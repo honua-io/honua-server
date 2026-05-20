@@ -328,7 +328,8 @@ internal static class ServiceCollectionExtensions
                 client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
                 client.Timeout = TimeSpan.FromMinutes(5);
             },
-            configureHandler: static () => ArcGisRestClient.CreatePinnedDnsHttpMessageHandler());
+            configureHandler: static () => ArcGisRestClient.CreatePinnedDnsHttpMessageHandler())
+            .AddHttpMessageHandler<MigrationRequestCountingHandler>();
 
         // Register Geoservices import service
         services.AddScoped<IGeoservicesImportService, GeoservicesImportService>();
@@ -338,6 +339,7 @@ internal static class ServiceCollectionExtensions
         services.AddAutoDocsCore();
 
         // Register GeoServer REST client for GeoServer migration imports with resilience
+        services.TryAddTransient<MigrationRequestCountingHandler>();
         services.AddResilientHttpClient<GeoServerRestClient>(
             "geoserver-rest",
             HttpResiliencePolicies.SlowServiceDefaults,
@@ -346,7 +348,8 @@ internal static class ServiceCollectionExtensions
                 client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
                 client.Timeout = TimeSpan.FromMinutes(5);
             },
-            configureHandler: static () => GeoServerRestClient.CreatePinnedDnsHttpMessageHandler());
+            configureHandler: static () => GeoServerRestClient.CreatePinnedDnsHttpMessageHandler())
+            .AddHttpMessageHandler<MigrationRequestCountingHandler>();
 
         // Register migration catalog writer used by apply-mode imports.
         services.AddScoped<IMigrationCatalogWriter, PostgresMigrationCatalogWriter>();
@@ -363,7 +366,8 @@ internal static class ServiceCollectionExtensions
                 client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
                 client.Timeout = TimeSpan.FromMinutes(2);
             },
-            configureHandler: static () => OgcServiceMigrationScanner.CreatePinnedDnsHttpMessageHandler());
+            configureHandler: static () => OgcServiceMigrationScanner.CreatePinnedDnsHttpMessageHandler())
+            .AddHttpMessageHandler<MigrationRequestCountingHandler>();
         services.AddScoped<IOgcServiceMigrationScanner>(serviceProvider =>
             serviceProvider.GetRequiredService<OgcServiceMigrationScanner>());
 

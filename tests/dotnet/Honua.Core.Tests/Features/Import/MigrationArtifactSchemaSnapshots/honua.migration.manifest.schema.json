@@ -169,6 +169,14 @@
       }
     },
     {
+      "JsonName": "identityRemapping",
+      "ClrName": "IdentityRemapping",
+      "Container": "map",
+      "ElementType": "string",
+      "Required": false,
+      "Nullable": false
+    },
+    {
       "JsonName": "identityRemaps",
       "ClrName": "IdentityRemaps",
       "Container": "array",
@@ -185,6 +193,22 @@
             "ElementType": "string",
             "Required": true,
             "Nullable": false
+          },
+          {
+            "JsonName": "identityStability",
+            "ClrName": "IdentityStability",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": true
+          },
+          {
+            "JsonName": "reason",
+            "ClrName": "Reason",
+            "Container": "scalar",
+            "ElementType": "string",
+            "Required": false,
+            "Nullable": true
           },
           {
             "JsonName": "sourceId",
@@ -423,6 +447,7 @@
             "Nullable": false
           },
           {
+<<<<<<< HEAD
             "JsonName": "planEntries",
             "ClrName": "PlanEntries",
             "Container": "array",
@@ -451,12 +476,35 @@
                 {
                   "JsonName": "code",
                   "ClrName": "Code",
+=======
+            "JsonName": "identity",
+            "ClrName": "Identity",
+            "Container": "scalar",
+            "ElementType": "MigrationManifestServiceIdentity",
+            "Required": false,
+            "Nullable": true,
+            "Schema": {
+              "TypeName": "MigrationManifestServiceIdentity",
+              "Properties": [
+                {
+                  "JsonName": "identityRemapReason",
+                  "ClrName": "IdentityRemapReason",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "identityStability",
+                  "ClrName": "IdentityStability",
+>>>>>>> origin/trunk
                   "Container": "scalar",
                   "ElementType": "string",
                   "Required": true,
                   "Nullable": false
                 },
                 {
+<<<<<<< HEAD
                   "JsonName": "id",
                   "ClrName": "Id",
                   "Container": "scalar",
@@ -483,12 +531,33 @@
                 {
                   "JsonName": "name",
                   "ClrName": "Name",
+=======
+                  "JsonName": "sourceFolderPath",
+                  "ClrName": "SourceFolderPath",
                   "Container": "scalar",
                   "ElementType": "string",
                   "Required": false,
                   "Nullable": true
                 },
                 {
+                  "JsonName": "sourceQualifiedName",
+                  "ClrName": "SourceQualifiedName",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "sourceServiceId",
+                  "ClrName": "SourceServiceId",
+>>>>>>> origin/trunk
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+<<<<<<< HEAD
                   "JsonName": "reason",
                   "ClrName": "Reason",
                   "Container": "scalar",
@@ -511,6 +580,30 @@
                   "ElementType": "string",
                   "Required": true,
                   "Nullable": false
+=======
+                  "JsonName": "targetFolderPath",
+                  "ClrName": "TargetFolderPath",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "targetName",
+                  "ClrName": "TargetName",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "targetServiceId",
+                  "ClrName": "TargetServiceId",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+>>>>>>> origin/trunk
                 }
               ]
             }
@@ -845,6 +938,83 @@
             "Nullable": false
           },
           {
+            "JsonName": "attachments",
+            "ClrName": "Attachments",
+            "Container": "array",
+            "ElementType": "MigrationManifestAttachmentRecord",
+            "Required": false,
+            "Nullable": false,
+            "Schema": {
+              "TypeName": "MigrationManifestAttachmentRecord",
+              "Properties": [
+                {
+                  "JsonName": "classification",
+                  "ClrName": "Classification",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "contentType",
+                  "ClrName": "ContentType",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "name",
+                  "ClrName": "Name",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "reason",
+                  "ClrName": "Reason",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "size",
+                  "ClrName": "Size",
+                  "Container": "scalar",
+                  "ElementType": "long",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "sourceAttachmentId",
+                  "ClrName": "SourceAttachmentId",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "sourceResourceId",
+                  "ClrName": "SourceResourceId",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "targetAttachmentRef",
+                  "ClrName": "TargetAttachmentRef",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                }
+              ]
+            }
+          },
+          {
             "JsonName": "capabilities",
             "ClrName": "Capabilities",
             "Container": "array",
@@ -1012,12 +1182,190 @@
             "Nullable": true
           },
           {
+            "JsonName": "identity",
+            "ClrName": "Identity",
+            "Container": "scalar",
+            "ElementType": "MigrationManifestResourceIdentity",
+            "Required": false,
+            "Nullable": true,
+            "Schema": {
+              "TypeName": "MigrationManifestResourceIdentity",
+              "Properties": [
+                {
+                  "JsonName": "identityRemapReason",
+                  "ClrName": "IdentityRemapReason",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "identityStability",
+                  "ClrName": "IdentityStability",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "sourceFolderPath",
+                  "ClrName": "SourceFolderPath",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "sourceLayerId",
+                  "ClrName": "SourceLayerId",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "sourceQualifiedName",
+                  "ClrName": "SourceQualifiedName",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "sourceServiceId",
+                  "ClrName": "SourceServiceId",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "targetFolderPath",
+                  "ClrName": "TargetFolderPath",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "targetLayerId",
+                  "ClrName": "TargetLayerId",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "targetName",
+                  "ClrName": "TargetName",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "targetServiceId",
+                  "ClrName": "TargetServiceId",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                }
+              ]
+            }
+          },
+          {
             "JsonName": "migrationMode",
             "ClrName": "MigrationMode",
             "Container": "scalar",
             "ElementType": "string",
             "Required": false,
             "Nullable": true
+          },
+          {
+            "JsonName": "relationships",
+            "ClrName": "Relationships",
+            "Container": "array",
+            "ElementType": "MigrationManifestRelationshipRecord",
+            "Required": false,
+            "Nullable": false,
+            "Schema": {
+              "TypeName": "MigrationManifestRelationshipRecord",
+              "Properties": [
+                {
+                  "JsonName": "cardinality",
+                  "ClrName": "Cardinality",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "classification",
+                  "ClrName": "Classification",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "name",
+                  "ClrName": "Name",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "reason",
+                  "ClrName": "Reason",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "relatedLayerIds",
+                  "ClrName": "RelatedLayerIds",
+                  "Container": "array",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "relationshipType",
+                  "ClrName": "RelationshipType",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "sourceRelationshipId",
+                  "ClrName": "SourceRelationshipId",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "sourceResourceId",
+                  "ClrName": "SourceResourceId",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "targetRelationshipRef",
+                  "ClrName": "TargetRelationshipRef",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                }
+              ]
+            }
           },
           {
             "JsonName": "sourceKind",

@@ -1013,9 +1013,6 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
     private static FilteredResources FilterRequestedResources(GeoServerServiceInfo serviceInfo, GeoServerImportRequest request)
     {
         var styleIdsByReference = BuildStyleReferenceLookup(serviceInfo.Styles);
-        var workspaces = request.WorkspaceNames == null
-            ? serviceInfo.Workspaces
-            : serviceInfo.Workspaces.Where(w => request.WorkspaceNames.Contains(w.Name)).ToArray();
 
         var dataStores = request.DataStoreNames == null
             ? serviceInfo.DataStores
@@ -1036,6 +1033,54 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                 .ToArray()
             : Array.Empty<GeoServerLayerGroupInfo>();
 
+        // Scope workspaces to the operator's request. When WorkspaceNames is set we honor
+        // it directly; otherwise, when LayerNames narrows the scope we derive the
+        // workspace set from the selected layers (and any layer groups) so the
+        // catalog-apply loop does not persist honua.services rows for workspaces the
+        // operator never asked to touch (issue #1098). When neither filter is set we
+        // preserve the historical "all workspaces" behavior.
+        GeoServerWorkspaceInfo[] workspaces;
+        if (request.WorkspaceNames != null)
+        {
+            workspaces = serviceInfo.Workspaces
+                .Where(w => request.WorkspaceNames.Contains(w.Name, StringComparer.OrdinalIgnoreCase))
+                .ToArray();
+        }
+        else if (request.LayerNames != null)
+        {
+            var scopedWorkspaceNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var layer in layers)
+            {
+                if (!string.IsNullOrWhiteSpace(layer.WorkspaceName))
+                {
+                    scopedWorkspaceNames.Add(layer.WorkspaceName);
+                }
+            }
+            foreach (var group in layerGroups)
+            {
+                if (!string.IsNullOrWhiteSpace(group.WorkspaceName))
+                {
+                    scopedWorkspaceNames.Add(group.WorkspaceName);
+                }
+            }
+            workspaces = serviceInfo.Workspaces
+                .Where(w => scopedWorkspaceNames.Contains(w.Name))
+                .ToArray();
+        }
+        else
+        {
+            workspaces = serviceInfo.Workspaces;
+        }
+
+        var scopedWorkspaceNameSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var workspace in workspaces)
+        {
+            if (!string.IsNullOrWhiteSpace(workspace.Name))
+            {
+                scopedWorkspaceNameSet.Add(workspace.Name);
+            }
+        }
+
         return new FilteredResources
         {
             Workspaces = workspaces,
@@ -1046,7 +1091,8 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             WorkspaceCount = workspaces.Length,
             DataStoreCount = dataStores.Length,
             LayerCount = layers.Length,
-            StyleCount = styles.Length
+            StyleCount = styles.Length,
+            ScopedWorkspaceNames = scopedWorkspaceNameSet
         };
     }
 
@@ -1333,6 +1379,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                     layersById,
                     dataStoresByKey,
                     layerGroupsById,
+                    filteredResources,
                     request,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -1374,6 +1421,7 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         Dictionary<string, GeoServerLayerInfo> layersById,
         Dictionary<string, GeoServerDataStoreInfo> dataStoresByKey,
         Dictionary<string, GeoServerLayerGroupInfo> layerGroupsById,
+        FilteredResources filteredResources,
         GeoServerImportRequest request,
         CancellationToken cancellationToken)
     {
@@ -1398,6 +1446,18 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         // follow-on slices and recorded as manual-review evidence by the manifest.
         if (string.Equals(step.Kind, "layer-group", StringComparison.Ordinal))
         {
+            // Defensive scoping (#1098): reject layer-group catalog writes whose
+            // owning workspace is not part of the operator's requested scope.
+            if (layerGroupsById.TryGetValue(step.SourceId, out var scopeGroup) &&
+                !IsWorkspaceInScope(filteredResources, scopeGroup.WorkspaceName))
+            {
+                Log.WorkspaceWriteRejected(_logger, "layer-group", scopeGroup.WorkspaceName ?? "global");
+                return CreateExecutionStepResult(
+                    step,
+                    "manual-review",
+                    $"Catalog write for layer-group '{step.SourceId}' rejected: source workspace '{scopeGroup.WorkspaceName}' is outside the requested workspace scope (issue #1098).");
+            }
+
             return await ApplyLayerGroupCatalogStepAsync(
                     step,
                     layerGroupsById,
@@ -1420,6 +1480,17 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
                 step,
                 "manual-review",
                 "The source layer was not present in the filtered GeoServer discovery result.");
+        }
+
+        // Defensive scoping (#1098): reject layer catalog writes whose owning
+        // workspace is not part of the operator's requested scope.
+        if (!IsWorkspaceInScope(filteredResources, layer.WorkspaceName))
+        {
+            Log.WorkspaceWriteRejected(_logger, "layer", layer.WorkspaceName ?? "global");
+            return CreateExecutionStepResult(
+                step,
+                "manual-review",
+                $"Catalog write for layer '{step.SourceId}' rejected: source workspace '{layer.WorkspaceName}' is outside the requested workspace scope (issue #1098).");
         }
 
         if (string.IsNullOrWhiteSpace(layer.DataStoreName))
@@ -1607,6 +1678,23 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             cancellationToken.ThrowIfCancellationRequested();
 
             var sourceId = GetWorkspaceId(workspace.Name);
+
+            // Defensive scoping (#1098): even though FilterRequestedResources should
+            // already exclude unscoped workspaces, re-check at the write site so a
+            // future regression in plan/translator code cannot smuggle a
+            // cross-workspace mutation into honua.services.
+            if (!IsWorkspaceInScope(filteredResources, workspace.Name))
+            {
+                Log.WorkspaceWriteRejected(_logger, "workspace", workspace.Name);
+                results.Add(CreateOutOfScopeStepResult(
+                    sourceId: sourceId,
+                    kind: "workspace",
+                    targetServiceName: NormalizeCatalogServiceName(workspace.Name),
+                    targetResourceName: workspace.Name,
+                    workspaceName: workspace.Name));
+                continue;
+            }
+
             var targetServiceName = NormalizeCatalogServiceName(workspace.Name);
             var stepResult = await EnsureCatalogEntryAsync(
                     sourceId: sourceId,
@@ -1623,6 +1711,48 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         }
 
         return results;
+    }
+
+    private static bool IsWorkspaceInScope(FilteredResources filteredResources, string? workspaceName)
+    {
+        if (string.IsNullOrWhiteSpace(workspaceName))
+        {
+            // Global resources (no owning workspace) are not workspace-scoped and
+            // are intentionally allowed through this guard.
+            return true;
+        }
+
+        return filteredResources.ScopedWorkspaceNames.Contains(workspaceName);
+    }
+
+    private static MigrationApplyExecutionStepResult CreateOutOfScopeStepResult(
+        string sourceId,
+        string kind,
+        string targetServiceName,
+        string targetResourceName,
+        string workspaceName)
+    {
+        var syntheticStep = new MigrationApplyPlanStep
+        {
+            Sequence = 0,
+            StepId = $"catalog-{kind}:{sourceId}",
+            SourceId = sourceId,
+            Kind = kind,
+            Action = "stage-catalog-entry",
+            Disposition = "manual-review",
+            TargetServiceName = targetServiceName,
+            TargetResourceName = targetResourceName,
+            Compatibility = new MigrationCompatibilityAssessment
+            {
+                Level = "manual-review",
+                Reason = "Catalog write rejected by workspace scope guard."
+            }
+        };
+
+        return CreateExecutionStepResult(
+            syntheticStep,
+            "manual-review",
+            $"Catalog write for {kind} '{sourceId}' rejected: source workspace '{workspaceName}' is outside the requested workspace scope (issue #1098).");
     }
 
     private async Task<MigrationApplyExecutionStepResult> ApplyLayerGroupCatalogStepAsync(
@@ -2626,6 +2756,16 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         public int DataStoreCount { get; init; }
         public int LayerCount { get; init; }
         public int StyleCount { get; init; }
+
+        /// <summary>
+        /// Defensive scoping set used by catalog-apply write sites to reject any
+        /// resource whose source workspace falls outside the operator's requested
+        /// scope (issue #1098). The set is derived from the filtered workspace
+        /// list so the apply path stays self-consistent even if a future plan
+        /// builder forwards a step whose workspace was excluded by the filter.
+        /// </summary>
+        public HashSet<string> ScopedWorkspaceNames { get; init; } =
+            new(StringComparer.OrdinalIgnoreCase);
     }
 
     internal sealed record ImportStepResult
@@ -2749,6 +2889,9 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
             long requestCount,
             long resourceCount,
             int phaseCount);
+
+        [LoggerMessage(8018, LogLevel.Warning, "GeoServer catalog-apply rejected cross-workspace write: {EntryKind} owned by workspace '{WorkspaceName}' is outside the operator's requested scope (issue #1098)")]
+        public static partial void WorkspaceWriteRejected(ILogger logger, string entryKind, string workspaceName);
     }
 
 }

@@ -67,6 +67,14 @@ public sealed record MigrationManifestArtifact
     public MigrationManifestIdentityRemap[] IdentityRemaps { get; init; } = [];
 
     /// <summary>
+    /// Optional source-id to target-id pairs that app migration tooling must apply when
+    /// the manifest could not preserve a source identifier verbatim. Only entries whose
+    /// identity stability is not <see cref="MigrationManifestIdentityStabilities.Preserved"/>
+    /// are included so consumers can short-circuit when the identity was kept stable.
+    /// </summary>
+    public Dictionary<string, string> IdentityRemapping { get; init; } = new(StringComparer.Ordinal);
+
+    /// <summary>
     /// Optional fidelity matrix enriched with target identity mappings from this manifest.
     /// </summary>
     public MigrationFidelityMatrix? FidelityMatrix { get; init; }
@@ -195,9 +203,174 @@ public sealed record MigrationManifestTargetResource
     public string[] ExternalDependencyIds { get; init; } = [];
 
     /// <summary>
+    /// Optional source/target identity record. App migration tooling consults this to
+    /// decide whether the source layer identifier was preserved on the target or remapped.
+    /// </summary>
+    public MigrationManifestResourceIdentity? Identity { get; init; }
+
+    /// <summary>
+    /// Optional attachment migration classification records derived from the source inventory.
+    /// Each record reports the source attachment posture (file size, content type) and an
+    /// automation classification so target apply can decide whether to pull, defer, or skip
+    /// per-attachment migration. Empty when the source did not advertise attachments.
+    /// </summary>
+    public MigrationManifestAttachmentRecord[] Attachments { get; init; } = [];
+
+    /// <summary>
+    /// Optional relationship migration classification records derived from the source inventory.
+    /// Each record captures the relationship cardinality, related layer ids, and an automation
+    /// classification so target apply can recreate or document the relationship. Empty when the
+    /// source did not advertise relationships.
+    /// </summary>
+    public MigrationManifestRelationshipRecord[] Relationships { get; init; } = [];
+
+    /// <summary>
     /// Compatibility assessment that justified the target action.
     /// </summary>
     public required MigrationCompatibilityAssessment Compatibility { get; init; }
+}
+
+/// <summary>
+/// Stable attachment classification values emitted by manifest translation.
+/// </summary>
+public static class MigrationManifestAttachmentClassifications
+{
+    /// <summary>Attachment is small and a supported content type; it can be migrated automatically.</summary>
+    public const string Automated = "automated";
+
+    /// <summary>Attachment is captured but requires an operator-supervised follow-up migration step.</summary>
+    public const string Assisted = "assisted";
+
+    /// <summary>Attachment metadata is captured for explicit operator review before migration.</summary>
+    public const string ManualReview = "manual-review";
+
+    /// <summary>Attachment cannot be migrated by this slice (e.g. disallowed content type).</summary>
+    public const string Unsupported = "unsupported";
+}
+
+/// <summary>
+/// Per-attachment migration classification record emitted by the manifest translator.
+/// </summary>
+public sealed record MigrationManifestAttachmentRecord
+{
+    /// <summary>
+    /// Source attachment identifier as advertised by the source service (e.g. the ArcGIS attachmentId).
+    /// </summary>
+    public required string SourceAttachmentId { get; init; }
+
+    /// <summary>
+    /// Source resource identifier the attachment belongs to.
+    /// </summary>
+    public required string SourceResourceId { get; init; }
+
+    /// <summary>
+    /// Optional attachment file name.
+    /// </summary>
+    public string? Name { get; init; }
+
+    /// <summary>
+    /// Optional advertised content type (MIME) for the attachment.
+    /// </summary>
+    public string? ContentType { get; init; }
+
+    /// <summary>
+    /// Optional attachment size in bytes when advertised by the source.
+    /// </summary>
+    public long? Size { get; init; }
+
+    /// <summary>
+    /// Automation classification. One of
+    /// <see cref="MigrationManifestAttachmentClassifications.Automated"/>,
+    /// <see cref="MigrationManifestAttachmentClassifications.Assisted"/>,
+    /// <see cref="MigrationManifestAttachmentClassifications.ManualReview"/>, or
+    /// <see cref="MigrationManifestAttachmentClassifications.Unsupported"/>.
+    /// </summary>
+    public required string Classification { get; init; }
+
+    /// <summary>
+    /// Optional stable target attachment reference (e.g. <c>target:attachment:{service}:{resource}:{id}</c>)
+    /// that target apply will materialize when the classification is automated or assisted.
+    /// </summary>
+    public string? TargetAttachmentRef { get; init; }
+
+    /// <summary>
+    /// Optional human-readable explanation for the classification.
+    /// </summary>
+    public string? Reason { get; init; }
+}
+
+/// <summary>
+/// Stable relationship classification values emitted by manifest translation.
+/// </summary>
+public static class MigrationManifestRelationshipClassifications
+{
+    /// <summary>Relationship can be recreated automatically by target apply.</summary>
+    public const string Automated = "automated";
+
+    /// <summary>Relationship is captured but requires an operator-supervised follow-up step.</summary>
+    public const string Assisted = "assisted";
+
+    /// <summary>Relationship metadata is captured for explicit operator review.</summary>
+    public const string ManualReview = "manual-review";
+
+    /// <summary>Relationship is not supported by this slice and must be manually re-modeled.</summary>
+    public const string Unsupported = "unsupported";
+}
+
+/// <summary>
+/// Per-relationship migration classification record emitted by the manifest translator.
+/// </summary>
+public sealed record MigrationManifestRelationshipRecord
+{
+    /// <summary>
+    /// Source relationship identifier as advertised by the source service.
+    /// </summary>
+    public required string SourceRelationshipId { get; init; }
+
+    /// <summary>
+    /// Source resource identifier that owns or originates the relationship.
+    /// </summary>
+    public required string SourceResourceId { get; init; }
+
+    /// <summary>
+    /// Optional relationship display name.
+    /// </summary>
+    public string? Name { get; init; }
+
+    /// <summary>
+    /// Optional relationship cardinality such as <c>1:1</c>, <c>1:N</c>, or <c>M:N</c>.
+    /// </summary>
+    public string? Cardinality { get; init; }
+
+    /// <summary>
+    /// Optional relationship subtype such as <c>simple</c>, <c>composite</c>, or <c>attributed</c>.
+    /// </summary>
+    public string? RelationshipType { get; init; }
+
+    /// <summary>
+    /// Related source layer or table identifiers (e.g. parent and child layer ids).
+    /// </summary>
+    public string[] RelatedLayerIds { get; init; } = [];
+
+    /// <summary>
+    /// Automation classification. One of
+    /// <see cref="MigrationManifestRelationshipClassifications.Automated"/>,
+    /// <see cref="MigrationManifestRelationshipClassifications.Assisted"/>,
+    /// <see cref="MigrationManifestRelationshipClassifications.ManualReview"/>, or
+    /// <see cref="MigrationManifestRelationshipClassifications.Unsupported"/>.
+    /// </summary>
+    public required string Classification { get; init; }
+
+    /// <summary>
+    /// Optional stable target relationship reference that target apply will materialize when the
+    /// classification is automated or assisted.
+    /// </summary>
+    public string? TargetRelationshipRef { get; init; }
+
+    /// <summary>
+    /// Optional human-readable explanation for the classification.
+    /// </summary>
+    public string? Reason { get; init; }
 }
 
 /// <summary>
@@ -261,6 +434,11 @@ public sealed record MigrationManifestServicePlan
     /// nothing to flag.
     /// </summary>
     public MigrationManifestPlanDiagnostic[] Diagnostics { get; init; } = [];
+    /// Optional source/target identity record for the planned service. Mirrors
+    /// <see cref="MigrationManifestTargetResource.Identity"/> so app migration tooling can
+    /// remap service-level identifiers consistently.
+    /// </summary>
+    public MigrationManifestServiceIdentity? Identity { get; init; }
 
     /// <summary>
     /// Compatibility assessment that justified the service plan action.
@@ -429,6 +607,142 @@ public sealed record MigrationManifestIdentityRemap
     /// Manifest action associated with the mapping.
     /// </summary>
     public required string Action { get; init; }
+
+    /// <summary>
+    /// Identity stability classification for the mapping. One of
+    /// <see cref="MigrationManifestIdentityStabilities.Preserved"/>,
+    /// <see cref="MigrationManifestIdentityStabilities.Remapped"/>, or
+    /// <see cref="MigrationManifestIdentityStabilities.Synthesized"/>.
+    /// </summary>
+    public string? IdentityStability { get; init; }
+
+    /// <summary>
+    /// Optional explanation when <see cref="IdentityStability"/> is
+    /// <see cref="MigrationManifestIdentityStabilities.Remapped"/> or
+    /// <see cref="MigrationManifestIdentityStabilities.Synthesized"/>.
+    /// </summary>
+    public string? Reason { get; init; }
+}
+
+/// <summary>
+/// Stable identity stability values emitted by manifest translation.
+/// </summary>
+public static class MigrationManifestIdentityStabilities
+{
+    /// <summary>The target identifier exactly matches the source identifier.</summary>
+    public const string Preserved = "preserved";
+
+    /// <summary>The target identifier was changed from the source identifier and the mapping is recorded.</summary>
+    public const string Remapped = "remapped";
+
+    /// <summary>The source did not advertise an identifier, so the manifest synthesized one.</summary>
+    public const string Synthesized = "synthesized";
+}
+
+/// <summary>
+/// Source and target identity record for a manifest target resource (layer or table).
+/// </summary>
+public sealed record MigrationManifestResourceIdentity
+{
+    /// <summary>
+    /// Source service identifier (e.g. ArcGIS service key such as <c>Roads</c>).
+    /// </summary>
+    public string? SourceServiceId { get; init; }
+
+    /// <summary>
+    /// Source layer or table identifier as advertised by the source (e.g. ArcGIS integer layer id).
+    /// Kept as a string so non-numeric identifiers can be carried verbatim.
+    /// </summary>
+    public string? SourceLayerId { get; init; }
+
+    /// <summary>
+    /// Fully qualified source resource name, including service or workspace prefix when applicable.
+    /// </summary>
+    public string? SourceQualifiedName { get; init; }
+
+    /// <summary>
+    /// Optional folder path the source resource lives under, when the source models a folder hierarchy.
+    /// </summary>
+    public string? SourceFolderPath { get; init; }
+
+    /// <summary>
+    /// Stable target Honua service identifier. Mirrors the source value when the source identifier was preserved.
+    /// </summary>
+    public string? TargetServiceId { get; init; }
+
+    /// <summary>
+    /// Stable target Honua layer or table identifier. Mirrors the source value when the source identifier was preserved.
+    /// </summary>
+    public string? TargetLayerId { get; init; }
+
+    /// <summary>
+    /// Target resource name on Honua.
+    /// </summary>
+    public string? TargetName { get; init; }
+
+    /// <summary>
+    /// Optional folder path the target resource will be placed under.
+    /// </summary>
+    public string? TargetFolderPath { get; init; }
+
+    /// <summary>
+    /// Identity stability classification. One of
+    /// <see cref="MigrationManifestIdentityStabilities.Preserved"/>,
+    /// <see cref="MigrationManifestIdentityStabilities.Remapped"/>, or
+    /// <see cref="MigrationManifestIdentityStabilities.Synthesized"/>.
+    /// </summary>
+    public required string IdentityStability { get; init; }
+
+    /// <summary>
+    /// Optional explanation when the identity could not be preserved verbatim.
+    /// </summary>
+    public string? IdentityRemapReason { get; init; }
+}
+
+/// <summary>
+/// Source and target identity record for a manifest service plan.
+/// </summary>
+public sealed record MigrationManifestServiceIdentity
+{
+    /// <summary>
+    /// Source service identifier.
+    /// </summary>
+    public string? SourceServiceId { get; init; }
+
+    /// <summary>
+    /// Fully qualified source service name.
+    /// </summary>
+    public string? SourceQualifiedName { get; init; }
+
+    /// <summary>
+    /// Optional folder path the source service lives under.
+    /// </summary>
+    public string? SourceFolderPath { get; init; }
+
+    /// <summary>
+    /// Stable target Honua service identifier.
+    /// </summary>
+    public string? TargetServiceId { get; init; }
+
+    /// <summary>
+    /// Target service name on Honua.
+    /// </summary>
+    public string? TargetName { get; init; }
+
+    /// <summary>
+    /// Optional folder path the target service will be placed under.
+    /// </summary>
+    public string? TargetFolderPath { get; init; }
+
+    /// <summary>
+    /// Identity stability classification.
+    /// </summary>
+    public required string IdentityStability { get; init; }
+
+    /// <summary>
+    /// Optional explanation when the identity could not be preserved verbatim.
+    /// </summary>
+    public string? IdentityRemapReason { get; init; }
 }
 
 /// <summary>

@@ -34,6 +34,8 @@ public static partial class MigrationManifestTranslator
         var unsupportedItems = new List<MigrationManifestReviewItem>();
         var sourceProtocol = GetSourceProtocol(inventory);
 
+        var serviceIdentity = BuildServiceIdentity(inventory, targetServiceName);
+
         foreach (var resource in inventory.Resources.OrderBy(static item => item.Id, StringComparer.Ordinal))
         {
             AddReviewItems(
@@ -52,6 +54,23 @@ public static partial class MigrationManifestTranslator
             var action = IsPartial(resource.Compatibility.Level) ? "manual-review" : "publish";
             var targetResourceName = NormalizeName(resource.Name, fallback: resource.Id);
             var targetResourceId = BuildTargetId("resource", targetServiceName, targetResourceName);
+            var identity = BuildResourceIdentity(
+                inventory,
+                resource,
+                serviceIdentity,
+                targetServiceName,
+                targetResourceId,
+                targetResourceName);
+            var attachments = BuildResourceAttachments(
+                inventory,
+                resource,
+                targetServiceName,
+                targetResourceName);
+            var relationships = BuildResourceRelationships(
+                inventory,
+                resource,
+                targetServiceName,
+                targetResourceName);
 
             targetResources.Add(new MigrationManifestTargetResource
             {
@@ -72,6 +91,9 @@ public static partial class MigrationManifestTranslator
                     .ToArray(),
                 StyleIds = Order(resource.StyleIds),
                 ExternalDependencyIds = BuildResourceExternalDependencyIds(inventory, resource),
+                Identity = identity,
+                Attachments = attachments,
+                Relationships = relationships,
                 Compatibility = resource.Compatibility
             });
             identityRemaps.Add(new MigrationManifestIdentityRemap
@@ -81,7 +103,9 @@ public static partial class MigrationManifestTranslator
                 TargetId = targetResourceId,
                 TargetKind = "resource",
                 TargetName = targetResourceName,
-                Action = action
+                Action = action,
+                IdentityStability = identity.IdentityStability,
+                Reason = identity.IdentityRemapReason
             });
         }
 
@@ -116,7 +140,13 @@ public static partial class MigrationManifestTranslator
                 TargetId = targetStyleId,
                 TargetKind = "style",
                 TargetName = targetStyleName,
-                Action = action
+                Action = action,
+                IdentityStability = string.Equals(style.Id, targetStyleId, StringComparison.Ordinal)
+                    ? MigrationManifestIdentityStabilities.Preserved
+                    : MigrationManifestIdentityStabilities.Remapped,
+                Reason = string.Equals(style.Id, targetStyleId, StringComparison.Ordinal)
+                    ? null
+                    : "Honua reserves a deterministic style identifier scoped to the target service."
             });
         }
 
@@ -131,12 +161,32 @@ public static partial class MigrationManifestTranslator
                 unsupportedItems);
         }
 
-        servicePlans.AddRange(BuildServicePlans(inventory, targetServiceName));
+        servicePlans.AddRange(BuildServicePlans(inventory, targetServiceName, serviceIdentity));
 
         var orderedIdentityRemaps = identityRemaps
             .OrderBy(static item => item.SourceId, StringComparer.Ordinal)
             .ThenBy(static item => item.TargetId, StringComparer.Ordinal)
             .ToArray();
+        var identityRemapping = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var remap in orderedIdentityRemaps)
+        {
+            if (string.Equals(remap.IdentityStability, MigrationManifestIdentityStabilities.Preserved, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (identityRemapping.TryGetValue(remap.SourceId, out var existingTarget) &&
+                !string.Equals(existingTarget, remap.TargetId, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Source identifier '{remap.SourceId}' is mapped to conflicting target identifiers " +
+                    $"'{existingTarget}' and '{remap.TargetId}'. App migration tooling cannot apply ambiguous remappings; " +
+                    "fix the source inventory so each source id resolves to a single target.");
+            }
+
+            identityRemapping[remap.SourceId] = remap.TargetId;
+        }
+
         var fidelityMatrix = inventory.FidelityClassifications.Length > 0
             ? MigrationFidelityMatrixBuilder.Build(inventory.FidelityClassifications, orderedIdentityRemaps)
             : inventory.FidelityMatrix;
@@ -162,6 +212,7 @@ public static partial class MigrationManifestTranslator
                 .OrderBy(static item => item.SourceContainerId, StringComparer.Ordinal)
                 .ToArray(),
             IdentityRemaps = orderedIdentityRemaps,
+            IdentityRemapping = identityRemapping,
             FidelityMatrix = fidelityMatrix,
             ManualReviewItems = manualReviewItems
                 .OrderBy(static item => item.SourceId, StringComparer.Ordinal)
@@ -210,7 +261,8 @@ public static partial class MigrationManifestTranslator
 
     private static MigrationManifestServicePlan[] BuildServicePlans(
         MigrationSourceInventoryArtifact inventory,
-        string targetServiceName)
+        string targetServiceName,
+        MigrationManifestServiceIdentity serviceIdentity)
     {
         if (!IsOgcRenderOnlySource(inventory.SourceKind))
         {
@@ -243,6 +295,10 @@ public static partial class MigrationManifestTranslator
                     ExternalDependencyIds = Order(dependencies.Select(static dependency => dependency.Id)),
                     PlanEntries = planResult.Entries,
                     Diagnostics = planResult.Diagnostics,
+                    Identity = serviceIdentity with
+                    {
+                        SourceServiceId = serviceIdentity.SourceServiceId ?? container.Id
+                    },
                     Compatibility = container.Compatibility
                 };
             })
@@ -264,6 +320,446 @@ public static partial class MigrationManifestTranslator
         }
 
         return OgcRenderMigrationPlanResult.Empty;
+    private static MigrationManifestServiceIdentity BuildServiceIdentity(
+        MigrationSourceInventoryArtifact inventory,
+        string targetServiceName)
+    {
+        var (sourceServiceId, sourceQualifiedName, sourceFolderPath) = ExtractServiceSourceIdentity(inventory);
+
+        var stability = string.IsNullOrEmpty(sourceServiceId)
+            ? MigrationManifestIdentityStabilities.Synthesized
+            : string.Equals(sourceServiceId, targetServiceName, StringComparison.Ordinal)
+                ? MigrationManifestIdentityStabilities.Preserved
+                : MigrationManifestIdentityStabilities.Remapped;
+        var reason = stability switch
+        {
+            MigrationManifestIdentityStabilities.Synthesized =>
+                "Source did not advertise a stable service identifier; Honua synthesized one from the source display name.",
+            MigrationManifestIdentityStabilities.Remapped =>
+                "Source service name contained characters that are not allowed in Honua service identifiers and was normalized.",
+            _ => null
+        };
+
+        return new MigrationManifestServiceIdentity
+        {
+            SourceServiceId = string.IsNullOrEmpty(sourceServiceId) ? null : sourceServiceId,
+            SourceQualifiedName = sourceQualifiedName,
+            SourceFolderPath = sourceFolderPath,
+            TargetServiceId = targetServiceName,
+            TargetName = targetServiceName,
+            IdentityStability = stability,
+            IdentityRemapReason = reason
+        };
+    }
+
+    private static MigrationManifestResourceIdentity BuildResourceIdentity(
+        MigrationSourceInventoryArtifact inventory,
+        MigrationInventoryResource resource,
+        MigrationManifestServiceIdentity serviceIdentity,
+        string targetServiceName,
+        string targetResourceId,
+        string targetResourceName)
+    {
+        var sourceLayerId = ExtractResourceSourceLayerId(inventory, resource);
+        var sourceQualifiedName = BuildResourceSourceQualifiedName(
+            inventory,
+            resource,
+            serviceIdentity.SourceQualifiedName,
+            sourceLayerId);
+
+        var stability = string.IsNullOrEmpty(sourceLayerId)
+            ? MigrationManifestIdentityStabilities.Synthesized
+            : string.Equals(sourceLayerId, targetResourceName, StringComparison.Ordinal) &&
+              string.Equals(resource.Name, targetResourceName, StringComparison.Ordinal)
+                ? MigrationManifestIdentityStabilities.Preserved
+                : MigrationManifestIdentityStabilities.Remapped;
+        var reason = stability switch
+        {
+            MigrationManifestIdentityStabilities.Synthesized =>
+                "Source did not advertise a stable layer identifier; Honua synthesized a deterministic target id.",
+            MigrationManifestIdentityStabilities.Remapped =>
+                "Source layer id or name was normalized to fit Honua identifier constraints or to avoid a collision in the target service.",
+            _ => null
+        };
+
+        return new MigrationManifestResourceIdentity
+        {
+            SourceServiceId = serviceIdentity.SourceServiceId,
+            SourceLayerId = string.IsNullOrEmpty(sourceLayerId) ? null : sourceLayerId,
+            SourceQualifiedName = sourceQualifiedName,
+            SourceFolderPath = serviceIdentity.SourceFolderPath,
+            TargetServiceId = targetServiceName,
+            TargetLayerId = targetResourceId,
+            TargetName = targetResourceName,
+            TargetFolderPath = serviceIdentity.TargetFolderPath,
+            IdentityStability = stability,
+            IdentityRemapReason = reason
+        };
+    }
+
+    private static (string? SourceServiceId, string? SourceQualifiedName, string? SourceFolderPath) ExtractServiceSourceIdentity(
+        MigrationSourceInventoryArtifact inventory)
+    {
+        if (IsArcGisSource(inventory.SourceKind))
+        {
+            // Honua inventory uses container ids like "service:{serviceKey}" for ArcGIS sources.
+            var container = inventory.Containers
+                .FirstOrDefault(static c => c.Id.StartsWith("service:", StringComparison.Ordinal));
+            string? folderPath = null;
+            if (!string.IsNullOrEmpty(inventory.Source.BaseUrl))
+            {
+                folderPath = ExtractArcGisFolderPath(inventory.Source.BaseUrl);
+            }
+
+            if (container is not null)
+            {
+                var serviceKey = container.Id["service:".Length..];
+                var qualified = string.IsNullOrEmpty(folderPath)
+                    ? serviceKey
+                    : $"{folderPath}/{serviceKey}";
+                return (serviceKey, qualified, folderPath);
+            }
+        }
+
+        return (null, null, null);
+    }
+
+    private static string? ExtractResourceSourceLayerId(
+        MigrationSourceInventoryArtifact inventory,
+        MigrationInventoryResource resource)
+    {
+        if (IsArcGisSource(inventory.SourceKind))
+        {
+            // Honua inventory uses resource ids like "resource:{serviceName}:{kind}:{id}" for ArcGIS sources.
+            const string prefix = "resource:";
+            if (resource.Id.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                var remainder = resource.Id[prefix.Length..];
+                var parts = remainder.Split(':');
+                if (parts.Length >= 3)
+                {
+                    return parts[^1];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string? BuildResourceSourceQualifiedName(
+        MigrationSourceInventoryArtifact inventory,
+        MigrationInventoryResource resource,
+        string? serviceQualifiedName,
+        string? sourceLayerId)
+    {
+        if (string.IsNullOrEmpty(serviceQualifiedName))
+        {
+            return null;
+        }
+
+        var leaf = !string.IsNullOrEmpty(sourceLayerId)
+            ? sourceLayerId!
+            : resource.Name;
+        return string.IsNullOrEmpty(leaf)
+            ? serviceQualifiedName
+            : $"{serviceQualifiedName}/{leaf}";
+    }
+
+    private static string? ExtractArcGisFolderPath(string baseUrl)
+    {
+        // ArcGIS REST URLs follow .../rest/services/{folder?}/{service}/{serviceType}.
+        // Capture an optional folder segment that sits between "services" and the service name.
+        var segments = baseUrl.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var servicesIndex = -1;
+        for (var i = 0; i < segments.Length; i++)
+        {
+            if (segments[i].Equals("services", StringComparison.OrdinalIgnoreCase))
+            {
+                servicesIndex = i;
+                break;
+            }
+        }
+
+        if (servicesIndex < 0)
+        {
+            return null;
+        }
+
+        var serviceTypeIndex = -1;
+        for (var i = segments.Length - 1; i > servicesIndex; i--)
+        {
+            if (segments[i].Equals("FeatureServer", StringComparison.OrdinalIgnoreCase) ||
+                segments[i].Equals("MapServer", StringComparison.OrdinalIgnoreCase) ||
+                segments[i].Equals("ImageServer", StringComparison.OrdinalIgnoreCase))
+            {
+                serviceTypeIndex = i;
+                break;
+            }
+        }
+
+        if (serviceTypeIndex < 0)
+        {
+            return null;
+        }
+
+        // Folder segments sit between "services" (exclusive) and the service name (which precedes the service type).
+        var folderStart = servicesIndex + 1;
+        var folderEnd = serviceTypeIndex - 1; // exclusive of the service name itself
+        if (folderEnd <= folderStart)
+        {
+            return null;
+        }
+
+        var folderSegments = new ArraySegment<string>(segments, folderStart, folderEnd - folderStart);
+        return folderSegments.Count == 0 ? null : string.Join('/', folderSegments.ToArray());
+    }
+
+    private static bool IsArcGisSource(string sourceKind)
+        => string.Equals(sourceKind, "arcgis-geoservices-rest", StringComparison.OrdinalIgnoreCase);
+
+    // Attachments at or below this size are small enough for the automated migration lane.
+    // Above this size we capture the metadata but require an operator-supervised follow-up so the
+    // automated lane is not blocked by large binary transfers.
+    private const long AttachmentAutomatedSizeLimitBytes = 10L * 1024L * 1024L; // 10 MiB
+
+    // Attachments above this size are escalated past assisted to manual review because they need
+    // out-of-band transfer planning (network, object storage, etc.) rather than inline migration.
+    private const long AttachmentManualReviewSizeLimitBytes = 100L * 1024L * 1024L; // 100 MiB
+
+    private static readonly HashSet<string> SupportedAttachmentContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+        "application/pdf",
+        "text/plain",
+        "text/csv",
+        "application/json"
+    };
+
+    private static MigrationManifestAttachmentRecord[] BuildResourceAttachments(
+        MigrationSourceInventoryArtifact inventory,
+        MigrationInventoryResource resource,
+        string targetServiceName,
+        string targetResourceName)
+    {
+        if (!IsArcGisSource(inventory.SourceKind))
+        {
+            return [];
+        }
+
+        var dependencyIdSet = new HashSet<string>(resource.ExternalDependencyIds, StringComparer.Ordinal);
+        var records = new List<MigrationManifestAttachmentRecord>();
+
+        foreach (var dependency in inventory.ExternalDependencies
+                     .Where(d => string.Equals(d.Kind, "attachments", StringComparison.OrdinalIgnoreCase))
+                     .Where(d => string.Equals(d.ResourceId, resource.Id, StringComparison.Ordinal) ||
+                                 dependencyIdSet.Contains(d.Id))
+                     .OrderBy(static d => d.Id, StringComparer.Ordinal))
+        {
+            var attachmentId = dependency.Metadata.TryGetValue("attachmentId", out var advertisedId) &&
+                               !string.IsNullOrWhiteSpace(advertisedId)
+                ? advertisedId
+                : dependency.Id;
+            var name = dependency.Metadata.TryGetValue("name", out var advertisedName) &&
+                       !string.IsNullOrWhiteSpace(advertisedName)
+                ? advertisedName
+                : dependency.Name;
+            var contentType = dependency.Metadata.TryGetValue("contentType", out var ct) && !string.IsNullOrWhiteSpace(ct)
+                ? ct
+                : null;
+            long? size = null;
+            if (dependency.Metadata.TryGetValue("size", out var sizeText) &&
+                long.TryParse(sizeText, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsedSize) &&
+                parsedSize >= 0)
+            {
+                size = parsedSize;
+            }
+
+            var (classification, reason) = ClassifyAttachment(size, contentType);
+            string? targetRef = classification switch
+            {
+                MigrationManifestAttachmentClassifications.Automated or
+                    MigrationManifestAttachmentClassifications.Assisted =>
+                    $"target:attachment:{targetServiceName}:{targetResourceName}:{attachmentId}",
+                _ => null
+            };
+
+            records.Add(new MigrationManifestAttachmentRecord
+            {
+                SourceAttachmentId = attachmentId,
+                SourceResourceId = resource.Id,
+                Name = string.IsNullOrWhiteSpace(name) ? null : name,
+                ContentType = contentType,
+                Size = size,
+                Classification = classification,
+                TargetAttachmentRef = targetRef,
+                Reason = reason
+            });
+        }
+
+        return records
+            .OrderBy(static r => r.SourceAttachmentId, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static (string Classification, string? Reason) ClassifyAttachment(long? size, string? contentType)
+    {
+        if (!string.IsNullOrWhiteSpace(contentType) && !SupportedAttachmentContentTypes.Contains(contentType))
+        {
+            return (
+                MigrationManifestAttachmentClassifications.ManualReview,
+                $"Attachment content type '{contentType}' is outside the supported automated allowlist; capture for operator review.");
+        }
+
+        if (size is null)
+        {
+            return (
+                MigrationManifestAttachmentClassifications.ManualReview,
+                "Attachment size was not advertised by the source; defer to operator review before migration.");
+        }
+
+        if (size.Value <= AttachmentAutomatedSizeLimitBytes)
+        {
+            return (MigrationManifestAttachmentClassifications.Automated, null);
+        }
+
+        if (size.Value <= AttachmentManualReviewSizeLimitBytes)
+        {
+            return (
+                MigrationManifestAttachmentClassifications.Assisted,
+                $"Attachment exceeds the {AttachmentAutomatedSizeLimitBytes / (1024L * 1024L)} MiB automated lane and will run through the assisted attachment migration step.");
+        }
+
+        return (
+            MigrationManifestAttachmentClassifications.ManualReview,
+            $"Attachment exceeds the {AttachmentManualReviewSizeLimitBytes / (1024L * 1024L)} MiB assisted lane and must be planned out-of-band by an operator.");
+    }
+
+    private static MigrationManifestRelationshipRecord[] BuildResourceRelationships(
+        MigrationSourceInventoryArtifact inventory,
+        MigrationInventoryResource resource,
+        string targetServiceName,
+        string targetResourceName)
+    {
+        if (!IsArcGisSource(inventory.SourceKind))
+        {
+            return [];
+        }
+
+        var records = new List<MigrationManifestRelationshipRecord>();
+
+        foreach (var classification in inventory.FidelityClassifications
+                     .Where(c => string.Equals(c.SourceId, resource.Id, StringComparison.Ordinal))
+                     .Where(c => string.Equals(c.Category, "relationships", StringComparison.OrdinalIgnoreCase))
+                     .OrderBy(static c => c.Id, StringComparer.Ordinal))
+        {
+            var relationshipId = classification.Metadata.TryGetValue("relationshipId", out var advertisedId) &&
+                                 !string.IsNullOrWhiteSpace(advertisedId)
+                ? advertisedId
+                : classification.Id;
+            var name = classification.Metadata.TryGetValue("name", out var advertisedName) &&
+                       !string.IsNullOrWhiteSpace(advertisedName)
+                ? advertisedName
+                : classification.Name;
+            var cardinality = classification.Metadata.TryGetValue("cardinality", out var card) &&
+                              !string.IsNullOrWhiteSpace(card)
+                ? card
+                : null;
+            var relationshipType = classification.Metadata.TryGetValue("relationshipType", out var rt) &&
+                                   !string.IsNullOrWhiteSpace(rt)
+                ? rt
+                : null;
+            var relatedLayerIds = ExtractRelatedLayerIds(classification);
+
+            var (cls, reason) = ClassifyRelationship(cardinality, relationshipType, relatedLayerIds);
+            string? targetRef = cls switch
+            {
+                MigrationManifestRelationshipClassifications.Automated or
+                    MigrationManifestRelationshipClassifications.Assisted =>
+                    $"target:relationship:{targetServiceName}:{targetResourceName}:{relationshipId}",
+                _ => null
+            };
+
+            records.Add(new MigrationManifestRelationshipRecord
+            {
+                SourceRelationshipId = relationshipId,
+                SourceResourceId = resource.Id,
+                Name = string.IsNullOrWhiteSpace(name) ? null : name,
+                Cardinality = cardinality,
+                RelationshipType = relationshipType,
+                RelatedLayerIds = relatedLayerIds,
+                Classification = cls,
+                TargetRelationshipRef = targetRef,
+                Reason = reason
+            });
+        }
+
+        return records
+            .OrderBy(static r => r.SourceRelationshipId, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static string[] ExtractRelatedLayerIds(MigrationFidelityClassificationRecord classification)
+    {
+        if (classification.Metadata.TryGetValue("relatedLayerIds", out var csv) && !string.IsNullOrWhiteSpace(csv))
+        {
+            return Order(csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        }
+
+        return Order(classification.RelatedIds);
+    }
+
+    private static (string Classification, string? Reason) ClassifyRelationship(
+        string? cardinality,
+        string? relationshipType,
+        string[] relatedLayerIds)
+    {
+        if (!string.IsNullOrWhiteSpace(relationshipType) &&
+            (relationshipType.Equals("composite", StringComparison.OrdinalIgnoreCase) ||
+             relationshipType.Equals("attributed", StringComparison.OrdinalIgnoreCase)))
+        {
+            return (
+                MigrationManifestRelationshipClassifications.ManualReview,
+                $"Relationship type '{relationshipType}' carries side-effects (composite delete or junction attributes) that this slice does not recreate automatically.");
+        }
+
+        if (relatedLayerIds.Length == 0)
+        {
+            return (
+                MigrationManifestRelationshipClassifications.ManualReview,
+                "Relationship did not advertise related layer ids; operator must identify and re-link related layers before cutover.");
+        }
+
+        var normalizedCardinality = NormalizeCardinality(cardinality);
+        return normalizedCardinality switch
+        {
+            "1:1" or "1:N" or "M:N" => (
+                MigrationManifestRelationshipClassifications.Assisted,
+                $"Relationship cardinality '{normalizedCardinality}' captured; target apply recreates the link table or foreign key during the assisted relationship step."),
+            _ => (
+                MigrationManifestRelationshipClassifications.ManualReview,
+                string.IsNullOrWhiteSpace(cardinality)
+                    ? "Relationship cardinality was not advertised; operator must confirm cardinality before recreating the link."
+                    : $"Relationship cardinality '{cardinality}' is not recognized by the automated lane; operator review required.")
+        };
+    }
+
+    private static string? NormalizeCardinality(string? cardinality)
+    {
+        if (string.IsNullOrWhiteSpace(cardinality))
+        {
+            return null;
+        }
+
+        return cardinality.Trim().ToUpperInvariant() switch
+        {
+            "1:1" or "ONE_TO_ONE" or "ONETOONE" or "ESRIRELCARDINALITYONETOONE" => "1:1",
+            "1:N" or "1:M" or "ONE_TO_MANY" or "ONETOMANY" or "ESRIRELCARDINALITYONETOMANY" => "1:N",
+            "M:N" or "MANY_TO_MANY" or "MANYTOMANY" or "ESRIRELCARDINALITYMANYTOMANY" => "M:N",
+            _ => null
+        };
     }
 
     private static string[] BuildResourceExternalDependencyIds(
