@@ -267,6 +267,11 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/import/raster"),
         new("GET", "/api/v1/admin/import/raster/formats"),
 
+        // v1 admin migration performance evidence endpoints (#1033 slice 5)
+        new("GET", "/api/v1/admin/migration/performance-evidence/latest"),
+        new("GET", "/api/v1/admin/migration/performance-evidence/history"),
+        new("GET", "/api/v1/admin/migration/performance-evidence/{evidenceId}"),
+
         // v1 admin import endpoints (GeoServer)
         new("POST", "/api/v1/admin/import/geoserver/discover"),
         new("POST", "/api/v1/admin/import/geoserver/start"),

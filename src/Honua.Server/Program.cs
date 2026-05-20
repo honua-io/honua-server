@@ -570,6 +570,16 @@ builder.Services.AddSingleton<Honua.Server.Features.Import.GeoServerImportJobMan
         sp.GetService<IConnectionMultiplexer>()));
 builder.Services.AddHostedService<Honua.Server.Features.Import.GeoServerImportBackgroundService>();
 
+// Migration performance evidence store (#1033 slice 5).
+// Surface the source-generated JsonTypeInfo so the Postgres store can round-trip the artifact JSON
+// without reflection. The in-memory store is registered as the fallback so dev / test profiles
+// without a Postgres infrastructure still serve the admin/SDK endpoints.
+builder.Services.AddSingleton<System.Text.Json.Serialization.Metadata.JsonTypeInfo<Honua.Core.Features.Import.Domain.MigrationPerformanceEvidenceArtifact>>(
+    Honua.Server.Features.Import.ImportJsonContext.Default.MigrationPerformanceEvidenceArtifact);
+builder.Services.AddSingleton<Honua.Core.Features.Import.Services.InMemoryMigrationPerformanceEvidenceStore>();
+builder.Services.TryAddScoped<Honua.Core.Features.Import.Services.IMigrationPerformanceEvidenceStore>(sp =>
+    sp.GetRequiredService<Honua.Core.Features.Import.Services.InMemoryMigrationPerformanceEvidenceStore>());
+
 // Register export background service with durable request persistence and a bounded in-process scheduler.
 builder.Services.AddSingleton(System.Threading.Channels.Channel.CreateBounded<string>(
     new System.Threading.Channels.BoundedChannelOptions(4)
@@ -1216,6 +1226,7 @@ if (app.Environment.IsDevelopment())
 // Configure file import endpoints
 app.MapImportEndpoints();
 app.MapMigrationScannerEndpoints();
+app.MapMigrationPerformanceEvidenceEndpoints();
 app.MapRasterImportEndpoints();
 
 // Configure Geoservices service import endpoints
