@@ -45,6 +45,8 @@ namespace Honua.Server.Features.Import;
 [JsonSerializable(typeof(MigrationMetricBaselineSignal))]
 [JsonSerializable(typeof(MigrationMetricBaselineSignal[]))]
 [JsonSerializable(typeof(MigrationFixtureSizeProfile))]
+[JsonSerializable(typeof(MigrationPerformanceEvidenceArtifact))]
+[JsonSerializable(typeof(MigrationPerformanceEvidenceRedactionPosture))]
 [JsonSerializable(typeof(MigrationParityEvidenceArtifact))]
 [JsonSerializable(typeof(MigrationParityEvidenceSection))]
 [JsonSerializable(typeof(MigrationParityEvidenceSection[]))]
