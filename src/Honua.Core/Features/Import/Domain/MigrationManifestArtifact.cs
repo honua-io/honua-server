@@ -225,9 +225,170 @@ public sealed record MigrationManifestTargetResource
     public MigrationManifestRelationshipRecord[] Relationships { get; init; } = [];
 
     /// <summary>
+    /// Optional renderer migration diagnostic records derived from the source inventory's
+    /// <c>drawingInfo.renderer</c> metadata. Each record captures the renderer kind, an
+    /// automation classification, and an optional suggested target style id so target apply can
+    /// pick the assisted/manual-review lane per renderer. Empty when the source did not advertise
+    /// any renderers tied to the resource.
+    /// </summary>
+    public MigrationManifestRendererDiagnostic[] RendererDiagnostics { get; init; } = [];
+
+    /// <summary>
+    /// Optional label-class migration diagnostic records derived from the source inventory's
+    /// <c>drawingInfo.labelingInfo[]</c> metadata. Each record captures the label expression
+    /// (when advertised), the expression engine, and an automation classification so target apply
+    /// can either recreate, document, or skip a label class. Empty when the source did not
+    /// advertise any label classes tied to the resource.
+    /// </summary>
+    public MigrationManifestLabelClassDiagnostic[] LabelClassDiagnostics { get; init; } = [];
+
+    /// <summary>
     /// Compatibility assessment that justified the target action.
     /// </summary>
     public required MigrationCompatibilityAssessment Compatibility { get; init; }
+}
+
+/// <summary>
+/// Stable renderer classification values emitted by manifest translation.
+/// </summary>
+public static class MigrationManifestRendererClassifications
+{
+    /// <summary>Renderer can be migrated automatically (typically a <c>simple</c> renderer).</summary>
+    public const string Automated = "automated";
+
+    /// <summary>
+    /// Renderer can be migrated with operator-supervised follow-up
+    /// (typically <c>uniqueValue</c> or small <c>classBreaks</c> renderers).
+    /// </summary>
+    public const string Assisted = "assisted";
+
+    /// <summary>
+    /// Renderer was captured for explicit operator review before migration
+    /// (e.g. <c>dictionary</c>, complex expressions, raster shading, very large category sets).
+    /// </summary>
+    public const string ManualReview = "manual-review";
+
+    /// <summary>Renderer cannot be migrated by this slice.</summary>
+    public const string Unsupported = "unsupported";
+}
+
+/// <summary>
+/// Per-renderer migration diagnostic record emitted by the manifest translator.
+/// </summary>
+public sealed record MigrationManifestRendererDiagnostic
+{
+    /// <summary>
+    /// Source style identifier the renderer belongs to (e.g. <c>renderer:{service}:{layerId}</c>).
+    /// </summary>
+    public required string SourceStyleId { get; init; }
+
+    /// <summary>
+    /// Source resource identifier the renderer is bound to.
+    /// </summary>
+    public required string SourceResourceId { get; init; }
+
+    /// <summary>
+    /// Renderer kind as advertised by the source (e.g. <c>simple</c>, <c>uniqueValue</c>,
+    /// <c>classBreaks</c>, <c>dictionary</c>, <c>rasterShaded</c>).
+    /// </summary>
+    public required string RendererKind { get; init; }
+
+    /// <summary>
+    /// Number of categories advertised for <c>uniqueValue</c> renderers and number of breaks
+    /// advertised for <c>classBreaks</c> renderers. <c>null</c> when the source did not advertise
+    /// a category count or the renderer kind does not have one.
+    /// </summary>
+    public int? CategoryCount { get; init; }
+
+    /// <summary>
+    /// Automation classification. One of
+    /// <see cref="MigrationManifestRendererClassifications.Automated"/>,
+    /// <see cref="MigrationManifestRendererClassifications.Assisted"/>,
+    /// <see cref="MigrationManifestRendererClassifications.ManualReview"/>, or
+    /// <see cref="MigrationManifestRendererClassifications.Unsupported"/>.
+    /// </summary>
+    public required string Classification { get; init; }
+
+    /// <summary>
+    /// Optional suggested target style identifier that target apply may pre-bind for this
+    /// renderer when the classification is automated or assisted. Mirrors the deterministic
+    /// target style id reservation pattern (<c>target:style:{service}:{resource}:{kind}</c>).
+    /// </summary>
+    public string? SuggestedTargetStyleId { get; init; }
+
+    /// <summary>
+    /// Optional human-readable explanation for the classification.
+    /// </summary>
+    public string? Reason { get; init; }
+}
+
+/// <summary>
+/// Stable label-class classification values emitted by manifest translation.
+/// </summary>
+public static class MigrationManifestLabelClassClassifications
+{
+    /// <summary>Label class can be migrated automatically.</summary>
+    public const string Automated = "automated";
+
+    /// <summary>Label class can be migrated with operator-supervised follow-up.</summary>
+    public const string Assisted = "assisted";
+
+    /// <summary>Label class was captured for explicit operator review before migration.</summary>
+    public const string ManualReview = "manual-review";
+
+    /// <summary>
+    /// Label class cannot be migrated by this slice (e.g. <c>VBScript</c> expressions).
+    /// </summary>
+    public const string Unsupported = "unsupported";
+}
+
+/// <summary>
+/// Per-label-class migration diagnostic record emitted by the manifest translator.
+/// </summary>
+public sealed record MigrationManifestLabelClassDiagnostic
+{
+    /// <summary>
+    /// Source style identifier the label class is bound to.
+    /// </summary>
+    public required string SourceStyleId { get; init; }
+
+    /// <summary>
+    /// Source resource identifier the label class is bound to.
+    /// </summary>
+    public required string SourceResourceId { get; init; }
+
+    /// <summary>
+    /// Zero-based index of the label class as advertised in the source <c>labelingInfo</c> array.
+    /// </summary>
+    public int LabelClassIndex { get; init; }
+
+    /// <summary>
+    /// Label expression text as advertised by the source. May be a field token (<c>[NAME]</c>),
+    /// an Arcade expression, a VBScript expression, or a Python expression. <c>null</c> when the
+    /// source did not advertise an expression.
+    /// </summary>
+    public string? Expression { get; init; }
+
+    /// <summary>
+    /// Label expression engine as advertised by the source (e.g. <c>Arcade</c>, <c>VBScript</c>,
+    /// <c>Python</c>, <c>JScript</c>). <c>null</c> when the engine was not advertised; defaults
+    /// to the source's documented field-substitution syntax.
+    /// </summary>
+    public string? ExpressionEngine { get; init; }
+
+    /// <summary>
+    /// Automation classification. One of
+    /// <see cref="MigrationManifestLabelClassClassifications.Automated"/>,
+    /// <see cref="MigrationManifestLabelClassClassifications.Assisted"/>,
+    /// <see cref="MigrationManifestLabelClassClassifications.ManualReview"/>, or
+    /// <see cref="MigrationManifestLabelClassClassifications.Unsupported"/>.
+    /// </summary>
+    public required string Classification { get; init; }
+
+    /// <summary>
+    /// Optional human-readable explanation for the classification.
+    /// </summary>
+    public string? Reason { get; init; }
 }
 
 /// <summary>

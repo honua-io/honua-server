@@ -354,16 +354,14 @@ internal static class ServiceCollectionExtensions
         // Register migration catalog writer used by apply-mode imports.
         services.AddScoped<IMigrationCatalogWriter, PostgresMigrationCatalogWriter>();
 
-        // Register migration run catalog (issue #1015 slice 5). Resolved as a
-        // scoped service so each request opens its own short-lived connection;
-        // the catalog is owned by the admin orchestration endpoints and the
-        // apply path.
-        services.AddScoped<IMigrationRunCatalog>(serviceProvider =>
-        {
-            var connectionString = ResolveConnectionString(serviceProvider, configuration);
-            var logger = serviceProvider.GetRequiredService<ILogger<PostgresMigrationRunCatalog>>();
-            return new PostgresMigrationRunCatalog(connectionString, logger);
-        });
+        // Register ArcGIS migration evidence store (#1025 slice 6). Replaces the Core
+        // in-memory default so admin endpoints can serve persisted manifest + parity
+        // artifacts across server restarts and across instances.
+        services.RemoveAll<IArcGisMigrationEvidenceStore>();
+        services.AddScoped<IArcGisMigrationEvidenceStore>(serviceProvider =>
+            new PostgresArcGisMigrationEvidenceStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
 
         // Register migration performance evidence store (#1033 slice 5). Resolved alongside
         // the JsonTypeInfo<MigrationPerformanceEvidenceArtifact> the Server registers from
