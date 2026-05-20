@@ -1231,7 +1231,6 @@ app.MapImportEndpoints();
 app.MapMigrationScannerEndpoints();
 app.MapArcGisMigrationEvidenceEndpoints();
 app.MapMigrationPerformanceEvidenceEndpoints();
-app.MapMigrationRunAdminEndpoints();
 app.MapRasterImportEndpoints();
 
 // Configure Geoservices service import endpoints
