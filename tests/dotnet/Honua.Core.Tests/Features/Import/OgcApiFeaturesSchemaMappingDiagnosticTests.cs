@@ -182,8 +182,10 @@ public sealed partial class OgcApiFeaturesSchemaMappingDiagnosticTests
         var json = JsonSerializer.Serialize(original, ImportJsonContextProxy.ResultInfo);
 
         // Sanity: camelCase property + classification serialized as string (via custom converter).
+        // JsonStringEnumConverter<T> defaults to PascalCase enum-value names — no naming policy is
+        // applied through the source-gen options for enum values, so we assert the actual output.
         json.Should().Contain("\"mappingDiagnostics\"");
-        json.Should().Contain("\"manualReview\"").And.Contain("\"unsupported\"");
+        json.Should().Contain("\"ManualReview\"").And.Contain("\"Unsupported\"");
 
         var roundTripped = JsonSerializer.Deserialize<OgcApiFeaturesImportResult>(json, ImportJsonContextProxy.ResultInfo);
 
