@@ -43,7 +43,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
     private static ProcessDefinition[] BuildDefinitions() =>
     [
         // -----------------------------------------------------------------------
-        // Geometry operations (12)
+        // Geometry operations (14)
         // -----------------------------------------------------------------------
         new ProcessDefinition
         {
@@ -64,13 +64,14 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         {
             ProcessId = "geometry.simplify",
             Title = "Simplify",
-            Description = "Generalizes geometries by removing vertices within the given tolerance, optionally preserving topology.",
+            Description = "Generalizes a geometry by removing vertices within the given tolerance using the Douglas-Peucker algorithm. By default uses topology-preserving simplification (ST_SimplifyPreserveTopology); setting preserveTopology=false enables the faster plain Douglas-Peucker walk.",
             Category = "geometry",
             Parameters =
             [
                 Param("wkb", "Input Geometry", "Geometry to simplify as base64-encoded WKB.", ProcessParameterValueType.Wkb, required: true),
-                Param("tolerance", "Tolerance", "Simplification tolerance in spatial reference units.", ProcessParameterValueType.FloatingPoint, required: true),
-                Param("preserveTopology", "Preserve Topology", "Use topology-preserving simplification.", ProcessParameterValueType.Flag, defaultValue: "true"),
+                Param("srid", "Spatial Reference", "SRID of the input geometry.", ProcessParameterValueType.Srid, required: true),
+                Param("tolerance", "Tolerance", "Simplification tolerance in spatial reference units; vertices within the tolerance of the simplified path are removed.", ProcessParameterValueType.FloatingPoint, required: true),
+                Param("preserveTopology", "Preserve Topology", "Use topology-preserving simplification to avoid introducing self-intersections.", ProcessParameterValueType.Flag, defaultValue: "true"),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
@@ -205,6 +206,35 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             [
                 Param("wkb", "Input Geometry", "Geometry as base64-encoded WKB.", ProcessParameterValueType.Wkb, required: true),
                 Param("srid", "Spatial Reference", "SRID of the input geometry.", ProcessParameterValueType.Srid, required: true),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "geometry.dissolve",
+            Title = "Dissolve",
+            Description = "Collapses adjacent same-attribute geometries into one feature per group. Each input geometry is paired with an optional groupKeys entry; geometries sharing a key are unioned. When groupKeys is omitted every input collapses into a single feature, mirroring geometry.union but emitting a FeatureCollection envelope so downstream consumers can rely on the same shape regardless of group cardinality.",
+            Category = "geometry",
+            Parameters =
+            [
+                Param("wkbs", "Input Geometries", "Array of geometries to dissolve as base64-encoded WKB strings.", ProcessParameterValueType.WkbArray, required: true),
+                Param("srid", "Spatial Reference", "SRID of the input geometries.", ProcessParameterValueType.Srid, required: true),
+                Param("groupKeys", "Group Keys", "Optional JSON array of attribute keys parallel to 'wkbs'; geometries sharing a key dissolve together. When omitted all inputs collapse into a single feature.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "geometry.snap",
+            Title = "Snap",
+            Description = "Snaps the vertices of an input geometry to those of a reference geometry whenever the distance between two candidates falls within the supplied tolerance, using the NetTopologySuite GeometrySnapper. Useful for aligning adjacent dataset boundaries before overlay operations that would otherwise produce sliver polygons.",
+            Category = "geometry",
+            Parameters =
+            [
+                Param("wkb", "Input Geometry", "Geometry whose vertices will be snapped, as base64-encoded WKB.", ProcessParameterValueType.Wkb, required: true),
+                Param("referenceWkb", "Reference Geometry", "Reference geometry whose vertices are the snap targets, as base64-encoded WKB.", ProcessParameterValueType.Wkb, required: true),
+                Param("srid", "Spatial Reference", "SRID of both geometries.", ProcessParameterValueType.Srid, required: true),
+                Param("tolerance", "Tolerance", "Snap tolerance in spatial reference units; input vertices within this distance of a reference vertex are pulled onto it.", ProcessParameterValueType.FloatingPoint, required: true),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },

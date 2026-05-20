@@ -19,6 +19,8 @@ internal static class ProcessMigrationEvidenceClassifier
             "geometry.intersect",
             "geometry.project",
             "geometry.simplify",
+            "geometry.snap",
+            "geometry.dissolve",
             "geometry.make-valid",
             "geometry.union",
             "geometry.difference",

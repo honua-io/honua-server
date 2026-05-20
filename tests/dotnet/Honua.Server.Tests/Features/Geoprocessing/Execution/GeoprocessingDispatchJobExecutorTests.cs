@@ -18,10 +18,11 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 /// Unit coverage for the dispatcher that routes claimed geoprocessing jobs
 /// to the correct per-process executor. The dispatcher is the single
 /// IJobExecutor registered for ExecutionJobKind.Geoprocessing after slice 2;
-/// slice 3 extended it with geometry.area + geometry.union; slice 4 adds
-/// geometry.centroid + geometry.length + geometry.convex-hull. This test
-/// pins the routing contract so unknown process ids never reach a
-/// per-process executor by accident.
+/// slice 3 extended it with geometry.area + geometry.union; slice 4 added
+/// geometry.centroid + geometry.length + geometry.convex-hull; slice 5 adds
+/// geometry.dissolve + geometry.simplify + geometry.snap. This test pins
+/// the routing contract so unknown process ids never reach a per-process
+/// executor by accident.
 /// </summary>
 public sealed class GeoprocessingDispatchJobExecutorTests
 {
@@ -32,12 +33,15 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         var context = Substitute.For<IJobExecutionContext>();
         context.OperationId.Returns("op-unknown");
 
-        var record = CreateJobRecord("geometry.simplify");
+        // geometry.difference is still catalog-only after slice 5 — pick it
+        // for the unknown-id smoke so the assertion stays meaningful as the
+        // slice adds geometry.simplify / geometry.dissolve / geometry.snap.
+        var record = CreateJobRecord("geometry.difference");
 
         var result = await dispatcher.ExecuteAsync(record, context, CancellationToken.None);
 
         result.Status.Should().Be(ExecutionJobStatus.Failed);
-        result.ErrorMessage.Should().Contain("geometry.simplify");
+        result.ErrorMessage.Should().Contain("geometry.difference");
         result.ErrorMessage.Should().Contain("geometry.buffer");
         result.ErrorMessage.Should().Contain("geometry.clip");
         result.ErrorMessage.Should().Contain("geometry.intersect");
@@ -47,6 +51,9 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         result.ErrorMessage.Should().Contain("geometry.centroid");
         result.ErrorMessage.Should().Contain("geometry.length");
         result.ErrorMessage.Should().Contain("geometry.convex-hull");
+        result.ErrorMessage.Should().Contain("geometry.dissolve");
+        result.ErrorMessage.Should().Contain("geometry.simplify");
+        result.ErrorMessage.Should().Contain("geometry.snap");
     }
 
     [UnitTest]
@@ -64,7 +71,7 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         result.ErrorMessage.Should().Contain("<none>");
     }
 
-    private static readonly string[] SliceFourProcessIds =
+    private static readonly string[] SliceFiveProcessIds =
     {
         "geometry.buffer",
         "geometry.clip",
@@ -75,13 +82,16 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         "geometry.centroid",
         "geometry.length",
         "geometry.convex-hull",
+        "geometry.dissolve",
+        "geometry.simplify",
+        "geometry.snap",
     };
 
     [UnitTest]
-    public void SupportedProcessIds_ListsSliceFourExecutors()
+    public void SupportedProcessIds_ListsSliceFiveExecutors()
     {
         var dispatcher = CreateDispatcher();
-        dispatcher.SupportedProcessIds.Should().BeEquivalentTo(SliceFourProcessIds);
+        dispatcher.SupportedProcessIds.Should().BeEquivalentTo(SliceFiveProcessIds);
     }
 
     [UnitTest]
@@ -111,6 +121,9 @@ public sealed class GeoprocessingDispatchJobExecutorTests
             new GeometryCentroidJobExecutor(monitor, NullLogger<GeometryCentroidJobExecutor>.Instance),
             new GeometryLengthJobExecutor(monitor, NullLogger<GeometryLengthJobExecutor>.Instance),
             new GeometryConvexHullJobExecutor(monitor, NullLogger<GeometryConvexHullJobExecutor>.Instance),
+            new GeometryDissolveJobExecutor(monitor, NullLogger<GeometryDissolveJobExecutor>.Instance),
+            new GeometrySimplifyJobExecutor(monitor, NullLogger<GeometrySimplifyJobExecutor>.Instance),
+            new GeometrySnapJobExecutor(monitor, NullLogger<GeometrySnapJobExecutor>.Instance),
             NullLogger<GeoprocessingDispatchJobExecutor>.Instance);
     }
 
