@@ -78,13 +78,28 @@ public sealed class MigrationRunMetricsRecorder
     }
 
     /// <summary>Records a source request (typically HTTP) issued during the run.</summary>
-    public void RecordSourceRequest(long count = 1)
+    /// <param name="count">Number of requests to add (defaults to 1).</param>
+    /// <param name="bytesRead">
+    /// Optional bytes-read attribution for the request (e.g. response Content-Length). When greater
+    /// than zero, also increments the <see cref="MigrationRunMetricsValues.BytesRead"/> total so the
+    /// HTTP boundary can attribute payload size without forcing the caller to buffer the response.
+    /// </param>
+    public void RecordSourceRequest(long count = 1, long bytesRead = 0)
     {
-        if (count <= 0) return;
+        if (count <= 0 && bytesRead <= 0) return;
         lock (_gate)
         {
-            _sourceRequestCount += count;
-            CurrentPhase()?.AddSourceRequest(count);
+            if (count > 0)
+            {
+                _sourceRequestCount += count;
+                CurrentPhase()?.AddSourceRequest(count);
+            }
+
+            if (bytesRead > 0)
+            {
+                _bytesRead += bytesRead;
+                CurrentPhase()?.AddBytesRead(bytesRead);
+            }
         }
     }
 
