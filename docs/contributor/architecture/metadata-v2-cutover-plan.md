@@ -12,28 +12,62 @@ in one sweep. The branch is `feat/metadata-v2-cutover` off `trunk`.
 
 ## Done
 
-Commits on `feat/metadata-v2-cutover` (latest at top):
+Commits on `feat/metadata-v2-cutover` (latest first; partial list, see `git log
+--oneline cfe776faf..HEAD` for the full set — 24 commits beyond the original plan
+commit):
 
+* `952a938eb` fix: tolerate duplicate display names in `MetadataV2GraphIndex` (services published through multiple protocols)
+* `70729d924` feat: V2 `BuildPrimaryServiceMapV2` (parallel of v1's BuildPrimaryServiceMap)
+* `6abd93c78` refactor: port `TileJsonEndpoints` to V2
+* `02318e744` feat: `ServiceProtocols.IsProtocolEnabled` V2 overload
+* `527df80bc` feat: V2 overloads on `ServiceDataEditorAuthorization`
+* `c98179835` refactor: port `FeatureMutationEventService.ResolveServiceIdAsync` to V2 + protocol-string mapping
+* `affe866a5` feat: V2 spatial/temporal extension readers (`ReadSrid`, `ReadBbox`, `ReadGeometryType`, `ReadTemporalFields`, `FindPrimaryGeometryField`, `FindPrimaryIdField`, `MetadataV2ServiceTypeMapping.Map`)
+* `0d3e329c1` feat: `ResolvePrimaryServiceV2Async` / `ResolvePrimaryServiceNameV2Async`
+* `800d9de12` test: cover V2 layer/collection validation overloads
+* `5f3678cc6` feat: V2 validation overloads in `LayerValidationHelpers` (`ValidateLayerWithAccessV2Async`, `ValidateCollectionWithAccessV2Async`, `MetadataV2ValidationResult`)
+* `3586c45aa` feat: V2-aware `AccessPolicy` carrier (typed field on `MetadataV2Resource` / `MetadataV2Service`) + helper overloads
+* `47d031e3b` refactor: move `AccessPolicy` to `Honua.Core.Features.Security.Domain` (out of `CatalogMetadata.cs`)
+* `48cd418d1` fix: port `TileOperationJobServicePublishTests` fixture to V2
+* `988c6a338` refactor: delete v1 metadata dead code (`GlobalCapabilities`, `ResourceMetadata`, `FieldSemanticRoles`, projection scaffolds)
+* `0cbe9d002` refactor: port `TileOperationJobService` to V2
+* `c4aba20a0` refactor: port ImageServer handlers to V2 (8 files)
+* `1f5c0f877` refactor: delete v1 `IMetadataProvider` + capabilities formatter scaffolding
 * `83e289d51` feat: lean `AdminInfoEndpoints` (`/version` + `/capabilities`) on V2
-* (anon) refactor: delete v1 `IMetadataProvider` + capabilities formatter scaffolding
 * `995e7b827` chore: drop v1 manifest/gitops/metadata-resource entries from `EndpointRegistry`
 * `5488b2ab3` refactor: delete v1 metadata admin surface (57 files, ~12k LOC)
 * `4f932063f` test: register default Metadata v2 graph in `WebAppFixture`
-* `46930dce1` refactor: port COG/Zarr/Multidim admin endpoints to metadata v2
-* `6267f0cd8` refactor: port `AlertPipeline` to metadata v2
+* `46930dce1` refactor: port COG/Zarr/Multidim admin endpoints to V2
+* `6267f0cd8` refactor: port `AlertPipeline` to V2
 * `cfe776faf` docs: capture metadata v2 cutover plan and remaining work
-* `e14edd64e` refactor: port `CacheOperationsEndpoints` to metadata v2
-* `a8d6f1449` refactor: port `CacheAdminEndpoints` to metadata v2
+* `e14edd64e` refactor: port `CacheOperationsEndpoints` to V2
+* `a8d6f1449` refactor: port `CacheAdminEndpoints` to V2
 * `e6a6c5eb2` test: V2 TestKit fixture + builder
 * `7644213a8` test: metadata v2 snapshot + file loader tests
 * `ebe93d48e` feat: metadata v2 runtime foundation
 
+Plus partial cluster ports from agent work merged in:
+
+* STAC: `StacV2Lookups`, `StacResourceExtensions`, partial port of `CollectionEndpoints` + `CatalogEndpoints` (2 STAC integration tests remain failing — see "Known gaps" below).
+* GeoServices Catalog: `GeoservicesCatalogEndpoints` walks the V2 graph for service-directory enumeration.
+
 Verified green at HEAD:
 
 * `dotnet build` (whole solution): 0 warnings, 0 errors.
-* `dotnet test Honua.Core.Tests`: 1679 / 1679 pass.
-* `dotnet test Honua.Architecture.Tests`: 66 / 66 pass.
-* `dotnet test Honua.Server.Tests` (excluding Integration/Emulator/External/Cloud): 3972 / 3972 pass.
+* `dotnet test Honua.Core.Tests`: 1680 / 1680 pass.
+* `dotnet test Honua.Architecture.Tests`: 63 / 63 pass.
+* `dotnet test Honua.Server.Tests` STAC slice: 91 / 93 pass, 2 known failures, 2 environment-skipped.
+
+## Known gaps
+
+* `StacCollectionsTests.GetCollection_ById_ReturnsDeclaredStacMetadata` and
+  `GetCollection_WithProjectedExtent_UsesTransformFallbackForSpatialBbox` —
+  both rely on `ILayerMetadataUpdater.UpdateLayerMetadataAsync(layerId,
+  CatalogMetadata)` to seed per-test STAC license, keywords, and STAC
+  extensions before the request. The V2 STAC port reads from
+  `resource.Extensions["stac"]` instead. To fix, replace `UpdateLayerMetadataAsync`
+  in the affected tests with a helper that mutates the V2 graph via the
+  `TestMetadataV2GraphProvider.SetGraph` hook. Open issue for the test-port slice.
 
 ## What was deleted vs ported
 
