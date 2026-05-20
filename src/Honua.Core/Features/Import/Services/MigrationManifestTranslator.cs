@@ -61,6 +61,16 @@ public static partial class MigrationManifestTranslator
                 targetServiceName,
                 targetResourceId,
                 targetResourceName);
+            var attachments = BuildResourceAttachments(
+                inventory,
+                resource,
+                targetServiceName,
+                targetResourceName);
+            var relationships = BuildResourceRelationships(
+                inventory,
+                resource,
+                targetServiceName,
+                targetResourceName);
 
             targetResources.Add(new MigrationManifestTargetResource
             {
@@ -82,6 +92,8 @@ public static partial class MigrationManifestTranslator
                 StyleIds = Order(resource.StyleIds),
                 ExternalDependencyIds = BuildResourceExternalDependencyIds(inventory, resource),
                 Identity = identity,
+                Attachments = attachments,
+                Relationships = relationships,
                 Compatibility = resource.Compatibility
             });
             identityRemaps.Add(new MigrationManifestIdentityRemap
@@ -485,6 +497,251 @@ public static partial class MigrationManifestTranslator
 
     private static bool IsArcGisSource(string sourceKind)
         => string.Equals(sourceKind, "arcgis-geoservices-rest", StringComparison.OrdinalIgnoreCase);
+
+    // Attachments at or below this size are small enough for the automated migration lane.
+    // Above this size we capture the metadata but require an operator-supervised follow-up so the
+    // automated lane is not blocked by large binary transfers.
+    private const long AttachmentAutomatedSizeLimitBytes = 10L * 1024L * 1024L; // 10 MiB
+
+    // Attachments above this size are escalated past assisted to manual review because they need
+    // out-of-band transfer planning (network, object storage, etc.) rather than inline migration.
+    private const long AttachmentManualReviewSizeLimitBytes = 100L * 1024L * 1024L; // 100 MiB
+
+    private static readonly HashSet<string> SupportedAttachmentContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+        "application/pdf",
+        "text/plain",
+        "text/csv",
+        "application/json"
+    };
+
+    private static MigrationManifestAttachmentRecord[] BuildResourceAttachments(
+        MigrationSourceInventoryArtifact inventory,
+        MigrationInventoryResource resource,
+        string targetServiceName,
+        string targetResourceName)
+    {
+        if (!IsArcGisSource(inventory.SourceKind))
+        {
+            return [];
+        }
+
+        var dependencyIdSet = new HashSet<string>(resource.ExternalDependencyIds, StringComparer.Ordinal);
+        var records = new List<MigrationManifestAttachmentRecord>();
+
+        foreach (var dependency in inventory.ExternalDependencies
+                     .Where(d => string.Equals(d.Kind, "attachments", StringComparison.OrdinalIgnoreCase))
+                     .Where(d => string.Equals(d.ResourceId, resource.Id, StringComparison.Ordinal) ||
+                                 dependencyIdSet.Contains(d.Id))
+                     .OrderBy(static d => d.Id, StringComparer.Ordinal))
+        {
+            var attachmentId = dependency.Metadata.TryGetValue("attachmentId", out var advertisedId) &&
+                               !string.IsNullOrWhiteSpace(advertisedId)
+                ? advertisedId
+                : dependency.Id;
+            var name = dependency.Metadata.TryGetValue("name", out var advertisedName) &&
+                       !string.IsNullOrWhiteSpace(advertisedName)
+                ? advertisedName
+                : dependency.Name;
+            var contentType = dependency.Metadata.TryGetValue("contentType", out var ct) && !string.IsNullOrWhiteSpace(ct)
+                ? ct
+                : null;
+            long? size = null;
+            if (dependency.Metadata.TryGetValue("size", out var sizeText) &&
+                long.TryParse(sizeText, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsedSize) &&
+                parsedSize >= 0)
+            {
+                size = parsedSize;
+            }
+
+            var (classification, reason) = ClassifyAttachment(size, contentType);
+            string? targetRef = classification switch
+            {
+                MigrationManifestAttachmentClassifications.Automated or
+                    MigrationManifestAttachmentClassifications.Assisted =>
+                    $"target:attachment:{targetServiceName}:{targetResourceName}:{attachmentId}",
+                _ => null
+            };
+
+            records.Add(new MigrationManifestAttachmentRecord
+            {
+                SourceAttachmentId = attachmentId,
+                SourceResourceId = resource.Id,
+                Name = string.IsNullOrWhiteSpace(name) ? null : name,
+                ContentType = contentType,
+                Size = size,
+                Classification = classification,
+                TargetAttachmentRef = targetRef,
+                Reason = reason
+            });
+        }
+
+        return records
+            .OrderBy(static r => r.SourceAttachmentId, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static (string Classification, string? Reason) ClassifyAttachment(long? size, string? contentType)
+    {
+        if (!string.IsNullOrWhiteSpace(contentType) && !SupportedAttachmentContentTypes.Contains(contentType))
+        {
+            return (
+                MigrationManifestAttachmentClassifications.ManualReview,
+                $"Attachment content type '{contentType}' is outside the supported automated allowlist; capture for operator review.");
+        }
+
+        if (size is null)
+        {
+            return (
+                MigrationManifestAttachmentClassifications.ManualReview,
+                "Attachment size was not advertised by the source; defer to operator review before migration.");
+        }
+
+        if (size.Value <= AttachmentAutomatedSizeLimitBytes)
+        {
+            return (MigrationManifestAttachmentClassifications.Automated, null);
+        }
+
+        if (size.Value <= AttachmentManualReviewSizeLimitBytes)
+        {
+            return (
+                MigrationManifestAttachmentClassifications.Assisted,
+                $"Attachment exceeds the {AttachmentAutomatedSizeLimitBytes / (1024L * 1024L)} MiB automated lane and will run through the assisted attachment migration step.");
+        }
+
+        return (
+            MigrationManifestAttachmentClassifications.ManualReview,
+            $"Attachment exceeds the {AttachmentManualReviewSizeLimitBytes / (1024L * 1024L)} MiB assisted lane and must be planned out-of-band by an operator.");
+    }
+
+    private static MigrationManifestRelationshipRecord[] BuildResourceRelationships(
+        MigrationSourceInventoryArtifact inventory,
+        MigrationInventoryResource resource,
+        string targetServiceName,
+        string targetResourceName)
+    {
+        if (!IsArcGisSource(inventory.SourceKind))
+        {
+            return [];
+        }
+
+        var records = new List<MigrationManifestRelationshipRecord>();
+
+        foreach (var classification in inventory.FidelityClassifications
+                     .Where(c => string.Equals(c.SourceId, resource.Id, StringComparison.Ordinal))
+                     .Where(c => string.Equals(c.Category, "relationships", StringComparison.OrdinalIgnoreCase))
+                     .OrderBy(static c => c.Id, StringComparer.Ordinal))
+        {
+            var relationshipId = classification.Metadata.TryGetValue("relationshipId", out var advertisedId) &&
+                                 !string.IsNullOrWhiteSpace(advertisedId)
+                ? advertisedId
+                : classification.Id;
+            var name = classification.Metadata.TryGetValue("name", out var advertisedName) &&
+                       !string.IsNullOrWhiteSpace(advertisedName)
+                ? advertisedName
+                : classification.Name;
+            var cardinality = classification.Metadata.TryGetValue("cardinality", out var card) &&
+                              !string.IsNullOrWhiteSpace(card)
+                ? card
+                : null;
+            var relationshipType = classification.Metadata.TryGetValue("relationshipType", out var rt) &&
+                                   !string.IsNullOrWhiteSpace(rt)
+                ? rt
+                : null;
+            var relatedLayerIds = ExtractRelatedLayerIds(classification);
+
+            var (cls, reason) = ClassifyRelationship(cardinality, relationshipType, relatedLayerIds);
+            string? targetRef = cls switch
+            {
+                MigrationManifestRelationshipClassifications.Automated or
+                    MigrationManifestRelationshipClassifications.Assisted =>
+                    $"target:relationship:{targetServiceName}:{targetResourceName}:{relationshipId}",
+                _ => null
+            };
+
+            records.Add(new MigrationManifestRelationshipRecord
+            {
+                SourceRelationshipId = relationshipId,
+                SourceResourceId = resource.Id,
+                Name = string.IsNullOrWhiteSpace(name) ? null : name,
+                Cardinality = cardinality,
+                RelationshipType = relationshipType,
+                RelatedLayerIds = relatedLayerIds,
+                Classification = cls,
+                TargetRelationshipRef = targetRef,
+                Reason = reason
+            });
+        }
+
+        return records
+            .OrderBy(static r => r.SourceRelationshipId, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static string[] ExtractRelatedLayerIds(MigrationFidelityClassificationRecord classification)
+    {
+        if (classification.Metadata.TryGetValue("relatedLayerIds", out var csv) && !string.IsNullOrWhiteSpace(csv))
+        {
+            return Order(csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        }
+
+        return Order(classification.RelatedIds);
+    }
+
+    private static (string Classification, string? Reason) ClassifyRelationship(
+        string? cardinality,
+        string? relationshipType,
+        string[] relatedLayerIds)
+    {
+        if (!string.IsNullOrWhiteSpace(relationshipType) &&
+            (relationshipType.Equals("composite", StringComparison.OrdinalIgnoreCase) ||
+             relationshipType.Equals("attributed", StringComparison.OrdinalIgnoreCase)))
+        {
+            return (
+                MigrationManifestRelationshipClassifications.ManualReview,
+                $"Relationship type '{relationshipType}' carries side-effects (composite delete or junction attributes) that this slice does not recreate automatically.");
+        }
+
+        if (relatedLayerIds.Length == 0)
+        {
+            return (
+                MigrationManifestRelationshipClassifications.ManualReview,
+                "Relationship did not advertise related layer ids; operator must identify and re-link related layers before cutover.");
+        }
+
+        var normalizedCardinality = NormalizeCardinality(cardinality);
+        return normalizedCardinality switch
+        {
+            "1:1" or "1:N" or "M:N" => (
+                MigrationManifestRelationshipClassifications.Assisted,
+                $"Relationship cardinality '{normalizedCardinality}' captured; target apply recreates the link table or foreign key during the assisted relationship step."),
+            _ => (
+                MigrationManifestRelationshipClassifications.ManualReview,
+                string.IsNullOrWhiteSpace(cardinality)
+                    ? "Relationship cardinality was not advertised; operator must confirm cardinality before recreating the link."
+                    : $"Relationship cardinality '{cardinality}' is not recognized by the automated lane; operator review required.")
+        };
+    }
+
+    private static string? NormalizeCardinality(string? cardinality)
+    {
+        if (string.IsNullOrWhiteSpace(cardinality))
+        {
+            return null;
+        }
+
+        return cardinality.Trim().ToUpperInvariant() switch
+        {
+            "1:1" or "ONE_TO_ONE" or "ONETOONE" or "ESRIRELCARDINALITYONETOONE" => "1:1",
+            "1:N" or "1:M" or "ONE_TO_MANY" or "ONETOMANY" or "ESRIRELCARDINALITYONETOMANY" => "1:N",
+            "M:N" or "MANY_TO_MANY" or "MANYTOMANY" or "ESRIRELCARDINALITYMANYTOMANY" => "M:N",
+            _ => null
+        };
+    }
 
     private static string[] BuildResourceExternalDependencyIds(
         MigrationSourceInventoryArtifact inventory,

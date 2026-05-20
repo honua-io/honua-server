@@ -808,6 +808,83 @@
             "Nullable": false
           },
           {
+            "JsonName": "attachments",
+            "ClrName": "Attachments",
+            "Container": "array",
+            "ElementType": "MigrationManifestAttachmentRecord",
+            "Required": false,
+            "Nullable": false,
+            "Schema": {
+              "TypeName": "MigrationManifestAttachmentRecord",
+              "Properties": [
+                {
+                  "JsonName": "classification",
+                  "ClrName": "Classification",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "contentType",
+                  "ClrName": "ContentType",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "name",
+                  "ClrName": "Name",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "reason",
+                  "ClrName": "Reason",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "size",
+                  "ClrName": "Size",
+                  "Container": "scalar",
+                  "ElementType": "long",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "sourceAttachmentId",
+                  "ClrName": "SourceAttachmentId",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "sourceResourceId",
+                  "ClrName": "SourceResourceId",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "targetAttachmentRef",
+                  "ClrName": "TargetAttachmentRef",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                }
+              ]
+            }
+          },
+          {
             "JsonName": "capabilities",
             "ClrName": "Capabilities",
             "Container": "array",
@@ -1074,6 +1151,91 @@
             "ElementType": "string",
             "Required": false,
             "Nullable": true
+          },
+          {
+            "JsonName": "relationships",
+            "ClrName": "Relationships",
+            "Container": "array",
+            "ElementType": "MigrationManifestRelationshipRecord",
+            "Required": false,
+            "Nullable": false,
+            "Schema": {
+              "TypeName": "MigrationManifestRelationshipRecord",
+              "Properties": [
+                {
+                  "JsonName": "cardinality",
+                  "ClrName": "Cardinality",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "classification",
+                  "ClrName": "Classification",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "name",
+                  "ClrName": "Name",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "reason",
+                  "ClrName": "Reason",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "relatedLayerIds",
+                  "ClrName": "RelatedLayerIds",
+                  "Container": "array",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "relationshipType",
+                  "ClrName": "RelationshipType",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "sourceRelationshipId",
+                  "ClrName": "SourceRelationshipId",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "sourceResourceId",
+                  "ClrName": "SourceResourceId",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "targetRelationshipRef",
+                  "ClrName": "TargetRelationshipRef",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                }
+              ]
+            }
           },
           {
             "JsonName": "sourceKind",
