@@ -112,6 +112,23 @@ public sealed record MigrationRunMetricsValues
     /// <summary>Resume attempts observed.</summary>
     public int? ResumeCount { get; init; }
 
+    /// <summary>
+    /// Whether the run resumed from a previously persisted checkpoint
+    /// (issue #1033 slice 3). Null when the run did not attempt to resume.
+    /// </summary>
+    public bool? ResumeFromCheckpoint { get; init; }
+
+    /// <summary>
+    /// Number of times an apply phase replayed previously-applied work without producing
+    /// any incremental change (idempotency evidence; issue #1033 slice 3).
+    /// </summary>
+    public int? IdempotentReplayCount { get; init; }
+
+    /// <summary>
+    /// Number of times the run observed a cancellation request (issue #1033 slice 3).
+    /// </summary>
+    public int? CancellationCount { get; init; }
+
     /// <summary>CPU milliseconds when the recorder can measure them.</summary>
     public long? CpuMilliseconds { get; init; }
 

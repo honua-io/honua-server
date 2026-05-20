@@ -365,6 +365,12 @@ internal static class ServiceCollectionExtensions
             return new PostgresMigrationRunCatalog(connectionString, logger);
         });
 
+        // Register migration performance evidence store (#1033 slice 5). Resolved alongside
+        // the JsonTypeInfo<MigrationPerformanceEvidenceArtifact> the Server registers from
+        // its source-generated context so persistence stays AOT-safe. TryAdd so a host that
+        // bypasses Postgres registration retains the in-memory fallback default.
+        services.TryAddScoped<IMigrationPerformanceEvidenceStore, PostgresMigrationPerformanceEvidenceStore>();
+
         // Register GeoServer import service
         services.AddScoped<IGeoServerImportService, GeoServerImportService>();
 

@@ -1,0 +1,16 @@
+{
+  "fixtureProfile": "geoserver-small",
+  "sourceFamily": "geoserver-rest",
+  "size": "small",
+  "displayName": "fixture-geoserver-small",
+  "resources": [
+    { "id": "ws:demo/layer:roads", "featureCount": 1500 },
+    { "id": "ws:demo/layer:rivers", "featureCount": 1200 },
+    { "id": "ws:demo/layer:parks", "featureCount": 800 },
+    { "id": "ws:demo/layer:buildings", "featureCount": 3500 },
+    { "id": "ws:demo/layer:trails", "featureCount": 600 },
+    { "id": "ws:demo/layer:zones", "featureCount": 400 },
+    { "id": "ws:demo/layer:wells", "featureCount": 700 },
+    { "id": "ws:demo/layer:basins", "featureCount": 1300 }
+  ]
+}
