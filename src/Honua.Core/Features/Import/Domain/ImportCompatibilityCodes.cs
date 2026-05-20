@@ -139,4 +139,16 @@ public static class ImportCompatibilityCodes
     /// <summary>WMS layer-metadata entry carries a deterministic preferred WFS companion-source hint
     /// so operators can pair the render-only layer with a feature source for applied data import.</summary>
     public const string OgcWmsCompanionSourceHint = "OGC_WMS_COMPANION_SOURCE_HINT";
+
+    /// <summary>WMTS tile-set export ran successfully for an automated XYZ/TMS plan entry.</summary>
+    public const string OgcWmtsTileCacheExported = "OGC_WMTS_TILE_CACHE_EXPORTED";
+
+    /// <summary>WMTS tile-set export was deferred because the requested zoom range exceeds the slice-4 safety threshold.</summary>
+    public const string OgcWmtsTileCacheZoomThresholdExceeded = "OGC_WMTS_TILE_CACHE_ZOOM_THRESHOLD_EXCEEDED";
+
+    /// <summary>WMTS tile-set export was skipped because the planner did not classify the tile-set as automated XYZ/TMS.</summary>
+    public const string OgcWmtsTileCacheSkippedManualReview = "OGC_WMTS_TILE_CACHE_SKIPPED_MANUAL_REVIEW";
+
+    /// <summary>WMTS tile-set export failed because a tile fetch returned an error.</summary>
+    public const string OgcWmtsTileCacheFetchFailed = "OGC_WMTS_TILE_CACHE_FETCH_FAILED";
 }
