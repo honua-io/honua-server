@@ -73,7 +73,7 @@ public sealed record MigrationParityStageEntry
     /// <summary>
     /// Aggregate parity classification for the fixture: <c>pass</c>, <c>warn</c>,
     /// <c>fail</c>, or <c>manual-review</c>. Mirrors the per-section thresholds rolled up by
-    /// <see cref="MigrationAcceptanceParityStageRunner"/>.
+    /// <c>MigrationAcceptanceParityStageRunner</c>.
     /// </summary>
     public required string Classification { get; init; }
 
