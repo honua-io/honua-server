@@ -2580,7 +2580,7 @@
             "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/McpToolDelegationTests.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/McpErrorMappingTests.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/McpAuthorizationTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/McpStubToolTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/PlanAnalysisToolTests.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/McpResourceSerializationTests.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/McpTaxonomyAlignmentTests.cs"
           ],

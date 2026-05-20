@@ -4,7 +4,7 @@
 using Honua.Core.Features.NlQuery;
 using Honua.Core.Features.NlQuery.Abstractions;
 using Honua.Core.Features.Infrastructure.Resilience;
-using Honua.Server.Features.AiBuilder.Fixtures;
+using Honua.Server.Features.AiBuilder;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
@@ -55,7 +55,7 @@ internal static class NlQueryServiceCollectionExtensions
 
         if (isDeterministic)
         {
-            services.TryAddSingleton<AiBuilderFixtureCatalog>();
+            services.AddAiBuilderFixtures();
             services.AddScoped<INlQueryPlanProvider, DeterministicNlQueryPlanProvider>();
         }
         else

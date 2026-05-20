@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Server.Features.AiBuilder.Fixtures;
+using Honua.Server.Features.AiBuilder;
 using Honua.Server.Features.AiBuilder.Planning;
 using Honua.Server.Features.Grounding;
 using Honua.Server.Features.Protocols.Mcp.Resources;
@@ -46,8 +46,7 @@ internal static class McpServiceCollectionExtensions
         // call services.Replace(...) after AddMcpOperatorSurface to swap in
         // their implementation; the catalog itself is harmless to keep around
         // either way because it lazily loads embedded fixtures.
-        services.TryAddSingleton<AiBuilderFixtureCatalog>();
-        services.TryAddSingleton<IPlanAnalysisService, FixturePlanAnalysisService>();
+        services.AddAiBuilderPlanAnalysis();
 
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ValidatePlanTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, DryRunPlanTool>());
