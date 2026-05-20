@@ -281,6 +281,8 @@ public static partial class MigrationManifestTranslator
                 var dependencies = inventory.ExternalDependencies
                     .Where(dependency => string.Equals(dependency.ContainerId, container.Id, StringComparison.Ordinal));
 
+                var planResult = BuildRenderPlanResult(inventory, container.Id);
+
                 return new MigrationManifestServicePlan
                 {
                     SourceContainerId = container.Id,
@@ -291,6 +293,8 @@ public static partial class MigrationManifestTranslator
                     ResourceIds = Order(resources.Select(static resource => resource.Id)),
                     StyleIds = Order(styles.Select(static style => style.Id)),
                     ExternalDependencyIds = Order(dependencies.Select(static dependency => dependency.Id)),
+                    PlanEntries = planResult.Entries,
+                    Diagnostics = planResult.Diagnostics,
                     Identity = serviceIdentity with
                     {
                         SourceServiceId = serviceIdentity.SourceServiceId ?? container.Id
@@ -299,6 +303,23 @@ public static partial class MigrationManifestTranslator
                 };
             })
             .ToArray();
+    }
+
+    private static OgcRenderMigrationPlanResult BuildRenderPlanResult(
+        MigrationSourceInventoryArtifact inventory,
+        string containerId)
+    {
+        if (OgcWmsMigrationPlanner.CanPlan(inventory))
+        {
+            return OgcWmsMigrationPlanner.Plan(inventory, containerId);
+        }
+
+        if (OgcWmtsMigrationPlanner.CanPlan(inventory))
+        {
+            return OgcWmtsMigrationPlanner.Plan(inventory, containerId);
+        }
+
+        return OgcRenderMigrationPlanResult.Empty;
     }
 
     private static MigrationManifestServiceIdentity BuildServiceIdentity(
