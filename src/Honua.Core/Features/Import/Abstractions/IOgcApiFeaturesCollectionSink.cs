@@ -55,6 +55,43 @@ public interface IOgcApiFeaturesCollectionSink
         string scopeSignature,
         CancellationToken cancellationToken)
         => Task.CompletedTask;
+
+    /// <summary>
+    /// Returns the descriptive column set for the target table so the importer can emit schema
+    /// mapping diagnostics against the source property set. Implementations that cannot introspect
+    /// the target (or have not yet created the table) MAY return an empty collection; the importer
+    /// will then skip diagnostics for that run rather than fabricating false positives.
+    /// </summary>
+    /// <param name="target">Sink target descriptor.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The column descriptors for the target table, or an empty collection when unknown.</returns>
+    Task<IReadOnlyList<OgcApiFeaturesSinkColumn>> GetTargetColumnsAsync(
+        OgcApiFeaturesSinkTarget target,
+        CancellationToken cancellationToken)
+        => Task.FromResult<IReadOnlyList<OgcApiFeaturesSinkColumn>>([]);
+}
+
+/// <summary>
+/// Descriptor for a single column on the OGC API Features sink target. Used by the importer to
+/// compare against the source collection's property set and emit schema mapping diagnostics.
+/// </summary>
+public sealed record OgcApiFeaturesSinkColumn
+{
+    /// <summary>Column name as it appears in the catalog table.</summary>
+    public required string Name { get; init; }
+
+    /// <summary>
+    /// Canonical SQL type name (<c>integer</c>, <c>bigint</c>, <c>text</c>, <c>varchar(64)</c>, etc.).
+    /// Implementations SHOULD return the lowercase form so the importer's comparison rules are
+    /// deterministic.
+    /// </summary>
+    public required string DataType { get; init; }
+
+    /// <summary>
+    /// Whether the column is nullable. Reserved for future expansion of the diagnostic taxonomy
+    /// (e.g. flagging required source properties that map to nullable target columns).
+    /// </summary>
+    public bool IsNullable { get; init; } = true;
 }
 
 /// <summary>
