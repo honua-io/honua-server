@@ -246,9 +246,112 @@ public sealed record MigrationManifestServicePlan
     public string[] ExternalDependencyIds { get; init; } = [];
 
     /// <summary>
+    /// Classified per-area migration plan entries for render-only (WMS/WMTS)
+    /// services. Each entry tags whether layer metadata, style references, tile
+    /// sets, or render endpoints are <c>automated</c>, <c>assisted</c>,
+    /// <c>manual-review</c>, or <c>unsupported</c> for migration. Populated by
+    /// the dedicated WMS/WMTS migration planners for render-only sources; empty
+    /// for non render-only translations.
+    /// </summary>
+    public MigrationManifestPlanEntry[] PlanEntries { get; init; } = [];
+
+    /// <summary>
+    /// Diagnostics captured during planning (for example, SLD/SE references that
+    /// were noted but not auto-imported by this slice). Empty when there is
+    /// nothing to flag.
+    /// </summary>
+    public MigrationManifestPlanDiagnostic[] Diagnostics { get; init; } = [];
+
+    /// <summary>
     /// Compatibility assessment that justified the service plan action.
     /// </summary>
     public required MigrationCompatibilityAssessment Compatibility { get; init; }
+}
+
+/// <summary>
+/// One classified planning entry within a render-only service migration plan.
+/// </summary>
+public sealed record MigrationManifestPlanEntry
+{
+    /// <summary>
+    /// Stable plan-local identifier for the entry.
+    /// </summary>
+    public required string Id { get; init; }
+
+    /// <summary>
+    /// Source artifact identifier this entry was derived from (resource, style, or dependency id).
+    /// </summary>
+    public required string SourceId { get; init; }
+
+    /// <summary>
+    /// Source item kind, such as <c>render-layer</c>, <c>tile-layer</c>,
+    /// <c>wms-style</c>, <c>wmts-style</c>, <c>tile-matrix-set</c>, or
+    /// <c>ogc-endpoint</c>.
+    /// </summary>
+    public required string SourceKind { get; init; }
+
+    /// <summary>
+    /// Plan category, such as <c>layer-metadata</c>, <c>style</c>,
+    /// <c>tile-set</c>, or <c>render-endpoint</c>.
+    /// </summary>
+    public required string Category { get; init; }
+
+    /// <summary>
+    /// Automation status: <c>automated</c>, <c>assisted</c>,
+    /// <c>manual-review</c>, or <c>unsupported</c>.
+    /// </summary>
+    public required string AutomationStatus { get; init; }
+
+    /// <summary>
+    /// Stable machine-readable code for this entry's disposition.
+    /// </summary>
+    public required string Code { get; init; }
+
+    /// <summary>
+    /// Optional source display name for the entry.
+    /// </summary>
+    public string? Name { get; init; }
+
+    /// <summary>
+    /// Human-readable reason for the assigned automation status.
+    /// </summary>
+    public required string Reason { get; init; }
+
+    /// <summary>
+    /// Operator remediation guidance for assisted, manual-review, or unsupported entries.
+    /// </summary>
+    public string[] ManualSteps { get; init; } = [];
+
+    /// <summary>
+    /// Deterministic planning metadata (no raw style or capabilities document text).
+    /// </summary>
+    public Dictionary<string, string> Metadata { get; init; } = [];
+}
+
+/// <summary>
+/// One diagnostic captured during render-only migration planning.
+/// </summary>
+public sealed record MigrationManifestPlanDiagnostic
+{
+    /// <summary>
+    /// Source artifact identifier the diagnostic relates to.
+    /// </summary>
+    public required string SourceId { get; init; }
+
+    /// <summary>
+    /// Stable machine-readable diagnostic code.
+    /// </summary>
+    public required string Code { get; init; }
+
+    /// <summary>
+    /// Diagnostic severity, such as <c>info</c>, <c>warning</c>, or <c>error</c>.
+    /// </summary>
+    public required string Severity { get; init; }
+
+    /// <summary>
+    /// Diagnostic message describing the captured detail.
+    /// </summary>
+    public required string Message { get; init; }
 }
 
 /// <summary>
