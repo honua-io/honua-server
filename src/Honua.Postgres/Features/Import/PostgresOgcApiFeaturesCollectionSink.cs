@@ -233,6 +233,80 @@ internal sealed partial class PostgresOgcApiFeaturesCollectionSink : IOgcApiFeat
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<OgcApiFeaturesSinkColumn>> GetTargetColumnsAsync(
+        OgcApiFeaturesSinkTarget target,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        AssertSafeIdentifier(target.Schema, nameof(target.Schema));
+        AssertSafeIdentifier(target.Table, nameof(target.Table));
+
+        const string sql = """
+            SELECT column_name,
+                   COALESCE(udt_name, data_type) AS data_type,
+                   character_maximum_length,
+                   is_nullable
+              FROM information_schema.columns
+             WHERE lower(table_schema) = lower(@schema)
+               AND lower(table_name) = lower(@table)
+             ORDER BY ordinal_position;
+            """;
+
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.Add(new NpgsqlParameter("@schema", NpgsqlDbType.Text) { Value = target.Schema });
+        command.Parameters.Add(new NpgsqlParameter("@table", NpgsqlDbType.Text) { Value = target.Table });
+
+        var columns = new List<OgcApiFeaturesSinkColumn>();
+        try
+        {
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var name = reader.GetString(0);
+                var dataType = reader.IsDBNull(1) ? "unknown" : reader.GetString(1);
+                int? maxLength = reader.IsDBNull(2) ? null : Convert.ToInt32(reader.GetValue(2), CultureInfo.InvariantCulture);
+                var nullable = !reader.IsDBNull(3) &&
+                    string.Equals(reader.GetString(3), "YES", StringComparison.OrdinalIgnoreCase);
+
+                var canonical = NormalizeDataType(dataType, maxLength);
+                columns.Add(new OgcApiFeaturesSinkColumn
+                {
+                    Name = name,
+                    DataType = canonical,
+                    IsNullable = nullable
+                });
+            }
+        }
+        catch (PostgresException ex) when (ex.SqlState == "42P01")
+        {
+            // Target table not yet provisioned (race with EnsureTargetAsync); fall back to empty.
+            return [];
+        }
+
+        return columns;
+    }
+
+    private static string NormalizeDataType(string udtOrType, int? maxLength)
+    {
+        var lower = udtOrType.ToLowerInvariant();
+        return lower switch
+        {
+            "varchar" or "character varying" when maxLength is > 0 =>
+                string.Create(CultureInfo.InvariantCulture, $"varchar({maxLength.Value})"),
+            "bpchar" or "character" when maxLength is > 0 =>
+                string.Create(CultureInfo.InvariantCulture, $"char({maxLength.Value})"),
+            "int2" => "smallint",
+            "int4" => "integer",
+            "int8" => "bigint",
+            "float4" => "real",
+            "float8" => "double precision",
+            "bool" => "boolean",
+            _ => lower
+        };
+    }
+
     private static void AssertSafeIdentifier(string candidate, string parameterName)
     {
         if (string.IsNullOrWhiteSpace(candidate))

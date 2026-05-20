@@ -85,6 +85,14 @@ public sealed record OgcApiFeaturesImportResult
     /// Operators can route this through the migration manifest review queue.
     /// </summary>
     public string? ManualReviewReason { get; init; }
+
+    /// <summary>
+    /// Structured schema-mapping diagnostics emitted when the source collection's properties do
+    /// not align cleanly with the target table columns. Clean (automated) matches do NOT appear
+    /// here — only properties that triggered an assisted, manual-review, or unsupported finding.
+    /// See <see cref="OgcApiFeaturesSchemaMappingDiagnostic"/> for the classification taxonomy.
+    /// </summary>
+    public IReadOnlyList<OgcApiFeaturesSchemaMappingDiagnostic> MappingDiagnostics { get; init; } = [];
 }
 
 /// <summary>

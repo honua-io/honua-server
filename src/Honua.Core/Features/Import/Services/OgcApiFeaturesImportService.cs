@@ -220,6 +220,10 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
 
             await _sink.EnsureTargetAsync(target, timeout.Token).ConfigureAwait(false);
 
+            using var schemaDocumentHandle = await TryFetchSchemaDocumentAsync(serviceUri, request.CollectionId, timeout.Token).ConfigureAwait(false);
+            var schemaDocument = schemaDocumentHandle?.RootElement;
+            IReadOnlyList<OgcApiFeaturesSchemaMappingDiagnostic> mappingDiagnostics = [];
+
             var scopeSignature = ComputeScopeSignature(normalizedFilter, normalizedBbox, normalizedDatetime);
             var scopeDriftDetected = false;
             string? manualReviewReason = null;
@@ -287,6 +291,17 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
                         warnings: warnings);
                 }
 
+                if (pagesFetched == 1)
+                {
+                    mappingDiagnostics = await ComputeMappingDiagnosticsAsync(
+                            target,
+                            schemaDocument,
+                            featuresElement,
+                            warnings,
+                            timeout.Token)
+                        .ConfigureAwait(false);
+                }
+
                 var batch = new List<OgcApiFeaturesSinkFeature>(featuresElement.GetArrayLength());
                 var pageIndex = 0;
                 foreach (var feature in featuresElement.EnumerateArray())
@@ -340,7 +355,8 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
                 Warnings = warnings,
                 Duration = stopwatch.Elapsed,
                 ScopeDriftDetected = scopeDriftDetected,
-                ManualReviewReason = manualReviewReason
+                ManualReviewReason = manualReviewReason,
+                MappingDiagnostics = mappingDiagnostics
             };
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -1070,6 +1086,79 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
         return builder.Uri.AbsoluteUri;
     }
 
+    private async Task<JsonDocument?> TryFetchSchemaDocumentAsync(
+        Uri serviceUri,
+        string collectionId,
+        CancellationToken cancellationToken)
+    {
+        var schemaUri = AppendPath(serviceUri, $"collections/{Uri.EscapeDataString(collectionId)}/schemas/feature");
+
+        try
+        {
+            return await GetJsonDocumentAsync(schemaUri, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (HttpRequestException ex)
+        {
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                Log.SchemaDocumentUnavailable(_logger, collectionId, ToSafeSourceUrl(schemaUri), ex);
+            }
+
+            return null;
+        }
+        catch (JsonException ex)
+        {
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                Log.SchemaDocumentUnavailable(_logger, collectionId, ToSafeSourceUrl(schemaUri), ex);
+            }
+
+            return null;
+        }
+    }
+
+    private async Task<IReadOnlyList<OgcApiFeaturesSchemaMappingDiagnostic>> ComputeMappingDiagnosticsAsync(
+        OgcApiFeaturesSinkTarget target,
+        JsonElement? schemaDocument,
+        JsonElement firstPageFeatures,
+        List<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<OgcApiFeaturesSinkColumn> columns;
+        try
+        {
+            columns = await _sink.GetTargetColumnsAsync(target, cancellationToken).ConfigureAwait(false);
+        }
+        catch (NotSupportedException)
+        {
+            return [];
+        }
+
+        if (columns.Count == 0)
+        {
+            return [];
+        }
+
+        var sourceProperties = OgcApiFeaturesSchemaMapper.DeriveSourceProperties(schemaDocument, firstPageFeatures);
+        var diagnostics = OgcApiFeaturesSchemaMapper.Diagnose(sourceProperties, columns);
+
+        foreach (var diagnostic in diagnostics)
+        {
+            if (warnings.Count >= 100)
+            {
+                break;
+            }
+
+            warnings.Add($"Schema mapping {diagnostic.Classification.ToString().ToLowerInvariant()}: {diagnostic.Reason}");
+        }
+
+        return diagnostics;
+    }
+
     private sealed record OgcApiFeaturesItemLink(string Rel, string Href, string? Type);
 
     private static partial class Log
@@ -1103,5 +1192,11 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
             Level = LogLevel.Warning,
             Message = "OGC API Features import scope drift detected for {CollectionId} writing to {Target}; previous scope {PreviousScope} differs from current scope {CurrentScope}. Rows that fell out of scope were NOT deleted.")]
         public static partial void ScopeDriftDetected(ILogger logger, string collectionId, string target, string previousScope, string currentScope);
+
+        [LoggerMessage(
+            EventId = 21106,
+            Level = LogLevel.Debug,
+            Message = "OGC API Features schema document unavailable for {CollectionId} at {Url}; mapping diagnostics will fall back to inference from first-page properties.")]
+        public static partial void SchemaDocumentUnavailable(ILogger logger, string collectionId, string url, Exception exception);
     }
 }
