@@ -819,6 +819,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Import.ImportJsonContext.Default,
         Honua.Server.Features.Import.RasterImportJsonContext.Default,
         Honua.Server.Features.Import.GeoservicesImportApiJsonContext.Default,
+        Honua.Server.Features.Import.OgcCoverageImportJsonContext.Default,
+        Honua.Server.Features.Import.OgcWcsImportJsonContext.Default,
         Honua.Server.Features.Admin.OperationsProgressJsonContext.Default,
         Honua.Server.Features.Admin.FeatureEventReplayJsonContext.Default,
         Honua.Server.Features.Mobile.Auth.MobileAuthJsonContext.Default,
@@ -1223,6 +1225,12 @@ app.MapGeoservicesImportEndpoints();
 
 // Configure GeoServer import endpoints
 app.MapGeoServerImportEndpoints();
+
+// Configure OGC WCS / OGC API Coverages GeoTIFF/COG import endpoints (issue #1030 slice 2)
+app.MapOgcCoverageImportEndpoints();
+
+// Configure legacy OGC WCS coverage import endpoints (issue #1030 slice 3)
+app.MapOgcWcsImportEndpoints();
 
 if (isTestEnvironment)
 {

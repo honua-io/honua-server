@@ -56,14 +56,13 @@ internal sealed partial class GeometryBufferJobExecutor : IJobExecutor
         ArgumentNullException.ThrowIfNull(context);
 
         var parameters = job.Spec.Parameters;
-        var processId = ResolveProcessId(parameters);
+        var processId = GeoprocessingDispatchHelper.ResolveProcessId(parameters);
 
         if (!string.Equals(processId, HandledProcessId, StringComparison.Ordinal))
         {
             Log.UnsupportedProcessId(_logger, job.OperationId, processId ?? "<none>");
             return JobExecutionResult.Failed(
-                $"Process id '{processId ?? "<none>"}' is not supported by the first-slice geoprocessing runtime. " +
-                "Only 'geometry.buffer' is wired in this release; additional vector processes are tracked separately.");
+                $"Process id '{processId ?? "<none>"}' is not handled by the geometry.buffer executor.");
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -148,35 +147,6 @@ internal sealed partial class GeometryBufferJobExecutor : IJobExecutor
         await context.ReportProgressAsync(100, "Buffer completed", cancellationToken).ConfigureAwait(false);
 
         return JobExecutionResult.Succeeded();
-    }
-
-    private static string? ResolveProcessId(IReadOnlyDictionary<string, string> parameters)
-    {
-        if (parameters.TryGetValue(ExecutionJobParameterKeys.GeoprocessingProcessDefinitions, out var raw)
-            && !string.IsNullOrWhiteSpace(raw))
-        {
-            var first = raw
-                .Split(ExecutionJobParameterKeys.MetadataListSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .FirstOrDefault();
-            if (!string.IsNullOrWhiteSpace(first))
-            {
-                return first;
-            }
-        }
-
-        if (parameters.TryGetValue("protocolProcessId", out var protocolProcessId)
-            && !string.IsNullOrWhiteSpace(protocolProcessId))
-        {
-            return protocolProcessId;
-        }
-
-        if (parameters.TryGetValue(GeoprocessingProtocolMetadataKeys.GPServerTaskName, out var gpTask)
-            && !string.IsNullOrWhiteSpace(gpTask))
-        {
-            return gpTask;
-        }
-
-        return null;
     }
 
     private static bool TryReadStepInputs(

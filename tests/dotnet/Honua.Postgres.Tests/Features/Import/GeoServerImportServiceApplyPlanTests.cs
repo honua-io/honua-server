@@ -198,6 +198,133 @@ public sealed class GeoServerImportServiceApplyPlanTests
     }
 
     [Fact]
+    public async Task ImportConfigurationAsync_WithApplyModeAndCatalogWriter_AppliesWorkspaceAndLayerGroupCatalogEntries()
+    {
+        var fixture = LoadFixture("CatalogApplySlice");
+        var publisher = new RecordingLayerPublishingService();
+        var catalogWriter = new RecordingMigrationCatalogWriter();
+        var request = new GeoServerImportRequest
+        {
+            GeoServerRestUrl = fixture.ServiceUrl,
+            TargetHonuaUrl = "https://honua.example.test",
+            DryRun = false,
+            ApplyMode = true,
+            ImportStyles = false,
+            AutoPublishLayers = true,
+            RequestTimeoutSeconds = 5
+        };
+
+        var result = await CreateService(new FixtureHttpHandler(fixture.Responses), publisher, catalogWriter)
+            .ImportConfigurationAsync(request);
+
+        result.Success.Should().BeTrue();
+        result.ApplyExecution.Should().NotBeNull();
+        var workspaceStep = result.ApplyExecution!.StepResults.SingleOrDefault(step =>
+            step.Kind == "workspace" && step.SourceId == "workspace:ops");
+        workspaceStep.Should().NotBeNull("workspace catalog entries must be applied by slice 1");
+        workspaceStep!.Outcome.Should().Be("applied");
+        workspaceStep.TargetServiceName.Should().Be("ops");
+
+        var layerGroupStep = result.ApplyExecution.StepResults.SingleOrDefault(step =>
+            step.Kind == "layer-group" && step.SourceId == "layer-group:ops:ops-base");
+        layerGroupStep.Should().NotBeNull("layer-group catalog entries must be applied by slice 1");
+        layerGroupStep!.Outcome.Should().Be("applied");
+
+        catalogWriter.Requests.Select(r => r.ServiceName)
+            .Should().Contain("ops")
+            .And.Contain(name => name.Contains("ops-base", StringComparison.Ordinal));
+        catalogWriter.Requests.Should().OnlyContain(r => r.Srid == 4326);
+    }
+
+    [Fact]
+    public async Task ImportConfigurationAsync_WithApplyMode_IsIdempotentOnReApply()
+    {
+        var fixture = LoadFixture("CatalogApplySlice");
+        var publisher = new RecordingLayerPublishingService();
+        var catalogWriter = new RecordingMigrationCatalogWriter();
+        var request = new GeoServerImportRequest
+        {
+            GeoServerRestUrl = fixture.ServiceUrl,
+            TargetHonuaUrl = "https://honua.example.test",
+            DryRun = false,
+            ApplyMode = true,
+            AutoPublishLayers = true,
+            RequestTimeoutSeconds = 5
+        };
+
+        var firstService = CreateService(new FixtureHttpHandler(fixture.Responses), publisher, catalogWriter);
+        await firstService.ImportConfigurationAsync(request);
+
+        var secondService = CreateService(new FixtureHttpHandler(fixture.Responses), publisher, catalogWriter);
+        var secondResult = await secondService.ImportConfigurationAsync(request);
+
+        secondResult.Success.Should().BeTrue();
+        var workspaceStep = secondResult.ApplyExecution!.StepResults.Single(step =>
+            step.Kind == "workspace" && step.SourceId == "workspace:ops");
+        workspaceStep.Outcome.Should().Be("already-applied");
+        var layerGroupStep = secondResult.ApplyExecution.StepResults.Single(step =>
+            step.Kind == "layer-group" && step.SourceId == "layer-group:ops:ops-base");
+        layerGroupStep.Outcome.Should().Be("already-applied");
+
+        // Idempotency contract: re-applying records the catalog write but reports
+        // "already-applied" rather than creating duplicate catalog rows.
+        catalogWriter.Requests
+            .Count(r => string.Equals(r.ServiceName, "ops", StringComparison.Ordinal))
+            .Should().Be(2);
+    }
+
+    [Fact]
+    public async Task ImportConfigurationAsync_WithApplyModeButNoCatalogWriter_KeepsCatalogStepsAsManualReview()
+    {
+        var fixture = LoadFixture("CatalogApplySlice");
+        var request = new GeoServerImportRequest
+        {
+            GeoServerRestUrl = fixture.ServiceUrl,
+            TargetHonuaUrl = "https://honua.example.test",
+            DryRun = false,
+            ApplyMode = true,
+            RequestTimeoutSeconds = 5
+        };
+
+        var result = await CreateService(new FixtureHttpHandler(fixture.Responses))
+            .ImportConfigurationAsync(request);
+
+        result.Success.Should().BeTrue();
+        result.ApplyExecution!.StepResults
+            .Where(step => step.Kind == "workspace")
+            .Should().OnlyContain(step => step.Outcome == "manual-review");
+        result.ApplyExecution.StepResults
+            .Where(step => step.Kind == "layer-group")
+            .Should().OnlyContain(step => step.Outcome == "manual-review");
+    }
+
+    [Fact]
+    public async Task ImportConfigurationAsync_WithApplyModeAndCancellation_StopsBeforeWritingMoreCatalogEntries()
+    {
+        var fixture = LoadFixture("CatalogApplySlice");
+        var publisher = new RecordingLayerPublishingService();
+        var catalogWriter = new RecordingMigrationCatalogWriter();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var act = async () => await CreateService(new FixtureHttpHandler(fixture.Responses), publisher, catalogWriter)
+            .ImportConfigurationAsync(
+                new GeoServerImportRequest
+                {
+                    GeoServerRestUrl = fixture.ServiceUrl,
+                    TargetHonuaUrl = "https://honua.example.test",
+                    DryRun = false,
+                    ApplyMode = true,
+                    AutoPublishLayers = true,
+                    RequestTimeoutSeconds = 5
+                },
+                progress: null,
+                cancellationToken: cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public async Task ImportConfigurationAsync_WithUnsupportedResources_ClassifiesManualReviewAndUnsupportedWithoutCredentialLeakage()
     {
         var fixture = LoadFixture("MixedCatalog");
@@ -253,7 +380,8 @@ public sealed class GeoServerImportServiceApplyPlanTests
 
     private static GeoServerImportService CreateService(
         HttpMessageHandler handler,
-        ILayerPublishingService? layerPublishingService = null)
+        ILayerPublishingService? layerPublishingService = null,
+        IMigrationCatalogWriter? catalogWriter = null)
     {
         var httpClient = new HttpClient(handler);
         var restClient = new GeoServerRestClient(
@@ -263,7 +391,7 @@ public sealed class GeoServerImportServiceApplyPlanTests
         var connectionProvider = new Mock<IDatabaseConnectionProvider>(MockBehavior.Strict);
         var crsRegistry = new Mock<ICrsRegistry>(MockBehavior.Strict);
 
-        if (layerPublishingService != null)
+        if (layerPublishingService != null || catalogWriter != null)
         {
             connectionProvider.Setup(provider => provider.GetConnectionString())
                 .Returns("Host=localhost;Database=honua");
@@ -283,7 +411,8 @@ public sealed class GeoServerImportServiceApplyPlanTests
             connectionProvider.Object,
             crsRegistry.Object,
             NullLogger<GeoServerImportService>.Instance,
-            layerPublishingService: layerPublishingService);
+            layerPublishingService: layerPublishingService,
+            catalogWriter: catalogWriter);
     }
 
     private sealed record FixtureScenario(string ServiceUrl, IReadOnlyDictionary<string, string> Responses);
@@ -481,4 +610,65 @@ public sealed class GeoServerImportServiceApplyPlanTests
     }
 
     private sealed record LayerAttachRequest(int LayerId, string ServiceName, bool Enabled);
+
+    private sealed class RecordingMigrationCatalogWriter : IMigrationCatalogWriter
+    {
+        private readonly HashSet<string> _existing = new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _existingDataSources = new(StringComparer.OrdinalIgnoreCase);
+
+        public List<MigrationCatalogServiceRequest> Requests { get; } = [];
+
+        public List<MigrationDataSourceRequest> DataSourceRequests { get; } = [];
+
+        public List<MigrationFeatureCopyRequest> FeatureCopyRequests { get; } = [];
+
+        public Task<MigrationCatalogWriteOutcome> EnsureCatalogServiceAsync(
+            string connectionString,
+            MigrationCatalogServiceRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            var outcome = _existing.Add(request.ServiceName)
+                ? MigrationCatalogWriteOutcome.Created
+                : MigrationCatalogWriteOutcome.AlreadyExists;
+            return Task.FromResult(outcome);
+        }
+
+        public Task<MigrationCatalogWriteOutcome> EnsureDataSourceAsync(
+            string connectionString,
+            MigrationDataSourceRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            DataSourceRequests.Add(request);
+            var key = $"{request.SourceKind}:{request.SourceId}";
+            var outcome = _existingDataSources.Add(key)
+                ? MigrationCatalogWriteOutcome.Created
+                : MigrationCatalogWriteOutcome.AlreadyExists;
+            return Task.FromResult(outcome);
+        }
+
+        public Task<MigrationFeatureCopyOutcome> CopyFeatureDataAsync(
+            string connectionString,
+            MigrationFeatureCopyRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            FeatureCopyRequests.Add(request);
+            // Default recording writer reports SourceMissing so slice-1
+            // expectations (publish from source table) remain unchanged when the
+            // test only needs the catalog-writer recording behavior.
+            return Task.FromResult(new MigrationFeatureCopyOutcome
+            {
+                Status = MigrationFeatureCopyStatus.SourceMissing,
+                RowCount = 0
+            });
+        }
+
+        // Slice 3 (#1015): apply-plan tests do not exercise style persistence
+        // directly; record-and-noop so the interface remains satisfied.
+        public Task<MigrationCatalogWriteOutcome> EnsureStyleAsync(
+            string connectionString,
+            MigrationStyleRequest request,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(MigrationCatalogWriteOutcome.Created);
+    }
 }
