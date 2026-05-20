@@ -200,9 +200,19 @@ public sealed class MigrationRunMetricsBaselineEvaluatorTests
     [Fact]
     public void TryEvaluate_ResolvesBaselineFromCatalog()
     {
+        // Populate every metric the catalog bands look at — unset values are
+        // classified as Warn by the evaluator (missing data), which would
+        // make this test about catalog-resolution flake into Warn instead of
+        // exercising the Pass-classification path.
         var run = BuildRun(new MigrationRunMetricsValues
         {
             DurationMilliseconds = 30_000,
+            SourceRequestCount = 100,
+            BytesRead = 1024L * 1024,
+            BytesWritten = 1024L * 1024,
+            RetryCount = 0,
+            ResumeCount = 0,
+            ManualReviewRatio = 0.0,
             FeatureThroughputPerSecond = 200
         });
 
