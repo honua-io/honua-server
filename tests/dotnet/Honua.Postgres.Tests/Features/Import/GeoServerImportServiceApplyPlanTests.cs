@@ -614,8 +614,13 @@ public sealed class GeoServerImportServiceApplyPlanTests
     private sealed class RecordingMigrationCatalogWriter : IMigrationCatalogWriter
     {
         private readonly HashSet<string> _existing = new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _existingDataSources = new(StringComparer.OrdinalIgnoreCase);
 
         public List<MigrationCatalogServiceRequest> Requests { get; } = [];
+
+        public List<MigrationDataSourceRequest> DataSourceRequests { get; } = [];
+
+        public List<MigrationFeatureCopyRequest> FeatureCopyRequests { get; } = [];
 
         public Task<MigrationCatalogWriteOutcome> EnsureCatalogServiceAsync(
             string connectionString,
@@ -628,5 +633,42 @@ public sealed class GeoServerImportServiceApplyPlanTests
                 : MigrationCatalogWriteOutcome.AlreadyExists;
             return Task.FromResult(outcome);
         }
+
+        public Task<MigrationCatalogWriteOutcome> EnsureDataSourceAsync(
+            string connectionString,
+            MigrationDataSourceRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            DataSourceRequests.Add(request);
+            var key = $"{request.SourceKind}:{request.SourceId}";
+            var outcome = _existingDataSources.Add(key)
+                ? MigrationCatalogWriteOutcome.Created
+                : MigrationCatalogWriteOutcome.AlreadyExists;
+            return Task.FromResult(outcome);
+        }
+
+        public Task<MigrationFeatureCopyOutcome> CopyFeatureDataAsync(
+            string connectionString,
+            MigrationFeatureCopyRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            FeatureCopyRequests.Add(request);
+            // Default recording writer reports SourceMissing so slice-1
+            // expectations (publish from source table) remain unchanged when the
+            // test only needs the catalog-writer recording behavior.
+            return Task.FromResult(new MigrationFeatureCopyOutcome
+            {
+                Status = MigrationFeatureCopyStatus.SourceMissing,
+                RowCount = 0
+            });
+        }
+
+        // Slice 3 (#1015): apply-plan tests do not exercise style persistence
+        // directly; record-and-noop so the interface remains satisfied.
+        public Task<MigrationCatalogWriteOutcome> EnsureStyleAsync(
+            string connectionString,
+            MigrationStyleRequest request,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(MigrationCatalogWriteOutcome.Created);
     }
 }
