@@ -1114,6 +1114,7 @@ app.MapAlertAdminEndpoints();
 // Configure platform admin endpoints (license, identity, cache, geocoding, features)
 app.MapLicenseAdminEndpoints();
 app.MapIdentityAdminEndpoints();
+app.MapAdminInfoEndpoints();
 app.MapCacheAdminEndpoints();
 app.MapGeocodingAdminEndpoints();
 app.MapFeatureOverviewEndpoints();
