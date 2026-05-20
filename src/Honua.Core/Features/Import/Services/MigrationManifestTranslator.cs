@@ -71,6 +71,14 @@ public static partial class MigrationManifestTranslator
                 resource,
                 targetServiceName,
                 targetResourceName);
+            var rendererDiagnostics = BuildResourceRendererDiagnostics(
+                inventory,
+                resource,
+                targetServiceName,
+                targetResourceName);
+            var labelClassDiagnostics = BuildResourceLabelClassDiagnostics(
+                inventory,
+                resource);
 
             targetResources.Add(new MigrationManifestTargetResource
             {
@@ -94,6 +102,8 @@ public static partial class MigrationManifestTranslator
                 Identity = identity,
                 Attachments = attachments,
                 Relationships = relationships,
+                RendererDiagnostics = rendererDiagnostics,
+                LabelClassDiagnostics = labelClassDiagnostics,
                 Compatibility = resource.Compatibility
             });
             identityRemaps.Add(new MigrationManifestIdentityRemap
@@ -741,6 +751,317 @@ public static partial class MigrationManifestTranslator
             "M:N" or "MANY_TO_MANY" or "MANYTOMANY" or "ESRIRELCARDINALITYMANYTOMANY" => "M:N",
             _ => null
         };
+    }
+
+    // <=10 categories on a uniqueValue or classBreaks renderer keep the renderer eligible for the
+    // assisted lane. Above this threshold target apply cannot reasonably re-bind a default style and
+    // the renderer is escalated to manual review per the slice 4 contract.
+    private const int RendererAssistedCategoryLimit = 10;
+
+    private static readonly HashSet<string> SupportedRendererKinds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "simple",
+        "uniqueValue",
+        "classBreaks"
+    };
+
+    private static readonly HashSet<string> ManualReviewRendererKinds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "dictionary",
+        "rasterShaded",
+        "rasterColormap",
+        "vectorField",
+        "temporal",
+        "heatmap",
+        "stretched",
+        "classedColor",
+        "classedSize"
+    };
+
+    private static MigrationManifestRendererDiagnostic[] BuildResourceRendererDiagnostics(
+        MigrationSourceInventoryArtifact inventory,
+        MigrationInventoryResource resource,
+        string targetServiceName,
+        string targetResourceName)
+    {
+        if (!IsArcGisSource(inventory.SourceKind))
+        {
+            return [];
+        }
+
+        var diagnostics = new List<MigrationManifestRendererDiagnostic>();
+
+        foreach (var style in inventory.Styles
+                     .Where(style => string.Equals(style.Kind, "renderer", StringComparison.OrdinalIgnoreCase))
+                     .Where(style => style.ResourceIds.Contains(resource.Id, StringComparer.Ordinal))
+                     .OrderBy(static style => style.Id, StringComparer.Ordinal))
+        {
+            var rendererKind = style.Metadata.TryGetValue("rendererType", out var advertisedKind) &&
+                               !string.IsNullOrWhiteSpace(advertisedKind)
+                ? advertisedKind
+                : "unknown";
+            var categoryCount = ExtractRendererCategoryCount(style.Metadata, rendererKind);
+            var hasExternalSymbol = style.ExternalDependencyIds.Length > 0 ||
+                                    HasComplexExpression(style.Metadata);
+
+            var (classification, reason, suggestedTargetStyleId) = ClassifyRenderer(
+                rendererKind,
+                categoryCount,
+                hasExternalSymbol,
+                targetServiceName,
+                targetResourceName);
+
+            diagnostics.Add(new MigrationManifestRendererDiagnostic
+            {
+                SourceStyleId = style.Id,
+                SourceResourceId = resource.Id,
+                RendererKind = rendererKind,
+                CategoryCount = categoryCount,
+                Classification = classification,
+                SuggestedTargetStyleId = suggestedTargetStyleId,
+                Reason = reason
+            });
+        }
+
+        return diagnostics
+            .OrderBy(static d => d.SourceStyleId, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static int? ExtractRendererCategoryCount(IReadOnlyDictionary<string, string> metadata, string rendererKind)
+    {
+        // The scanner surfaces the number of uniqueValue infos / classBreaks infos via metadata so
+        // the translator can decide assisted vs manual-review without re-parsing the renderer JSON.
+        var key = rendererKind.Equals("classBreaks", StringComparison.OrdinalIgnoreCase)
+            ? "classBreakInfoCount"
+            : rendererKind.Equals("uniqueValue", StringComparison.OrdinalIgnoreCase)
+                ? "uniqueValueInfoCount"
+                : null;
+
+        if (key is null)
+        {
+            return null;
+        }
+
+        if (metadata.TryGetValue(key, out var raw) &&
+            int.TryParse(raw, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsed) &&
+            parsed >= 0)
+        {
+            return parsed;
+        }
+
+        return null;
+    }
+
+    private static bool HasComplexExpression(IReadOnlyDictionary<string, string> metadata)
+        => metadata.TryGetValue("hasComplexExpression", out var raw) &&
+           bool.TryParse(raw, out var parsed) && parsed;
+
+    private static (string Classification, string? Reason, string? SuggestedTargetStyleId) ClassifyRenderer(
+        string rendererKind,
+        int? categoryCount,
+        bool hasExternalSymbol,
+        string targetServiceName,
+        string targetResourceName)
+    {
+        if (string.Equals(rendererKind, "simple", StringComparison.OrdinalIgnoreCase))
+        {
+            var suggested = $"target:style:{targetServiceName}:{targetResourceName}:simple";
+            if (hasExternalSymbol)
+            {
+                return (
+                    MigrationManifestRendererClassifications.Assisted,
+                    "Simple renderer references one or more external symbol URLs; target apply must mirror or replace the external symbol assets before binding the suggested target style.",
+                    suggested);
+            }
+
+            return (
+                MigrationManifestRendererClassifications.Automated,
+                null,
+                suggested);
+        }
+
+        if (string.Equals(rendererKind, "uniqueValue", StringComparison.OrdinalIgnoreCase))
+        {
+            if (categoryCount is { } count && count > RendererAssistedCategoryLimit)
+            {
+                return (
+                    MigrationManifestRendererClassifications.ManualReview,
+                    $"Renderer 'uniqueValue' advertises {count} categories, exceeding the {RendererAssistedCategoryLimit}-category assisted lane; operator must review and consolidate categories before migration.",
+                    null);
+            }
+
+            return (
+                MigrationManifestRendererClassifications.Assisted,
+                "Renderer 'uniqueValue' captured; target apply recreates the category bindings during the assisted style step.",
+                $"target:style:{targetServiceName}:{targetResourceName}:unique-value");
+        }
+
+        if (string.Equals(rendererKind, "classBreaks", StringComparison.OrdinalIgnoreCase))
+        {
+            if (categoryCount is { } breaks && breaks > RendererAssistedCategoryLimit)
+            {
+                return (
+                    MigrationManifestRendererClassifications.ManualReview,
+                    $"Renderer 'classBreaks' advertises {breaks} breaks, exceeding the {RendererAssistedCategoryLimit}-break assisted lane; operator must review and simplify class breaks before migration.",
+                    null);
+            }
+
+            return (
+                MigrationManifestRendererClassifications.Assisted,
+                "Renderer 'classBreaks' captured; target apply recreates the class-break bindings during the assisted style step.",
+                $"target:style:{targetServiceName}:{targetResourceName}:class-breaks");
+        }
+
+        if (ManualReviewRendererKinds.Contains(rendererKind))
+        {
+            return (
+                MigrationManifestRendererClassifications.ManualReview,
+                $"Renderer '{rendererKind}' uses dictionary lookups, raster shading, or other Esri-specific drawing strategies that this slice does not translate automatically.",
+                null);
+        }
+
+        return (
+            MigrationManifestRendererClassifications.Unsupported,
+            $"Renderer kind '{rendererKind}' is not recognized by the automated lane and cannot be migrated by this slice.",
+            null);
+    }
+
+    private static MigrationManifestLabelClassDiagnostic[] BuildResourceLabelClassDiagnostics(
+        MigrationSourceInventoryArtifact inventory,
+        MigrationInventoryResource resource)
+    {
+        if (!IsArcGisSource(inventory.SourceKind))
+        {
+            return [];
+        }
+
+        var diagnostics = new List<MigrationManifestLabelClassDiagnostic>();
+
+        foreach (var style in inventory.Styles
+                     .Where(style => string.Equals(style.Kind, "renderer", StringComparison.OrdinalIgnoreCase))
+                     .Where(style => style.ResourceIds.Contains(resource.Id, StringComparer.Ordinal))
+                     .OrderBy(static style => style.Id, StringComparer.Ordinal))
+        {
+            // The scanner surfaces per-label-class entries via metadata keys of the form
+            // "labelClass.{index}.expression" and "labelClass.{index}.expressionEngine"; the
+            // translator iterates by index until the expression key disappears.
+            for (var index = 0; ; index++)
+            {
+                var expressionKey = $"labelClass.{index}.expression";
+                var hasExpression = style.Metadata.TryGetValue(expressionKey, out var expression);
+                var engineKey = $"labelClass.{index}.expressionEngine";
+                var hasEngine = style.Metadata.TryGetValue(engineKey, out var engine);
+
+                if (!hasExpression && !hasEngine)
+                {
+                    break;
+                }
+
+                var trimmedExpression = string.IsNullOrWhiteSpace(expression) ? null : expression;
+                var trimmedEngine = string.IsNullOrWhiteSpace(engine) ? null : engine;
+
+                var (classification, reason) = ClassifyLabelClass(trimmedExpression, trimmedEngine);
+
+                diagnostics.Add(new MigrationManifestLabelClassDiagnostic
+                {
+                    SourceStyleId = style.Id,
+                    SourceResourceId = resource.Id,
+                    LabelClassIndex = index,
+                    Expression = trimmedExpression,
+                    ExpressionEngine = trimmedEngine,
+                    Classification = classification,
+                    Reason = reason
+                });
+            }
+        }
+
+        return diagnostics
+            .OrderBy(static d => d.SourceStyleId, StringComparer.Ordinal)
+            .ThenBy(static d => d.LabelClassIndex)
+            .ToArray();
+    }
+
+    private static (string Classification, string? Reason) ClassifyLabelClass(string? expression, string? engine)
+    {
+        if (!string.IsNullOrWhiteSpace(engine) &&
+            engine.Trim().Equals("VBScript", StringComparison.OrdinalIgnoreCase))
+        {
+            return (
+                MigrationManifestLabelClassClassifications.Unsupported,
+                "VBScript label expressions are not portable to Honua; operator must rewrite the expression in Arcade or simplify to a field token before migration.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(engine) &&
+            (engine.Trim().Equals("JScript", StringComparison.OrdinalIgnoreCase) ||
+             engine.Trim().Equals("Python", StringComparison.OrdinalIgnoreCase)))
+        {
+            return (
+                MigrationManifestLabelClassClassifications.ManualReview,
+                $"Label expression engine '{engine.Trim()}' is captured for operator review; Honua does not execute Esri scripting engines.");
+        }
+
+        if (string.IsNullOrWhiteSpace(expression))
+        {
+            return (
+                MigrationManifestLabelClassClassifications.ManualReview,
+                "Label class did not advertise an expression; operator must confirm the label binding before migration.");
+        }
+
+        var trimmed = expression.Trim();
+        // A pure field token like "[NAME]" or {NAME} maps cleanly to a Honua field-substitution label.
+        if (IsSimpleFieldToken(trimmed))
+        {
+            return (MigrationManifestLabelClassClassifications.Automated, null);
+        }
+
+        // Arcade or complex expressions need operator-supervised follow-up.
+        if (!string.IsNullOrWhiteSpace(engine) &&
+            engine.Trim().Equals("Arcade", StringComparison.OrdinalIgnoreCase))
+        {
+            return (
+                MigrationManifestLabelClassClassifications.Assisted,
+                "Arcade label expression captured; target apply recreates the expression during the assisted label step.");
+        }
+
+        return (
+            MigrationManifestLabelClassClassifications.ManualReview,
+            "Label expression mixes field tokens with literal text or function calls and was captured for operator review before migration.");
+    }
+
+    private static bool IsSimpleFieldToken(string expression)
+    {
+        // Recognize "[FIELD]" or "{FIELD}" with no surrounding literal text.
+        if (expression.Length < 3)
+        {
+            return false;
+        }
+
+        var first = expression[0];
+        var last = expression[^1];
+        if (!((first == '[' && last == ']') || (first == '{' && last == '}')))
+        {
+            return false;
+        }
+
+        var inner = expression[1..^1];
+        if (string.IsNullOrWhiteSpace(inner))
+        {
+            return false;
+        }
+
+        // Reject expressions that contain whitespace, brackets, or operator characters in the inner.
+        foreach (var ch in inner)
+        {
+            if (char.IsLetterOrDigit(ch) || ch == '_' || ch == '.')
+            {
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
     }
 
     private static string[] BuildResourceExternalDependencyIds(

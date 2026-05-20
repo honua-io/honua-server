@@ -1145,6 +1145,75 @@
             }
           },
           {
+            "JsonName": "labelClassDiagnostics",
+            "ClrName": "LabelClassDiagnostics",
+            "Container": "array",
+            "ElementType": "MigrationManifestLabelClassDiagnostic",
+            "Required": false,
+            "Nullable": false,
+            "Schema": {
+              "TypeName": "MigrationManifestLabelClassDiagnostic",
+              "Properties": [
+                {
+                  "JsonName": "classification",
+                  "ClrName": "Classification",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "expression",
+                  "ClrName": "Expression",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "expressionEngine",
+                  "ClrName": "ExpressionEngine",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "labelClassIndex",
+                  "ClrName": "LabelClassIndex",
+                  "Container": "scalar",
+                  "ElementType": "int",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "reason",
+                  "ClrName": "Reason",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "sourceResourceId",
+                  "ClrName": "SourceResourceId",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "sourceStyleId",
+                  "ClrName": "SourceStyleId",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                }
+              ]
+            }
+          },
+          {
             "JsonName": "migrationMode",
             "ClrName": "MigrationMode",
             "Container": "scalar",
@@ -1229,6 +1298,75 @@
                 {
                   "JsonName": "targetRelationshipRef",
                   "ClrName": "TargetRelationshipRef",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                }
+              ]
+            }
+          },
+          {
+            "JsonName": "rendererDiagnostics",
+            "ClrName": "RendererDiagnostics",
+            "Container": "array",
+            "ElementType": "MigrationManifestRendererDiagnostic",
+            "Required": false,
+            "Nullable": false,
+            "Schema": {
+              "TypeName": "MigrationManifestRendererDiagnostic",
+              "Properties": [
+                {
+                  "JsonName": "categoryCount",
+                  "ClrName": "CategoryCount",
+                  "Container": "scalar",
+                  "ElementType": "int",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "classification",
+                  "ClrName": "Classification",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "reason",
+                  "ClrName": "Reason",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "rendererKind",
+                  "ClrName": "RendererKind",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "sourceResourceId",
+                  "ClrName": "SourceResourceId",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "sourceStyleId",
+                  "ClrName": "SourceStyleId",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": true,
+                  "Nullable": false
+                },
+                {
+                  "JsonName": "suggestedTargetStyleId",
+                  "ClrName": "SuggestedTargetStyleId",
                   "Container": "scalar",
                   "ElementType": "string",
                   "Required": false,
