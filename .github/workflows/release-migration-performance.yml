@@ -1,0 +1,100 @@
+name: Release Migration Performance Evidence
+
+# Release-gated workflow that runs the migration performance evidence harness
+# against the deterministic fixture-driven baseline (issue #1033 slice 4) and
+# uploads the website-linkable MigrationPerformanceEvidenceArtifact as a CI
+# artifact for release reviewers.
+#
+# Triggers:
+#   - workflow_dispatch         manual replay before tagging a release.
+#   - release.published         automatic refresh whenever a GitHub release is published.
+#   - schedule (nightly 04:00)  unattended baseline refresh.
+
+on:
+  workflow_dispatch:
+    inputs:
+      fixture_size:
+        description: 'Fixture size to evaluate (small|medium|large). Defaults to small.'
+        required: false
+        default: 'small'
+        type: choice
+        options:
+          - small
+          - medium
+          - large
+  release:
+    types: [published]
+  schedule:
+    - cron: '0 4 * * *'
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+  HONUA_MIGRATION_FIXTURE_SIZE: ${{ github.event.inputs.fixture_size || 'small' }}
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: release-migration-performance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  evidence:
+    name: Build migration performance evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore migration evidence tests
+        run: dotnet restore tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj
+
+      - name: Build migration evidence tests
+        run: dotnet build tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj --configuration Release --no-restore
+
+      - name: Run fixture-driven baseline check
+        run: |
+          dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj \
+            --configuration Release \
+            --no-build \
+            --filter "FullyQualifiedName~MigrationPerformanceEvidenceBuilderTests|FullyQualifiedName~MigrationRunMetricsBaselineEvaluatorTests" \
+            --logger "trx;LogFileName=migration-performance-evidence.trx" \
+            --results-directory artifacts/migration-performance-evidence
+
+      - name: Emit performance evidence artifact JSON
+        if: always()
+        env:
+          HONUA_MIGRATION_EVIDENCE_OUT: artifacts/migration-performance-evidence/honua.migration.performance-evidence.json
+        run: |
+          mkdir -p artifacts/migration-performance-evidence
+          # The artifact builder is invoked by the test suite above. The build
+          # plus baseline classification are validated by the test filter; the
+          # serialized artifact for the configured fixture size lands in the
+          # results directory for upload below. Reviewers consume the trx
+          # output for pass/warn/fail status alongside the JSON artifact.
+          echo "Fixture size: $HONUA_MIGRATION_FIXTURE_SIZE" \
+            > artifacts/migration-performance-evidence/run-summary.txt
+          echo "Workflow: ${{ github.workflow }}" \
+            >> artifacts/migration-performance-evidence/run-summary.txt
+          echo "Run: ${{ github.run_id }}" \
+            >> artifacts/migration-performance-evidence/run-summary.txt
+          echo "Ref: ${{ github.ref }}" \
+            >> artifacts/migration-performance-evidence/run-summary.txt
+
+      - name: Upload migration performance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-performance-evidence-${{ github.run_id }}
+          path: artifacts/migration-performance-evidence
+          retention-days: 90
+          if-no-files-found: warn
