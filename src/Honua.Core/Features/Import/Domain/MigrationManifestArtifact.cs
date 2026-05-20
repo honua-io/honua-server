@@ -434,6 +434,8 @@ public sealed record MigrationManifestServicePlan
     /// nothing to flag.
     /// </summary>
     public MigrationManifestPlanDiagnostic[] Diagnostics { get; init; } = [];
+
+    /// <summary>
     /// Optional source/target identity record for the planned service. Mirrors
     /// <see cref="MigrationManifestTargetResource.Identity"/> so app migration tooling can
     /// remap service-level identifiers consistently.

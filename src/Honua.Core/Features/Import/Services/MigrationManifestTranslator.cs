@@ -320,6 +320,8 @@ public static partial class MigrationManifestTranslator
         }
 
         return OgcRenderMigrationPlanResult.Empty;
+    }
+
     private static MigrationManifestServiceIdentity BuildServiceIdentity(
         MigrationSourceInventoryArtifact inventory,
         string targetServiceName)
