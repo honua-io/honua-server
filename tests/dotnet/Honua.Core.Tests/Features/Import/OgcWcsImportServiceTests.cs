@@ -269,6 +269,31 @@ public sealed class OgcWcsImportServiceTests
     }
 
     [Fact]
+    public async Task ImportAsync_PropagatesStyleDiagnosticsFromUnderlyingCoverageService()
+    {
+        var rasterImportMock = new Mock<IRasterImportService>(MockBehavior.Strict);
+        var handler = new CountingHandler(() => throw new InvalidOperationException("Dry-run must not call the WCS source."));
+        var service = CreateService(handler, rasterImportMock.Object);
+
+        var resource = BuildGeoTiffResource("ndvi") with
+        {
+            StyleIds = ["esri:colorizer"]
+        };
+        var request = new OgcWcsImportRequest
+        {
+            ServiceUrl = ServiceUrl,
+            Inventory = BuildInventory(resource),
+            DryRun = true
+        };
+
+        var result = await service.ImportAsync(request);
+
+        result.StyleDiagnostics.Should().ContainSingle();
+        result.StyleDiagnostics[0].VendorName.Should().Be("Esri");
+        result.StyleDiagnostics[0].Classification.Should().Be("manual-review");
+    }
+
+    [Fact]
     public async Task ImportAsync_MissingServiceUrl_ThrowsArgumentException()
     {
         var rasterImportMock = new Mock<IRasterImportService>(MockBehavior.Strict);

@@ -45,4 +45,10 @@ public sealed record OgcWcsImportResult
     /// Whether the request was a dry-run preview.
     /// </summary>
     public bool DryRun { get; init; }
+
+    /// <summary>
+    /// Coverage-style migration diagnostics surfaced by the underlying coverage
+    /// import service. Slice 4 of issue #1030.
+    /// </summary>
+    public MigrationCoverageStyleDiagnostic[] StyleDiagnostics { get; init; } = [];
 }

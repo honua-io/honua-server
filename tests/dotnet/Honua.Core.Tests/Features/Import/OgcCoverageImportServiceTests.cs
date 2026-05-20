@@ -276,6 +276,32 @@ public sealed class OgcCoverageImportServiceTests
     }
 
     [Fact]
+    public async Task ImportAsync_PopulatesStyleDiagnosticsFromInventoryStyleIds()
+    {
+        var rasterImportMock = new Mock<IRasterImportService>(MockBehavior.Strict);
+        var handler = new CountingHandler(() => throw new InvalidOperationException("Dry-run import must not call the source service."));
+        var service = CreateService(handler, rasterImportMock.Object);
+
+        var resource = BuildGeoTiffResource("ndvi-monthly") with
+        {
+            StyleIds = ["ndvi-continuous-ramp", "esri:rendering:stretchedRaster"]
+        };
+        var request = new OgcCoverageImportRequest
+        {
+            ServiceType = "WCS",
+            ServiceUrl = ServiceUrl,
+            Inventory = BuildInventory(resource),
+            DryRun = true
+        };
+
+        var result = await service.ImportAsync(request);
+
+        result.StyleDiagnostics.Should().HaveCountGreaterThan(0);
+        result.StyleDiagnostics.Should().Contain(d => d.Kind == "colorMap" && d.Classification == "manual-review");
+        result.StyleDiagnostics.Should().Contain(d => d.VendorName == "Esri");
+    }
+
+    [Fact]
     public async Task ImportAsync_RejectsPlainHttpUrl_UnlessAllowUnsafeIsSet()
     {
         var rasterImportMock = new Mock<IRasterImportService>(MockBehavior.Strict);
