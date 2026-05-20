@@ -626,6 +626,36 @@ internal static class LayerValidationHelpers
         return new MetadataV2ValidationResult(true, publication, resource, service, null);
     }
 
+    /// <summary>
+    /// Resolves the primary V2 service for a layer index. Preferred match is on
+    /// <paramref name="requiredServiceType"/>; falls back to the lexicographically earliest
+    /// service name. Returns null when no publication matches.
+    /// </summary>
+    public static async Task<MetadataV2Service?> ResolvePrimaryServiceV2Async(
+        HttpContext context,
+        int layerId,
+        MetadataV2ServiceType? requiredServiceType = null,
+        CancellationToken cancellationToken = default)
+    {
+        var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+        var (_, _, service) = ResolveV2Triple(snapshot, layerId, requiredServiceType);
+        return service;
+    }
+
+    /// <summary>
+    /// Resolves the primary V2 service name for a layer index.
+    /// </summary>
+    public static async Task<string?> ResolvePrimaryServiceNameV2Async(
+        HttpContext context,
+        int layerId,
+        MetadataV2ServiceType? requiredServiceType = null,
+        CancellationToken cancellationToken = default)
+    {
+        var service = await ResolvePrimaryServiceV2Async(context, layerId, requiredServiceType, cancellationToken)
+            .ConfigureAwait(false);
+        return service?.Metadata.Name;
+    }
+
     private static async Task<MetadataV2GraphSnapshot> GetV2SnapshotAsync(
         HttpContext context,
         CancellationToken cancellationToken)
