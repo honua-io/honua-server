@@ -2,9 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
@@ -47,22 +47,24 @@ internal static class TileJsonEndpoints
         [FromServices] IOptions<LimitsOptions> limitsOptions,
         CancellationToken cancellationToken)
     {
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
             context,
             layerId,
-            requiredProtocol: ServiceProtocols.FeatureServer,
+            requiredServiceType: MetadataV2ServiceType.EsriFeatureService,
             cancellationToken: cancellationToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
         }
-        var layer = layerValidation.Layer!;
+        var resource = layerValidation.Resource!;
+        var publication = layerValidation.Publication!;
+        var resolvedLayerId = publication.LayerIndex ?? layerId;
 
         var tileLimits = limitsOptions.Value.Tiles;
         var minZoom = Math.Max(0, tileLimits.MinTileZoom);
         var maxZoom = Math.Max(minZoom, tileLimits.MaxTileZoom);
 
-        var extent = await ResolveExtentAsync(layer, featureReader, cancellationToken);
+        var extent = await ResolveExtentAsync(resource, resolvedLayerId, featureReader, cancellationToken);
         var bounds = extent.HasValue
             ? new[] { extent.Value.MinX, extent.Value.MinY, extent.Value.MaxX, extent.Value.MaxY }
             : null;
@@ -72,21 +74,24 @@ internal static class TileJsonEndpoints
             : new[] { (bounds[0] + bounds[2]) / 2.0, (bounds[1] + bounds[3]) / 2.0, (double)minZoom };
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-        var tilesUrl = $"{baseUrl}/tiles/{layer.Id}/{{z}}/{{x}}/{{y}}.mvt";
-        var styleUrl = $"{baseUrl}/api/styles/{layer.Id}.json";
+        var tilesUrl = $"{baseUrl}/tiles/{resolvedLayerId}/{{z}}/{{x}}/{{y}}.mvt";
+        var styleUrl = $"{baseUrl}/api/styles/{resolvedLayerId}.json";
+
+        var title = resource.Metadata.Title ?? resource.Metadata.Name;
+        var description = resource.Metadata.Description;
 
         var response = new TileJsonResponse
         {
             TileJson = TileJsonVersion,
-            Name = layer.Name,
-            Description = layer.Description,
+            Name = title,
+            Description = description,
             Scheme = TileScheme,
             Tiles = [tilesUrl],
             MinZoom = minZoom,
             MaxZoom = maxZoom,
             Bounds = bounds,
             Center = center,
-            VectorLayers = [BuildVectorLayer(layer, minZoom, maxZoom)],
+            VectorLayers = [BuildVectorLayer(resource, title, description, minZoom, maxZoom)],
             Style = styleUrl
         };
 
@@ -94,73 +99,84 @@ internal static class TileJsonEndpoints
     }
 
     private static async Task<FeatureExtent?> ResolveExtentAsync(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        int layerId,
         IFeatureReader featureReader,
         CancellationToken cancellationToken)
     {
+        var srid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         var query = new FeatureQuery
         {
-            SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
+            SpatialReferenceSrid = srid,
             OutputSrid = SpatialReference.WGS84.Wkid
         };
 
-        var extent = await featureReader.GetExtentAsync(layer.Id, query, cancellationToken);
+        var extent = await featureReader.GetExtentAsync(layerId, query, cancellationToken);
         if (extent.HasValue)
         {
             return extent;
         }
 
-        if (layer.Extent.HasValue && layer.Extent.Value.SpatialReference == SpatialReference.WGS84.Wkid)
+        var bbox = resource.ReadBbox();
+        if (bbox.HasValue && srid == SpatialReference.WGS84.Wkid)
         {
-            return layer.Extent.Value;
+            return FeatureExtent.Create(bbox.Value.West, bbox.Value.South, bbox.Value.East, bbox.Value.North, SpatialReference.WGS84.Wkid);
         }
 
         return null;
     }
 
-    private static TileJsonVectorLayer BuildVectorLayer(LayerDefinition layer, int minZoom, int maxZoom)
+    private static TileJsonVectorLayer BuildVectorLayer(
+        MetadataV2Resource resource,
+        string title,
+        string? description,
+        int minZoom,
+        int maxZoom)
     {
         var fields = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var field in layer.Fields)
+        var geometryField = resource.FindPrimaryGeometryField();
+        foreach (var field in resource.SchemaFields)
         {
-            if (field.IsGeometry)
+            if (geometryField is not null &&
+                string.Equals(field.Name, geometryField.Name, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
-
-            fields[field.Name] = DescribeField(field);
+            fields[field.Name] = string.IsNullOrWhiteSpace(field.Description)
+                ? MapFieldTypeName(field.Type)
+                : field.Description!;
         }
 
-        var description = string.IsNullOrWhiteSpace(layer.Description) ? layer.Name : layer.Description;
+        var vectorDescription = string.IsNullOrWhiteSpace(description) ? title : description!;
 
         return new TileJsonVectorLayer
         {
             Id = StyleDefaults.SourceLayerName,
-            Description = description,
+            Description = vectorDescription,
             MinZoom = minZoom,
             MaxZoom = maxZoom,
             Fields = fields
         };
     }
 
-    private static string DescribeField(FieldDefinition field)
-        => string.IsNullOrWhiteSpace(field.Description) ? MapFieldType(field.Type) : field.Description!;
-
-    private static string MapFieldType(FieldType type)
-        => type switch
+    private static string MapFieldTypeName(string typeName)
+    {
+        if (string.IsNullOrWhiteSpace(typeName))
         {
-            FieldType.String => "string",
-            FieldType.Integer => "integer",
-            FieldType.BigInteger => "integer",
-            FieldType.Double => "number",
-            FieldType.Float => "number",
-            FieldType.Boolean => "boolean",
-            FieldType.DateTime => "string",
-            FieldType.Date => "string",
-            FieldType.Time => "string",
-            FieldType.Json => "object",
-            FieldType.Binary => "binary",
-            FieldType.Uuid => "string",
-            _ => "string"
+            return "string";
+        }
+        var lower = typeName.ToLowerInvariant();
+        return lower switch
+        {
+            "string" or "text" => "string",
+            "integer" or "int32" or "int" or "int64" or "biginteger" or "long" => "integer",
+            "double" or "float" or "number" or "decimal" or "real" => "number",
+            "boolean" or "bool" => "boolean",
+            "datetime" or "date" or "time" or "timestamp" => "string",
+            "json" or "object" => "object",
+            "binary" or "bytes" => "binary",
+            "uuid" or "guid" => "string",
+            _ => "string",
         };
+    }
 }
