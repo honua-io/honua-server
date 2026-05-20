@@ -12,7 +12,10 @@
     "geometry.intersect",
     "geometry.project",
     "geometry.area",
-    "geometry.union"
+    "geometry.union",
+    "geometry.centroid",
+    "geometry.length",
+    "geometry.convex-hull"
   ],
   "cases": [
     {
@@ -135,6 +138,54 @@
         "geometryType": "Polygon",
         "featureCount": 1,
         "areaApprox": 175.0
+      }
+    },
+    {
+      "caseId": "centroid-10x10-box",
+      "processId": "geometry.centroid",
+      "description": "Slice 4: centroid of a 10x10 axis-aligned box anchored at (0,0) is the geometric center (5,5). Output is always a Point Feature regardless of input geometry type.",
+      "inputsWkt": {
+        "wkt": "POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))",
+        "srid": "4326"
+      },
+      "expected": {
+        "outputParameter": "outputFeatureLayer",
+        "artifactKind": "FeatureLayer",
+        "geometryType": "Point",
+        "featureCount": 1,
+        "coordinate": [5.0, 5.0]
+      }
+    },
+    {
+      "caseId": "length-3-4-5-triangle-line",
+      "processId": "geometry.length",
+      "description": "Slice 4: planar length of a 3-4-5 right-triangle linestring (LINESTRING(0 0, 3 0, 3 4)) is 7. Catalog documents geodesic length but the first-slice executor returns planar length; geodesic measure is tracked as a follow-on slice alongside geometry.area.",
+      "inputsWkt": {
+        "wkt": "LINESTRING(0 0, 3 0, 3 4)",
+        "srid": "4326"
+      },
+      "expected": {
+        "outputParameter": "outputScalar",
+        "artifactKind": "Scalar",
+        "measure": "length",
+        "value": 7.0,
+        "unit": "input-crs-units"
+      }
+    },
+    {
+      "caseId": "convex-hull-five-points",
+      "processId": "geometry.convex-hull",
+      "description": "Slice 4: convex hull of five points (four corners of a 10x10 box plus the centroid) is the 10x10 box itself with area 100. Mirrors the PostGIS ST_ConvexHull semantics where the interior point does not extend the hull.",
+      "inputsWkt": {
+        "wkt": "MULTIPOINT((0 0), (10 0), (10 10), (0 10), (5 5))",
+        "srid": "4326"
+      },
+      "expected": {
+        "outputParameter": "outputFeatureLayer",
+        "artifactKind": "FeatureLayer",
+        "geometryType": "Polygon",
+        "featureCount": 1,
+        "areaApprox": 100.0
       }
     }
   ],

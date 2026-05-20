@@ -25,15 +25,15 @@ using StackExchange.Redis;
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 
 /// <summary>
-/// End-to-end parity coverage for the slice-2 / slice-3 vector executors.
-/// Each test submits a process through the OGC API Processes execute
-/// endpoint, polls the durable runtime until the job reaches a terminal
-/// status, retrieves the result document, and compares the published
-/// GeoJSON Feature (FeatureLayer outputs) or measure-result document
-/// (Scalar outputs) against a golden expectation (geometry type, feature
-/// count, area / coordinate position, measure value). Mirrors the slice-1
-/// buffer integration test shape so the new processes pin the same
-/// evidence contract.
+/// End-to-end parity coverage for the slice-2 / slice-3 / slice-4 vector
+/// executors. Each test submits a process through the OGC API Processes
+/// execute endpoint, polls the durable runtime until the job reaches a
+/// terminal status, retrieves the result document, and compares the
+/// published GeoJSON Feature (FeatureLayer outputs) or measure-result
+/// document (Scalar outputs) against a golden expectation (geometry type,
+/// feature count, area / coordinate position, measure value). Mirrors the
+/// slice-1 buffer integration test shape so the new processes pin the
+/// same evidence contract.
 /// </summary>
 [Collection("Redis")]
 [Protocol(TestProtocols.OgcApiProcesses)]
@@ -286,6 +286,179 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
+    public async Task CentroidProcess_CompletesAndReturnsCenterPoint()
+    {
+        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+
+        var fixture = BuildFixture();
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            client.Timeout = TimeSpan.FromSeconds(30);
+
+            // Centroid of a 10x10 box anchored at (0,0) is (5,5).
+            var polygon = BuildBoxPolygon(0, 0, 10, 10);
+            var body = string.Format(
+                CultureInfo.InvariantCulture,
+                "{{\"response\":\"document\",\"inputs\":{{\"wkb\":\"{0}\",\"srid\":4326}}}}",
+                WkbBase64(polygon));
+
+            var jobId = await SubmitJobAsync(client, "geometry.centroid", body);
+
+            using var terminal = await PollUntilTerminalAsync(client, jobId);
+            terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
+
+            using var resultsDoc = await GetResultsAsync(client, jobId);
+            var feature = DecodeOutputFeature(resultsDoc, "geometry.centroid");
+
+            feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(4326);
+            feature.GetProperty("properties").GetProperty("inputGeometryType").GetString().Should().Be("Polygon");
+
+            var geometry = ReadGeometry(feature.GetProperty("geometry"));
+            geometry.Should().BeOfType<Point>();
+            var point = (Point)geometry;
+            point.X.Should().BeApproximately(5.0, 1e-9);
+            point.Y.Should().BeApproximately(5.0, 1e-9);
+
+            var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
+            var package = await resultStore.GetAsync(jobId);
+            package.Should().NotBeNull();
+            package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
+            package.Artifacts.Should().ContainSingle();
+            package.Artifacts[0].Uri.Should().StartWith(DataUriPrefix);
+            package.Artifacts[0].Label.Should().Be("outputFeatureLayer");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
+    public async Task LengthProcess_CompletesAndReturnsPlanarMeasure()
+    {
+        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+
+        var fixture = BuildFixture();
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            client.Timeout = TimeSpan.FromSeconds(30);
+
+            // LINESTRING(0 0, 3 0, 3 4) — 3-4-5 right-triangle linestring with planar length 7.
+            var factory = NetTopologySuite.NtsGeometryServices.Instance
+                .CreateGeometryFactory(srid: 4326);
+            var line = factory.CreateLineString(new[]
+            {
+                new Coordinate(0, 0),
+                new Coordinate(3, 0),
+                new Coordinate(3, 4),
+            });
+            var body = string.Format(
+                CultureInfo.InvariantCulture,
+                "{{\"response\":\"document\",\"inputs\":{{\"wkb\":\"{0}\",\"srid\":4326}}}}",
+                WkbBase64(line));
+
+            var jobId = await SubmitJobAsync(client, "geometry.length", body);
+
+            using var terminal = await PollUntilTerminalAsync(client, jobId);
+            terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
+
+            using var resultsDoc = await GetResultsAsync(client, jobId);
+            var measure = DecodeScalarMeasure(resultsDoc, "geometry.length");
+            measure.GetProperty("measure").GetString().Should().Be("length");
+            measure.GetProperty("value").GetDouble().Should().BeApproximately(7.0, 1e-9);
+            measure.GetProperty("unit").GetString().Should().Be("input-crs-units");
+            measure.GetProperty("inputSrid").GetInt32().Should().Be(4326);
+            measure.GetProperty("inputGeometryType").GetString().Should().Be("LineString");
+
+            var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
+            var package = await resultStore.GetAsync(jobId);
+            package.Should().NotBeNull();
+            package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
+            package.Artifacts.Should().ContainSingle();
+            package.Artifacts[0].Uri.Should().StartWith("data:application/json;base64,");
+            package.Artifacts[0].Label.Should().Be("outputScalar");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
+    public async Task ConvexHullProcess_CompletesAndReturnsBoundingPolygon()
+    {
+        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+
+        var fixture = BuildFixture();
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            client.Timeout = TimeSpan.FromSeconds(30);
+
+            // MultiPoint with four corners of a 10x10 box plus the centroid.
+            // Hull is the bounding 10x10 box itself with area 100.
+            var factory = NetTopologySuite.NtsGeometryServices.Instance
+                .CreateGeometryFactory(srid: 4326);
+            var multipoint = factory.CreateMultiPoint(new[]
+            {
+                factory.CreatePoint(new Coordinate(0, 0)),
+                factory.CreatePoint(new Coordinate(10, 0)),
+                factory.CreatePoint(new Coordinate(10, 10)),
+                factory.CreatePoint(new Coordinate(0, 10)),
+                factory.CreatePoint(new Coordinate(5, 5)),
+            });
+            var body = string.Format(
+                CultureInfo.InvariantCulture,
+                "{{\"response\":\"document\",\"inputs\":{{\"wkb\":\"{0}\",\"srid\":4326}}}}",
+                WkbBase64(multipoint));
+
+            var jobId = await SubmitJobAsync(client, "geometry.convex-hull", body);
+
+            using var terminal = await PollUntilTerminalAsync(client, jobId);
+            terminal.RootElement.GetProperty("status").GetString().Should().Be("successful");
+
+            using var resultsDoc = await GetResultsAsync(client, jobId);
+            var feature = DecodeOutputFeature(resultsDoc, "geometry.convex-hull");
+
+            feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(4326);
+            feature.GetProperty("properties").GetProperty("inputGeometryType").GetString().Should().Be("MultiPoint");
+
+            var geometry = ReadGeometry(feature.GetProperty("geometry"));
+            geometry.Area.Should().BeApproximately(100.0, 1e-6,
+                "hull of four corners of a 10x10 box plus the centroid is the 10x10 box itself");
+
+            var resultStore = fixture.GetService<IGeoprocessingResultPackageStore>();
+            var package = await resultStore.GetAsync(jobId);
+            package.Should().NotBeNull();
+            package!.Status.Should().Be(GeoprocessingWorkflowStatus.Completed);
+            package.Artifacts.Should().ContainSingle();
+            package.Artifacts[0].Uri.Should().StartWith(DataUriPrefix);
+            package.Artifacts[0].Label.Should().Be("outputFeatureLayer");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
@@ -340,9 +513,10 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
 
         // Activate the worker host. The production dispatcher registered by
         // AddGeoprocessing routes the geometry.clip / geometry.intersect /
-        // geometry.project / geometry.area / geometry.union ids to their
-        // per-process executors — that's the system-under-test for this
-        // parity suite.
+        // geometry.project / geometry.area / geometry.union /
+        // geometry.centroid / geometry.length / geometry.convex-hull ids to
+        // their per-process executors — that's the system-under-test for
+        // this parity suite.
         services.AddJobWorker();
     }
 

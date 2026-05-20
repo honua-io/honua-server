@@ -18,9 +18,10 @@ namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
 /// Unit coverage for the dispatcher that routes claimed geoprocessing jobs
 /// to the correct per-process executor. The dispatcher is the single
 /// IJobExecutor registered for ExecutionJobKind.Geoprocessing after slice 2;
-/// slice 3 extends it with geometry.area + geometry.union. This test pins
-/// the routing contract so unknown process ids never reach a per-process
-/// executor by accident.
+/// slice 3 extended it with geometry.area + geometry.union; slice 4 adds
+/// geometry.centroid + geometry.length + geometry.convex-hull. This test
+/// pins the routing contract so unknown process ids never reach a
+/// per-process executor by accident.
 /// </summary>
 public sealed class GeoprocessingDispatchJobExecutorTests
 {
@@ -43,6 +44,9 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         result.ErrorMessage.Should().Contain("geometry.project");
         result.ErrorMessage.Should().Contain("geometry.area");
         result.ErrorMessage.Should().Contain("geometry.union");
+        result.ErrorMessage.Should().Contain("geometry.centroid");
+        result.ErrorMessage.Should().Contain("geometry.length");
+        result.ErrorMessage.Should().Contain("geometry.convex-hull");
     }
 
     [UnitTest]
@@ -60,7 +64,7 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         result.ErrorMessage.Should().Contain("<none>");
     }
 
-    private static readonly string[] SliceThreeProcessIds =
+    private static readonly string[] SliceFourProcessIds =
     {
         "geometry.buffer",
         "geometry.clip",
@@ -68,13 +72,16 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         "geometry.project",
         "geometry.area",
         "geometry.union",
+        "geometry.centroid",
+        "geometry.length",
+        "geometry.convex-hull",
     };
 
     [UnitTest]
-    public void SupportedProcessIds_ListsSliceThreeExecutors()
+    public void SupportedProcessIds_ListsSliceFourExecutors()
     {
         var dispatcher = CreateDispatcher();
-        dispatcher.SupportedProcessIds.Should().BeEquivalentTo(SliceThreeProcessIds);
+        dispatcher.SupportedProcessIds.Should().BeEquivalentTo(SliceFourProcessIds);
     }
 
     [UnitTest]
@@ -101,6 +108,9 @@ public sealed class GeoprocessingDispatchJobExecutorTests
             new GeometryProjectJobExecutor(monitor, NullLogger<GeometryProjectJobExecutor>.Instance),
             new GeometryAreaJobExecutor(monitor, NullLogger<GeometryAreaJobExecutor>.Instance),
             new GeometryUnionJobExecutor(monitor, NullLogger<GeometryUnionJobExecutor>.Instance),
+            new GeometryCentroidJobExecutor(monitor, NullLogger<GeometryCentroidJobExecutor>.Instance),
+            new GeometryLengthJobExecutor(monitor, NullLogger<GeometryLengthJobExecutor>.Instance),
+            new GeometryConvexHullJobExecutor(monitor, NullLogger<GeometryConvexHullJobExecutor>.Instance),
             NullLogger<GeoprocessingDispatchJobExecutor>.Instance);
     }
 

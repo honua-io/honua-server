@@ -41,7 +41,10 @@ public sealed class ProcessMigrationEvidenceFixtureTests
             "geometry.intersect",
             "geometry.project",
             "geometry.area",
-            "geometry.union"
+            "geometry.union",
+            "geometry.centroid",
+            "geometry.length",
+            "geometry.convex-hull"
         ]);
 
         foreach (var processId in processIds)
