@@ -1407,8 +1407,10 @@ jobs:
             github_token=${{ github.token }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          provenance: true
-          sbom: true
+          # provenance/sbom must be false for `load: true` — the local docker exporter
+          # can't load a manifest list. SBOM is generated separately via Anchore below.
+          provenance: false
+          sbom: false
 
       # Generate an SPDX JSON SBOM for the freshly built image and upload it
       # as a workflow artifact so PR reviewers (and downstream supply-chain
