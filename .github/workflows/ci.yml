@@ -450,10 +450,15 @@ jobs:
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
 
+          # Per ADR-0037 PR CI executes the LoadTests project's Fast tier only —
+          # the actual NBomber scenarios are exercised by the nightly load-soak
+          # workflow. Any future scenario-runner test marked `[Trait("Tier", "Slow")]`
+          # is skipped here.
           dotnet test tests/dotnet/Honua.LoadTests/Honua.LoadTests.csproj \
             --no-build \
             --no-restore \
             --configuration Release \
+            --filter "Tier!=Slow" \
             --logger "trx;LogFileName=load-tests.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
