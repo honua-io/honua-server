@@ -74,6 +74,53 @@ public sealed class GeoservicesImportServiceAuthenticatedImportTests(PostgresFix
         }
     }
 
+    [Fact]
+    public async Task ImportLayerAsync_WhenPagingRequestReturns401_ReturnsCredentialDeniedFailureWithoutLeakingSecret()
+    {
+        const string accessToken = "expired-import-token";
+        const string secretReference = "env:HONUA_PRIVATE_ARCGIS_TOKEN";
+        const string tableName = "expired_token_geoservices_import";
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(
+            nameof(GeoservicesImportServiceAuthenticatedImportTests) + "_Expired");
+        var handler = new ExpiredTokenFeatureServerHandler(accessToken);
+        var service = CreateService(handler);
+
+        try
+        {
+            var result = await service.ImportLayerAsync(new GeoservicesImportRequest
+            {
+                ServiceUrl = "https://example.com/arcgis/rest/services/Private/FeatureServer",
+                LayerId = 0,
+                TableName = tableName,
+                TargetSchema = schemaName,
+                TargetSrid = 4326,
+                BatchSize = 1,
+                RequestTimeoutSeconds = 5,
+                MaxRetries = 0,
+                AutoPublish = false,
+                Credentials = new GeoservicesCredentialDescriptor
+                {
+                    Mode = GeoservicesAuthenticationModes.Token,
+                    AccessToken = accessToken,
+                    AccessTokenSecretReference = secretReference
+                }
+            });
+
+            result.Success.Should().BeFalse();
+            result.ErrorMessage.Should().NotBeNullOrEmpty();
+            result.ErrorMessage.Should().Contain(ImportCompatibilityCodes.ArcGisAccessDenied);
+            result.ErrorMessage.Should().NotContain(accessToken);
+            result.ErrorMessage.Should().NotContain(secretReference);
+            result.SourceServiceUrl.Should().NotContain(accessToken);
+            result.SourceServiceUrl.Should().NotContain(secretReference);
+            handler.SanitizedPaths.Should().NotContain(path => path.Contains(accessToken, StringComparison.Ordinal));
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
     private GeoservicesImportService CreateService(HttpMessageHandler handler)
     {
         var restClient = new ArcGisRestClient(
@@ -193,6 +240,55 @@ public sealed class GeoservicesImportServiceAuthenticatedImportTests(PostgresFix
             {
                 Content = new StringContent(payload, Encoding.UTF8, "application/json")
             });
+        }
+    }
+
+    private sealed class ExpiredTokenFeatureServerHandler(string expectedToken) : HttpMessageHandler
+    {
+        private readonly string _escapedToken = Uri.EscapeDataString(expectedToken);
+
+        public List<string> SanitizedPaths { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var pathAndQuery = request.RequestUri?.PathAndQuery ?? string.Empty;
+            pathAndQuery.Should().Contain($"token={_escapedToken}");
+            request.Headers.Authorization.Should().BeNull();
+
+            var sanitizedPath = pathAndQuery.Replace($"&token={_escapedToken}", string.Empty, StringComparison.Ordinal);
+            SanitizedPaths.Add(sanitizedPath);
+
+            // Metadata + count succeed; the first paged query rejects the token with 401.
+            return sanitizedPath switch
+            {
+                "/arcgis/rest/services/Private/FeatureServer/0?f=json" => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        """
+                        {
+                          "id": 0,
+                          "name": "Private Parcels",
+                          "geometryType": "esriGeometryPoint",
+                          "maxRecordCount": 1,
+                          "fields": [
+                            { "name": "OBJECTID", "type": "esriFieldTypeOID", "nullable": false },
+                            { "name": "Name", "type": "esriFieldTypeString", "nullable": true },
+                            { "name": "Value", "type": "esriFieldTypeInteger", "nullable": true }
+                          ]
+                        }
+                        """,
+                        Encoding.UTF8,
+                        "application/json")
+                }),
+                "/arcgis/rest/services/Private/FeatureServer/0/query?where=1=1&returnCountOnly=true&f=json" => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""{"count":2}""", Encoding.UTF8, "application/json")
+                }),
+                _ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized)
+                {
+                    Content = new StringContent("Unauthorized", Encoding.UTF8, "text/plain")
+                })
+            };
         }
     }
 

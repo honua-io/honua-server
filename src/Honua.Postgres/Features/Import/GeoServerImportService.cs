@@ -2044,15 +2044,21 @@ internal sealed partial class GeoServerImportService : IGeoServerImportService
         string? convertedBody = null;
         string? convertedFormat = null;
         var diagnostics = new List<StyleDiagnostic>();
-        // Preserve manual-review and unsupported dispositions from the apply plan
-        // (MigrationApplyPlanBuilder can emit either) — coercing unsupported to
-        // applied would undercount unsupported work and skew evidence summaries.
-        var disposition = step.Disposition switch
-        {
-            "manual-review" => "manual-review",
-            "unsupported" => "unsupported",
-            _ => "applied"
-        };
+        // Slice 3 (#1015): the manifest translator marks every SLD style as
+        // "unsupported" because at inventory time we cannot know whether an
+        // ISldStyleConverter is registered (issue #375 was the original gap).
+        // The apply path now closes that gap by running the registered
+        // converter and recording diagnostics, so the apply disposition must
+        // reflect the converter's actual outcome rather than mirroring the
+        // conservative manifest-level tag. We start optimistic ("applied")
+        // and degrade to "manual-review" below when the converter is absent,
+        // the SLD body is empty, conversion errors out, or the source format
+        // has no deterministic converter (CSS, YSLD, etc.). Explicit
+        // reviewer-driven manual-review hold-backs from the plan are still
+        // respected so they are not silently promoted to applied.
+        var disposition = string.Equals(step.Disposition, "manual-review", StringComparison.Ordinal)
+            ? "manual-review"
+            : "applied";
 
         if (string.Equals(sourceFormat, "sld", StringComparison.Ordinal))
         {

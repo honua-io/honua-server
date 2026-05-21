@@ -135,4 +135,8 @@ public static class ImportCompatibilityCodes
 
     /// <summary>WMS/WMTS render or tile endpoint captured for downstream service migration planning.</summary>
     public const string OgcRenderEndpointPlanned = "OGC_RENDER_ENDPOINT_PLANNED";
+
+    /// <summary>WMS layer-metadata entry carries a deterministic preferred WFS companion-source hint
+    /// so operators can pair the render-only layer with a feature source for applied data import.</summary>
+    public const string OgcWmsCompanionSourceHint = "OGC_WMS_COMPANION_SOURCE_HINT";
 }

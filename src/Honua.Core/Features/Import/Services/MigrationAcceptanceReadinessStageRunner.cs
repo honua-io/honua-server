@@ -360,6 +360,14 @@ public static class MigrationAcceptanceReadinessStageRunner
         };
     }
 
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026:Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code",
+        Justification = "Hash artifact for deterministic replay token; serializer reads public properties only and is not part of the wire protocol.")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
+        "AOT",
+        "IL3050:Calling members annotated with 'RequiresDynamicCodeAttribute' may break functionality when AOT compiling",
+        Justification = "Hash artifact for deterministic replay token; the AOT host registers the three artifact types via ImportJsonContext source-gen used elsewhere.")]
     private static string ComputeArtifactHash<T>(T artifact)
     {
         var json = JsonSerializer.SerializeToUtf8Bytes(artifact, ArtifactHashJsonOptions);
