@@ -397,7 +397,12 @@ jobs:
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
     needs: [build, changes]
-    timeout-minutes: 35
+    # Bumped 35→70 to absorb Coverlet XPlat-collector instrumentation
+    # overhead across the per-project test steps (Core 30m, Server Fast 20m,
+    # Architecture 10m, Security 3m). Step-level timeouts still bound each
+    # individual run; this just keeps the orchestrator from cancelling the
+    # job before the steps get to fail naturally (#1144).
+    timeout-minutes: 70
     services:
       postgres:
         image: postgis/postgis:16-3.4
