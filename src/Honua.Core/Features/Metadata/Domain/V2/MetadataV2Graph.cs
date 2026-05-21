@@ -182,6 +182,13 @@ public sealed record MetadataV2Resource
     public IReadOnlyList<string> PolicyIds { get; init; } = Array.Empty<string>();
 
     /// <summary>
+    /// Resource-to-resource relationships exposed by this resource (the v2 equivalent of
+    /// the v1 <c>LayerDefinition.LayerRelationships</c> set).
+    /// </summary>
+    [JsonPropertyName("relationships")]
+    public IReadOnlyList<MetadataV2Relationship> Relationships { get; init; } = Array.Empty<MetadataV2Relationship>();
+
+    /// <summary>
     /// Optional access policy controlling who can read/write this resource.
     /// </summary>
     [JsonPropertyName("accessPolicy")]
