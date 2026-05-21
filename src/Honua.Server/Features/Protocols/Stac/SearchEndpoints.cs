@@ -46,6 +46,10 @@ internal static class SearchEndpoints
             .Produces<StacItemCollection>(200, MediaTypes.GeoJson)
             .Produces(400);
 
+        // Read-only OGC/STAC search surface; anonymous by design. The POST form
+        // mirrors the GET search semantics — the body just carries the same
+        // filter parameters as a JSON document — and is gated downstream by the
+        // per-layer access policy via StacFilterHelpers.ResolveStacVisibleLayersAsync.
         endpoints.MapPost("/stac/search", HandleSearchPost)
             .WithDisplayName("STAC Search (POST)")
             .WithName("StacSearchPost")
@@ -53,6 +57,7 @@ internal static class SearchEndpoints
             .WithDescription("Searches STAC items across collections with a JSON request body")
             .WithTags("STAC")
             .Accepts<StacSearchRequest>(MediaTypes.Json)
+            .AllowAnonymous()
             .Produces<StacItemCollection>(200, MediaTypes.GeoJson)
             .Produces(400);
 

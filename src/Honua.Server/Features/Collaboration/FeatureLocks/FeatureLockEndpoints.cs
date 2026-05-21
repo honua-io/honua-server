@@ -15,7 +15,11 @@ internal static class FeatureLockEndpoints
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/saved-maps/{mapId}/collaboration/feature-locks")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
-            .WithTags("Saved Maps", "Collaboration", "Feature Locks");
+            .WithTags("Saved Maps", "Collaboration", "Feature Locks")
+            // Mutation endpoints — require an authenticated principal up front so
+            // unauthenticated requests are rejected at the middleware boundary,
+            // before reaching the per-feature lock authorizer in the handler.
+            .RequireAuthorization();
 
         group.MapPost("/claim", HandleClaim)
             .WithDisplayName("Claim Saved Map Feature Lock")
