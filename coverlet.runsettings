@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Coverlet data-collector run settings for dotnet test with XPlat Code Coverage.
+  Emits Cobertura XML reports per-project under the configured results directory.
+  Shared by the CI workflow and local invocations.
+-->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <DeterministicReport>true</DeterministicReport>
+          <UseSourceLink>true</UseSourceLink>
+          <Exclude>[xunit.*]*,[*.Tests]*,[*.TestKit]*,[Honua.LoadTests]*,[Honua.Architecture.Tests]*</Exclude>
+          <ExcludeByFile>**/*.Designer.cs,**/*.g.cs,**/*.g.i.cs,**/Migrations/*.cs,**/obj/**/*.cs,**/*.AssemblyInfo.cs,**/*GlobalUsings.g.cs</ExcludeByFile>
+          <ExcludeByAttribute>Obsolete,GeneratedCodeAttribute,CompilerGeneratedAttribute,ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>
+          <SingleHit>false</SingleHit>
+          <IncludeTestAssembly>false</IncludeTestAssembly>
+          <SkipAutoProps>true</SkipAutoProps>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>
