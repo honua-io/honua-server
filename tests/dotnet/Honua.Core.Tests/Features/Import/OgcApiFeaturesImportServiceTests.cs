@@ -65,7 +65,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         // not-applicable: the source numberMatched is no longer comparable to the partial import.
         result.FeatureCountParity.Should().NotBeNull();
         result.FeatureCountParity!.State.Should().Be(OgcApiFeaturesFeatureCountParityStates.NotApplicable);
-        result.FeatureCountParity.Summary.Should().Contain("truncated", StringComparison.OrdinalIgnoreCase);
+        result.FeatureCountParity.Summary.ToLowerInvariant().Should().Contain("truncated");
     }
 
     [Fact]
@@ -317,7 +317,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         result.FeatureCountParity!.State.Should().Be(OgcApiFeaturesFeatureCountParityStates.NotApplicable);
         result.FeatureCountParity.Expected.Should().BeNull();
         result.FeatureCountParity.Observed.Should().Be(1);
-        result.FeatureCountParity.Summary.Should().Contain("numberMatched", StringComparison.Ordinal);
+        result.FeatureCountParity.Summary.Should().Contain("numberMatched");
     }
 
     [Fact]
@@ -367,7 +367,7 @@ public sealed class OgcApiFeaturesImportServiceTests
         result.FeatureCountParity!.State.Should().Be(OgcApiFeaturesFeatureCountParityStates.Pass);
         result.FeatureCountParity.Expected.Should().Be(2);
         result.FeatureCountParity.Observed.Should().Be(1);
-        result.FeatureCountParity.Summary.Should().Contain("skipped", StringComparison.Ordinal);
+        result.FeatureCountParity.Summary.Should().Contain("skipped");
     }
 
     private static OgcApiFeaturesImportService CreateService(HttpClient httpClient, IOgcApiFeaturesCollectionSink sink)
