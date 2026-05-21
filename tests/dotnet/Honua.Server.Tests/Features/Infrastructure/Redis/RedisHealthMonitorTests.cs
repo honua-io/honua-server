@@ -1,9 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Reflection;
 using FluentAssertions;
 using Honua.Server.Features.Infrastructure.Redis;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using StackExchange.Redis;
@@ -143,5 +145,69 @@ public sealed class RedisHealthMonitorTests
 
         // Should not throw and should be safe to call multiple times
         monitor.Dispose();
+    }
+
+    [UnitTest]
+    public async Task PerformHealthCheck_WhenPingThrows_DoesNotPropagate()
+    {
+        // Async void timer callbacks must never let exceptions escape; verify by
+        // invoking the private callback while the database throws synchronously.
+        var mockDatabase = new Mock<IDatabase>();
+        mockDatabase.Setup(db => db.PingAsync(It.IsAny<CommandFlags>()))
+            .ThrowsAsync(new InvalidOperationException("boom"));
+
+        var mockRedis = new Mock<IConnectionMultiplexer>();
+        mockRedis.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>())).Returns(mockDatabase.Object);
+
+        var logger = new InMemoryLogger<RedisHealthMonitor>();
+        var monitor = new RedisHealthMonitor(mockRedis.Object, logger);
+
+        var unhandled = 0;
+        UnhandledExceptionEventHandler handler = (_, _) => Interlocked.Increment(ref unhandled);
+        AppDomain.CurrentDomain.UnhandledException += handler;
+        try
+        {
+            InvokePerformHealthCheck(monitor);
+            // Yield to let the async void continuation run.
+            await Task.Delay(50);
+        }
+        finally
+        {
+            AppDomain.CurrentDomain.UnhandledException -= handler;
+            monitor.Dispose();
+        }
+
+        unhandled.Should().Be(0, "async void timer callback must swallow inner exceptions");
+        monitor.ConsecutiveFailures.Should().BeGreaterThan(0, "inner failure path must still log via RecordFailure");
+    }
+
+    private static void InvokePerformHealthCheck(RedisHealthMonitor monitor)
+    {
+        var method = typeof(RedisHealthMonitor).GetMethod(
+            "PerformHealthCheck",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        method.Should().NotBeNull();
+        method!.Invoke(monitor, new object?[] { null });
+    }
+
+    private sealed class InMemoryLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, EventId Id, string Message, Exception? Exception)> Entries { get; } = new();
+
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullDisposable.Instance;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            lock (Entries)
+            {
+                Entries.Add((logLevel, eventId, formatter(state, exception), exception));
+            }
+        }
+
+        private sealed class NullDisposable : IDisposable
+        {
+            public static readonly NullDisposable Instance = new();
+            public void Dispose() { }
+        }
     }
 }

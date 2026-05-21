@@ -2,8 +2,13 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Honua OGC API Processes",
-    "description": "OGC API Processes adapter over the Honua canonical geoprocessing runtime.",
-    "version": "1.0.0"
+    "description": "OGC API Processes adapter over the Honua canonical geoprocessing runtime.\n\nCompliance: OGC CITE 952/952 across 11 conformance suites — see docs/cite-status.md.",
+    "version": "1.0.0",
+    "x-honua-cite-compliance": {
+      "summary": "OGC API Processes does not yet have a published ETS; the surrounding Honua OGC stack passes 952/952 across 11 conformance suites.",
+      "lastEvidenceRun": "2026-05-17",
+      "authoritativeSource": "docs/cite-status.md"
+    }
   },
   "paths": {
     "/ogc/processes": {

@@ -55,6 +55,14 @@ public sealed class MonitoredResponseCacheDecorator : IResponseCache
 
             // Record hit/miss metrics
             _performanceMonitor.RecordCacheMetrics(cacheType, isHit ? "hit" : "miss");
+            if (isHit)
+            {
+                HonuaCacheMetrics.RecordHit(cacheType);
+            }
+            else
+            {
+                HonuaCacheMetrics.RecordMiss(cacheType);
+            }
 
             // Record operation timing
             scope.WithTag("result", isHit ? "hit" : "miss");
@@ -120,6 +128,7 @@ public sealed class MonitoredResponseCacheDecorator : IResponseCache
             {
                 // Cache hit
                 _performanceMonitor.RecordCacheMetrics(cacheType, "hit");
+                HonuaCacheMetrics.RecordHit(cacheType);
                 scope.WithTag("result", "hit");
 
                 MonitoredCacheLog.CacheGetOrCreateHit(_logger, cacheType, key, stopwatch.Elapsed.TotalMilliseconds);
@@ -138,6 +147,7 @@ public sealed class MonitoredResponseCacheDecorator : IResponseCache
             await _innerCache.SetAsync(key, result, expiration, cancellationToken);
 
             _performanceMonitor.RecordCacheMetrics(cacheType, "miss");
+            HonuaCacheMetrics.RecordMiss(cacheType);
             scope.WithTag("result", "miss")
                  .WithTag("factory_time_ms", factoryStopwatch.Elapsed.TotalMilliseconds.ToString(CultureInfo.InvariantCulture));
 
@@ -175,6 +185,7 @@ public sealed class MonitoredResponseCacheDecorator : IResponseCache
 
             // Record eviction
             _performanceMonitor.RecordCacheMetrics(cacheType, "eviction");
+            HonuaCacheMetrics.RecordEviction(cacheType);
 
             MonitoredCacheLog.CacheRemoveCompleted(_logger, cacheType, key, stopwatch.Elapsed.TotalMilliseconds);
         }
@@ -203,6 +214,7 @@ public sealed class MonitoredResponseCacheDecorator : IResponseCache
 
             // Record pattern eviction
             _performanceMonitor.RecordCacheMetrics(cacheType, "pattern_eviction");
+            HonuaCacheMetrics.RecordEviction(cacheType);
 
             MonitoredCacheLog.CacheRemovePatternCompleted(_logger, cacheType, pattern, stopwatch.Elapsed.TotalMilliseconds);
         }

@@ -280,6 +280,22 @@ jobs:
           docker tag "$SCAN_SOURCE" "$SCAN_LOCAL"
           echo "scan_local=$SCAN_LOCAL" >> "$GITHUB_OUTPUT"
 
+      # Always generate an SPDX SBOM artifact for every platform image, even
+      # when matrix.sbom is false (Lambda images skip the OCI SBOM
+      # attestation because AWS Lambda's image format rejects unknown
+      # manifest entries). This ensures audit gate A -> A+ coverage of
+      # *every* container build, not just the ones that publish an
+      # attestation alongside the image.
+      - name: Generate SBOM (SPDX JSON) for ${{ matrix.image_key }} (${{ matrix.arch }})
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ steps.scan_prep.outputs.scan_local }}
+          format: spdx-json
+          output-file: sbom-${{ matrix.image_key }}-${{ matrix.arch }}.spdx.json
+          artifact-name: sbom-${{ matrix.image_key }}-${{ matrix.arch }}.spdx.json
+          upload-artifact: true
+          upload-release-assets: false
+
       # Restrict SARIF generation to HIGH/CRITICAL so the per-image category in the
       # GitHub Security tab only carries actionable findings. The SARIF uploaded below
       # is produced by this filtered run, so lower severities are intentionally not

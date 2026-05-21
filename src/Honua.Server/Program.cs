@@ -36,6 +36,7 @@ using Honua.Server.Features.FileStorage;
 using Honua.Server.Features.HealthCheck;
 using Honua.Server.Features.Import;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.AuditLog;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Configuration;
 using Honua.Server.Features.Infrastructure.Extensions;
@@ -43,6 +44,7 @@ using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Hosting;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Monitoring;
+using Honua.Server.Features.Infrastructure.MultiTenancy;
 using Honua.Server.Features.Infrastructure.RateLimiting;
 using Honua.Server.Features.Infrastructure.Redis;
 using Honua.Server.Features.Infrastructure.Security;
@@ -53,6 +55,7 @@ using Honua.Server.Features.Mobile.Diagnostics;
 using Honua.Server.Features.Mobile.FieldCollection;
 using Honua.Server.Features.Orchestration;
 using Honua.Server.Features.Streaming;
+using Honua.Server.Startup;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.FileProviders;
@@ -78,8 +81,8 @@ using StackExchange.Redis;
 var builder = WebApplication.CreateBuilder(args);
 
 var useTestSchemaHeaders = builder.Configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
-var forwardedHeadersEnabled = ConfigureForwardedHeaders(builder.Services, builder.Configuration);
-ResolveEnvironmentSecretReferences(builder.Configuration);
+var forwardedHeadersEnabled = StartupConfigurationHelpers.ConfigureForwardedHeaders(builder.Services, builder.Configuration);
+StartupConfigurationHelpers.ResolveEnvironmentSecretReferences(builder.Configuration);
 var isTestEnvironment = builder.Environment.IsEnvironment("Test");
 var registerInfrastructureInTestEnvironment =
     builder.Configuration.GetValue<bool>("HONUA_REGISTER_TEST_INFRASTRUCTURE") ||
@@ -103,14 +106,14 @@ if (serveStacOpsDemo && !builder.Environment.IsDevelopment())
 }
 
 // Load optional security configuration without overriding environment-specific settings.
-AddSecurityConfiguration(builder.Configuration, builder.Environment);
+StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, builder.Environment);
 builder.Services.AddDataProtection();
 
 // Enable Aspire integrations only when Aspire configuration is present.
 var useAspire = builder.Configuration.GetSection("Aspire").Exists();
 var redisConnectionString = builder.Configuration.GetConnectionString("redis")
     ?? builder.Configuration["Aspire:StackExchange:Redis:ConnectionString"];
-var redisCacheEntitled = await IsRedisCacheEntitledAsync(builder.Configuration);
+var redisCacheEntitled = await StartupConfigurationHelpers.IsRedisCacheEntitledAsync(builder.Configuration);
 var redisCacheConnectionString = redisCacheEntitled ? redisConnectionString : null;
 var redisInfrastructureConnectionString = RedisConnectionSelector.SelectInfrastructureConnectionString(
     redisConnectionString,
@@ -252,7 +255,7 @@ builder.Host.UseSerilog((context, services, config) =>
 // Standalone Python/JS harnesses can opt back in with HONUA_REGISTER_TEST_INFRASTRUCTURE=true.
 if (!isTestEnvironment || registerInfrastructureInTestEnvironment)
 {
-    RegisterInfrastructureServices(builder.Services, builder.Configuration);
+    InfrastructureCompositionRoot.RegisterInfrastructureServices(builder.Services, builder.Configuration);
 }
 
 // PERFORMANCE ENHANCEMENTS: Add advanced monitoring and optimization services
@@ -290,7 +293,7 @@ if (useTestSchemaHeaders)
 }
 
 // Configure limits with validation
-ConfigureLimits(builder.Services, builder.Configuration);
+InfrastructureCompositionRoot.ConfigureLimits(builder.Services, builder.Configuration);
 
 // Configure deployment mode options
 builder.Services.Configure<DeploymentOptions>(
@@ -330,49 +333,10 @@ builder.Services.AddResilientHttpClient(
     AzureBatchDataPlaneClient.HttpClientName,
     "control-plane-azure-batch",
     HttpResiliencePolicies.FastApiDefaults);
-builder.Services.AddSingleton<IAwsLambdaAliasClient, AwsSdkLambdaAliasClient>();
-builder.Services.AddSingleton<IAwsAlbClient, AwsSdkAlbClient>();
-builder.Services.AddSingleton<IAwsEcsClient, AwsSdkEcsClient>();
-builder.Services.AddSingleton<IAzureFunctionsSlotClient, AzureManagementFunctionsSlotClient>();
-builder.Services.AddSingleton<IAzureContainerAppsRevisionClient, AzureManagementContainerAppsRevisionClient>();
-builder.Services.AddSingleton<IAzureBatchClient, AzureBatchDataPlaneClient>();
-builder.Services.AddSingleton<AzureBatchComputeBackend>();
-builder.Services.AddSingleton<IBatchComputeBackend>(sp => sp.GetRequiredService<AzureBatchComputeBackend>());
-builder.Services.AddSingleton<IDeployTargetRegistry, ConfigurationDeployTargetRegistry>();
-builder.Services.AddSingleton<IExecutionJobDefinitionRegistry, ConfigurationExecutionJobDefinitionRegistry>();
-builder.Services.AddSingleton<DeployWorkflowService>();
-builder.Services.AddSingleton<IDeployTelemetrySignalEvaluator, PrometheusDeployTelemetrySignalEvaluator>();
-builder.Services.AddSingleton<KubernetesGitOpsDeployBackend>();
-builder.Services.AddSingleton<AwsEcsGitOpsDeployBackend>();
-builder.Services.AddSingleton<AwsEcsAlbDeployBackend>();
-builder.Services.AddSingleton<AzureContainerAppsGitOpsDeployBackend>();
-builder.Services.AddSingleton<AzureContainerAppsRevisionDeployBackend>();
-builder.Services.AddSingleton<AwsLambdaGitOpsDeployBackend>();
-builder.Services.AddSingleton<AzureFunctionsGitOpsDeployBackend>();
-builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<KubernetesGitOpsDeployBackend>());
-builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsEcsGitOpsDeployBackend>());
-builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsEcsAlbDeployBackend>());
-builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureContainerAppsGitOpsDeployBackend>());
-builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureContainerAppsRevisionDeployBackend>());
-builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AwsLambdaGitOpsDeployBackend>());
-builder.Services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<AzureFunctionsGitOpsDeployBackend>());
-builder.Services.AddSingleton<LocalBatchComputeBackend>();
-builder.Services.AddSingleton<IBatchComputeBackend>(sp =>
-    sp.GetRequiredService<LocalBatchComputeBackend>());
+// ---- Extracted: control-plane deploy + batch-compute backends (Startup/BatchAndDeployBackendsRegistration.cs)
+builder.Services.AddHonuaBatchAndDeployBackends();
+// ---- End extracted block
 
-// AWS Batch backend follows the unconditional registration pattern used by sibling AWS deploy
-// backends. Per-workload AWS Batch settings (job definition ARN, queue ARN, region, resource
-// overrides) are carried on each ExecutionJobSpec.Parameters entry via ControlPlane:ExecutionWorkloads,
-// so the adapter has no global options section it depends on. Registering unconditionally keeps
-// the backend visible to the reconciler whenever an operator targets Backend=honua-aws-batch.
-builder.Services.AddSingleton<IAwsBatchJobClient, AwsSdkBatchJobClient>();
-builder.Services.AddSingleton<AwsBatchComputeBackend>();
-builder.Services.AddSingleton<IBatchComputeBackend>(sp => sp.GetRequiredService<AwsBatchComputeBackend>());
-
-builder.Services.AddSingleton<IKubernetesJobClient, KubernetesJobClient>();
-builder.Services.AddSingleton<KubernetesJobBatchComputeBackend>();
-builder.Services.AddSingleton<IBatchComputeBackend>(sp =>
-    sp.GetRequiredService<KubernetesJobBatchComputeBackend>());
 if (connectedRedis != null)
 {
     builder.Services.AddSingleton<IWorkflowOperationStore, RedisWorkflowOperationStore>();
@@ -386,10 +350,10 @@ if (connectedRedis != null)
 }
 
 // Configure tile options
-ConfigureTileOptions(builder.Services, builder.Configuration);
+InfrastructureCompositionRoot.ConfigureTileOptions(builder.Services, builder.Configuration);
 
 // Configure caching options and register cache services
-ConfigureCaching(builder.Services, builder.Configuration, redisCacheEntitled);
+InfrastructureCompositionRoot.ConfigureCaching(builder.Services, builder.Configuration, redisCacheEntitled);
 
 // Configure cloud file storage for imports and attachments
 builder.Services.AddCloudFileStorage(builder.Configuration);
@@ -399,7 +363,7 @@ builder.Services.Configure<FileUploadSecurityOptions>(
     builder.Configuration.GetSection(FileUploadSecurityOptions.SectionName));
 
 // Register configuration validators to ensure application fails fast on invalid configuration
-RegisterConfigurationValidators(builder.Services);
+StartupConfigurationHelpers.RegisterConfigurationValidators(builder.Services);
 
 // Register health check services
 builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Monitoring.MigrationState>();
@@ -410,33 +374,9 @@ builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckServ
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
 builder.Services.AddProductionHealthChecks(builder.Configuration);
 
-builder.Services.Configure<Honua.Server.Features.Infrastructure.Licensing.LicenseOptions>(
-    builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Licensing.LicenseOptions.SectionName));
-builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Licensing.IEd25519Verifier,
-    Honua.Server.Features.Infrastructure.Licensing.BouncyCastleEd25519Verifier>();
-builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Licensing.FileBackedLicenseService>();
-builder.Services.AddSingleton<Honua.Core.Features.Licensing.Abstractions.ILicenseEntitlementService>(sp =>
-    sp.GetRequiredService<Honua.Server.Features.Infrastructure.Licensing.FileBackedLicenseService>());
-builder.Services.AddSingleton<Honua.Core.Features.Licensing.Abstractions.ILicenseStatusProvider>(sp =>
-    sp.GetRequiredService<Honua.Server.Features.Infrastructure.Licensing.FileBackedLicenseService>());
-builder.Services.AddSingleton<Honua.Core.Features.Licensing.Abstractions.ILicenseManager>(sp =>
-    sp.GetRequiredService<Honua.Server.Features.Infrastructure.Licensing.FileBackedLicenseService>());
-builder.Services.AddHostedService(sp =>
-    sp.GetRequiredService<Honua.Server.Features.Infrastructure.Licensing.FileBackedLicenseService>());
-
-// Register named HTTP client for identity provider connectivity tests with resilience
-builder.Services.AddResilientHttpClient(
-    "IdentityProviderTest",
-    "identity-provider-test",
-    HttpResiliencePolicies.FastApiDefaults);
-builder.Services.AddResilientHttpClient(
-    "AdminAuthOidc",
-    "admin-auth-oidc",
-    HttpResiliencePolicies.FastApiDefaults,
-    configureHandler: () => new HttpClientHandler
-    {
-        AllowAutoRedirect = false
-    });
+// ---- Extracted: licensing + identity-provider HTTP clients (Startup/LicensingRegistration.cs)
+builder.Services.AddHonuaLicensing(builder.Configuration);
+// ---- End extracted block
 
 // Register configuration documentation service for self-documenting admin endpoint
 builder.Services.AddScoped<Honua.Server.Features.Admin.Services.ConfigurationDocumentationService>();
@@ -453,41 +393,9 @@ builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Authenticatio
 builder.Services.AddSingleton<IMetadataSchemaRegistry, MetadataSchemaRegistry>();
 builder.Services.AddSingleton<IMetadataCompiler, DefaultMetadataCompiler>();
 
-// Register manifest approval workflow services
-builder.Services.Configure<Honua.Server.Features.Admin.Models.ManifestApprovalOptions>(
-    builder.Configuration.GetSection(Honua.Server.Features.Admin.Models.ManifestApprovalOptions.SectionName));
-builder.Services.Configure<Honua.Server.Features.Admin.Models.ManifestApprovalWebhookOptions>(
-    builder.Configuration.GetSection(Honua.Server.Features.Admin.Models.ManifestApprovalWebhookOptions.SectionName));
-builder.Services.AddSingleton<IValidateOptions<Honua.Server.Features.Admin.Models.ManifestApprovalWebhookOptions>,
-    Honua.Server.Features.Admin.Models.ManifestApprovalWebhookOptionsValidator>();
-builder.Services.AddResilientHttpClient(
-    "manifest-approval-webhook",
-    "manifest-approval-webhook",
-    HttpResiliencePolicies.FastApiDefaults,
-    configureHandler: static () => Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
-builder.Services.AddSingleton<Honua.Server.Features.Admin.ManifestApprovalWebhookDispatcher>(sp =>
-    new Honua.Server.Features.Admin.ManifestApprovalWebhookDispatcher(
-        sp.GetRequiredService<IHttpClientFactory>(),
-        sp.GetRequiredService<IOptions<Honua.Server.Features.Admin.Models.ManifestApprovalWebhookOptions>>(),
-        sp.GetRequiredService<ILogger<Honua.Server.Features.Admin.ManifestApprovalWebhookDispatcher>>()));
-builder.Services.AddHostedService(sp =>
-    sp.GetRequiredService<Honua.Server.Features.Admin.ManifestApprovalWebhookDispatcher>());
-builder.Services.AddHostedService(sp =>
-    new Honua.Server.Features.Admin.ManifestApprovalExpiryService(
-        sp.GetRequiredService<IServiceScopeFactory>(),
-        sp.GetRequiredService<IOptions<Honua.Server.Features.Admin.Models.ManifestApprovalOptions>>(),
-        sp.GetService<Honua.Server.Features.Admin.ManifestApprovalWebhookDispatcher>(),
-        sp.GetRequiredService<ILogger<Honua.Server.Features.Admin.ManifestApprovalExpiryService>>()));
-builder.Services.AddScoped<Honua.Server.Features.Admin.ManifestApprovalGate>();
-
-// Register GitOps watch services (#518)
-builder.Services.Configure<Honua.Server.Features.Admin.Models.GitOpsWatchOptions>(
-    builder.Configuration.GetSection(Honua.Server.Features.Admin.Models.GitOpsWatchOptions.SectionName));
-builder.Services.AddHostedService(sp =>
-    new Honua.Server.Features.Admin.GitOpsWatchService(
-        sp.GetRequiredService<IServiceScopeFactory>(),
-        sp.GetRequiredService<IOptions<Honua.Server.Features.Admin.Models.GitOpsWatchOptions>>(),
-        sp.GetRequiredService<ILogger<Honua.Server.Features.Admin.GitOpsWatchService>>()));
+// ---- Extracted: manifest approval workflow + GitOps watch (Startup/ManifestAndGitOpsRegistration.cs)
+builder.Services.AddHonuaManifestAndGitOps(builder.Configuration);
+// ---- End extracted block
 
 // Register shared Infrastructure services
 builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.IGeometryConverter,
@@ -542,142 +450,16 @@ builder.Services.AddScoped<Honua.Server.Features.Protocols.GeoServices.FeatureSe
         sp.GetRequiredService<Honua.Server.Features.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(),
         sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>()));
 
-// Register Geoservices import job manager and background service
-builder.Services.AddSingleton<Honua.Core.Features.Infrastructure.Abstractions.IUniversalProgressStore>(sp =>
-    new Honua.Server.Features.Import.UniversalProgressStore(
-        sp.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(),
-        sp.GetRequiredService<ILogger<Honua.Server.Features.Import.UniversalProgressStore>>(),
-        sp.GetService<IConnectionMultiplexer>()));
-builder.Services.Configure<Honua.Server.Features.Import.FileUploadOptions>(
-    builder.Configuration.GetSection(Honua.Server.Features.Import.FileUploadOptions.SectionName));
-builder.Services.AddSingleton<Honua.Server.Features.Import.StreamingFileUploadService>();
-builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Abstractions.IUploadQueueMetricsProvider>(sp =>
-    sp.GetRequiredService<Honua.Server.Features.Import.StreamingFileUploadService>());
-builder.Services.AddSingleton<Honua.Core.Features.Import.Abstractions.IDistributedImportJobManager>(sp =>
-    new Honua.Server.Features.Import.RedisImportJobManager(
-        sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IUniversalProgressStore>(),
-        sp.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(),
-        sp.GetRequiredService<ILogger<Honua.Server.Features.Import.RedisImportJobManager>>(),
-        sp.GetRequiredService<IHostEnvironment>(),
-        sp.GetService<IConnectionMultiplexer>()));
-builder.Services.AddHostedService<Honua.Server.Features.Import.GeoservicesImportBackgroundService>();
-builder.Services.AddSingleton<Honua.Server.Features.Import.GeoServerImportJobManager>(sp =>
-    new Honua.Server.Features.Import.GeoServerImportJobManager(
-        sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IUniversalProgressStore>(),
-        sp.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(),
-        sp.GetRequiredService<ILogger<Honua.Server.Features.Import.GeoServerImportJobManager>>(),
-        sp.GetRequiredService<IHostEnvironment>(),
-        sp.GetService<IConnectionMultiplexer>()));
-builder.Services.AddHostedService<Honua.Server.Features.Import.GeoServerImportBackgroundService>();
-
-// Migration performance evidence store (#1033 slice 5).
-// Surface the source-generated JsonTypeInfo so the Postgres store can round-trip the artifact JSON
-// without reflection. The in-memory store is registered as the fallback so dev / test profiles
-// without a Postgres infrastructure still serve the admin/SDK endpoints.
-builder.Services.AddSingleton<System.Text.Json.Serialization.Metadata.JsonTypeInfo<Honua.Core.Features.Import.Domain.MigrationPerformanceEvidenceArtifact>>(
-    Honua.Server.Features.Import.ImportJsonContext.Default.MigrationPerformanceEvidenceArtifact);
-builder.Services.AddSingleton<Honua.Core.Features.Import.Services.InMemoryMigrationPerformanceEvidenceStore>();
-builder.Services.TryAddScoped<Honua.Core.Features.Import.Services.IMigrationPerformanceEvidenceStore>(sp =>
-    sp.GetRequiredService<Honua.Core.Features.Import.Services.InMemoryMigrationPerformanceEvidenceStore>());
-
-// Register export background service with durable request persistence and a bounded in-process scheduler.
-builder.Services.AddSingleton(System.Threading.Channels.Channel.CreateBounded<string>(
-    new System.Threading.Channels.BoundedChannelOptions(4)
-    {
-        FullMode = System.Threading.Channels.BoundedChannelFullMode.Wait
-    }));
-builder.Services.AddSingleton<Honua.Server.Features.Export.IExportJobService>(sp =>
-    new Honua.Server.Features.Export.ExportJobService(
-        sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IUniversalProgressStore>(),
-        sp.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(),
-        sp.GetRequiredService<System.Threading.Channels.Channel<string>>(),
-        sp.GetRequiredService<IServiceScopeFactory>(),
-        sp.GetRequiredService<ILogger<Honua.Server.Features.Export.ExportJobService>>(),
-        sp.GetService<IConnectionMultiplexer>()));
-builder.Services.AddHostedService<Honua.Server.Features.Export.ExportBackgroundService>();
+// ---- Extracted: import/export job managers, migration evidence, tile operations
+//      (Startup/ImportExportTileOperationsRegistration.cs)
+builder.Services.AddHonuaImportExportAndTileOperations(builder.Configuration);
+// ---- End extracted block
 
 
-builder.Services.Configure<Honua.Server.Features.Infrastructure.Events.FeatureChangeEventOptions>(
-    builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Events.FeatureChangeEventOptions.SectionName));
-builder.Services.AddSingleton<IValidateOptions<Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookOptions>, Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookOptionsValidator>();
-builder.Services.AddOptions<Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookOptions>()
-    .Bind(builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookOptions.SectionName))
-    .ValidateOnStart();
-builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventStore>(sp =>
-{
-    return new Honua.Server.Features.Infrastructure.Events.InMemoryFeatureChangeEventStore(
-        sp.GetRequiredService<IOptions<Honua.Server.Features.Infrastructure.Events.FeatureChangeEventOptions>>(),
-        sp.GetService<IConnectionMultiplexer>(),
-        allowInMemoryFallback: !requiresDurableDistributedEvents);
-});
-builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventStoreHealth>(sp =>
-    (Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventStoreHealth)sp.GetRequiredService<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventStore>());
-// Register feature-stream session manager and streaming publisher (#501)
-builder.Services.AddOptions<Honua.Server.Features.Streaming.FeatureStreamOptions>()
-    .Bind(builder.Configuration.GetSection(Honua.Server.Features.Streaming.FeatureStreamOptions.SectionName))
-    .ValidateOnStart();
-builder.Services.AddSingleton<IValidateOptions<Honua.Server.Features.Streaming.FeatureStreamOptions>,
-    Honua.Server.Features.Streaming.FeatureStreamOptionsValidator>();
-builder.Services.AddSingleton<Honua.Server.Features.Streaming.FeatureStreamSessionManager>(sp =>
-    new Honua.Server.Features.Streaming.FeatureStreamSessionManager(
-        sp.GetRequiredService<IOptions<Honua.Server.Features.Streaming.FeatureStreamOptions>>(),
-        sp.GetRequiredService<ILogger<Honua.Server.Features.Streaming.FeatureStreamSessionManager>>(),
-        sp.GetService<IConnectionMultiplexer>()));
-builder.Services.AddSingleton(System.Threading.Channels.Channel.CreateUnbounded<Honua.Server.Features.Infrastructure.Events.PendingFeatureChangeSignal>());
-builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.IFeatureChangeRetryQueue>(sp =>
-    new Honua.Server.Features.Infrastructure.Events.FeatureChangeRetryQueue(
-        sp.GetService<IDistributedCache>(),
-        sp.GetRequiredService<System.Threading.Channels.Channel<Honua.Server.Features.Infrastructure.Events.PendingFeatureChangeSignal>>(),
-        sp.GetRequiredService<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventStore>(),
-        sp.GetRequiredService<Honua.Server.Features.Streaming.FeatureStreamSessionManager>(),
-        sp.GetRequiredService<ILogger<Honua.Server.Features.Infrastructure.Events.FeatureChangeRetryQueue>>(),
-        sp.GetService<IConnectionMultiplexer>()));
-builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventPublisher>(sp =>
-    new Honua.Server.Features.Streaming.FeatureStreamPublisher(
-        sp.GetRequiredService<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventStore>(),
-        sp.GetRequiredService<Honua.Server.Features.Streaming.FeatureStreamSessionManager>(),
-        sp.GetRequiredService<ILogger<Honua.Server.Features.Streaming.FeatureStreamPublisher>>(),
-        sp.GetRequiredService<Honua.Server.Features.Infrastructure.Events.IFeatureChangeRetryQueue>()));
-builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.FeatureMutationEventService>();
-
-// Feature-change transactional outbox (#692). Capability provider, dispatcher, health,
-// and metrics. The outbox repository itself is registered by the active provider's
-// service-collection extension (Postgres registers a working repository; SQL Server and
-// DuckDB register only the capability provider since they do not support feature writes).
-builder.Services.AddSingleton<
-    Microsoft.Extensions.Options.IValidateOptions<Honua.Server.Features.Infrastructure.Events.Outbox.OutboxDispatcherOptions>,
-    Honua.Server.Features.Infrastructure.Events.Outbox.OutboxDispatcherOptionsValidator>();
-builder.Services.AddOptions<Honua.Server.Features.Infrastructure.Events.Outbox.OutboxDispatcherOptions>()
-    .Bind(builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Events.Outbox.OutboxDispatcherOptions.SectionName))
-    .ValidateOnStart();
-// Default capability provider for hosts that bypass RegisterInfrastructureServices (test
-// factories). The active provider's extension uses AddSingleton, so when it runs first
-// it wins over this TryAdd; when infrastructure registration is skipped, the dispatcher
-// still constructs and immediately exits because SupportsTransactionalOutbox is false.
-builder.Services.TryAddSingleton<
-    Honua.Core.Features.Infrastructure.Events.Outbox.IOutboxCapabilityProvider,
-    Honua.Server.Features.Infrastructure.Events.Outbox.NoOpOutboxCapabilityProvider>();
-builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Events.Outbox.OutboxDispatcherBackgroundService>();
-builder.Services.AddSingleton<Honua.Core.Features.Infrastructure.Events.Outbox.IOutboxHealth>(sp =>
-    sp.GetRequiredService<Honua.Server.Features.Infrastructure.Events.Outbox.OutboxDispatcherBackgroundService>());
-builder.Services.AddHostedService(sp =>
-    sp.GetRequiredService<Honua.Server.Features.Infrastructure.Events.Outbox.OutboxDispatcherBackgroundService>());
-builder.Services.AddHostedService<Honua.Server.Features.Infrastructure.Events.FeatureChangeRetryBackgroundService>();
-builder.Services.AddScoped<Honua.Server.Features.Streaming.FeatureStreamDependencies>();
-builder.Services.AddHostedService<Honua.Server.Features.Streaming.FeatureStreamHeartbeatService>();
-builder.Services.AddResilientHttpClient(
-    "feature-change-webhook",
-    "feature-change-webhook",
-    HttpResiliencePolicies.FastApiDefaults,
-    configureHandler: static () => Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
-builder.Services.AddHostedService(sp =>
-    new Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookDispatcher(
-        sp.GetRequiredService<Honua.Server.Features.Infrastructure.Events.IFeatureChangeEventStore>(),
-        sp.GetService<IDistributedCache>(),
-        sp.GetService<IConnectionMultiplexer>(),
-        sp.GetRequiredService<IHttpClientFactory>(),
-        sp.GetRequiredService<IOptions<Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookOptions>>(),
-        sp.GetRequiredService<ILogger<Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookDispatcher>>()));
+// ---- Extracted: feature-change events, streaming, transactional outbox
+//      (Startup/FeatureEventsAndStreamingRegistration.cs)
+builder.Services.AddHonuaFeatureEventsAndStreaming(builder.Configuration, requiresDurableDistributedEvents);
+// ---- End extracted block
 builder.Services.AddCollaborationSessionTransport();
 
 // Register manifest drift webhook dispatcher (#515)
@@ -698,100 +480,25 @@ builder.Services.AddHostedService(sp =>
         sp.GetRequiredService<IOptions<Honua.Server.Features.Admin.ManifestDriftWebhookOptions>>(),
         sp.GetRequiredService<ILogger<Honua.Server.Features.Admin.ManifestDriftWebhookDispatcher>>()));
 
-builder.Services.AddSingleton<Honua.Server.Features.Admin.TileOperations.ITileOperationJobService>(sp =>
-    new Honua.Server.Features.Admin.TileOperations.TileOperationJobService(
-        sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IUniversalProgressStore>(),
-        sp.GetService<IDistributedCache>(),
-        sp.GetRequiredService<Honua.Server.Features.Infrastructure.Caching.OutputCacheInvalidationService>(),
-        sp.GetRequiredService<IServiceScopeFactory>(),
-        sp.GetRequiredService<IOptions<Honua.Core.Features.Tiles.TileOptions>>(),
-        sp.GetRequiredService<IOptions<LimitsOptions>>(),
-        sp.GetRequiredService<ILogger<Honua.Server.Features.Admin.TileOperations.TileOperationJobService>>(),
-        sp.GetService<IConnectionMultiplexer>()));
-builder.Services.Configure<Honua.Server.Features.Admin.TileOperations.TileCacheWarmingOptions>(
-    builder.Configuration.GetSection(Honua.Server.Features.Admin.TileOperations.TileCacheWarmingOptions.SectionName));
-builder.Services.AddHostedService<Honua.Server.Features.Admin.TileOperations.TileCacheWarmingHostedService>();
-builder.Services.AddHostedService<Honua.Server.Features.Admin.TileOperations.TileOperationBackgroundService>();
+// Tile-operation job service + warming/background hosted services are registered by
+// AddHonuaImportExportAndTileOperations above.
 
 // Register OData services and handlers
-// Configure authentication options
-builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.ApiKeyAuthenticationOptions>(options =>
-{
-    options.IsDevelopmentMode = builder.Environment.IsDevelopment();
-    options.IsTestMode = builder.Environment.IsEnvironment("Test");
-    var adminPassword = builder.Configuration["HONUA_ADMIN_PASSWORD"];
+// ApiKeyAuthenticationOptions (incl. admin password complexity, dev-auth bypass
+// gating via HONUA_DEV_AUTH_ALLOW_BYPASS) are configured by
+// AddHonuaAuthenticationOptions below.
 
-    // SECURITY: Validate admin password complexity in production
-    if (builder.Environment.IsProduction() && !string.IsNullOrEmpty(adminPassword))
-    {
-        if (adminPassword.Length < 16)
-        {
-            throw new InvalidOperationException("Admin password must be at least 16 characters in production environment");
-        }
-
-        bool hasUpper = adminPassword.Any(char.IsUpper);
-        bool hasLower = adminPassword.Any(char.IsLower);
-        bool hasDigit = adminPassword.Any(char.IsDigit);
-        bool hasSpecial = adminPassword.Any(c => !char.IsLetterOrDigit(c));
-
-        if (!(hasUpper && hasLower && hasDigit && hasSpecial))
-        {
-            throw new InvalidOperationException("Admin password must contain uppercase, lowercase, digit, and special characters in production environment");
-        }
-    }
-
-    options.AdminPassword = adminPassword;
-    options.DevAuthBypass = builder.Configuration["HONUA_DEV_AUTH"];
-    options.DevAuthBypassAcknowledged = builder.Configuration["HONUA_DEV_AUTH_ALLOW_BYPASS"];
-    options.EnvironmentName = builder.Environment.EnvironmentName;
-    options.EnableBasicAuthCompatibility =
-        builder.Configuration.GetValue("Authentication:BasicCompatibility:Enabled",
-            builder.Configuration.GetValue("HONUA_ENABLE_BASIC_AUTH_COMPAT", false));
-
-    // SECURITY: Always enforce HTTPS for basic auth in production - cannot be overridden
-    if (builder.Environment.IsProduction())
-    {
-        options.RequireHttpsForBasicAuth = true;
-    }
-    else
-    {
-        // In development/test environments, allow configuration override
-        var requireHttpsForBasicAuth = builder.Configuration.GetValue("Authentication:BasicCompatibility:RequireHttps",
-            builder.Configuration.GetValue("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH", true));
-        options.RequireHttpsForBasicAuth = requireHttpsForBasicAuth;
-    }
-});
-
-// Configure OIDC authentication options
-builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.OidcAuthenticationOptions>(
-    builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Authentication.OidcAuthenticationOptions.SectionName));
-
-// Configure mobile runtime auth refresh options
-builder.Services.Configure<Honua.Server.Features.Mobile.Auth.MobileAuthOptions>(
-    builder.Configuration.GetSection(Honua.Server.Features.Mobile.Auth.MobileAuthOptions.SectionName));
-
-// Configure RBAC options
-builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.RbacOptions>(
-    builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Authentication.RbacOptions.SectionName));
-
-// Configure operator authorization and approval
-builder.Services.AddSingleton<Honua.Core.Features.Authorization.Abstractions.IOperatorAuthorizationEvaluator,
-    Honua.Server.Features.Infrastructure.Authentication.OperatorAuthorizationEvaluator>();
-builder.Services.AddSingleton<Honua.Core.Features.Authorization.Abstractions.IOperatorApprovalEvaluator,
-    Honua.Server.Features.Infrastructure.Authentication.DefaultOperatorApprovalEvaluator>();
-builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.OperatorApprovalOptions>(
-    builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Authentication.OperatorApprovalOptions.SectionName));
-builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Authentication.OperatorApprovalGate>();
-
-// Configure authentication and authorization
-builder.Services.AddApiKeyAuthentication();
-
-// Add OIDC authentication if enabled
-builder.Services.AddOidcAuthentication(builder.Configuration);
-builder.Services.AddOidcAuthorization(builder.Configuration);
-builder.Services.AddSingleton<AdminAuthSessionStore>();
+// ---- Extracted: authentication & authorization options (Startup/AuthenticationOptionsRegistration.cs)
+builder.Services.AddHonuaAuthenticationOptions(builder.Configuration, builder.Environment);
+// ---- End extracted block
 // Configure security headers
 builder.Services.AddSecurityHeaders(builder.Configuration);
+// Configure security audit log sink (#1144)
+builder.Services.AddHonuaAuditLog();
+// Configure tenant context resolution rail (#1144). Defaults are bound from
+// the MultiTenancy configuration section; the inline callback is the wiring
+// point for environment-specific overrides.
+builder.Services.AddHonuaTenantContext(builder.Configuration, _ => { });
 // Configure CORS policies
 builder.Services.AddCorsPolicies(builder.Configuration, builder.Environment);
 builder.Services.AddInputValidation(builder.Configuration);
@@ -811,91 +518,17 @@ builder.Services.AddApiVersioning(options =>
     // Keep versioning metadata explicit without publishing additional major paths.
 });
 
-// Configure JSON serialization for ASP.NET Core (needed for minimal API body binding)
-builder.Services.ConfigureHttpJsonOptions(options =>
-{
-    options.SerializerOptions.TypeInfoResolver = JsonTypeInfoResolver.Combine(
-        Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models.FeatureServerJsonContext.Default,
-        Honua.Server.Features.Protocols.GeoServices.ImageServer.Models.ImageServerJsonContext.Default,
-        Honua.Server.Features.Protocols.OData.Models.ODataJsonContext.Default,
-        Honua.Server.Features.Protocols.Ogc.Api.Coverages.Models.OgcCoveragesJsonContext.Default,
-        Honua.Server.Features.Protocols.Ogc.Api.Features.OgcJsonContext.Default,
-        Honua.Server.Features.Protocols.Ogc.Api.Maps.Models.OgcMapsJsonContext.Default,
-        Honua.Server.Features.Protocols.Ogc.Api.Records.OgcRecordsJsonContext.Default,
-        Honua.Server.Features.Protocols.Ogc.Api.Tiles.OgcTilesJsonContext.Default,
-        Honua.Server.Features.Admin.Models.SecureConnectionJsonContext.Default,
-        Honua.Server.Features.Admin.Models.LayerPublishingJsonContext.Default,
-        Honua.Server.Features.Admin.Models.ServiceSettingsJsonContext.Default,
-        Honua.Server.Features.Admin.Models.DeployControlJsonContext.Default,
-        Honua.Server.Features.Infrastructure.Monitoring.MetricsJsonContext.Default,
-        Honua.Server.Features.Import.ImportJsonContext.Default,
-        Honua.Server.Features.Import.RasterImportJsonContext.Default,
-        Honua.Server.Features.Import.GeoservicesImportApiJsonContext.Default,
-        Honua.Server.Features.Import.OgcWfsImportJsonContext.Default,
-        Honua.Server.Features.Import.OgcCoverageImportJsonContext.Default,
-        Honua.Server.Features.Import.OgcWcsImportJsonContext.Default,
-        Honua.Server.Features.Import.OgcTileCacheExportJsonContext.Default,
-        Honua.Server.Features.Admin.OperationsProgressJsonContext.Default,
-        Honua.Server.Features.Admin.FeatureEventReplayJsonContext.Default,
-        Honua.Server.Features.Mobile.Auth.MobileAuthJsonContext.Default,
-        Honua.Server.Features.Mobile.Diagnostics.MobileExceptionIngestionJsonContext.Default,
-        Honua.Server.Features.Mobile.FieldCollection.FieldCollectionSyncJsonContext.Default,
-        Honua.Server.Features.Admin.TileOperations.TileOperationsJsonContext.Default,
-        Honua.Server.Features.Admin.Models.MetadataResourceJsonContext.Default,
-        Honua.Server.Features.Admin.Models.ManifestApprovalJsonContext.Default,
-        Honua.Server.Features.Admin.Models.GitOpsWatchJsonContext.Default,
-        Honua.Server.Features.Admin.Models.LayerStyleJsonContext.Default,
-        Honua.Server.Features.Admin.Models.LayerFieldConfigurationJsonContext.Default,
-        Honua.Server.Features.Admin.Models.LayerValidationJsonContext.Default,
-        Honua.Server.Features.Admin.Models.StyleSuggestionJsonContext.Default,
-        Honua.Server.Features.Admin.Models.AlertAdminJsonContext.Default,
-        Honua.Server.Features.Admin.Models.LicenseJsonContext.Default,
-        Honua.Server.Features.Admin.Models.OidcProviderJsonContext.Default,
-        Honua.Server.Features.Admin.Models.UserManagementJsonContext.Default,
-        Honua.Server.Features.Admin.Models.RoleJsonContext.Default,
-        Honua.Server.Features.Admin.Models.AdminApiKeyJsonContext.Default,
-        Honua.Server.Features.Admin.Models.SceneDatasetJsonContext.Default,
-        Honua.Server.Features.Admin.Models.SceneGenerationJsonContext.Default,
-        Honua.Server.Features.Protocols.Scene.Models.PublicSceneDiscoveryJsonContext.Default,
-        Honua.Server.Features.Admin.Models.RateLimitJsonContext.Default,
-        Honua.Server.Features.Admin.Models.TableDiscoveryJsonContext.Default,
-        Honua.Server.Features.Admin.Models.ExternalServiceDiscoveryJsonContext.Default,
-        Honua.Server.Features.Admin.Models.AdminAuthJsonContext.Default,
-        Honua.Server.Features.Admin.Models.ConfigurationJsonContext.Default,
-        Honua.Server.Features.Admin.Models.LicenseAdminJsonContext.Default,
-        Honua.Server.Features.Infrastructure.Licensing.LicenseFileJsonContext.Default,
-        Honua.Server.Features.Admin.Models.IdentityAdminJsonContext.Default,
-        Honua.Server.Features.Admin.Models.CacheAdminJsonContext.Default,
-        Honua.Server.Features.Admin.Models.GeocodingAdminJsonContext.Default,
-        Honua.Server.Features.Admin.Models.FeatureOverviewJsonContext.Default,
-        Honua.Server.Features.Admin.Models.CacheOperationsJsonContext.Default,
-        Honua.Server.Features.Admin.Models.StreamingOperationsJsonContext.Default,
-        Honua.Server.Features.Admin.Models.GeocodingOperationsJsonContext.Default,
-        Honua.Server.Features.CloudDemo.CloudDemoJsonContext.Default,
-        Honua.Server.Features.HealthCheck.HealthJsonContext.Default,
-        Honua.Server.Features.Infrastructure.Models.ProblemJsonContext.Default,
-        Honua.Server.Features.Infrastructure.Middleware.LimitsEnforcementJsonContext.Default,
-        Honua.Server.Features.Infrastructure.Security.CspViolationJsonContext.Default,
-        Honua.Server.Features.Protocols.GeoServices.GeometryService.Models.GeometryServiceJsonContext.Default,
-        Honua.Server.Features.Protocols.GeoServices.NAServer.Models.NAServerJsonContext.Default,
-        Honua.Server.Features.Export.ExportJsonContext.Default,
-        Honua.Server.Features.Protocols.Stac.StacJsonContext.Default,
-        Honua.Server.Features.Protocols.Cog.CogJsonContext.Default,
-        Honua.Server.Features.Protocols.Coverages.Multidimensional.MultidimensionalCoverageJsonContext.Default,
-        Honua.Server.Features.Protocols.Zarr.ZarrJsonContext.Default,
-        Honua.Server.Features.Protocols.SpatialAnalytics.Models.SpatialAnalyticsJsonContext.Default,
-        Honua.Server.Features.Collaboration.Sessions.CollaborationSessionJsonContext.Default,
-        Honua.Server.Features.Collaboration.FeatureLocks.FeatureLockJsonContext.Default,
-        Honua.Core.Features.Authorization.Domain.OperatorAuthorizationJsonContext.Default,
-        Honua.Server.Features.Protocols.Ogc.Api.Processes.OgcProcessesJsonContext.Default);
-});
+// ---- Extracted: source-generated JsonSerializerContext registration
+//      (Startup/JsonContextRegistration.cs)
+builder.Services.AddHonuaJsonContexts();
+// ---- End extracted block
 
 // Add comprehensive IOptions configuration validation
 builder.Services.AddConfigurationOptionsValidation();
 
 var app = builder.Build();
 
-FilterHostedBlazorStaticAssetEndpoints(
+HostedBlazorAssetHelpers.FilterHostedBlazorStaticAssetEndpoints(
     app,
     allowStacOpsDemoAssets: serveStacOpsDemo);
 
@@ -1038,14 +671,14 @@ app.UseWebSockets();
 
 if (serveStacOpsDemo)
 {
-    ConfigureHostedBlazorAssets(app, stacOpsDemoPathPrefix);
+    HostedBlazorAssetHelpers.ConfigureHostedBlazorAssets(app, stacOpsDemoPathPrefix);
     app.MapGet("/samples/stac-ops", () => Results.Redirect("/samples/stac-ops/index.html"))
         .ExcludeFromDescription();
-    MapHostedBlazorFallback(app, stacOpsDemoPathPrefix);
+    HostedBlazorAssetHelpers.MapHostedBlazorFallback(app, stacOpsDemoPathPrefix);
 }
 else
 {
-    MapDisabledHostedBlazorPrefix(app, stacOpsDemoPathPrefix);
+    HostedBlazorAssetHelpers.MapDisabledHostedBlazorPrefix(app, stacOpsDemoPathPrefix);
 }
 
 // Map interactive API explorer (Scalar) at /docs when enabled
@@ -1145,6 +778,16 @@ app.UseInputValidation();
 
 // Add authentication and authorization middleware early to short-circuit unauthorized requests
 app.UseApiKeyAuthentication();
+
+// Resolve tenant context immediately after authentication so claims (and the
+// X-Honua-Tenant override header) are evaluated against the resolved principal
+// before any downstream feature handler reads ITenantContext (#1144).
+app.UseHonuaTenantContext();
+
+// Audit-log middleware records security-relevant request outcomes. It runs after
+// auth so the audit actor is the authenticated principal, and before endpoint
+// execution so 401/403/5xx responses are still observed (#1144).
+app.UseHonuaAuditLog();
 
 // Rate limiting disabled per project requirements
 
@@ -1320,172 +963,12 @@ app.MapEnhancedPerformanceEndpoints();
 
 app.Run();
 
-// Composition Root: Register Infrastructure implementations
-// This is the only method in Server that directly references Infrastructure
-// All other code uses Core abstractions only
-static void RegisterInfrastructureServices(IServiceCollection services, IConfiguration configuration)
-{
-    var provider = configuration.GetValue<string>("DataSource:Provider");
-    if (string.IsNullOrWhiteSpace(provider) ||
-        provider.Equals("postgres", StringComparison.OrdinalIgnoreCase) ||
-        provider.Equals("postgresql", StringComparison.OrdinalIgnoreCase) ||
-        provider.Equals("postgis", StringComparison.OrdinalIgnoreCase))
-    {
-        Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, configuration);
-    }
-    else if (provider.Equals("duckdb", StringComparison.OrdinalIgnoreCase))
-    {
-        Honua.DuckDB.ServiceCollectionExtensions.AddDuckDBServices(services, configuration);
-    }
-    else if (provider.Equals(DataProviderNames.MySql, StringComparison.OrdinalIgnoreCase) ||
-             provider.Equals("mariadb", StringComparison.OrdinalIgnoreCase))
-    {
-        Honua.MySql.ServiceCollectionExtensions.AddMySqlServices(services, configuration);
-    }
-    else
-    {
-        throw new InvalidOperationException($"Unsupported data source provider '{provider}'.");
-    }
-
-    // Register the SQL Server spatial provider as an additional read-only feature backend (#850).
-    // Layers whose connection resolves to provider 'sqlserver'/'mssql' are routed here through the
-    // shared FeatureProviderBindingResolver. Disabled when SqlServer:Enabled is explicitly false.
-    if (configuration.GetValue("SqlServer:Enabled", true))
-    {
-        Honua.SqlServer.ServiceCollectionExtensions.AddSqlServerFeatureProvider(services, configuration);
-    }
-
-    services.TryAddScoped<IFeatureDataProviderRegistry>(serviceProvider =>
-        new FeatureDataProviderRegistry(serviceProvider.GetServices<IFeatureDataProvider>()));
-    services.TryAddScoped(serviceProvider =>
-        new FeatureProviderBindingResolver(
-            serviceProvider.GetRequiredService<Honua.Core.Features.Security.Abstractions.ISecureConnectionRegistry>(),
-            serviceProvider.GetRequiredService<IFeatureDataProviderRegistry>(),
-            DataProviderNames.Normalize(provider)));
-    services.TryAddScoped<FeatureProviderQueryRouter>();
-
-    // Add centralized configuration management and secret services
-    services.AddConfigurationManagement(configuration);
-
-    // Wrap ILayerCatalog with caching decorator
-    // This uses the decorator pattern to add caching behavior transparently
-    var innerCatalogDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(ILayerCatalog));
-    if (innerCatalogDescriptor != null)
-    {
-        services.Remove(innerCatalogDescriptor);
-
-        // Shared resolver for the data-source catalog (PostgresLayerCatalog) — avoids
-        // duplicating the resolution logic across the main and keyed registrations.
-        ILayerCatalog ResolveDataSourceCatalog(IServiceProvider sp)
-        {
-            if (innerCatalogDescriptor.ImplementationFactory != null)
-                return (ILayerCatalog)innerCatalogDescriptor.ImplementationFactory(sp);
-            if (innerCatalogDescriptor.ImplementationType != null)
-                return (ILayerCatalog)ActivatorUtilities.CreateInstance(sp, innerCatalogDescriptor.ImplementationType);
-            throw new InvalidOperationException("Unable to resolve inner ILayerCatalog implementation");
-        }
-
-        // Register the data-source catalog as a keyed service so the background refresh
-        // decorator can fetch fresh data without going through the caching layer.
-        // Wrapped with the monitoring decorator so background refresh reads remain
-        // observable in catalog telemetry while still bypassing the cache.
-        services.AddKeyedScoped<ILayerCatalog>(
-            BackgroundRefreshCacheDecorator.UncachedCatalogServiceKey,
-            (sp, _) =>
-            {
-                var catalog = ResolveDataSourceCatalog(sp);
-                var performanceMonitor = sp.GetRequiredService<IPerformanceMonitor>();
-                var monitorLogger = sp.GetRequiredService<ILogger<MonitoredLayerCatalogDecorator>>();
-                return new MonitoredLayerCatalogDecorator(catalog, performanceMonitor, monitorLogger);
-            });
-
-        services.AddScoped<ILayerCatalog>(sp =>
-        {
-            ILayerCatalog innerCatalog = ResolveDataSourceCatalog(sp);
-
-            // Apply caching decorator if enabled
-            var cacheOptions = sp.GetRequiredService<IOptions<CacheOptions>>().Value;
-            ILayerCatalog catalog = innerCatalog;
-            if (cacheOptions.Enabled)
-            {
-                var cacheService = sp.GetRequiredService<ICacheService>();
-                var options = sp.GetRequiredService<IOptions<CacheOptions>>();
-                var schemaContext = sp.GetService<ISchemaContext>();
-                catalog = new CachingLayerCatalog(catalog, cacheService, options, schemaContext);
-
-                // Wrap with background refresh decorator for stale-while-revalidate
-                if (cacheOptions.BackgroundRefreshEnabled)
-                {
-                    var refreshCoordinator = sp.GetRequiredService<ICacheRefreshCoordinator>();
-                    var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
-                    var refreshLogger = sp.GetRequiredService<ILogger<BackgroundRefreshCacheDecorator>>();
-                    catalog = new BackgroundRefreshCacheDecorator(catalog, cacheService, refreshCoordinator, scopeFactory, options, refreshLogger, schemaContext);
-                }
-            }
-
-            // Always wrap with monitoring for catalog metadata queries
-            var performanceMonitor = sp.GetRequiredService<IPerformanceMonitor>();
-            var logger = sp.GetRequiredService<ILogger<MonitoredLayerCatalogDecorator>>();
-            return new MonitoredLayerCatalogDecorator(catalog, performanceMonitor, logger);
-        });
-    }
-
-    // Wrap ILayerStyleCatalog with caching decorator
-    var innerStyleCatalogDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(ILayerStyleCatalog));
-    if (innerStyleCatalogDescriptor != null)
-    {
-        services.Remove(innerStyleCatalogDescriptor);
-
-        services.AddScoped<ILayerStyleCatalog>(sp =>
-        {
-            ILayerStyleCatalog innerStyleCatalog;
-            if (innerStyleCatalogDescriptor.ImplementationFactory != null)
-            {
-                innerStyleCatalog = (ILayerStyleCatalog)innerStyleCatalogDescriptor.ImplementationFactory(sp);
-            }
-            else if (innerStyleCatalogDescriptor.ImplementationType != null)
-            {
-                innerStyleCatalog = (ILayerStyleCatalog)ActivatorUtilities.CreateInstance(sp, innerStyleCatalogDescriptor.ImplementationType);
-            }
-            else
-            {
-                throw new InvalidOperationException("Unable to resolve inner ILayerStyleCatalog implementation");
-            }
-
-            var cacheOptions = sp.GetRequiredService<IOptions<CacheOptions>>().Value;
-            if (!cacheOptions.Enabled)
-            {
-                return innerStyleCatalog;
-            }
-
-            var cacheService = sp.GetRequiredService<ICacheService>();
-            var options = sp.GetRequiredService<IOptions<CacheOptions>>();
-            var schemaContext = sp.GetService<ISchemaContext>();
-            return new CachingLayerStyleCatalog(innerStyleCatalog, cacheService, options, schemaContext);
-        });
-    }
-}
-
-// Configure limits with validation
-static void ConfigureLimits(IServiceCollection services, IConfiguration configuration)
-{
-    // Bind configuration with validation
-    services.Configure<Honua.Core.Configuration.LimitsOptions>(options =>
-    {
-        configuration.GetSection(Honua.Core.Configuration.LimitsOptions.SectionName).Bind(options);
-
-        var validator = new Honua.Core.Configuration.LimitsOptionsValidator();
-        var validationResult = validator.Validate(Options.DefaultName, options);
-        if (validationResult.Failed)
-        {
-            var failures = validationResult.Failures ?? [];
-            var errorMessage = "Invalid limits configuration:" + Environment.NewLine +
-                              string.Join(Environment.NewLine, failures);
-            throw new InvalidOperationException(errorMessage);
-        }
-    });
-}
-
+// Composition Root: RegisterInfrastructureServices, ConfigureLimits, ConfigureTileOptions,
+// ConfigureCaching now live in Startup/InfrastructureCompositionRoot.cs.
+// ConfigureForwardedHeaders, ResolveEnvironmentSecretReferences, IsRedisCacheEntitledAsync,
+// AddSecurityConfiguration, RegisterConfigurationValidators now live in
+// Startup/StartupConfigurationHelpers.cs. The hosted-Blazor static-asset helpers + filter
+// data source live in Startup/HostedBlazorAssetHelpers.cs.
 
 // Database migration helper
 async Task RunDatabaseMigrationsAsync()
@@ -1622,353 +1105,3 @@ async Task RunPostGisPreflightCheckAsync()
     Honua.Server.Features.Infrastructure.Logging.Log.PostGisPreflightCheckFailedDevelopment(app.Logger, errorMessage);
 }
 
-// Configure tile options with validation
-static void ConfigureTileOptions(IServiceCollection services, IConfiguration configuration)
-{
-    // Bind configuration with default values
-    services.Configure<Honua.Core.Features.Tiles.TileOptions>(options =>
-    {
-        configuration.GetSection(Honua.Core.Features.Tiles.TileOptions.SectionName).Bind(options);
-    });
-}
-
-static bool ConfigureForwardedHeaders(IServiceCollection services, IConfiguration configuration)
-{
-    var enabled = configuration.GetValue<bool>("ForwardedHeaders:Enabled");
-    if (!enabled)
-    {
-        return false;
-    }
-
-    services.Configure<ForwardedHeadersOptions>(options =>
-    {
-        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor |
-                                   ForwardedHeaders.XForwardedProto |
-                                   ForwardedHeaders.XForwardedHost;
-        options.ForwardLimit = configuration.GetValue<int?>("ForwardedHeaders:ForwardLimit") ?? 1;
-
-        var knownProxies = configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() ?? [];
-        foreach (var proxy in knownProxies)
-        {
-            if (IPAddress.TryParse(proxy, out var ip))
-            {
-                options.KnownProxies.Add(ip);
-            }
-        }
-    });
-
-    return true;
-}
-
-static void ResolveEnvironmentSecretReferences(ConfigurationManager configuration)
-{
-    ResolveEnvironmentSecretReference(configuration, "ConnectionStrings:DefaultConnection");
-    ResolveEnvironmentSecretReference(configuration, "ConnectionStrings:redis");
-    ResolveEnvironmentSecretReference(configuration, "Aspire:StackExchange:Redis:ConnectionString");
-}
-
-static void ResolveEnvironmentSecretReference(ConfigurationManager configuration, string key)
-{
-    var value = configuration[key];
-    var resolved = SecretReferenceResolver.ResolveEnvironmentReference(value, key);
-    if (!string.Equals(value, resolved, StringComparison.Ordinal))
-    {
-        configuration[key] = resolved;
-    }
-}
-
-static async Task<bool> IsRedisCacheEntitledAsync(IConfiguration configuration)
-{
-    var redisConnectionString = configuration.GetConnectionString("redis")
-        ?? configuration["Aspire:StackExchange:Redis:ConnectionString"];
-    if (string.IsNullOrWhiteSpace(redisConnectionString))
-    {
-        return false;
-    }
-
-    using var loggerFactory = LoggerFactory.Create(static builder => builder.AddConsole());
-    var snapshot = await Honua.Server.Features.Infrastructure.Licensing.FileBackedLicenseService
-        .LoadBootstrapSnapshotAsync(configuration, loggerFactory)
-        .ConfigureAwait(false);
-    return snapshot.HasEntitlement("caching.redis");
-}
-
-// Configure caching services with Redis and in-memory fallback
-static void ConfigureCaching(IServiceCollection services, IConfiguration configuration, bool redisCacheEntitled)
-{
-    // Bind cache configuration with validation
-    services.AddOptions<CacheOptions>()
-        .Bind(configuration.GetSection(CacheOptions.SectionName))
-        .ValidateDataAnnotations()
-        .ValidateOnStart();
-
-    services.AddMemoryCache();
-
-    // Register RedisCacheService (handles both Redis and fallback modes)
-    // IDistributedCache is optionally provided by Aspire's AddRedisDistributedCache
-    services.AddSingleton<RedisCacheService>(sp =>
-    {
-        var distributedCache = sp.GetService<IDistributedCache>();
-        var options = sp.GetRequiredService<IOptions<CacheOptions>>();
-        var logger = sp.GetRequiredService<ILogger<RedisCacheService>>();
-        var performanceMonitor = sp.GetRequiredService<IPerformanceMonitor>();
-        var redis = redisCacheEntitled ? sp.GetService<IConnectionMultiplexer>() : null;
-
-        // StackExchangeRedisCache prepends its InstanceName to all keys internally.
-        // Raw multiplexer operations (e.g., TTL lookup) must use the same prefix.
-        var redisCacheOpts = sp.GetService<IOptions<Microsoft.Extensions.Caching.StackExchangeRedis.RedisCacheOptions>>();
-        var instanceName = redisCacheOpts?.Value?.InstanceName;
-
-        return new RedisCacheService(distributedCache, options, logger, performanceMonitor, redis, instanceName);
-    });
-
-    // Register interfaces pointing to the singleton
-    services.AddSingleton<ICacheService>(sp => sp.GetRequiredService<RedisCacheService>());
-    services.AddSingleton<ICacheHealthChecker>(sp => sp.GetRequiredService<RedisCacheService>());
-    services.AddSingleton<ICacheStorageMetricsProvider>(sp => sp.GetRequiredService<RedisCacheService>());
-
-    services.AddSingleton<IResponseCache>(sp =>
-    {
-        var innerCache = new CacheServiceResponseCache(
-            sp.GetRequiredService<ICacheService>());
-        return new MonitoredResponseCacheDecorator(
-            innerCache,
-            sp.GetRequiredService<IPerformanceMonitor>(),
-            sp.GetRequiredService<ILogger<MonitoredResponseCacheDecorator>>());
-    });
-
-    // Register distributed cache refresh coordinator
-    services.AddSingleton<Honua.Server.Features.Infrastructure.Caching.DistributedCacheRefreshCoordinator>(sp =>
-        new Honua.Server.Features.Infrastructure.Caching.DistributedCacheRefreshCoordinator(
-            sp.GetRequiredService<IOptions<CacheOptions>>(),
-            sp.GetRequiredService<IPerformanceMonitor>(),
-            sp.GetRequiredService<ILogger<Honua.Server.Features.Infrastructure.Caching.DistributedCacheRefreshCoordinator>>(),
-            redisCacheEntitled ? sp.GetService<IConnectionMultiplexer>() : null));
-
-    services.AddSingleton<ICacheRefreshCoordinator>(sp =>
-        sp.GetRequiredService<Honua.Server.Features.Infrastructure.Caching.DistributedCacheRefreshCoordinator>());
-    services.AddSingleton<Honua.Core.Features.Caching.Abstractions.IDistributedCacheRefreshCoordinator>(sp =>
-        sp.GetRequiredService<Honua.Server.Features.Infrastructure.Caching.DistributedCacheRefreshCoordinator>());
-    services.AddHostedService(sp =>
-        sp.GetRequiredService<Honua.Server.Features.Infrastructure.Caching.DistributedCacheRefreshCoordinator>());
-
-    // Register the CachingLayerCatalog - it will be wired via decorator pattern in RegisterInfrastructureServices
-}
-
-static void AddSecurityConfiguration(ConfigurationManager configuration, IHostEnvironment environment)
-{
-    const string securitySettingsFile = "appsettings.Security.json";
-    configuration.AddJsonFile(securitySettingsFile, optional: true, reloadOnChange: true);
-
-    var sources = configuration.Sources;
-    var securityIndex = -1;
-    for (var i = sources.Count - 1; i >= 0; i--)
-    {
-        if (sources[i] is JsonConfigurationSource jsonSource &&
-            string.Equals(jsonSource.Path, securitySettingsFile, StringComparison.OrdinalIgnoreCase))
-        {
-            securityIndex = i;
-            break;
-        }
-    }
-
-    if (securityIndex < 0)
-    {
-        return;
-    }
-
-    var securitySource = sources[securityIndex];
-    sources.RemoveAt(securityIndex);
-
-    var envSettingsPath = $"appsettings.{environment.EnvironmentName}.json";
-    var insertIndex = -1;
-    for (var i = 0; i < sources.Count; i++)
-    {
-        if (sources[i] is JsonConfigurationSource jsonSource &&
-            string.Equals(jsonSource.Path, envSettingsPath, StringComparison.OrdinalIgnoreCase))
-        {
-            insertIndex = i;
-            break;
-        }
-    }
-
-    if (insertIndex < 0)
-    {
-        for (var i = 0; i < sources.Count; i++)
-        {
-            if (sources[i] is JsonConfigurationSource jsonSource &&
-                string.Equals(jsonSource.Path, "appsettings.json", StringComparison.OrdinalIgnoreCase))
-            {
-                insertIndex = i + 1;
-                break;
-            }
-        }
-    }
-
-    if (insertIndex < 0)
-    {
-        insertIndex = 0;
-    }
-
-    sources.Insert(insertIndex, securitySource);
-}
-
-// Registers configuration validators for all options classes to ensure fail-fast behavior
-// on invalid configuration. Prevents the application from starting with invalid settings.
-static void RegisterConfigurationValidators(IServiceCollection services)
-{
-    // Register IValidateOptions<T> implementations for each configuration class
-    // These will be invoked by the options framework during application startup
-    // and will cause the app to fail to start if configuration is invalid
-
-    services.AddSingleton<IValidateOptions<LimitsOptions>>(new LimitsOptionsValidator());
-    services.AddSingleton<IValidateOptions<CacheOptions>>(new CacheOptionsValidator());
-    services.AddSingleton<IValidateOptions<CloudStorageOptions>>(new CloudStorageOptionsValidator());
-    services.AddSingleton<IValidateOptions<OidcAuthenticationOptions>>(new OidcAuthenticationOptionsValidator());
-    services.AddSingleton<IValidateOptions<FileUploadSecurityOptions>>(new FileUploadSecurityOptionsValidator());
-}
-
-static void ConfigureHostedBlazorAssets(
-    IApplicationBuilder app,
-    PathString pathPrefix)
-{
-    var prefix = pathPrefix.Value?.Trim('/') ??
-        throw new InvalidOperationException("Hosted Blazor path prefix is required.");
-    var webRootFileProvider = app.ApplicationServices
-        .GetRequiredService<IWebHostEnvironment>()
-        .WebRootFileProvider;
-
-    // Keep hosted shells isolated to their configured prefix so enabling one
-    // does not expose another shell's static web assets.
-    app.UseStaticFiles(new StaticFileOptions
-    {
-        RequestPath = pathPrefix,
-        FileProvider = new PathPrefixFileProvider(webRootFileProvider, prefix)
-    });
-}
-
-static void MapHostedBlazorFallback(
-    IEndpointRouteBuilder endpoints,
-    PathString pathPrefix)
-{
-    var prefix = pathPrefix.Value?.TrimEnd('/') ??
-        throw new InvalidOperationException("Hosted Blazor path prefix is required.");
-    var fallbackRoute = $"{prefix}/{{*path:nonfile}}";
-    var fallbackFile = $"{prefix.TrimStart('/')}/index.html";
-
-    endpoints.MapFallbackToFile(fallbackRoute, fallbackFile);
-}
-
-static void FilterHostedBlazorStaticAssetEndpoints(
-    WebApplication app,
-    bool allowStacOpsDemoAssets)
-{
-    var blockedPrefixes = new List<string>(1);
-    // Always block the `admin/` static-asset prefix — the in-tree Blazor admin UI
-    // moved to the sibling `honua-server-admin` repo and ships as a separately
-    // deployed static site.
-    blockedPrefixes.Add("admin/");
-
-    if (!allowStacOpsDemoAssets)
-    {
-        blockedPrefixes.Add("samples/stac-ops/");
-    }
-
-    var routeBuilder = (IEndpointRouteBuilder)app;
-    var dataSources = routeBuilder.DataSources.ToArray();
-
-    routeBuilder.DataSources.Clear();
-    foreach (var dataSource in dataSources)
-    {
-        routeBuilder.DataSources.Add(new HostedBlazorStaticAssetFilterDataSource(
-            dataSource,
-            blockedPrefixes));
-    }
-}
-
-static void MapDisabledHostedBlazorPrefix(
-    IApplicationBuilder app,
-    PathString pathPrefix)
-{
-    app.Map(pathPrefix, disabledApp =>
-    {
-        disabledApp.Run(context =>
-        {
-            context.Response.StatusCode = StatusCodes.Status404NotFound;
-            return Task.CompletedTask;
-        });
-    });
-}
-
-sealed class PathPrefixFileProvider(
-    IFileProvider innerProvider,
-    string pathPrefix) : IFileProvider
-{
-    private readonly IFileProvider _innerProvider = innerProvider;
-    private readonly string _pathPrefix = pathPrefix;
-
-    public IDirectoryContents GetDirectoryContents(string subpath)
-        => _innerProvider.GetDirectoryContents(ApplyPrefix(subpath));
-
-    public IFileInfo GetFileInfo(string subpath)
-        => _innerProvider.GetFileInfo(ApplyPrefix(subpath));
-
-    public IChangeToken Watch(string filter)
-        => _innerProvider.Watch(ApplyPrefix(filter));
-
-    private string ApplyPrefix(string subpath)
-    {
-        var trimmedSubpath = subpath.TrimStart('/');
-        return string.IsNullOrEmpty(trimmedSubpath)
-            ? _pathPrefix
-            : $"{_pathPrefix}/{trimmedSubpath}";
-    }
-}
-
-sealed class HostedBlazorStaticAssetFilterDataSource(
-    EndpointDataSource innerDataSource,
-    IReadOnlyCollection<string> blockedPrefixes) : EndpointDataSource
-{
-    private readonly EndpointDataSource _innerDataSource = innerDataSource;
-    private readonly IReadOnlyCollection<string> _blockedPrefixes = blockedPrefixes;
-
-    public override IReadOnlyList<Endpoint> Endpoints => FilterEndpoints();
-
-    public override IChangeToken GetChangeToken() => _innerDataSource.GetChangeToken();
-
-    private IReadOnlyList<Endpoint> FilterEndpoints()
-    {
-        if (_blockedPrefixes.Count == 0)
-        {
-            return _innerDataSource.Endpoints;
-        }
-
-        return _innerDataSource.Endpoints
-            .Where(ShouldKeepEndpoint)
-            .ToArray();
-    }
-
-    private bool ShouldKeepEndpoint(Endpoint endpoint)
-    {
-        if (endpoint is not RouteEndpoint routeEndpoint)
-        {
-            return true;
-        }
-
-        var route = routeEndpoint.RoutePattern.RawText;
-        if (string.IsNullOrEmpty(route))
-        {
-            return true;
-        }
-
-        foreach (var blockedPrefix in _blockedPrefixes)
-        {
-            if (route.StartsWith(blockedPrefix, StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-}

@@ -129,6 +129,7 @@ public static partial class Extensions
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
                 .AddRuntimeInstrumentation()
+                .AddProcessInstrumentation()
                 .AddMeter(_meterNames)
                 .AddPrometheusExporter();
 

@@ -15,6 +15,7 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Services;
+using Honua.Server.Features.Protocols.Ogc.Shared;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Primitives;
 using NetTopologySuite.Geometries;
@@ -22,6 +23,10 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Features.Protocols.Ogc.Classic.Wcs20;
 
+/// <summary>
+/// CITE conformance: 82/82 (WCS 2.0 `core` profile, 100% pass on trunk).
+/// Authoritative status: <see href="../../../../../../docs/cite-status.md">docs/cite-status.md</see>.
+/// </summary>
 internal sealed class Wcs20Handler
 {
     private static readonly XNamespace Wcs = Wcs20Utilities.WcsNamespace;
@@ -159,8 +164,17 @@ internal sealed class Wcs20Handler
         if (!string.IsNullOrWhiteSpace(acceptVersions))
         {
             var versions = SplitCsv(acceptVersions);
-            if (versions.Length > 0 &&
-                !versions.Contains(Wcs20Utilities.Version, StringComparer.OrdinalIgnoreCase))
+            var anySupported = false;
+            foreach (var candidate in versions)
+            {
+                if (OgcParameterValidator.TryParseVersion(candidate, Wcs20Utilities.SupportedVersions, out _, out _))
+                {
+                    anySupported = true;
+                    break;
+                }
+            }
+
+            if (versions.Length > 0 && !anySupported)
             {
                 return Wcs20ErrorResults.CreateBadRequest(
                     Wcs20Utilities.ExceptionCodes.VersionNegotiationFailed,
@@ -543,7 +557,7 @@ internal sealed class Wcs20Handler
 
         var version = GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.Version);
         if (!string.IsNullOrWhiteSpace(version) &&
-            !string.Equals(version, Wcs20Utilities.Version, StringComparison.OrdinalIgnoreCase))
+            !OgcParameterValidator.TryParseVersion(version, Wcs20Utilities.SupportedVersions, out _, out _))
         {
             return Wcs20ErrorResults.CreateBadRequest(
                 Wcs20Utilities.ExceptionCodes.VersionNegotiationFailed,
@@ -1139,8 +1153,11 @@ internal sealed class Wcs20Handler
         envelope = default!;
         error = default;
 
-        var parts = bbox.Split(',', StringSplitOptions.TrimEntries);
-        if (parts.Length != 4)
+        // Use the shared parameter kernel for tokenisation/coercion so all
+        // protocols share one bbox parser. WCS 2.0 rejects the 3D form and
+        // does not honour a trailing CRS suffix (CRS comes from SUBSETTINGCRS
+        // / BBOXCRS), so enforce those constraints after the shared parse.
+        if (!OgcParameterValidator.TryParseBbox(bbox, out var parsed, out _))
         {
             error = new WcsParameterError(
                 Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
@@ -1149,23 +1166,20 @@ internal sealed class Wcs20Handler
             return false;
         }
 
-        if (!double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var minX) ||
-            !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var minY) ||
-            !double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var maxX) ||
-            !double.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var maxY))
+        if (parsed.Is3D || parsed.CrsToken is not null)
         {
             error = new WcsParameterError(
                 Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
-                "BBOX coordinates must be numeric.",
+                "BBOX must use xmin,ymin,xmax,ymax syntax.",
                 Wcs20Utilities.Parameters.BBox);
             return false;
         }
 
         return TryCreateEnvelope(
-            minX,
-            minY,
-            maxX,
-            maxY,
+            parsed.MinX,
+            parsed.MinY,
+            parsed.MaxX,
+            parsed.MaxY,
             subsettingCrs,
             Wcs20Utilities.Parameters.BBox,
             out envelope,
@@ -1236,8 +1250,11 @@ internal sealed class Wcs20Handler
             return true;
         }
 
-        var normalized = format.Trim();
-        if (!Wcs20Utilities.CoverageFormats.Contains(normalized))
+        // Delegate set-membership to the shared kernel so format whitelisting
+        // is consistent across protocols. The switch below still owns the
+        // protocol-specific mapping from token -> RasterFormat enum + content
+        // type, which is intentionally WCS-2.0-specific.
+        if (!OgcParameterValidator.TryParseFormat(format, Wcs20Utilities.CoverageFormatsList, out var normalized, out _))
         {
             return false;
         }

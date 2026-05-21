@@ -5,12 +5,16 @@ using System.Collections.Concurrent;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Infrastructure.Caching;
+using Honua.Core.Features.Infrastructure.Monitoring;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace Honua.Server.Features.Infrastructure.Caching;
 
 internal sealed class MemoryResponseCache : IResponseCache, IDisposable
 {
+    // Stable cache_name dimension for honua_cache_*_total counters; keep low-cardinality.
+    internal const string CacheName = "response";
+
     private readonly IMemoryCache _cache;
     private readonly ConcurrentDictionary<string, byte> _keys = new(StringComparer.Ordinal);
     private readonly int _maxEntries;
@@ -33,9 +37,11 @@ internal sealed class MemoryResponseCache : IResponseCache, IDisposable
 
         if (_cache.TryGetValue(key, out var value) && value is T typed)
         {
+            HonuaCacheMetrics.RecordHit(CacheName);
             return Task.FromResult<T?>(typed);
         }
 
+        HonuaCacheMetrics.RecordMiss(CacheName);
         return Task.FromResult<T?>(default);
     }
 
@@ -51,12 +57,16 @@ internal sealed class MemoryResponseCache : IResponseCache, IDisposable
         {
             AbsoluteExpirationRelativeToNow = expiration
         };
-        options.RegisterPostEvictionCallback((evictedKey, _, _, _) =>
+        options.RegisterPostEvictionCallback((evictedKey, _, reason, _) =>
         {
             if (evictedKey is string evicted)
             {
                 _keys.TryRemove(evicted, out _);
             }
+
+            // Explicit Remove() also fires the post-eviction callback (reason=Removed),
+            // so this single call covers TTL-, capacity-, and explicit-eviction paths.
+            HonuaCacheMetrics.RecordEviction(CacheName);
         });
 
         if (_keys.Count >= _maxEntries)

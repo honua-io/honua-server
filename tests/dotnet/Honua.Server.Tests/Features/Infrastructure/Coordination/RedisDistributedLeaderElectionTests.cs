@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Reflection;
 using FluentAssertions;
 using Honua.Server.Features.Infrastructure.Coordination;
 using Honua.TestKit.Attributes;
@@ -377,6 +378,52 @@ public sealed class RedisDistributedLeaderElectionTests : IDisposable
             It.IsAny<string>(),
             It.IsAny<RedisKey[]>(),
             It.IsAny<RedisValue[]>()), Times.Once);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Infrastructure)]
+    public async Task RenewLeaseAsync_WhenInnerWorkThrows_DoesNotPropagate()
+    {
+        // Async void timer callbacks must never let exceptions escape (no managed handler).
+        using var election = CreateRedisBackedElection();
+        _database.Setup(db => db.StringSetAsync(
+                "test-leader-key",
+                It.IsAny<RedisValue>(),
+                It.IsAny<TimeSpan?>(),
+                When.NotExists))
+            .ReturnsAsync(true);
+        _database.Setup(db => db.ScriptEvaluateAsync(
+                It.IsAny<string>(),
+                It.IsAny<RedisKey[]>(),
+                It.IsAny<RedisValue[]>()))
+            .ThrowsAsync(new InvalidOperationException("boom"));
+
+        await election.TryAcquireLeadershipAsync();
+        election.IsLeader.Should().BeTrue();
+
+        var unhandled = 0;
+        UnhandledExceptionEventHandler handler = (_, _) => Interlocked.Increment(ref unhandled);
+        AppDomain.CurrentDomain.UnhandledException += handler;
+        try
+        {
+            InvokeRenewLeaseAsync(election);
+            await Task.Delay(50);
+        }
+        finally
+        {
+            AppDomain.CurrentDomain.UnhandledException -= handler;
+        }
+
+        unhandled.Should().Be(0, "async void timer callback must swallow inner exceptions");
+    }
+
+    private static void InvokeRenewLeaseAsync(RedisDistributedLeaderElection election)
+    {
+        var method = typeof(RedisDistributedLeaderElection).GetMethod(
+            "RenewLeaseAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        method.Should().NotBeNull();
+        method!.Invoke(election, new object?[] { null });
     }
 
     private RedisDistributedLeaderElection CreateRedisBackedElection()

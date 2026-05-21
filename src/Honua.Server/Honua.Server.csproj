@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Server.Tests" />
+    <InternalsVisibleTo Include="Honua.Benchmarks" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 

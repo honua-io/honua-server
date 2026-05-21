@@ -139,4 +139,26 @@ internal static partial class AuthenticationLog
         Level = LogLevel.Debug,
         Message = "Invalid HTTP Basic authorization header supplied")]
     public static partial void InvalidBasicAuthorizationHeader(ILogger logger);
+
+    /// <summary>
+    /// Logs when HONUA_DEV_AUTH=true is set but the bypass is not activated because
+    /// preconditions (environment must be exactly "Test" and a matching
+    /// HONUA_DEV_AUTH_ALLOW_BYPASS token must be set) were not met. This is a startup-time
+    /// security signal so developers learn that their attempted opt-in was rejected.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4112,
+        Level = LogLevel.Warning,
+        Message = "HONUA_DEV_AUTH set but bypass not active because {Reason}")]
+    public static partial void DevelopmentBypassRejected(ILogger logger, string reason);
+
+    /// <summary>
+    /// Logs when HONUA_DEV_AUTH=true is detected in a production environment. This
+    /// is a critical misconfiguration and the application will refuse to start.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4113,
+        Level = LogLevel.Error,
+        Message = "SECURITY: HONUA_DEV_AUTH=true detected in Production environment. Refusing to start.")]
+    public static partial void DevelopmentBypassInProductionFatal(ILogger logger);
 }

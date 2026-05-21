@@ -38,13 +38,13 @@ public class SecurityHeadersMiddlewareTests
         await middleware.InvokeAsync(context);
 
         // Assert
-        Assert.Equal("max-age=31536000; includeSubDomains", context.Response.Headers["Strict-Transport-Security"]);
+        Assert.Equal("max-age=63072000; includeSubDomains; preload", context.Response.Headers["Strict-Transport-Security"]);
         Assert.Equal("DENY", context.Response.Headers["X-Frame-Options"]);
         Assert.Equal("nosniff", context.Response.Headers["X-Content-Type-Options"]);
         Assert.Equal("strict-origin-when-cross-origin", context.Response.Headers["Referrer-Policy"]);
         Assert.Equal("1; mode=block", context.Response.Headers["X-XSS-Protection"]);
         Assert.Equal("same-origin", context.Response.Headers["Cross-Origin-Opener-Policy"]);
-        Assert.Equal("require-corp", context.Response.Headers["Cross-Origin-Embedder-Policy"]);
+        Assert.Equal("unsafe-none", context.Response.Headers["Cross-Origin-Embedder-Policy"]);
         Assert.True(context.Response.Headers.ContainsKey("Content-Security-Policy"));
         Assert.True(context.Response.Headers.ContainsKey("Permissions-Policy"));
     }
@@ -363,6 +363,8 @@ public class SecurityHeadersMiddlewareTests
     {
         var context = new DefaultHttpContext();
         context.Response.Headers.Clear();
+        // Default to HTTPS so HSTS-gating doesn't suppress headers in legacy unit tests.
+        context.Request.Scheme = "https";
         return context;
     }
 

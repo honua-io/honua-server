@@ -160,6 +160,8 @@ internal static class SearchEndpoints
         bool defaultFilterLangIsText,
         ILogger logger)
     {
+        // TODO(#1144): wire tenant filter — resolve ITenantContext from context.RequestServices
+        // and constrain layerCatalog / featureReader queries to the caller's tenant id.
         using var activity = StacTelemetry.StartActivity(
             StacTelemetry.Operations.SearchExecute,
             "/stac/search",

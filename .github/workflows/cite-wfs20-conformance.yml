@@ -102,6 +102,20 @@ jobs:
           github_token=${{ secrets.GITHUB_TOKEN }}
         cache-from: type=gha,scope=cite-wfs20
         cache-to: type=gha,mode=max,scope=cite-wfs20
+        provenance: true
+        sbom: true
+
+    # Capture SPDX SBOM alongside CITE WFS 2.0 evidence so conformance
+    # artifacts are reproducible to a known component list.
+    - name: Generate SBOM (SPDX JSON) for honua-server:latest
+      uses: anchore/sbom-action@v0
+      with:
+        image: honua-server:latest
+        format: spdx-json
+        output-file: sbom-honua-server-cite-wfs20-${{ matrix.profile }}.spdx.json
+        artifact-name: sbom-honua-server-cite-wfs20-${{ matrix.profile }}.spdx.json
+        upload-artifact: true
+        upload-release-assets: false
 
     - name: Pre-pull CITE images
       run: |
