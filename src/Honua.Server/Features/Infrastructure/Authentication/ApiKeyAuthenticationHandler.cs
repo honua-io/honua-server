@@ -231,19 +231,21 @@ internal sealed class ApiKeyAuthenticationHandler(
     private bool IsDevelopmentBypassEnabled()
     {
         // SECURITY: Never allow bypass in production or any non-Test environment.
-        // We consult both the runtime ASPNETCORE_ENVIRONMENT *and* the option
-        // captured at startup so a mutation of either cannot re-enable the bypass.
-        var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
-        if (string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase))
+        // We rely on the environment name captured at startup via
+        // builder.Environment.EnvironmentName (immutable options binding). Reading
+        // the live process env var was a footgun: ASP.NET hosting can configure
+        // its environment via UseEnvironment(...) without touching the OS env,
+        // so a process-env read would disagree with the captured option in tests.
+        var startupEnvironment = _authOptions.EnvironmentName;
+        if (string.Equals(startupEnvironment, "Production", StringComparison.OrdinalIgnoreCase))
         {
             AuthenticationLog.DevelopmentBypassBlockedInProduction(Logger);
             return false;
         }
 
-        var startupEnvironment = _authOptions.EnvironmentName;
-        if (!IsAllowedBypassEnvironment(environment) || !IsAllowedBypassEnvironment(startupEnvironment))
+        if (!IsAllowedBypassEnvironment(startupEnvironment))
         {
-            // Staging, QA, custom envs, anything other than Test must fall through.
+            // Staging, QA, custom envs, anything other than Test/Development must fall through.
             return false;
         }
 
