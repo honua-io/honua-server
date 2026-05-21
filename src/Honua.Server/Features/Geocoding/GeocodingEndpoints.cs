@@ -1,5 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
+//
+// Read-only Esri-compatible GeocodeServer surface; anonymous by design. The
+// POST variants of every operation mirror the GET form and only carry query
+// parameters in the body — they perform no server-side mutation. Each POST
+// route opts into AllowAnonymous explicitly so authorization-policy tooling
+// can see the intent rather than treating it as an accidental gap.
 
 using Honua.Server.Features.Infrastructure.Helpers;
 
@@ -30,7 +36,8 @@ internal static class GeocodingEndpoints
             .WithName("FindAddressCandidatesPost")
             .WithSummary("Forward geocode an address using POST")
             .WithDescription("Find address candidates from freeform address text")
-            .WithTags("GeocodeServer");
+            .WithTags("GeocodeServer")
+            .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/{locatorName}/GeocodeServer/reverseGeocode", HandleReverseGeocode)
             .WithDisplayName("Reverse Geocode")
@@ -44,7 +51,8 @@ internal static class GeocodingEndpoints
             .WithName("ReverseGeocodePost")
             .WithSummary("Reverse geocode coordinates using POST")
             .WithDescription("Resolve coordinates to the nearest known address")
-            .WithTags("GeocodeServer");
+            .WithTags("GeocodeServer")
+            .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/{locatorName}/GeocodeServer/suggest", HandleSuggest)
             .WithDisplayName("Suggest Addresses")
@@ -58,7 +66,8 @@ internal static class GeocodingEndpoints
             .WithName("SuggestAddressesPost")
             .WithSummary("Suggest addresses for partial text using POST")
             .WithDescription("Returns ranked geocode suggestions")
-            .WithTags("GeocodeServer");
+            .WithTags("GeocodeServer")
+            .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/{locatorName}/GeocodeServer/geocodeAddresses", HandleBatch)
             .WithDisplayName("Batch Geocode Addresses")
@@ -72,7 +81,8 @@ internal static class GeocodingEndpoints
             .WithName("BatchGeocodeAddressesPost")
             .WithSummary("Batch geocode addresses using POST")
             .WithDescription("Batch geocoding operation with provider capability checks")
-            .WithTags("GeocodeServer");
+            .WithTags("GeocodeServer")
+            .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/GeocodeServer", static (HttpContext context, GeocodingHandler handler) =>
                 handler.HandleMetadataAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))

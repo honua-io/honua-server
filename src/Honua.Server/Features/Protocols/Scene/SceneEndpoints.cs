@@ -41,6 +41,10 @@ internal static partial class SceneEndpoints
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
+        // Anonymous by design: public scenes intentionally bypass auth, while
+        // protected scenes are gated inline by AccessPolicyHelpers.RequireAccess
+        // inside HandleIssueAccessEnvelope. Marking the route AllowAnonymous
+        // documents that decision for authorization-policy tooling.
         endpoints.MapPost(
                 "/scenes/{sceneId}/access-envelope",
                 HandleIssueAccessEnvelope)
@@ -52,6 +56,7 @@ internal static partial class SceneEndpoints
                 + "nested tile/glTF/texture requests under the scene's asset prefix. The "
                 + "caller must already hold a valid bearer credential for the scene.")
             .WithTags(ScenesTag)
+            .AllowAnonymous()
             .Produces<SceneAccessEnvelope>(StatusCodes.Status200OK, contentType: "application/json")
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status401Unauthorized)
