@@ -24,6 +24,44 @@ This guide covers authentication, authorization, edge security, and related oper
 - Optional static signing-key mode for controlled environments/tests:
 - `Oidc__TokenValidation__SymmetricSigningKey=<shared-secret>`
 
+### Development authentication bypass (Test only)
+
+`HONUA_DEV_AUTH=true` exists exclusively so the in-process integration test
+host can short-circuit admin authentication. It is **not** a "non-production"
+shortcut: Staging, QA, Preview, and Development environments all enforce
+API-key authentication regardless of how `HONUA_DEV_AUTH` is set.
+
+To activate the bypass, **every** condition below must hold:
+
+| Condition | Required value |
+|---|---|
+| `ASPNETCORE_ENVIRONMENT` | exactly `Test` (case-insensitive) |
+| `HONUA_DEV_AUTH` | `true` |
+| `HONUA_DEV_AUTH_ALLOW_BYPASS` | `true` (operator acknowledgement) |
+
+If any condition is unmet the bypass is silently inactive and authentication
+proceeds as normal. The two-flag design is intentional: an accidentally
+leaked `HONUA_DEV_AUTH=true` (for example, copied from a CI lane into a
+Staging deployment) cannot, on its own, disable authentication.
+
+**Operational signals**
+
+- When the bypass *is* active you will see warning event `4112` at startup:
+  *"SECURITY WARNING: HONUA_DEV_AUTH bypass is ACTIVE for environment 'Test'."*
+  If you see this warning anywhere other than a disposable Test environment,
+  unset both flags immediately.
+- When `HONUA_DEV_AUTH=true` is configured but the bypass is rejected (for
+  example because the environment is Staging or the ack flag is missing) the
+  server logs warning event `4113` so the misconfiguration is visible.
+- Production deployments additionally surface warning event `4111`
+  ("Development authentication bypass blocked - production environment
+  detected") for every request that attempts the bypass path.
+
+`HONUA_DEV_AUTH` must not be set in Production, Staging, QA, or any other
+shared environment. The startup configuration validator emits a hard error
+in non-relaxed environments if it is present (see
+[`ConfigurationValidationService`](../../src/Honua.Server/Features/Admin/Services/ConfigurationValidationService.cs)).
+
 ---
 
 ## Authorization

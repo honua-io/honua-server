@@ -6,11 +6,9 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
-using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
@@ -62,7 +60,6 @@ internal sealed class ApiKeyAuthenticationHandler(
             else if (!string.IsNullOrEmpty(basicFailure))
             {
                 Context.Items[AuthFailureMessageKey] = basicFailure;
-                await EmitAuditAsync("auth.failure", AuditOutcome.Failure, AuditActorType.Anonymous, AuditEvent.AnonymousActor).ConfigureAwait(false);
                 return AuthenticateResult.Fail(basicFailure);
             }
         }
@@ -79,7 +76,6 @@ internal sealed class ApiKeyAuthenticationHandler(
             if (storedKey is not null)
             {
                 AuthenticationLog.ApiKeyAuthenticationSuccessful(Logger);
-                await EmitAuditAsync("auth.success", AuditOutcome.Success, AuditActorType.ApiKey, storedKey.Record.Id.ToString("D")).ConfigureAwait(false);
                 return CreateSuccessfulAuthenticationResult(
                     "admin-api-key",
                     storedKey.Record.Id,
@@ -112,54 +108,11 @@ internal sealed class ApiKeyAuthenticationHandler(
         if (!IsApiKeyValid(providedApiKey, configuredPassword))
         {
             AuthenticationLog.InvalidApiKeyProvided(Logger);
-            await EmitAuditAsync("auth.failure", AuditOutcome.Failure, AuditActorType.Anonymous, AuditEvent.AnonymousActor).ConfigureAwait(false);
             return AuthenticateResult.Fail("Invalid API key");
         }
 
         AuthenticationLog.ApiKeyAuthenticationSuccessful(Logger);
-        await EmitAuditAsync("auth.success", AuditOutcome.Success, AuditActorType.ApiKey, "admin-password").ConfigureAwait(false);
         return CreateSuccessfulAuthenticationResult("admin");
-    }
-
-    /// <summary>
-    /// Best-effort emit of an authentication audit event. Failures inside the
-    /// audit sink are intentionally swallowed — never block authentication on
-    /// the audit log.
-    /// </summary>
-    private async Task EmitAuditAsync(string action, AuditOutcome outcome, AuditActorType actorType, string actor)
-    {
-        var auditLog = Context.RequestServices.GetService<IAuditLog>();
-        if (auditLog is null)
-        {
-            return;
-        }
-
-        var auditEvent = new AuditEvent
-        {
-            Timestamp = DateTimeOffset.UtcNow,
-            EventType = AuditEventType.Authentication,
-            Actor = actor,
-            ActorType = actorType,
-            ResourceType = "http",
-            ResourceId = Context.Request.Path.HasValue ? Context.Request.Path.Value : null,
-            Action = action,
-            Outcome = outcome,
-            CorrelationId = string.IsNullOrWhiteSpace(Context.TraceIdentifier)
-                ? Guid.NewGuid().ToString("D")
-                : Context.TraceIdentifier,
-            RemoteIp = Context.Connection.RemoteIpAddress?.ToString(),
-            UserAgent = Context.Request.Headers.UserAgent.ToString() is { Length: > 0 } ua ? ua : null,
-            Details = $"{{\"scheme\":\"api-key\",\"method\":\"{Context.Request.Method}\"}}",
-        };
-
-        try
-        {
-            await auditLog.RecordAsync(auditEvent, Context.RequestAborted).ConfigureAwait(false);
-        }
-        catch
-        {
-            // Per IAuditLog contract: audit failures must never block auth.
-        }
     }
 
     private string? GetApiKeyFromHeader()
@@ -260,55 +213,68 @@ internal sealed class ApiKeyAuthenticationHandler(
     /// Determines if development authentication bypass is enabled.
     /// </summary>
     /// <remarks>
-    /// SECURITY: The bypass only activates when ALL of the following are true:
-    /// <list type="bullet">
-    ///   <item><description><c>ASPNETCORE_ENVIRONMENT</c> is exactly <c>Test</c>
-    ///   (not <c>Development</c>, not <c>Staging</c>). The strict match prevents a
-    ///   typo on a staging deploy from opening admin endpoints.</description></item>
-    ///   <item><description><c>HONUA_DEV_AUTH</c> equals <c>true</c>.</description></item>
-    ///   <item><description><c>HONUA_DEV_AUTH_ACK</c> equals
-    ///   <see cref="ApiKeyAuthenticationOptions.ExpectedDevAuthBypassAck"/>.</description></item>
+    /// SECURITY: The bypass is gated by three independent conditions and is only
+    /// active when all three are satisfied. Any deployment that does not match
+    /// every condition - including Staging, QA, Production, or any other custom
+    /// environment - falls through to normal API-key authentication.
+    /// <list type="number">
+    ///   <item>Resolved ASPNETCORE_ENVIRONMENT is exactly "Test" (the only
+    ///   environment where the in-process test host runs unauthenticated).
+    ///   We deliberately do NOT honour the bypass in "Development" because
+    ///   developers should exercise the same API-key path as production.</item>
+    ///   <item><c>HONUA_DEV_AUTH=true</c> is supplied.</item>
+    ///   <item><c>HONUA_DEV_AUTH_ALLOW_BYPASS=true</c> is supplied as an
+    ///   independent operator acknowledgement so an accidentally-leaked
+    ///   HONUA_DEV_AUTH cannot, on its own, disable authentication.</item>
     /// </list>
-    /// Production misconfiguration is rejected at startup (see
-    /// <c>EnsureDevAuthBypassConfigurationIsSafe</c> in Program.cs); any remaining
-    /// partial match here is a defence-in-depth check.
     /// </remarks>
     private bool IsDevelopmentBypassEnabled()
     {
-        // SECURITY: Never allow bypass in production, regardless of configuration.
-        // Startup-time validation should have already thrown, but check again per request.
-        var environment = _authOptions.EnvironmentName
-            ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
-        if (string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase))
+        // SECURITY: Never allow bypass in production or any non-Test environment.
+        // We rely on the environment name captured at startup via
+        // builder.Environment.EnvironmentName (immutable options binding). Reading
+        // the live process env var was a footgun: ASP.NET hosting can configure
+        // its environment via UseEnvironment(...) without touching the OS env,
+        // so a process-env read would disagree with the captured option in tests.
+        var startupEnvironment = _authOptions.EnvironmentName;
+        if (string.Equals(startupEnvironment, "Production", StringComparison.OrdinalIgnoreCase))
         {
             AuthenticationLog.DevelopmentBypassBlockedInProduction(Logger);
             return false;
         }
 
-        // Require HONUA_DEV_AUTH=true.
+        if (!IsAllowedBypassEnvironment(startupEnvironment))
+        {
+            // Staging, QA, custom envs, anything other than Test/Development must fall through.
+            return false;
+        }
+
+        // Belt-and-braces: the captured IsTestMode flag must also agree.
+        if (!_authOptions.IsTestMode)
+        {
+            return false;
+        }
+
+        // Require the explicit opt-in token AND the operator acknowledgement.
         if (!string.Equals(_authOptions.DevAuthBypass, "true", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
-        // Require environment to be EXACTLY "Test" (case-insensitive). Strict equality
-        // prevents accidental activation in "Development", "Staging", or typos like "test ".
-        if (!string.Equals(environment, "Test", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        // Require the explicit acknowledgement token to match verbatim.
-        if (!string.Equals(
-                _authOptions.DevAuthBypassAck,
-                ApiKeyAuthenticationOptions.ExpectedDevAuthBypassAck,
-                StringComparison.Ordinal))
+        if (!string.Equals(_authOptions.DevAuthBypassAcknowledged, "true", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
         AuthenticationLog.DevelopmentBypassEnabled(Logger);
         return true;
+    }
+
+    private static bool IsAllowedBypassEnvironment(string? environmentName)
+    {
+        // Only "Test" is allowed - Development, Staging, QA, Production, and any
+        // other custom environment fall through to standard API-key auth.
+        return string.Equals(environmentName, "Test", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

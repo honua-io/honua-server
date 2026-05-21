@@ -484,20 +484,9 @@ builder.Services.AddHostedService(sp =>
 // AddHonuaImportExportAndTileOperations above.
 
 // Register OData services and handlers
-// SECURITY: Validate the dev-auth bypass configuration ONCE at startup, before any
-// request can hit ApiKeyAuthenticationHandler. This catches misconfigured deploys
-// (e.g. HONUA_DEV_AUTH=true in Production) before they cause harm and emits a
-// startup warning when a developer set HONUA_DEV_AUTH=true but the bypass will
-// not activate (wrong env, missing ack, etc.).
-{
-    using var devAuthValidatorLoggerFactory = LoggerFactory.Create(lb => lb.AddConsole());
-    Honua.Server.Features.Infrastructure.Authentication.DevAuthBypassStartupValidator
-        .Validate(
-            environmentName: builder.Environment.EnvironmentName,
-            devAuthBypass: builder.Configuration["HONUA_DEV_AUTH"],
-            devAuthBypassAck: builder.Configuration["HONUA_DEV_AUTH_ACK"],
-            loggerFactory: devAuthValidatorLoggerFactory);
-}
+// ApiKeyAuthenticationOptions (incl. admin password complexity, dev-auth bypass
+// gating via HONUA_DEV_AUTH_ALLOW_BYPASS) are configured by
+// AddHonuaAuthenticationOptions below.
 
 // ---- Extracted: authentication & authorization options (Startup/AuthenticationOptionsRegistration.cs)
 builder.Services.AddHonuaAuthenticationOptions(builder.Configuration, builder.Environment);
@@ -612,6 +601,33 @@ if (configurationErrors.Count > 0)
 }
 
 ConfigurationLog.ConfigurationValidationSucceeded(app.Logger);
+
+// SECURITY: Surface the development auth bypass state at startup so operators
+// reviewing logs immediately notice if admin endpoints are unauthenticated.
+{
+    var apiKeyOptions = app.Services
+        .GetRequiredService<IOptions<Honua.Server.Features.Infrastructure.Authentication.ApiKeyAuthenticationOptions>>()
+        .Value;
+    var devAuthRequested = string.Equals(apiKeyOptions.DevAuthBypass, "true", StringComparison.OrdinalIgnoreCase);
+    var devAuthAcknowledged = string.Equals(apiKeyOptions.DevAuthBypassAcknowledged, "true", StringComparison.OrdinalIgnoreCase);
+    var environmentName = app.Environment.EnvironmentName;
+    var bypassActive =
+        devAuthRequested &&
+        devAuthAcknowledged &&
+        apiKeyOptions.IsTestMode &&
+        string.Equals(environmentName, "Test", StringComparison.OrdinalIgnoreCase);
+
+    if (bypassActive)
+    {
+        Honua.Server.Features.Infrastructure.Authentication.AuthenticationLog
+            .DevelopmentBypassActiveAtStartup(app.Logger, environmentName);
+    }
+    else if (devAuthRequested)
+    {
+        Honua.Server.Features.Infrastructure.Authentication.AuthenticationLog
+            .DevelopmentBypassRequestedButRejected(app.Logger, environmentName);
+    }
+}
 
 // Log OIDC configuration state for observability
 {

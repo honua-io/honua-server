@@ -29,24 +29,20 @@ public sealed class ApiKeyAuthenticationOptions
     public string? DevAuthBypass { get; set; }
 
     /// <summary>
-    /// Gets or sets the explicit acknowledgement token required to activate the
-    /// development authentication bypass. This must match
-    /// <see cref="ExpectedDevAuthBypassAck"/> verbatim. The verbose, intentionally
-    /// awkward token makes accidental opt-in essentially impossible.
+    /// Gets or sets the explicit operator acknowledgement that the development
+    /// authentication bypass should be honoured. Required in addition to
+    /// <see cref="DevAuthBypass"/> so the bypass cannot be silently activated
+    /// by a stray <c>HONUA_DEV_AUTH=true</c> in a Staging/QA environment.
     /// </summary>
-    public string? DevAuthBypassAck { get; set; }
+    public string? DevAuthBypassAcknowledged { get; set; }
 
     /// <summary>
-    /// Gets or sets the environment name reported by the host (e.g. "Test", "Development",
-    /// "Staging", "Production"). The bypass only activates when this is exactly "Test".
+    /// Gets or sets the ASPNETCORE_ENVIRONMENT name as resolved at startup.
+    /// The development auth bypass is only honoured when this is "Development"
+    /// or "Test"; every other value (including Staging, QA, and Production)
+    /// must reject the bypass even if <see cref="IsTestMode"/> is somehow set.
     /// </summary>
     public string? EnvironmentName { get; set; }
-
-    /// <summary>
-    /// The exact value <see cref="DevAuthBypassAck"/> must equal for the dev auth
-    /// bypass to activate. Never override this constant.
-    /// </summary>
-    public const string ExpectedDevAuthBypassAck = "i-understand-this-bypasses-auth";
 
     /// <summary>
     /// Gets or sets whether HTTP Basic auth is accepted as a compatibility mode.

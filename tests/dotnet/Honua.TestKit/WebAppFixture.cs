@@ -125,11 +125,12 @@ public sealed class WebAppFixture : IAsyncLifetime
                 // Configure test environment
                 builder.UseEnvironment("Test");
 
-                // Configure authentication bypass for test environment. Wave-2 audit hardening
-                // requires the explicit acknowledgement token alongside HONUA_DEV_AUTH=true; see
-                // DevAuthBypassStartupValidator.
+                // Configure authentication bypass for test environment.
+                // BOTH flags are required (see honua-server#1144): HONUA_DEV_AUTH
+                // alone is insufficient outside of Test+explicit-ack to prevent
+                // accidental bypass activation in Staging/QA.
                 builder.UseSetting("HONUA_DEV_AUTH", "true");
-                builder.UseSetting("HONUA_DEV_AUTH_ACK", "i-understand-this-bypasses-auth");
+                builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "true");
                 builder.UseSetting("HONUA_SKIP_MIGRATIONS", "true");
 
                 _configureWebHost?.Invoke(builder);
@@ -317,8 +318,9 @@ public sealed class WebAppFixture : IAsyncLifetime
                     .WithWebHostBuilder(builder =>
                     {
                         builder.UseEnvironment("Test");
+                        // honua-server#1144: dev-auth bypass requires explicit ack.
                         builder.UseSetting("HONUA_DEV_AUTH", "true");
-                        builder.UseSetting("HONUA_DEV_AUTH_ACK", "i-understand-this-bypasses-auth");
+                        builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "true");
                         builder.UseSetting("HONUA_ADMIN_PASSWORD", SharedAdminPassword);
                         builder.UseSetting("HONUA_SKIP_MIGRATIONS", "true");
 
@@ -332,7 +334,7 @@ public sealed class WebAppFixture : IAsyncLifetime
                                 ["Geocoding:Nominatim:BaseUrl"] = StableTestGeocodingBaseUrl,
                                 ["Geocoding:Providers:Nominatim:BaseUrl"] = StableTestGeocodingBaseUrl,
                                 ["HONUA_DEV_AUTH"] = "true",
-                                ["HONUA_DEV_AUTH_ACK"] = "i-understand-this-bypasses-auth",
+                                ["HONUA_DEV_AUTH_ALLOW_BYPASS"] = "true",
                                 ["HONUA_ADMIN_PASSWORD"] = SharedAdminPassword,
                                 ["HONUA_SKIP_MIGRATIONS"] = "true",
                                 ["HONUA_TEST_SCHEMA_HEADERS"] = "true",

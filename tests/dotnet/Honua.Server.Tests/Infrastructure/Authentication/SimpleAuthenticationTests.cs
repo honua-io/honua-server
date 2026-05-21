@@ -150,9 +150,9 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
             });
 
         // Act & Assert - Startup should fail fast in production when DEV_AUTH is enabled.
-        // Wave-2 hardening replaced the prior generic "Configuration validation failed" with
-        // a security-prefixed message from DevAuthBypassStartupValidator. Accept either to
-        // remain compatible with future validator wording.
+        // Accept either the generic "Configuration validation failed" wording or any
+        // HONUA_DEV_AUTH-mentioning rejection from the validator, so future validator
+        // wording tweaks don't break the assertion.
         var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
         Assert.True(
             exception.Message.Contains("HONUA_DEV_AUTH", StringComparison.OrdinalIgnoreCase) ||

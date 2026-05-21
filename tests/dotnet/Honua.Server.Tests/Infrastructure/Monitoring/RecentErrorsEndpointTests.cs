@@ -144,7 +144,9 @@ public sealed class RecentErrorsEndpointTests
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
                         ["HONUA_DEV_AUTH"] = "true",
-                        ["HONUA_DEV_AUTH_ACK"] = "i-understand-this-bypasses-auth",
+                        // Required as of #1144: the bypass needs an explicit operator
+                        // acknowledgement in addition to HONUA_DEV_AUTH.
+                        ["HONUA_DEV_AUTH_ALLOW_BYPASS"] = "true",
                         ["Monitoring:RecentErrors:Capacity"] = capacity.ToString(CultureInfo.InvariantCulture)
                     });
                 });

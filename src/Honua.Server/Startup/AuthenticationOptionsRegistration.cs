@@ -49,7 +49,7 @@ internal static class AuthenticationOptionsRegistration
 
             options.AdminPassword = adminPassword;
             options.DevAuthBypass = configuration["HONUA_DEV_AUTH"];
-            options.DevAuthBypassAck = configuration["HONUA_DEV_AUTH_ACK"];
+            options.DevAuthBypassAcknowledged = configuration["HONUA_DEV_AUTH_ALLOW_BYPASS"];
             options.EnvironmentName = environment.EnvironmentName;
             options.EnableBasicAuthCompatibility =
                 configuration.GetValue("Authentication:BasicCompatibility:Enabled",
