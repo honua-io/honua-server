@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+#pragma warning disable CA1859 // Evidence-pack builders take IReadOnlyList<T> so callers can pass List/array/immutable collections uniformly; the perf difference is not on a hot path.
+
 using System.Security.Cryptography;
 using System.Text.Json;
 using Honua.Core.Features.Import.Domain;

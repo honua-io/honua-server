@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+#pragma warning disable CA1859 // Tile-cache export helpers return IReadOnlyList<T>/IReadOnlySet<T> so callers can pass any compatible collection uniformly; the perf difference is not on a hot path.
+
 using System.Diagnostics;
 using System.Globalization;
 using System.Net.Http.Headers;

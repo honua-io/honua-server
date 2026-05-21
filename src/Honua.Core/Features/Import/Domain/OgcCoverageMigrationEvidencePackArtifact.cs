@@ -30,8 +30,7 @@ namespace Honua.Core.Features.Import.Domain;
 /// <para>
 /// AOT note: this record uses POCO-only properties (no polymorphic
 /// converters, no <c>JsonExtensionData</c>) so the source-generated
-/// <see cref="OgcCoverageMigrationEvidencePackJsonContext"/> remains
-/// trim/AOT safe.
+/// JSON context remains trim/AOT safe.
 /// </para>
 /// </remarks>
 public sealed record OgcCoverageMigrationEvidencePackArtifact
