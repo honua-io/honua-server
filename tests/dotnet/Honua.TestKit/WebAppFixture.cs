@@ -364,7 +364,7 @@ public sealed class WebAppFixture : IAsyncLifetime
                     serviceId: "svc-test-stac",
                     resourceId: resourceId,
                     layerIndex: layerIndex,
-                    serviceLocalId: $"collection-{layerIndex}",
+                    serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     publicationType: MetadataV2PublicationType.StacCollection);
         }
 
