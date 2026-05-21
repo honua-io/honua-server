@@ -771,4 +771,97 @@ internal static class LayerValidationHelpers
             : null;
         return (publication, resource, service);
     }
+
+    /// <summary>
+    /// V2 service-level validation. Looks up a <see cref="MetadataV2Service"/> by name and gates
+    /// it on the access policy. Returns the resolved service plus all of its publications and
+    /// their resources, so capability/metadata handlers can build their response without further
+    /// snapshot walking.
+    /// </summary>
+    /// <param name="context">HTTP context.</param>
+    /// <param name="serviceName">Public service name (case-insensitive).</param>
+    /// <param name="requiredServiceType">Optional <see cref="MetadataV2ServiceType"/> gate; when
+    /// set, only matches services of that type. Use to route a request to (for example) the
+    /// EsriMapService publication when a v1 service name is shared across multiple V2 service
+    /// types.</param>
+    /// <param name="scope">Access scope to check.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public static async Task<MetadataV2ServiceValidationResult> ValidateServiceWithAccessV2Async(
+        HttpContext context,
+        string serviceName,
+        MetadataV2ServiceType? requiredServiceType = null,
+        AccessScope scope = AccessScope.Read,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(serviceName))
+        {
+            return new MetadataV2ServiceValidationResult(
+                false, null, [], [],
+                StandardErrorHelpers.CreateBadRequest(context, "Service name is required."));
+        }
+
+        var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+
+        // Prefer a service-type match; otherwise fall back to name match.
+        MetadataV2Service? service = null;
+        if (requiredServiceType.HasValue)
+        {
+            service = snapshot.Graph.Services.FirstOrDefault(s =>
+                s.ServiceType == requiredServiceType.Value &&
+                string.Equals(s.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase));
+        }
+        service ??= snapshot.Index.ServicesByName.TryGetValue(serviceName, out var s) ? s : null;
+
+        if (service is null)
+        {
+            return new MetadataV2ServiceValidationResult(
+                false, null, [], [],
+                StandardErrorHelpers.CreateNotFound(context, $"Service '{serviceName}' not found."));
+        }
+
+        if (requiredServiceType.HasValue && service.ServiceType != requiredServiceType.Value)
+        {
+            return new MetadataV2ServiceValidationResult(
+                false, service, [], [],
+                StandardErrorHelpers.CreateNotFound(
+                    context, $"{requiredServiceType.Value} is not enabled for service '{serviceName}'."));
+        }
+
+        var serviceAccessError = AccessPolicyHelpers.RequireServiceAccess(context, service, scope);
+        if (serviceAccessError != null)
+        {
+            return new MetadataV2ServiceValidationResult(false, service, [], [], serviceAccessError);
+        }
+
+        var publications = snapshot.PublicationsForService(service.Metadata.Id);
+        var resources = new List<MetadataV2Resource>(publications.Count);
+        foreach (var pub in publications)
+        {
+            var resource = snapshot.ResolveResource(pub);
+            if (resource is null)
+            {
+                continue;
+            }
+            // Drop resources the caller can't read; capability documents normally hide them.
+            if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, service, scope))
+            {
+                continue;
+            }
+            resources.Add(resource);
+        }
+
+        return new MetadataV2ServiceValidationResult(true, service, publications, resources, null);
+    }
 }
+
+/// <summary>
+/// Result of V2 service-level validation. Carries the service plus its full publication set and
+/// the resources visible to the caller, so capability-document handlers don't have to walk the
+/// graph again.
+/// </summary>
+internal readonly record struct MetadataV2ServiceValidationResult(
+    bool IsValid,
+    MetadataV2Service? Service,
+    IReadOnlyList<MetadataV2Publication> Publications,
+    IReadOnlyList<MetadataV2Resource> AccessibleResources,
+    IResult? ErrorResult);

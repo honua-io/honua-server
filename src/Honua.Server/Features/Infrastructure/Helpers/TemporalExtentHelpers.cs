@@ -5,6 +5,7 @@ using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Server.Features.Infrastructure.Helpers;
 
@@ -33,6 +34,17 @@ internal static class TemporalExtentHelpers
     internal readonly record struct TemporalRange(
         FieldDefinition StartField,
         FieldDefinition? EndField,
+        DateTimeOffset? Min,
+        DateTimeOffset? Max,
+        bool HasExtent);
+
+    /// <summary>
+    /// V2 parallel of <see cref="TemporalRange"/> — the start and end fields are name strings
+    /// instead of v1 <see cref="FieldDefinition"/> objects.
+    /// </summary>
+    internal readonly record struct MetadataV2TemporalRange(
+        string StartFieldName,
+        string? EndFieldName,
         DateTimeOffset? Min,
         DateTimeOffset? Max,
         bool HasExtent);
@@ -203,6 +215,102 @@ internal static class TemporalExtentHelpers
 
         var hasExtent = startExtent != null || endExtent != null;
         return new TemporalRange(startField, endField, min, max, hasExtent);
+    }
+
+    /// <summary>
+    /// V2 overload of <see cref="TryResolveTemporalRangeAsync(LayerDefinition, IFeatureReader, CancellationToken)"/>.
+    /// Reads the start/end field names from <see cref="MetadataV2Resource.Temporal"/> and probes
+    /// the feature store for the time range. Returns a typed range (start/end fields and the
+    /// observed extent) so capability handlers can advertise the layer's time dimension.
+    /// </summary>
+    /// <param name="resource">V2 resource carrying the temporal extension.</param>
+    /// <param name="layerIndex">The integer layer id used by the feature store (publication.LayerIndex).</param>
+    /// <param name="featureReader">Feature store reader.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public static async Task<MetadataV2TemporalRange?> TryResolveTemporalRangeV2Async(
+        MetadataV2Resource resource,
+        int layerIndex,
+        IFeatureReader featureReader,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        ArgumentNullException.ThrowIfNull(featureReader);
+
+        var fields = resource.ReadTemporalFields();
+        if (string.IsNullOrWhiteSpace(fields.StartTimeField))
+        {
+            return null;
+        }
+
+        var startFieldType = ResolveSchemaFieldType(resource, fields.StartTimeField);
+        TemporalExtentResult? startExtent;
+        try
+        {
+            startExtent = await featureReader.GetTemporalExtentAsync(
+                layerIndex,
+                fields.StartTimeField,
+                startFieldType,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (NotSupportedException)
+        {
+            return null;
+        }
+
+        TemporalExtentResult? endExtent = null;
+        if (!string.IsNullOrWhiteSpace(fields.EndTimeField) &&
+            !string.Equals(fields.EndTimeField, fields.StartTimeField, StringComparison.OrdinalIgnoreCase))
+        {
+            var endFieldType = ResolveSchemaFieldType(resource, fields.EndTimeField);
+            try
+            {
+                endExtent = await featureReader.GetTemporalExtentAsync(
+                    layerIndex,
+                    fields.EndTimeField,
+                    endFieldType,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (NotSupportedException)
+            {
+                return null;
+            }
+        }
+
+        var min = startExtent?.Start;
+        DateTimeOffset? max;
+        if (string.IsNullOrWhiteSpace(fields.EndTimeField))
+        {
+            max = startExtent?.End;
+        }
+        else
+        {
+            max = endExtent?.End ?? endExtent?.Start ?? startExtent?.End;
+        }
+
+        var hasExtent = startExtent != null || endExtent != null;
+        return new MetadataV2TemporalRange(
+            fields.StartTimeField!,
+            fields.EndTimeField,
+            min,
+            max,
+            hasExtent);
+    }
+
+    private static FieldType ResolveSchemaFieldType(MetadataV2Resource resource, string fieldName)
+    {
+        foreach (var field in resource.SchemaFields)
+        {
+            if (string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
+            {
+                return field.Type?.ToLowerInvariant() switch
+                {
+                    "date" => FieldType.Date,
+                    "time" => FieldType.Time,
+                    _ => FieldType.DateTime,
+                };
+            }
+        }
+        return FieldType.DateTime;
     }
 
     private static bool TryResolveTemporalFields(
