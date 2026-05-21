@@ -442,7 +442,9 @@ jobs:
         # coverage entirely to postgres-compat.
         # Coverlet XPlat collector emits cobertura.xml per project under
         # ./coverage; see coverlet.runsettings for exclusions / formats.
-        timeout-minutes: 20
+        # Timeout bumped 20→30 to absorb XPlat-collector instrumentation
+        # overhead on the larger Honua.Core assembly (#1144).
+        timeout-minutes: 30
         run: |
           dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj \
             --no-build \
