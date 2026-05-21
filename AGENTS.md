@@ -438,3 +438,13 @@ tests/
 ├── Honua.MySql.Tests/     # MySQL/MariaDB provider tests (Testcontainers gated)
 └── Honua.Architecture.Tests/  # Architecture enforcement
 ```
+
+### Follow-ups
+
+- `src/Honua.Server/Features/Infrastructure/` currently aggregates several
+  cross-cutting concerns (Middleware, Authentication, Caching, RateLimiting,
+  Security, Styling, etc.). The audit (#1144) recommended promoting clearly
+  bounded subfolders (e.g. `Styling/`, 26 files) into dedicated feature
+  folders alongside `Protocols/`, `Admin/`, `Reporting/`. This is deferred —
+  Styling references span endpoint files, the admin metadata surface and the
+  layout pipeline, so a move requires a dedicated PR with namespace updates.
