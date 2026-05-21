@@ -17,6 +17,14 @@ namespace Honua.Postgres.Features.Import;
 /// artifacts as JSONB so schema evolution is owned by the artifact records themselves
 /// (#1025 slice 6).
 /// </summary>
+[System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
+    "Trimming",
+    "IL2026:Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code",
+    Justification = "Evidence store persists artifact records as opaque JSONB; the AOT host registers the artifact types via ImportJsonContext source-gen used elsewhere, and this store is never reached from native-AOT-published binaries (PostgreSQL provider lights up only in the JIT host).")]
+[System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
+    "AOT",
+    "IL3050:Calling members annotated with 'RequiresDynamicCodeAttribute' may break functionality when AOT compiling",
+    Justification = "Evidence store persists artifact records as opaque JSONB; the AOT host registers the artifact types via ImportJsonContext source-gen used elsewhere, and this store is never reached from native-AOT-published binaries (PostgreSQL provider lights up only in the JIT host).")]
 internal sealed class PostgresArcGisMigrationEvidenceStore : IArcGisMigrationEvidenceStore
 {
     private static readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
