@@ -27,6 +27,15 @@ public sealed record OgcCoverageImportResult
     /// Whether the request was a dry-run preview.
     /// </summary>
     public bool DryRun { get; init; }
+
+    /// <summary>
+    /// Coverage-style migration diagnostics emitted while inspecting source
+    /// coverage style hints. Empty when no inventoried coverage advertised a
+    /// color map, band statistics, NoData marker, transparency preset, legend,
+    /// or rendering hint that required separate operator attention.
+    /// Slice 4 of issue #1030.
+    /// </summary>
+    public MigrationCoverageStyleDiagnostic[] StyleDiagnostics { get; init; } = [];
 }
 
 /// <summary>
