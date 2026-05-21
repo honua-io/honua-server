@@ -481,9 +481,12 @@ jobs:
         # NSubstitute / NullLogger / in-memory caches and do not require the
         # PostgreSQL service. Decoupled from the targeted-shards matrix so a
         # PR with no matching shard still runs the fast server unit tests.
-        # Timeout bumped 10→20 to absorb Coverlet XPlat-collector instrumentation
-        # overhead on the larger Honua.Server assembly (#1144).
-        timeout-minutes: 20
+        # Coverage collection on this step would add ~20m of Coverlet teardown
+        # overhead on Honua.Server.dll (size + density). Server.Tests coverage
+        # is collected by the sharded server-tests jobs which DO use the
+        # collector. Keeping this step coverage-free preserves the "fast smoke"
+        # intent (#1144).
+        timeout-minutes: 15
         run: |
           dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build \
@@ -492,9 +495,7 @@ jobs:
             --filter "Tier=Fast" \
             --logger "trx;LogFileName=server-fast-tier.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults \
-            --collect:"XPlat Code Coverage" \
-            --settings coverlet.runsettings
+            --results-directory ./tests/TestResults
 
       - name: Run .NET Tests (Architecture)
         timeout-minutes: 10
