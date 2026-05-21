@@ -15,7 +15,7 @@
       }
     ]
   },
-  "description": "Tile/cache traffic. Uses generic honua_cache_operation_total emitted by PerformanceMetrics. A tile-cache-specific meter (per-cache-type label) is not yet emitted; evictions panel is a placeholder. See #1144.",
+  "description": "Tile/cache traffic. Hit/miss/eviction series come from the canonical honua_cache_{hits,misses,evictions}_total counters emitted by HonuaCacheMetrics; legacy honua_cache_operation_total is retained for backward compatibility with older exporters.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -208,20 +208,9 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Placeholder. Requires a cache-eviction counter (e.g. honua_cache_operation_total{operation=\"eviction\"} or a dedicated honua_cache_evictions_total) to be wired up consistently; see #1144.",
+      "description": "Evictions per second, partitioned by cache_name. Sourced from honua_cache_evictions_total (HonuaCacheMetrics). IMemoryCache PostEvictionCallback covers TTL, capacity, and explicit-remove evictions.",
       "fieldConfig": {
         "defaults": {
-          "mappings": [
-            {
-              "options": {
-                "match": "null",
-                "result": {
-                  "text": "n/a"
-                }
-              },
-              "type": "special"
-            }
-          ],
           "min": 0,
           "unit": "ops"
         },
@@ -235,28 +224,57 @@
       },
       "id": 6,
       "options": {
-        "colorMode": "none",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "targets": [
         {
-          "expr": "sum(rate(honua_cache_operation_total{operation=\"eviction\"}[5m]))",
-          "legendFormat": "evictions/s",
+          "expr": "sum(rate(honua_cache_evictions_total[5m])) by (cache_name)",
+          "legendFormat": "{{cache_name}}",
           "refId": "A"
         }
       ],
-      "title": "Evictions (placeholder - requires meter, see #1144)",
-      "type": "stat"
+      "title": "Evictions by Cache",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Per-cache hit ratio sourced from honua_cache_hits_total / (honua_cache_hits_total + honua_cache_misses_total) over a 5m window. Tagged with cache_name (e.g. response, query_results).",
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(honua_cache_hits_total[5m])) by (cache_name) / (sum(rate(honua_cache_hits_total[5m])) by (cache_name) + sum(rate(honua_cache_misses_total[5m])) by (cache_name))",
+          "legendFormat": "{{cache_name}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Hit Ratio % by Cache",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
