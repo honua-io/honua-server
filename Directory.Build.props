@@ -68,8 +68,13 @@
     of the published packages get debuggable sources and we get consistent code-
     quality feedback. PrivateAssets="all" keeps these out of the runtime package
     graph; they only run at compile time.
+
+    Gate: skip for the synthetic `package-test` consumer project the core-package-
+    compatibility CI job creates via `dotnet new console`. That project inherits
+    this Directory.Build.props but doesn't see Directory.Packages.props's
+    centrally-managed versions, which produces NU1015/NU1604.
   -->
-  <ItemGroup>
+  <ItemGroup Condition="'$(HonuaSkipRepoAnalyzers)' != 'true' AND '$(MSBuildProjectName)' != 'package-test'">
     <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="all" />
     <PackageReference Include="Roslynator.Analyzers" PrivateAssets="all" />
   </ItemGroup>
