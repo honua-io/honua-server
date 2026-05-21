@@ -15,4 +15,7 @@ internal static class Categories
     public const string Filter = "filter";
     public const string Serialization = "serialization";
     public const string Cache = "cache";
+    public const string Raster = "raster";
+    public const string Spec = "spec";
+    public const string ConnectionPool = "connection-pool";
 }

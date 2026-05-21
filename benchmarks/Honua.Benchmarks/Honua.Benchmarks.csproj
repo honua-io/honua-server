@@ -16,7 +16,7 @@
       harness. Suppress the noisy categories so the harness builds clean under
       the repo-wide TreatWarningsAsErrors policy without weakening it elsewhere.
     -->
-    <NoWarn>$(NoWarn);CS1591;CA1707;CA1822;CA1812;CA1515;CA1062;CA2007;CA1869;IDE0005;IDE0051;IDE0052;IL2026;IL2104;IL3050;IL3002</NoWarn>
+    <NoWarn>$(NoWarn);CS1591;CA1001;CA1707;CA1822;CA1812;CA1515;CA1062;CA2007;CA1869;IDE0005;IDE0051;IDE0052;IL2026;IL2104;IL3050;IL3002</NoWarn>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <!--
       AOT compatibility is intentionally disabled: BenchmarkDotNet generates
@@ -34,6 +34,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Honua.Core\Honua.Core.csproj" />
     <ProjectReference Include="..\..\src\Honua.Server\Honua.Server.csproj" />
+    <ProjectReference Include="..\..\src\Honua.Postgres\Honua.Postgres.csproj" />
   </ItemGroup>
 
 </Project>
