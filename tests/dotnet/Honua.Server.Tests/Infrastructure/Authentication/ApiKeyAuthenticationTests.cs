@@ -181,28 +181,49 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
     }
 
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
-    public async Task AdminEndpoint_StagingEnvironment_DevAuthSet_BypassNotActive()
+    [Fact]
+    public void AdminEndpoint_StagingEnvironment_DevAuthSet_StartupValidationRejects()
     {
         // SECURITY REGRESSION GUARD (honua-server#1144):
-        // The dev-auth bypass must NEVER activate in Staging, even when both
-        // HONUA_DEV_AUTH=true and HONUA_DEV_AUTH_ALLOW_BYPASS=true are present.
-        // Staging is production-like and must enforce API-key authentication.
-        using var factory = CreateTestFactory(builder =>
+        // The dev-auth bypass must NEVER be configurable in Staging. Startup
+        // configuration validation (ConfigurationValidationService) is the
+        // first line of defence — setting HONUA_DEV_AUTH=true in a
+        // non-relaxed environment must fail to start, before any request can
+        // arrive. This is stronger than a request-level 401 check because the
+        // misconfiguration never reaches the auth handler at all.
+        var exception = Assert.Throws<InvalidOperationException>(() =>
         {
-            builder.UseEnvironment("Staging");
-            builder.UseSetting("HONUA_DEV_AUTH", "true");
-            builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "true");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
+            using var factory = CreateTestFactory(builder =>
+            {
+                builder.UseEnvironment("Staging");
+                builder.UseSetting("HONUA_DEV_AUTH", "true");
+                builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "true");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
+            });
+            _ = factory.CreateClient();
         });
-        using var client = factory.CreateClient();
+        Assert.Contains("Configuration validation failed", exception.Message);
+    }
 
-        // Act - Access admin endpoint without API key
-        var response = await client.GetAsync("/api/v1/admin/connections/test/tables");
-
-        // Assert - Bypass MUST NOT apply; authentication is required.
-        Assert.Equal(401, (int)response.StatusCode);
+    [Fact]
+    public void AdminEndpoint_CustomEnvironment_DevAuthSet_StartupValidationRejects()
+    {
+        // SECURITY REGRESSION GUARD (honua-server#1144):
+        // Custom/unknown environment names (e.g. QA, Preview) must default to
+        // enforcing authentication. The dev-auth bypass cannot be configured
+        // in any environment other than Development or Test.
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+        {
+            using var factory = CreateTestFactory(builder =>
+            {
+                builder.UseEnvironment("QA");
+                builder.UseSetting("HONUA_DEV_AUTH", "true");
+                builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "true");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
+            });
+            _ = factory.CreateClient();
+        });
+        Assert.Contains("Configuration validation failed", exception.Message);
     }
 
     [IntegrationTest]
@@ -210,9 +231,10 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     public async Task AdminEndpoint_DevelopmentEnvironment_DevAuthSet_BypassNotActive()
     {
         // SECURITY REGRESSION GUARD (honua-server#1144):
-        // The bypass is restricted to the Test environment. Even Development
-        // must exercise the API-key authentication path so developers debug the
-        // same code their operators ship.
+        // The bypass is restricted to the Test environment. In Development,
+        // HONUA_DEV_AUTH is permitted by configuration validation, but the
+        // auth handler's IsAllowedBypassEnvironment refuses to honour it.
+        // Developers must exercise the same API-key path their operators ship.
         using var factory = CreateTestFactory(builder =>
         {
             builder.UseEnvironment("Development");
@@ -226,27 +248,6 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         var response = await client.GetAsync("/api/v1/admin/connections/test/tables");
 
         // Assert - Bypass MUST NOT apply; authentication is required.
-        Assert.Equal(401, (int)response.StatusCode);
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
-    public async Task AdminEndpoint_CustomEnvironment_DevAuthSet_BypassNotActive()
-    {
-        // SECURITY REGRESSION GUARD (honua-server#1144):
-        // Custom/unknown environment names (e.g. QA, Preview) must default to
-        // enforcing authentication. Only "Test" is allowed to bypass.
-        using var factory = CreateTestFactory(builder =>
-        {
-            builder.UseEnvironment("QA");
-            builder.UseSetting("HONUA_DEV_AUTH", "true");
-            builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "true");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
-        });
-        using var client = factory.CreateClient();
-
-        var response = await client.GetAsync("/api/v1/admin/connections/test/tables");
-
         Assert.Equal(401, (int)response.StatusCode);
     }
 
