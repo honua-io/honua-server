@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.IO.Compression;
 
 namespace Honua.Core.Features.Raster.CogParser;
@@ -44,12 +45,47 @@ public static class TileDecompressor
     /// TIFF DEFLATE compression uses zlib (RFC 1950) wrapping, not raw DEFLATE (RFC 1951).
     /// GDAL and all major COG producers write zlib-wrapped data for compression codes 8 and 32946.
     /// </summary>
+    // Tradeoff: callers consume the returned byte[] across async hops and ownership boundaries,
+    // so we still allocate a sized byte[] for the result but pool the growing scratch buffer
+    // (the unbounded intermediate that previously came from MemoryStream's internal doubling).
     private static byte[] DecompressZlib(byte[] compressedData)
     {
+        // MemoryStream(byte[]) is a non-copying wrapper over the input, so no pooling needed there.
         using var input = new MemoryStream(compressedData);
         using var zlib = new ZLibStream(input, CompressionMode.Decompress);
-        using var output = new MemoryStream();
-        zlib.CopyTo(output);
-        return output.ToArray();
+
+        // Start with a buffer sized to the compressed input (decompressed output is typically
+        // 2-4x larger, but we grow on demand from the pool rather than via MemoryStream doubling).
+        var pool = ArrayPool<byte>.Shared;
+        var scratch = pool.Rent(Math.Max(compressedData.Length * 2, 4096));
+        var written = 0;
+        try
+        {
+            while (true)
+            {
+                if (written == scratch.Length)
+                {
+                    var bigger = pool.Rent(scratch.Length * 2);
+                    Buffer.BlockCopy(scratch, 0, bigger, 0, written);
+                    pool.Return(scratch);
+                    scratch = bigger;
+                }
+
+                var read = zlib.Read(scratch.AsSpan(written));
+                if (read == 0)
+                {
+                    break;
+                }
+                written += read;
+            }
+
+            var result = new byte[written];
+            Buffer.BlockCopy(scratch, 0, result, 0, written);
+            return result;
+        }
+        finally
+        {
+            pool.Return(scratch);
+        }
     }
 }

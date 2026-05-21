@@ -538,12 +538,10 @@ internal sealed class PostgresSecureConnectionRegistry : ISecureConnectionRegist
     /// <summary>
     /// Gets all active connections (interface compatibility wrapper).
     /// </summary>
-    Task<IEnumerable<DataConnection>> ISecureConnectionRegistry.GetActiveConnectionsAsync(CancellationToken cancellationToken)
+    async Task<IEnumerable<DataConnection>> ISecureConnectionRegistry.GetActiveConnectionsAsync(CancellationToken cancellationToken)
     {
-        return GetActiveConnectionsAsync(cancellationToken).ContinueWith(
-            task => (IEnumerable<DataConnection>)task.Result,
-            cancellationToken,
-            TaskContinuationOptions.OnlyOnRanToCompletion,
-            TaskScheduler.Default);
+        // IReadOnlyList<T> implements IEnumerable<T>, so the await result naturally satisfies the
+        // interface contract — no extra projection or ContinueWith blocking on .Result required.
+        return await GetActiveConnectionsAsync(cancellationToken).ConfigureAwait(false);
     }
 }
