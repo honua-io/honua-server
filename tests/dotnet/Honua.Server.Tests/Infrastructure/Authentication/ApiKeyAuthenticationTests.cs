@@ -226,29 +226,25 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         Assert.Contains("Configuration validation failed", exception.Message);
     }
 
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
-    public async Task AdminEndpoint_DevelopmentEnvironment_DevAuthSet_BypassNotActive()
+    [Fact]
+    public void AdminEndpoint_DevelopmentEnvironment_DevAuthSet_StartupValidationRejects()
     {
         // SECURITY REGRESSION GUARD (honua-server#1144):
         // The bypass is restricted to the Test environment. In Development,
-        // HONUA_DEV_AUTH is permitted by configuration validation, but the
-        // auth handler's IsAllowedBypassEnvironment refuses to honour it.
-        // Developers must exercise the same API-key path their operators ship.
-        using var factory = CreateTestFactory(builder =>
+        // HONUA_DEV_AUTH=true is REJECTED at startup — operators must
+        // configure HONUA_ADMIN_PASSWORD for development access instead.
+        var exception = Assert.Throws<InvalidOperationException>(() =>
         {
-            builder.UseEnvironment("Development");
-            builder.UseSetting("HONUA_DEV_AUTH", "true");
-            builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "true");
-            builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
+            using var factory = CreateTestFactory(builder =>
+            {
+                builder.UseEnvironment("Development");
+                builder.UseSetting("HONUA_DEV_AUTH", "true");
+                builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "true");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
+            });
+            _ = factory.CreateClient();
         });
-        using var client = factory.CreateClient();
-
-        // Act - Access admin endpoint without API key
-        var response = await client.GetAsync("/api/v1/admin/connections/test/tables");
-
-        // Assert - Bypass MUST NOT apply; authentication is required.
-        Assert.Equal(401, (int)response.StatusCode);
+        Assert.Contains("Configuration validation failed", exception.Message);
     }
 
     #endregion
