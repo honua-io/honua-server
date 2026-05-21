@@ -20,7 +20,7 @@ namespace Honua.Server.Features.Import;
 /// Redis-based distributed import job manager with in-memory fallback.
 /// Uses StackExchange.Redis primitives when available, falling back to IDistributedCache.
 /// </summary>
-internal sealed partial class RedisImportJobManager : IDistributedImportJobManager, IImportWorkerJobManager<GeoservicesImportRequest, GeoservicesImportProgress>, IImportCoordinationHealth, IDisposable
+internal sealed partial class RedisImportJobManager : IDistributedImportJobManager, IImportWorkerJobManager<GeoservicesImportRequest, GeoservicesImportProgress>, IImportCoordinationHealth, IAsyncDisposable, IDisposable
 {
     private readonly ImportJobManagerState<GeoservicesImportRequest, GeoservicesImportProgress> _state;
 
@@ -54,6 +54,20 @@ internal sealed partial class RedisImportJobManager : IDistributedImportJobManag
 
     public void Dispose()
     {
+        if (_state.LeaderElection is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_state.LeaderElection is IAsyncDisposable asyncDisposable)
+        {
+            await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+            return;
+        }
+
         if (_state.LeaderElection is IDisposable disposable)
         {
             disposable.Dispose();
@@ -379,7 +393,7 @@ internal sealed partial class RedisJobQueue : IDistributedJobQueueService
 /// Falls back to node-local leadership only when Redis is not configured so
 /// single-node imports continue processing without creating split-brain risk.
 /// </summary>
-internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, IDisposable
+internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, IAsyncDisposable, IDisposable
 {
     private static readonly TimeSpan _disposeReleaseTimeout = TimeSpan.FromSeconds(1);
     private readonly IDatabase? _redisDb;
@@ -666,14 +680,28 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
 
     private void HeartbeatCallback(object? state)
     {
-        if (_disposed)
+        // Defense in depth: timer callbacks must never let exceptions escape (no managed
+        // handler for async void exceptions -> process crash). Wrap the entire body.
+        try
         {
-            return;
-        }
+            if (_disposed)
+            {
+                return;
+            }
 
-        _ = HeartbeatAsync(CancellationToken.None);
+            _ = HeartbeatAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            Log.UnhandledTimerException(_logger, nameof(HeartbeatCallback), ex);
+        }
     }
 
+    // Synchronous Dispose offloads the async release to a thread-pool task and waits with
+    // a bounded timeout. Running through Task.Run avoids reentrancy on the caller's
+    // SynchronizationContext (the classic sync-over-async deadlock); the timeout ensures
+    // we never block forever on a wedged Redis. Prefer DisposeAsync for deterministic
+    // release without any blocking wait.
     public void Dispose()
     {
         if (_disposed)
@@ -687,29 +715,58 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
         {
             try
             {
-                ReleaseLeadershipAsync(CancellationToken.None).WaitAsync(_disposeReleaseTimeout).GetAwaiter().GetResult();
-            }
-            catch (TimeoutException)
-            {
-                _isLeader = false;
-                _usingLocalFallbackLeadership = false;
-                Log.DisposeReleaseTimedOut(_logger, _instanceId, _disposeReleaseTimeout);
+                Task.Run(ReleaseLeadershipOnDisposeAsync).Wait(_disposeReleaseTimeout);
             }
             catch (Exception ex)
             {
-                _isLeader = false;
-                _usingLocalFallbackLeadership = false;
+                // ReleaseLeadershipOnDisposeAsync swallows its own exceptions; this guard
+                // covers scheduling failures (e.g., AggregateException from Task.Wait).
                 Log.LeadershipError(_logger, "dispose", ex);
             }
         }
-        else
-        {
-            _isLeader = false;
-            _usingLocalFallbackLeadership = false;
-        }
 
+        _isLeader = false;
+        _usingLocalFallbackLeadership = false;
         _disposed = true;
         _heartbeatTimer.Dispose();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _heartbeatTimer.Change(Timeout.Infinite, Timeout.Infinite);
+
+        if (_isLeader && _useRedis && _redisDb != null)
+        {
+            await ReleaseLeadershipOnDisposeAsync().ConfigureAwait(false);
+        }
+
+        _isLeader = false;
+        _usingLocalFallbackLeadership = false;
+        _disposed = true;
+        _heartbeatTimer.Dispose();
+    }
+
+    private async Task ReleaseLeadershipOnDisposeAsync()
+    {
+        try
+        {
+            await ReleaseLeadershipAsync(CancellationToken.None)
+                .WaitAsync(_disposeReleaseTimeout)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            Log.DisposeReleaseTimedOut(_logger, _instanceId, _disposeReleaseTimeout);
+        }
+        catch (Exception ex)
+        {
+            Log.LeadershipError(_logger, "dispose", ex);
+        }
     }
 
     private static partial class Log
@@ -737,6 +794,9 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
 
         [LoggerMessage(7617, LogLevel.Warning, "Timed out waiting {Timeout} to release leadership for instance {InstanceId} during dispose")]
         public static partial void DisposeReleaseTimedOut(ILogger logger, string instanceId, TimeSpan timeout);
+
+        [LoggerMessage(7618, LogLevel.Error, "Unhandled exception escaped timer callback {Callback}")]
+        public static partial void UnhandledTimerException(ILogger logger, string callback, Exception exception);
     }
 }
 
