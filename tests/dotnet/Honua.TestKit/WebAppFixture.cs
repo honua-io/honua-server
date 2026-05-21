@@ -303,8 +303,17 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// </summary>
     private static MetadataV2Graph BuildDefaultTestGraph()
     {
+        // The Postgres test seed (tests/seed/server.yaml) registers a single "test" service
+        // with every protocol enabled. Mirror that on the V2 graph so capability gates
+        // (ServiceProtocols.IsProtocolEnabled on the OGC API family) match the v1 behaviour.
+        var allProtocols = Honua.Core.Features.Catalog.Domain.ServiceProtocols.All;
         var builder = new Honua.TestKit.Infrastructure.TestMetadataV2GraphBuilder()
-            .AddService("svc-test", "test", MetadataV2ServiceType.OgcApiFeatures, route: "/ogc/features");
+            .AddService(
+                "svc-test",
+                "test",
+                MetadataV2ServiceType.OgcApiFeatures,
+                route: "/ogc/features",
+                enabledProtocols: allProtocols);
 
         // Cover the layer ids inserted by server.yaml (0..2 and the spatial-reference fixtures
         // at 101..104). Any test that needs a different id range can extend or replace the graph.

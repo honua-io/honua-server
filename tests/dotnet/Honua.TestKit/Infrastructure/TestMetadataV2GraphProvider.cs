@@ -134,13 +134,15 @@ public sealed class TestMetadataV2GraphBuilder
         string id,
         string name,
         MetadataV2ServiceType serviceType = MetadataV2ServiceType.OgcApiFeatures,
-        string? route = null)
+        string? route = null,
+        IReadOnlyList<string>? enabledProtocols = null)
     {
         _services.Add(new MetadataV2Service
         {
             Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
             ServiceType = serviceType,
             Route = route,
+            EnabledProtocols = enabledProtocols,
         });
         return this;
     }
