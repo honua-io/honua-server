@@ -378,6 +378,8 @@ internal static partial class TilesEndpoints
         [FromServices] IOptions<TileOptions> tileOptions,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
+        // TODO(#1144): wire tenant filter — resolve ITenantContext from context.RequestServices
+        // and reject (or scope) tile requests whose collectionId is not visible to the caller's tenant.
         var request = context.Request;
         var f = OgcCommonUtilities.GetQueryValue(request, "f");
         var datetime = OgcCommonUtilities.GetQueryValue(request, "datetime");
