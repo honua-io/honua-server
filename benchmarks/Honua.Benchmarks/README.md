@@ -15,6 +15,9 @@ alongside ns/op and runs can be filtered by category.
 | `Wfs20ParseBenchmarks` | `ogc`, `filter` | `Fes20Parser.ParseFilter` on simple, nested, and spatial WFS filter XML. |
 | `GeoJsonSerializationBenchmarks` | `ogc`, `serialization` | Source-generated `FeatureCollection` serialization at 10 / 1k / 10k features. |
 | `CacheKeyHashBenchmarks` | `cache` | `MetadataCacheKeyBuilder` Build / BuildKey / fingerprint hot paths plus a batched-burst case. |
+| `RasterMosaicBenchmarks` | `raster`, `tile` | `RasterMosaicUtilities.ResolveMergeStrategy` token / JSON paths plus `TileMath` Web Mercator and CRS84Quad bounds. |
+| `SpecParserBenchmarks` | `spec` | `SpecParser.Parse` across small, medium (canonical fixture) and large (16 sources, 32 compute steps) documents. |
+| `ConnectionPoolBenchmarks` | `connection-pool` | `QueryConcurrencyGate` uncontended WaitAsync/Release fast path, saturate-and-drain burst, and adaptive Release(TimeSpan) controller path. |
 
 ## Running
 
