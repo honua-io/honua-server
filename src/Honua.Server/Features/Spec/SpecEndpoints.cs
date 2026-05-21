@@ -27,7 +27,18 @@ internal static class SpecEndpoints
         ArgumentNullException.ThrowIfNull(endpoints);
 
         var group = endpoints.MapGroup("/v1/spec")
-            .WithTags("Spec");
+            .WithTags("Spec")
+            // Spec is a Terraform-style developer-experience surface that is
+            // currently anonymous by design: the apply engine performs its own
+            // operator-scoped authorization for each node, and the public
+            // entry points (validate/plan/apply/cancel/artifact) intentionally
+            // expose the workflow to unauthenticated callers in early access.
+            // Explicit AllowAnonymous documents that decision for
+            // authorization-policy tooling and the audit guard
+            // (Honua.Architecture.Tests.EndpointAuthorizationGuardTests).
+            // TODO(#1144): tighten to RequireAdminAuthorization once the SDK
+            // and test harness route through an authenticated transport.
+            .AllowAnonymous();
 
         group.MapPost("/validate", HandleValidateAsync)
             .WithDisplayName("Spec Validate")
