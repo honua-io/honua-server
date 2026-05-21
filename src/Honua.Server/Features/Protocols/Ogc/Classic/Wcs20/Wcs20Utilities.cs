@@ -45,6 +45,24 @@ internal static class Wcs20Utilities
             "jpg",
             "jpeg");
 
+    // Ordered list of CoverageFormats for shared OgcParameterValidator. Order
+    // mirrors the enumeration used in the OWS Capabilities document so error
+    // messages list canonical content types first.
+    internal static readonly ImmutableArray<string> CoverageFormatsList =
+        ImmutableArray.Create(
+            TiffContentType,
+            "image/geotiff",
+            "tiff",
+            "tif",
+            PngContentType,
+            "png",
+            JpegContentType,
+            "jpg",
+            "jpeg");
+
+    internal static readonly ImmutableArray<string> SupportedVersions =
+        ImmutableArray.Create(Version);
+
     internal static class Operations
     {
         internal const string GetCapabilities = "GetCapabilities";
