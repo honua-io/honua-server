@@ -58,6 +58,60 @@ Verified green at HEAD:
 * `dotnet test Honua.Architecture.Tests`: 63 / 63 pass.
 * `dotnet test Honua.Server.Tests` STAC slice: 91 / 93 pass, 2 known failures, 2 environment-skipped.
 
+## Cross-cluster shared-infra V2 surfaces still needed
+
+Parallel agent runs on FeatureServer, MapServer, WMS/WMTS, and OData all stopped
+after structural analysis with the same finding: **per-handler ports cannot
+complete cleanly until 8 shared helpers gain V2 overloads** (without violating
+the no-shims rule):
+
+1. **`IFilterExpressionService.Translate(FilterExpression, MetadataV2Resource)`**
+   — used by OData, OGC API Features query adapter, WFS Get/Transaction filter
+   pipeline, GeoServices FeatureServer query. Today the only overload takes
+   `LayerDefinition`. A V2 overload requires V2 surfaces all the way down
+   through `IFilterExpressionTranslator.Translate(FilterExpression,
+   MetadataV2Resource)`, `FilterExpressionNormalizer.Normalize(FilterExpression,
+   MetadataV2Resource)`, and `ISqlFilterTranslator.Translate(FilterExpression,
+   MetadataV2Resource)` — each walks `layer.AttributeFields[].Type` today and
+   would walk `resource.SchemaFields` instead. ~4 files, ~400 lines of additions.
+2. **`MetadataV2Relationship` + `IRelationshipStore` V2 overload** — OData
+   `$metadata`/`$expand`, FeatureServer related-records, WFS join queries all
+   need the relationship graph that today lives on
+   `LayerDefinition.LayerRelationships`. V2 namespace carries no relationship
+   model. Adding a new V2 record + extension reader (`resource.ReadRelationships()`)
+   + `IRelationshipStore.GetByResourceId` overload.
+3. **`RasterMapRenderingPipeline.RenderRasterTileV2Async(MetadataV2Service,
+   IReadOnlyList<(MetadataV2Resource, MetadataV2Publication)>, ...)`** — the
+   970-line renderer is consumed by MapServer Tile/Export, WMS GetMap, and WMTS
+   GetTile. Without a V2 overload all three protocol clusters remain stuck.
+4. **`IQueryParameterAdapter<T>.ConvertAsync(T, MetadataV2Resource, int layerId, ...)`**
+   + **`IEditParameterAdapter<T>.ConvertAsync(T, MetadataV2Resource, int layerId, ...)`**
+   — Core interfaces re-signed with V2 entities. Used by
+   `GeoServicesQueryParameterAdapter`, `ODataQueryParameterAdapter`,
+   `Wfs20QueryParameterAdapter`, `OgcFeaturesQueryParameterAdapter`.
+5. **`AccessPolicyHelpers.IsLayerAccessible(MetadataV2Resource,
+   MetadataV2Service?)`** + **`RequireAnyLayerAccess(IEnumerable<MetadataV2Resource>,
+   MetadataV2Service?)`** — V2 overloads exist for
+   `RequireResourceAccess`/`IsResourceAccessible`/`RequireAnyResourceAccess` but
+   the v1-named overloads still flow `LayerDefinition[]` and `ServiceDefinition`
+   through WMS GetCapabilities and FeatureServer access gating.
+6. **`OgcClassicRequestHelpers.GetWmsLayerName(MetadataV2Resource)`** — used by
+   WMS GetMap/GetFeatureInfo and MapServer Identify to map `<Name>` elements to
+   resources.
+7. **`IResourceValidator.ValidateServiceAsync(serviceName)` V2 result** — today
+   returns `ResourceValidationResult<ServiceDefinition>`. Each protocol
+   entry-point dispatches via this. `LayerValidationHelpers.ValidateServiceWithAccessV2Async`
+   is now in place (commit `a43bb490e`); per-protocol entry-point dispatchers
+   need to migrate onto it.
+8. **`TemporalExtentHelpers.TryResolveOptInTemporalFields(MetadataV2Resource)`**
+   + **`ResolveTemporalFieldsOrThrow(MetadataV2Resource)`** — companion V2
+   overloads for the temporal-resolution surface.
+   `TryResolveTemporalRangeV2Async` is in place (commit `a43bb490e`).
+
+These 8 Core/helper additions total roughly **8–12 hours of careful Core work**
+and gate the remaining ~50 per-handler ports. Once they land, per-handler ports
+go back to the established 1–5 file, &lt;500 line cadence.
+
 ## Known gaps
 
 * `StacCollectionsTests.GetCollection_ById_ReturnsDeclaredStacMetadata` and
