@@ -476,7 +476,9 @@ jobs:
         # NSubstitute / NullLogger / in-memory caches and do not require the
         # PostgreSQL service. Decoupled from the targeted-shards matrix so a
         # PR with no matching shard still runs the fast server unit tests.
-        timeout-minutes: 10
+        # Timeout bumped 10→20 to absorb Coverlet XPlat-collector instrumentation
+        # overhead on the larger Honua.Server assembly (#1144).
+        timeout-minutes: 20
         run: |
           dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build \
