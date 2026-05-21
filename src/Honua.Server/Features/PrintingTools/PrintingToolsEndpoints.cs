@@ -43,13 +43,19 @@ internal static class PrintingToolsEndpoints
             .WithTags("PrintingTools");
 
         // Synchronous execute
+        // PUBLIC by design (#1144): GeoServices Esri-style Export Web Map Task POST
+        // mirrors the GET form. The handler enforces edition gating via
+        // LicenseGate and resolves the caller principal through HttpContext.User
+        // for per-feature access checks. Marked AllowAnonymous so the audit
+        // architecture guard records the intentional decision.
         endpoints.MapPost($"{TaskRoute}/execute",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleExecute(context, cancellationToken))
             .WithDisplayName("Execute Print Task")
             .WithName("PrintingToolsExecute")
             .WithSummary("Execute a synchronous print task")
             .WithDescription("Composes a map layout from a web map JSON definition and returns the output")
-            .WithTags("PrintingTools");
+            .WithTags("PrintingTools")
+            .AllowAnonymous();
 
         endpoints.MapGet($"{TaskRoute}/execute",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleExecute(context, cancellationToken))
@@ -60,13 +66,18 @@ internal static class PrintingToolsEndpoints
             .WithTags("PrintingTools");
 
         // Async submit job (POST + GET per GP contract)
+        // PUBLIC by design (#1144): mirrors the GET submitJob and is bound by
+        // the same edition gating + per-feature access checks the handler runs
+        // against HttpContext.User. Marked AllowAnonymous so the audit guard
+        // records the intentional decision.
         endpoints.MapPost($"{TaskRoute}/submitJob",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleSubmitJob(context, cancellationToken))
             .WithDisplayName("Submit Print Job")
             .WithName("PrintingToolsSubmitJob")
             .WithSummary("Submit an asynchronous print job")
             .WithDescription("Queues a print job for background processing and returns a job ID")
-            .WithTags("PrintingTools");
+            .WithTags("PrintingTools")
+            .AllowAnonymous();
 
         endpoints.MapGet($"{TaskRoute}/submitJob",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleSubmitJob(context, cancellationToken))
