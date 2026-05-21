@@ -36,6 +36,7 @@ using Honua.Server.Features.FileStorage;
 using Honua.Server.Features.HealthCheck;
 using Honua.Server.Features.Import;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.AuditLog;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Configuration;
 using Honua.Server.Features.Infrastructure.Extensions;
@@ -43,6 +44,7 @@ using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Hosting;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Monitoring;
+using Honua.Server.Features.Infrastructure.MultiTenancy;
 using Honua.Server.Features.Infrastructure.RateLimiting;
 using Honua.Server.Features.Infrastructure.Redis;
 using Honua.Server.Features.Infrastructure.Security;
@@ -807,6 +809,12 @@ builder.Services.AddOidcAuthorization(builder.Configuration);
 builder.Services.AddSingleton<AdminAuthSessionStore>();
 // Configure security headers
 builder.Services.AddSecurityHeaders(builder.Configuration);
+// Configure security audit log sink (#1144)
+builder.Services.AddHonuaAuditLog();
+// Configure tenant context resolution rail (#1144). Defaults are bound from
+// the MultiTenancy configuration section; the inline callback is the wiring
+// point for environment-specific overrides.
+builder.Services.AddHonuaTenantContext(builder.Configuration, _ => { });
 // Configure CORS policies
 builder.Services.AddCorsPolicies(builder.Configuration, builder.Environment);
 builder.Services.AddInputValidation(builder.Configuration);
@@ -1132,6 +1140,16 @@ app.UseInputValidation();
 
 // Add authentication and authorization middleware early to short-circuit unauthorized requests
 app.UseApiKeyAuthentication();
+
+// Resolve tenant context immediately after authentication so claims (and the
+// X-Honua-Tenant override header) are evaluated against the resolved principal
+// before any downstream feature handler reads ITenantContext (#1144).
+app.UseHonuaTenantContext();
+
+// Audit-log middleware records security-relevant request outcomes. It runs after
+// auth so the audit actor is the authenticated principal, and before endpoint
+// execution so 401/403/5xx responses are still observed (#1144).
+app.UseHonuaAuditLog();
 
 // Rate limiting disabled per project requirements
 
