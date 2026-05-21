@@ -244,10 +244,11 @@ public sealed class SecurityComplianceTests : IAsyncLifetime
         response.Headers.Should().ContainKey("X-XSS-Protection");
         response.Headers.GetValues("X-XSS-Protection").Should().Contain("1; mode=block");
 
-        response.Headers.Should().ContainKey("Strict-Transport-Security");
-        var hstsHeader = response.Headers.GetValues("Strict-Transport-Security").First();
-        hstsHeader.Should().Contain("max-age=");
-        hstsHeader.Should().Contain("includeSubDomains");
+        // Strict-Transport-Security is only emitted on HTTPS per RFC 6797 §7.2
+        // and SecurityHeadersOptions.HstsHttpsOnly (default true). The in-memory
+        // TestServer used here speaks HTTP, so we verify the header is absent;
+        // HSTS-over-HTTPS coverage lives in unit tests where IsHttps can be forced.
+        response.Headers.Should().NotContainKey("Strict-Transport-Security");
 
         response.Headers.Should().ContainKey("Content-Security-Policy");
     }

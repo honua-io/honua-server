@@ -63,6 +63,43 @@ public sealed class OgcWmsWmtsMigrationPlannerTests
     }
 
     [Fact]
+    public void WmsPlanner_LayerMetadata_CarriesPreferredCompanionWfsSourceHint()
+    {
+        var inventory = CreateWmsInventory();
+
+        var result = OgcWmsMigrationPlanner.Plan(inventory, WmsContainerId);
+
+        var metadataEntry = result.Entries.Should().ContainSingle(entry =>
+                entry.Category == "layer-metadata" && entry.SourceId == "wms-layer:roads")
+            .Subject;
+        metadataEntry.Metadata.Should().ContainKey("companionSourceKind").WhoseValue.Should().Be("ogc-wfs");
+        metadataEntry.Metadata.Should().ContainKey("companionTypeNameHint").WhoseValue.Should().Be("roads");
+        metadataEntry.Metadata.Should().ContainKey("companionCapabilitiesUrl")
+            .WhoseValue.Should().Be("https://ogc-wms.example.test/service?service=WFS&request=GetCapabilities");
+
+        result.Diagnostics.Should().ContainSingle(diagnostic =>
+            diagnostic.SourceId == "wms-layer:roads" &&
+            diagnostic.Code == ImportCompatibilityCodes.OgcWmsCompanionSourceHint &&
+            diagnostic.Severity == "info");
+    }
+
+    [Fact]
+    public void DeriveCompanionWfsCapabilitiesUrl_OnInvalidBaseUrl_ReturnsEmpty()
+    {
+        OgcWmsMigrationPlanner.DeriveCompanionWfsCapabilitiesUrl(string.Empty).Should().BeEmpty();
+        OgcWmsMigrationPlanner.DeriveCompanionWfsCapabilitiesUrl("not a url").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void DeriveCompanionWfsCapabilitiesUrl_PreservesPathAndReplacesQuery()
+    {
+        var derived = OgcWmsMigrationPlanner.DeriveCompanionWfsCapabilitiesUrl(
+            "https://gs.example.test/geoserver/wms?service=WMS&request=GetCapabilities&version=1.3.0");
+
+        derived.Should().Be("https://gs.example.test/geoserver/wms?service=WFS&request=GetCapabilities");
+    }
+
+    [Fact]
     public void WmsPlanner_ClassifiesRenderEndpointAsManualReview()
     {
         var inventory = CreateWmsInventory();

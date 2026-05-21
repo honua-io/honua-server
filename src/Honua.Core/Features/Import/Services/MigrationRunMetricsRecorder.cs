@@ -46,6 +46,9 @@ public sealed class MigrationRunMetricsRecorder
     private long _artifactBytes;
     private long _cpuMilliseconds;
     private long _peakMemoryBytes;
+    private long _idempotentReplayCount;
+    private long _cancellationCount;
+    private bool? _resumeFromCheckpoint;
 
     /// <summary>
     /// Initializes a new <see cref="MigrationRunMetricsRecorder"/>.
@@ -148,6 +151,46 @@ public sealed class MigrationRunMetricsRecorder
             {
                 _resumeMarkers.Add(SafeMarker(safeMarker));
             }
+        }
+    }
+
+    /// <summary>
+    /// Marks that this run resumed from (or did not resume from) a previously persisted
+    /// checkpoint. Pass <c>true</c> when a checkpoint was found and used; pass <c>false</c>
+    /// to explicitly record that resume was attempted but no checkpoint was available.
+    /// </summary>
+    public void RecordResumeFromCheckpoint(bool resumed)
+    {
+        lock (_gate)
+        {
+            // Once true, stay true: a single resume attempt is sufficient evidence.
+            // Otherwise record whatever the caller observed (including an explicit false).
+            _resumeFromCheckpoint = _resumeFromCheckpoint == true || resumed;
+        }
+    }
+
+    /// <summary>
+    /// Records that an apply or import phase replayed previously-applied work without
+    /// producing any incremental change. Used as idempotency evidence (issue #1033 slice 3).
+    /// </summary>
+    public void RecordIdempotentReplay(long count = 1)
+    {
+        if (count <= 0) return;
+        lock (_gate)
+        {
+            _idempotentReplayCount += count;
+        }
+    }
+
+    /// <summary>
+    /// Records that the run observed a cancellation request (issue #1033 slice 3).
+    /// </summary>
+    public void RecordCancellation(long count = 1)
+    {
+        if (count <= 0) return;
+        lock (_gate)
+        {
+            _cancellationCount += count;
         }
     }
 
@@ -350,6 +393,9 @@ public sealed class MigrationRunMetricsRecorder
             BytesWritten = _bytesWritten > 0 ? _bytesWritten : null,
             RetryCount = _retryCount > 0 ? (int?)_retryCount : null,
             ResumeCount = _resumeCount > 0 ? (int?)_resumeCount : null,
+            ResumeFromCheckpoint = _resumeFromCheckpoint,
+            IdempotentReplayCount = _idempotentReplayCount > 0 ? (int?)_idempotentReplayCount : null,
+            CancellationCount = _cancellationCount > 0 ? (int?)_cancellationCount : null,
             CpuMilliseconds = _cpuMilliseconds > 0 ? _cpuMilliseconds : null,
             PeakMemoryBytes = _peakMemoryBytes > 0 ? _peakMemoryBytes : null,
             DatabaseGrowthBytes = _databaseGrowthBytes > 0 ? _databaseGrowthBytes : null,

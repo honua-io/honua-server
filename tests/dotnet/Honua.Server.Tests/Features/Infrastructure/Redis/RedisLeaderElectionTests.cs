@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Reflection;
 using FluentAssertions;
 using Honua.Server.Features.Infrastructure.Redis;
 using Honua.TestKit.Attributes;
@@ -232,6 +233,43 @@ public sealed class RedisLeaderElectionTests : IDisposable
         _mockDatabase.Verify(
             db => db.LockReleaseAsync("test-key", It.IsAny<RedisValue>()),
             Times.Once);
+    }
+
+    [UnitTest]
+    public async Task OnRenewalTimer_WhenInnerWorkThrows_DoesNotPropagate()
+    {
+        // Async void timer callbacks must never let exceptions escape (no managed handler).
+        _mockDatabase.Setup(db => db.LockTakeAsync("test-key", It.IsAny<RedisValue>(), It.IsAny<TimeSpan>()))
+            .ThrowsAsync(new InvalidOperationException("boom"));
+
+        var election = CreateElection("test-key");
+        await election.StartAsync();
+
+        var unhandled = 0;
+        UnhandledExceptionEventHandler handler = (_, _) => Interlocked.Increment(ref unhandled);
+        AppDomain.CurrentDomain.UnhandledException += handler;
+        try
+        {
+            InvokeOnRenewalTimer(election);
+            await Task.Delay(50);
+        }
+        finally
+        {
+            AppDomain.CurrentDomain.UnhandledException -= handler;
+            await election.StopAsync();
+            election.Dispose();
+        }
+
+        unhandled.Should().Be(0, "async void timer callback must swallow inner exceptions");
+    }
+
+    private static void InvokeOnRenewalTimer(RedisLeaderElection election)
+    {
+        var method = typeof(RedisLeaderElection).GetMethod(
+            "OnRenewalTimer",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        method.Should().NotBeNull();
+        method!.Invoke(election, new object?[] { null });
     }
 
     private RedisLeaderElection CreateElection(string key, TimeSpan? leaseDuration = null)

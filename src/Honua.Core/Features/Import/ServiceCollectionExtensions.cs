@@ -57,6 +57,11 @@ public static class ServiceCollectionExtensions
         // wire IO. Format negotiation and inventory downgrades happen in-process.
         services.TryAddScoped<IOgcWcsImportService, OgcWcsImportService>();
 
+        // Default in-memory evidence store for ArcGIS migration runs. Postgres composition
+        // root replaces this with a durable implementation; tests rely on this default to
+        // exercise the admin endpoints without a database (#1025 slice 6).
+        services.TryAddSingleton<IArcGisMigrationEvidenceStore, InMemoryArcGisMigrationEvidenceStore>();
+
         return services;
     }
 }

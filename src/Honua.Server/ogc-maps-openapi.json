@@ -2,8 +2,16 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Honua OGC API Maps",
-    "description": "OGC API Maps implementation for server-rendered imagery",
-    "version": "1.0.0"
+    "description": "OGC API Maps implementation for server-rendered imagery\n\nCompliance: OGC CITE 952/952 across 11 conformance suites — see docs/cite-status.md.",
+    "version": "1.0.0",
+    "x-honua-cite-compliance": {
+      "summary": "Map rendering is exercised through the classic WMS 1.3 ETS, which passes 199/199 on trunk; full Honua suite is 952/952.",
+      "lastEvidenceRun": "2026-05-17",
+      "authoritativeSource": "docs/cite-status.md",
+      "suites": [
+        { "suite": "WMS 1.3", "profile": "default", "passed": 199, "total": 199, "passRate": "100%" }
+      ]
+    }
   },
   "paths": {
     "/ogc/maps": {

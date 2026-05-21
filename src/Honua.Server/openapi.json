@@ -2,10 +2,35 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Honua OGC API Features",
-    "description": "OGC API Features implementation for geospatial data access",
+    "description": "OGC API Features implementation for geospatial data access\n\nCompliance: OGC CITE 952/952 across 11 conformance suites — see docs/cite-status.md.",
     "version": "1.0.0",
     "contact": {
       "name": "Honua Server"
+    },
+    "x-honua-cite-compliance": {
+      "summary": "All 11 conformance suites pass at 100% on trunk.",
+      "totals": {
+        "passed": 952,
+        "failed": 0,
+        "skipped": 0,
+        "cantTell": 0
+      },
+      "lastEvidenceRun": "2026-05-17",
+      "evidenceWorkflow": "https://github.com/honua-io/honua-server/actions/workflows/cite-evidence-report.yml",
+      "authoritativeSource": "docs/cite-status.md",
+      "suites": [
+        { "suite": "OGC API Features 1.0", "profile": "default", "passed": 137, "total": 137, "passRate": "100%" },
+        { "suite": "OGC API Tiles 1.0", "profile": "default", "passed": 16, "total": 16, "passRate": "100%" },
+        { "suite": "GeoPackage 1.2", "profile": "applicable", "passed": 31, "total": 31, "passRate": "100%" },
+        { "suite": "GML 3.2", "profile": "applicable", "passed": 17, "total": 17, "passRate": "100%" },
+        { "suite": "KML 2.2", "profile": "applicable", "passed": 42, "total": 42, "passRate": "100%" },
+        { "suite": "WFS 1.0", "profile": "basic", "passed": 162, "total": 162, "passRate": "100%" },
+        { "suite": "WFS 1.1", "profile": "basic", "passed": 39, "total": 39, "passRate": "100%" },
+        { "suite": "WFS 2.0", "profile": "basic", "passed": 167, "total": 167, "passRate": "100%" },
+        { "suite": "WCS 2.0", "profile": "core", "passed": 82, "total": 82, "passRate": "100%" },
+        { "suite": "WMS 1.3", "profile": "default", "passed": 199, "total": 199, "passRate": "100%" },
+        { "suite": "WMTS 1.0", "profile": "default", "passed": 60, "total": 60, "passRate": "100%" }
+      ]
     }
   },
   "servers": [

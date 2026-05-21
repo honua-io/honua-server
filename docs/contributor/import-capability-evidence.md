@@ -1,6 +1,6 @@
 # Import and Migration Capability Evidence
 
-Last reviewed: 2026-05-18
+Last reviewed: 2026-05-20
 
 This page is the website-linkable evidence summary for Honua Server import and
 migration claims. It distinguishes production data import from migration
@@ -14,25 +14,36 @@ For the website-level compatibility and automated migration claims, start with
 Use this wording for public material:
 
 > Honua imports common GIS file formats and public or credentialed queryable
-> ArcGIS GeoServices REST feature/map-service layers into PostGIS. It also inventories ArcGIS
-> GeoServices REST and GeoServer REST sources for migration planning, supports
-> GeoServer dry-run validation and bounded PostGIS-backed catalog apply, emits
-> classic OGC WFS/WMS/WMTS scan, manifest, parity, and
-> fidelity-classification artifacts for operator review, and runs cross-server
-> WMS/WFS/WMTS consume tests against reference GeoServer and MapServer
+> ArcGIS GeoServices REST feature/map-service layers into PostGIS. It inventories
+> ArcGIS GeoServices REST and GeoServer REST sources for migration planning,
+> validates GeoServer dry-run plans, and applies reviewed GeoServer manifests to
+> the Honua catalog with idempotent data-source, feature-data, and style
+> persistence plus a release-gated evidence pack. Admin orchestration endpoints
+> drive scan -> manifest -> apply -> parity -> readiness migration runs over
+> ArcGIS, GeoServer, and OGC API Features fixtures, and the release-gated
+> performance-evidence artifact reports duration, throughput, retry/resume,
+> idempotency, and manual-review-ratio metrics. ArcGIS service-fidelity migration
+> covers attachments and relationships, renderer/label diagnostics, post-migration
+> parity probes, and admin endpoints for inspecting ArcGIS evidence. Concrete
+> vector geoprocessing executors (buffer, clip, intersect, project, area, union,
+> centroid, length, convex hull, dissolve, simplify, snap) are exposed through
+> OGC API Processes and GeoServices GPServer with result-artifact persistence.
+> Classic OGC WFS/WMS/WMTS migration remains a planning path emitting scan,
+> manifest, parity, and fidelity-classification artifacts, and cross-server
+> WMS/WFS/WMTS consume tests run against reference GeoServer and MapServer
 > services.
 
 Do not currently claim applied catalog/data migration from WMS/WMTS render
-services or full GeoServer catalog/data/style migration. The classic OGC path is
-an operator-facing planning path: WFS feature types can produce feature-import
-manifest targets, while WMS/WMTS produce explicit service plans, unsupported
-data-copy items, and manual-review classifications. The GeoServer non-dry-run
-path only publishes already-present PostGIS-backed tables into the Honua catalog
-and records all other source constructs as manual-review or unsupported. Do not
-use broad low-risk/cost automated migration language until the release-gated
-acceptance evidence suite in
-[honua-server#1024](https://github.com/honua-io/honua-server/issues/1024) is
-passing and linked from the compatibility evidence page.
+services, OGC API Features source migration, WCS/OGC API Coverages source
+migration, or private/authenticated ArcGIS sources beyond focused token
+plumbing. The classic OGC path is an operator-facing planning path: WFS feature
+types can produce feature-import manifest targets, while WMS/WMTS produce
+explicit service plans, unsupported data-copy items, and manual-review
+classifications. ArcPy / Python GP claims should name the supported vector
+process set above; broader ArcPy scan/translate/parity work depends on
+[honua-sdk-python#59](https://github.com/honua-io/honua-sdk-python/issues/59).
+SDK-driven migration evidence in the central compatibility matrix is still
+tracked under [honua-server#1018](https://github.com/honua-io/honua-server/issues/1018).
 
 ## Current Capability Matrix
 
@@ -42,19 +53,19 @@ passing and linked from the compatibility evidence page.
 | Raster import | Production path | `POST /api/v1/admin/import/raster`; GeoTIFF/COG and PNG/JPEG world-file paths | Raster import is separate from coverage-service import. |
 | ArcGIS GeoServices REST discovery | Production path | `POST /api/v1/admin/import/geoservices/discover` | Requires an HTTPS service-root URL ending in `FeatureServer` or `MapServer`; layer URLs, embedded credentials, and credential query parameters are rejected. Token/OAuth/Basic credentials are accepted through the `credentials` object for synchronous discovery only. |
 | ArcGIS GeoServices REST layer import | Production path | `POST /api/v1/admin/import/geoservices/start`; background job uses paged `/query` reads, creates a PostGIS table, inserts attributes/geometries, builds a spatial index, and can auto-publish | Queryable public and credentialed feature/map-service layers are supported. Queued credentialed imports must use secret references; plaintext tokens/passwords are not persisted. Attachments and renderers are inventoried or flagged for manual follow-up, not imported as first-class data. |
-| ArcGIS Server service-fidelity migration | Partial / gap | Current layer import and GeoServices parity evidence | Stable layer identity, domains/subtypes, relationships, attachments, renderers/styles, time metadata, service metadata, route parity, and post-migration parity evidence are tracked in [honua-server#1025](https://github.com/honua-io/honua-server/issues/1025). |
+| ArcGIS Server service-fidelity migration | Delivered for the four-bucket fidelity matrix | Fidelity matrix + manifest identity remap + attachments/relationships classification + renderer/label diagnostics + post-migration parity probes + admin evidence endpoints (`PostgresArcGisMigrationEvidenceStore`); merged via [#1075](https://github.com/honua-io/honua-server/pull/1075), [#1103](https://github.com/honua-io/honua-server/pull/1103), [#1139](https://github.com/honua-io/honua-server/pull/1139) closing [honua-server#1025](https://github.com/honua-io/honua-server/issues/1025) | Authenticated private-source parity remains tracked by [honua-server#1017](https://github.com/honua-io/honua-server/issues/1017); SceneServer/I3S, Network Analyst, Utility Network remain explicitly out of scope. |
 | Unified migration scanner | Production path | `POST /api/v1/admin/import/scan` with `sourceKind=geoserver-rest` or `sourceKind=arcgis-geoservices-rest` | The scanner returns deterministic planning artifacts. It does not mutate catalog or data tables. |
 | GeoServer REST discovery | Production path | `POST /api/v1/admin/import/geoserver/discover` and scanner support | HTTPS public URL required outside test mode. Basic auth is supported when both username and password are supplied. |
-| GeoServer REST import job | Dry-run validation plus bounded catalog apply | `POST /api/v1/admin/import/geoserver/start` supports `dryRun=true` validation and `dryRun=false` deterministic apply-plan plus apply-execution jobs | Non-dry-run jobs can idempotently publish PostGIS-backed layers whose source tables already exist in the target Honua database. Data copy, layer groups, service exposure changes, and bulk style persistence remain explicit review records. |
+| GeoServer REST import job | Applied migration path | `POST /api/v1/admin/import/geoserver/start` supports `dryRun=true` validation and `dryRun=false` apply jobs that emit deterministic apply-plan + apply-execution artifacts, persist data sources, copy feature data, and persist styles with conversion diagnostics. `/api/v1/admin/migration/runs` admin endpoints list/inspect/cancel runs and serve evidence packs. Merged via [#1095](https://github.com/honua-io/honua-server/pull/1095), [#1107](https://github.com/honua-io/honua-server/pull/1107), [#1140](https://github.com/honua-io/honua-server/pull/1140) closing [honua-server#1015](https://github.com/honua-io/honua-server/issues/1015). | Layer-group, WMS/WFS/WMTS service-exposure mutations, and non-PostGIS data-source migration remain manual-review/unsupported execution records. Pre-existing trunk PG-compat flake on `GeoServerImportServiceStyleApplyTests` must clear before linking a current nightly pass. |
 | GeoServer SLD migration | Partial supporting path | Admin SLD import/export endpoints and `ISldStyleConverter` integration | Bulk GeoServer import validates/converts SLD content for diagnostics, but per-layer style persistence is handled by the admin SLD endpoint. |
 | Classic OGC WFS/WMS/WMTS service migration planning | First operator-facing scanner slice | `POST /api/v1/admin/import/scan` with `sourceKind=ogc-wfs`, `ogc-wms`, or `ogc-wmts`; `artifactSet=all` returns inventory, manifest, and parity evidence; Core scanner tests cover WFS feature types plus WMS/WMTS render/tile manual-review classifications | WFS is a feature-import planning path only. WMS/WMTS are metadata/style/tile/service-plan paths and are marked unsupported for automated data copy unless paired with WFS, coverage, database, or file sources. Track further applied migration work in [honua-server#1016](https://github.com/honua-io/honua-server/issues/1016). |
 | OGC API Features service import | Not implemented | Honua serves OGC API Features but does not yet import external OGC API Features sources | Track source scan/import/parity evidence in [honua-server#1029](https://github.com/honua-io/honua-server/issues/1029). |
 | OGC coverage service import | Not implemented | Raster file import exists, but WCS/OGC API Coverages source migration is not an operator path | Track WCS/OGC API Coverages migration in [honua-server#1030](https://github.com/honua-io/honua-server/issues/1030). |
 | Cross-server OGC consume | Test/nightly evidence | Test-only `/__test/cross-server-consume/proxy`; nightly `cross-server-consume-nightly.yml`; gap report at `docs/compatibility/cross-server-consume-gap-report.md` | The probe exists only in the Test environment and should not be presented as an operator API. |
-| End-to-end migration acceptance suite | Not implemented as one release gate | Existing evidence is split across source-specific tests, SDK compatibility, and artifact unit tests | Track the full scan/manifest/apply/parity/readiness suite in [honua-server#1024](https://github.com/honua-io/honua-server/issues/1024). |
+| End-to-end migration acceptance suite | Pipeline runners delivered for scan/apply/parity/readiness over deterministic fixtures | `MigrationAcceptance{Scan,Apply,Parity,Readiness}StageRunner` with integration tests in `MigrationAcceptance*StageTests.cs`. Merged via [#1093](https://github.com/honua-io/honua-server/pull/1093), [#1108](https://github.com/honua-io/honua-server/pull/1108), [#1136](https://github.com/honua-io/honua-server/pull/1136) closing [honua-server#1024](https://github.com/honua-io/honua-server/issues/1024). | Cross-repo SDK migration evidence and paired Esri app + service corpus still feed the suite; pre-existing trunk PG-compat flake must clear before linking a release-gated passing run. |
 | Operator review and cutover workbench | Not complete | Stable artifact contracts can be displayed by downstream UI | Track review, approvals, parity evidence, redaction, retries, exports, and cutover readiness in [honua-server-admin#94](https://github.com/honua-io/honua-server-admin/issues/94). |
-| Migration cost/performance evidence | Not implemented as release evidence | No current artifact measures duration, throughput, source request counts, retry/resume behavior, resource use, or manual-review ratio | Track measured cost/performance evidence in [honua-server#1033](https://github.com/honua-io/honua-server/issues/1033). |
-| GP/process migration execution evidence | First-slice scaffold | GPServer and OGC API Processes expose concrete vector process ids/result routes, with classification and fixture artifact contracts in [Process Migration Evidence](process-migration-evidence.md) | Populate passing execution/parity evidence before broader process portability claims. Track server evidence in [honua-server#1031](https://github.com/honua-io/honua-server/issues/1031), paired with Python SDK ArcPy migration in [honua-sdk-python#59](https://github.com/honua-io/honua-sdk-python/issues/59). |
+| Migration cost/performance evidence | Release-gated `honua.migration.performance-evidence` artifact on trunk | Metric schema, S/M/L fixture sizing, baseline thresholds, retry/resume/idempotency, and admin endpoints under `/api/v1/admin/migration/performance-evidence`. Release workflow: `.github/workflows/release-migration-performance.yml`. Merged via [#1092](https://github.com/honua-io/honua-server/pull/1092), [#1110](https://github.com/honua-io/honua-server/pull/1110), [#1138](https://github.com/honua-io/honua-server/pull/1138) closing [honua-server#1033](https://github.com/honua-io/honua-server/issues/1033). | Seeded baselines cover initial GeoServer S/M/L sizes; additional source-family baselines fill in as their importers populate the suite. |
+| GP/process migration execution evidence | Concrete executable vector process set delivered | Buffer, clip, intersect, project, area, union, centroid, length, convex hull, dissolve, simplify, snap exposed through OGC API Processes and GeoServices GPServer with result artifacts. Per-executor tests under `tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/Geometry*JobExecutorTests.cs` plus `VectorProcessParityIntegrationTests`. Merged via [#1094](https://github.com/honua-io/honua-server/pull/1094), [#1109](https://github.com/honua-io/honua-server/pull/1109), [#1137](https://github.com/honua-io/honua-server/pull/1137) closing [honua-server#1031](https://github.com/honua-io/honua-server/issues/1031). See [Process Migration Evidence](process-migration-evidence.md). | ArcPy / Python GP scan/translate/runner and end-to-end ArcPy parity remain in [honua-sdk-python#59](https://github.com/honua-io/honua-sdk-python/issues/59); GeoServer WPS / OGC API Processes source-process migration is explicitly out of scope. |
 
 ## Implementation Evidence
 

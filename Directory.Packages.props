@@ -23,6 +23,7 @@
     <PackageVersion Include="Azure.Messaging.EventGrid" Version="5.0.0" />
     <PackageVersion Include="Azure.Messaging.EventHubs" Version="5.12.2" />
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.27.0" />
+    <PackageVersion Include="BenchmarkDotNet" Version="0.14.0" />
     <PackageVersion Include="BouncyCastle.Cryptography" Version="2.6.2" />
     <PackageVersion Include="dbup-postgresql" Version="7.0.1" />
     <PackageVersion Include="DuckDB.NET.Data.Full" Version="1.5.0" />
@@ -64,7 +65,9 @@
     <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.6" />
     <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.5.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.4.0" />
+    <PackageVersion Include="coverlet.collector" Version="6.0.4" />
     <PackageVersion Include="Microsoft.OData.Client" Version="8.4.3" />
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
     <PackageVersion Include="Moq" Version="4.20.72" />
     <PackageVersion Include="MySqlConnector" Version="2.4.0" />
     <PackageVersion Include="NBomber" Version="6.3.0" />
@@ -80,11 +83,13 @@
     <PackageVersion Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" Version="1.15.0-beta.1" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.1" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.15.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Process" Version="1.15.1-beta.1" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.StackExchangeRedis" Version="1.14.0-beta.1" />
     <PackageVersion Include="Parquet.Net" Version="5.6.0" />
     <PackageVersion Include="ParquetSharp" Version="23.0.0.1" />
     <PackageVersion Include="Polly" Version="8.6.6" />
+    <PackageVersion Include="Roslynator.Analyzers" Version="4.13.1" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.14.1" />
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageVersion Include="Serilog.Enrichers.Environment" Version="3.0.1" />

@@ -1,11 +1,27 @@
 name: CodeQL
 
 on:
-  # Tier: nightly — CodeQL is non-deterministic and slow for routine PRs.
-  # Runs on a weekly schedule. See docs/ci/gate-model.md.
+  # Tier: PR gate + weekly full scan.
+  # - pull_request: runs CodeQL on the changed surface so security regressions
+  #   are caught before merge (audit #1144). PR runs reuse the same C# +
+  #   security-extended query pack as the scheduled scan; CodeQL's incremental
+  #   analyzer keeps the wall time within the PR budget.
+  # - schedule: weekly full sweep to catch issues introduced by transitive
+  #   dependency churn or queries-pack updates.
+  pull_request:
+    branches: [trunk]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'Directory.Packages.props'
+      - 'Directory.Build.props'
+      - 'Honua.sln'
+      - '.github/codeql/**'
+      - '.github/workflows/codeql.yml'
   schedule:
     # Run weekly on Monday at 00:00 UTC
     - cron: '0 0 * * 1'
+  workflow_dispatch: {}
 
 env:
   DOTNET_VERSION: '10.0.x'
@@ -21,6 +37,8 @@ jobs:
     name: Analyze C#
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
+    # PR gate budget: scheduled full scan can run longer if needed.
+    timeout-minutes: ${{ github.event_name == 'pull_request' && 45 || 90 }}
     permissions:
       actions: read
       contents: read

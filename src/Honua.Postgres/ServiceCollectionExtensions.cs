@@ -337,8 +337,40 @@ internal static class ServiceCollectionExtensions
         // Register migration catalog writer used by apply-mode imports.
         services.AddScoped<IMigrationCatalogWriter, PostgresMigrationCatalogWriter>();
 
+        // Register ArcGIS migration evidence store (#1025 slice 6). Replaces the Core
+        // in-memory default so admin endpoints can serve persisted manifest + parity
+        // artifacts across server restarts and across instances.
+        services.RemoveAll<IArcGisMigrationEvidenceStore>();
+        services.AddScoped<IArcGisMigrationEvidenceStore>(serviceProvider =>
+            new PostgresArcGisMigrationEvidenceStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+
+        // Register migration performance evidence store (#1033 slice 5). Resolved alongside
+        // the JsonTypeInfo<MigrationPerformanceEvidenceArtifact> the Server registers from
+        // its source-generated context so persistence stays AOT-safe. TryAdd so a host that
+        // bypasses Postgres registration retains the in-memory fallback default.
+        services.TryAddScoped<IMigrationPerformanceEvidenceStore, PostgresMigrationPerformanceEvidenceStore>();
+
         // Register GeoServer import service
         services.AddScoped<IGeoServerImportService, GeoServerImportService>();
+
+        // Register OGC API Features collection import (#1029 slice 2) with its Postgres sink.
+        services.AddScoped<IOgcApiFeaturesCollectionSink>(serviceProvider =>
+            new PostgresOgcApiFeaturesCollectionSink(
+                serviceProvider.GetRequiredService<NpgsqlDataSource>(),
+                serviceProvider.GetRequiredService<ILogger<PostgresOgcApiFeaturesCollectionSink>>()));
+        services.AddResilientHttpClient<OgcApiFeaturesImportService>(
+            "ogc-api-features-import",
+            HttpResiliencePolicies.SlowServiceDefaults,
+            configureClient: client =>
+            {
+                client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
+                client.Timeout = TimeSpan.FromMinutes(10);
+            },
+            configureHandler: static () => OgcApiFeaturesImportService.CreatePinnedDnsHttpMessageHandler());
+        services.AddScoped<IOgcApiFeaturesImportService>(serviceProvider =>
+            serviceProvider.GetRequiredService<OgcApiFeaturesImportService>());
 
         // Register OGC service migration scanner for WFS inventory and WMS/WMTS manual-review planning.
         services.AddResilientHttpClient<OgcServiceMigrationScanner>(
@@ -376,6 +408,30 @@ internal static class ServiceCollectionExtensions
                 httpClientFactory.CreateClient(OgcWfsImportService.HttpClientName),
                 serviceProvider.GetRequiredService<ILogger<OgcWfsImportService>>(),
                 serviceProvider.GetService<PostgresSchemaConfiguration>());
+        });
+
+        // Register OGC WMTS tile-cache export service (#1016 slice 4). Reuses the OGC service
+        // migration scanner for inventory/manifest resolution; the dedicated HTTP client is
+        // tuned for short-lived tile fetches; the sink is the Postgres-backed tile catalog.
+        services.AddResilientHttpClient(
+            OgcTileCacheExportService.HttpClientName,
+            "ogc-tile-cache-export",
+            HttpResiliencePolicies.SlowServiceDefaults,
+            configureClient: client =>
+            {
+                client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
+                client.Timeout = TimeSpan.FromMinutes(2);
+            },
+            configureHandler: static () => OgcServiceMigrationScanner.CreatePinnedDnsHttpMessageHandler());
+        services.AddScoped<IOgcTileCacheSink, PostgresOgcTileCacheSink>();
+        services.AddScoped<IOgcTileCacheExportService>(serviceProvider =>
+        {
+            var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
+            return new OgcTileCacheExportService(
+                serviceProvider.GetRequiredService<IOgcServiceMigrationScanner>(),
+                serviceProvider.GetRequiredService<IOgcTileCacheSink>(),
+                httpClientFactory.CreateClient(OgcTileCacheExportService.HttpClientName),
+                serviceProvider.GetRequiredService<ILogger<OgcTileCacheExportService>>());
         });
 
         // Register secure connection management services

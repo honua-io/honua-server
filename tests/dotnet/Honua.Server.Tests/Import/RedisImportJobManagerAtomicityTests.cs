@@ -119,6 +119,64 @@ public sealed class RedisImportJobManagerAtomicityTests
     }
 
     [UnitTest]
+    public async Task Dispose_WhenReleaseHangs_ReturnsPromptlyWithoutBlocking()
+    {
+        // Audit fix: synchronous Dispose() must not block on Redis/network; it schedules
+        // a best-effort release on a background task with a bounded timeout.
+        const string leaderKey = "test:leader:dispose-hang";
+        const string instanceId = "instance-a";
+
+        var database = Substitute.For<IDatabase>();
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.LockTakeAsync(leaderKey, instanceId, Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(true));
+
+        var hangingRelease = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        database.LockReleaseAsync(leaderKey, instanceId, Arg.Any<CommandFlags>())
+            .Returns(_ => hangingRelease.Task);
+
+        var election = new RedisLeaderElection(redis, NullLogger.Instance, leaderKey, instanceId);
+
+        (await election.TryAcquireLeadershipAsync()).Should().BeTrue();
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        election.Dispose();
+        stopwatch.Stop();
+
+        stopwatch.Elapsed.Should().BeLessThan(
+            TimeSpan.FromSeconds(2),
+            "Dispose must not block synchronously on a hanging Redis release");
+
+        // Let background timeout fire so the hanging task is observed.
+        hangingRelease.TrySetResult(true);
+        await Task.Delay(50);
+    }
+
+    [UnitTest]
+    public async Task DisposeAsync_AwaitsBoundedRelease()
+    {
+        const string leaderKey = "test:leader:dispose-async";
+        const string instanceId = "instance-a";
+
+        var database = Substitute.For<IDatabase>();
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.LockTakeAsync(leaderKey, instanceId, Arg.Any<TimeSpan>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(true));
+        database.LockReleaseAsync(leaderKey, instanceId, Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(true));
+
+        var election = new RedisLeaderElection(redis, NullLogger.Instance, leaderKey, instanceId);
+        (await election.TryAcquireLeadershipAsync()).Should().BeTrue();
+
+        await election.DisposeAsync();
+
+        election.IsLeader.Should().BeFalse();
+        await database.Received().LockReleaseAsync(leaderKey, instanceId, Arg.Any<CommandFlags>());
+    }
+
+    [UnitTest]
     public async Task SetProgressAsync_WhenActiveIndexWriteFails_DoesNotLeaveCachedProgressBehind()
     {
         var harness = new RedisProgressHarness(throwOnDirectSetAdd: true);

@@ -44,13 +44,18 @@ internal static class GPServerEndpoints
             .WithDescription("Returns metadata about the GPServer service including available tasks")
             .WithTags("GPServer");
 
+        // PUBLIC by design (#1144): GeoServices REST POST mirror of the GET
+        // service-info read; returns the same metadata as the GET form. Marked
+        // AllowAnonymous so the audit architecture guard records the
+        // intentional decision.
         endpoints.MapPost(RouteBase,
                 static (HttpContext context, CancellationToken ct) => HandleServiceInfo(context, ct))
             .WithDisplayName("GPServer Service Info (POST)")
             .WithName("GPServerServiceInfoPost")
             .WithSummary("Get GPServer service metadata")
             .WithDescription("Returns metadata about the GPServer service including available tasks")
-            .WithTags("GPServer");
+            .WithTags("GPServer")
+            .AllowAnonymous();
 
         // Task info
         endpoints.MapGet($"{RouteBase}/{{taskName}}",
@@ -61,22 +66,32 @@ internal static class GPServerEndpoints
             .WithDescription("Returns metadata about a specific GP task including parameters")
             .WithTags("GPServer");
 
+        // PUBLIC by design (#1144): GeoServices REST POST mirror of the GET
+        // task-info read; returns the same metadata as the GET form. Marked
+        // AllowAnonymous so the audit architecture guard records the
+        // intentional decision.
         endpoints.MapPost($"{RouteBase}/{{taskName}}",
                 static (HttpContext context, CancellationToken ct) => HandleTaskInfo(context, ct))
             .WithDisplayName("GPServer Task Info (POST)")
             .WithName("GPServerTaskInfoPost")
             .WithSummary("Get GP task metadata")
             .WithDescription("Returns metadata about a specific GP task including parameters")
-            .WithTags("GPServer");
+            .WithTags("GPServer")
+            .AllowAnonymous();
 
         // Async submit job (POST + GET per Esri GP contract)
+        // HANDLER-AUTHORIZED (#1144): the handler calls
+        // IGeoprocessingJobService.EnsureCallerAuthorized before reading the
+        // request body, so 401/403 are returned ahead of 400 for unauth
+        // callers. Marked AllowAnonymous to record the explicit decision.
         endpoints.MapPost($"{RouteBase}/{{taskName}}/submitJob",
                 static (HttpContext context, CancellationToken ct) => HandleSubmitJob(context, ct))
             .WithDisplayName("GPServer Submit Job")
             .WithName("GPServerSubmitJob")
             .WithSummary("Submit an asynchronous GP job")
             .WithDescription("Queues a GP task for background processing and returns a job ID")
-            .WithTags("GPServer");
+            .WithTags("GPServer")
+            .AllowAnonymous();
 
         endpoints.MapGet($"{RouteBase}/{{taskName}}/submitJob",
                 static (HttpContext context, CancellationToken ct) => HandleSubmitJob(context, ct))
@@ -113,13 +128,18 @@ internal static class GPServerEndpoints
             .WithDescription("Cancels an in-flight GP job")
             .WithTags("GPServer");
 
+        // HANDLER-AUTHORIZED (#1144): GetJobAsync/CancelJobAsync resolve
+        // ownership against HttpContext.User; unauthenticated callers receive
+        // GeoprocessingAuthorizationException → 401. Marked AllowAnonymous so
+        // the audit guard records the intentional decision.
         endpoints.MapPost($"{RouteBase}/{{taskName}}/jobs/{{jobId}}/cancel",
                 static (HttpContext context, CancellationToken ct) => HandleCancelJob(context, ct))
             .WithDisplayName("GPServer Cancel Job (POST)")
             .WithName("GPServerCancelJobPost")
             .WithSummary("Cancel a GP job")
             .WithDescription("Cancels an in-flight GP job")
-            .WithTags("GPServer");
+            .WithTags("GPServer")
+            .AllowAnonymous();
 
         return endpoints;
     }

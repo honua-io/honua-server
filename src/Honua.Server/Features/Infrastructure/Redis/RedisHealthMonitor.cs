@@ -133,16 +133,25 @@ internal sealed partial class RedisHealthMonitor : IRedisHealthMonitor, IDisposa
 
     private async void PerformHealthCheck(object? state)
     {
-        if (_disposed)
-            return;
-
+        // async void timer callback: NO exception may escape (no managed handler -> crash).
+        // Outer try/catch is the last line of defense even for the disposed check.
         try
         {
-            await TestConnectivityAsync().ConfigureAwait(false);
+            if (_disposed)
+                return;
+
+            try
+            {
+                await TestConnectivityAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Log.HealthCheckFailed(_logger, ex);
+            }
         }
         catch (Exception ex)
         {
-            Log.HealthCheckFailed(_logger, ex);
+            Log.UnhandledTimerException(_logger, nameof(PerformHealthCheck), ex);
         }
     }
 
@@ -175,5 +184,8 @@ internal sealed partial class RedisHealthMonitor : IRedisHealthMonitor, IDisposa
 
         [LoggerMessage(EventId = 9006, Level = LogLevel.Information, Message = "Redis health monitor disposed")]
         public static partial void RedisHealthMonitorDisposed(ILogger logger);
+
+        [LoggerMessage(EventId = 9007, Level = LogLevel.Error, Message = "Unhandled exception escaped timer callback {Callback}")]
+        public static partial void UnhandledTimerException(ILogger logger, string callback, Exception exception);
     }
 }

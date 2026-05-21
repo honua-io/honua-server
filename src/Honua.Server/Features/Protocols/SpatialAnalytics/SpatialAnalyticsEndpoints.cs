@@ -1,5 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
+//
+// Read-only spatial-analytics surface (Esri FeatureServer mirror and OGC API
+// Features mirror); anonymous by design. Every POST takes a JSON body that
+// specifies the filter/clustering/buffer parameters and returns derived
+// analytic features — no server-side mutation. Each route opts into
+// AllowAnonymous explicitly so authorization-policy tooling can see the
+// intent rather than treating it as an accidental gap; per-layer access
+// policies still gate the underlying data via the shared handler stack.
 
 namespace Honua.Server.Features.Protocols.SpatialAnalytics;
 
@@ -31,7 +39,8 @@ internal static class SpatialAnalyticsEndpoints
                 + "subset of a layer and returns either one row per feature carrying a clusterId "
                 + "or one row per cluster with hull geometry and aggregate statistics.")
             .WithTags("FeatureServer")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .AllowAnonymous();
 
         endpoints.MapPost(
             "/rest/services/{serviceId}/FeatureServer/{layerId:int}/spatialJoin",
@@ -45,7 +54,8 @@ internal static class SpatialAnalyticsEndpoints
                 + "with a match count, optional carried attributes and aggregate statistics "
                 + "over the matching join rows.")
             .WithTags("FeatureServer")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .AllowAnonymous();
 
         endpoints.MapPost(
             "/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryBufferAggregate",
@@ -57,7 +67,8 @@ internal static class SpatialAnalyticsEndpoints
                 "Buffers each input feature by a fixed distance and either dissolves the "
                 + "result with ST_Union per optional group or returns the individual buffers.")
             .WithTags("FeatureServer")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .AllowAnonymous();
 
         endpoints.MapPost(
             "/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryDensity",
@@ -70,7 +81,8 @@ internal static class SpatialAnalyticsEndpoints
                 + "and returns one row per occupied cell with the cell geometry and a count or "
                 + "weighted sum.")
             .WithTags("FeatureServer")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .AllowAnonymous();
 
         return endpoints;
     }
@@ -93,7 +105,8 @@ internal static class SpatialAnalyticsEndpoints
                 "OGC API Features mirror of queryClusters. Returns a GeoJSON FeatureCollection "
                 + "whose features either represent individual source rows with assigned cluster "
                 + "ids or one feature per cluster carrying the convex hull geometry.")
-            .WithTags("OGC API Features");
+            .WithTags("OGC API Features")
+            .AllowAnonymous();
 
         endpoints.MapPost(
             "/ogc/features/collections/{collectionId}/spatial-join",
@@ -104,7 +117,8 @@ internal static class SpatialAnalyticsEndpoints
             .WithDescription(
                 "OGC API Features mirror of spatialJoin. Returns a GeoJSON FeatureCollection "
                 + "of target features enriched with match counts and optional carry attributes.")
-            .WithTags("OGC API Features");
+            .WithTags("OGC API Features")
+            .AllowAnonymous();
 
         endpoints.MapPost(
             "/ogc/features/collections/{collectionId}/buffer-aggregate",
@@ -115,7 +129,8 @@ internal static class SpatialAnalyticsEndpoints
             .WithDescription(
                 "OGC API Features mirror of queryBufferAggregate. Returns a GeoJSON "
                 + "FeatureCollection with dissolved buffer polygons per group.")
-            .WithTags("OGC API Features");
+            .WithTags("OGC API Features")
+            .AllowAnonymous();
 
         endpoints.MapPost(
             "/ogc/features/collections/{collectionId}/density",
@@ -126,7 +141,8 @@ internal static class SpatialAnalyticsEndpoints
             .WithDescription(
                 "OGC API Features mirror of queryDensity. Returns a GeoJSON FeatureCollection "
                 + "of density cells with counts or weighted sums.")
-            .WithTags("OGC API Features");
+            .WithTags("OGC API Features")
+            .AllowAnonymous();
 
         return endpoints;
     }

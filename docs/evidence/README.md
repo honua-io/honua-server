@@ -60,6 +60,7 @@ What we can import, scan, or migrate from existing systems, and the website-safe
 - **Compatibility and migration evidence (overarching)** — [`contributor/compatibility-and-migration-evidence.md`](../contributor/compatibility-and-migration-evidence.md). The claim-governance index that gates "compatible with X" and "automated migration from X" copy.
 - **Import & scan capability evidence** — [`contributor/import-capability-evidence.md`](../contributor/import-capability-evidence.md). ArcGIS GeoServices REST, GeoServer, and OGC import/scan capability matrix.
 - **Process migration evidence** — [`contributor/process-migration-evidence.md`](../contributor/process-migration-evidence.md). Server-side evidence slice for geoprocessing workload migration. Classification contract (Automated / Assisted / Manual review / Unsupported).
+- **Migration performance evidence** — [`evidence/migration-performance-evidence.md`](migration-performance-evidence.md). Release-gated `honua.migration.performance-evidence` artifact (fingerprinted) and the workflow that emits it. Required reading before using "minimal-cost migration" wording.
 - **MVP compatibility contract** — [`gis/MVP_COMPATIBILITY_CONTRACT.md`](../gis/MVP_COMPATIBILITY_CONTRACT.md). The launch-facing what-works / what-is-partial / what-is-pending contract for protocols and formats.
 
 ## SDK parity
@@ -85,7 +86,7 @@ Cross-repo coordination between Honua server and the first-party SDKs (`honua-sd
 
 | Refreshed | Where to look |
 |---|---|
-| Nightly (auto-generated) | [client interop gap report](../gis/gap-report.md), [cross-server consume gap report](../compatibility/cross-server-consume-gap-report.md) |
+| Nightly (auto-generated) | [client interop gap report](../gis/gap-report.md), [cross-server consume gap report](../compatibility/cross-server-consume-gap-report.md), [migration performance evidence](migration-performance-evidence.md) |
 | Per release | All `contributor/*-evidence.md` files, the [public-interface quality model](../contributor/public-interface-quality-model.md), the [release checklist](../contributor/RELEASE_CHECKLIST.md) |
 | Per SDK release | [`developer/SDK_COMPATIBILITY_*`](../developer/), [`developer/metadata-catalog-parity-matrix.md`](../developer/metadata-catalog-parity-matrix.md) |
 | When suite state changes | [`contributor/ogc-cite-conformance-evidence.md`](../contributor/ogc-cite-conformance-evidence.md), [`contributor/ogc-certification-path.md`](../contributor/ogc-certification-path.md) |

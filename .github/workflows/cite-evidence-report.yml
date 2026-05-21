@@ -45,6 +45,20 @@ jobs:
             github_token=${{ secrets.GITHUB_TOKEN }}
           cache-from: type=gha,scope=cite-evidence
           cache-to: type=gha,mode=max,scope=cite-evidence
+          provenance: true
+          sbom: true
+
+      # Bundle an SPDX SBOM into the CITE evidence package so the regulator-
+      # facing report carries a reproducible component manifest.
+      - name: Generate SBOM (SPDX JSON) for honua-server:latest
+        uses: anchore/sbom-action@v0
+        with:
+          image: honua-server:latest
+          format: spdx-json
+          output-file: sbom-honua-server-cite-evidence.spdx.json
+          artifact-name: sbom-honua-server-cite-evidence.spdx.json
+          upload-artifact: true
+          upload-release-assets: false
 
       - name: Install evidence dependencies
         run: |

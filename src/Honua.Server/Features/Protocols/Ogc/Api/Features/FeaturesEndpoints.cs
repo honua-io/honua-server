@@ -136,6 +136,8 @@ internal static partial class FeaturesEndpoints
         string? crs,
         OgcFeaturesQueryHandler queryHandler)
     {
+        // TODO(#1144): wire tenant filter — pass the resolved ITenantContext.TenantId
+        // into queryHandler so feature lookups are scoped to the caller's tenant.
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         return await queryHandler.HandleGetItemsAsync(
             collectionId, context, f, limit, offset, bbox, datetime, filter, ids, properties, sortby, crs, cancellationToken);

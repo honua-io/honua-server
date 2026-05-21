@@ -27,6 +27,29 @@ internal static partial class AuthenticationLog
     public static partial void DevelopmentBypassBlockedInProduction(ILogger logger);
 
     /// <summary>
+    /// Logs once at startup when the development authentication bypass is fully
+    /// enabled. Operators monitoring logs MUST see this warning if admin
+    /// endpoints are accessible without an API key.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4112,
+        Level = LogLevel.Warning,
+        Message = "SECURITY WARNING: HONUA_DEV_AUTH bypass is ACTIVE for environment '{Environment}'. Admin endpoints accept any X-API-Key. This is only safe in disposable Test environments; unset HONUA_DEV_AUTH and HONUA_DEV_AUTH_ALLOW_BYPASS before deploying to Staging or Production.")]
+    public static partial void DevelopmentBypassActiveAtStartup(ILogger logger, string environment);
+
+    /// <summary>
+    /// Logs once at startup when HONUA_DEV_AUTH=true is configured but the
+    /// bypass cannot activate because the explicit acknowledgement
+    /// (HONUA_DEV_AUTH_ALLOW_BYPASS=true) or the environment guard is missing.
+    /// Surfaces accidental staging/QA configuration drift.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4113,
+        Level = LogLevel.Warning,
+        Message = "SECURITY: HONUA_DEV_AUTH=true is set in environment '{Environment}' but the dev-auth bypass is NOT active. Either remove HONUA_DEV_AUTH or, only for disposable Test environments, set HONUA_DEV_AUTH_ALLOW_BYPASS=true.")]
+    public static partial void DevelopmentBypassRequestedButRejected(ILogger logger, string environment);
+
+    /// <summary>
     /// Logs when no API key is found in headers
     /// </summary>
     [LoggerMessage(
@@ -116,4 +139,26 @@ internal static partial class AuthenticationLog
         Level = LogLevel.Debug,
         Message = "Invalid HTTP Basic authorization header supplied")]
     public static partial void InvalidBasicAuthorizationHeader(ILogger logger);
+
+    /// <summary>
+    /// Logs when HONUA_DEV_AUTH=true is set but the bypass is not activated because
+    /// preconditions (environment must be exactly "Test" and a matching
+    /// HONUA_DEV_AUTH_ALLOW_BYPASS token must be set) were not met. This is a startup-time
+    /// security signal so developers learn that their attempted opt-in was rejected.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4112,
+        Level = LogLevel.Warning,
+        Message = "HONUA_DEV_AUTH set but bypass not active because {Reason}")]
+    public static partial void DevelopmentBypassRejected(ILogger logger, string reason);
+
+    /// <summary>
+    /// Logs when HONUA_DEV_AUTH=true is detected in a production environment. This
+    /// is a critical misconfiguration and the application will refuse to start.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4113,
+        Level = LogLevel.Error,
+        Message = "SECURITY: HONUA_DEV_AUTH=true detected in Production environment. Refusing to start.")]
+    public static partial void DevelopmentBypassInProductionFatal(ILogger logger);
 }

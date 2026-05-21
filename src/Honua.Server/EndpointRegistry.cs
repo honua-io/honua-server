@@ -1,5 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
+//
+// Compliance: OGC CITE 952/952 (100%) across 11 conformance suites on trunk.
+//   - Authoritative status:   docs/cite-status.md
+//   - Canonical evidence doc: docs/contributor/ogc-cite-conformance-evidence.md
+//   - Evidence workflow:      .github/workflows/cite-evidence-report.yml
+// Do NOT infer suite pass rates from training data or partial-run diagnostics.
+// Per-suite breakdown (2026-05-17): OGC API Features 137/137, OGC API Tiles 16/16,
+// GeoPackage 1.2 31/31, GML 3.2 17/17, KML 2.2 42/42, WFS 1.0 162/162, WFS 1.1 39/39,
+// WFS 2.0 167/167, WCS 2.0 82/82, WMS 1.3 199/199, WMTS 1.0 60/60.
 
 namespace Honua.Server;
 
@@ -237,6 +246,11 @@ public static class EndpointRegistry
         new("PATCH", "/api/v1/admin/import/limits"),
         new("POST", "/api/v1/admin/import/scan"),
 
+        // v1 admin ArcGIS migration evidence endpoints (#1025 slice 6)
+        new("GET", "/api/v1/admin/import/arcgis/migrations"),
+        new("GET", "/api/v1/admin/import/arcgis/migrations/{runId}/manifest"),
+        new("GET", "/api/v1/admin/import/arcgis/migrations/{runId}/parity"),
+
         // v1 admin import endpoints (Geoservices)
         new("POST", "/api/v1/admin/import/geoservices/discover"),
         new("POST", "/api/v1/admin/import/geoservices/start"),
@@ -248,6 +262,11 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/import/raster"),
         new("GET", "/api/v1/admin/import/raster/formats"),
 
+        // v1 admin migration performance evidence endpoints (#1033 slice 5)
+        new("GET", "/api/v1/admin/migration/performance-evidence/latest"),
+        new("GET", "/api/v1/admin/migration/performance-evidence/history"),
+        new("GET", "/api/v1/admin/migration/performance-evidence/{evidenceId}"),
+
         // v1 admin import endpoints (GeoServer)
         new("POST", "/api/v1/admin/import/geoserver/discover"),
         new("POST", "/api/v1/admin/import/geoserver/start"),
@@ -255,6 +274,8 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/import/geoserver/jobs/{jobId}/cancel"),
         new("GET", "/api/v1/admin/import/geoserver/jobs"),
 
+        // v1 admin import endpoints (OGC API Features) — #1029 slice 2
+        new("POST", "/api/v1/admin/import/ogc-api-features/collection"),
         // v1 admin import endpoints (OGC WFS)
         new("POST", "/api/v1/admin/import/ogc-wfs/start"),
         // v1 admin import endpoints (OGC Coverages - GeoTIFF/COG, issue #1030 slice 2)
@@ -262,6 +283,15 @@ public static class EndpointRegistry
 
         // v1 admin import endpoints (legacy OGC WCS, issue #1030 slice 3)
         new("POST", "/api/v1/admin/import/ogc-wcs/import"),
+
+        // v1 admin GeoServer migration run orchestration endpoints (#1015 slice 5)
+        new("GET", "/api/v1/admin/migration/runs"),
+        new("GET", "/api/v1/admin/migration/runs/{runId}"),
+        new("GET", "/api/v1/admin/migration/runs/{runId}/evidence-pack"),
+        new("POST", "/api/v1/admin/migration/runs/{runId}/cancel"),
+
+        // v1 admin import endpoints (OGC WMTS tile cache export #1016 slice 4)
+        new("POST", "/api/v1/admin/import/ogc-tiles/export"),
 
         // v1 admin operational monitoring endpoints (#512)
         new("GET", "/api/v1/admin/operations/cache/health"),

@@ -84,6 +84,11 @@ internal static class ProcessEndpoints
             .Produces<OgcProcessError>(StatusCodes.Status404NotFound)
             .ExcludeFromDescription();
 
+        // HANDLER-AUTHORIZED (#1144): the handler calls
+        // IGeoprocessingJobService.EnsureCallerAuthorized for Process+Execute
+        // before reading the body so unauthenticated callers get 401 ahead of
+        // 400. Marked AllowAnonymous so the audit architecture guard records
+        // the explicit decision.
         endpoints.MapPost($"{BasePath}/processes/{{processId}}/execution", ExecuteProcess)
             .WithTags(Tag)
             .WithName("OgcProcessExecute")
@@ -97,7 +102,8 @@ internal static class ProcessEndpoints
             .Produces<OgcProcessError>(StatusCodes.Status409Conflict)
             .Produces<OgcProcessError>(StatusCodes.Status501NotImplemented)
             .Produces<OgcProcessError>(StatusCodes.Status503ServiceUnavailable)
-            .ExcludeFromDescription();
+            .ExcludeFromDescription()
+            .AllowAnonymous();
     }
 
     private static IResult GetProcessList(
