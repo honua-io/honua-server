@@ -144,6 +144,7 @@ public sealed class RecentErrorsEndpointTests
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
                         ["HONUA_DEV_AUTH"] = "true",
+                        ["HONUA_DEV_AUTH_ACK"] = "i-understand-this-bypasses-auth",
                         ["Monitoring:RecentErrors:Capacity"] = capacity.ToString(CultureInfo.InvariantCulture)
                     });
                 });

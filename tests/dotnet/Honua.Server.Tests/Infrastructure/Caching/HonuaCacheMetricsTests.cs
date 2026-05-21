@@ -77,9 +77,12 @@ public sealed class HonuaCacheMetricsTests : IDisposable
             await Task.Delay(10);
         }
 
-        var sample = collector.Samples.SingleOrDefault(s => GetTag(s, "cache_name") == MemoryResponseCache.CacheName);
-        sample.Should().NotBeNull("an explicit Remove must trigger PostEvictionCallback and increment honua_cache_evictions_total");
-        sample!.Value.Should().BeGreaterThan(0);
+        // IMemoryCache may emit PostEvictionCallback on multiple ticks for a single Remove
+        // (size-tracking + dispose paths); count the total increments rather than asserting
+        // exactly one sample. The contract is "an eviction was observed", not "exactly one".
+        var samples = collector.Samples.Where(s => GetTag(s, "cache_name") == MemoryResponseCache.CacheName).ToArray();
+        samples.Should().NotBeEmpty("an explicit Remove must trigger PostEvictionCallback and increment honua_cache_evictions_total");
+        samples.Sum(s => s.Value).Should().BeGreaterThan(0);
     }
 
     [Fact]
