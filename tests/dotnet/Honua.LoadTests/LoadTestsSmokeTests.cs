@@ -8,11 +8,18 @@ using Xunit;
 namespace Honua.LoadTests;
 
 /// <summary>
-/// PR-tier smoke tests that assert the load scenario classes compile, can be
-/// instantiated, and produce valid <see cref="ScenarioProps"/>. These run in
-/// every PR build so the project remains non-empty; the actual high-throughput
-/// runs are gated behind <c>Tier=Slow</c> and only execute in the nightly
-/// load-soak workflow.
+/// PR-tier smoke tests for the real NBomber load scenarios that ship under
+/// <c>./Scenarios/</c> (<see cref="StacSearchLoadScenario"/>,
+/// <see cref="TilesLoadScenario"/>, <see cref="FeaturesPaginationLoadScenario"/>,
+/// and <see cref="LoadScenarioSettings"/>). Each fact instantiates a scenario
+/// and asserts it produces a valid, configured <see cref="ScenarioProps"/> with
+/// at least one load simulation, so a broken or removed scenario fails the PR
+/// build instead of silently disappearing.
+///
+/// These are NOT the full load runs — the actual high-throughput executions
+/// are gated behind <c>Tier=Slow</c> and only run in the nightly load-soak
+/// workflow. The presence and shape of the scenarios themselves is what this
+/// PR-tier suite guards.
 /// </summary>
 public sealed class LoadTestsSmokeTests
 {
