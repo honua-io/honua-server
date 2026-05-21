@@ -742,6 +742,8 @@ builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.A
 
     options.AdminPassword = adminPassword;
     options.DevAuthBypass = builder.Configuration["HONUA_DEV_AUTH"];
+    options.DevAuthBypassAcknowledged = builder.Configuration["HONUA_DEV_AUTH_ALLOW_BYPASS"];
+    options.EnvironmentName = builder.Environment.EnvironmentName;
     options.EnableBasicAuthCompatibility =
         builder.Configuration.GetValue("Authentication:BasicCompatibility:Enabled",
             builder.Configuration.GetValue("HONUA_ENABLE_BASIC_AUTH_COMPAT", false));
@@ -966,6 +968,33 @@ if (configurationErrors.Count > 0)
 }
 
 ConfigurationLog.ConfigurationValidationSucceeded(app.Logger);
+
+// SECURITY: Surface the development auth bypass state at startup so operators
+// reviewing logs immediately notice if admin endpoints are unauthenticated.
+{
+    var apiKeyOptions = app.Services
+        .GetRequiredService<IOptions<Honua.Server.Features.Infrastructure.Authentication.ApiKeyAuthenticationOptions>>()
+        .Value;
+    var devAuthRequested = string.Equals(apiKeyOptions.DevAuthBypass, "true", StringComparison.OrdinalIgnoreCase);
+    var devAuthAcknowledged = string.Equals(apiKeyOptions.DevAuthBypassAcknowledged, "true", StringComparison.OrdinalIgnoreCase);
+    var environmentName = app.Environment.EnvironmentName;
+    var bypassActive =
+        devAuthRequested &&
+        devAuthAcknowledged &&
+        apiKeyOptions.IsTestMode &&
+        string.Equals(environmentName, "Test", StringComparison.OrdinalIgnoreCase);
+
+    if (bypassActive)
+    {
+        Honua.Server.Features.Infrastructure.Authentication.AuthenticationLog
+            .DevelopmentBypassActiveAtStartup(app.Logger, environmentName);
+    }
+    else if (devAuthRequested)
+    {
+        Honua.Server.Features.Infrastructure.Authentication.AuthenticationLog
+            .DevelopmentBypassRequestedButRejected(app.Logger, environmentName);
+    }
+}
 
 // Log OIDC configuration state for observability
 {

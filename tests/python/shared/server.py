@@ -98,7 +98,9 @@ class HonuaServer:
             "ConnectionStrings__DefaultConnection": connection_string,
             "ConnectionStrings__honua": connection_string,
             # Keep the Python/GDAL harness anonymous so protocol clients can exercise the full surface.
+            # As of #1144 the bypass requires an explicit operator acknowledgement.
             "HONUA_DEV_AUTH": "true",
+            "HONUA_DEV_AUTH_ALLOW_BYPASS": "true",
             "HONUA_REGISTER_TEST_INFRASTRUCTURE": "true",
             "HONUA_SKIP_MIGRATIONS": "true",
             # Disable HTTPS redirection for tests

@@ -56,13 +56,19 @@ internal static class JobEndpoints
             .Produces<OgcProcessError>(StatusCodes.Status404NotFound)
             .ExcludeFromDescription();
 
+        // HANDLER-AUTHORIZED (#1144): the handler calls
+        // OperatorApprovalGate.CheckAuthorization (with destructive=true) for
+        // OperatorResourceType.Job + Execute before any mutation; unauth
+        // callers receive an OGC-shaped 401/403. Marked AllowAnonymous so the
+        // audit architecture guard records the explicit decision.
         endpoints.MapDelete($"{BasePath}/jobs/{{jobId}}", DismissJob)
             .WithTags(Tag)
             .WithName("OgcProcessesDismissJob")
             .WithSummary("Dismiss (cancel) a job")
             .Produces<OgcStatusInfo>()
             .Produces<OgcProcessError>(StatusCodes.Status404NotFound)
-            .ExcludeFromDescription();
+            .ExcludeFromDescription()
+            .AllowAnonymous();
     }
 
     private static async Task<IResult> GetJobList(
