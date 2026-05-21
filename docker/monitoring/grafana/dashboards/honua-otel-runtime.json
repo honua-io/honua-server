@@ -15,7 +15,7 @@
       }
     ]
   },
-  "description": ".NET runtime telemetry from OpenTelemetry.Instrumentation.Runtime. Working-set/process-info panel is a placeholder; AddProcessInstrumentation() is not wired in Honua.ServiceDefaults (see #1144).",
+  "description": ".NET runtime telemetry from OpenTelemetry.Instrumentation.Runtime plus process-level metrics (working set, CPU, threads) from OpenTelemetry.Instrumentation.Process.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -257,54 +257,113 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Placeholder. Working set / process metrics require AddProcessInstrumentation() to be wired in Honua.ServiceDefaults (currently only AddRuntimeInstrumentation is enabled). See #1144.",
+      "description": "Process memory usage (working set) emitted by OpenTelemetry.Instrumentation.Process.",
       "fieldConfig": {
         "defaults": {
-          "mappings": [
-            {
-              "options": {
-                "match": "null",
-                "result": {
-                  "text": "n/a"
-                }
-              },
-              "type": "special"
-            }
-          ],
+          "min": 0,
           "unit": "decbytes"
         },
         "overrides": []
       },
       "gridPos": {
-        "h": 6,
-        "w": 24,
+        "h": 8,
+        "w": 8,
         "x": 0,
         "y": 24
       },
       "id": 7,
       "options": {
-        "colorMode": "none",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "targets": [
         {
-          "expr": "max(process_runtime_dotnet_memory_working_set_bytes)",
+          "expr": "max(process_memory_usage_bytes)",
           "legendFormat": "working set",
+          "refId": "A"
+        },
+        {
+          "expr": "max(process_memory_virtual_bytes)",
+          "legendFormat": "virtual",
+          "refId": "B"
+        }
+      ],
+      "title": "Working Set",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Process CPU time rate (user/system) from OpenTelemetry.Instrumentation.Process.",
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 24
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(process_cpu_time_seconds_total[5m])) by (state)",
+          "legendFormat": "{{state}}",
           "refId": "A"
         }
       ],
-      "title": "Working Set (placeholder - requires process instrumentation, see #1144)",
-      "type": "stat"
+      "title": "Process CPU Time",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "OS-level thread count for the process from OpenTelemetry.Instrumentation.Process.",
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 24
+      },
+      "id": 9,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "expr": "max(process_threads)",
+          "legendFormat": "threads",
+          "refId": "A"
+        }
+      ],
+      "title": "Process Threads",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
