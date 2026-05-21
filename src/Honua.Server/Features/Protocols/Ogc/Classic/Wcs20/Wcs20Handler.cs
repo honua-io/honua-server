@@ -23,6 +23,10 @@ using NetTopologySuite.IO;
 
 namespace Honua.Server.Features.Protocols.Ogc.Classic.Wcs20;
 
+/// <summary>
+/// CITE conformance: 82/82 (WCS 2.0 `core` profile, 100% pass on trunk).
+/// Authoritative status: <see href="../../../../../../docs/cite-status.md">docs/cite-status.md</see>.
+/// </summary>
 internal sealed class Wcs20Handler
 {
     private static readonly XNamespace Wcs = Wcs20Utilities.WcsNamespace;

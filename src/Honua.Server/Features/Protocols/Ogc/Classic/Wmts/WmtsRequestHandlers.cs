@@ -30,6 +30,10 @@ using static Honua.Server.Features.Protocols.Ogc.Classic.OgcClassicRequestHelper
 
 namespace Honua.Server.Features.Protocols.Ogc.Classic.Wmts;
 
+/// <summary>
+/// CITE conformance: 60/60 (WMTS 1.0 `default` profile, 100% pass on trunk).
+/// Authoritative status: <see href="../../../../../../docs/cite-status.md">docs/cite-status.md</see>.
+/// </summary>
 internal static class WmtsRequestHandlers
 {
     private const double WebMercatorOrigin = SpatialConstants.WebMercatorExtent;

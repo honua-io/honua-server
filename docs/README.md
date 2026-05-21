@@ -37,6 +37,7 @@ This page is the canonical table of contents for every important doc in the repo
 
 The authoritative claims about what Honua conforms to, and the evidence behind them.
 
+- [API Standards Summary](api-standards-summary.md) — consolidated map of OGC CITE pass rates, gRPC versioning policy, OpenAPI drift workflow, and API versioning strategy.
 - [CITE Status](cite-status.md) — authoritative snapshot of OGC CITE pass rates per protocol on `trunk` (currently **952 / 952** across 11 suites).
 - [OGC CITE Conformance Evidence](contributor/ogc-cite-conformance-evidence.md) — canonical, website-linkable summary with per-suite totals and evidence links.
 - [Standards & APIs Overview](gis/STANDARDS_APIS.md) — every standard and protocol Honua speaks, with endpoint, version, and coverage links.
