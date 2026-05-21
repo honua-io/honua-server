@@ -118,7 +118,9 @@ public sealed class ConfigurationDocumentationService
                 BuildProperty("HONUA_TEST_SCHEMA_HEADERS", "HONUA_TEST_SCHEMA_HEADERS", "boolean",
                     "Enable schema-based test isolation headers", false, isSensitive: false),
                 BuildProperty("HONUA_DEV_AUTH", "HONUA_DEV_AUTH", "string",
-                    "Development authentication bypass token", null, isSensitive: true)
+                    "Development authentication bypass token (Test environment only; must be paired with HONUA_DEV_AUTH_ALLOW_BYPASS=true to take effect)", null, isSensitive: true),
+                BuildProperty("HONUA_DEV_AUTH_ALLOW_BYPASS", "HONUA_DEV_AUTH_ALLOW_BYPASS", "boolean",
+                    "Explicit operator acknowledgement required (in addition to HONUA_DEV_AUTH=true and ASPNETCORE_ENVIRONMENT=Test) to disable admin authentication for disposable Test environments", null, isSensitive: false)
             ]
         };
     }
@@ -849,7 +851,8 @@ public sealed class ConfigurationDocumentationService
             new() { Name = "HONUA_OBSERVABILITY", ConfigPath = "Features", Description = "Enable metrics endpoints", Default = "false", Example = "true" },
             new() { Name = "HONUA_OPENTELEMETRY", ConfigPath = "Features", Description = "Enable distributed tracing", Default = "false", Example = "true" },
             new() { Name = "HONUA_SKIP_MIGRATIONS", ConfigPath = "Features", Description = "Skip database migrations", Default = "false", Example = "true" },
-            new() { Name = "HONUA_DEV_AUTH", ConfigPath = "Security", Description = "Development auth bypass", Required = false, Example = "dev-token" },
+            new() { Name = "HONUA_DEV_AUTH", ConfigPath = "Security", Description = "Development auth bypass (Test env only; requires HONUA_DEV_AUTH_ALLOW_BYPASS=true)", Required = false, Example = "true" },
+            new() { Name = "HONUA_DEV_AUTH_ALLOW_BYPASS", ConfigPath = "Security", Description = "Operator ack required alongside HONUA_DEV_AUTH=true to activate the Test-only auth bypass", Required = false, Example = "true" },
             new() { Name = "HONUA_ADMIN_PASSWORD", ConfigPath = "Security", Description = "Admin API password", Required = false, Example = "secure-password" },
             new() { Name = "HONUA_ADMIN_UI_CORS_ORIGINS", ConfigPath = "Security", Description = "Standalone Admin UI origins", Required = false, Example = "https://admin.example.com" },
 

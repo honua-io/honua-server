@@ -82,6 +82,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
                         ["Security:ConnectionEncryption:MasterKey"] = TestConnectionEncryptionMasterKey,
                         ["HONUA_ADMIN_PASSWORD"] = builder.GetSetting("HONUA_ADMIN_PASSWORD"),
                         ["HONUA_DEV_AUTH"] = builder.GetSetting("HONUA_DEV_AUTH"),
+                        ["HONUA_DEV_AUTH_ALLOW_BYPASS"] = builder.GetSetting("HONUA_DEV_AUTH_ALLOW_BYPASS"),
                         ["HONUA_ENABLE_BASIC_AUTH_COMPAT"] = builder.GetSetting("HONUA_ENABLE_BASIC_AUTH_COMPAT"),
                         ["HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH"] = builder.GetSetting("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH"),
                         ["ForwardedHeaders:Enabled"] = builder.GetSetting("ForwardedHeaders:Enabled")
@@ -121,10 +122,11 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
     public async Task AdminEndpoint_DevelopmentBypass_ExplicitlyEnabled_AllowsAccess()
     {
-        // Arrange - Explicitly enable development bypass
+        // Arrange - Explicitly enable development bypass (HONUA_DEV_AUTH + operator ack).
         using var factory = CreateTestFactory(builder =>
         {
             builder.UseSetting("HONUA_DEV_AUTH", "true");
+            builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "true");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", "some-password");
         });
         using var client = factory.CreateClient();
@@ -135,6 +137,28 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         // Assert - Should allow access due to explicit bypass
         Assert.NotEqual(401, (int)response.StatusCode);
         _output.WriteLine($"Response status: {response.StatusCode}");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    public async Task AdminEndpoint_DevelopmentBypass_MissingAcknowledgement_RequiresAuth()
+    {
+        // Arrange - HONUA_DEV_AUTH=true is set but the operator ack flag is absent.
+        // Defence-in-depth: the bypass must not activate without both flags.
+        using var factory = CreateTestFactory(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.UseSetting("HONUA_DEV_AUTH", "true");
+            // Deliberately omit HONUA_DEV_AUTH_ALLOW_BYPASS
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
+        });
+        using var client = factory.CreateClient();
+
+        // Act - Access admin endpoint without API key
+        var response = await client.GetAsync("/api/v1/admin/connections/test/tables");
+
+        // Assert - Bypass must NOT activate; authentication is required.
+        Assert.Equal(401, (int)response.StatusCode);
     }
 
     [IntegrationTest]
@@ -155,6 +179,75 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         // Assert - Should require authentication
         Assert.Equal(401, (int)response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    public async Task AdminEndpoint_StagingEnvironment_DevAuthSet_BypassNotActive()
+    {
+        // SECURITY REGRESSION GUARD (honua-server#1144):
+        // The dev-auth bypass must NEVER activate in Staging, even when both
+        // HONUA_DEV_AUTH=true and HONUA_DEV_AUTH_ALLOW_BYPASS=true are present.
+        // Staging is production-like and must enforce API-key authentication.
+        using var factory = CreateTestFactory(builder =>
+        {
+            builder.UseEnvironment("Staging");
+            builder.UseSetting("HONUA_DEV_AUTH", "true");
+            builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "true");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
+        });
+        using var client = factory.CreateClient();
+
+        // Act - Access admin endpoint without API key
+        var response = await client.GetAsync("/api/v1/admin/connections/test/tables");
+
+        // Assert - Bypass MUST NOT apply; authentication is required.
+        Assert.Equal(401, (int)response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    public async Task AdminEndpoint_DevelopmentEnvironment_DevAuthSet_BypassNotActive()
+    {
+        // SECURITY REGRESSION GUARD (honua-server#1144):
+        // The bypass is restricted to the Test environment. Even Development
+        // must exercise the API-key authentication path so developers debug the
+        // same code their operators ship.
+        using var factory = CreateTestFactory(builder =>
+        {
+            builder.UseEnvironment("Development");
+            builder.UseSetting("HONUA_DEV_AUTH", "true");
+            builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "true");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
+        });
+        using var client = factory.CreateClient();
+
+        // Act - Access admin endpoint without API key
+        var response = await client.GetAsync("/api/v1/admin/connections/test/tables");
+
+        // Assert - Bypass MUST NOT apply; authentication is required.
+        Assert.Equal(401, (int)response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    public async Task AdminEndpoint_CustomEnvironment_DevAuthSet_BypassNotActive()
+    {
+        // SECURITY REGRESSION GUARD (honua-server#1144):
+        // Custom/unknown environment names (e.g. QA, Preview) must default to
+        // enforcing authentication. Only "Test" is allowed to bypass.
+        using var factory = CreateTestFactory(builder =>
+        {
+            builder.UseEnvironment("QA");
+            builder.UseSetting("HONUA_DEV_AUTH", "true");
+            builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "true");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
+        });
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/api/v1/admin/connections/test/tables");
+
+        Assert.Equal(401, (int)response.StatusCode);
     }
 
     #endregion
