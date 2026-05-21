@@ -714,6 +714,21 @@ builder.Services.AddHostedService<Honua.Server.Features.Admin.TileOperations.Til
 builder.Services.AddHostedService<Honua.Server.Features.Admin.TileOperations.TileOperationBackgroundService>();
 
 // Register OData services and handlers
+// SECURITY: Validate the dev-auth bypass configuration ONCE at startup, before any
+// request can hit ApiKeyAuthenticationHandler. This catches misconfigured deploys
+// (e.g. HONUA_DEV_AUTH=true in Production) before they cause harm and emits a
+// startup warning when a developer set HONUA_DEV_AUTH=true but the bypass will
+// not activate (wrong env, missing ack, etc.).
+{
+    using var devAuthValidatorLoggerFactory = LoggerFactory.Create(lb => lb.AddConsole());
+    Honua.Server.Features.Infrastructure.Authentication.DevAuthBypassStartupValidator
+        .Validate(
+            environmentName: builder.Environment.EnvironmentName,
+            devAuthBypass: builder.Configuration["HONUA_DEV_AUTH"],
+            devAuthBypassAck: builder.Configuration["HONUA_DEV_AUTH_ACK"],
+            loggerFactory: devAuthValidatorLoggerFactory);
+}
+
 // Configure authentication options
 builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.ApiKeyAuthenticationOptions>(options =>
 {
@@ -742,6 +757,8 @@ builder.Services.Configure<Honua.Server.Features.Infrastructure.Authentication.A
 
     options.AdminPassword = adminPassword;
     options.DevAuthBypass = builder.Configuration["HONUA_DEV_AUTH"];
+    options.DevAuthBypassAck = builder.Configuration["HONUA_DEV_AUTH_ACK"];
+    options.EnvironmentName = builder.Environment.EnvironmentName;
     options.EnableBasicAuthCompatibility =
         builder.Configuration.GetValue("Authentication:BasicCompatibility:Enabled",
             builder.Configuration.GetValue("HONUA_ENABLE_BASIC_AUTH_COMPAT", false));
