@@ -145,9 +145,17 @@ jobs:
             exit_code="$build_exit"
           else
             lane_log="docker/client-compat/output/${{ matrix.lane }}/lane.log"
+            # NOTE: do not pass --no-build to `docker compose run`. The flag was
+            # rejected by the docker compose plugin shipped on ubuntu-24.04
+            # runners ("unknown flag: --no-build"), causing every lane to exit
+            # before the honua container could start. Both the honua image
+            # (built above via `docker build -t honua-server:client-compat`) and
+            # the lane image (built via `docker compose build seed <lane>`)
+            # already exist by this point, so compose reuses them without
+            # rebuilding.
             docker compose -f docker/client-compat/compose.yml \
               --profile ${{ matrix.lane }} \
-              run --no-build --rm \
+              run --rm \
               ${{ matrix.lane }} 2>&1 | tee "$lane_log"
             exit_code=${PIPESTATUS[0]}
             if [[ "$exit_code" -eq 0 ]]; then
