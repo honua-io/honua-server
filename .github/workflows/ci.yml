@@ -1334,6 +1334,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Build Docker image
+        id: docker_build
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -1346,6 +1347,62 @@ jobs:
             github_token=${{ github.token }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      # Generate an SPDX JSON SBOM for the freshly built image and upload it
+      # as a workflow artifact so PR reviewers (and downstream supply-chain
+      # tooling) can inspect the bill of materials without having to pull the
+      # image registry attestation. Required by audit gate A -> A+.
+      - name: Generate SBOM (SPDX JSON) for honua-server:test
+        id: sbom
+        uses: anchore/sbom-action@v0
+        with:
+          image: honua-server:test
+          format: spdx-json
+          output-file: sbom-honua-server-test.spdx.json
+          artifact-name: sbom-honua-server-test.spdx.json
+          upload-artifact: true
+          upload-release-assets: false
+
+      # Run Trivy against the image we just built locally (no double-build:
+      # we reuse honua-server:test that the build-push step `load: true`'d
+      # into the docker daemon). Fail the PR gate on any HIGH/CRITICAL CVE
+      # that already has a fix available upstream.
+      - name: Trivy image scan (PR gate, HIGH/CRITICAL, fixed only)
+        id: trivy_image
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: image
+          image-ref: honua-server:test
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+          vuln-type: os,library
+
+      # Filesystem scan catches CVEs introduced by the Dockerfile base image
+      # / package manifests / lockfiles that the image scan may miss when a
+      # vulnerable dependency hasn't shipped to a release artifact yet.
+      - name: Trivy filesystem scan (PR gate, HIGH/CRITICAL, fixed only)
+        id: trivy_fs
+        if: always()
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+          vuln-type: os,library
+
+      - name: Trivy failure guidance
+        if: failure() && (steps.trivy_image.outcome == 'failure' || steps.trivy_fs.outcome == 'failure')
+        run: |
+          echo "::error title=Trivy PR gate failed::One or more HIGH/CRITICAL CVEs with available fixes were detected."
+          echo "::notice::To resolve: review the Trivy output above, then bump the affected dependency / base image to a fixed version. If a CVE is a false positive, add an entry to .trivyignore with a justification and CVE link."
+          exit 1
 
       - name: Run Docker container
         run: |
