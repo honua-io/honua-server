@@ -440,6 +440,8 @@ jobs:
         # it here as well was duplicating ~2 min of test time per PR on the
         # baseline 16-3.4 image. Keep core + loadtests here; defer Postgres
         # coverage entirely to postgres-compat.
+        # Coverlet XPlat collector emits cobertura.xml per project under
+        # ./coverage; see coverlet.runsettings for exclusions / formats.
         timeout-minutes: 20
         run: |
           dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj \
@@ -448,7 +450,9 @@ jobs:
             --configuration Release \
             --logger "trx;LogFileName=core-tests.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
+            --results-directory ./tests/TestResults \
+            --collect:"XPlat Code Coverage" \
+            --settings coverlet.runsettings
 
           # Per ADR-0037 PR CI executes the LoadTests project's Fast tier only —
           # the actual NBomber scenarios are exercised by the nightly load-soak
@@ -479,7 +483,9 @@ jobs:
             --filter "Tier=Fast" \
             --logger "trx;LogFileName=server-fast-tier.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
+            --results-directory ./tests/TestResults \
+            --collect:"XPlat Code Coverage" \
+            --settings coverlet.runsettings
 
       - name: Run .NET Tests (Architecture)
         timeout-minutes: 10
@@ -500,6 +506,35 @@ jobs:
           name: foundation-test-results
           path: tests/TestResults/
           retention-days: 7
+
+      # Coverlet's XPlat collector drops `coverage.cobertura.xml` into a per-run
+      # GUID subdirectory under TestResults. Surface those files as their own
+      # artifact so downstream coverage tooling (CodeCov, ReportGenerator, etc.)
+      # can pull them without unpacking the full test-results bundle.
+      - name: Upload foundation coverage (cobertura)
+        uses: actions/upload-artifact@v7
+        if: always()
+        timeout-minutes: 3
+        with:
+          name: foundation-coverage
+          path: tests/TestResults/**/coverage.cobertura.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+      # CodeCov upload — only runs when a token is configured in repo secrets.
+      # Without a token the artifact above is still produced so coverage can be
+      # inspected manually from the workflow run.
+      - name: Upload coverage to Codecov
+        if: ${{ always() && env.CODECOV_TOKEN != '' }}
+        uses: codecov/codecov-action@v4
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: tests/TestResults/**/coverage.cobertura.xml
+          flags: foundation
+          name: foundation-tests
+          fail_ci_if_error: false
 
   server-tests:
     name: Server Tests (${{ matrix.shard_name }})
@@ -1164,7 +1199,32 @@ jobs:
           dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
             --configuration Release \
             --no-build \
-            --logger "console;verbosity=detailed"
+            --logger "console;verbosity=detailed" \
+            --results-directory ./tests/TestResults \
+            --collect:"XPlat Code Coverage" \
+            --settings coverlet.runsettings
+
+      - name: Upload Postgres coverage (cobertura)
+        uses: actions/upload-artifact@v7
+        if: always()
+        timeout-minutes: 3
+        with:
+          name: postgres-coverage-${{ strategy.job-index }}
+          path: tests/TestResults/**/coverage.cobertura.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload Postgres coverage to Codecov
+        if: ${{ always() && env.CODECOV_TOKEN != '' }}
+        uses: codecov/codecov-action@v4
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: tests/TestResults/**/coverage.cobertura.xml
+          flags: postgres-${{ strategy.job-index }}
+          name: postgres-compat
+          fail_ci_if_error: false
 
   core-package-compatibility:
     name: Honua.Core Package Compatibility
