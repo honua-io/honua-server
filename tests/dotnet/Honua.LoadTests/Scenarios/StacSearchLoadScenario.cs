@@ -14,7 +14,7 @@ namespace Honua.LoadTests.Scenarios;
 /// payload. Nominal rate is 50 requests/second over <see cref="LoadScenarioSettings.GetDuration"/>
 /// (default 60 seconds). Used by the nightly load-soak workflow; not executed
 /// in PR CI (Tier=Slow excluded). Build-time discoverability is asserted by
-/// <see cref="Honua.LoadTests.LoadScenarioDiscoveryTests"/>.
+/// <see cref="Honua.LoadTests.LoadTestsSmokeTests"/>.
 /// </summary>
 public static class StacSearchLoadScenario
 {
