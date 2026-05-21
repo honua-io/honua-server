@@ -22,6 +22,7 @@ namespace Honua.Server.Features.Import;
 [JsonSerializable(typeof(OgcApiFeaturesSchemaMappingDiagnostic[]))]
 [JsonSerializable(typeof(IReadOnlyList<OgcApiFeaturesSchemaMappingDiagnostic>))]
 [JsonSerializable(typeof(OgcApiFeaturesSchemaMappingClassification))]
+[JsonSerializable(typeof(OgcApiFeaturesFeatureCountParity))]
 [JsonSerializable(typeof(GeoservicesCredentialDescriptor))]
 [JsonSerializable(typeof(MigrationSourceInventoryArtifact))]
 [JsonSerializable(typeof(MigrationManifestArtifact))]
