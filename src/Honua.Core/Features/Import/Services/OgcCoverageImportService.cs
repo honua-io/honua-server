@@ -55,6 +55,7 @@ public sealed partial class OgcCoverageImportService : IOgcCoverageImportService
             .Where(static resource => string.Equals(resource.Kind, "coverage", StringComparison.Ordinal))
             .ToArray();
         var selectedResources = SelectResources(inventoryResources, request.CoverageSelection);
+        var styleDiagnostics = CoverageStyleDiagnosticBuilder.Build(selectedResources);
 
         var targets = new List<MigrationManifestTargetResource>();
         var manualReviewItems = new List<MigrationManifestReviewItem>();
@@ -284,7 +285,8 @@ public sealed partial class OgcCoverageImportService : IOgcCoverageImportService
                 .OrderBy(static record => record.SourceCoverageId, StringComparer.Ordinal)
                 .ToArray(),
             ApplyMode = applyMode,
-            DryRun = !applyMode
+            DryRun = !applyMode,
+            StyleDiagnostics = styleDiagnostics
         };
     }
 

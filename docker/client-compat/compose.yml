@@ -101,7 +101,13 @@ services:
       interval: 10s
       timeout: 5s
       retries: 30
-      start_period: 30s
+      # 60s start_period gives the non-AOT .NET 10 app room to JIT, bind
+      # Kestrel, and warm its readiness probe before failed probes start
+      # counting toward `retries`. Cold starts on GitHub-hosted runners have
+      # been observed >30s for the client-compat image (see honua-server#1014),
+      # which previously flipped the container to `unhealthy` before it had
+      # a chance to answer /healthz/ready.
+      start_period: 60s
 
   gdal:
     profiles: ["matrix", "gdal"]

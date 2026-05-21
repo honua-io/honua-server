@@ -31,6 +31,11 @@ public sealed class OgcApiFeaturesImportServiceTests
         first.FeaturesSkipped.Should().Be(0);
         first.PagesFetched.Should().Be(2);
         first.Truncated.Should().BeFalse();
+        first.SourceFeatureCountReported.Should().Be(3);
+        first.FeatureCountParity.Should().NotBeNull();
+        first.FeatureCountParity!.State.Should().Be(OgcApiFeaturesFeatureCountParityStates.Pass);
+        first.FeatureCountParity.Expected.Should().Be(3);
+        first.FeatureCountParity.Observed.Should().Be(3);
 
         sink.EnsureTargetCalls.Should().BeGreaterThanOrEqualTo(1);
         sink.WrittenFeatures.Select(static f => f.SourceFeatureId).Should().BeEquivalentTo(
@@ -55,6 +60,12 @@ public sealed class OgcApiFeaturesImportServiceTests
         result.FeaturesImported.Should().Be(2);
         result.Truncated.Should().BeTrue();
         result.Warnings.Should().Contain(warning => warning.Contains("feature limit", StringComparison.Ordinal));
+
+        // Operator-imposed truncation must downgrade the feature-count parity probe to
+        // not-applicable: the source numberMatched is no longer comparable to the partial import.
+        result.FeatureCountParity.Should().NotBeNull();
+        result.FeatureCountParity!.State.Should().Be(OgcApiFeaturesFeatureCountParityStates.NotApplicable);
+        result.FeatureCountParity.Summary.ToLowerInvariant().Should().Contain("truncated");
     }
 
     [Fact]
@@ -289,6 +300,76 @@ public sealed class OgcApiFeaturesImportServiceTests
         result.Warnings.Should().Contain(warning => warning.Contains("paging cycle", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task ImportCollectionAsync_WhenSourceOmitsNumberMatched_ReportsParityProbeNotApplicable()
+    {
+        var handler = new SinglePageHandler(numberMatchedJsonFragment: null);
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://demo.example") };
+        var sink = new RecordingSink();
+        var service = CreateService(httpClient, sink);
+
+        var result = await service.ImportCollectionAsync(NewRequest());
+
+        result.Success.Should().BeTrue();
+        result.FeaturesImported.Should().Be(1);
+        result.SourceFeatureCountReported.Should().BeNull();
+        result.FeatureCountParity.Should().NotBeNull();
+        result.FeatureCountParity!.State.Should().Be(OgcApiFeaturesFeatureCountParityStates.NotApplicable);
+        result.FeatureCountParity.Expected.Should().BeNull();
+        result.FeatureCountParity.Observed.Should().Be(1);
+        result.FeatureCountParity.Summary.Should().Contain("numberMatched");
+    }
+
+    [Fact]
+    public async Task ImportCollectionAsync_WhenSourceCountMismatchesImportedCount_ReportsParityProbeFail()
+    {
+        // Source advertises numberMatched=7 but only emits 1 feature on the only page (no next
+        // link). The importer cannot recover the missing six features, so the inline parity probe
+        // must surface a fail state for operator review.
+        var handler = new SinglePageHandler(numberMatchedJsonFragment: "\"numberMatched\": 7,");
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://demo.example") };
+        var sink = new RecordingSink();
+        var service = CreateService(httpClient, sink);
+
+        var result = await service.ImportCollectionAsync(NewRequest());
+
+        result.Success.Should().BeTrue();
+        result.FeaturesImported.Should().Be(1);
+        result.Truncated.Should().BeFalse();
+        result.SourceFeatureCountReported.Should().Be(7);
+        result.FeatureCountParity.Should().NotBeNull();
+        result.FeatureCountParity!.State.Should().Be(OgcApiFeaturesFeatureCountParityStates.Fail);
+        result.FeatureCountParity.Expected.Should().Be(7);
+        result.FeatureCountParity.Observed.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ImportCollectionAsync_WhenSkippedFeaturesAccountForDifference_ReportsParityProbePass()
+    {
+        // Source advertises numberMatched=2 and emits two features, but one has no usable
+        // identifier and a non-object geometry/properties payload (still projectable) — the
+        // synthetic id path keeps it as an imported feature, so we exercise the skipped path
+        // separately via a feature with no id and properties=null (which we accept) — instead use
+        // a feature with explicit non-object value, which is rejected.
+        var handler = new MixedFeaturesHandler();
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://demo.example") };
+        var sink = new RecordingSink();
+        var service = CreateService(httpClient, sink);
+
+        var result = await service.ImportCollectionAsync(NewRequest());
+
+        result.Success.Should().BeTrue();
+        result.FeaturesImported.Should().Be(1);
+        result.FeaturesSkipped.Should().Be(1);
+        result.SourceFeatureCountReported.Should().Be(2);
+        result.FeatureCountParity.Should().NotBeNull();
+        // imported (1) + skipped (1) == source-advertised (2): probe should pass.
+        result.FeatureCountParity!.State.Should().Be(OgcApiFeaturesFeatureCountParityStates.Pass);
+        result.FeatureCountParity.Expected.Should().Be(2);
+        result.FeatureCountParity.Observed.Should().Be(1);
+        result.FeatureCountParity.Summary.Should().Contain("skipped");
+    }
+
     private static OgcApiFeaturesImportService CreateService(HttpClient httpClient, IOgcApiFeaturesCollectionSink sink)
         => new(
             httpClient,
@@ -508,6 +589,109 @@ public sealed class OgcApiFeaturesImportServiceTests
             }
 
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+        }
+    }
+
+    private sealed class SinglePageHandler : HttpMessageHandler
+    {
+        private readonly string? _numberMatchedJsonFragment;
+
+        public SinglePageHandler(string? numberMatchedJsonFragment)
+        {
+            _numberMatchedJsonFragment = numberMatchedJsonFragment;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.RequestUri!.PathAndQuery == "/ogcapi/collections/roads")
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        """
+                        {
+                          "id": "roads",
+                          "links": [
+                            { "rel": "items", "href": "https://demo.example/ogcapi/collections/roads/items", "type": "application/geo+json" }
+                          ]
+                        }
+                        """,
+                        System.Text.Encoding.UTF8,
+                        "application/json")
+                });
+            }
+
+            var body =
+                "{\n" +
+                "  \"type\": \"FeatureCollection\",\n" +
+                "  " + (_numberMatchedJsonFragment ?? string.Empty) + "\n" +
+                "  \"links\": [\n" +
+                "    { \"rel\": \"self\", \"href\": \"https://demo.example/ogcapi/collections/roads/items?limit=2\" }\n" +
+                "  ],\n" +
+                "  \"features\": [\n" +
+                "    {\n" +
+                "      \"type\": \"Feature\",\n" +
+                "      \"id\": \"road.1\",\n" +
+                "      \"geometry\": { \"type\": \"Point\", \"coordinates\": [-157.85, 21.30] },\n" +
+                "      \"properties\": { \"name\": \"King\" }\n" +
+                "    }\n" +
+                "  ]\n" +
+                "}";
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, System.Text.Encoding.UTF8, "application/geo+json")
+            });
+        }
+    }
+
+    private sealed class MixedFeaturesHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.RequestUri!.PathAndQuery == "/ogcapi/collections/roads")
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        """
+                        {
+                          "id": "roads",
+                          "links": [
+                            { "rel": "items", "href": "https://demo.example/ogcapi/collections/roads/items", "type": "application/geo+json" }
+                          ]
+                        }
+                        """,
+                        System.Text.Encoding.UTF8,
+                        "application/json")
+                });
+            }
+
+            // Source advertises numberMatched=2: one valid feature plus one non-object entry that
+            // the importer must reject as a skipped projection.
+            const string body = """
+                {
+                  "type": "FeatureCollection",
+                  "numberMatched": 2,
+                  "links": [
+                    { "rel": "self", "href": "https://demo.example/ogcapi/collections/roads/items?limit=2" }
+                  ],
+                  "features": [
+                    {
+                      "type": "Feature",
+                      "id": "road.1",
+                      "geometry": { "type": "Point", "coordinates": [-157.85, 21.30] },
+                      "properties": { "name": "King" }
+                    },
+                    "not-a-feature-object"
+                  ]
+                }
+                """;
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, System.Text.Encoding.UTF8, "application/geo+json")
+            });
         }
     }
 

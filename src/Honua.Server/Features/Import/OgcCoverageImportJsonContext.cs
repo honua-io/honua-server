@@ -17,6 +17,8 @@ namespace Honua.Server.Features.Import;
 [JsonSerializable(typeof(OgcCoverageImportResult))]
 [JsonSerializable(typeof(OgcCoverageImportRecord))]
 [JsonSerializable(typeof(OgcCoverageImportRecord[]))]
+[JsonSerializable(typeof(MigrationCoverageStyleDiagnostic))]
+[JsonSerializable(typeof(MigrationCoverageStyleDiagnostic[]))]
 [JsonSerializable(typeof(OgcCoverageImportTarget))]
 [JsonSerializable(typeof(IReadOnlyDictionary<string, OgcCoverageImportTarget>))]
 [JsonSerializable(typeof(MigrationSourceInventoryArtifact))]

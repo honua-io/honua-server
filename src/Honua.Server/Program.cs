@@ -909,6 +909,9 @@ app.MapOgcWcsImportEndpoints();
 // Configure GeoServer migration run admin orchestration endpoints (issue #1015 slice 5)
 app.MapMigrationRunAdminEndpoints();
 
+// Configure OGC WMTS tile-cache export endpoints (#1016 slice 4)
+app.MapOgcTileCacheExportEndpoints();
+
 if (isTestEnvironment)
 {
     app.MapCrossServerConsumeProbeEndpoints();

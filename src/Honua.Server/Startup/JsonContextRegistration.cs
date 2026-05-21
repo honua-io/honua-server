@@ -36,6 +36,7 @@ internal static class JsonContextRegistration
                 Honua.Server.Features.Import.OgcWfsImportJsonContext.Default,
                 Honua.Server.Features.Import.OgcCoverageImportJsonContext.Default,
                 Honua.Server.Features.Import.OgcWcsImportJsonContext.Default,
+                Honua.Server.Features.Import.OgcTileCacheExportJsonContext.Default,
                 Honua.Server.Features.Admin.OperationsProgressJsonContext.Default,
                 Honua.Server.Features.Admin.FeatureEventReplayJsonContext.Default,
                 Honua.Server.Features.Mobile.Auth.MobileAuthJsonContext.Default,
