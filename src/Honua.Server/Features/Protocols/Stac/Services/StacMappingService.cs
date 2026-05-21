@@ -299,6 +299,185 @@ internal sealed class StacMappingService
         };
     }
 
+    /// <summary>
+    /// V2 overload of <see cref="MapFeatureToItem(Feature, LayerDefinition, string, IReadOnlySet{string}?, int?)"/>.
+    /// Builds a STAC item directly from a Metadata v2 resource + publication, sourcing
+    /// declared STAC extensions, license, keywords, and temporal field hints from the
+    /// resource's STAC + Temporal extensions instead of v1 LayerDefinition.Metadata.
+    /// </summary>
+    public static StacItem MapFeatureToItem(
+        Feature feature,
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        int layerIndex,
+        string baseUrl,
+        IReadOnlySet<string>? selectedProperties = null,
+        int? geometrySrid = null)
+    {
+        var collectionId = layerIndex.ToString(CultureInfo.InvariantCulture);
+        var itemId = ResolveItemId(feature);
+        var escapedItemId = Uri.EscapeDataString(itemId);
+        var idFieldName = resource.FindPrimaryIdField()?.Name ?? "objectid";
+        var ogcItemId = ResolveOgcPublicId(feature, idFieldName);
+        var escapedOgcItemId = Uri.EscapeDataString(ogcItemId);
+        var stacBase = $"{baseUrl}/stac";
+        IReadOnlyDictionary<string, object?> attributes = feature.Attributes ?? ImmutableDictionary<string, object?>.Empty;
+        var selectedPropertiesLookup = selectedProperties is null
+            ? null
+            : new HashSet<string>(selectedProperties, StringComparer.OrdinalIgnoreCase);
+
+        var properties = new Dictionary<string, object?>();
+        PopulateTemporalPropertiesV2(attributes, resource, properties);
+
+        // Copy feature attributes
+        foreach (var kvp in attributes)
+        {
+            if ((!IsItemIdAttribute(kvp.Key) || selectedPropertiesLookup?.Contains(kvp.Key) == true) &&
+                !string.Equals(kvp.Key, "objectid", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(kvp.Key, "datetime", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(kvp.Key, "start_datetime", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(kvp.Key, "end_datetime", StringComparison.OrdinalIgnoreCase) &&
+                !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
+            {
+                if (selectedPropertiesLookup is not null && !selectedPropertiesLookup.Contains(kvp.Key))
+                {
+                    continue;
+                }
+                if (kvp.Value is null && selectedPropertiesLookup is null)
+                {
+                    continue;
+                }
+                properties[kvp.Key] = kvp.Value;
+            }
+        }
+
+        JsonElement? geometry = null;
+        ImmutableArray<double>? bbox = null;
+        if (feature.Geometry is { Length: > 0 })
+        {
+            try
+            {
+                var parsed = WkbReaderCache.Get().Read(feature.Geometry);
+                geometry = ConvertGeometryToGeoJsonElement(parsed);
+                bbox = TryBuildBboxFromGeometry(parsed, geometrySrid ?? resource.ReadSrid() ?? 4326);
+            }
+            catch
+            {
+                // WKB parsing failure — STAC allows null geometry.
+            }
+        }
+
+        var title = resource.Metadata.Title ?? resource.Metadata.Name;
+
+        var links = ImmutableArray.Create(
+            Link.Create(
+                href: $"{stacBase}/collections/{collectionId}/items/{escapedItemId}",
+                rel: RelationTypes.Self,
+                type: MediaTypes.GeoJson,
+                title: $"Item {itemId}"),
+            Link.Create(
+                href: $"{stacBase}/collections/{collectionId}",
+                rel: RelationTypes.Collection,
+                type: MediaTypes.Json,
+                title: title),
+            Link.Create(
+                href: $"{stacBase}/collections/{collectionId}",
+                rel: StacConstants.StacRelations.Parent,
+                type: MediaTypes.Json,
+                title: title),
+            Link.Create(
+                href: stacBase,
+                rel: StacConstants.StacRelations.Root,
+                type: MediaTypes.Json,
+                title: "STAC Catalog"));
+
+        var assets = new Dictionary<string, StacAsset>
+        {
+            ["geojson"] = new StacAsset
+            {
+                Href = $"{baseUrl}/ogc/features/collections/{collectionId}/items/{escapedOgcItemId}",
+                Title = "GeoJSON",
+                Type = MediaTypes.GeoJson,
+                Roles = ImmutableArray.Create("data"),
+            }
+        };
+
+        return new StacItem
+        {
+            Id = itemId,
+            Geometry = geometry,
+            Bbox = bbox,
+            Properties = properties,
+            Links = links,
+            Assets = assets,
+            Collection = collectionId,
+            StacExtensions = resource.ResolveDeclaredExtensions(),
+        };
+    }
+
+    private static string ResolveOgcPublicId(Feature feature, string idFieldName)
+    {
+        if (feature.Attributes is not null &&
+            feature.Attributes.TryGetValue(idFieldName, out var configured) &&
+            configured is not null)
+        {
+            var asString = Convert.ToString(configured, CultureInfo.InvariantCulture);
+            if (!string.IsNullOrWhiteSpace(asString))
+            {
+                return asString;
+            }
+        }
+        return feature.ObjectId?.ToString(CultureInfo.InvariantCulture)
+            ?? feature.Id.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static void PopulateTemporalPropertiesV2(
+        IReadOnlyDictionary<string, object?> attributes,
+        MetadataV2Resource resource,
+        Dictionary<string, object?> properties)
+    {
+        var fields = resource.ReadTemporalFields();
+        DateTimeOffset? start = null;
+        DateTimeOffset? end = null;
+
+        if (!string.IsNullOrWhiteSpace(fields.StartTimeField))
+        {
+            start = TryReadTemporalValue(attributes, fields.StartTimeField);
+        }
+        if (!string.IsNullOrWhiteSpace(fields.EndTimeField))
+        {
+            end = TryReadTemporalValue(attributes, fields.EndTimeField);
+        }
+
+        if (start is null && end is null)
+        {
+            var intervalStart = TryReadTemporalValue(attributes, "start_datetime");
+            if (intervalStart is not null)
+            {
+                start = intervalStart;
+                end = TryReadTemporalValue(attributes, "end_datetime");
+            }
+        }
+
+        start ??= TryReadFallbackTemporalValue(attributes);
+
+        if (start is not null && (end is null || end == start))
+        {
+            properties["datetime"] = FormatTemporalValue(start.Value);
+            return;
+        }
+
+        if (start is not null || end is not null)
+        {
+            properties["datetime"] = null;
+            properties["start_datetime"] = start is null ? null : FormatTemporalValue(start.Value);
+            properties["end_datetime"] = end is null ? null : FormatTemporalValue(end.Value);
+            return;
+        }
+
+        properties["datetime"] = null;
+    }
+
     private static string ResolveItemId(Feature feature)
     {
         foreach (var key in new[] { "stac_id", "item_id", "id" })
