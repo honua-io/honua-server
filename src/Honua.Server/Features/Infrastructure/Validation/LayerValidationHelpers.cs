@@ -580,11 +580,27 @@ internal static class LayerValidationHelpers
         }
 
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
-        var publication = snapshot.Graph.Publications.FirstOrDefault(p =>
-            string.Equals(p.ServiceLocalId, collectionId, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(p.Path, collectionId, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(p.Metadata.Name, collectionId, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(p.Metadata.Id, collectionId, StringComparison.OrdinalIgnoreCase));
+
+        bool MatchesCollectionId(MetadataV2Publication p)
+            => string.Equals(p.ServiceLocalId, collectionId, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(p.Path, collectionId, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(p.Metadata.Name, collectionId, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(p.Metadata.Id, collectionId, StringComparison.OrdinalIgnoreCase);
+
+        MetadataV2Publication? publication = null;
+
+        // When a service type is specified, prefer the matching publication so a STAC
+        // collection request that shares a serviceLocalId with another protocol's
+        // publication (e.g. an Esri Feature Service publication with the same local id)
+        // doesn't get dispatched to the wrong protocol.
+        if (requiredServiceType.HasValue)
+        {
+            publication = snapshot.Graph.Publications.FirstOrDefault(p =>
+                MatchesCollectionId(p) &&
+                snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var s) &&
+                s.ServiceType == requiredServiceType.Value);
+        }
+        publication ??= snapshot.Graph.Publications.FirstOrDefault(MatchesCollectionId);
 
         if (publication is null)
         {
@@ -597,7 +613,9 @@ internal static class LayerValidationHelpers
         }
 
         var resource = snapshot.ResolveResource(publication);
-        var service = snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var s) ? s : null;
+        var service = snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var resolvedService)
+            ? resolvedService
+            : null;
 
         if (resource is null)
         {
