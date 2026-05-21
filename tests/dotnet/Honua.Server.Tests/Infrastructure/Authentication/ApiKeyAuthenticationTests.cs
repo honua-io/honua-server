@@ -82,6 +82,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
                         ["Security:ConnectionEncryption:MasterKey"] = TestConnectionEncryptionMasterKey,
                         ["HONUA_ADMIN_PASSWORD"] = builder.GetSetting("HONUA_ADMIN_PASSWORD"),
                         ["HONUA_DEV_AUTH"] = builder.GetSetting("HONUA_DEV_AUTH"),
+                        ["HONUA_DEV_AUTH_ACK"] = builder.GetSetting("HONUA_DEV_AUTH_ACK"),
                         ["HONUA_ENABLE_BASIC_AUTH_COMPAT"] = builder.GetSetting("HONUA_ENABLE_BASIC_AUTH_COMPAT"),
                         ["HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH"] = builder.GetSetting("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH"),
                         ["ForwardedHeaders:Enabled"] = builder.GetSetting("ForwardedHeaders:Enabled")
@@ -121,10 +122,13 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
     public async Task AdminEndpoint_DevelopmentBypass_ExplicitlyEnabled_AllowsAccess()
     {
-        // Arrange - Explicitly enable development bypass
+        // Arrange - Explicitly enable development bypass with the required ack token.
+        // CreateTestFactory defaults to ASPNETCORE_ENVIRONMENT=Test, which is the only
+        // environment in which the bypass activates.
         using var factory = CreateTestFactory(builder =>
         {
             builder.UseSetting("HONUA_DEV_AUTH", "true");
+            builder.UseSetting("HONUA_DEV_AUTH_ACK", "i-understand-this-bypasses-auth");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", "some-password");
         });
         using var client = factory.CreateClient();

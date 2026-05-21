@@ -210,31 +210,58 @@ internal sealed class ApiKeyAuthenticationHandler(
     }
 
     /// <summary>
-    /// Determines if development authentication bypass is enabled
+    /// Determines if development authentication bypass is enabled.
     /// </summary>
+    /// <remarks>
+    /// SECURITY: The bypass only activates when ALL of the following are true:
+    /// <list type="bullet">
+    ///   <item><description><c>ASPNETCORE_ENVIRONMENT</c> is exactly <c>Test</c>
+    ///   (not <c>Development</c>, not <c>Staging</c>). The strict match prevents a
+    ///   typo on a staging deploy from opening admin endpoints.</description></item>
+    ///   <item><description><c>HONUA_DEV_AUTH</c> equals <c>true</c>.</description></item>
+    ///   <item><description><c>HONUA_DEV_AUTH_ACK</c> equals
+    ///   <see cref="ApiKeyAuthenticationOptions.ExpectedDevAuthBypassAck"/>.</description></item>
+    /// </list>
+    /// Production misconfiguration is rejected at startup (see
+    /// <c>EnsureDevAuthBypassConfigurationIsSafe</c> in Program.cs); any remaining
+    /// partial match here is a defence-in-depth check.
+    /// </remarks>
     private bool IsDevelopmentBypassEnabled()
     {
-        // SECURITY: Never allow bypass in production, regardless of configuration
-        var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+        // SECURITY: Never allow bypass in production, regardless of configuration.
+        // Startup-time validation should have already thrown, but check again per request.
+        var environment = _authOptions.EnvironmentName
+            ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
         if (string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase))
         {
             AuthenticationLog.DevelopmentBypassBlockedInProduction(Logger);
             return false;
         }
 
-        // Check if HONUA_DEV_AUTH is explicitly set to true
-        string? devAuthBypass = _authOptions.DevAuthBypass;
-        if (string.Equals(devAuthBypass, "true", StringComparison.OrdinalIgnoreCase))
+        // Require HONUA_DEV_AUTH=true.
+        if (!string.Equals(_authOptions.DevAuthBypass, "true", StringComparison.OrdinalIgnoreCase))
         {
-            // Only allow in Test environment, not just any non-production environment
-            if (_authOptions.IsTestMode)
-            {
-                AuthenticationLog.DevelopmentBypassEnabled(Logger);
-                return true;
-            }
+            return false;
         }
 
-        return false;
+        // Require environment to be EXACTLY "Test" (case-insensitive). Strict equality
+        // prevents accidental activation in "Development", "Staging", or typos like "test ".
+        if (!string.Equals(environment, "Test", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        // Require the explicit acknowledgement token to match verbatim.
+        if (!string.Equals(
+                _authOptions.DevAuthBypassAck,
+                ApiKeyAuthenticationOptions.ExpectedDevAuthBypassAck,
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        AuthenticationLog.DevelopmentBypassEnabled(Logger);
+        return true;
     }
 
     /// <summary>
