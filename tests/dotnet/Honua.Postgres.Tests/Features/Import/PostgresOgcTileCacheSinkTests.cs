@@ -21,9 +21,45 @@ public sealed class PostgresOgcTileCacheSinkTests(PostgresFixture fixture)
 {
     private const string SourceServiceUrl = "https://wmts.example.test/wmts";
 
+    private async Task EnsureTileCacheSchemaAsync()
+    {
+        await using var conn = await fixture.GetConnectionAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            CREATE SCHEMA IF NOT EXISTS honua;
+            CREATE TABLE IF NOT EXISTS honua.tile_caches (
+                tile_cache_id      TEXT PRIMARY KEY,
+                layer_identifier   TEXT NOT NULL,
+                tile_matrix_set    TEXT NOT NULL,
+                source_service_url TEXT NOT NULL,
+                tile_format        TEXT NOT NULL DEFAULT 'image/png',
+                style_identifier   TEXT NOT NULL DEFAULT 'default',
+                min_zoom           INTEGER NOT NULL,
+                max_zoom           INTEGER NOT NULL,
+                created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE (layer_identifier, tile_matrix_set, style_identifier, tile_format, source_service_url)
+            );
+            CREATE TABLE IF NOT EXISTS honua.tile_cache_entries (
+                tile_cache_id  TEXT NOT NULL REFERENCES honua.tile_caches (tile_cache_id) ON DELETE CASCADE,
+                zoom_level     INTEGER NOT NULL,
+                tile_column    INTEGER NOT NULL,
+                tile_row       INTEGER NOT NULL,
+                content_type   TEXT NOT NULL,
+                content        BYTEA NOT NULL,
+                source_url     TEXT NOT NULL,
+                created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (tile_cache_id, zoom_level, tile_column, tile_row)
+            );
+            """;
+        await cmd.ExecuteNonQueryAsync();
+    }
+
     [Fact]
     public async Task WriteTileAsync_Inserts_Then_RepeatedWrite_IsAlreadyPresent()
     {
+        await EnsureTileCacheSchemaAsync();
+
         var sink = new PostgresOgcTileCacheSink(
             new FixtureConnectionProvider(fixture),
             NullLogger<PostgresOgcTileCacheSink>.Instance);
@@ -67,6 +103,8 @@ public sealed class PostgresOgcTileCacheSinkTests(PostgresFixture fixture)
     [Fact]
     public async Task EnsureTileCacheAsync_IsIdempotent_AndExpandsZoomRange()
     {
+        await EnsureTileCacheSchemaAsync();
+
         var sink = new PostgresOgcTileCacheSink(
             new FixtureConnectionProvider(fixture),
             NullLogger<PostgresOgcTileCacheSink>.Instance);
