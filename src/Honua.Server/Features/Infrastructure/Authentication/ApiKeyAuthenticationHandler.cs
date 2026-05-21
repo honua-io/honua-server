@@ -6,9 +6,11 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
@@ -60,6 +62,7 @@ internal sealed class ApiKeyAuthenticationHandler(
             else if (!string.IsNullOrEmpty(basicFailure))
             {
                 Context.Items[AuthFailureMessageKey] = basicFailure;
+                await EmitAuditAsync("auth.failure", AuditOutcome.Failure, AuditActorType.Anonymous, AuditEvent.AnonymousActor).ConfigureAwait(false);
                 return AuthenticateResult.Fail(basicFailure);
             }
         }
@@ -76,6 +79,7 @@ internal sealed class ApiKeyAuthenticationHandler(
             if (storedKey is not null)
             {
                 AuthenticationLog.ApiKeyAuthenticationSuccessful(Logger);
+                await EmitAuditAsync("auth.success", AuditOutcome.Success, AuditActorType.ApiKey, storedKey.Record.Id.ToString("D")).ConfigureAwait(false);
                 return CreateSuccessfulAuthenticationResult(
                     "admin-api-key",
                     storedKey.Record.Id,
@@ -108,11 +112,54 @@ internal sealed class ApiKeyAuthenticationHandler(
         if (!IsApiKeyValid(providedApiKey, configuredPassword))
         {
             AuthenticationLog.InvalidApiKeyProvided(Logger);
+            await EmitAuditAsync("auth.failure", AuditOutcome.Failure, AuditActorType.Anonymous, AuditEvent.AnonymousActor).ConfigureAwait(false);
             return AuthenticateResult.Fail("Invalid API key");
         }
 
         AuthenticationLog.ApiKeyAuthenticationSuccessful(Logger);
+        await EmitAuditAsync("auth.success", AuditOutcome.Success, AuditActorType.ApiKey, "admin-password").ConfigureAwait(false);
         return CreateSuccessfulAuthenticationResult("admin");
+    }
+
+    /// <summary>
+    /// Best-effort emit of an authentication audit event. Failures inside the
+    /// audit sink are intentionally swallowed — never block authentication on
+    /// the audit log.
+    /// </summary>
+    private async Task EmitAuditAsync(string action, AuditOutcome outcome, AuditActorType actorType, string actor)
+    {
+        var auditLog = Context.RequestServices.GetService<IAuditLog>();
+        if (auditLog is null)
+        {
+            return;
+        }
+
+        var auditEvent = new AuditEvent
+        {
+            Timestamp = DateTimeOffset.UtcNow,
+            EventType = AuditEventType.Authentication,
+            Actor = actor,
+            ActorType = actorType,
+            ResourceType = "http",
+            ResourceId = Context.Request.Path.HasValue ? Context.Request.Path.Value : null,
+            Action = action,
+            Outcome = outcome,
+            CorrelationId = string.IsNullOrWhiteSpace(Context.TraceIdentifier)
+                ? Guid.NewGuid().ToString("D")
+                : Context.TraceIdentifier,
+            RemoteIp = Context.Connection.RemoteIpAddress?.ToString(),
+            UserAgent = Context.Request.Headers.UserAgent.ToString() is { Length: > 0 } ua ? ua : null,
+            Details = $"{{\"scheme\":\"api-key\",\"method\":\"{Context.Request.Method}\"}}",
+        };
+
+        try
+        {
+            await auditLog.RecordAsync(auditEvent, Context.RequestAborted).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Per IAuditLog contract: audit failures must never block auth.
+        }
     }
 
     private string? GetApiKeyFromHeader()
