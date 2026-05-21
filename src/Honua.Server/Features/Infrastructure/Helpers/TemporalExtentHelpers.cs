@@ -53,6 +53,14 @@ internal static class TemporalExtentHelpers
         FieldDefinition StartField,
         FieldDefinition? EndField);
 
+    /// <summary>
+    /// V2 parallel of <see cref="TemporalFieldSelection"/> — carries the field name strings
+    /// instead of v1 <see cref="FieldDefinition"/> records.
+    /// </summary>
+    internal readonly record struct MetadataV2TemporalFieldSelection(
+        string StartFieldName,
+        string? EndFieldName);
+
     private enum TemporalFieldResolutionFailure
     {
         None,
@@ -76,6 +84,70 @@ internal static class TemporalExtentHelpers
     /// </summary>
     public static bool HasOptInTemporalFields(LayerDefinition layer)
         => TryResolveOptInTemporalFields(layer, out _);
+
+    /// <summary>
+    /// V2 overload of <see cref="HasOptInTemporalFields(LayerDefinition)"/>. Returns true when
+    /// the resource declares a configured <c>startTimeField</c> via
+    /// <see cref="MetadataV2Resource.Temporal"/> AND that field resolves to a
+    /// date/datetime entry in <see cref="MetadataV2Resource.SchemaFields"/>.
+    /// </summary>
+    public static bool HasOptInTemporalFields(MetadataV2Resource resource)
+        => TryResolveOptInTemporalFieldsV2(resource, out _);
+
+    /// <summary>
+    /// V2 overload of <see cref="TryResolveOptInTemporalFields(LayerDefinition, out TemporalFieldSelection)"/>.
+    /// Resolves the configured opt-in temporal field names from the resource's temporal
+    /// extension; returns false (selection=default) when the resource has no
+    /// <c>startTimeField</c> or it doesn't match a schema field of date/datetime type.
+    /// </summary>
+    public static bool TryResolveOptInTemporalFieldsV2(
+        MetadataV2Resource resource,
+        out MetadataV2TemporalFieldSelection selection)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        selection = default;
+
+        var fields = resource.ReadTemporalFields();
+        if (string.IsNullOrWhiteSpace(fields.StartTimeField))
+        {
+            return false;
+        }
+
+        if (!TryFindSchemaTemporalField(resource, fields.StartTimeField, out var startName))
+        {
+            return false;
+        }
+
+        string? endName = null;
+        if (!string.IsNullOrWhiteSpace(fields.EndTimeField))
+        {
+            if (!TryFindSchemaTemporalField(resource, fields.EndTimeField, out endName))
+            {
+                return false;
+            }
+        }
+
+        selection = new MetadataV2TemporalFieldSelection(startName!, endName);
+        return true;
+    }
+
+    private static bool TryFindSchemaTemporalField(MetadataV2Resource resource, string fieldName, out string? resolvedName)
+    {
+        foreach (var field in resource.SchemaFields)
+        {
+            if (string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
+            {
+                var lowerType = field.Type?.ToLowerInvariant();
+                if (lowerType is "date" or "datetime" or "timestamp" or "time")
+                {
+                    resolvedName = field.Name;
+                    return true;
+                }
+            }
+        }
+        resolvedName = null;
+        return false;
+    }
 
     /// <summary>
     /// Strict opt-in resolver that returns the resolved start/end fields when
