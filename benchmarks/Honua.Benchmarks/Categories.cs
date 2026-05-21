@@ -12,4 +12,7 @@ internal static class Categories
     public const string Tile = "tile";
     public const string Stac = "stac";
     public const string Ogc = "ogc";
+    public const string Filter = "filter";
+    public const string Serialization = "serialization";
+    public const string Cache = "cache";
 }
