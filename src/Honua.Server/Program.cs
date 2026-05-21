@@ -832,6 +832,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Import.OgcWfsImportJsonContext.Default,
         Honua.Server.Features.Import.OgcCoverageImportJsonContext.Default,
         Honua.Server.Features.Import.OgcWcsImportJsonContext.Default,
+        Honua.Server.Features.Import.OgcTileCacheExportJsonContext.Default,
         Honua.Server.Features.Admin.OperationsProgressJsonContext.Default,
         Honua.Server.Features.Admin.FeatureEventReplayJsonContext.Default,
         Honua.Server.Features.Mobile.Auth.MobileAuthJsonContext.Default,
@@ -1251,6 +1252,9 @@ app.MapOgcWcsImportEndpoints();
 
 // Configure GeoServer migration run admin orchestration endpoints (issue #1015 slice 5)
 app.MapMigrationRunAdminEndpoints();
+
+// Configure OGC WMTS tile-cache export endpoints (#1016 slice 4)
+app.MapOgcTileCacheExportEndpoints();
 
 if (isTestEnvironment)
 {
