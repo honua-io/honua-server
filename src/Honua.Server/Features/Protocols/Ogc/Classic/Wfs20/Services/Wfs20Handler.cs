@@ -44,6 +44,10 @@ namespace Honua.Server.Features.Protocols.Ogc.Classic.Wfs20.Services;
 /// <summary>
 /// Core handler for WFS 2.0 operations backed by the shared catalog and feature stores.
 /// </summary>
+/// <remarks>
+/// CITE conformance: 167/167 (WFS 2.0 `basic` profile, 100% pass on trunk).
+/// Authoritative status: <see href="../../../../../../../docs/cite-status.md">docs/cite-status.md</see>.
+/// </remarks>
 internal sealed partial class Wfs20Handler
 {
     private const string FeatureNamespacePrefix = "honua";

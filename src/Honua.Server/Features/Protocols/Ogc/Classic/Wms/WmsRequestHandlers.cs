@@ -30,6 +30,10 @@ using static Honua.Server.Features.Protocols.Ogc.Classic.OgcClassicRequestHelper
 
 namespace Honua.Server.Features.Protocols.Ogc.Classic.Wms;
 
+/// <summary>
+/// CITE conformance: 199/199 (WMS 1.3 `default` profile, 100% pass on trunk).
+/// Authoritative status: <see href="../../../../../../docs/cite-status.md">docs/cite-status.md</see>.
+/// </summary>
 internal static partial class WmsRequestHandlers
 {
     private const int WmsMaxImageDimension = 4096;
