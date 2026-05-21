@@ -172,16 +172,25 @@ internal sealed partial class RedisLeaderElection : RedisServiceBase, IRedisLead
 
     private async void OnRenewalTimer(object? state)
     {
-        if (_disposed || !_isStarted || _stopTokenSource?.IsCancellationRequested == true)
-            return;
-
+        // async void timer callback: NO exception may escape (no managed handler -> crash).
+        // Outer try/catch is the last line of defense even for the disposed/started checks.
         try
         {
-            await TryAcquireOrExtendLeadershipAsync(_stopTokenSource?.Token ?? CancellationToken.None).ConfigureAwait(false);
+            if (_disposed || !_isStarted || _stopTokenSource?.IsCancellationRequested == true)
+                return;
+
+            try
+            {
+                await TryAcquireOrExtendLeadershipAsync(_stopTokenSource?.Token ?? CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Log.LeadershipRenewalFailed(Logger, _nodeId, ex);
+            }
         }
         catch (Exception ex)
         {
-            Log.LeadershipRenewalFailed(Logger, _nodeId, ex);
+            Log.UnhandledTimerException(Logger, nameof(OnRenewalTimer), ex);
         }
     }
 
@@ -338,5 +347,9 @@ internal sealed partial class RedisLeaderElection : RedisServiceBase, IRedisLead
         [LoggerMessage(EventId = 9112, Level = LogLevel.Warning,
             Message = "Timed out waiting {Timeout} to release leadership during dispose (NodeId: {NodeId})")]
         public static partial void DisposeReleaseTimedOut(ILogger logger, string nodeId, TimeSpan timeout);
+
+        [LoggerMessage(EventId = 9113, Level = LogLevel.Error,
+            Message = "Unhandled exception escaped timer callback {Callback}")]
+        public static partial void UnhandledTimerException(ILogger logger, string callback, Exception exception);
     }
 }
