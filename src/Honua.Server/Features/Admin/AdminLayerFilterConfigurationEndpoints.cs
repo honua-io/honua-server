@@ -3,6 +3,8 @@
 
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
@@ -66,7 +68,7 @@ internal static class AdminLayerFilterConfigurationEndpoints
         LayerFilterConfigurationUpdateRequest request,
         HttpContext context,
         [FromServices] IResourceValidator resourceValidator,
-        [FromServices] ILayerMetadataUpdater layerMetadataUpdater,
+        [FromServices] IMetadataV2GraphStore graphStore,
         [FromServices] IFilterExpressionService filterExpressionService,
         [FromServices] OutputCacheInvalidationService cacheInvalidator,
         CancellationToken cancellationToken)
@@ -95,13 +97,70 @@ internal static class AdminLayerFilterConfigurationEndpoints
             PermanentFilter = validationResult.Filter
         };
 
-        await layerMetadataUpdater.UpdateLayerMetadataAsync(layerId, metadata, cancellationToken).ConfigureAwait(false);
+        await WriteResourcePermanentFilterAsync(
+            graphStore,
+            layerId,
+            validationResult.Filter,
+            cancellationToken).ConfigureAwait(false);
         await cacheInvalidator.InvalidateServiceCatalogAsync(null, [layerId], cancellationToken).ConfigureAwait(false);
 
         var response = BuildResponse(layerResult.Layer with { Metadata = metadata });
         return Results.Json(
             ApiResponse<LayerFilterConfigurationResponse>.CreateSuccess(response),
             LayerFieldConfigurationJsonContext.Default.ApiResponseLayerFilterConfigurationResponse);
+    }
+
+    /// <summary>
+    /// Writes the per-layer permanent filter onto every V2 resource that this layer id
+    /// publishes through. Slice 51/N moved <c>LayerMetadata.PermanentFilter</c> to
+    /// <see cref="MetadataV2Resource.PermanentFilter"/>; this endpoint is the migrated
+    /// admin write-path. Passing <c>null</c> clears the filter.
+    /// </summary>
+    private static async Task WriteResourcePermanentFilterAsync(
+        IMetadataV2GraphStore graphStore,
+        int layerId,
+        LayerPermanentFilter? filter,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+
+        // Resolve every resource id that this layer id publishes through. The admin
+        // permanent-filter endpoint is service-agnostic (it operates on layer ids only),
+        // so we walk all publications whose numeric identifier equals layerId and apply
+        // the change to each unique backing resource.
+        var targetResourceIds = snapshot.Graph.Publications
+            .Where(p => p.Identifier.IsNumeric && p.LayerIndex == layerId)
+            .Select(p => p.ResourceId)
+            .ToHashSet(StringComparer.Ordinal);
+
+        if (targetResourceIds.Count == 0)
+        {
+            return;
+        }
+
+        var v2Filter = filter is null
+            ? null
+            : new MetadataV2PermanentFilter
+            {
+                Expression = filter.Expression,
+                Language = filter.Language,
+            };
+
+        var resources = snapshot.Graph.Resources.ToArray();
+        for (var i = 0; i < resources.Length; i++)
+        {
+            if (targetResourceIds.Contains(resources[i].Metadata.Id))
+            {
+                resources[i] = resources[i] with { PermanentFilter = v2Filter };
+            }
+        }
+
+        var updated = snapshot.Graph with
+        {
+            Resources = resources,
+            Revision = snapshot.Graph.Revision + 1,
+        };
+        _ = await graphStore.SaveAsync(updated, snapshot.Etag, cancellationToken).ConfigureAwait(false);
     }
 
     private static (LayerPermanentFilter? Filter, string? Error) ValidateAndBuildPermanentFilter(

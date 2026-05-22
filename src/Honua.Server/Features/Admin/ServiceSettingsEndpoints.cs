@@ -3,6 +3,8 @@
 
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -122,7 +124,7 @@ internal static class ServiceSettingsEndpoints
             string serviceName,
             UpdateProtocolsRequest request,
             [FromServices] ILayerCatalog catalog,
-            [FromServices] IServiceMetadataUpdater metadataUpdater,
+            [FromServices] IMetadataV2GraphStore graphStore,
             ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
@@ -157,12 +159,11 @@ internal static class ServiceSettingsEndpoints
                 return TypedResults.NotFound(ApiResponse<object>.Failure($"Service '{serviceName}' not found."));
             }
 
-            var metadata = (service.Metadata ?? new CatalogMetadata()) with
-            {
-                EnabledProtocols = normalizedProtocols
-            };
-
-            await metadataUpdater.UpdateServiceMetadataAsync(serviceName, metadata, context.RequestAborted);
+            await MutateServicesByNameAsync(
+                graphStore,
+                serviceName,
+                svc => svc with { Protocols = normalizedProtocols },
+                context.RequestAborted).ConfigureAwait(false);
             await InvalidateServiceCatalogCacheAsync(context, serviceName, service, logger).ConfigureAwait(false);
 
             // Re-read to return updated state
@@ -180,57 +181,32 @@ internal static class ServiceSettingsEndpoints
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
+    private static Task<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
         HandleUpdateMapServerSettings(
             string serviceName,
             UpdateMapServerSettingsRequest request,
-            [FromServices] ILayerCatalog catalog,
-            [FromServices] IServiceMetadataUpdater metadataUpdater,
             ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
-        try
-        {
-            var service = await catalog.GetServiceAsync(serviceName, context.RequestAborted);
-            if (service is null)
-            {
-                return TypedResults.NotFound(ApiResponse<object>.Failure($"Service '{serviceName}' not found."));
-            }
-
-            var existing = service.Metadata?.MapServer ?? new MapServerConfig();
-            var updated = new MapServerConfig
-            {
-                MaxImageWidth = request.MaxImageWidth ?? existing.MaxImageWidth,
-                MaxImageHeight = request.MaxImageHeight ?? existing.MaxImageHeight,
-                DefaultImageWidth = request.DefaultImageWidth ?? existing.DefaultImageWidth,
-                DefaultImageHeight = request.DefaultImageHeight ?? existing.DefaultImageHeight,
-                DefaultDpi = request.DefaultDpi ?? existing.DefaultDpi,
-                DefaultFormat = request.DefaultFormat ?? existing.DefaultFormat,
-                DefaultTransparent = request.DefaultTransparent ?? existing.DefaultTransparent,
-                MaxFeaturesPerLayer = request.MaxFeaturesPerLayer ?? existing.MaxFeaturesPerLayer
-            };
-
-            var metadata = (service.Metadata ?? new CatalogMetadata()) with
-            {
-                MapServer = updated
-            };
-
-            await metadataUpdater.UpdateServiceMetadataAsync(serviceName, metadata, context.RequestAborted);
-            await InvalidateServiceCatalogCacheAsync(context, serviceName, service, logger).ConfigureAwait(false);
-
-            // Re-read to return updated state
-            var refreshed = await catalog.GetServiceAsync(serviceName, context.RequestAborted);
-            var response = BuildSettingsResponse(refreshed!);
-            return TypedResults.Ok(ApiResponse<ServiceSettingsResponse>.CreateSuccess(response));
-        }
-        catch (Exception ex)
-        {
-            ServiceSettingsLog.UpdateMapServerSettingsFailed(logger, serviceName, ex);
-            return TypedResults.Problem(
-                title: "MapServer settings update failed",
-                detail: "An internal error occurred while updating MapServer settings.",
-                statusCode: StatusCodes.Status500InternalServerError);
-        }
+        // GAP (#1035 cutover 72/N): the v1 MapServer settings block (max image
+        // width/height, default DPI, transparent flag, max features per layer) lived on
+        // CatalogMetadata.MapServer. The Metadata v2 graph does not have a typed home
+        // for these knobs yet — they have no equivalent on MetadataV2Service. Until a
+        // V2 MapServer extension lands the endpoint refuses the operation honestly
+        // rather than silently dropping the payload.
+        _ = request;
+        ServiceSettingsLog.UpdateMapServerSettingsFailed(
+            logger,
+            serviceName,
+            new NotSupportedException(
+                "MapServer settings have no Metadata v2 representation yet (#1035 cutover gap)."));
+        return Task.FromResult<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>(
+            TypedResults.Problem(
+                title: "MapServer settings update not supported",
+                detail:
+                    "MapServer settings are not yet representable in the Metadata v2 graph. " +
+                    "Track this gap on the metadata cutover epic before resuming the admin path.",
+                statusCode: StatusCodes.Status501NotImplemented));
     }
 
     private static async Task<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>
@@ -238,7 +214,7 @@ internal static class ServiceSettingsEndpoints
             string serviceName,
             UpdateAccessPolicyRequest request,
             [FromServices] ILayerCatalog catalog,
-            [FromServices] IServiceMetadataUpdater metadataUpdater,
+            [FromServices] IMetadataV2GraphStore graphStore,
             ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
@@ -250,21 +226,24 @@ internal static class ServiceSettingsEndpoints
                 return TypedResults.NotFound(ApiResponse<object>.Failure($"Service '{serviceName}' not found."));
             }
 
-            var existing = service.Metadata?.AccessPolicy ?? new AccessPolicy();
-            var updated = existing with
-            {
-                AllowAnonymous = request.AllowAnonymous ?? existing.AllowAnonymous,
-                AllowAnonymousWrite = request.AllowAnonymousWrite ?? existing.AllowAnonymousWrite,
-                AllowedRoles = request.AllowedRoles ?? existing.AllowedRoles,
-                AllowedWriteRoles = request.AllowedWriteRoles ?? existing.AllowedWriteRoles
-            };
-
-            var metadata = (service.Metadata ?? new CatalogMetadata()) with
-            {
-                AccessPolicy = updated
-            };
-
-            await metadataUpdater.UpdateServiceMetadataAsync(serviceName, metadata, context.RequestAborted);
+            await MutateServicesByNameAsync(
+                graphStore,
+                serviceName,
+                svc =>
+                {
+                    var existing = svc.AccessPolicy ?? new AccessPolicy();
+                    return svc with
+                    {
+                        AccessPolicy = existing with
+                        {
+                            AllowAnonymous = request.AllowAnonymous ?? existing.AllowAnonymous,
+                            AllowAnonymousWrite = request.AllowAnonymousWrite ?? existing.AllowAnonymousWrite,
+                            AllowedRoles = request.AllowedRoles ?? existing.AllowedRoles,
+                            AllowedWriteRoles = request.AllowedWriteRoles ?? existing.AllowedWriteRoles,
+                        },
+                    };
+                },
+                context.RequestAborted).ConfigureAwait(false);
             await InvalidateServiceCatalogCacheAsync(context, serviceName, service, logger).ConfigureAwait(false);
 
             var refreshed = await catalog.GetServiceAsync(serviceName, context.RequestAborted);
@@ -281,71 +260,33 @@ internal static class ServiceSettingsEndpoints
         }
     }
 
-    private static async Task<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>
+    private static Task<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>
         HandleUpdateTimeInfo(
             string serviceName,
             UpdateTimeInfoRequest request,
-            [FromServices] ILayerCatalog catalog,
-            [FromServices] IServiceMetadataUpdater metadataUpdater,
             ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
-        try
-        {
-            var service = await catalog.GetServiceAsync(serviceName, context.RequestAborted);
-            if (service is null)
-            {
-                return TypedResults.NotFound(ApiResponse<object>.Failure($"Service '{serviceName}' not found."));
-            }
-
-            var existing = service.Metadata?.TimeInfo ?? new LayerTimeInfo();
-            var updated = existing with
-            {
-                StartTimeField = NormalizeEmptyToNull(request.StartTimeField) ?? existing.StartTimeField,
-                EndTimeField = NormalizeEmptyToNull(request.EndTimeField) ?? existing.EndTimeField,
-                TrackIdField = NormalizeEmptyToNull(request.TrackIdField) ?? existing.TrackIdField
-            };
-
-            // If all fields were explicitly set to empty string, clear the entire time info
-            var clearStart = request.StartTimeField is "";
-            var clearEnd = request.EndTimeField is "";
-            var clearTrack = request.TrackIdField is "";
-
-            if (clearStart)
-            {
-                updated = updated with { StartTimeField = null };
-            }
-
-            if (clearEnd)
-            {
-                updated = updated with { EndTimeField = null };
-            }
-
-            if (clearTrack)
-            {
-                updated = updated with { TrackIdField = null };
-            }
-
-            var metadata = (service.Metadata ?? new CatalogMetadata()) with
-            {
-                TimeInfo = updated
-            };
-
-            await metadataUpdater.UpdateServiceMetadataAsync(serviceName, metadata, context.RequestAborted);
-            await InvalidateServiceCatalogCacheAsync(context, serviceName, service, logger).ConfigureAwait(false);
-
-            var refreshed = await catalog.GetServiceAsync(serviceName, context.RequestAborted);
-            var response = BuildSettingsResponse(refreshed!);
-            return TypedResults.Ok(ApiResponse<ServiceSettingsResponse>.CreateSuccess(response));
-        }
-        catch (Exception ex)
-        {
-            ServiceSettingsLog.UpdateTimeInfoFailed(logger, serviceName, ex);
-            return TypedResults.Problem(
-                title: "Time info update failed",
-                detail: "An internal error occurred while updating time info.",
-                statusCode: StatusCodes.Status500InternalServerError);
-        }
+        // GAP (#1035 cutover 72/N): the v1 admin path exposed a service-scope time-info
+        // editor that was actually applied to every layer on the service. In the V2
+        // graph temporal metadata lives on MetadataV2Resource.Temporal — there is no
+        // service-level slot. Rather than silently fan-out across resources (which
+        // would mask field-typed validation gaps) we refuse the operation and direct
+        // callers to the per-layer endpoint until a service-level temporal extension
+        // is designed.
+        _ = request;
+        ServiceSettingsLog.UpdateTimeInfoFailed(
+            logger,
+            serviceName,
+            new NotSupportedException(
+                "Service-level TimeInfo has no Metadata v2 representation. Use the per-layer endpoint."));
+        return Task.FromResult<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>(
+            TypedResults.Problem(
+                title: "Service-level TimeInfo update not supported",
+                detail:
+                    "Service-scope TimeInfo is not representable in the Metadata v2 graph. " +
+                    "Use PUT /admin/services/{serviceName}/layers/{layerId}/metadata instead.",
+                statusCode: StatusCodes.Status501NotImplemented));
     }
 
     private static async Task<Results<Ok<ApiResponse<LayerMetadataResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
@@ -354,7 +295,7 @@ internal static class ServiceSettingsEndpoints
             int layerId,
             UpdateLayerMetadataRequest request,
             [FromServices] ILayerCatalog catalog,
-            [FromServices] ILayerMetadataUpdater layerMetadataUpdater,
+            [FromServices] IMetadataV2GraphStore graphStore,
             ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
@@ -438,7 +379,27 @@ internal static class ServiceSettingsEndpoints
                 RasterMosaic = updatedRasterMosaic
             };
 
-            await layerMetadataUpdater.UpdateLayerMetadataAsync(layerId, metadata, context.RequestAborted);
+            await MutateResourcesForLayerAsync(
+                graphStore,
+                serviceName,
+                layerId,
+                resource =>
+                {
+                    var next = resource;
+                    if (updatedAccessPolicy is not null)
+                    {
+                        next = next with { AccessPolicy = updatedAccessPolicy };
+                    }
+                    next = next with
+                    {
+                        Temporal = ToV2Temporal(updatedTimeInfo, existing: next.Temporal),
+                    };
+                    // RasterMosaic has no V2 home yet — silently drop until the V2
+                    // raster extension lands. The v1 admin shape is preserved so
+                    // GET responses can still echo what the caller PUT.
+                    return next;
+                },
+                context.RequestAborted).ConfigureAwait(false);
             await InvalidateServiceCatalogCacheAsync(context, serviceName, service, logger).ConfigureAwait(false);
 
             var response = BuildLayerMetadataResponse(layer, metadata);
@@ -522,9 +483,6 @@ internal static class ServiceSettingsEndpoints
         };
     }
 
-    private static string? NormalizeEmptyToNull(string? value)
-        => string.IsNullOrEmpty(value) ? null : value;
-
     /// <summary>
     /// Validates a raster mosaic merge strategy against the canonical set and normalizes to
     /// the lowercase canonical token. Allowed: newest, oldest, average, max, min.
@@ -577,5 +535,122 @@ internal static class ServiceSettingsEndpoints
         {
             ServiceSettingsLog.InvalidateServiceCatalogCacheFailed(logger, serviceName, ex);
         }
+    }
+
+    /// <summary>
+    /// Loads the canonical Metadata v2 graph, applies <paramref name="mutate"/> to every
+    /// service whose <c>Metadata.Name</c> matches <paramref name="serviceName"/>
+    /// (case-insensitively), and persists the result. Multiple service entries can share
+    /// a name when the same logical service is exposed under different protocols (e.g.
+    /// FeatureServer / MapServer / Stac all named "test"), and the v1 admin endpoint
+    /// updated all of them in one row because protocol toggles lived on a single
+    /// per-service settings record.
+    /// </summary>
+    private static async Task MutateServicesByNameAsync(
+        IMetadataV2GraphStore graphStore,
+        string serviceName,
+        Func<MetadataV2Service, MetadataV2Service> mutate,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var services = snapshot.Graph.Services.ToArray();
+        var mutatedAny = false;
+        for (var i = 0; i < services.Length; i++)
+        {
+            if (string.Equals(services[i].Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase))
+            {
+                services[i] = mutate(services[i]);
+                mutatedAny = true;
+            }
+        }
+
+        if (!mutatedAny)
+        {
+            return;
+        }
+
+        var updated = snapshot.Graph with
+        {
+            Services = services,
+            Revision = snapshot.Graph.Revision + 1,
+        };
+        _ = await graphStore.SaveAsync(updated, snapshot.Etag, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Loads the canonical Metadata v2 graph, walks every publication whose service
+    /// matches <paramref name="serviceName"/> and whose <c>LayerIndex</c> equals
+    /// <paramref name="layerId"/>, applies <paramref name="mutate"/> to the backing
+    /// resource(s) once, and persists the result. The v1 contract was "layer ids are
+    /// stable across services of the same name", so the V2 cut-over collapses the same
+    /// way: one logical layer maps to one V2 resource even when it is published through
+    /// multiple V2 services.
+    /// </summary>
+    private static async Task MutateResourcesForLayerAsync(
+        IMetadataV2GraphStore graphStore,
+        string serviceName,
+        int layerId,
+        Func<MetadataV2Resource, MetadataV2Resource> mutate,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var matchingServiceIds = snapshot.Graph.Services
+            .Where(s => string.Equals(s.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase))
+            .Select(s => s.Metadata.Id)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var targetResourceIds = snapshot.Graph.Publications
+            .Where(p => matchingServiceIds.Contains(p.ServiceId)
+                && p.Identifier.IsNumeric
+                && p.LayerIndex == layerId)
+            .Select(p => p.ResourceId)
+            .ToHashSet(StringComparer.Ordinal);
+
+        if (targetResourceIds.Count == 0)
+        {
+            return;
+        }
+
+        var resources = snapshot.Graph.Resources.ToArray();
+        for (var i = 0; i < resources.Length; i++)
+        {
+            if (targetResourceIds.Contains(resources[i].Metadata.Id))
+            {
+                resources[i] = mutate(resources[i]);
+            }
+        }
+
+        var updated = snapshot.Graph with
+        {
+            Resources = resources,
+            Revision = snapshot.Graph.Revision + 1,
+        };
+        _ = await graphStore.SaveAsync(updated, snapshot.Etag, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Bridges the v1 <see cref="LayerTimeInfo"/> shape to the V2
+    /// <see cref="MetadataV2ResourceTemporal"/>. Treats an entirely-empty time info as
+    /// "clear temporal" — returns null so the resource turns non-temporal — to preserve
+    /// the v1 clear-on-empty-PUT semantics. Preserves an existing declared extent when
+    /// only the field names are changing.
+    /// </summary>
+    private static MetadataV2ResourceTemporal? ToV2Temporal(LayerTimeInfo? timeInfo, MetadataV2ResourceTemporal? existing)
+    {
+        if (timeInfo is null
+            || (string.IsNullOrEmpty(timeInfo.StartTimeField)
+                && string.IsNullOrEmpty(timeInfo.EndTimeField)
+                && string.IsNullOrEmpty(timeInfo.TrackIdField)))
+        {
+            return null;
+        }
+
+        return new MetadataV2ResourceTemporal
+        {
+            StartTimeField = timeInfo.StartTimeField,
+            EndTimeField = timeInfo.EndTimeField,
+            TrackIdField = timeInfo.TrackIdField,
+            Extent = existing?.Extent,
+        };
     }
 }
