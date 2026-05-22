@@ -124,14 +124,6 @@ public sealed class MetadataV2ModelTests
                 Value = "0",
                 IsNumeric = true,
                 PathOverride = "/collections/parcels",
-            },
-            SupportedFormats =
-            [
-                "application/geo+json"
-            ],
-            FieldAliases = new Dictionary<string, string>
-            {
-                ["shape"] = "Geometry"
             }
         };
 
@@ -146,7 +138,6 @@ public sealed class MetadataV2ModelTests
         graph.Publications.Single().ServiceId.Should().Be("service.public");
         graph.Publications.Single().PublicationType.Should().Be(MetadataV2PublicationType.OgcCollection);
         graph.Publications.Single().Path.Should().Be("/collections/parcels");
-        graph.Publications.Single().FieldAliases.Should().Contain("shape", "Geometry");
     }
 
     [UnitTest]

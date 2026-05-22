@@ -463,25 +463,12 @@ public sealed record MetadataV2Publication
     public bool IsPrimary { get; init; }
 
     /// <summary>
-    /// Format identifiers supported by this publication.
-    /// </summary>
-    [JsonPropertyName("supportedFormats")]
-    public IReadOnlyList<string> SupportedFormats { get; init; } = Array.Empty<string>();
-
-    /// <summary>
-    /// Service-specific field aliases.
-    /// </summary>
-    [JsonPropertyName("fieldAliases")]
-    public IReadOnlyDictionary<string, string> FieldAliases { get; init; } = new Dictionary<string, string>();
-
-    /// <summary>
-    /// Publication capabilities after service and storage validation.
-    /// </summary>
-    [JsonPropertyName("capabilities")]
-    public IReadOnlyList<string> Capabilities { get; init; } = Array.Empty<string>();
-
-    /// <summary>
-    /// Publication-specific options.
+    /// Publication-specific options. The catch-all bag for publication-shape
+    /// extensions that don't deserve a typed slot (per-publication output
+    /// formats, capability overrides, field aliases, …). Compare to the
+    /// per-entity <see cref="Extensions"/> dictionary — Options is for
+    /// publication-specific config the producer knows about; Extensions is for
+    /// out-of-band annotations a third-party tool attaches.
     /// </summary>
     [JsonPropertyName("options")]
     public IReadOnlyDictionary<string, JsonElement> Options { get; init; } = new Dictionary<string, JsonElement>();
