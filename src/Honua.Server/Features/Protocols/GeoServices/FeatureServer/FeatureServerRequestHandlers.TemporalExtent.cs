@@ -3,6 +3,8 @@
 
 using System.Globalization;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
@@ -46,7 +48,7 @@ internal static partial class FeatureServerEndpoints
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerV2Async(
             resourceValidator,
             serviceId,
             layerId,
@@ -59,32 +61,42 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = validationResult.Service!;
-        var layer = validationResult.Layer!;
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+        var publication = validationResult.Publication!;
+        var resource = validationResult.Resource!;
+        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
         if (accessError != null)
         {
             return accessError;
         }
 
         // Discovery is opt-in (docs/gis/temporal-animation-api.md): a layer is
-        // exposed via temporalExtent only when an explicit TimeInfo.StartTimeField
-        // has been configured. The shared TryResolveTemporalRangeAsync helper
-        // falls back to the first Date/DateTime attribute when TimeInfo is null
-        // (preserved for OGC API Features collection extents), but that fallback
-        // would surface temporal metadata for layers that were never marked
-        // time-aware. WMS/WMTS already gate on the same condition before calling
-        // the helper.
-        if (layer.Metadata?.TimeInfo is null ||
-            string.IsNullOrWhiteSpace(layer.Metadata.TimeInfo.StartTimeField))
+        // exposed via temporalExtent only when an explicit start-time field has
+        // been configured on the V2 resource's temporal extension. The shared
+        // TryResolveTemporalRangeV2Async helper does NOT fall back to scanning
+        // attribute schemas for a date field — that opt-in gate is enforced
+        // here and via HasOptInTemporalFields. WMS/WMTS already gate on the
+        // same condition before calling the helper.
+        if (!TemporalExtentHelpers.TryResolveOptInTemporalFieldsV2(resource, out var fields))
         {
             return StandardErrorHelpers.CreateNotFound(
                 context,
-                $"Layer '{layer.Name ?? layer.Id.ToString(CultureInfo.InvariantCulture)}' is not configured as time-aware.");
+                $"Layer '{resource.Metadata.Name ?? layerId.ToString(CultureInfo.InvariantCulture)}' is not configured as time-aware.");
         }
 
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var temporalRange = await TemporalExtentHelpers.TryResolveTemporalRangeAsync(
-            layer,
+        var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var storageLayerId = snapshot.ResolveStorageLayerId(publication);
+        if (storageLayerId is null)
+        {
+            return StandardErrorHelpers.CreateNotFound(
+                context,
+                $"Layer '{resource.Metadata.Name ?? layerId.ToString(CultureInfo.InvariantCulture)}' is not bound to a storage layer.");
+        }
+
+        var temporalRange = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(
+            resource,
+            storageLayerId.Value,
             featureReader,
             cancellationToken).ConfigureAwait(false);
 
@@ -92,16 +104,16 @@ internal static partial class FeatureServerEndpoints
         {
             return StandardErrorHelpers.CreateNotFound(
                 context,
-                $"Layer '{layer.Name ?? layer.Id.ToString(CultureInfo.InvariantCulture)}' is not configured as time-aware.");
+                $"Layer '{resource.Metadata.Name ?? layerId.ToString(CultureInfo.InvariantCulture)}' is not configured as time-aware.");
         }
 
         var range = temporalRange.Value;
         var response = new TemporalExtentResponse
         {
-            LayerId = layer.Id,
-            LayerName = layer.Name,
-            StartTimeField = range.StartField.Name,
-            EndTimeField = range.EndField?.Name,
+            LayerId = layerId,
+            LayerName = resource.Metadata.Name,
+            StartTimeField = range.StartFieldName,
+            EndTimeField = range.EndFieldName,
             Min = range.Min?.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture),
             Max = range.Max?.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture),
             MinEpochMs = range.Min?.ToUnixTimeMilliseconds(),
