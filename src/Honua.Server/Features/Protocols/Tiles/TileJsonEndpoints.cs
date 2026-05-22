@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -47,6 +48,16 @@ internal static class TileJsonEndpoints
         [FromServices] IOptions<LimitsOptions> limitsOptions,
         CancellationToken cancellationToken)
     {
+        var backingLayer = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+            context,
+            layerId,
+            requiredProtocol: ServiceProtocols.FeatureServer,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!backingLayer.IsValid)
+        {
+            return backingLayer.ErrorResult!;
+        }
+
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
             context,
             layerId,

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 
@@ -88,13 +89,19 @@ public sealed class TestMetadataV2GraphBuilder
         string id,
         string name,
         MetadataV2ResourceType type = MetadataV2ResourceType.FeatureDataset,
-        IEnumerable<MetadataV2Field>? fields = null)
+        IEnumerable<MetadataV2Field>? fields = null,
+        JsonElement? spatial = null,
+        JsonElement? temporal = null,
+        IReadOnlyDictionary<string, JsonElement>? extensions = null)
     {
         _resources.Add(new MetadataV2Resource
         {
             Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
             Type = type,
             SchemaFields = fields?.ToArray() ?? Array.Empty<MetadataV2Field>(),
+            Spatial = spatial,
+            Temporal = temporal,
+            Extensions = extensions ?? new Dictionary<string, JsonElement>(),
         });
         return this;
     }

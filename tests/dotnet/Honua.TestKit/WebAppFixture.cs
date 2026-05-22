@@ -322,7 +322,13 @@ public sealed class WebAppFixture : IAsyncLifetime
         {
             var resourceId = $"res-layer-{layerIndex}";
             builder
-                .AddResource(resourceId, $"layer-{layerIndex}", MetadataV2ResourceType.FeatureDataset)
+                .AddResource(
+                    resourceId,
+                    $"layer-{layerIndex}",
+                    MetadataV2ResourceType.FeatureDataset,
+                    fields: BuildDefaultFeatureSchemaFields(),
+                    spatial: BuildDefaultSpatialMetadata(layerIndex),
+                    temporal: layerIndex == TestLayerId ? BuildDefaultTemporalMetadata() : null)
                 .AddPublication(
                     id: $"pub-layer-{layerIndex}",
                     serviceId: "svc-test",
@@ -382,6 +388,79 @@ public sealed class WebAppFixture : IAsyncLifetime
         }
 
         return builder.Build();
+    }
+
+    private static MetadataV2Field[] BuildDefaultFeatureSchemaFields()
+    {
+        return
+        [
+            new MetadataV2Field
+            {
+                Name = "objectid",
+                Type = "integer",
+                Title = "Object ID",
+                Nullable = false,
+                SemanticRoles = ["id.primary"]
+            },
+            new MetadataV2Field
+            {
+                Name = "name",
+                Type = "string",
+                Title = "Name",
+                Nullable = true
+            },
+            new MetadataV2Field
+            {
+                Name = "geometry",
+                Type = "geometry",
+                Title = "Geometry",
+                Nullable = true,
+                SemanticRoles = ["geometry.primary"]
+            },
+            new MetadataV2Field
+            {
+                Name = "timestamp",
+                Type = "datetime",
+                Title = "Timestamp",
+                Nullable = true
+            },
+            new MetadataV2Field
+            {
+                Name = "event_date",
+                Type = "datetime",
+                Title = "Event date",
+                Nullable = true
+            }
+        ];
+    }
+
+    private static JsonElement BuildDefaultSpatialMetadata(int layerIndex)
+    {
+        var srid = layerIndex is 101 or 102 or 103 or 104
+            ? SpatialReferenceTestLayerCatalog.LayerSrid
+            : 4326;
+        var geometryType = layerIndex switch
+        {
+            102 => "LineString",
+            103 => "Polygon",
+            _ => "Point"
+        };
+
+        return JsonSerializer.SerializeToElement(new
+        {
+            srid,
+            crs = $"EPSG:{srid}",
+            geometryType
+        });
+    }
+
+    private static JsonElement BuildDefaultTemporalMetadata()
+    {
+        return JsonSerializer.SerializeToElement(new
+        {
+            startTimeField = "timestamp",
+            endTimeField = "event_date"
+        });
     }
 
     private static void RegisterDefaultMetadataV2Graph(IServiceCollection services)
