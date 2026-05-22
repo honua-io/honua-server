@@ -38,7 +38,7 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
         var schema = _fixture.CurrentSchema
             ?? throw new InvalidOperationException("WebAppFixture did not initialize an isolated schema.");
 
-        var seedPath = ResolveRepoFile("tests", "seed", "mobile-offline-demo-v1.sql");
+        var seedPath = RepositoryPaths.Resolve("tests", "seed", "mobile-offline-demo-v1.sql");
         var seedSql = await File.ReadAllTextAsync(seedPath);
 
         await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
@@ -223,17 +223,5 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
     {
         var content = await response.Content.ReadAsStringAsync();
         return JsonDocument.Parse(content);
-    }
-
-    private static string ResolveRepoFile(params string[] path)
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
-        {
-            directory = directory.Parent;
-        }
-
-        directory.Should().NotBeNull("the test should run under the repository output tree");
-        return Path.Combine(new[] { directory!.FullName }.Concat(path).ToArray());
     }
 }

@@ -73,7 +73,7 @@ VALUES (
         'accessPolicy', jsonb_build_object('allowAnonymous', true, 'allowAnonymousWrite', true),
         'demoFixture', jsonb_build_object(
             'id', 'mobile-offline-field-ops-v1',
-            'issue', 'honua-server#895',
+            'issue', 'honua-server#965',
             'enabledIssues', jsonb_build_array('honua-mobile#92', 'honua-mobile#95', 'honua-mobile#97'),
             'setupSeed', 'tests/seed/mobile-offline-demo-v1.sql',
             'conflictSeed', 'tests/seed/mobile-offline-demo-conflict-delta.sql',
@@ -88,7 +88,7 @@ VALUES (
                 'packageId', 'mobile-offline-field-ops-v1',
                 'serviceId', 'mobile_offline_demo',
                 'format', 'json',
-                'syncModel', 'perLayer',
+                'syncModel', 'perReplica',
                 'bbox', jsonb_build_array(-158.1250, 21.2600, -157.7000, 21.5200),
                 'pageSize', 100,
                 'sourceIds', jsonb_build_array('mobile_offline_demo/FeatureServer/68910', 'mobile_offline_demo/FeatureServer/68920'),
