@@ -4,10 +4,10 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Exceptions;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
@@ -93,7 +93,7 @@ internal static class CollectionsEndpoints
     private static async Task<IResult> HandleGetCollections(
         HttpContext context,
         string? f,
-        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
         [FromServices] IFeatureReader featureReader,
         [FromServices] ICrsRegistry crsRegistry,
         [FromServices] ICoordinateTransformService coordinateTransformService,
@@ -117,22 +117,48 @@ internal static class CollectionsEndpoints
             }
 
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-            var layers = await layerCatalog.ListLayersAsync(cancellationToken);
-            var services = await layerCatalog.ListServicesAsync(cancellationToken);
-            var layerToService = LayerValidationHelpers.BuildPrimaryServiceMap(services, ServiceProtocols.OgcFeatures);
-            var visibleLayers = layers
-                .Where(layer =>
-                    layerToService.TryGetValue(layer.Id, out var service)
-                        ? ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.OgcFeatures) &&
-                            AccessPolicyHelpers.IsLayerAccessible(context, layer, service)
-                        : ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.OgcFeatures) &&
-                            AccessPolicyHelpers.IsLayerAccessible(context, layer))
-                .ToList();
+            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+
+            // Walk OGC API Features publications: each is a (resource, service) pair gated
+            // on protocol enablement + access policy. Use BuildPrimaryServiceMapV2 to pick
+            // the canonical service per layer index when a resource is published through
+            // more than one service.
+            var publicationsByResource = new Dictionary<string, (MetadataV2Publication Publication, MetadataV2Service Service, MetadataV2Resource Resource)>(StringComparer.OrdinalIgnoreCase);
+            foreach (var publication in snapshot.Graph.Publications)
+            {
+                if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service))
+                {
+                    continue;
+                }
+                if (!ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.OgcFeatures))
+                {
+                    continue;
+                }
+                var resource = snapshot.ResolveResource(publication);
+                if (resource is null)
+                {
+                    continue;
+                }
+                if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, service))
+                {
+                    continue;
+                }
+                // Prefer the publication explicitly flagged primary; otherwise first wins.
+                if (!publicationsByResource.TryGetValue(resource.Metadata.Id, out var existing) ||
+                    (publication.IsPrimary && !existing.Publication.IsPrimary))
+                {
+                    publicationsByResource[resource.Metadata.Id] = (publication, service, resource);
+                }
+            }
+
+            var visiblePublications = publicationsByResource.Values.ToList();
             var collections = await ProjectWithLimitedConcurrencyAsync(
-                visibleLayers,
-                (layer, ct) => CreateCollectionAsync(
-                    layer,
-                    layerToService.TryGetValue(layer.Id, out var service) ? service : null,
+                visiblePublications,
+                (entry, ct) => CreateCollectionAsync(
+                    entry.Resource,
+                    entry.Publication,
+                    entry.Service,
+                    snapshot,
                     baseUrl,
                     featureReader,
                     crsRegistry,
@@ -198,7 +224,7 @@ internal static class CollectionsEndpoints
         string collectionId,
         HttpContext context,
         string? f,
-        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
         [FromServices] IFeatureReader featureReader,
         [FromServices] ICrsRegistry crsRegistry,
         [FromServices] ICoordinateTransformService coordinateTransformService,
@@ -237,23 +263,31 @@ internal static class CollectionsEndpoints
 
             collectionId = collectionResolution.ResolvedCollectionId;
 
-            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+            var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
                 context,
-                collectionResolution.LayerId,
-                LayerValidationHelpers.ValidationProtocol.OgcFeatures,
+                collectionId,
                 requiredProtocol: ServiceProtocols.OgcFeatures,
                 cancellationToken: cancellationToken);
-            if (!layerValidation.IsValid)
+            if (!validation.IsValid)
             {
-                return layerValidation.ErrorResult!;
+                return validation.ErrorResult!;
             }
 
-            var layer = layerValidation.Layer!;
-            var services = await layerCatalog.ListServicesAsync(cancellationToken);
-            var layerToService = LayerValidationHelpers.BuildPrimaryServiceMap(services, ServiceProtocols.OgcFeatures);
-            layerToService.TryGetValue(layer.Id, out var service);
+            var resource = validation.Resource!;
+            var publication = validation.Publication!;
+            var service = validation.Service;
+            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-            var collection = await CreateCollectionAsync(layer, service, baseUrl, featureReader, crsRegistry, coordinateTransformService, cancellationToken);
+            var collection = await CreateCollectionAsync(
+                resource,
+                publication,
+                service,
+                snapshot,
+                baseUrl,
+                featureReader,
+                crsRegistry,
+                coordinateTransformService,
+                cancellationToken);
             var collectionSegment = Uri.EscapeDataString(collectionId);
             var basePath = $"{baseUrl}/ogc/features/collections/{collectionSegment}";
             var selfHref = $"{basePath}{request.QueryString}";
@@ -266,7 +300,7 @@ internal static class CollectionsEndpoints
             updatedLinks = OgcCommonUtilities.AddAlternateLinks(updatedLinks, request, basePath, outputFormat, OgcCommonUtilities.MetadataFormats);
             collection = collection with { Links = updatedLinks };
 
-            OgcFeaturesLog.CollectionReturned(logger, collectionId, layer.Name);
+            OgcFeaturesLog.CollectionReturned(logger, collectionId, resource.Metadata.Name);
             return OgcCommonUtilities.FormatMetadataResponse(
                 collection,
                 OgcJsonContext.Default.CollectionInfo,
@@ -405,28 +439,40 @@ internal static class CollectionsEndpoints
     }
 
     /// <summary>
-    /// Converts a layer definition to OGC API Features collection
+    /// Metadata v2 builder for an OGC API Features <see cref="CollectionInfo"/>. The collection
+    /// id is the publication's <c>ServiceLocalId</c>, falling back to its resource name when the
+    /// publication carries no explicit local id. Spatial extent is read from the typed
+    /// <see cref="MetadataV2ResourceSpatial"/> slot on the resource; temporal extent is computed
+    /// from the V2 temporal helpers keyed on the resolved storage layer id.
     /// </summary>
     private static async Task<CollectionInfo> CreateCollectionAsync(
-        LayerDefinition layer,
-        ServiceDefinition? service,
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        MetadataV2Service? service,
+        MetadataV2GraphSnapshot snapshot,
         string baseUrl,
         IFeatureReader featureReader,
         ICrsRegistry crsRegistry,
         ICoordinateTransformService coordinateTransformService,
         CancellationToken cancellationToken)
     {
-        // Use layer ID as collection ID (string representation)
-        var collectionId = layer.Id.ToString();
-        var itemsBaseHref = $"{baseUrl}/ogc/features/collections/{collectionId}/items";
+        var collectionId = publication.ServiceLocalId
+            ?? publication.Path
+            ?? resource.Metadata.Name;
+        var displayName = publication.TitleOverride
+            ?? resource.Metadata.Title
+            ?? resource.Metadata.Name;
+        var description = resource.Metadata.Description;
+        var itemsBaseHref = $"{baseUrl}/ogc/features/collections/{Uri.EscapeDataString(collectionId)}/items";
+        var collectionSegment = Uri.EscapeDataString(collectionId);
         var collectionLinks = ImmutableArray.CreateBuilder<Link>();
 
         // Self link
         collectionLinks.Add(Link.Create(
-            href: $"{baseUrl}/ogc/features/collections/{collectionId}",
+            href: $"{baseUrl}/ogc/features/collections/{collectionSegment}",
             rel: RelationTypes.Self,
             type: MediaTypes.Json,
-            title: layer.Name));
+            title: displayName));
 
         // Items links for all supported encodings
         foreach (var format in OgcFeaturesUtilities.FeatureFormats)
@@ -448,11 +494,10 @@ internal static class CollectionsEndpoints
             type: MediaTypes.GeoJson,
             title: "Data"));
 
-        var metadata = service?.Metadata ?? layer.Metadata;
-        if (ServiceProtocols.IsProtocolEnabled(metadata, ServiceProtocols.OgcApiMaps))
+        if (service is not null && ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.OgcApiMaps))
         {
             collectionLinks.Add(Link.Create(
-                href: $"{baseUrl}/ogc/maps/collections/{collectionId}/map",
+                href: $"{baseUrl}/ogc/maps/collections/{collectionSegment}/map",
                 rel: RelationTypes.Map,
                 type: "image/png",
                 title: "Map"));
@@ -467,49 +512,52 @@ internal static class CollectionsEndpoints
 
         // Queryables link
         collectionLinks.Add(Link.Create(
-            href: $"{baseUrl}/ogc/features/collections/{collectionId}/queryables",
+            href: $"{baseUrl}/ogc/features/collections/{collectionSegment}/queryables",
             rel: RelationTypes.Queryables,
             type: MediaTypes.SchemaJson,
             title: "Queryables"));
 
-        // Style link (MapLibre style JSON)
-        collectionLinks.Add(Link.Create(
-            href: $"{baseUrl}/api/styles/{layer.Id}.json",
-            rel: RelationTypes.Style,
-            type: MediaTypes.Json,
-            title: "Style"));
-
-        if (ServiceProtocols.IsProtocolEnabled(metadata, ServiceProtocols.OgcApiTiles))
+        // Style link (MapLibre style JSON) — uses the storage layer id as the v1 catalog does.
+        var storageLayerId = snapshot.ResolveStorageLayerId(publication);
+        if (storageLayerId.HasValue)
         {
             collectionLinks.Add(Link.Create(
-                href: $"{baseUrl}/ogc/tiles/collections/{collectionId}/tiles",
+                href: $"{baseUrl}/api/styles/{storageLayerId.Value.ToString(CultureInfo.InvariantCulture)}.json",
+                rel: RelationTypes.Style,
+                type: MediaTypes.Json,
+                title: "Style"));
+        }
+
+        if (service is not null && ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.OgcApiTiles))
+        {
+            collectionLinks.Add(Link.Create(
+                href: $"{baseUrl}/ogc/tiles/collections/{collectionSegment}/tiles",
                 rel: RelationTypes.TilesetsVector,
                 type: MediaTypes.Json,
                 title: "Vector tilesets"));
         }
 
         SpatialExtent? spatialExtent = null;
-        if (layer.Extent != null)
+        var bbox = resource.ReadBbox();
+        if (bbox is not null)
         {
-            var extentSrid = layer.Extent.Value.SpatialReference;
-            (double Lon, double Lat) min = default;
-            (double Lon, double Lat) max = default;
+            var extentSrid = resource.ReadSrid() ?? 4326;
+            (double Lon, double Lat) min;
+            (double Lon, double Lat) max;
             var transformedToCrs84 = false;
             (double Lon, double Lat) minTransformed = default;
             (double Lon, double Lat) maxTransformed = default;
             if (extentSrid != 4326)
             {
                 transformedToCrs84 =
-                    OgcExtentTransformer.TryTransformToCrs84(layer.Extent.Value.MinX, layer.Extent.Value.MinY, extentSrid, out minTransformed) &&
-                    OgcExtentTransformer.TryTransformToCrs84(layer.Extent.Value.MaxX, layer.Extent.Value.MaxY, extentSrid, out maxTransformed);
+                    OgcExtentTransformer.TryTransformToCrs84(bbox.West, bbox.South, extentSrid, out minTransformed) &&
+                    OgcExtentTransformer.TryTransformToCrs84(bbox.East, bbox.North, extentSrid, out maxTransformed);
 
-                // PostGIS fallback for non-WGS84/WebMercator CRS (e.g. NAD83, UTM zones)
-                // Uses TransformExtentAsync which transforms all 4 corners to find true min/max
                 if (!transformedToCrs84)
                 {
                     var extentResult = await coordinateTransformService.TransformExtentAsync(
-                        layer.Extent.Value.MinX, layer.Extent.Value.MinY,
-                        layer.Extent.Value.MaxX, layer.Extent.Value.MaxY,
+                        bbox.West, bbox.South,
+                        bbox.East, bbox.North,
                         extentSrid, 4326, cancellationToken);
                     if (extentResult.HasValue)
                     {
@@ -524,8 +572,8 @@ internal static class CollectionsEndpoints
             {
                 if (extentSrid == 4326)
                 {
-                    min = (layer.Extent.Value.MinX, layer.Extent.Value.MinY);
-                    max = (layer.Extent.Value.MaxX, layer.Extent.Value.MaxY);
+                    min = (bbox.West, bbox.South);
+                    max = (bbox.East, bbox.North);
                 }
                 else
                 {
@@ -541,7 +589,16 @@ internal static class CollectionsEndpoints
             }
         }
 
-        var temporalExtent = await OgcFeaturesUtilities.BuildTemporalExtentAsync(layer, featureReader, cancellationToken);
+        TemporalExtent? temporalExtent = null;
+        if (storageLayerId.HasValue)
+        {
+            temporalExtent = await OgcFeaturesUtilities.BuildTemporalExtentAsync(
+                resource,
+                storageLayerId.Value,
+                featureReader,
+                cancellationToken).ConfigureAwait(false);
+        }
+
         var extent = spatialExtent == null && temporalExtent == null
             ? null
             : new Extent
@@ -550,19 +607,24 @@ internal static class CollectionsEndpoints
                 Temporal = temporalExtent
             };
 
-        var storageCrsDefinition = await crsRegistry.ResolveAsync(
-            layer.SpatialReference.ToOgcCrs(),
-            cancellationToken);
+        CrsDefinition? storageCrsDefinition = null;
+        var resourceSrid = resource.ReadSrid();
+        if (resourceSrid.HasValue)
+        {
+            storageCrsDefinition = await crsRegistry.ResolveAsync(
+                resourceSrid.Value.ToOgcCrs(),
+                cancellationToken);
+        }
         var supportedCrs = await OgcFeaturesUtilities.GetSupportedCrsUrisAsync(
-            layer,
+            resource,
             crsRegistry,
             cancellationToken);
 
         return new CollectionInfo
         {
             Id = collectionId,
-            Title = layer.Name,
-            Description = layer.Description,
+            Title = displayName,
+            Description = description,
             Links = collectionLinks.ToImmutable(),
             Extent = extent,
             Crs = supportedCrs,
@@ -571,58 +633,9 @@ internal static class CollectionsEndpoints
     }
 
     /// <summary>
-    /// Creates queryables schema from layer definition
-    /// </summary>
-    private static QueryablesSchema CreateQueryablesSchema(
-        LayerDefinition layer,
-        string queryablesId)
-    {
-        var properties = ImmutableDictionary.CreateBuilder<string, JsonSchemaProperty>();
-        var requiredFields = new List<string>();
-
-        // Add properties for all non-geometry fields
-        foreach (var field in layer.VisibleAttributeFields.Where(OgcFeaturesUtilities.IsSimpleQueryableField))
-        {
-            var jsonSchemaProperty = ConvertFieldToJsonSchemaProperty(field);
-            properties[field.Name] = jsonSchemaProperty;
-
-            // Add to required array if field is not nullable
-            if (!field.Nullable)
-            {
-                requiredFields.Add(field.Name);
-            }
-        }
-
-        // Add special geometry property if layer has geometry
-        if (layer.HasGeometry && layer.GeometryField != null)
-        {
-            properties[layer.GeometryField.Name] = new JsonSchemaProperty
-            {
-                Type = "object",
-                Title = "Geometry",
-                Description = "Geometric representation of the feature",
-                Format = "geometry",
-                Ref = "https://geojson.org/schema/Geometry.json"
-            };
-        }
-
-        return new QueryablesSchema
-        {
-            Id = queryablesId,
-            Type = "object",
-            Title = $"Queryables for {layer.Name}",
-            Description = $"Schema for queryable properties of the {layer.Name} collection",
-            Properties = properties.ToImmutable(),
-            Required = requiredFields.ToImmutableArray()
-        };
-    }
-
-    /// <summary>
-    /// Metadata v2 overload of
-    /// <see cref="CreateQueryablesSchema(LayerDefinition, string)"/>. Builds the queryables
-    /// JSON Schema from <see cref="MetadataV2Resource.SchemaFields"/>, with the primary
-    /// geometry field resolved via
-    /// <see cref="MetadataV2SpatialExtensions.FindPrimaryGeometryField"/>.
+    /// Builds the OGC API Features queryables JSON Schema from
+    /// <see cref="MetadataV2Resource.SchemaFields"/>, with the primary geometry field
+    /// resolved via <see cref="MetadataV2SpatialExtensions.FindPrimaryGeometryField"/>.
     /// </summary>
     private static QueryablesSchema CreateQueryablesSchema(
         MetadataV2Resource resource,
@@ -720,23 +733,7 @@ internal static class CollectionsEndpoints
     }
 
     /// <summary>
-    /// Converts a FieldDefinition to a JSON Schema property
-    /// </summary>
-    private static JsonSchemaProperty ConvertFieldToJsonSchemaProperty(FieldDefinition field)
-    {
-        var (type, format) = GetJsonSchemaTypeAndFormat(field.Type);
-
-        return new JsonSchemaProperty
-        {
-            Type = type,
-            Format = format,
-            Title = field.DisplayName ?? field.Name,
-            Description = field.Description
-        };
-    }
-
-    /// <summary>
-    /// Metadata v2 overload of <see cref="ConvertFieldToJsonSchemaProperty(FieldDefinition)"/>.
+    /// Builds a queryables JSON Schema property from a V2 schema field.
     /// </summary>
     private static JsonSchemaProperty ConvertFieldToJsonSchemaProperty(MetadataV2Field field)
     {
@@ -752,26 +749,7 @@ internal static class CollectionsEndpoints
     }
 
     /// <summary>
-    /// Maps FieldType to JSON Schema type and format
-    /// </summary>
-    private static (string type, string? format) GetJsonSchemaTypeAndFormat(FieldType fieldType)
-        => fieldType switch
-        {
-            FieldType.String => ("string", null),
-            FieldType.Integer => ("integer", null),
-            FieldType.BigInteger => ("integer", null),
-            FieldType.Double => ("number", "double"),
-            FieldType.Float => ("number", "float"),
-            FieldType.Boolean => ("boolean", null),
-            FieldType.DateTime => ("string", "date-time"),
-            FieldType.Date => ("string", "date"),
-            FieldType.Time => ("string", "time"),
-            FieldType.Uuid => ("string", "uuid"),
-            _ => ("string", null)
-        };
-
-    /// <summary>
-    /// Metadata v2 overload of <see cref="GetJsonSchemaTypeAndFormat(FieldType)"/>.
+    /// Maps a V2 <see cref="MetadataV2FieldType"/> to a JSON Schema type/format pair.
     /// </summary>
     private static (string type, string? format) GetJsonSchemaTypeAndFormatV2(MetadataV2FieldType type)
         => type switch
@@ -801,7 +779,6 @@ internal static class CollectionsEndpoints
             return new CollectionResolution(
                 Found: false,
                 ResolvedCollectionId: collectionId,
-                LayerId: 0,
                 ErrorResult: StandardErrorHelpers.CreateBadRequest(
                     context,
                     collectionResult.ErrorMessage ?? "Collection ID is required."));
@@ -809,7 +786,7 @@ internal static class CollectionsEndpoints
 
         var resolvedCollectionId = collectionResult.Value!;
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var validationResult = await resourceValidator.ValidateCollectionAsync(resolvedCollectionId, cancellationToken);
+        var validationResult = await resourceValidator.ValidateCollectionV2Async(resolvedCollectionId, cancellationToken);
         if (!validationResult.IsValid)
         {
             var errorResult = validationResult.ErrorCode == ResourceValidationError.InvalidIdentifier
@@ -818,21 +795,18 @@ internal static class CollectionsEndpoints
             return new CollectionResolution(
                 Found: false,
                 ResolvedCollectionId: resolvedCollectionId,
-                LayerId: 0,
                 ErrorResult: errorResult);
         }
 
         return new CollectionResolution(
             Found: true,
             ResolvedCollectionId: resolvedCollectionId,
-            LayerId: validationResult.Resource!.Id,
             ErrorResult: null);
     }
 
     private readonly record struct CollectionResolution(
         bool Found,
         string ResolvedCollectionId,
-        int LayerId,
         IResult? ErrorResult);
 
 }
