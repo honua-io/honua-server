@@ -58,19 +58,15 @@ public sealed record MetadataV2ObjectMetadata
     public string? Description { get; init; }
 
     /// <summary>
-    /// Tags for discovery.
-    /// </summary>
-    [JsonPropertyName("tags")]
-    public IReadOnlyList<string> Tags { get; init; } = Array.Empty<string>();
-
-    /// <summary>
-    /// Labels for selection and grouping.
+    /// Labels for selection and grouping (Kubernetes-style selectable key/values).
+    /// Discovery / search tooling reads these. Express a "tag" as a label with an
+    /// empty value: <c>{"public": "", "weather": ""}</c>.
     /// </summary>
     [JsonPropertyName("labels")]
     public IReadOnlyDictionary<string, string> Labels { get; init; } = new Dictionary<string, string>();
 
     /// <summary>
-    /// Tooling annotations.
+    /// Tooling annotations (Kubernetes-style opaque key/values; not selectable).
     /// </summary>
     [JsonPropertyName("annotations")]
     public IReadOnlyDictionary<string, string> Annotations { get; init; } = new Dictionary<string, string>();

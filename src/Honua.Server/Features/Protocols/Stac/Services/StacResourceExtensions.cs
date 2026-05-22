@@ -65,13 +65,15 @@ internal static class StacResourceExtensions
 
     private static ImmutableArray<string>? ResourceTagsAsKeywords(MetadataV2Resource resource)
     {
-        var tags = resource.Metadata.Tags;
-        if (tags is null || tags.Count == 0)
+        // STAC keywords are now sourced from the resource's labels (the v2
+        // Kubernetes-style label dictionary). A label entry with empty value is
+        // treated as a bare tag.
+        if (resource.Metadata.Labels.Count == 0)
         {
             return null;
         }
 
-        var normalized = tags
+        var normalized = resource.Metadata.Labels.Keys
             .Where(static keyword => !string.IsNullOrWhiteSpace(keyword))
             .Select(static keyword => keyword.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
