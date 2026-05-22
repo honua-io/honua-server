@@ -760,6 +760,16 @@ class PostGISFixture:
             finally:
                 conn.execute("SELECT pg_advisory_unlock(%s);", (self.CATALOG_LOCK_KEY,))
 
+    def seed_metadata_v2_snapshot(self, schema: str | None = None) -> None:
+        """Seed a Metadata v2 snapshot from the current v1 compatibility catalog."""
+        with self.get_connection(schema) as conn:
+            conn.execute("SELECT pg_advisory_lock(%s);", (self.CATALOG_LOCK_KEY,))
+            try:
+                self._seed_metadata_v2_snapshot(conn)
+                conn.commit()
+            finally:
+                conn.execute("SELECT pg_advisory_unlock(%s);", (self.CATALOG_LOCK_KEY,))
+
     @staticmethod
     def _metadata_id_part(value: object) -> str:
         text = str(value).strip().lower()

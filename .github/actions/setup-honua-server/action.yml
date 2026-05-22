@@ -26,6 +26,17 @@ inputs:
       the server runs detached without an explicit file sink.
     required: false
     default: ''
+  dev-auth:
+    description: >
+      Enable explicit development authentication bypass for disposable
+      compatibility-test servers.
+    required: false
+    default: 'false'
+  dev-auth-allow-bypass:
+    description: >
+      Required acknowledgement flag for development authentication bypass.
+    required: false
+    default: 'false'
 
 runs:
   using: 'composite'
@@ -80,6 +91,8 @@ runs:
         ASPNETCORE_URLS: "http://localhost:5000"
         ASPNETCORE_ENVIRONMENT: "Development"
         HONUA_ADMIN_PASSWORD: "ci-admin-password"
+        HONUA_DEV_AUTH: ${{ inputs.dev-auth }}
+        HONUA_DEV_AUTH_ALLOW_BYPASS: ${{ inputs.dev-auth-allow-bypass }}
         Security__ConnectionEncryption__MasterKey: "test-master-key-that-is-at-least-32-characters-long-for-security"
         Security__ConnectionEncryption__Salt: "dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM="
         LOG_PATH: ${{ inputs.log-path }}
