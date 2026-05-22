@@ -476,6 +476,17 @@ public sealed record MetadataV2Publication
     public int? LayerIndex { get; init; }
 
     /// <summary>
+    /// When true, this publication is the primary publication of its resource on
+    /// its service. Used by resolvers that need to pick "the" publication of a
+    /// resource (e.g. cache invalidation, mutation events, redirect-on-name lookups)
+    /// when a resource is published through more than one service or more than once
+    /// on a single service. At most one publication per (resourceId, serviceId)
+    /// should set this. Graph integrity validation enforces the constraint.
+    /// </summary>
+    [JsonPropertyName("isPrimary")]
+    public bool IsPrimary { get; init; }
+
+    /// <summary>
     /// Format identifiers supported by this publication.
     /// </summary>
     [JsonPropertyName("supportedFormats")]

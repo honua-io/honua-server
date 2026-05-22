@@ -656,7 +656,9 @@ internal static class LayerValidationHelpers
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        var byLayer = new Dictionary<int, MetadataV2Service>();
+        // Track the chosen publication alongside the service so subsequent tie-break
+        // decisions can consult publication.IsPrimary.
+        var byLayer = new Dictionary<int, (MetadataV2Publication Publication, MetadataV2Service Service)>();
         foreach (var pub in snapshot.Graph.Publications)
         {
             if (!pub.LayerIndex.HasValue)
@@ -669,24 +671,42 @@ internal static class LayerValidationHelpers
             }
             if (!byLayer.TryGetValue(pub.LayerIndex.Value, out var existing))
             {
-                byLayer[pub.LayerIndex.Value] = service;
+                byLayer[pub.LayerIndex.Value] = (pub, service);
                 continue;
             }
 
-            // Resolve ambiguity: prefer service-type match, then lexicographically earliest name.
-            var existingMatches = requiredServiceType.HasValue && existing.ServiceType == requiredServiceType.Value;
+            // Tie-break:
+            //   1. requiredServiceType match
+            //   2. publication.IsPrimary
+            //   3. lexicographically earliest service name
+            var existingMatches = requiredServiceType.HasValue && existing.Service.ServiceType == requiredServiceType.Value;
             var candidateMatches = requiredServiceType.HasValue && service.ServiceType == requiredServiceType.Value;
             if (candidateMatches && !existingMatches)
             {
-                byLayer[pub.LayerIndex.Value] = service;
+                byLayer[pub.LayerIndex.Value] = (pub, service);
+                continue;
             }
-            else if (existingMatches == candidateMatches &&
-                     string.Compare(service.Metadata.Name, existing.Metadata.Name, StringComparison.OrdinalIgnoreCase) < 0)
+            if (existingMatches != candidateMatches)
             {
-                byLayer[pub.LayerIndex.Value] = service;
+                continue;
+            }
+
+            if (pub.IsPrimary && !existing.Publication.IsPrimary)
+            {
+                byLayer[pub.LayerIndex.Value] = (pub, service);
+                continue;
+            }
+            if (existing.Publication.IsPrimary != pub.IsPrimary)
+            {
+                continue;
+            }
+
+            if (string.Compare(service.Metadata.Name, existing.Service.Metadata.Name, StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                byLayer[pub.LayerIndex.Value] = (pub, service);
             }
         }
-        return byLayer;
+        return byLayer.ToDictionary(kv => kv.Key, kv => kv.Value.Service);
     }
 
     /// <summary>
@@ -769,9 +789,14 @@ internal static class LayerValidationHelpers
             int layerId,
             MetadataV2ServiceType? requiredServiceType)
     {
-        // When a service type is specified, prefer publications on services of that type.
+        // Resolution order (now deterministic):
+        //   1. requiredServiceType matches AND publication.IsPrimary
+        //   2. requiredServiceType matches (any)
+        //   3. publication.IsPrimary
+        //   4. lexicographically earliest by service name
         var candidatePublications = snapshot.Graph.Publications
-            .Where(p => p.LayerIndex == layerId);
+            .Where(p => p.LayerIndex == layerId)
+            .ToList();
 
         if (requiredServiceType.HasValue)
         {
@@ -779,6 +804,7 @@ internal static class LayerValidationHelpers
                 .Where(p =>
                     snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var s) &&
                     s.ServiceType == requiredServiceType.Value)
+                .OrderByDescending(p => p.IsPrimary)
                 .FirstOrDefault();
             if (preferred is not null)
             {
@@ -789,7 +815,8 @@ internal static class LayerValidationHelpers
         }
 
         var publication = candidatePublications
-            .OrderBy(p =>
+            .OrderByDescending(p => p.IsPrimary)
+            .ThenBy(p =>
                 snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var s)
                     ? s.Metadata.Name
                     : p.ServiceId,
