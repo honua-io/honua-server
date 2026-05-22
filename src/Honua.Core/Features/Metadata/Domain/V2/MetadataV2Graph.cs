@@ -134,12 +134,6 @@ public sealed record MetadataV2Resource
     public IReadOnlyList<MetadataV2Field> SchemaFields { get; init; } = Array.Empty<MetadataV2Field>();
 
     /// <summary>
-    /// Style resources attached to this canonical resource.
-    /// </summary>
-    [JsonPropertyName("styleResourceIds")]
-    public IReadOnlyList<string> StyleResourceIds { get; init; } = Array.Empty<string>();
-
-    /// <summary>
     /// Resource-to-resource relationships exposed by this resource (the v2 equivalent of
     /// the v1 <c>LayerDefinition.LayerRelationships</c> set).
     /// </summary>
