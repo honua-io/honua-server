@@ -46,13 +46,10 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [Endpoint("GET /ogc/services/{serviceId}/wmts")]
     public async Task Wmts_GetCapabilities_WithWmtsEnabledAndMapServerDisabled_ReturnsXml()
     {
-        var updater = _fixture.GetService<IServiceMetadataUpdater>();
-        await updater.UpdateServiceMetadataAsync(
+        // V2 cutover (#1035 72/N): protocol gating reads MetadataV2Service.Protocols.
+        _fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
-            new CatalogMetadata
-            {
-                EnabledProtocols = [ServiceProtocols.Wmts]
-            });
+            enabledProtocols: [ServiceProtocols.Wmts]);
 
         var response = await _fixture.Client.GetAsync(
             $"/ogc/services/{WebAppFixture.TestServiceId}/wmts?SERVICE=WMTS&REQUEST=GetCapabilities");

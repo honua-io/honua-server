@@ -8,6 +8,7 @@ using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Security.Domain;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -919,13 +920,12 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Wfs_Transaction_AnonymousWrite_AllowsInsertWithoutRbac()
     {
-        await UpdateLayerMetadataAsync(new CatalogMetadata
-        {
-            AccessPolicy = new AccessPolicy
-            {
-                AllowAnonymousWrite = true
-            }
-        });
+        // V2 cutover (#1035 72/N): per-resource access policy now lives on
+        // MetadataV2Resource.AccessPolicy. Seed it directly via the test fixture.
+        _fixture.UpdateV2ResourceMetadata(
+            WebAppFixture.TestLayerId,
+            accessPolicy: new AccessPolicy { AllowAnonymousWrite = true });
+        await Task.CompletedTask;
 
         const string requestBody = """
             <wfs:Transaction service="WFS" version="2.0.0"
@@ -1748,9 +1748,4 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             .ToArray();
     }
 
-    private Task UpdateLayerMetadataAsync(CatalogMetadata metadata)
-    {
-        var updater = _fixture.Services.GetRequiredService<ILayerMetadataUpdater>();
-        return updater.UpdateLayerMetadataAsync(WebAppFixture.TestLayerId, metadata);
-    }
 }

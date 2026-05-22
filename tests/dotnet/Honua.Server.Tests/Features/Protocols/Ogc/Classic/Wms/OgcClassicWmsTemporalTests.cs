@@ -3,8 +3,8 @@
 
 using System.Net;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -298,16 +298,13 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
 
     private Task ConfigureLayerAsTimeAwareAsync()
     {
-        // Use the seeded "timestamp" DateTime field that is registered in
-        // honua.layer_fields for the shared test layer; the helper resolves
-        // an extent only when the configured field is a real attribute.
-        var updater = _fixture.GetService<ILayerMetadataUpdater>();
-        return updater.UpdateLayerMetadataAsync(
+        // V2 cutover (#1035 72/N): time-info now lives on MetadataV2Resource.Temporal.
+        // Use the seeded "timestamp" DateTime field on the shared test layer; resolvers
+        // emit an extent only when the field resolves to a real Date/DateTime attribute.
+        _fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
-            new CatalogMetadata
-            {
-                TimeInfo = new LayerTimeInfo { StartTimeField = "timestamp" }
-            });
+            temporal: new MetadataV2ResourceTemporal { StartTimeField = "timestamp" });
+        return Task.CompletedTask;
     }
 
     private Task ConfigureLayerWithInvalidEndTimeFieldAsync()
@@ -316,17 +313,14 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
         // Date/DateTime attribute: simulates the misconfiguration that the
         // metadata update path allows today (no field-type validation). The
         // capabilities/request gate must treat this layer as not time-aware.
-        var updater = _fixture.GetService<ILayerMetadataUpdater>();
-        return updater.UpdateLayerMetadataAsync(
+        _fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
-            new CatalogMetadata
+            temporal: new MetadataV2ResourceTemporal
             {
-                TimeInfo = new LayerTimeInfo
-                {
-                    StartTimeField = "timestamp",
-                    EndTimeField = "name"
-                }
+                StartTimeField = "timestamp",
+                EndTimeField = "name",
             });
+        return Task.CompletedTask;
     }
 
     private Task ConfigureLayerWithInvalidStartTimeFieldAsync()
@@ -334,20 +328,15 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
         // The seeded "name" attribute is a string column, not a Date/DateTime,
         // so configuring it as StartTimeField simulates the misconfiguration
         // the metadata update path allows today.
-        var updater = _fixture.GetService<ILayerMetadataUpdater>();
-        return updater.UpdateLayerMetadataAsync(
+        _fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
-            new CatalogMetadata
-            {
-                TimeInfo = new LayerTimeInfo { StartTimeField = "name" }
-            });
+            temporal: new MetadataV2ResourceTemporal { StartTimeField = "name" });
+        return Task.CompletedTask;
     }
 
     private Task ClearLayerTimeInfoAsync()
     {
-        var updater = _fixture.GetService<ILayerMetadataUpdater>();
-        return updater.UpdateLayerMetadataAsync(
-            WebAppFixture.TestLayerId,
-            new CatalogMetadata());
+        _fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, clearTemporal: true);
+        return Task.CompletedTask;
     }
 }

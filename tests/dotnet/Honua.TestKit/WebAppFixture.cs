@@ -460,16 +460,24 @@ public sealed class WebAppFixture : IAsyncLifetime
         };
 
     /// <summary>
-    /// V2-aware helper for STAC tests: looks up the test V2 graph provider, locates the
-    /// resource by the publication's layer index, and writes <c>stac</c> + <c>temporal</c>
-    /// extension JSON onto it. Mirrors the v1 <c>UpdateLayerMetadataAsync</c> call surface
-    /// the STAC tests used to seed CatalogMetadata.Stac.
+    /// V2-aware helper that mirrors the v1 <c>ILayerMetadataUpdater</c> seed surface used
+    /// by classic-protocol and STAC tests. Looks up the resource bound to the publication
+    /// with <paramref name="layerIndex"/> and applies the supplied access policy, temporal
+    /// metadata, spatial metadata, permanent filter, and/or STAC extension payload.
+    /// Passing a value writes it; omitting an argument leaves that slot untouched. The
+    /// <c>clear*</c> flags explicitly clear the corresponding slot (mirroring the v1
+    /// "PUT empty CatalogMetadata" semantics).
     /// </summary>
     public void UpdateV2ResourceMetadata(
         int layerIndex,
-        JsonElement? stacExtension = null,
+        AccessPolicy? accessPolicy = null,
         MetadataV2ResourceTemporal? temporal = null,
-        MetadataV2ResourceSpatial? spatial = null)
+        MetadataV2ResourceSpatial? spatial = null,
+        MetadataV2PermanentFilter? permanentFilter = null,
+        JsonElement? stacExtension = null,
+        bool clearAccessPolicy = false,
+        bool clearTemporal = false,
+        bool clearPermanentFilter = false)
     {
         var provider = GetService<IMetadataV2GraphProvider>() as Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider
             ?? throw new InvalidOperationException(
@@ -483,40 +491,127 @@ public sealed class WebAppFixture : IAsyncLifetime
                 $"No publication for layer {layerIndex} in the test V2 graph.");
         }
 
-        var resourceIndex = -1;
-        for (var i = 0; i < snapshot.Graph.Resources.Count; i++)
-        {
-            if (string.Equals(snapshot.Graph.Resources[i].Metadata.Id, pub.ResourceId, StringComparison.Ordinal))
-            {
-                resourceIndex = i;
-                break;
-            }
-        }
-        if (resourceIndex < 0)
-        {
-            throw new InvalidOperationException(
-                $"Publication {pub.Metadata.Id} references missing resource {pub.ResourceId}.");
-        }
-
         var resources = snapshot.Graph.Resources.ToArray();
-        var resource = resources[resourceIndex];
-
-        var extensions = new Dictionary<string, JsonElement>(resource.Extensions, StringComparer.Ordinal);
-        if (stacExtension.HasValue)
+        var mutated = false;
+        for (var i = 0; i < resources.Length; i++)
         {
-            extensions["stac"] = stacExtension.Value;
+            if (!string.Equals(resources[i].Metadata.Id, pub.ResourceId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var next = resources[i];
+            if (clearAccessPolicy)
+            {
+                next = next with { AccessPolicy = null };
+            }
+            else if (accessPolicy is not null)
+            {
+                next = next with { AccessPolicy = accessPolicy };
+            }
+
+            if (clearTemporal)
+            {
+                next = next with { Temporal = null };
+            }
+            else if (temporal is not null)
+            {
+                next = next with { Temporal = temporal };
+            }
+
+            if (spatial is not null)
+            {
+                next = next with { Spatial = spatial };
+            }
+
+            if (clearPermanentFilter)
+            {
+                next = next with { PermanentFilter = null };
+            }
+            else if (permanentFilter is not null)
+            {
+                next = next with { PermanentFilter = permanentFilter };
+            }
+
+            if (stacExtension.HasValue)
+            {
+                var extensions = new Dictionary<string, JsonElement>(next.Extensions, StringComparer.Ordinal)
+                {
+                    ["stac"] = stacExtension.Value,
+                };
+                next = next with { Extensions = extensions };
+            }
+
+            resources[i] = next;
+            mutated = true;
         }
 
-        resources[resourceIndex] = resource with
+        if (!mutated)
         {
-            Extensions = extensions,
-            Temporal = temporal is not null ? temporal : resource.Temporal,
-            Spatial = spatial is not null ? spatial : resource.Spatial,
-        };
+            return;
+        }
 
         var updatedGraph = snapshot.Graph with
         {
             Resources = resources,
+            Revision = snapshot.Graph.Revision + 1,
+        };
+        provider.SetGraph(updatedGraph);
+    }
+
+    /// <summary>
+    /// V2-aware helper that mirrors the v1 <c>IServiceMetadataUpdater</c> seed surface
+    /// for service-level toggles (enabled protocols, access policy). Updates every V2
+    /// service that shares the supplied name (case-insensitive) — the test graph
+    /// registers one service per protocol cluster, all keyed off the same logical name,
+    /// so the v1 "one row per service" admin shape collapses onto fan-out at write time.
+    /// </summary>
+    public void UpdateV2ServiceMetadata(
+        string serviceName,
+        IReadOnlyList<string>? enabledProtocols = null,
+        AccessPolicy? accessPolicy = null,
+        bool clearAccessPolicy = false)
+    {
+        var provider = GetService<IMetadataV2GraphProvider>() as Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider
+            ?? throw new InvalidOperationException(
+                "Test V2 graph provider not registered as TestMetadataV2GraphProvider.");
+
+        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
+        var services = snapshot.Graph.Services.ToArray();
+        var mutated = false;
+        for (var i = 0; i < services.Length; i++)
+        {
+            if (!string.Equals(services[i].Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var next = services[i];
+            if (enabledProtocols is not null)
+            {
+                next = next with { Protocols = enabledProtocols };
+            }
+            if (clearAccessPolicy)
+            {
+                next = next with { AccessPolicy = null };
+            }
+            else if (accessPolicy is not null)
+            {
+                next = next with { AccessPolicy = accessPolicy };
+            }
+
+            services[i] = next;
+            mutated = true;
+        }
+
+        if (!mutated)
+        {
+            return;
+        }
+
+        var updatedGraph = snapshot.Graph with
+        {
+            Services = services,
             Revision = snapshot.Graph.Revision + 1,
         };
         provider.SetGraph(updatedGraph);

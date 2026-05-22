@@ -4,7 +4,6 @@
 using System.Net;
 using System.Security.Cryptography;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -67,13 +66,10 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /ogc/services/{serviceId}/wms")]
     public async Task Wms_GetCapabilities_WithWmsEnabledAndMapServerDisabled_ReturnsXml()
     {
-        var updater = _fixture.GetService<IServiceMetadataUpdater>();
-        await updater.UpdateServiceMetadataAsync(
+        // V2 cutover (#1035 72/N): protocol gating reads MetadataV2Service.Protocols.
+        _fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
-            new CatalogMetadata
-            {
-                EnabledProtocols = [ServiceProtocols.Wms]
-            });
+            enabledProtocols: [ServiceProtocols.Wms]);
 
         var response = await _fixture.Client.GetAsync(
             $"/ogc/services/{WebAppFixture.TestServiceId}/wms?SERVICE=WMS&REQUEST=GetCapabilities");
