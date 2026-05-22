@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Edit;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Server.Features.Protocols.OData.Services;
 
@@ -55,6 +56,20 @@ internal sealed class ODataEditParameterAdapter(
         ODataEditRequest protocolRequest,
         LayerDefinition layer,
         CancellationToken cancellationToken = default)
+        => ConvertCoreAsync(protocolRequest);
+
+    /// <summary>
+    /// Metadata v2 overload of <see cref="ConvertAsync(ODataEditRequest, LayerDefinition, CancellationToken)"/>.
+    /// The OData edit adapter does not consult layer metadata to build the unified edit, so the
+    /// V2 implementation is functionally identical to the v1 overload.
+    /// </summary>
+    public Task<EditAdapterResult> ConvertAsync(
+        ODataEditRequest protocolRequest,
+        MetadataV2Resource resource,
+        CancellationToken cancellationToken = default)
+        => ConvertCoreAsync(protocolRequest);
+
+    private Task<EditAdapterResult> ConvertCoreAsync(ODataEditRequest protocolRequest)
     {
         try
         {
