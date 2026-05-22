@@ -126,7 +126,7 @@ public sealed class FileMetadataV2GraphProviderTests
                     Metadata = new MetadataV2ObjectMetadata { Id = "resource.parcels", Name = "parcels" },
                     Type = MetadataV2ResourceType.FeatureDataset,
                     StorageBindingIds = ["storage.parcels.postgis"],
-                    PrimaryStorageBindingId = "storage.parcels.postgis",
+                    
                 }
             ],
             StorageBindings =

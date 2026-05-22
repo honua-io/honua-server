@@ -149,14 +149,6 @@ public static class MetadataV2GraphValidator
                 }
             }
 
-            if (resource.PrimaryStorageBindingId is not null && !storageBindingIds.Contains(
-                    resource.PrimaryStorageBindingId,
-                    StringComparer.Ordinal))
-            {
-                errors.Add(
-                    $"resource '{resource.Metadata.Id}' primary storage binding '{resource.PrimaryStorageBindingId}' must be listed in storageBindingIds.");
-            }
-
             ValidateResourceStorageLayerId(errors, resource, storageBindingIds, storageBindingsById);
             ValidateResourceSpatial(errors, resource);
             ValidateResourceTemporal(errors, resource);

@@ -474,8 +474,7 @@ public sealed class MetadataV2ModelTests
                     StorageBindingIds =
                     [
                         "storage.hydrants.postgis"
-                    ],
-                    PrimaryStorageBindingId = "storage.parcels.postgis"
+                    ]
                 }
             ],
             StorageBindings =
@@ -554,8 +553,7 @@ public sealed class MetadataV2ModelTests
                     StorageBindingIds =
                     [
                         "storage.parcels.postgis"
-                    ],
-                    PrimaryStorageBindingId = "storage.parcels.postgis"
+                    ]
                 }
             ],
             Connections =

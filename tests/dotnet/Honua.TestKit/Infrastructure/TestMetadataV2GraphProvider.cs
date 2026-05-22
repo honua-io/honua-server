@@ -122,8 +122,8 @@ public sealed class TestMetadataV2GraphBuilder
             var existing = _resources[resourceIndex];
             var updated = existing with
             {
+                // StorageBindingIds[0] is primary by convention (design slice 56/N).
                 StorageBindingIds = existing.StorageBindingIds.Append(id).Distinct(StringComparer.Ordinal).ToArray(),
-                PrimaryStorageBindingId = existing.PrimaryStorageBindingId ?? id,
             };
             _resources[resourceIndex] = updated;
         }

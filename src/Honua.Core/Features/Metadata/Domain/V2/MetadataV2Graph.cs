@@ -147,15 +147,21 @@ public sealed record MetadataV2Resource
 
     /// <summary>
     /// Storage bindings that can materialize this canonical resource.
+    /// <see cref="StorageBindingIds"/><c>[0]</c> is the primary binding by
+    /// convention; secondary bindings (read replicas, alternative backends) come
+    /// after. Empty for derived/document/external resources that have no
+    /// physical storage.
     /// </summary>
     [JsonPropertyName("storageBindingIds")]
     public IReadOnlyList<string> StorageBindingIds { get; init; } = Array.Empty<string>();
 
     /// <summary>
-    /// Optional primary storage binding identifier.
+    /// The primary storage binding id for this resource — i.e.
+    /// <c>StorageBindingIds[0]</c> when present, or <c>null</c> for resources
+    /// with no physical storage.
     /// </summary>
-    [JsonPropertyName("primaryStorageBindingId")]
-    public string? PrimaryStorageBindingId { get; init; }
+    public string? PrimaryStorageBindingId =>
+        StorageBindingIds.Count == 0 ? null : StorageBindingIds[0];
 
     /// <summary>
     /// Canonical schema fields and field-level semantic roles. The single source
