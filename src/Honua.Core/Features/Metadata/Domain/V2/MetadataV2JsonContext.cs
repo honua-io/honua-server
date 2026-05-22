@@ -31,6 +31,7 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 [JsonSerializable(typeof(MetadataV2ResourceSpatial))]
 [JsonSerializable(typeof(MetadataV2TimeRange))]
 [JsonSerializable(typeof(MetadataV2ResourceTemporal))]
+[JsonSerializable(typeof(MetadataV2PermanentFilter))]
 [JsonSerializable(typeof(IReadOnlyDictionary<string, string>), TypeInfoPropertyName = "ReadOnlyDictionaryStringString")]
 public sealed partial class MetadataV2JsonContext : JsonSerializerContext
 {

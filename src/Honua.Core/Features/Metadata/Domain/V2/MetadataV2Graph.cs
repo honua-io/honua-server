@@ -219,6 +219,15 @@ public sealed record MetadataV2Resource
     public MetadataV2ResourceTemporal? Temporal { get; init; }
 
     /// <summary>
+    /// Optional permanent filter applied to every query against this resource.
+    /// Mirrors the v1 <c>LayerMetadata.PermanentFilter</c>. The storage backends
+    /// (Postgres / MySql / DuckDB / SqlServer FeatureStores) honour this by ANDing
+    /// it with the per-request filter before SQL translation.
+    /// </summary>
+    [JsonPropertyName("permanentFilter")]
+    public MetadataV2PermanentFilter? PermanentFilter { get; init; }
+
+    /// <summary>
     /// Lifecycle and observed status.
     /// </summary>
     [JsonPropertyName("status")]
