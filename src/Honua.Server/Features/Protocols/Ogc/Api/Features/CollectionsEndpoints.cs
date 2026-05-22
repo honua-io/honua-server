@@ -354,7 +354,7 @@ internal static class CollectionsEndpoints
             var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
                 context,
                 collectionId,
-                requiredServiceType: MetadataV2ServiceType.OgcApiFeatures,
+                requiredProtocol: ServiceProtocols.OgcFeatures,
                 cancellationToken: effectiveToken);
             if (!validation.IsValid)
             {

@@ -279,7 +279,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore
             cmd.Parameters.AddWithValue("@revision", graph.Revision);
             cmd.Parameters.AddWithValue("@id", service.Metadata.Id);
             cmd.Parameters.AddWithValue("@name", service.Metadata.Name);
-            cmd.Parameters.AddWithValue("@type", service.ServiceType.ToString());
+            cmd.Parameters.AddWithValue("@type", (object?)service.PrimaryProtocol ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@route", (object?)service.Route ?? DBNull.Value);
             await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }

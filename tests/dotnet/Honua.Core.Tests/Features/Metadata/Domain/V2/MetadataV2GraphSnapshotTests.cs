@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -155,7 +156,7 @@ public sealed class MetadataV2GraphSnapshotTests
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service.features", Name = "Features" },
-                    ServiceType = MetadataV2ServiceType.OgcApiFeatures,
+                    Protocols = [ServiceProtocols.OgcFeatures],
                     Route = "/ogc/features",
                 }
             ],

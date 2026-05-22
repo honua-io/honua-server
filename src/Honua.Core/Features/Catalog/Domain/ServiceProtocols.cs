@@ -95,7 +95,6 @@ public static class ServiceProtocols
     /// <summary>
     /// Checks whether a V2 service exposes <paramref name="protocol"/>. The service's
     /// <see cref="MetadataV2Service.Protocols"/> list is the single source of truth —
-    /// no fallback to the legacy <see cref="MetadataV2Service.ServiceType"/> enum and
     /// no implicit defaults. Empty <c>Protocols</c> means "exposes nothing".
     /// </summary>
     public static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)

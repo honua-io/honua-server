@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
@@ -69,7 +70,7 @@ public sealed class LayerValidationHelpersV2Tests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
-    public async Task ValidateLayerWithAccessV2_RequiredServiceTypeMismatch_ReturnsNotFound()
+    public async Task ValidateLayerWithAccessV2_RequiredProtocolMismatch_ReturnsNotFound()
     {
         var (context, _) = BuildContext(allowAnonymous: true);
 
@@ -77,7 +78,7 @@ public sealed class LayerValidationHelpersV2Tests
             context,
             layerId: 0,
             scope: AccessScope.Read,
-            requiredServiceType: MetadataV2ServiceType.EsriImageService);
+            requiredProtocol: ServiceProtocols.ImageServer);
 
         result.IsValid.Should().BeFalse();
         result.ErrorResult.Should().NotBeNull();
@@ -115,7 +116,7 @@ public sealed class LayerValidationHelpersV2Tests
     private static (HttpContext Context, MetadataV2Graph Graph) BuildContext(bool allowAnonymous)
     {
         var graph = new TestMetadataV2GraphBuilder()
-            .AddService("svc-test", "test-service", MetadataV2ServiceType.OgcApiFeatures)
+            .AddService("svc-test", "test-service", protocols: [ServiceProtocols.OgcFeatures])
             .AddResource("res-test", "test-resource")
             .AddPublication(
                 "pub-test",

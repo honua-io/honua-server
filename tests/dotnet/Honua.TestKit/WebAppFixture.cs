@@ -7,6 +7,7 @@ using System.Text.Json;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -311,7 +312,6 @@ public sealed class WebAppFixture : IAsyncLifetime
             .AddService(
                 "svc-test",
                 "test",
-                MetadataV2ServiceType.OgcApiFeatures,
                 route: "/ogc/features",
                 protocols: allProtocols);
 
@@ -339,7 +339,7 @@ public sealed class WebAppFixture : IAsyncLifetime
         // ImageServer handler tests resolve their layer index against this snapshot.
         builder
             .AddResource("res-image-test", "test-layer", MetadataV2ResourceType.RasterDataset)
-            .AddService("svc-image-test", TestServiceId, MetadataV2ServiceType.EsriImageService)
+            .AddService("svc-image-test", TestServiceId, protocols: [ServiceProtocols.ImageServer])
             .AddPublication(
                 id: "pub-image-test",
                 serviceId: "svc-image-test",
@@ -355,9 +355,9 @@ public sealed class WebAppFixture : IAsyncLifetime
         // layer ids that server.yaml seeds so /rest/services has services to return and
         // downstream FeatureServer/MapServer handler ports can resolve them by layer id.
         builder
-            .AddService("svc-test-feature", "test", MetadataV2ServiceType.EsriFeatureService)
-            .AddService("svc-test-map", "test", MetadataV2ServiceType.EsriMapService)
-            .AddService("svc-test-stac", "test", MetadataV2ServiceType.StacApi, route: "/stac");
+            .AddService("svc-test-feature", "test", protocols: [ServiceProtocols.FeatureServer])
+            .AddService("svc-test-map", "test", protocols: [ServiceProtocols.MapServer])
+            .AddService("svc-test-stac", "test", route: "/stac", protocols: [ServiceProtocols.Stac]);
         foreach (var layerIndex in seededLayerIndices)
         {
             var resourceId = $"res-layer-{layerIndex}";

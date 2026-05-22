@@ -476,7 +476,7 @@ internal static class LayerValidationHelpers
         int layerId,
         ValidationProtocol protocol,
         AccessScope scope = AccessScope.Read,
-        MetadataV2ServiceType? requiredServiceType = null,
+        string? requiredProtocol = null,
         CancellationToken cancellationToken = default)
     {
         var effectiveToken = protocol == ValidationProtocol.OData
@@ -484,7 +484,7 @@ internal static class LayerValidationHelpers
             : cancellationToken;
 
         var snapshot = await GetV2SnapshotAsync(context, effectiveToken).ConfigureAwait(false);
-        var (publication, resource, service) = ResolveV2Triple(snapshot, layerId, requiredServiceType);
+        var (publication, resource, service) = ResolveV2Triple(snapshot, layerId, requiredProtocol);
 
         if (publication is null || resource is null)
         {
@@ -504,9 +504,10 @@ internal static class LayerValidationHelpers
             return new MetadataV2ValidationResult(false, publication, resource, service, accessError);
         }
 
-        if (requiredServiceType.HasValue && service is not null && service.ServiceType != requiredServiceType.Value)
+        if (!string.IsNullOrWhiteSpace(requiredProtocol) && service is not null &&
+            !ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
         {
-            var msg = $"{requiredServiceType.Value} is not enabled for this service.";
+            var msg = $"{requiredProtocol} is not enabled for this service.";
             var error = protocol switch
             {
                 ValidationProtocol.OData => CreateODataError(context, msg, StatusCodes.Status404NotFound),
@@ -527,11 +528,11 @@ internal static class LayerValidationHelpers
         HttpContext context,
         int layerId,
         AccessScope scope = AccessScope.Read,
-        MetadataV2ServiceType? requiredServiceType = null,
+        string? requiredProtocol = null,
         CancellationToken cancellationToken = default)
     {
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
-        var (publication, resource, service) = ResolveV2Triple(snapshot, layerId, requiredServiceType);
+        var (publication, resource, service) = ResolveV2Triple(snapshot, layerId, requiredProtocol);
 
         if (publication is null || resource is null)
         {
@@ -545,11 +546,12 @@ internal static class LayerValidationHelpers
             return new MetadataV2ValidationResult(false, publication, resource, service, accessError);
         }
 
-        if (requiredServiceType.HasValue && service is not null && service.ServiceType != requiredServiceType.Value)
+        if (!string.IsNullOrWhiteSpace(requiredProtocol) && service is not null &&
+            !ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
         {
             var error = StandardErrorHelpers.CreateNotFound(
                 context,
-                $"{requiredServiceType.Value} is not enabled for this service.");
+                $"{requiredProtocol} is not enabled for this service.");
             return new MetadataV2ValidationResult(false, publication, resource, service, error);
         }
 
@@ -566,7 +568,7 @@ internal static class LayerValidationHelpers
         HttpContext context,
         string collectionId,
         AccessScope scope = AccessScope.Read,
-        MetadataV2ServiceType? requiredServiceType = MetadataV2ServiceType.OgcApiFeatures,
+        string? requiredProtocol = ServiceProtocols.OgcFeatures,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(collectionId))
@@ -589,16 +591,16 @@ internal static class LayerValidationHelpers
 
         MetadataV2Publication? publication = null;
 
-        // When a service type is specified, prefer the matching publication so a STAC
+        // When a protocol is specified, prefer the matching publication so a STAC
         // collection request that shares a serviceLocalId with another protocol's
         // publication (e.g. an Esri Feature Service publication with the same local id)
         // doesn't get dispatched to the wrong protocol.
-        if (requiredServiceType.HasValue)
+        if (!string.IsNullOrWhiteSpace(requiredProtocol))
         {
             publication = snapshot.Graph.Publications.FirstOrDefault(p =>
                 MatchesCollectionId(p) &&
                 snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var s) &&
-                s.ServiceType == requiredServiceType.Value);
+                ServiceProtocols.IsProtocolEnabled(s, requiredProtocol));
         }
         publication ??= snapshot.Graph.Publications.FirstOrDefault(MatchesCollectionId);
 
@@ -633,11 +635,12 @@ internal static class LayerValidationHelpers
             return new MetadataV2ValidationResult(false, publication, resource, service, accessError);
         }
 
-        if (requiredServiceType.HasValue && service is not null && service.ServiceType != requiredServiceType.Value)
+        if (!string.IsNullOrWhiteSpace(requiredProtocol) && service is not null &&
+            !ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
         {
             var error = StandardErrorHelpers.CreateNotFound(
                 context,
-                $"{requiredServiceType.Value} is not enabled for this service.");
+                $"{requiredProtocol} is not enabled for this service.");
             return new MetadataV2ValidationResult(false, publication, resource, service, error);
         }
 
@@ -647,12 +650,13 @@ internal static class LayerValidationHelpers
     /// <summary>
     /// Builds a deterministic layerIndex → <see cref="MetadataV2Service"/> map for a protocol-
     /// specific route surface. When a publication's layer index could belong to several
-    /// services, the one matching <paramref name="requiredServiceType"/> wins; otherwise the
-    /// service with the lexicographically earliest name keeps routing deterministic.
+    /// services, the one whose <see cref="MetadataV2Service.Protocols"/> contains
+    /// <paramref name="requiredProtocol"/> wins; otherwise the service with the
+    /// lexicographically earliest name keeps routing deterministic.
     /// </summary>
     public static IReadOnlyDictionary<int, MetadataV2Service> BuildPrimaryServiceMapV2(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2ServiceType? requiredServiceType = null)
+        string? requiredProtocol = null)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
@@ -676,11 +680,12 @@ internal static class LayerValidationHelpers
             }
 
             // Tie-break:
-            //   1. requiredServiceType match
+            //   1. requiredProtocol match
             //   2. publication.IsPrimary
             //   3. lexicographically earliest service name
-            var existingMatches = requiredServiceType.HasValue && existing.Service.ServiceType == requiredServiceType.Value;
-            var candidateMatches = requiredServiceType.HasValue && service.ServiceType == requiredServiceType.Value;
+            var hasProtocolGate = !string.IsNullOrWhiteSpace(requiredProtocol);
+            var existingMatches = hasProtocolGate && ServiceProtocols.IsProtocolEnabled(existing.Service, requiredProtocol!);
+            var candidateMatches = hasProtocolGate && ServiceProtocols.IsProtocolEnabled(service, requiredProtocol!);
             if (candidateMatches && !existingMatches)
             {
                 byLayer[pub.LayerIndex.Value] = (pub, service);
@@ -711,17 +716,17 @@ internal static class LayerValidationHelpers
 
     /// <summary>
     /// Resolves the primary V2 service for a layer index. Preferred match is on
-    /// <paramref name="requiredServiceType"/>; falls back to the lexicographically earliest
+    /// <paramref name="requiredProtocol"/>; falls back to the lexicographically earliest
     /// service name. Returns null when no publication matches.
     /// </summary>
     public static async Task<MetadataV2Service?> ResolvePrimaryServiceV2Async(
         HttpContext context,
         int layerId,
-        MetadataV2ServiceType? requiredServiceType = null,
+        string? requiredProtocol = null,
         CancellationToken cancellationToken = default)
     {
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
-        var (_, _, service) = ResolveV2Triple(snapshot, layerId, requiredServiceType);
+        var (_, _, service) = ResolveV2Triple(snapshot, layerId, requiredProtocol);
         return service;
     }
 
@@ -731,10 +736,10 @@ internal static class LayerValidationHelpers
     public static async Task<string?> ResolvePrimaryServiceNameV2Async(
         HttpContext context,
         int layerId,
-        MetadataV2ServiceType? requiredServiceType = null,
+        string? requiredProtocol = null,
         CancellationToken cancellationToken = default)
     {
-        var service = await ResolvePrimaryServiceV2Async(context, layerId, requiredServiceType, cancellationToken)
+        var service = await ResolvePrimaryServiceV2Async(context, layerId, requiredProtocol, cancellationToken)
             .ConfigureAwait(false);
         return service?.Metadata.Name;
     }
@@ -742,9 +747,8 @@ internal static class LayerValidationHelpers
     /// <summary>
     /// Resolves the primary V2 service name for a layer index, preferring services
     /// whose <see cref="MetadataV2Service.Protocols"/> list contains
-    /// <paramref name="requiredProtocol"/>. Use when the caller knows the protocol
-    /// string (e.g. <c>ServiceProtocols.OgcFeatures</c>) but not the legacy
-    /// <see cref="MetadataV2ServiceType"/> enum classification.
+    /// <paramref name="requiredProtocol"/>. Kept as a distinct entry point so call
+    /// sites self-document the protocol-string gating contract.
     /// </summary>
     public static async Task<string?> ResolvePrimaryServiceNameByProtocolV2Async(
         HttpContext context,
@@ -787,23 +791,23 @@ internal static class LayerValidationHelpers
         ResolveV2Triple(
             MetadataV2GraphSnapshot snapshot,
             int layerId,
-            MetadataV2ServiceType? requiredServiceType)
+            string? requiredProtocol)
     {
         // Resolution order (now deterministic):
-        //   1. requiredServiceType matches AND publication.IsPrimary
-        //   2. requiredServiceType matches (any)
+        //   1. requiredProtocol matches AND publication.IsPrimary
+        //   2. requiredProtocol matches (any)
         //   3. publication.IsPrimary
         //   4. lexicographically earliest by service name
         var candidatePublications = snapshot.Graph.Publications
             .Where(p => p.LayerIndex == layerId)
             .ToList();
 
-        if (requiredServiceType.HasValue)
+        if (!string.IsNullOrWhiteSpace(requiredProtocol))
         {
             var preferred = candidatePublications
                 .Where(p =>
                     snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var s) &&
-                    s.ServiceType == requiredServiceType.Value)
+                    ServiceProtocols.IsProtocolEnabled(s, requiredProtocol))
                 .OrderByDescending(p => p.IsPrimary)
                 .FirstOrDefault();
             if (preferred is not null)
@@ -843,16 +847,16 @@ internal static class LayerValidationHelpers
     /// </summary>
     /// <param name="context">HTTP context.</param>
     /// <param name="serviceName">Public service name (case-insensitive).</param>
-    /// <param name="requiredServiceType">Optional <see cref="MetadataV2ServiceType"/> gate; when
-    /// set, only matches services of that type. Use to route a request to (for example) the
-    /// EsriMapService publication when a v1 service name is shared across multiple V2 service
-    /// types.</param>
+    /// <param name="requiredProtocol">Optional protocol gate; when set, only matches
+    /// services whose <see cref="MetadataV2Service.Protocols"/> list contains the
+    /// protocol. Use to route a request to (for example) the MapServer publication
+    /// when a service name is shared across multiple protocols.</param>
     /// <param name="scope">Access scope to check.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     public static async Task<MetadataV2ServiceValidationResult> ValidateServiceWithAccessV2Async(
         HttpContext context,
         string serviceName,
-        MetadataV2ServiceType? requiredServiceType = null,
+        string? requiredProtocol = null,
         AccessScope scope = AccessScope.Read,
         CancellationToken cancellationToken = default)
     {
@@ -865,12 +869,12 @@ internal static class LayerValidationHelpers
 
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
 
-        // Prefer a service-type match; otherwise fall back to name match.
+        // Prefer a protocol match; otherwise fall back to name match.
         MetadataV2Service? service = null;
-        if (requiredServiceType.HasValue)
+        if (!string.IsNullOrWhiteSpace(requiredProtocol))
         {
             service = snapshot.Graph.Services.FirstOrDefault(s =>
-                s.ServiceType == requiredServiceType.Value &&
+                ServiceProtocols.IsProtocolEnabled(s, requiredProtocol) &&
                 string.Equals(s.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase));
         }
         service ??= snapshot.Index.ServicesByName.TryGetValue(serviceName, out var s) ? s : null;
@@ -882,12 +886,13 @@ internal static class LayerValidationHelpers
                 StandardErrorHelpers.CreateNotFound(context, $"Service '{serviceName}' not found."));
         }
 
-        if (requiredServiceType.HasValue && service.ServiceType != requiredServiceType.Value)
+        if (!string.IsNullOrWhiteSpace(requiredProtocol) &&
+            !ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
         {
             return new MetadataV2ServiceValidationResult(
                 false, service, [], [],
                 StandardErrorHelpers.CreateNotFound(
-                    context, $"{requiredServiceType.Value} is not enabled for service '{serviceName}'."));
+                    context, $"{requiredProtocol} is not enabled for service '{serviceName}'."));
         }
 
         var serviceAccessError = AccessPolicyHelpers.RequireServiceAccess(context, service, scope);

@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -114,7 +115,7 @@ public sealed class MetadataV2ModelTests
             {
                 Id = "service.public"
             },
-            ServiceType = MetadataV2ServiceType.OgcApiFeatures
+            Protocols = [ServiceProtocols.OgcFeatures]
         };
 
         var publication = new MetadataV2Publication
@@ -246,7 +247,7 @@ public sealed class MetadataV2ModelTests
                 Id = "service.public-works-feature-server",
                 Name = "Public Works FeatureServer"
             },
-            ServiceType = MetadataV2ServiceType.EsriFeatureService,
+            Protocols = [ServiceProtocols.FeatureServer],
             Route = "/PublicWorks/FeatureServer"
         };
 
@@ -271,7 +272,7 @@ public sealed class MetadataV2ModelTests
             .Should().BeEquivalentTo(
                 "publication.public-works.0",
                 "publication.public-works.1");
-        graph.Services.Single().ServiceType.Should().Be(MetadataV2ServiceType.EsriFeatureService);
+        graph.Services.Single().PrimaryProtocol.Should().Be(ServiceProtocols.FeatureServer);
         graph.Publications.Should().OnlyContain(publication =>
             publication.ServiceId == "service.public-works-feature-server" &&
             publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
@@ -312,15 +313,13 @@ public sealed class MetadataV2ModelTests
 
     [UnitTest]
     [Operation(Operations.Query)]
-    public void StorageTypes_AreSeparateFromServiceAndPublicationTypes()
+    public void StorageTypes_AreSeparateFromPublicationTypes()
     {
         var storageNames = Enum.GetNames<MetadataV2StorageType>();
-        var serviceNames = Enum.GetNames<MetadataV2ServiceType>();
         var publicationNames = Enum.GetNames<MetadataV2PublicationType>();
 
         storageNames.Should().Contain(nameof(MetadataV2StorageType.GeoParquet));
         storageNames.Should().Contain(nameof(MetadataV2StorageType.CloudOptimizedGeoTiff));
-        serviceNames.Intersect(storageNames).Should().BeEmpty();
         publicationNames.Intersect(storageNames).Should().BeEmpty();
     }
 

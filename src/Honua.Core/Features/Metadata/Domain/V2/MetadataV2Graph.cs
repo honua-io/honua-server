@@ -377,15 +377,6 @@ public sealed record MetadataV2Service
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();
 
     /// <summary>
-    /// Public service classification used for routing and display only. Protocol
-    /// enablement is governed by <see cref="Protocols"/>; the two are kept independent
-    /// so a service classified as an Esri Feature Service can additionally expose,
-    /// e.g., the OGC API Features protocol on the same publications.
-    /// </summary>
-    [JsonPropertyName("serviceType")]
-    public MetadataV2ServiceType ServiceType { get; init; } = MetadataV2ServiceType.OgcApiFeatures;
-
-    /// <summary>
     /// Service route or base path.
     /// </summary>
     [JsonPropertyName("route")]
@@ -420,6 +411,13 @@ public sealed record MetadataV2Service
     /// </summary>
     [JsonPropertyName("protocols")]
     public IReadOnlyList<string> Protocols { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Primary protocol identifier for routing/display purposes — defined as
+    /// <see cref="Protocols"/>[0] when present, otherwise null.
+    /// </summary>
+    [JsonIgnore]
+    public string? PrimaryProtocol => Protocols.Count == 0 ? null : Protocols[0];
 
     /// <summary>
     /// Service-specific options.

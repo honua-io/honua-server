@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Metadata.Services;
 using Honua.TestKit.Attributes;
@@ -144,7 +145,7 @@ public sealed class FileMetadataV2GraphProviderTests
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service.features", Name = "Features" },
-                    ServiceType = MetadataV2ServiceType.OgcApiFeatures,
+                    Protocols = [ServiceProtocols.OgcFeatures],
                     Route = "/ogc/features",
                 }
             ],

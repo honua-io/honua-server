@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -36,8 +37,8 @@ internal static class StacV2Lookups
 
     /// <summary>
     /// Enumerates the STAC publications visible to the caller. A publication is visible
-    /// when it lives on a service of type <see cref="MetadataV2ServiceType.StacApi"/> and
-    /// the access policy on the resource (and the service it is published through)
+    /// when it lives on a service exposing the <see cref="ServiceProtocols.Stac"/> protocol
+    /// and the access policy on the resource (and the service it is published through)
     /// allows the current principal to read it.
     /// </summary>
     public static async Task<ResolvedStacPublication[]> ResolveVisibleStacPublicationsAsync(
@@ -49,7 +50,7 @@ internal static class StacV2Lookups
         var snapshot = await GetSnapshotAsync(context, cancellationToken).ConfigureAwait(false);
 
         var stacServiceIds = snapshot.Graph.Services
-            .Where(s => s.ServiceType == MetadataV2ServiceType.StacApi)
+            .Where(s => ServiceProtocols.IsProtocolEnabled(s, ServiceProtocols.Stac))
             .Select(s => s.Metadata.Id)
             .ToHashSet(StringComparer.Ordinal);
 
@@ -133,7 +134,7 @@ internal static class StacV2Lookups
             {
                 continue;
             }
-            if (service.ServiceType != MetadataV2ServiceType.StacApi)
+            if (!ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.Stac))
             {
                 continue;
             }

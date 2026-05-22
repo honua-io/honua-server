@@ -571,7 +571,7 @@ public sealed class TileOperationJobServicePublishTests
     {
         var services = new ServiceCollection();
         var graph = new TestMetadataV2GraphBuilder()
-            .AddService("svc-publish-test", "publish-test", MetadataV2ServiceType.OgcApiFeatures)
+            .AddService("svc-publish-test", "publish-test")
             .AddResource("res-publish", "publish-layer")
             .AddPublication("pub-publish", "svc-publish-test", "res-publish", layerIndex: 7)
             .Build();
