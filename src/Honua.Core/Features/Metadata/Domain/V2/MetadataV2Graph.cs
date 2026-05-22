@@ -176,7 +176,12 @@ public sealed record MetadataV2Resource
     public IReadOnlyList<string> StyleResourceIds { get; init; } = Array.Empty<string>();
 
     /// <summary>
-    /// Policy identifiers attached to this resource.
+    /// Forward-looking references to <see cref="MetadataV2Policy"/> entries for
+    /// rule-engine evaluation (e.g. an OPA/Rego policy bundle). Not currently
+    /// consulted by <c>IAccessPolicyEvaluator</c>; only the inline
+    /// <see cref="AccessPolicy"/> participates in runtime decisions. The reference
+    /// model is reserved so existing graph documents stay forward-compatible when
+    /// a rule-engine integration lands; do not couple new code to it.
     /// </summary>
     [JsonPropertyName("policyIds")]
     public IReadOnlyList<string> PolicyIds { get; init; } = Array.Empty<string>();
@@ -190,6 +195,11 @@ public sealed record MetadataV2Resource
 
     /// <summary>
     /// Optional access policy controlling who can read/write this resource.
+    /// Composes with the owning service's <see cref="MetadataV2Service.AccessPolicy"/>
+    /// under deny-wins semantics: both policies must pass for a request to be
+    /// allowed. Resource-level denials are reported in preference to service-level
+    /// denials. When both are unset, authentication is required by default; set
+    /// <c>AllowAnonymous = true</c> at either level to open public access.
     /// </summary>
     [JsonPropertyName("accessPolicy")]
     public AccessPolicy? AccessPolicy { get; init; }
@@ -391,6 +401,11 @@ public sealed record MetadataV2Service
 
     /// <summary>
     /// Optional access policy controlling who can read/write this service.
+    /// Composes with each <see cref="MetadataV2Resource.AccessPolicy"/> on resources
+    /// published through this service under deny-wins semantics (see the docs on
+    /// <see cref="MetadataV2Resource.AccessPolicy"/>). A service-level deny blocks
+    /// access to every resource on the service; a service-level
+    /// <c>AllowAnonymous = true</c> does NOT override a resource-level restriction.
     /// </summary>
     [JsonPropertyName("accessPolicy")]
     public AccessPolicy? AccessPolicy { get; init; }
