@@ -171,6 +171,89 @@ public sealed class ComplianceDependencyGateTests
         description.Should().NotContain("misconfigured", "raw exception messages must not leak");
     }
 
+    [Fact]
+    public void AuditLog_OverrideTrue_DescribesAttestationEvenWhenProbeSaysNullSink()
+    {
+        // No registered IAuditLog (probe would say NullAuditLog) but operator overrides
+        // to true (sidecar deployment). DescribeStatus must reflect the override source
+        // rather than the disagreeing probe — otherwise the evidence row stamps an
+        // Implemented status with a "falls back to NullAuditLog" detail.
+        var options = new ComplianceOptions
+        {
+            DependencyOverrides = new ComplianceDependencyOverrides { AuditLogConfigured = true },
+        };
+
+        var gate = CreateGate(options, oidcConfig: null);
+
+        gate.IsSatisfied(ComplianceDependency.AuditLog).Should().BeTrue();
+        var description = gate.DescribeStatus(ComplianceDependency.AuditLog);
+        description.Should().Contain("operator override");
+        description.Should().Contain("AuditLogConfigured=true");
+        description.Should().NotContain("NullAuditLog", "the override source must be the authoritative description");
+    }
+
+    [Fact]
+    public void AuditLog_OverrideFalse_DescribesOperatorForcedUnsatisfied()
+    {
+        var options = new ComplianceOptions
+        {
+            DependencyOverrides = new ComplianceDependencyOverrides { AuditLogConfigured = false },
+        };
+
+        var gate = CreateGate(options, oidcConfig: null);
+
+        gate.IsSatisfied(ComplianceDependency.AuditLog).Should().BeFalse();
+        var description = gate.DescribeStatus(ComplianceDependency.AuditLog);
+        description.Should().Contain("operator override");
+        description.Should().Contain("AuditLogConfigured=false");
+    }
+
+    [Fact]
+    public void Sso_OverrideTrue_DescribesAttestationEvenWhenOidcDisabled()
+    {
+        // OIDC is not enabled in config but operator overrides SSO to true.
+        // DescribeStatus must say "operator override" instead of the misleading
+        // "OIDC enabled with at least one configured provider".
+        var options = new ComplianceOptions
+        {
+            DependencyOverrides = new ComplianceDependencyOverrides { SsoConfigured = true },
+        };
+
+        var gate = CreateGate(options, oidcConfig: null);
+
+        gate.IsSatisfied(ComplianceDependency.Sso).Should().BeTrue();
+        var description = gate.DescribeStatus(ComplianceDependency.Sso);
+        description.Should().Contain("operator override");
+        description.Should().Contain("SsoConfigured=true");
+        description.Should().NotContain("OIDC enabled with at least one configured provider",
+            "override-attested SSO must not claim live OIDC config");
+    }
+
+    [Fact]
+    public void Sso_OverrideFalse_DescribesOperatorForcedUnsatisfied()
+    {
+        // OIDC is fully configured but operator overrides to false (auditor wants
+        // to confirm gap behavior). DescribeStatus must reflect the override.
+        var oidcConfig = new Dictionary<string, string?>
+        {
+            ["Oidc:Enabled"] = "true",
+            ["Oidc:Google:Enabled"] = "true",
+            ["Oidc:Google:ClientId"] = "google-client-id",
+        };
+
+        var options = new ComplianceOptions
+        {
+            DependencyOverrides = new ComplianceDependencyOverrides { SsoConfigured = false },
+        };
+
+        var gate = CreateGate(options, oidcConfig);
+
+        gate.IsSatisfied(ComplianceDependency.Sso).Should().BeFalse();
+        var description = gate.DescribeStatus(ComplianceDependency.Sso);
+        description.Should().Contain("operator override");
+        description.Should().Contain("SsoConfigured=false");
+    }
+
     private static DefaultComplianceDependencyGate CreateGate(
         ComplianceOptions options,
         IDictionary<string, string?>? oidcConfig,

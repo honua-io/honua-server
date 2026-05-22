@@ -234,6 +234,12 @@ internal sealed class DefaultComplianceEvidenceCollector : IComplianceEvidenceCo
                 Detail = $"primaryRegion={residency.PrimaryRegion}, allowedRegions=[{string.Join(", ", residency.AllowedRegions)}]",
             });
 
+            // Mirror the FIPS gap path: a framework-specific evidence row that downgrades
+            // status must also surface a gap message so the dashboard's Gaps section and
+            // the PDF report render the issue — otherwise the row drops to
+            // PartiallyImplemented with an empty Gaps[] and the operator sees no signal.
+            gaps.Add("Data residency policy is informational only — set Compliance:DataResidency:Enforced=true to deny egress to regions outside the allow-list.");
+
             if (status == ComplianceControlStatus.Implemented)
             {
                 status = ComplianceControlStatus.PartiallyImplemented;

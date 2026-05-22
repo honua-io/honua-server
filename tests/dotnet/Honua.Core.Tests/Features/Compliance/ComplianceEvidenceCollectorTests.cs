@@ -121,6 +121,52 @@ public sealed class ComplianceEvidenceCollectorTests
     }
 
     [Fact]
+    public async Task Snapshot_DependenciesSatisfied_ButResidencyInformational_SurfacesGap()
+    {
+        // Residency-aware controls (fedramp.sc-7, soc2.cc6.7) downgrade to
+        // PartiallyImplemented when residency is not enforced. The dashboard / PDF
+        // render the Gaps section only when Gaps[] is non-empty, so the residency
+        // partial-status row must also append a gap message — mirroring the FIPS
+        // path. Without it the operator sees a degraded status with no reason.
+        var collector = CreateCollector(new ComplianceOptions
+        {
+            Soc2ReadinessClaimed = true,
+            FedRampReadinessClaimed = true,
+            DataResidency = new ComplianceResidencyOptions
+            {
+                Enforced = false,
+                PrimaryRegion = "us-gov-west-1",
+            },
+            Encryption = new ComplianceEncryptionOptions
+            {
+                FipsModeAttested = true,
+            },
+            DependencyOverrides = new ComplianceDependencyOverrides
+            {
+                AuditLogConfigured = true,
+                SsoConfigured = true,
+                RbacConfigured = true,
+                TransportEncryptionAttested = true,
+                DataResidencyAttested = true,
+            },
+        });
+
+        var snapshot = await collector.CollectAsync(CancellationToken.None);
+
+        var sc7 = snapshot.Controls.Single(c => c.Control.ControlId == "fedramp.sc-7");
+        sc7.Status.Should().Be(ComplianceControlStatus.PartiallyImplemented,
+            "all deps are satisfied but residency is not enforced");
+        sc7.Gaps.Should().Contain(g => g.Contains("residency", StringComparison.OrdinalIgnoreCase),
+            "the residency partial-status row must surface an actionable gap");
+        sc7.Gaps.Should().Contain(g => g.Contains("Compliance:DataResidency:Enforced", StringComparison.Ordinal),
+            "the gap must point at the configuration key the operator needs to flip");
+
+        var cc67 = snapshot.Controls.Single(c => c.Control.ControlId == "soc2.cc6.7");
+        cc67.Status.Should().Be(ComplianceControlStatus.PartiallyImplemented);
+        cc67.Gaps.Should().Contain(g => g.Contains("residency", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task Snapshot_AllDependenciesSatisfied_MarksControlsImplemented()
     {
         var collector = CreateCollector(new ComplianceOptions

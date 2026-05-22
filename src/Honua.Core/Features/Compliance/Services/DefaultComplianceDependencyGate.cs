@@ -69,14 +69,16 @@ internal sealed partial class DefaultComplianceDependencyGate : IComplianceDepen
 
     public string DescribeStatus(ComplianceDependency dependency)
     {
+        var overrides = _options.CurrentValue.DependencyOverrides;
         return dependency switch
         {
-            ComplianceDependency.AuditLog => IsAuditLogOperational(out var auditDetail)
-                ? "Durable audit log sink registered (PostgresAuditLog)."
-                : auditDetail,
-            ComplianceDependency.Sso => IsSatisfied(dependency)
-                ? "OIDC enabled with at least one configured provider."
-                : "OIDC is not enabled or no provider has a client ID — set Oidc:Enabled=true with at least one provider, or attest via Compliance:DependencyOverrides:SsoConfigured.",
+            // AuditLog and Sso have BOTH an override and a live probe. When an override
+            // is set, the description must reflect the override source — auditors should
+            // not see "OIDC enabled with at least one configured provider" when SSO
+            // satisfaction came only from an operator attestation, nor "audit log falls
+            // back to NullAuditLog" when AuditLogConfigured=true overrides the probe.
+            ComplianceDependency.AuditLog => DescribeAuditLog(overrides.AuditLogConfigured),
+            ComplianceDependency.Sso => DescribeSso(overrides.SsoConfigured),
             ComplianceDependency.Rbac => IsSatisfied(dependency)
                 ? "RBAC enforcement attested by operator."
                 : "RBAC enforcement is not attested — set Compliance:DependencyOverrides:RbacConfigured once role policies are required on protected endpoints.",
@@ -91,6 +93,34 @@ internal sealed partial class DefaultComplianceDependencyGate : IComplianceDepen
                 : "Data residency enforcement is not attested — Compliance:DataResidency:Enforced controls the policy view, but operators must also set Compliance:DependencyOverrides:DataResidencyAttested once egress guards are wired.",
             _ => "Unknown dependency.",
         };
+    }
+
+    private string DescribeAuditLog(bool? overrideValue)
+    {
+        if (overrideValue.HasValue)
+        {
+            return overrideValue.Value
+                ? "Audit log operationally attested by operator override (Compliance:DependencyOverrides:AuditLogConfigured=true)."
+                : "Audit log marked unsatisfied by operator override (Compliance:DependencyOverrides:AuditLogConfigured=false).";
+        }
+
+        return IsAuditLogOperational(out var detail)
+            ? "Durable audit log sink registered (PostgresAuditLog)."
+            : detail;
+    }
+
+    private string DescribeSso(bool? overrideValue)
+    {
+        if (overrideValue.HasValue)
+        {
+            return overrideValue.Value
+                ? "SSO operationally attested by operator override (Compliance:DependencyOverrides:SsoConfigured=true)."
+                : "SSO marked unsatisfied by operator override (Compliance:DependencyOverrides:SsoConfigured=false).";
+        }
+
+        return IsOidcEffectivelyEnabled()
+            ? "OIDC enabled with at least one configured provider."
+            : "OIDC is not enabled or no provider has a client ID — set Oidc:Enabled=true with at least one provider, or attest via Compliance:DependencyOverrides:SsoConfigured.";
     }
 
     // Probe methods are intentionally exception-tolerant: a singleton factory that
