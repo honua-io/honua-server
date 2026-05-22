@@ -4,6 +4,7 @@
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Compliance.Abstractions;
 using Honua.Core.Features.Compliance.Domain;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Compliance.Services;
@@ -31,7 +32,7 @@ namespace Honua.Core.Features.Compliance.Services;
 internal sealed class InMemoryEncryptionPostureProvider : IEncryptionPostureProvider
 {
     private readonly IOptionsMonitor<ComplianceOptions> _options;
-    private readonly IAuditLog _auditLog;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly TimeProvider _timeProvider;
 
     private readonly object _gate = new();
@@ -40,14 +41,14 @@ internal sealed class InMemoryEncryptionPostureProvider : IEncryptionPostureProv
 
     public InMemoryEncryptionPostureProvider(
         IOptionsMonitor<ComplianceOptions> options,
-        IAuditLog auditLog,
+        IServiceScopeFactory scopeFactory,
         TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(auditLog);
+        ArgumentNullException.ThrowIfNull(scopeFactory);
         ArgumentNullException.ThrowIfNull(timeProvider);
         _options = options;
-        _auditLog = auditLog;
+        _scopeFactory = scopeFactory;
         _timeProvider = timeProvider;
 
         var now = _timeProvider.GetUtcNow();
@@ -101,19 +102,26 @@ internal sealed class InMemoryEncryptionPostureProvider : IEncryptionPostureProv
             _activeVersion = next;
         }
 
-        await _auditLog.RecordAsync(new AuditEvent
+        // The provider is a singleton (the in-memory key ring must outlive any single
+        // request), but IAuditLog is scoped. Resolve it from a fresh scope per rotation
+        // so we never capture a stale instance from root scope.
+        await using (var scope = _scopeFactory.CreateAsyncScope())
         {
-            Timestamp = now,
-            EventType = AuditEventType.ConfigChange,
-            Actor = string.IsNullOrWhiteSpace(requestedBy) ? AuditEvent.AnonymousActor : requestedBy,
-            ActorType = AuditActorType.UserId,
-            ResourceType = "encryption-key",
-            ResourceId = next.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            Action = "encryption.key.rotate",
-            Outcome = AuditOutcome.Success,
-            CorrelationId = $"rotate-{next}",
-            Details = $"{{\"previousVersion\":{previous},\"newVersion\":{next}}}",
-        }, cancellationToken).ConfigureAwait(false);
+            var auditLog = scope.ServiceProvider.GetRequiredService<IAuditLog>();
+            await auditLog.RecordAsync(new AuditEvent
+            {
+                Timestamp = now,
+                EventType = AuditEventType.ConfigChange,
+                Actor = string.IsNullOrWhiteSpace(requestedBy) ? AuditEvent.AnonymousActor : requestedBy,
+                ActorType = AuditActorType.UserId,
+                ResourceType = "encryption-key",
+                ResourceId = next.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                Action = "encryption.key.rotate",
+                Outcome = AuditOutcome.Success,
+                CorrelationId = $"rotate-{next}",
+                Details = $"{{\"previousVersion\":{previous},\"newVersion\":{next}}}",
+            }, cancellationToken).ConfigureAwait(false);
+        }
 
         return new KeyRotationOutcome
         {

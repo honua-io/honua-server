@@ -66,7 +66,8 @@ internal static partial class ComplianceAdminEndpoints
             .WithDisplayName("Export Compliance Report")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces(StatusCodes.Status200OK, contentType: PdfContentType)
-            .Produces(StatusCodes.Status400BadRequest);
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status406NotAcceptable);
 
         group.MapPost("/residency/evaluate", HandleEvaluateResidency)
             .WithDisplayName("Evaluate Residency Policy")
@@ -119,9 +120,16 @@ internal static partial class ComplianceAdminEndpoints
         }
         catch (NotSupportedException)
         {
+            // The format string parsed but no renderer is registered for it (e.g. a
+            // deployment trimmed the renderer enumerable). 406 is the correct status
+            // for media-type negotiation failure; 400 is reserved for the parser
+            // rejection path above (unrecognized format string).
             ComplianceAdminLog.UnsupportedReportFormat(logger, formatName, actor);
-            return Results.BadRequest(ApiResponse<object>.Failure(
-                "Requested compliance report format is not supported by this deployment."));
+            return Results.Json(
+                ApiResponse<object>.Failure(
+                    "Requested compliance report format is not supported by this deployment."),
+                ComplianceAdminJsonContext.Default.ApiResponseObject,
+                statusCode: StatusCodes.Status406NotAcceptable);
         }
 
         ComplianceAdminLog.ReportExported(logger, formatName, actor);

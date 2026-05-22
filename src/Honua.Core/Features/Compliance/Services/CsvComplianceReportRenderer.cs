@@ -24,7 +24,12 @@ internal sealed class CsvComplianceReportRenderer : IComplianceReportRenderer
         ArgumentNullException.ThrowIfNull(snapshot);
 
         using var buffer = new MemoryStream();
-        using (var writer = new StreamWriter(buffer, Utf8WithBom, bufferSize: 4096, leaveOpen: true))
+        using (var writer = new StreamWriter(buffer, Utf8WithBom, bufferSize: 4096, leaveOpen: true)
+        {
+            // RFC 4180 §2 mandates CRLF regardless of host OS. StreamWriter defaults to
+            // Environment.NewLine, which is LF on Linux.
+            NewLine = "\r\n",
+        })
         {
             writer.WriteLine("Framework,ControlId,Title,Status,CollectedAt,Source,Claim,Detail");
 

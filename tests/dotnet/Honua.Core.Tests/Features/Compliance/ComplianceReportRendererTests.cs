@@ -33,6 +33,26 @@ public sealed class ComplianceReportRendererTests
         body.Should().Contain("Framework,ControlId,Title,Status,CollectedAt,Source,Claim,Detail");
         body.Should().Contain("Soc2");
         body.Should().Contain("FedRamp");
+
+        // RFC 4180 §2: line terminator must be CRLF, independent of host OS.
+        var crlfCount = CountOccurrences(body, "\r\n");
+        var lfCount = body.Count(c => c == '\n');
+        crlfCount.Should().BeGreaterThan(0, "the CSV must use CRLF line terminators");
+        lfCount.Should().Be(crlfCount,
+            "every LF must be paired with a preceding CR — no bare LFs are allowed");
+    }
+
+    private static int CountOccurrences(string haystack, string needle)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = haystack.IndexOf(needle, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += needle.Length;
+        }
+
+        return count;
     }
 
     [Fact]

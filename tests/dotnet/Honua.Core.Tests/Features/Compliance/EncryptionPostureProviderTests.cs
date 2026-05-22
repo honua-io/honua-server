@@ -5,6 +5,7 @@ using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Compliance;
 using Honua.Core.Features.Compliance.Services;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Core.Tests.Features.Compliance;
 
@@ -115,7 +116,7 @@ public sealed class EncryptionPostureProviderTests
 
         var provider = new InMemoryEncryptionPostureProvider(
             new TestOptionsMonitor<ComplianceOptions>(opts),
-            NullAuditLog.Instance,
+            BuildScopeFactory(NullAuditLog.Instance),
             TimeProvider.System);
 
         var posture = provider.GetPosture();
@@ -126,8 +127,15 @@ public sealed class EncryptionPostureProviderTests
     private static InMemoryEncryptionPostureProvider CreateProvider(IAuditLog? audit = null) =>
         new(
             new TestOptionsMonitor<ComplianceOptions>(new ComplianceOptions()),
-            audit ?? NullAuditLog.Instance,
+            BuildScopeFactory(audit ?? NullAuditLog.Instance),
             TimeProvider.System);
+
+    private static IServiceScopeFactory BuildScopeFactory(IAuditLog audit)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(audit);
+        return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+    }
 }
 
 internal sealed class CapturingAuditLog : IAuditLog

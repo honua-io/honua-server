@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Reflection;
 using Honua.Core.Features.Compliance.Abstractions;
 using Honua.Core.Features.Compliance.Domain;
 using Microsoft.Extensions.Options;
@@ -146,6 +145,7 @@ internal sealed class DefaultComplianceEvidenceCollector : IComplianceEvidenceCo
         }
 
         var status = ComplianceControlStatus.Implemented;
+        var unsatisfiedDependencies = 0;
 
         foreach (var dependency in control.Dependencies)
         {
@@ -164,15 +164,19 @@ internal sealed class DefaultComplianceEvidenceCollector : IComplianceEvidenceCo
             if (!satisfied)
             {
                 status = ComplianceControlStatus.PartiallyImplemented;
+                unsatisfiedDependencies++;
                 gaps.Add($"{dependency}: {description}");
             }
         }
 
         AppendFrameworkSpecificEvidence(control, evidence, gaps, ref status, encryption, residency, now);
 
-        if (gaps.Count == control.Dependencies.Count && control.Dependencies.Count > 0)
+        // Downgrade to NotImplemented when every dependency is unsatisfied. Track this
+        // off `unsatisfiedDependencies` rather than `gaps.Count` because framework-
+        // specific evidence (FIPS, residency) can also append to `gaps`, which would
+        // otherwise hide the all-failed case behind a PartiallyImplemented rollup.
+        if (control.Dependencies.Count > 0 && unsatisfiedDependencies == control.Dependencies.Count)
         {
-            // No dependency satisfied -> downgrade further.
             status = ComplianceControlStatus.NotImplemented;
         }
 
@@ -239,17 +243,8 @@ internal sealed class DefaultComplianceEvidenceCollector : IComplianceEvidenceCo
 
     private static string ResolveServerVersion()
     {
-        var assembly = typeof(DefaultComplianceEvidenceCollector).Assembly;
-        var informational = assembly
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
-            .InformationalVersion;
-
-        if (!string.IsNullOrWhiteSpace(informational))
-        {
-            return informational;
-        }
-
-        var version = assembly.GetName().Version;
+        // AssemblyName.Version is trim-/AOT-safe; GetCustomAttribute<T> is not.
+        var version = typeof(DefaultComplianceEvidenceCollector).Assembly.GetName().Version;
         return version is null
             ? "0.0.0"
             : version.ToString(fieldCount: 4);

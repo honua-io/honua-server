@@ -2,10 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.AuditLog;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Compliance;
 using Honua.Core.Features.Compliance.Abstractions;
 using Honua.Core.Features.Compliance.Domain;
 using Honua.Core.Features.Compliance.Services;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Core.Tests.Features.Compliance;
 
@@ -86,6 +88,39 @@ public sealed class ComplianceEvidenceCollectorTests
     }
 
     [Fact]
+    public async Task Snapshot_AllDependenciesUnsatisfied_DowngradesToNotImplementedEvenWithFrameworkGaps()
+    {
+        // fedramp.sc-8 deps = [EncryptionInTransit] (single dep). With the dep
+        // unsatisfied AND FIPS not attested, AppendFrameworkSpecificEvidence appends a
+        // second gap entry (FIPS). The rollup must still be NotImplemented because the
+        // only dependency is unsatisfied — gaps.Count > Dependencies.Count must not
+        // mask the all-failed case.
+        var collector = CreateCollector(new ComplianceOptions
+        {
+            Soc2ReadinessClaimed = true,
+            FedRampReadinessClaimed = true,
+            Encryption = new ComplianceEncryptionOptions
+            {
+                FipsModeAttested = false,
+            },
+            DependencyOverrides = new ComplianceDependencyOverrides
+            {
+                TransportEncryptionAttested = false,
+            },
+        });
+
+        var snapshot = await collector.CollectAsync(CancellationToken.None);
+
+        var sc8 = snapshot.Controls.Single(c => c.Control.ControlId == "fedramp.sc-8");
+        sc8.Control.Dependencies.Count.Should().Be(1,
+            "test relies on sc-8 having exactly one overridable dependency (EncryptionInTransit)");
+        sc8.Gaps.Count.Should().BeGreaterThan(sc8.Control.Dependencies.Count,
+            "framework-specific evidence adds at least one extra gap beyond the dependency gaps");
+        sc8.Status.Should().Be(ComplianceControlStatus.NotImplemented,
+            "the only dependency is unsatisfied — the framework-specific FIPS gap must not mask the downgrade");
+    }
+
+    [Fact]
     public async Task Snapshot_AllDependenciesSatisfied_MarksControlsImplemented()
     {
         var collector = CreateCollector(new ComplianceOptions
@@ -123,9 +158,17 @@ public sealed class ComplianceEvidenceCollectorTests
         var monitor = new TestOptionsMonitor<ComplianceOptions>(opts);
         var catalog = new DefaultComplianceControlCatalog();
         var residency = new DefaultDataResidencyPolicyProvider(monitor);
-        var encryption = new InMemoryEncryptionPostureProvider(monitor, NullAuditLog.Instance, TimeProvider.System);
+        var scopeFactory = BuildScopeFactory(NullAuditLog.Instance);
+        var encryption = new InMemoryEncryptionPostureProvider(monitor, scopeFactory, TimeProvider.System);
         var gate = new StaticDependencyGate(opts);
         return new DefaultComplianceEvidenceCollector(catalog, gate, residency, encryption, monitor, TimeProvider.System);
+    }
+
+    private static IServiceScopeFactory BuildScopeFactory(IAuditLog audit)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(audit);
+        return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
     }
 
     private sealed class StaticDependencyGate : IComplianceDependencyGate
