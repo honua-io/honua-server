@@ -2,26 +2,29 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
-using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Protocols.Ogc.Api.Maps.Handlers;
 using Honua.Server.Features.Protocols.Ogc.Api.Maps.Models;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps;
 
 /// <summary>
-/// Tests for OgcMapsTileSetHandler functionality.
+/// Tests for <see cref="OgcMapsTileSetHandler"/> after the Metadata v2 cutover
+/// (#1035 cutover 86/N). The handler now resolves the V2 resource by the
+/// storage-layer-id integer (via <see cref="MetadataV2GraphIndex.ResourcesByStorageLayerId"/>)
+/// and reads protocol membership / access policy from the matching V2 service.
 /// </summary>
 [Protocol(TestProtocols.OgcApiMaps)]
 public class OgcMapsTileSetHandlerTests
@@ -29,24 +32,13 @@ public class OgcMapsTileSetHandlerTests
     private const string OgcApiMapsProtocol = "OGC-API-Maps";
     private const string OgcApiTilesProtocol = "OGC-API-Tiles";
 
-    private readonly ILayerCatalog _layerCatalog = Substitute.For<ILayerCatalog>();
-    private readonly OgcMapsTileSetHandler _handler;
-
-    public OgcMapsTileSetHandlerTests()
-    {
-        _handler = new OgcMapsTileSetHandler(
-            _layerCatalog,
-            NullLogger<OgcMapsTileSetHandler>.Instance);
-    }
-
     [UnitTest]
     [Operation(Operations.GetTileMetadata)]
     public async Task GetMapTileSetsAsync_LayerNotFound_ReturnsNotFound()
     {
-        _layerCatalog.GetLayerAsync(99, Arg.Any<CancellationToken>())
-            .Returns((LayerDefinition?)null);
+        var handler = CreateHandler(BuildEmptyProvider());
 
-        var result = await _handler.GetMapTileSetsAsync(99);
+        var result = await handler.GetMapTileSetsAsync(99);
 
         result.Should().BeOfType<NotFound>();
     }
@@ -55,14 +47,10 @@ public class OgcMapsTileSetHandlerTests
     [Operation(Operations.GetTileMetadata)]
     public async Task GetMapTileSetsAsync_ProtocolDisabled_ReturnsNotFound()
     {
-        var layer = CreatePublicLayer();
-        var service = CreateProtocolDisabledService(layer);
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(layer);
-        _layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>())
-            .Returns([service]);
+        var provider = BuildProvider(layerId: 1, mapsEnabled: false, allowAnonymous: true);
+        var handler = CreateHandler(provider);
 
-        var result = await _handler.GetMapTileSetsAsync(1, context: CreateOgcMapsContext());
+        var result = await handler.GetMapTileSetsAsync(1, context: CreateOgcMapsContext());
 
         result.Should().BeAssignableTo<IStatusCodeHttpResult>()
             .Which.StatusCode.Should().Be(StatusCodes.Status404NotFound);
@@ -72,16 +60,19 @@ public class OgcMapsTileSetHandlerTests
     [Operation(Operations.GetTileMetadata)]
     public async Task GetMapTileSetsAsync_MultiServiceLayer_PrefersMapsProtocolEnabledService()
     {
-        var layer = CreatePublicLayer();
-        var alpha = CreateProtocolDisabledService(layer) with { Name = "alpha-service" };
-        var beta = CreateProtocolEnabledService(layer) with { Name = "beta-service" };
+        // Two services both publish the same resource; only one declares OGC API Maps.
+        // The handler must pick the maps-enabled one.
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("resource-1", "test-layer", MetadataV2ResourceType.FeatureDataset, accessPolicy: PublicPolicy())
+            .AddStorageBinding("binding-1", "resource-1", "test", storageLayerId: 1)
+            .AddService("alpha-service", "alpha-service", protocols: [OgcApiTilesProtocol])
+            .AddService("beta-service", "beta-service", protocols: [OgcApiMapsProtocol, OgcApiTilesProtocol])
+            .AddPublication("alpha-pub", "alpha-service", "resource-1", layerIndex: 1)
+            .AddPublication("beta-pub", "beta-service", "resource-1", layerIndex: 1)
+            .Build();
+        var handler = CreateHandler(new TestMetadataV2GraphProvider(graph));
 
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(layer);
-        _layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>())
-            .Returns([alpha, beta]);
-
-        var result = await _handler.GetMapTileSetsAsync(1, context: CreateOgcMapsContext());
+        var result = await handler.GetMapTileSetsAsync(1, context: CreateOgcMapsContext());
 
         result.Should().BeOfType<Ok<TileSetsList>>();
     }
@@ -90,10 +81,9 @@ public class OgcMapsTileSetHandlerTests
     [Operation(Operations.GetTileMetadata)]
     public async Task GetMapTileSetsAsync_ValidLayer_ReturnsOk()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
+        var handler = CreateHandler(BuildProvider(layerId: 1));
 
-        var result = await _handler.GetMapTileSetsAsync(1);
+        var result = await handler.GetMapTileSetsAsync(1);
 
         result.Should().BeOfType<Ok<TileSetsList>>();
     }
@@ -102,10 +92,9 @@ public class OgcMapsTileSetHandlerTests
     [Operation(Operations.GetTileMetadata)]
     public async Task GetMapTileSetsAsync_ValidLayer_ReturnsTwoTileSets()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
+        var handler = CreateHandler(BuildProvider(layerId: 1));
 
-        var result = await _handler.GetMapTileSetsAsync(1);
+        var result = await handler.GetMapTileSetsAsync(1);
 
         var okResult = result as Ok<TileSetsList>;
         okResult.Should().NotBeNull();
@@ -116,10 +105,9 @@ public class OgcMapsTileSetHandlerTests
     [Operation(Operations.GetTileMetadata)]
     public async Task GetMapTileSetsAsync_ValidLayer_IncludesWebMercator()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
+        var handler = CreateHandler(BuildProvider(layerId: 1));
 
-        var result = await _handler.GetMapTileSetsAsync(1);
+        var result = await handler.GetMapTileSetsAsync(1);
 
         var okResult = result as Ok<TileSetsList>;
         okResult!.Value!.Tilesets.Should().Contain(ts =>
@@ -130,10 +118,9 @@ public class OgcMapsTileSetHandlerTests
     [Operation(Operations.GetTileMetadata)]
     public async Task GetMapTileSetsAsync_ValidLayer_IncludesWgs84()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
+        var handler = CreateHandler(BuildProvider(layerId: 1));
 
-        var result = await _handler.GetMapTileSetsAsync(1);
+        var result = await handler.GetMapTileSetsAsync(1);
 
         var okResult = result as Ok<TileSetsList>;
         okResult!.Value!.Tilesets.Should().Contain(ts =>
@@ -144,10 +131,9 @@ public class OgcMapsTileSetHandlerTests
     [Operation(Operations.GetTileMetadata)]
     public async Task GetMapTileSetsAsync_ValidLayer_IncludesTileMatrixSetId()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
+        var handler = CreateHandler(BuildProvider(layerId: 1));
 
-        var result = await _handler.GetMapTileSetsAsync(1);
+        var result = await handler.GetMapTileSetsAsync(1);
 
         var okResult = result as Ok<TileSetsList>;
         okResult!.Value!.Tilesets.Should().Contain(ts => ts.TileMatrixSetId == "WebMercatorQuad");
@@ -158,11 +144,10 @@ public class OgcMapsTileSetHandlerTests
     [Operation(Operations.GetTileMetadata)]
     public async Task GetMapTileSetsAsync_WithContext_LinksAreAbsolute()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
+        var handler = CreateHandler(BuildProvider(layerId: 1));
 
         var context = CreateOgcMapsContext();
-        var result = await _handler.GetMapTileSetsAsync(1, context: context);
+        var result = await handler.GetMapTileSetsAsync(1, context: context);
 
         var okResult = result as Ok<TileSetsList>;
         okResult.Should().NotBeNull();
@@ -180,11 +165,10 @@ public class OgcMapsTileSetHandlerTests
     [Operation(Operations.GetTileMetadata)]
     public async Task GetMapTileSetsAsync_WithoutConfiguredBaseUrl_UsesSafeAbsoluteLinks()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreatePublicLayer());
+        var handler = CreateHandler(BuildProvider(layerId: 1, allowAnonymous: true));
 
         var context = CreateAnonymousOgcMapsContext();
-        var result = await _handler.GetMapTileSetsAsync(1, context: context);
+        var result = await handler.GetMapTileSetsAsync(1, context: context);
 
         var okResult = result as Ok<TileSetsList>;
         okResult.Should().NotBeNull();
@@ -202,11 +186,10 @@ public class OgcMapsTileSetHandlerTests
     [Operation(Operations.GetTileMetadata)]
     public async Task GetMapTileSetsAsync_TileSets_IncludeTilingSchemeLinks()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
+        var handler = CreateHandler(BuildProvider(layerId: 1));
 
         var context = CreateOgcMapsContext();
-        var result = await _handler.GetMapTileSetsAsync(1, context: context);
+        var result = await handler.GetMapTileSetsAsync(1, context: context);
 
         var okResult = result as Ok<TileSetsList>;
         okResult.Should().NotBeNull();
@@ -222,10 +205,9 @@ public class OgcMapsTileSetHandlerTests
     [Operation(Operations.GetTileMetadata)]
     public async Task GetMapTileSetAsync_ValidLayer_ReturnsIndividualTileset()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
+        var handler = CreateHandler(BuildProvider(layerId: 1));
 
-        var result = await _handler.GetMapTileSetAsync(1, "WebMercatorQuad");
+        var result = await handler.GetMapTileSetAsync(1, "WebMercatorQuad");
 
         var okResult = result as Ok<TileSet>;
         okResult.Should().NotBeNull();
@@ -238,10 +220,9 @@ public class OgcMapsTileSetHandlerTests
     [Operation(Operations.GetTileMetadata)]
     public async Task GetMapTileSetAsync_ValidLayer_ItemLinkIsMarkedTemplated()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
+        var handler = CreateHandler(BuildProvider(layerId: 1));
 
-        var result = await _handler.GetMapTileSetAsync(1, "WebMercatorQuad");
+        var result = await handler.GetMapTileSetAsync(1, "WebMercatorQuad");
 
         var okResult = result as Ok<TileSet>;
         okResult.Should().NotBeNull();
@@ -254,14 +235,16 @@ public class OgcMapsTileSetHandlerTests
     [Operation(Operations.GetTileMetadata)]
     public async Task GetMapTileSetAsync_WhenOgcTilesDisabled_OmitsTileItemLinks()
     {
-        var layer = CreatePublicLayer();
-        var service = CreateMapsOnlyService(layer);
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(layer);
-        _layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>())
-            .Returns([service]);
+        // Maps enabled but Tiles disabled on the resolved publication.
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("resource-1", "test-layer", MetadataV2ResourceType.FeatureDataset, accessPolicy: PublicPolicy())
+            .AddStorageBinding("binding-1", "resource-1", "test", storageLayerId: 1)
+            .AddService("maps-only-service", "maps-only-service", protocols: [OgcApiMapsProtocol])
+            .AddPublication("pub-1", "maps-only-service", "resource-1", layerIndex: 1)
+            .Build();
+        var handler = CreateHandler(new TestMetadataV2GraphProvider(graph));
 
-        var result = await _handler.GetMapTileSetAsync(1, "WebMercatorQuad", context: CreateOgcMapsContext());
+        var result = await handler.GetMapTileSetAsync(1, "WebMercatorQuad", context: CreateOgcMapsContext());
 
         var okResult = result as Ok<TileSet>;
         okResult.Should().NotBeNull();
@@ -274,11 +257,10 @@ public class OgcMapsTileSetHandlerTests
     [Operation(Operations.GetTileMetadata)]
     public async Task GetMapTileSetsAsync_AccessDenied_ReturnsUnauthorized()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateRestrictedLayer());
+        var handler = CreateHandler(BuildProvider(layerId: 1, allowAnonymous: false));
 
         var context = CreateAnonymousOgcMapsContext();
-        var result = await _handler.GetMapTileSetsAsync(1, context: context);
+        var result = await handler.GetMapTileSetsAsync(1, context: context);
 
         result.Should().BeAssignableTo<IStatusCodeHttpResult>();
         var statusCodeResult = (IStatusCodeHttpResult)result;
@@ -289,100 +271,54 @@ public class OgcMapsTileSetHandlerTests
     [Operation(Operations.GetTileMetadata)]
     public async Task GetMapTileSetsAsync_ServiceRestrictionOverridesPublicLayerAccess()
     {
-        var layer = CreatePublicLayer();
-        var service = CreateRestrictedService(layer);
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(layer);
-        _layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>())
-            .Returns([service]);
+        // Resource is public, but the OGC API Maps service requires a role.
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("resource-1", "test-layer", MetadataV2ResourceType.FeatureDataset, accessPolicy: PublicPolicy())
+            .AddStorageBinding("binding-1", "resource-1", "test", storageLayerId: 1)
+            .AddService("restricted-service", "restricted-service",
+                protocols: [OgcApiMapsProtocol],
+                accessPolicy: new AccessPolicy { AllowedRoles = ["service-reader"] })
+            .AddPublication("pub-1", "restricted-service", "resource-1", layerIndex: 1)
+            .Build();
+        var handler = CreateHandler(new TestMetadataV2GraphProvider(graph));
 
         var context = CreateAnonymousOgcMapsContext();
-        var result = await _handler.GetMapTileSetsAsync(1, context: context);
+        var result = await handler.GetMapTileSetsAsync(1, context: context);
 
         result.Should().BeAssignableTo<IStatusCodeHttpResult>();
         var statusCodeResult = (IStatusCodeHttpResult)result;
         statusCodeResult.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
     }
 
-    private static LayerDefinition CreateTestLayer()
-        => LayerDefinition.CreateBasic(1, "test-layer", GeometryType.Point);
+    private static OgcMapsTileSetHandler CreateHandler(TestMetadataV2GraphProvider provider)
+        => new(provider, NullLogger<OgcMapsTileSetHandler>.Instance);
 
-    private static LayerDefinition CreateRestrictedLayer()
-        => CreateTestLayer() with
-        {
-            Metadata = new CatalogMetadata
-            {
-                AccessPolicy = new AccessPolicy
-                {
-                    AllowAnonymous = false
-                }
-            }
-        };
+    private static TestMetadataV2GraphProvider BuildEmptyProvider()
+        => new TestMetadataV2GraphBuilder().BuildProvider();
 
-    private static LayerDefinition CreatePublicLayer()
-        => CreateTestLayer() with
+    private static TestMetadataV2GraphProvider BuildProvider(
+        int layerId,
+        bool mapsEnabled = true,
+        bool? allowAnonymous = null)
+    {
+        var protocols = mapsEnabled
+            ? new[] { OgcApiMapsProtocol, OgcApiTilesProtocol }
+            : new[] { OgcApiTilesProtocol };
+        var policy = allowAnonymous switch
         {
-            Metadata = new CatalogMetadata
-            {
-                AccessPolicy = new AccessPolicy
-                {
-                    AllowAnonymous = true
-                }
-            }
+            true => PublicPolicy(),
+            false => new AccessPolicy { AllowAnonymous = false },
+            _ => null,
         };
+        return new TestMetadataV2GraphBuilder()
+            .AddResource($"resource-{layerId}", "test-layer", MetadataV2ResourceType.FeatureDataset, accessPolicy: policy)
+            .AddStorageBinding($"binding-{layerId}", $"resource-{layerId}", "test", storageLayerId: layerId)
+            .AddService($"service-{layerId}", $"service-{layerId}", protocols: protocols)
+            .AddPublication($"pub-{layerId}", $"service-{layerId}", $"resource-{layerId}", layerIndex: layerId)
+            .BuildProvider();
+    }
 
-    private static ServiceDefinition CreateRestrictedService(LayerDefinition layer)
-        => ServiceDefinition.CreateSingle(
-            "restricted-service",
-            layer,
-            SpatialReference.Create(layer.SpatialReference.Wkid)) with
-        {
-            Metadata = new CatalogMetadata
-            {
-                AccessPolicy = new AccessPolicy
-                {
-                    AllowedRoles = ["service-reader"]
-                }
-            }
-        };
-
-    private static ServiceDefinition CreateProtocolDisabledService(LayerDefinition layer)
-        => ServiceDefinition.CreateSingle(
-            "protocol-disabled-service",
-            layer,
-            SpatialReference.Create(layer.SpatialReference.Wkid)) with
-        {
-            Metadata = new CatalogMetadata
-            {
-                EnabledProtocols = ServiceProtocols.All
-                    .Where(protocol => !string.Equals(protocol, OgcApiMapsProtocol, StringComparison.Ordinal))
-                    .ToArray()
-            }
-        };
-
-    private static ServiceDefinition CreateProtocolEnabledService(LayerDefinition layer)
-        => ServiceDefinition.CreateSingle(
-            "protocol-enabled-service",
-            layer,
-            SpatialReference.Create(layer.SpatialReference.Wkid)) with
-        {
-            Metadata = new CatalogMetadata
-            {
-                EnabledProtocols = [OgcApiMapsProtocol, OgcApiTilesProtocol]
-            }
-        };
-
-    private static ServiceDefinition CreateMapsOnlyService(LayerDefinition layer)
-        => ServiceDefinition.CreateSingle(
-            "maps-only-service",
-            layer,
-            SpatialReference.Create(layer.SpatialReference.Wkid)) with
-        {
-            Metadata = new CatalogMetadata
-            {
-                EnabledProtocols = [OgcApiMapsProtocol]
-            }
-        };
+    private static AccessPolicy PublicPolicy() => new() { AllowAnonymous = true };
 
     private static DefaultHttpContext CreateOgcMapsContext()
     {

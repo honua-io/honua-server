@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Domain;
 
 namespace Honua.TestKit.Infrastructure;
 
@@ -88,13 +89,15 @@ public sealed class TestMetadataV2GraphBuilder
         string id,
         string name,
         MetadataV2ResourceType type = MetadataV2ResourceType.FeatureDataset,
-        IEnumerable<MetadataV2Field>? fields = null)
+        IEnumerable<MetadataV2Field>? fields = null,
+        AccessPolicy? accessPolicy = null)
     {
         _resources.Add(new MetadataV2Resource
         {
             Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
             Type = type,
             SchemaFields = fields?.ToArray() ?? Array.Empty<MetadataV2Field>(),
+            AccessPolicy = accessPolicy,
         });
         return this;
     }
@@ -104,7 +107,8 @@ public sealed class TestMetadataV2GraphBuilder
         string resourceId,
         string locator,
         string? connectionId = null,
-        MetadataV2StorageType storageType = MetadataV2StorageType.RelationalTable)
+        MetadataV2StorageType storageType = MetadataV2StorageType.RelationalTable,
+        int? storageLayerId = null)
     {
         _bindings.Add(new MetadataV2StorageBinding
         {
@@ -113,6 +117,7 @@ public sealed class TestMetadataV2GraphBuilder
             ConnectionId = connectionId,
             StorageType = storageType,
             Locator = locator,
+            StorageLayerId = storageLayerId,
         });
 
         // Attach to the resource's binding list so the graph is internally consistent.
@@ -134,13 +139,15 @@ public sealed class TestMetadataV2GraphBuilder
         string id,
         string name,
         string? route = null,
-        IReadOnlyList<string>? protocols = null)
+        IReadOnlyList<string>? protocols = null,
+        AccessPolicy? accessPolicy = null)
     {
         _services.Add(new MetadataV2Service
         {
             Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
             Route = route,
             Protocols = protocols ?? Array.Empty<string>(),
+            AccessPolicy = accessPolicy,
         });
         return this;
     }

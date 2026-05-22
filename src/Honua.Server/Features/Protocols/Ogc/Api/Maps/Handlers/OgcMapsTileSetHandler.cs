@@ -2,8 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
@@ -23,14 +24,14 @@ internal sealed class OgcMapsTileSetHandler
 {
     private const string OgcApiMapsProtocol = "OGC-API-Maps";
 
-    private readonly ILayerCatalog _layerCatalog;
+    private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly ILogger<OgcMapsTileSetHandler> _logger;
 
     public OgcMapsTileSetHandler(
-        ILayerCatalog layerCatalog,
+        IMetadataV2GraphProvider graphProvider,
         ILogger<OgcMapsTileSetHandler> logger)
     {
-        _layerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
+        _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -50,23 +51,21 @@ internal sealed class OgcMapsTileSetHandler
 
         try
         {
-            // Validate layer exists
-            var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer == null)
+            var (resource, service) = await ResolveResourceAndServiceAsync(layerId, cancellationToken).ConfigureAwait(false);
+            if (resource is null)
             {
                 OgcMapsLog.CollectionNotFound(_logger, layerId);
                 return CreateNotFoundResult(context, $"Collection {layerId} not found");
             }
 
-            var service = await ResolvePrimaryServiceAsync(layerId, cancellationToken);
-            if (!IsOgcApiMapsEnabled(layer, service))
+            if (!IsOgcApiMapsEnabled(service))
             {
                 return CreateNotFoundResult(context, $"Collection {layerId} not found");
             }
 
             if (context is not null)
             {
-                var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+                var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
                 if (accessError != null)
                 {
                     return accessError;
@@ -77,8 +76,8 @@ internal sealed class OgcMapsTileSetHandler
             var relativeTilesListPath = $"/ogc/maps/collections/{layerId}/map/tiles";
             var tilesListPath = BuildPath(basePathPrefix, relativeTilesListPath);
             var tileMatrixSetBasePath = BuildPath(basePathPrefix, "/ogc/tiles/tileMatrixSets");
-            var includeOgcTilesLinks = IsOgcApiTilesEnabled(layer, service);
-            var tileSets = BuildTileSets(layerId, layer.Name, basePathPrefix, tileMatrixSetBasePath, includeOgcTilesLinks);
+            var includeOgcTilesLinks = IsOgcApiTilesEnabled(service);
+            var tileSets = BuildTileSets(layerId, resource.Metadata.Name, basePathPrefix, tileMatrixSetBasePath, includeOgcTilesLinks);
 
             var response = new TileSetsList
             {
@@ -137,22 +136,21 @@ internal sealed class OgcMapsTileSetHandler
 
         try
         {
-            var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer == null)
+            var (resource, service) = await ResolveResourceAndServiceAsync(layerId, cancellationToken).ConfigureAwait(false);
+            if (resource is null)
             {
                 OgcMapsLog.CollectionNotFound(_logger, layerId);
                 return CreateNotFoundResult(context, $"Collection {layerId} not found");
             }
 
-            var service = await ResolvePrimaryServiceAsync(layerId, cancellationToken);
-            if (!IsOgcApiMapsEnabled(layer, service))
+            if (!IsOgcApiMapsEnabled(service))
             {
                 return CreateNotFoundResult(context, $"Collection {layerId} not found");
             }
 
             if (context is not null)
             {
-                var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+                var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
                 if (accessError != null)
                 {
                     return accessError;
@@ -161,8 +159,8 @@ internal sealed class OgcMapsTileSetHandler
 
             var basePathPrefix = ResolveBasePathPrefix(context);
             var tileMatrixSetBasePath = BuildPath(basePathPrefix, "/ogc/tiles/tileMatrixSets");
-            var includeOgcTilesLinks = IsOgcApiTilesEnabled(layer, service);
-            var tileSet = BuildTileSets(layerId, layer.Name, basePathPrefix, tileMatrixSetBasePath, includeOgcTilesLinks)
+            var includeOgcTilesLinks = IsOgcApiTilesEnabled(service);
+            var tileSet = BuildTileSets(layerId, resource.Metadata.Name, basePathPrefix, tileMatrixSetBasePath, includeOgcTilesLinks)
                 .FirstOrDefault(candidate => string.Equals(
                     candidate.TileMatrixSetId,
                     tileMatrixSetId,
@@ -285,22 +283,37 @@ internal sealed class OgcMapsTileSetHandler
             ? relativePath
             : $"{basePathPrefix}{relativePath}";
 
-    private static bool IsOgcApiMapsEnabled(LayerDefinition layer, ServiceDefinition? service)
-    {
-        var metadata = service?.Metadata ?? layer.Metadata;
-        return ServiceProtocols.IsProtocolEnabled(metadata, OgcApiMapsProtocol);
-    }
+    private static bool IsOgcApiMapsEnabled(MetadataV2Service? service)
+        => ServiceProtocols.IsProtocolEnabled(service, OgcApiMapsProtocol);
 
-    private static bool IsOgcApiTilesEnabled(LayerDefinition layer, ServiceDefinition? service)
-    {
-        var metadata = service?.Metadata ?? layer.Metadata;
-        return ServiceProtocols.IsProtocolEnabled(metadata, ServiceProtocols.OgcApiTiles);
-    }
+    private static bool IsOgcApiTilesEnabled(MetadataV2Service? service)
+        => ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.OgcApiTiles);
 
-    private async Task<ServiceDefinition?> ResolvePrimaryServiceAsync(int layerId, CancellationToken cancellationToken)
+    private async Task<(MetadataV2Resource? Resource, MetadataV2Service? Service)> ResolveResourceAndServiceAsync(
+        int storageLayerId,
+        CancellationToken cancellationToken)
     {
-        var services = await _layerCatalog.ListServicesAsync(cancellationToken);
-        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMap(services, OgcApiMapsProtocol);
-        return primaryServices.TryGetValue(layerId, out var service) ? service : null;
+        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(storageLayerId, out var resource))
+        {
+            return (null, null);
+        }
+
+        // Pick the OGC-API-Maps publication for this resource if one exists; otherwise null.
+        MetadataV2Service? service = null;
+        foreach (var publication in snapshot.Index.PublicationsByResource[resource.Metadata.Id])
+        {
+            if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var candidate))
+            {
+                continue;
+            }
+            if (ServiceProtocols.IsProtocolEnabled(candidate, OgcApiMapsProtocol))
+            {
+                service = candidate;
+                break;
+            }
+        }
+
+        return (resource, service);
     }
 }
