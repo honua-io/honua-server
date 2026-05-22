@@ -28,15 +28,11 @@ public sealed class MetadataV2ModelTests
         graph.Environment.Should().BeEmpty();
         graph.GeneratedAt.Should().Be(DateTimeOffset.UnixEpoch);
         graph.Namespaces.Should().BeEmpty();
-        graph.Catalogs.Should().BeEmpty();
         graph.Resources.Should().BeEmpty();
         graph.Connections.Should().BeEmpty();
         graph.StorageBindings.Should().BeEmpty();
         graph.Services.Should().BeEmpty();
         graph.Publications.Should().BeEmpty();
-        graph.ProjectionProfiles.Should().BeEmpty();
-        graph.Policies.Should().BeEmpty();
-        graph.Roles.Should().BeEmpty();
         graph.Extensions.Should().BeEmpty();
     }
 
@@ -72,10 +68,6 @@ public sealed class MetadataV2ModelTests
                         "geometry.primary"
                     ]
                 }
-            ],
-            PolicyIds =
-            [
-                "policy.internal"
             ]
         };
 
@@ -93,7 +85,6 @@ public sealed class MetadataV2ModelTests
         updated.Metadata.Labels.Should().Contain("domain", "cadastre");
         updated.StorageBindingIds.Should().HaveCount(2);
         updated.SchemaFields.Single().SemanticRoles.Should().Contain("geometry.primary");
-        updated.PolicyIds.Should().Contain("policy.internal");
     }
 
     [UnitTest]

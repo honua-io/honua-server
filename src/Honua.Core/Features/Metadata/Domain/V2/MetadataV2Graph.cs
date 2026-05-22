@@ -55,12 +55,6 @@ public sealed record MetadataV2Graph
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();
 
     /// <summary>
-    /// Catalog definitions that can project canonical resources.
-    /// </summary>
-    [JsonPropertyName("catalogs")]
-    public IReadOnlyList<MetadataV2Catalog> Catalogs { get; init; } = Array.Empty<MetadataV2Catalog>();
-
-    /// <summary>
     /// Canonical resources. Publications expose these resources through services.
     /// </summary>
     [JsonPropertyName("resources")]
@@ -89,25 +83,6 @@ public sealed record MetadataV2Graph
     /// </summary>
     [JsonPropertyName("publications")]
     public IReadOnlyList<MetadataV2Publication> Publications { get; init; } = Array.Empty<MetadataV2Publication>();
-
-    /// <summary>
-    /// Projection profiles for service and catalog target formats.
-    /// </summary>
-    [JsonPropertyName("projectionProfiles")]
-    public IReadOnlyList<MetadataV2ProjectionProfile> ProjectionProfiles { get; init; } =
-        Array.Empty<MetadataV2ProjectionProfile>();
-
-    /// <summary>
-    /// Policy definitions referenced by resources, services, publications, and roles.
-    /// </summary>
-    [JsonPropertyName("policies")]
-    public IReadOnlyList<MetadataV2Policy> Policies { get; init; } = Array.Empty<MetadataV2Policy>();
-
-    /// <summary>
-    /// Role definitions used by metadata access control.
-    /// </summary>
-    [JsonPropertyName("roles")]
-    public IReadOnlyList<MetadataV2Role> Roles { get; init; } = Array.Empty<MetadataV2Role>();
 
     /// <summary>
     /// Extension data for the graph document.
@@ -163,17 +138,6 @@ public sealed record MetadataV2Resource
     /// </summary>
     [JsonPropertyName("styleResourceIds")]
     public IReadOnlyList<string> StyleResourceIds { get; init; } = Array.Empty<string>();
-
-    /// <summary>
-    /// Forward-looking references to <see cref="MetadataV2Policy"/> entries for
-    /// rule-engine evaluation (e.g. an OPA/Rego policy bundle). Not currently
-    /// consulted by <c>IAccessPolicyEvaluator</c>; only the inline
-    /// <see cref="AccessPolicy"/> participates in runtime decisions. The reference
-    /// model is reserved so existing graph documents stay forward-compatible when
-    /// a rule-engine integration lands; do not couple new code to it.
-    /// </summary>
-    [JsonPropertyName("policyIds")]
-    public IReadOnlyList<string> PolicyIds { get; init; } = Array.Empty<string>();
 
     /// <summary>
     /// Resource-to-resource relationships exposed by this resource (the v2 equivalent of
@@ -560,210 +524,6 @@ public sealed record MetadataV2Publication
 
     /// <summary>
     /// Extension data for the publication.
-    /// </summary>
-    [JsonPropertyName("extensions")]
-    public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
-}
-
-/// <summary>
-/// Catalog target that can expose canonical resources.
-/// </summary>
-public sealed record MetadataV2Catalog
-{
-    /// <summary>
-    /// Catalog metadata and identity.
-    /// </summary>
-    [JsonPropertyName("metadata")]
-    public MetadataV2ObjectMetadata Metadata { get; init; } = new();
-
-    /// <summary>
-    /// Catalog target identifier, such as ogc-records, dcat, stac, or esri-portal.
-    /// </summary>
-    [JsonPropertyName("target")]
-    public string Target { get; init; } = string.Empty;
-
-    /// <summary>
-    /// Catalog-specific options.
-    /// </summary>
-    [JsonPropertyName("options")]
-    public IReadOnlyDictionary<string, JsonElement> Options { get; init; } = new Dictionary<string, JsonElement>();
-
-    /// <summary>
-    /// Lifecycle and observed status.
-    /// </summary>
-    [JsonPropertyName("status")]
-    public MetadataV2Status Status { get; init; } = new();
-
-    /// <summary>
-    /// Extension data for the catalog.
-    /// </summary>
-    [JsonPropertyName("extensions")]
-    public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
-}
-
-/// <summary>
-/// Mapping profile for projecting canonical metadata into service or catalog formats.
-/// </summary>
-public sealed record MetadataV2ProjectionProfile
-{
-    /// <summary>
-    /// Projection profile metadata and identity.
-    /// </summary>
-    [JsonPropertyName("metadata")]
-    public MetadataV2ObjectMetadata Metadata { get; init; } = new();
-
-    /// <summary>
-    /// Target format identifier.
-    /// </summary>
-    [JsonPropertyName("target")]
-    public string Target { get; init; } = string.Empty;
-
-    /// <summary>
-    /// Required semantic keys for this profile.
-    /// </summary>
-    [JsonPropertyName("requiredSemantics")]
-    public IReadOnlyList<string> RequiredSemantics { get; init; } = Array.Empty<string>();
-
-    /// <summary>
-    /// Profile-specific options.
-    /// </summary>
-    [JsonPropertyName("options")]
-    public IReadOnlyDictionary<string, JsonElement> Options { get; init; } = new Dictionary<string, JsonElement>();
-
-    /// <summary>
-    /// Lifecycle and observed status.
-    /// </summary>
-    [JsonPropertyName("status")]
-    public MetadataV2Status Status { get; init; } = new();
-
-    /// <summary>
-    /// Extension data for the projection profile.
-    /// </summary>
-    [JsonPropertyName("extensions")]
-    public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
-}
-
-/// <summary>
-/// Metadata policy definition.
-/// </summary>
-public sealed record MetadataV2Policy
-{
-    /// <summary>
-    /// Policy metadata and identity.
-    /// </summary>
-    [JsonPropertyName("metadata")]
-    public MetadataV2ObjectMetadata Metadata { get; init; } = new();
-
-    /// <summary>
-    /// Policy engine or policy language identifier.
-    /// </summary>
-    [JsonPropertyName("engine")]
-    public string Engine { get; init; } = string.Empty;
-
-    /// <summary>
-    /// Policy effect, such as allow, deny, mask, or audit.
-    /// </summary>
-    [JsonPropertyName("effect")]
-    public string Effect { get; init; } = string.Empty;
-
-    /// <summary>
-    /// Policy-specific rules.
-    /// </summary>
-    [JsonPropertyName("rules")]
-    public IReadOnlyDictionary<string, JsonElement> Rules { get; init; } = new Dictionary<string, JsonElement>();
-
-    /// <summary>
-    /// Lifecycle and observed status.
-    /// </summary>
-    [JsonPropertyName("status")]
-    public MetadataV2Status Status { get; init; } = new();
-
-    /// <summary>
-    /// Extension data for the policy.
-    /// </summary>
-    [JsonPropertyName("extensions")]
-    public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
-}
-
-/// <summary>
-/// Metadata role definition.
-/// </summary>
-public sealed record MetadataV2Role
-{
-    /// <summary>
-    /// Role metadata and identity.
-    /// </summary>
-    [JsonPropertyName("metadata")]
-    public MetadataV2ObjectMetadata Metadata { get; init; } = new();
-
-    /// <summary>
-    /// Permission identifiers granted by the role.
-    /// </summary>
-    [JsonPropertyName("permissions")]
-    public IReadOnlyList<string> Permissions { get; init; } = Array.Empty<string>();
-
-    /// <summary>
-    /// Policy identifiers attached to the role.
-    /// </summary>
-    [JsonPropertyName("policyIds")]
-    public IReadOnlyList<string> PolicyIds { get; init; } = Array.Empty<string>();
-
-    /// <summary>
-    /// Lifecycle and observed status.
-    /// </summary>
-    [JsonPropertyName("status")]
-    public MetadataV2Status Status { get; init; } = new();
-
-    /// <summary>
-    /// Extension data for the role.
-    /// </summary>
-    [JsonPropertyName("extensions")]
-    public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
-}
-
-/// <summary>
-/// Runtime metadata for cache-safe graph snapshots.
-/// </summary>
-public sealed record MetadataV2RuntimeSnapshot
-{
-    /// <summary>
-    /// Runtime metadata and identity.
-    /// </summary>
-    [JsonPropertyName("metadata")]
-    public MetadataV2ObjectMetadata Metadata { get; init; } = new();
-
-    /// <summary>
-    /// Cache key for the materialized runtime snapshot.
-    /// </summary>
-    [JsonPropertyName("cacheKey")]
-    public string? CacheKey { get; init; }
-
-    /// <summary>
-    /// Source graph revision represented by this runtime snapshot.
-    /// </summary>
-    [JsonPropertyName("sourceRevision")]
-    public long? SourceRevision { get; init; }
-
-    /// <summary>
-    /// Optional cache entity tag for snapshot consumers.
-    /// </summary>
-    [JsonPropertyName("etag")]
-    public string? ETag { get; init; }
-
-    /// <summary>
-    /// Optional cache expiry for derived runtime snapshots.
-    /// </summary>
-    [JsonPropertyName("expiresAt")]
-    public DateTimeOffset? ExpiresAt { get; init; }
-
-    /// <summary>
-    /// Lifecycle and observed status.
-    /// </summary>
-    [JsonPropertyName("status")]
-    public MetadataV2Status Status { get; init; } = new();
-
-    /// <summary>
-    /// Extension data for the runtime snapshot.
     /// </summary>
     [JsonPropertyName("extensions")]
     public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();

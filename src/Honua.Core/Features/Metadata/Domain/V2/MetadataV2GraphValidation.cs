@@ -20,7 +20,6 @@ public static class MetadataV2GraphValidator
         var errors = new List<string>();
         var entityIds = new HashSet<string>(StringComparer.Ordinal);
 
-        AddEntityIds(errors, entityIds, "catalog", graph.Catalogs.Select(catalog => catalog.Metadata.Id));
         AddEntityIds(errors, entityIds, "resource", graph.Resources.Select(resource => resource.Metadata.Id));
         AddEntityIds(errors, entityIds, "connection", graph.Connections.Select(connection => connection.Metadata.Id));
         AddEntityIds(
@@ -30,13 +29,6 @@ public static class MetadataV2GraphValidator
             graph.StorageBindings.Select(storageBinding => storageBinding.Metadata.Id));
         AddEntityIds(errors, entityIds, "service", graph.Services.Select(service => service.Metadata.Id));
         AddEntityIds(errors, entityIds, "publication", graph.Publications.Select(publication => publication.Metadata.Id));
-        AddEntityIds(
-            errors,
-            entityIds,
-            "projection profile",
-            graph.ProjectionProfiles.Select(profile => profile.Metadata.Id));
-        AddEntityIds(errors, entityIds, "policy", graph.Policies.Select(policy => policy.Metadata.Id));
-        AddEntityIds(errors, entityIds, "role", graph.Roles.Select(role => role.Metadata.Id));
 
         var resourceIds = graph.Resources.Select(resource => resource.Metadata.Id).ToHashSet(StringComparer.Ordinal);
         var connectionIds = graph.Connections.Select(connection => connection.Metadata.Id).ToHashSet(StringComparer.Ordinal);
@@ -48,14 +40,11 @@ public static class MetadataV2GraphValidator
             graph.Publications,
             publication => publication.Metadata.Id);
 
-        var policyIds = graph.Policies.Select(p => p.Metadata.Id).ToHashSet(StringComparer.Ordinal);
-
         ValidateStorageBindings(errors, graph.StorageBindings, resourceIds, connectionIds);
-        ValidateResources(errors, graph.Resources, storageBindingsById, policyIds);
+        ValidateResources(errors, graph.Resources, storageBindingsById);
         ValidatePublications(errors, graph.Publications, resourceIds, storageBindingsById, serviceIds);
         ValidateServices(errors, graph.Services, publicationsById);
         ValidatePublicationPrimary(errors, graph.Publications);
-        ValidateRoles(errors, graph.Roles, policyIds);
 
         return new MetadataV2GraphValidationResult(errors.Count == 0, errors);
     }
@@ -126,8 +115,7 @@ public static class MetadataV2GraphValidator
     private static void ValidateResources(
         List<string> errors,
         IEnumerable<MetadataV2Resource> resources,
-        Dictionary<string, MetadataV2StorageBinding> storageBindingsById,
-        HashSet<string> policyIds)
+        Dictionary<string, MetadataV2StorageBinding> storageBindingsById)
     {
         foreach (var resource in resources)
         {
@@ -153,7 +141,6 @@ public static class MetadataV2GraphValidator
             ValidateResourceSpatial(errors, resource);
             ValidateResourceTemporal(errors, resource);
             ValidateResourceSchemaFields(errors, resource);
-            ValidateResourcePolicyIds(errors, resource, policyIds);
         }
     }
 
@@ -298,19 +285,6 @@ public static class MetadataV2GraphValidator
         }
     }
 
-    private static void ValidateResourcePolicyIds(
-        List<string> errors, MetadataV2Resource resource, HashSet<string> policyIds)
-    {
-        foreach (var id in resource.PolicyIds)
-        {
-            if (!policyIds.Contains(id))
-            {
-                errors.Add(
-                    $"resource '{resource.Metadata.Id}' references missing policy '{id}'.");
-            }
-        }
-    }
-
     private static void ValidatePublicationPrimary(
         List<string> errors, IReadOnlyList<MetadataV2Publication> publications)
     {
@@ -328,22 +302,6 @@ public static class MetadataV2GraphValidator
             {
                 errors.Add(
                     $"resource '{resourceId}' has {n} primary publications on service '{serviceId}' (at most one allowed).");
-            }
-        }
-    }
-
-    private static void ValidateRoles(
-        List<string> errors, IEnumerable<MetadataV2Role> roles, HashSet<string> policyIds)
-    {
-        foreach (var role in roles)
-        {
-            foreach (var id in role.PolicyIds)
-            {
-                if (!policyIds.Contains(id))
-                {
-                    errors.Add(
-                        $"role '{role.Metadata.Id}' references missing policy '{id}'.");
-                }
             }
         }
     }
