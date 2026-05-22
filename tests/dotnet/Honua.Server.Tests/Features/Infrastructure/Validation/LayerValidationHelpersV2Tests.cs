@@ -100,6 +100,22 @@ public sealed class LayerValidationHelpersV2Tests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
+    public async Task ValidateCollectionWithAccessV2_NumericLayerIndex_ReturnsTriple()
+    {
+        var (context, _) = BuildContext(allowAnonymous: true);
+
+        var result = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
+            context,
+            collectionId: "0");
+
+        result.IsValid.Should().BeTrue();
+        result.Publication.Should().NotBeNull();
+        result.Publication!.LayerIndex.Should().Be(0);
+        result.Resource.Should().NotBeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
     public async Task ValidateCollectionWithAccessV2_MissingCollection_ReturnsNotFound()
     {
         var (context, _) = BuildContext(allowAnonymous: true);

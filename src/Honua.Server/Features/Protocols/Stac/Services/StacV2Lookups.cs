@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -49,7 +50,7 @@ internal static class StacV2Lookups
         var snapshot = await GetSnapshotAsync(context, cancellationToken).ConfigureAwait(false);
 
         var stacServiceIds = snapshot.Graph.Services
-            .Where(s => s.ServiceType == MetadataV2ServiceType.StacApi)
+            .Where(IsStacServiceEnabled)
             .Select(s => s.Metadata.Id)
             .ToHashSet(StringComparer.Ordinal);
 
@@ -133,7 +134,7 @@ internal static class StacV2Lookups
             {
                 continue;
             }
-            if (service.ServiceType != MetadataV2ServiceType.StacApi)
+            if (!IsStacServiceEnabled(service))
             {
                 continue;
             }
@@ -167,6 +168,10 @@ internal static class StacV2Lookups
 
         return numericId.HasValue && publication.LayerIndex == numericId.Value;
     }
+
+    private static bool IsStacServiceEnabled(MetadataV2Service service)
+        => service.ServiceType == MetadataV2ServiceType.StacApi &&
+           ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.Stac);
 
     private static async Task<MetadataV2GraphSnapshot> GetSnapshotAsync(
         HttpContext context,

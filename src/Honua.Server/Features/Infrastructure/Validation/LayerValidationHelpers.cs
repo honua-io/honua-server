@@ -580,12 +580,20 @@ internal static class LayerValidationHelpers
         }
 
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+        var numericCollectionId = int.TryParse(
+            collectionId.Trim(),
+            System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var parsedCollectionId)
+                ? parsedCollectionId
+                : (int?)null;
 
         bool MatchesCollectionId(MetadataV2Publication p)
             => string.Equals(p.ServiceLocalId, collectionId, StringComparison.OrdinalIgnoreCase) ||
                string.Equals(p.Path, collectionId, StringComparison.OrdinalIgnoreCase) ||
                string.Equals(p.Metadata.Name, collectionId, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(p.Metadata.Id, collectionId, StringComparison.OrdinalIgnoreCase);
+               string.Equals(p.Metadata.Id, collectionId, StringComparison.OrdinalIgnoreCase) ||
+               (numericCollectionId.HasValue && p.LayerIndex == numericCollectionId.Value);
 
         MetadataV2Publication? publication = null;
 
