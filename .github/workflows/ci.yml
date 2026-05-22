@@ -941,8 +941,6 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
           post-seed-yaml: tests/seed/browser-compat.yaml
-          dev-auth: 'true'
-          dev-auth-allow-bypass: 'true'
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -970,6 +968,7 @@ jobs:
         working-directory: tests/js-browser
         env:
           HONUA_BASE_URL: http://localhost:5000
+          HONUA_API_KEY: "ci-admin-password"
           CI: 'true'
 
       - name: Upload test artifacts
