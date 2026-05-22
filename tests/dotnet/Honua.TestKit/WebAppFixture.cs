@@ -460,6 +460,67 @@ public sealed class WebAppFixture : IAsyncLifetime
         };
 
     /// <summary>
+    /// During the v1→v2 cutover several protocol handlers (WMS/WMTS GetCapabilities,
+    /// FeatureServer temporal extent, etc.) still read TimeInfo / AccessPolicy from the
+    /// v1 Postgres catalog instead of the V2 graph. The Postgres test seed pre-populates
+    /// honua.layers.metadata with a non-empty TimeInfo for the canonical test layer, so
+    /// tests that need to clear or change those slots must also update the v1 jsonb
+    /// column until those handlers migrate. This helper bridges that write to the
+    /// shared honua.layers row (Database:Schema defaults to "honua" in test config
+    /// and the seed seeds the shared honua schema, so all tests already read/write
+    /// the same row — preserving the v1 coupling intentionally during cutover).
+    /// </summary>
+    private void WriteV1LayerCatalogBridge(int layerId, CatalogMetadata? metadata)
+    {
+        var json = metadata is null
+            ? "null"
+            : System.Text.Json.JsonSerializer.Serialize(
+                metadata,
+                Honua.Core.Features.Catalog.Domain.CatalogJsonContext.Default.CatalogMetadata);
+
+        using var connection = Postgres.GetConnectionAsync().GetAwaiter().GetResult();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE honua.layers SET metadata = @metadata::jsonb WHERE layer_id = @layerId";
+        var metadataParam = command.CreateParameter();
+        metadataParam.ParameterName = "@metadata";
+        metadataParam.Value = (object?)json ?? DBNull.Value;
+        command.Parameters.Add(metadataParam);
+        var idParam = command.CreateParameter();
+        idParam.ParameterName = "@layerId";
+        idParam.Value = layerId;
+        command.Parameters.Add(idParam);
+        _ = command.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Bridging counterpart to <see cref="WriteV1LayerCatalogBridge"/> for service-level
+    /// CatalogMetadata (EnabledProtocols, AccessPolicy). Same rationale: WMS/WMTS
+    /// GetCapabilities, FeatureServer protocol gating, etc. still consult
+    /// ServiceDefinition.Metadata from Postgres until those handlers move to V2.
+    /// </summary>
+    private void WriteV1ServiceCatalogBridge(string serviceName, CatalogMetadata? metadata)
+    {
+        var json = metadata is null
+            ? "null"
+            : System.Text.Json.JsonSerializer.Serialize(
+                metadata,
+                Honua.Core.Features.Catalog.Domain.CatalogJsonContext.Default.CatalogMetadata);
+
+        using var connection = Postgres.GetConnectionAsync().GetAwaiter().GetResult();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE honua.services SET metadata = @metadata::jsonb, updated_at = NOW() WHERE LOWER(service_name) = LOWER(@serviceName)";
+        var metadataParam = command.CreateParameter();
+        metadataParam.ParameterName = "@metadata";
+        metadataParam.Value = (object?)json ?? DBNull.Value;
+        command.Parameters.Add(metadataParam);
+        var nameParam = command.CreateParameter();
+        nameParam.ParameterName = "@serviceName";
+        nameParam.Value = serviceName;
+        command.Parameters.Add(nameParam);
+        _ = command.ExecuteNonQuery();
+    }
+
+    /// <summary>
     /// V2-aware helper that mirrors the v1 <c>ILayerMetadataUpdater</c> seed surface used
     /// by classic-protocol and STAC tests. Looks up the resource bound to the publication
     /// with <paramref name="layerIndex"/> and applies the supplied access policy, temporal
@@ -557,6 +618,34 @@ public sealed class WebAppFixture : IAsyncLifetime
             Revision = snapshot.Graph.Revision + 1,
         };
         provider.SetGraph(updatedGraph);
+
+        // Cutover bridge: until WMS/WMTS/FeatureServer-temporal handlers migrate off
+        // the v1 catalog, mirror the relevant CatalogMetadata fields onto the v1
+        // honua.layers.metadata JSONB column so v1 reads agree with V2 writes.
+        var bridge = new CatalogMetadata
+        {
+            AccessPolicy = clearAccessPolicy ? null : accessPolicy,
+            TimeInfo = clearTemporal
+                ? null
+                : (temporal is null
+                    ? null
+                    : new LayerTimeInfo
+                    {
+                        StartTimeField = temporal.StartTimeField,
+                        EndTimeField = temporal.EndTimeField,
+                        TrackIdField = temporal.TrackIdField,
+                    }),
+            PermanentFilter = clearPermanentFilter
+                ? null
+                : (permanentFilter is null
+                    ? null
+                    : new LayerPermanentFilter
+                    {
+                        Expression = permanentFilter.Expression,
+                        Language = permanentFilter.Language,
+                    }),
+        };
+        WriteV1LayerCatalogBridge(layerIndex, bridge);
     }
 
     /// <summary>
@@ -615,6 +704,15 @@ public sealed class WebAppFixture : IAsyncLifetime
             Revision = snapshot.Graph.Revision + 1,
         };
         provider.SetGraph(updatedGraph);
+
+        // Cutover bridge: mirror EnabledProtocols / AccessPolicy onto the v1 services
+        // row until protocol gating finishes migrating off the v1 catalog.
+        var bridge = new CatalogMetadata
+        {
+            AccessPolicy = clearAccessPolicy ? null : accessPolicy,
+            EnabledProtocols = enabledProtocols?.ToArray() ?? ServiceProtocols.All,
+        };
+        WriteV1ServiceCatalogBridge(serviceName, bridge);
     }
 
     /// <summary>
