@@ -36,8 +36,6 @@ public sealed class MetadataV2ModelTests
         graph.ProjectionProfiles.Should().BeEmpty();
         graph.Policies.Should().BeEmpty();
         graph.Roles.Should().BeEmpty();
-        graph.Runtime.Should().NotBeNull();
-        graph.ExtensionPoints.Should().BeEmpty();
         graph.Extensions.Should().BeEmpty();
     }
 

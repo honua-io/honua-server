@@ -110,18 +110,6 @@ public sealed record MetadataV2Graph
     public IReadOnlyList<MetadataV2Role> Roles { get; init; } = Array.Empty<MetadataV2Role>();
 
     /// <summary>
-    /// Runtime snapshot details for cache-safe graph materialization.
-    /// </summary>
-    [JsonPropertyName("runtime")]
-    public MetadataV2RuntimeSnapshot Runtime { get; init; } = new();
-
-    /// <summary>
-    /// Declared extension points for graph consumers.
-    /// </summary>
-    [JsonPropertyName("extensionPoints")]
-    public IReadOnlyList<MetadataV2ExtensionPoint> ExtensionPoints { get; init; } = Array.Empty<MetadataV2ExtensionPoint>();
-
-    /// <summary>
     /// Extension data for the graph document.
     /// </summary>
     [JsonPropertyName("extensions")]

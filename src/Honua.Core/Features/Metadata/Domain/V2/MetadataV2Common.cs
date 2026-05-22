@@ -157,36 +157,6 @@ public sealed record MetadataV2Condition
 }
 
 /// <summary>
-/// Named extension point for Metadata v2 tools and plugins.
-/// </summary>
-public sealed record MetadataV2ExtensionPoint
-{
-    /// <summary>
-    /// Extension point identifier.
-    /// </summary>
-    [JsonPropertyName("id")]
-    public string Id { get; init; } = string.Empty;
-
-    /// <summary>
-    /// Graph entity kinds this extension point applies to.
-    /// </summary>
-    [JsonPropertyName("appliesTo")]
-    public IReadOnlyList<string> AppliesTo { get; init; } = Array.Empty<string>();
-
-    /// <summary>
-    /// Optional description of the extension point.
-    /// </summary>
-    [JsonPropertyName("description")]
-    public string? Description { get; init; }
-
-    /// <summary>
-    /// Optional JSON schema fragment for extension values.
-    /// </summary>
-    [JsonPropertyName("schema")]
-    public JsonElement? Schema { get; init; }
-}
-
-/// <summary>
 /// Canonical field description owned by a Metadata v2 resource.
 /// </summary>
 public sealed record MetadataV2Field
