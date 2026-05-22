@@ -16,6 +16,8 @@ public sealed class MetadataV2GraphIndex
         IReadOnlyDictionary<string, MetadataV2Connection> connectionsById,
         IReadOnlyDictionary<string, MetadataV2StorageBinding> storageBindingsById,
         ILookup<string, MetadataV2StorageBinding> storageBindingsByResource,
+        IReadOnlyDictionary<int, MetadataV2StorageBinding> storageBindingsByStorageLayerId,
+        IReadOnlyDictionary<int, MetadataV2Resource> resourcesByStorageLayerId,
         IReadOnlyDictionary<string, MetadataV2Service> servicesById,
         IReadOnlyDictionary<string, MetadataV2Service> servicesByName,
         IReadOnlyDictionary<string, MetadataV2Publication> publicationsById,
@@ -32,6 +34,8 @@ public sealed class MetadataV2GraphIndex
         ConnectionsById = connectionsById;
         StorageBindingsById = storageBindingsById;
         StorageBindingsByResource = storageBindingsByResource;
+        StorageBindingsByStorageLayerId = storageBindingsByStorageLayerId;
+        ResourcesByStorageLayerId = resourcesByStorageLayerId;
         ServicesById = servicesById;
         ServicesByName = servicesByName;
         PublicationsById = publicationsById;
@@ -49,6 +53,24 @@ public sealed class MetadataV2GraphIndex
     public IReadOnlyDictionary<string, MetadataV2Connection> ConnectionsById { get; }
     public IReadOnlyDictionary<string, MetadataV2StorageBinding> StorageBindingsById { get; }
     public ILookup<string, MetadataV2StorageBinding> StorageBindingsByResource { get; }
+
+    /// <summary>
+    /// Lookup from <see cref="MetadataV2StorageBinding.StorageLayerId"/> to the
+    /// owning storage binding. Bindings with a null StorageLayerId are excluded.
+    /// </summary>
+    public IReadOnlyDictionary<int, MetadataV2StorageBinding> StorageBindingsByStorageLayerId { get; }
+
+    /// <summary>
+    /// Lookup from <see cref="MetadataV2StorageBinding.StorageLayerId"/> to the
+    /// owning canonical resource. This is the most frequent runtime lookup: the
+    /// storage backends (IFeatureReader, IFeatureWriter, ILayerStyleCatalog,
+    /// OutputCacheInvalidationService) all hand off integer layer ids, and the
+    /// V2 protocol handlers need the resource to do field / spatial / temporal
+    /// resolution. Bindings without a StorageLayerId or with a missing resource
+    /// reference are excluded.
+    /// </summary>
+    public IReadOnlyDictionary<int, MetadataV2Resource> ResourcesByStorageLayerId { get; }
+
     public IReadOnlyDictionary<string, MetadataV2Service> ServicesById { get; }
     public IReadOnlyDictionary<string, MetadataV2Service> ServicesByName { get; }
     public IReadOnlyDictionary<string, MetadataV2Publication> PublicationsById { get; }
@@ -81,6 +103,21 @@ public sealed class MetadataV2GraphIndex
         var connectionsById = graph.Connections.ToDictionary(c => c.Metadata.Id, StringComparer.Ordinal);
         var storageBindingsById = graph.StorageBindings.ToDictionary(s => s.Metadata.Id, StringComparer.Ordinal);
         var storageBindingsByResource = graph.StorageBindings.ToLookup(s => s.ResourceId, StringComparer.Ordinal);
+
+        var storageBindingsByStorageLayerId = new Dictionary<int, MetadataV2StorageBinding>();
+        var resourcesByStorageLayerId = new Dictionary<int, MetadataV2Resource>();
+        foreach (var binding in graph.StorageBindings)
+        {
+            if (binding.StorageLayerId is not int storageLayerId) continue;
+            // First-wins on collisions — graph validation surfaces duplicates
+            // separately so the index stays deterministic even on a bad graph.
+            storageBindingsByStorageLayerId.TryAdd(storageLayerId, binding);
+            if (resourcesById.TryGetValue(binding.ResourceId, out var resource))
+            {
+                resourcesByStorageLayerId.TryAdd(storageLayerId, resource);
+            }
+        }
+
         var servicesById = graph.Services.ToDictionary(s => s.Metadata.Id, StringComparer.Ordinal);
         // Multiple V2 services may share the same display name when the same logical
         // service is exposed through multiple protocols (e.g. an OGC API Features
@@ -110,6 +147,8 @@ public sealed class MetadataV2GraphIndex
             connectionsById,
             storageBindingsById,
             storageBindingsByResource,
+            storageBindingsByStorageLayerId,
+            resourcesByStorageLayerId,
             servicesById,
             servicesByName,
             publicationsById,
