@@ -403,23 +403,10 @@ public static class MetadataV2GraphValidator
         IEnumerable<MetadataV2Service> services,
         Dictionary<string, MetadataV2Publication> publicationsById)
     {
-        foreach (var service in services)
-        {
-            foreach (var publicationId in service.PublicationIds)
-            {
-                if (!publicationsById.TryGetValue(publicationId, out var publication))
-                {
-                    errors.Add($"service '{service.Metadata.Id}' references missing publication '{publicationId}'.");
-                    continue;
-                }
-
-                if (!string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal))
-                {
-                    errors.Add(
-                        $"service '{service.Metadata.Id}' references publication '{publicationId}' owned by service '{publication.ServiceId}'.");
-                }
-            }
-        }
+        // Service→publications is now derived from publication.ServiceId only;
+        // the redundant Service.PublicationIds slot was removed in design slice 55/N.
+        // This method is kept as a hook for future service-only invariants.
+        _ = errors; _ = services; _ = publicationsById;
     }
 }
 

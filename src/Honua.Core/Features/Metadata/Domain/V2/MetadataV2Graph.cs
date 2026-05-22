@@ -398,12 +398,6 @@ public sealed record MetadataV2Service
     public string? Route { get; init; }
 
     /// <summary>
-    /// Optional publication identifiers exposed by this service.
-    /// </summary>
-    [JsonPropertyName("publicationIds")]
-    public IReadOnlyList<string> PublicationIds { get; init; } = Array.Empty<string>();
-
-    /// <summary>
     /// Optional access policy controlling who can read/write this service.
     /// Composes with each <see cref="MetadataV2Resource.AccessPolicy"/> on resources
     /// published through this service under deny-wins semantics (see the docs on

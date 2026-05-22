@@ -146,7 +146,6 @@ public sealed class FileMetadataV2GraphProviderTests
                     Metadata = new MetadataV2ObjectMetadata { Id = "service.features", Name = "Features" },
                     ServiceType = MetadataV2ServiceType.OgcApiFeatures,
                     Route = "/ogc/features",
-                    PublicationIds = ["pub.parcels.features"],
                 }
             ],
             Publications =

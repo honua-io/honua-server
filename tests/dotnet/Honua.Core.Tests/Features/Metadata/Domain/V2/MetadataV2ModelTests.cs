@@ -239,12 +239,7 @@ public sealed class MetadataV2ModelTests
                 Name = "Public Works FeatureServer"
             },
             ServiceType = MetadataV2ServiceType.EsriFeatureService,
-            Route = "/PublicWorks/FeatureServer",
-            PublicationIds =
-            [
-                parcelsPublication.Metadata.Id,
-                hydrantsPublication.Metadata.Id
-            ]
+            Route = "/PublicWorks/FeatureServer"
         };
 
         var graph = new MetadataV2Graph
@@ -262,9 +257,12 @@ public sealed class MetadataV2ModelTests
             ]
         };
 
-        graph.Services.Single().PublicationIds.Should().BeEquivalentTo(
-            "publication.public-works.0",
-            "publication.public-works.1");
+        graph.Publications
+            .Where(p => p.ServiceId == "service.public-works-feature-server")
+            .Select(p => p.Metadata.Id)
+            .Should().BeEquivalentTo(
+                "publication.public-works.0",
+                "publication.public-works.1");
         graph.Services.Single().ServiceType.Should().Be(MetadataV2ServiceType.EsriFeatureService);
         graph.Publications.Should().OnlyContain(publication =>
             publication.ServiceId == "service.public-works-feature-server" &&
@@ -517,11 +515,7 @@ public sealed class MetadataV2ModelTests
                     Metadata = new MetadataV2ObjectMetadata
                     {
                         Id = "service.parcels"
-                    },
-                    PublicationIds =
-                    [
-                        "publication.parcels"
-                    ]
+                    }
                 }
             ],
             Publications =
@@ -543,8 +537,6 @@ public sealed class MetadataV2ModelTests
 
         result.IsValid.Should().BeFalse();
         result.Errors.Should().Contain("publication 'publication.parcels' references missing service 'service.other'.");
-        result.Errors.Should().Contain(
-            "service 'service.parcels' references publication 'publication.parcels' owned by service 'service.other'.");
     }
 
     private static MetadataV2Graph CreateValidGraph()
@@ -595,11 +587,7 @@ public sealed class MetadataV2ModelTests
                     Metadata = new MetadataV2ObjectMetadata
                     {
                         Id = "service.parcels"
-                    },
-                    PublicationIds =
-                    [
-                        "publication.parcels"
-                    ]
+                    }
                 }
             ],
             Publications =

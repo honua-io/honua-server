@@ -169,17 +169,9 @@ public sealed class TestMetadataV2GraphBuilder
             PublicationType = publicationType,
         });
 
-        // Attach to the service's publication list.
-        var serviceIndex = _services.FindIndex(s => s.Metadata.Id == serviceId);
-        if (serviceIndex >= 0)
-        {
-            var existing = _services[serviceIndex];
-            var updated = existing with
-            {
-                PublicationIds = existing.PublicationIds.Append(id).Distinct(StringComparer.Ordinal).ToArray(),
-            };
-            _services[serviceIndex] = updated;
-        }
+        // Service→publication membership is derived from publication.ServiceId
+        // (the redundant Service.PublicationIds slot was removed in design slice 55/N),
+        // so no service-side update is needed.
         return this;
     }
 
