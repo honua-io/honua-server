@@ -311,6 +311,17 @@ public sealed record MetadataV2StorageBinding
     public string Locator { get; init; } = string.Empty;
 
     /// <summary>
+    /// Integer handle identifying this binding inside its backing store. Distinct
+    /// from <see cref="MetadataV2Publication.LayerIndex"/> (which is the service-local
+    /// /protocol-facing index). <c>IFeatureReader</c>, <c>ILayerStyleCatalog</c>,
+    /// and <c>OutputCacheInvalidationService</c> all take this integer as their
+    /// "layer id" argument. Required for any feature/raster/table resource;
+    /// unused for derived/document/external resource types.
+    /// </summary>
+    [JsonPropertyName("storageLayerId")]
+    public int? StorageLayerId { get; init; }
+
+    /// <summary>
     /// Capabilities supported by this storage binding.
     /// </summary>
     [JsonPropertyName("capabilities")]
