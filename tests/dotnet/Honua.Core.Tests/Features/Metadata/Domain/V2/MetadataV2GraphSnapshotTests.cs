@@ -168,9 +168,12 @@ public sealed class MetadataV2GraphSnapshotTests
                     ServiceId = "service.features",
                     StorageBindingId = "storage.parcels.postgis",
                     PublicationType = MetadataV2PublicationType.OgcCollection,
-                    Path = "/collections/parcels",
-                    LayerIndex = 0,
-                    ServiceLocalId = "parcels",
+                    Identifier = new MetadataV2PublicationIdentifier
+                    {
+                        Value = "0",
+                        IsNumeric = true,
+                        PathOverride = "/collections/parcels",
+                    },
                 }
             ],
         };

@@ -127,8 +127,12 @@ public sealed class MetadataV2ModelTests
             ServiceId = service.Metadata.Id,
             StorageBindingId = "storage.parcels.postgis",
             PublicationType = MetadataV2PublicationType.OgcCollection,
-            Path = "/collections/parcels",
-            LayerIndex = 0,
+            Identifier = new MetadataV2PublicationIdentifier
+            {
+                Value = "0",
+                IsNumeric = true,
+                PathOverride = "/collections/parcels",
+            },
             SupportedFormats =
             [
                 "application/geo+json"
@@ -209,9 +213,12 @@ public sealed class MetadataV2ModelTests
             ResourceId = parcels.Metadata.Id,
             ServiceId = "service.public-works-feature-server",
             PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
-            LayerIndex = 0,
-            Path = "/PublicWorks/FeatureServer/0",
-            ServiceLocalId = "0"
+            Identifier = new MetadataV2PublicationIdentifier
+            {
+                Value = "0",
+                IsNumeric = true,
+                PathOverride = "/PublicWorks/FeatureServer/0",
+            }
         };
 
         var hydrantsPublication = new MetadataV2Publication
@@ -224,9 +231,12 @@ public sealed class MetadataV2ModelTests
             ResourceId = hydrants.Metadata.Id,
             ServiceId = "service.public-works-feature-server",
             PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
-            LayerIndex = 1,
-            Path = "/PublicWorks/FeatureServer/1",
-            ServiceLocalId = "1"
+            Identifier = new MetadataV2PublicationIdentifier
+            {
+                Value = "1",
+                IsNumeric = true,
+                PathOverride = "/PublicWorks/FeatureServer/1",
+            }
         };
 
         var service = new MetadataV2Service

@@ -482,16 +482,42 @@ public sealed record MetadataV2Publication
     public string? TitleOverride { get; init; }
 
     /// <summary>
-    /// Service path or catalog route override for this publication.
+    /// Unified protocol-facing identifier (collection id, layer name, or stringified
+    /// layer index). Collapses the prior <c>LayerIndex</c> / <c>ServiceLocalId</c>
+    /// / <c>Path</c> trio so the three cannot desync.
     /// </summary>
-    [JsonPropertyName("path")]
-    public string? Path { get; init; }
+    [JsonPropertyName("identifier")]
+    public MetadataV2PublicationIdentifier Identifier { get; init; } = new();
 
     /// <summary>
-    /// Service-local layer index when the target protocol requires one.
+    /// Computed integer layer index (legacy GeoServices-style routing). Returns
+    /// the int parsed from <see cref="Identifier"/> when
+    /// <see cref="MetadataV2PublicationIdentifier.IsNumeric"/> is true; otherwise <c>null</c>.
+    /// Kept as a derived property so existing call sites that read
+    /// <c>publication.LayerIndex</c> compile unchanged.
     /// </summary>
-    [JsonPropertyName("layerIndex")]
-    public int? LayerIndex { get; init; }
+    [JsonIgnore]
+    public int? LayerIndex => Identifier.IsNumeric
+        && int.TryParse(Identifier.Value, System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+        ? parsed
+        : null;
+
+    /// <summary>
+    /// Computed full URL path override read from <see cref="Identifier"/>.
+    /// Kept as a derived property so existing call sites that read
+    /// <c>publication.Path</c> compile unchanged.
+    /// </summary>
+    [JsonIgnore]
+    public string? Path => Identifier.PathOverride;
+
+    /// <summary>
+    /// Computed service-local id read from <see cref="Identifier"/>'s value.
+    /// Kept as a derived property so existing call sites that read
+    /// <c>publication.ServiceLocalId</c> compile unchanged.
+    /// </summary>
+    [JsonIgnore]
+    public string? ServiceLocalId => string.IsNullOrEmpty(Identifier.Value) ? null : Identifier.Value;
 
     /// <summary>
     /// When true, this publication is the primary publication of its resource on
@@ -521,12 +547,6 @@ public sealed record MetadataV2Publication
     /// </summary>
     [JsonPropertyName("capabilities")]
     public IReadOnlyList<string> Capabilities { get; init; } = Array.Empty<string>();
-
-    /// <summary>
-    /// Route segment, layer id, collection id, or other service-local publication key.
-    /// </summary>
-    [JsonPropertyName("serviceLocalId")]
-    public string? ServiceLocalId { get; init; }
 
     /// <summary>
     /// Publication-specific options.

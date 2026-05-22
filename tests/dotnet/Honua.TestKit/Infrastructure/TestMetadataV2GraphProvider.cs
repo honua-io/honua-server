@@ -157,15 +157,35 @@ public sealed class TestMetadataV2GraphBuilder
         string? serviceLocalId = null,
         MetadataV2PublicationType publicationType = MetadataV2PublicationType.OgcCollection)
     {
+        // The three legacy publication-identification slots collapsed onto one
+        // typed MetadataV2PublicationIdentifier in design slice 61/N. Builder
+        // resolution: layerIndex (numeric) > serviceLocalId (name-based) > "".
+        // path is now passed through Identifier.PathOverride.
+        string idValue;
+        bool isNumeric;
+        if (layerIndex is int idx)
+        {
+            idValue = idx.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            isNumeric = true;
+        }
+        else
+        {
+            idValue = serviceLocalId ?? string.Empty;
+            isNumeric = false;
+        }
+
         _publications.Add(new MetadataV2Publication
         {
             Metadata = new MetadataV2ObjectMetadata { Id = id, Name = serviceLocalId ?? id },
             ServiceId = serviceId,
             ResourceId = resourceId,
             StorageBindingId = storageBindingId,
-            Path = path,
-            LayerIndex = layerIndex,
-            ServiceLocalId = serviceLocalId,
+            Identifier = new MetadataV2PublicationIdentifier
+            {
+                Value = idValue,
+                IsNumeric = isNumeric,
+                PathOverride = path,
+            },
             PublicationType = publicationType,
         });
 
