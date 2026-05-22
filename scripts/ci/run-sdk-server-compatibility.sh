@@ -37,6 +37,21 @@ require_dir() {
     fi
 }
 
+url_port() {
+    python - "$1" <<'PY'
+import sys
+from urllib.parse import urlsplit
+
+url = urlsplit(sys.argv[1])
+if url.port is not None:
+    print(url.port)
+elif url.scheme == "https":
+    print(443)
+else:
+    print(80)
+PY
+}
+
 cleanup() {
     local pid
 
@@ -52,8 +67,10 @@ trap cleanup EXIT
 
 start_geoserver_fixture() {
     local fixture_path="$ROOT_DIR/$MIGRATION_GEOSERVER_FIXTURE"
-    local fixture_port="5011"
+    local fixture_port
     local log_path="$RESULTS_DIR/geoserver-fixture.log"
+
+    fixture_port="$(url_port "$MIGRATION_GEOSERVER_URL")"
 
     if [[ ! -f "$fixture_path" ]]; then
         echo "Missing GeoServer migration fixture at $fixture_path" >&2

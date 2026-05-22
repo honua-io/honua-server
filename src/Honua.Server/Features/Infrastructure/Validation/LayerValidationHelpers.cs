@@ -483,7 +483,19 @@ internal static class LayerValidationHelpers
             ? ODataUtilityService.GetTimeoutAwareCancellationToken(context)
             : cancellationToken;
 
-        var snapshot = await GetV2SnapshotAsync(context, effectiveToken).ConfigureAwait(false);
+        var snapshot = await TryGetV2SnapshotAsync(context, effectiveToken).ConfigureAwait(false);
+        if (snapshot is null)
+        {
+            var msg = $"Layer {layerId} not found";
+            var error = protocol switch
+            {
+                ValidationProtocol.OData => CreateODataError(context, msg, StatusCodes.Status404NotFound),
+                ValidationProtocol.OgcFeatures => CreateOgcError(context, msg, StatusCodes.Status404NotFound),
+                _ => StandardErrorHelpers.CreateNotFound(context, msg),
+            };
+            return new MetadataV2ValidationResult(false, null, null, null, error);
+        }
+
         var (publication, resource, service) = ResolveV2Triple(snapshot, layerId, requiredServiceType);
 
         if (publication is null || resource is null)
@@ -530,7 +542,13 @@ internal static class LayerValidationHelpers
         MetadataV2ServiceType? requiredServiceType = null,
         CancellationToken cancellationToken = default)
     {
-        var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+        var snapshot = await TryGetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+        if (snapshot is null)
+        {
+            var error = StandardErrorHelpers.CreateNotFound(context, $"Layer {layerId} not found");
+            return new MetadataV2ValidationResult(false, null, null, null, error);
+        }
+
         var (publication, resource, service) = ResolveV2Triple(snapshot, layerId, requiredServiceType);
 
         if (publication is null || resource is null)
@@ -579,7 +597,17 @@ internal static class LayerValidationHelpers
                 StandardErrorHelpers.CreateBadRequest(context, "Collection id is required."));
         }
 
-        var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+        var snapshot = await TryGetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+        if (snapshot is null)
+        {
+            return new MetadataV2ValidationResult(
+                false,
+                null,
+                null,
+                null,
+                StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found."));
+        }
+
         var numericCollectionId = int.TryParse(
             collectionId.Trim(),
             System.Globalization.NumberStyles.Integer,
@@ -708,7 +736,12 @@ internal static class LayerValidationHelpers
         MetadataV2ServiceType? requiredServiceType = null,
         CancellationToken cancellationToken = default)
     {
-        var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+        var snapshot = await TryGetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+        if (snapshot is null)
+        {
+            return null;
+        }
+
         var (_, _, service) = ResolveV2Triple(snapshot, layerId, requiredServiceType);
         return service;
     }
@@ -727,11 +760,16 @@ internal static class LayerValidationHelpers
         return service?.Metadata.Name;
     }
 
-    private static async Task<MetadataV2GraphSnapshot> GetV2SnapshotAsync(
+    private static async Task<MetadataV2GraphSnapshot?> TryGetV2SnapshotAsync(
         HttpContext context,
         CancellationToken cancellationToken)
     {
-        var provider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var provider = context.RequestServices.GetService<IMetadataV2GraphProvider>();
+        if (provider is null)
+        {
+            return null;
+        }
+
         return await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -808,7 +846,13 @@ internal static class LayerValidationHelpers
                 StandardErrorHelpers.CreateBadRequest(context, "Service name is required."));
         }
 
-        var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+        var snapshot = await TryGetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+        if (snapshot is null)
+        {
+            return new MetadataV2ServiceValidationResult(
+                false, null, [], [],
+                StandardErrorHelpers.CreateNotFound(context, $"Service '{serviceName}' not found."));
+        }
 
         // Prefer a service-type match; otherwise fall back to name match.
         MetadataV2Service? service = null;
