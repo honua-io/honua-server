@@ -24,12 +24,6 @@ public enum MetadataV2ResourceType
     RasterDataset,
 
     /// <summary>
-    /// A tabular resource without required geometry.
-    /// </summary>
-    [JsonStringEnumMemberName("table")]
-    Table,
-
-    /// <summary>
     /// A tile dataset.
     /// </summary>
     [JsonStringEnumMemberName("tile-dataset")]

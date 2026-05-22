@@ -165,7 +165,6 @@ public static class MetadataV2GraphValidator
     {
         if (resource.Type is not (MetadataV2ResourceType.FeatureDataset
             or MetadataV2ResourceType.RasterDataset
-            or MetadataV2ResourceType.Table
             or MetadataV2ResourceType.TileDataset))
         {
             return;

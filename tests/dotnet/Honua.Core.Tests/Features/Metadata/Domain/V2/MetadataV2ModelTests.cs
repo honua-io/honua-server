@@ -321,7 +321,6 @@ public sealed class MetadataV2ModelTests
         Enum.GetNames<MetadataV2ResourceType>().Should().BeEquivalentTo(
             nameof(MetadataV2ResourceType.FeatureDataset),
             nameof(MetadataV2ResourceType.RasterDataset),
-            nameof(MetadataV2ResourceType.Table),
             nameof(MetadataV2ResourceType.TileDataset),
             nameof(MetadataV2ResourceType.Process),
             nameof(MetadataV2ResourceType.Style),
