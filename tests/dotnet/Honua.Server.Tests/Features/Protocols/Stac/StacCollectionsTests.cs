@@ -250,7 +250,31 @@ public sealed class StacCollectionsTests : IAsyncLifetime
 
     private Task UpdateLayerMetadataAsync(CatalogMetadata metadata)
     {
-        var updater = _fixture.GetService<ILayerMetadataUpdater>();
-        return updater.UpdateLayerMetadataAsync(WebAppFixture.TestLayerId, metadata);
+        // The legacy v1 ILayerMetadataUpdater wrote CatalogMetadata to the v1 catalog. The
+        // V2-ported STAC endpoints read from resource.Extensions["stac"] and
+        // resource.Temporal. Bridge the test's CatalogMetadata input onto the V2 graph by
+        // serialising the Stac block and temporal field hints into the typed slots.
+        JsonElement? stac = null;
+        if (metadata.Stac is not null)
+        {
+            stac = JsonSerializer.SerializeToElement(
+                metadata.Stac,
+                Honua.Core.Features.Catalog.Domain.CatalogJsonContext.Default.StacCatalogMetadata);
+        }
+
+        JsonElement? temporal = null;
+        if (metadata.TimeInfo is not null)
+        {
+            temporal = JsonSerializer.SerializeToElement(
+                new
+                {
+                    startTimeField = metadata.TimeInfo.StartTimeField,
+                    endTimeField = metadata.TimeInfo.EndTimeField,
+                    trackIdField = metadata.TimeInfo.TrackIdField,
+                });
+        }
+
+        _fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, stacExtension: stac, temporal: temporal);
+        return Task.CompletedTask;
     }
 }

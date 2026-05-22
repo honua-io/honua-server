@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Infrastructure.Models;
@@ -69,6 +70,49 @@ internal static class ServiceDataEditorAuthorization
         CancellationToken cancellationToken = default)
     {
         var decision = await EvaluateLayerAccessAsync(context, layerId, cancellationToken);
+        return CreateDecisionResult(context, decision);
+    }
+
+    // ---- Metadata v2 overloads. Share the underlying evaluator with the v1 path;
+    // only the call-site shape changes. Consumers can swap LayerDefinition for
+    // MetadataV2Resource and ServiceDefinition for MetadataV2Service one file at a time.
+
+    public static async Task<IResult?> RequireServiceDataEditorAsync(
+        HttpContext context,
+        MetadataV2Service service,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(service);
+        var decision = EvaluateExplicitWritePolicy(context, null, service.AccessPolicy)
+            ?? await EvaluateServiceAccessAsync(context, service.Metadata.Name, cancellationToken).ConfigureAwait(false);
+        return CreateDecisionResult(context, decision);
+    }
+
+    public static async Task<IResult?> RequireResourceDataEditorAsync(
+        HttpContext context,
+        MetadataV2Resource resource,
+        MetadataV2Service? service = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        var explicitDecision = EvaluateExplicitWritePolicy(context, resource.AccessPolicy, service?.AccessPolicy);
+        if (explicitDecision is not null)
+        {
+            return CreateDecisionResult(context, explicitDecision.Value);
+        }
+
+        if (service is null)
+        {
+            // No service context — evaluate just the resource policy with the request
+            // principal via the access evaluator (used by anonymous-allowed write paths).
+            if (context.User?.Identity?.IsAuthenticated != true)
+            {
+                return CreateDecisionResult(context, AccessDecision.RequiresAuth("Authentication is required."));
+            }
+            return null;
+        }
+
+        var decision = await EvaluateServiceAccessAsync(context, service.Metadata.Name, cancellationToken).ConfigureAwait(false);
         return CreateDecisionResult(context, decision);
     }
 

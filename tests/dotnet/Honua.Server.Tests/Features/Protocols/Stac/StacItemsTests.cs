@@ -440,8 +440,26 @@ public sealed class StacItemsTests : IAsyncLifetime
 
     private Task UpdateLayerMetadataAsync(CatalogMetadata metadata)
     {
-        var updater = _fixture.GetService<ILayerMetadataUpdater>();
-        return updater.UpdateLayerMetadataAsync(WebAppFixture.TestLayerId, metadata);
+        // Bridge to the V2 graph (see StacCollectionsTests.UpdateLayerMetadataAsync).
+        JsonElement? stac = null;
+        if (metadata.Stac is not null)
+        {
+            stac = JsonSerializer.SerializeToElement(
+                metadata.Stac,
+                Honua.Core.Features.Catalog.Domain.CatalogJsonContext.Default.StacCatalogMetadata);
+        }
+        JsonElement? temporal = null;
+        if (metadata.TimeInfo is not null)
+        {
+            temporal = JsonSerializer.SerializeToElement(new
+            {
+                startTimeField = metadata.TimeInfo.StartTimeField,
+                endTimeField = metadata.TimeInfo.EndTimeField,
+                trackIdField = metadata.TimeInfo.TrackIdField,
+            });
+        }
+        _fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, stacExtension: stac, temporal: temporal);
+        return Task.CompletedTask;
     }
 
     private async Task<long> InsertDatelineFeatureAsync(double lon, double lat, string name)

@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Security.Domain;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
@@ -179,6 +180,19 @@ public sealed record MetadataV2Resource
     /// </summary>
     [JsonPropertyName("policyIds")]
     public IReadOnlyList<string> PolicyIds { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Resource-to-resource relationships exposed by this resource (the v2 equivalent of
+    /// the v1 <c>LayerDefinition.LayerRelationships</c> set).
+    /// </summary>
+    [JsonPropertyName("relationships")]
+    public IReadOnlyList<MetadataV2Relationship> Relationships { get; init; } = Array.Empty<MetadataV2Relationship>();
+
+    /// <summary>
+    /// Optional access policy controlling who can read/write this resource.
+    /// </summary>
+    [JsonPropertyName("accessPolicy")]
+    public AccessPolicy? AccessPolicy { get; init; }
 
     /// <summary>
     /// Optional spatial extent, CRS, or geometry metadata.
@@ -358,6 +372,25 @@ public sealed record MetadataV2Service
     /// </summary>
     [JsonPropertyName("publicationIds")]
     public IReadOnlyList<string> PublicationIds { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Optional access policy controlling who can read/write this service.
+    /// </summary>
+    [JsonPropertyName("accessPolicy")]
+    public AccessPolicy? AccessPolicy { get; init; }
+
+    /// <summary>
+    /// Protocol identifiers explicitly enabled on this service. When null, the
+    /// <see cref="ServiceType"/> implies a single canonical protocol (matched by
+    /// <c>MetadataV2ServiceTypeMapping.Map</c>); when set, this list lets a service
+    /// expose more than one protocol simultaneously (e.g. an
+    /// <see cref="MetadataV2ServiceType.OgcApiFeatures"/> service that also advertises
+    /// <c>OGC-API-Maps</c>, <c>OGC-API-Tiles</c>, or <c>OGC-API-Coverages</c> on the same
+    /// publications). Values match the v1 <c>ServiceProtocols.*</c> constants for source
+    /// compatibility.
+    /// </summary>
+    [JsonPropertyName("enabledProtocols")]
+    public IReadOnlyList<string>? EnabledProtocols { get; init; }
 
     /// <summary>
     /// Service-specific options.

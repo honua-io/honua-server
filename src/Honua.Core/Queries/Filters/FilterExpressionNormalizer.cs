@@ -27,43 +27,53 @@ public static class FilterExpressionNormalizer
     public static FilterExpression Normalize(FilterExpression expression, LayerDefinition layer)
     {
         EnsureWithinMaxDepth(expression);
-        return NormalizeCore(expression, layer);
+        return NormalizeCore(expression, FilterFieldSchema.From(layer));
     }
 
-    private static FilterExpression NormalizeCore(FilterExpression expression, LayerDefinition layer)
+    /// <summary>
+    /// V2 overload of <see cref="Normalize(FilterExpression, LayerDefinition)"/>. Resolves
+    /// field types from the resource's <c>SchemaFields</c>.
+    /// </summary>
+    public static FilterExpression Normalize(FilterExpression expression, Honua.Core.Features.Metadata.Domain.V2.MetadataV2Resource resource)
+    {
+        EnsureWithinMaxDepth(expression);
+        return NormalizeCore(expression, FilterFieldSchema.From(resource));
+    }
+
+    private static FilterExpression NormalizeCore(FilterExpression expression, FilterFieldSchema schema)
     {
         return expression switch
         {
-            BinaryExpression binary => NormalizeBinaryExpression(binary, layer),
-            UnaryExpression unary => new UnaryExpression(unary.Operator, NormalizeCore(unary.Operand, layer)),
+            BinaryExpression binary => NormalizeBinaryExpression(binary, schema),
+            UnaryExpression unary => new UnaryExpression(unary.Operator, NormalizeCore(unary.Operand, schema)),
             SpatialPredicate spatial => new SpatialPredicate(spatial.Operator,
-                NormalizeCore(spatial.Left, layer),
-                NormalizeCore(spatial.Right, layer)),
+                NormalizeCore(spatial.Left, schema),
+                NormalizeCore(spatial.Right, schema)),
             SpatialDistancePredicate spatialDistance => new SpatialDistancePredicate(
                 spatialDistance.Operator,
-                NormalizeCore(spatialDistance.Left, layer),
-                NormalizeCore(spatialDistance.Right, layer),
-                NormalizeCore(spatialDistance.Distance, layer)),
+                NormalizeCore(spatialDistance.Left, schema),
+                NormalizeCore(spatialDistance.Right, schema),
+                NormalizeCore(spatialDistance.Distance, schema)),
             TemporalPredicate temporal => new TemporalPredicate(
                 temporal.Operator,
-                NormalizeCore(temporal.Left, layer),
-                NormalizeCore(temporal.Right, layer)),
+                NormalizeCore(temporal.Left, schema),
+                NormalizeCore(temporal.Right, schema)),
             ArrayPredicate array => new ArrayPredicate(
                 array.Operator,
-                NormalizeCore(array.Left, layer),
-                NormalizeCore(array.Right, layer)),
+                NormalizeCore(array.Left, schema),
+                NormalizeCore(array.Right, schema)),
             FunctionCall function => new FunctionCall(function.FunctionName,
-                function.Arguments.Select(arg => NormalizeCore(arg, layer)).ToArray()),
-            ArrayLiteral arrayLiteral => new ArrayLiteral(arrayLiteral.Elements.Select(arg => NormalizeCore(arg, layer)).ToArray()),
-            ValueList valueList => new ValueList(valueList.Values.Select(arg => NormalizeCore(arg, layer)).ToArray()),
+                function.Arguments.Select(arg => NormalizeCore(arg, schema)).ToArray()),
+            ArrayLiteral arrayLiteral => new ArrayLiteral(arrayLiteral.Elements.Select(arg => NormalizeCore(arg, schema)).ToArray()),
+            ValueList valueList => new ValueList(valueList.Values.Select(arg => NormalizeCore(arg, schema)).ToArray()),
             _ => expression
         };
     }
 
-    private static BinaryExpression NormalizeBinaryExpression(BinaryExpression binary, LayerDefinition layer)
+    private static BinaryExpression NormalizeBinaryExpression(BinaryExpression binary, FilterFieldSchema schema)
     {
-        var left = NormalizeCore(binary.Left, layer);
-        var right = NormalizeCore(binary.Right, layer);
+        var left = NormalizeCore(binary.Left, schema);
+        var right = NormalizeCore(binary.Right, schema);
 
         if (binary.Operator is BinaryOperator.Equal or BinaryOperator.NotEqual or
             BinaryOperator.GreaterThan or BinaryOperator.GreaterThanOrEqual or
@@ -71,11 +81,11 @@ public static class FilterExpressionNormalizer
         {
             if (left is PropertyReference property && right is Literal literal)
             {
-                right = CoerceLiteral(property, literal, layer);
+                right = CoerceLiteral(property, literal, schema);
             }
             else if (right is PropertyReference propertyRight && left is Literal literalLeft)
             {
-                left = CoerceLiteral(propertyRight, literalLeft, layer);
+                left = CoerceLiteral(propertyRight, literalLeft, schema);
             }
         }
 
@@ -166,9 +176,9 @@ public static class FilterExpressionNormalizer
         }
     }
 
-    private static Literal CoerceLiteral(PropertyReference property, Literal literal, LayerDefinition layer)
+    private static Literal CoerceLiteral(PropertyReference property, Literal literal, FilterFieldSchema schema)
     {
-        if (!TryGetFieldType(layer, property.PropertyName, out var fieldType))
+        if (!schema.TryGetFieldType(property.PropertyName, out var fieldType))
         {
             throw new ArgumentException($"Unknown field '{property.PropertyName}' in filter expression.");
         }

@@ -195,3 +195,7 @@ sql:
           valid_pixel_count = EXCLUDED.valid_pixel_count,
           nodata_pixel_count = EXCLUDED.nodata_pixel_count,
           computed_at = NOW();
+
+  # Refresh Metadata v2 after browser-specific layers are present.
+  - |
+      SELECT honua.seed_metadata_v2_compat_snapshot();

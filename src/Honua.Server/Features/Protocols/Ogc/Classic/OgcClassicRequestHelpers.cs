@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Server.Features.Protocols.Ogc.Classic;
 
@@ -85,7 +86,32 @@ internal static class OgcClassicRequestHelpers
             return layer.Id.ToString(CultureInfo.InvariantCulture);
         }
 
-        var fullName = layer.Name.Trim();
+        return TrimNamespacePrefix(layer.Name);
+    }
+
+    /// <summary>
+    /// V2 overload of <see cref="GetWmsLayerName(LayerDefinition)"/>. Returns the resource's
+    /// display name with any leading namespace prefix removed, falling back to the
+    /// publication's layer index when the resource has no name.
+    /// </summary>
+    internal static string GetWmsLayerName(MetadataV2Resource resource, MetadataV2Publication? publication = null)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        var name = resource.Metadata.Name;
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            if (publication?.LayerIndex is int layerIndex)
+            {
+                return layerIndex.ToString(CultureInfo.InvariantCulture);
+            }
+            return resource.Metadata.Id;
+        }
+        return TrimNamespacePrefix(name);
+    }
+
+    private static string TrimNamespacePrefix(string name)
+    {
+        var fullName = name.Trim();
         var separatorIndex = fullName.LastIndexOf(':');
         return separatorIndex >= 0 && separatorIndex < fullName.Length - 1
             ? fullName[(separatorIndex + 1)..]

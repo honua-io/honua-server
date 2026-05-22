@@ -8,6 +8,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.Protocols.Ogc.Api.Features;
@@ -27,6 +28,99 @@ internal sealed class StacMappingService
     private static GeoJsonWriter? _geoJsonWriter;
 
     private static GeoJsonWriter GetGeoJsonWriter() => _geoJsonWriter ??= new GeoJsonWriter();
+    /// <summary>
+    /// Builds a STAC Collection directly from a Metadata v2 resource/publication.
+    /// </summary>
+    /// <remarks>
+    /// The feature reader still operates on the integer service-local layer index resolved
+    /// from the V2 publication, because the feature-store contract has not yet been ported
+    /// (see cutover plan step 2). The mapped collection metadata — license, keywords,
+    /// declared extensions — is read from the V2 resource via
+    /// <see cref="StacResourceExtensions"/>; spatial/temporal extents come from the V2
+    /// resource's spatial/temporal extensions plus the feature store probe.
+    /// </remarks>
+    public static async Task<StacCollection> MapResourceToCollectionAsync(
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        int layerIndex,
+        IFeatureReader featureReader,
+        string baseUrl,
+        ICoordinateTransformService? coordinateTransformService,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        ArgumentNullException.ThrowIfNull(publication);
+        ArgumentNullException.ThrowIfNull(featureReader);
+
+        var collectionId = layerIndex.ToString(CultureInfo.InvariantCulture);
+        var stacBase = $"{baseUrl}/stac";
+        var displayName = ResolveDisplayName(publication, resource, layerIndex);
+
+        var links = ImmutableArray.CreateBuilder<Link>();
+
+        links.Add(Link.Create(
+            href: $"{stacBase}/collections/{collectionId}",
+            rel: RelationTypes.Self,
+            type: MediaTypes.Json,
+            title: displayName));
+
+        links.Add(Link.Create(
+            href: stacBase,
+            rel: StacConstants.StacRelations.Root,
+            type: MediaTypes.Json,
+            title: "STAC Catalog"));
+
+        links.Add(Link.Create(
+            href: stacBase,
+            rel: StacConstants.StacRelations.Parent,
+            type: MediaTypes.Json,
+            title: "STAC Catalog"));
+
+        links.Add(Link.Create(
+            href: $"{stacBase}/collections/{collectionId}/items",
+            rel: StacConstants.StacRelations.Items,
+            type: MediaTypes.GeoJson,
+            title: "Items"));
+
+        links.Add(Link.Create(
+            href: $"{baseUrl}/ogc/features/collections/{collectionId}",
+            rel: RelationTypes.Alternate,
+            type: MediaTypes.Json,
+            title: "OGC API Features collection"));
+
+        var extent = await BuildStacExtentV2Async(
+            resource,
+            layerIndex,
+            featureReader,
+            coordinateTransformService,
+            cancellationToken).ConfigureAwait(false);
+
+        return new StacCollection
+        {
+            Id = collectionId,
+            Title = displayName,
+            Description = resource.Metadata.Description ?? $"STAC collection for {displayName}",
+            License = resource.ResolveLicense(),
+            Extent = extent,
+            Keywords = resource.ResolveKeywords(),
+            Links = links.ToImmutable(),
+            StacExtensions = resource.ResolveDeclaredExtensions()
+        };
+    }
+
+    private static string ResolveDisplayName(
+        MetadataV2Publication publication,
+        MetadataV2Resource resource,
+        int layerIndex)
+    {
+        return publication.TitleOverride
+            ?? publication.Metadata.Title
+            ?? (string.IsNullOrEmpty(publication.Metadata.Name) ? null : publication.Metadata.Name)
+            ?? resource.Metadata.Title
+            ?? (string.IsNullOrEmpty(resource.Metadata.Name) ? null : resource.Metadata.Name)
+            ?? layerIndex.ToString(CultureInfo.InvariantCulture);
+    }
+
     /// <summary>
     /// Builds a STAC Collection from a layer definition.
     /// </summary>
@@ -205,6 +299,185 @@ internal sealed class StacMappingService
         };
     }
 
+    /// <summary>
+    /// V2 overload of <see cref="MapFeatureToItem(Feature, LayerDefinition, string, IReadOnlySet{string}?, int?)"/>.
+    /// Builds a STAC item directly from a Metadata v2 resource + publication, sourcing
+    /// declared STAC extensions, license, keywords, and temporal field hints from the
+    /// resource's STAC + Temporal extensions instead of v1 LayerDefinition.Metadata.
+    /// </summary>
+    public static StacItem MapFeatureToItem(
+        Feature feature,
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        int layerIndex,
+        string baseUrl,
+        IReadOnlySet<string>? selectedProperties = null,
+        int? geometrySrid = null)
+    {
+        var collectionId = layerIndex.ToString(CultureInfo.InvariantCulture);
+        var itemId = ResolveItemId(feature);
+        var escapedItemId = Uri.EscapeDataString(itemId);
+        var idFieldName = resource.FindPrimaryIdField()?.Name ?? "objectid";
+        var ogcItemId = ResolveOgcPublicId(feature, idFieldName);
+        var escapedOgcItemId = Uri.EscapeDataString(ogcItemId);
+        var stacBase = $"{baseUrl}/stac";
+        IReadOnlyDictionary<string, object?> attributes = feature.Attributes ?? ImmutableDictionary<string, object?>.Empty;
+        var selectedPropertiesLookup = selectedProperties is null
+            ? null
+            : new HashSet<string>(selectedProperties, StringComparer.OrdinalIgnoreCase);
+
+        var properties = new Dictionary<string, object?>();
+        PopulateTemporalPropertiesV2(attributes, resource, properties);
+
+        // Copy feature attributes
+        foreach (var kvp in attributes)
+        {
+            if ((!IsItemIdAttribute(kvp.Key) || selectedPropertiesLookup?.Contains(kvp.Key) == true) &&
+                !string.Equals(kvp.Key, "objectid", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(kvp.Key, "datetime", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(kvp.Key, "start_datetime", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(kvp.Key, "end_datetime", StringComparison.OrdinalIgnoreCase) &&
+                !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
+            {
+                if (selectedPropertiesLookup is not null && !selectedPropertiesLookup.Contains(kvp.Key))
+                {
+                    continue;
+                }
+                if (kvp.Value is null && selectedPropertiesLookup is null)
+                {
+                    continue;
+                }
+                properties[kvp.Key] = kvp.Value;
+            }
+        }
+
+        JsonElement? geometry = null;
+        ImmutableArray<double>? bbox = null;
+        if (feature.Geometry is { Length: > 0 })
+        {
+            try
+            {
+                var parsed = WkbReaderCache.Get().Read(feature.Geometry);
+                geometry = ConvertGeometryToGeoJsonElement(parsed);
+                bbox = TryBuildBboxFromGeometry(parsed, geometrySrid ?? resource.ReadSrid() ?? 4326);
+            }
+            catch
+            {
+                // WKB parsing failure — STAC allows null geometry.
+            }
+        }
+
+        var title = resource.Metadata.Title ?? resource.Metadata.Name;
+
+        var links = ImmutableArray.Create(
+            Link.Create(
+                href: $"{stacBase}/collections/{collectionId}/items/{escapedItemId}",
+                rel: RelationTypes.Self,
+                type: MediaTypes.GeoJson,
+                title: $"Item {itemId}"),
+            Link.Create(
+                href: $"{stacBase}/collections/{collectionId}",
+                rel: RelationTypes.Collection,
+                type: MediaTypes.Json,
+                title: title),
+            Link.Create(
+                href: $"{stacBase}/collections/{collectionId}",
+                rel: StacConstants.StacRelations.Parent,
+                type: MediaTypes.Json,
+                title: title),
+            Link.Create(
+                href: stacBase,
+                rel: StacConstants.StacRelations.Root,
+                type: MediaTypes.Json,
+                title: "STAC Catalog"));
+
+        var assets = new Dictionary<string, StacAsset>
+        {
+            ["geojson"] = new StacAsset
+            {
+                Href = $"{baseUrl}/ogc/features/collections/{collectionId}/items/{escapedOgcItemId}",
+                Title = "GeoJSON",
+                Type = MediaTypes.GeoJson,
+                Roles = ImmutableArray.Create("data"),
+            }
+        };
+
+        return new StacItem
+        {
+            Id = itemId,
+            Geometry = geometry,
+            Bbox = bbox,
+            Properties = properties,
+            Links = links,
+            Assets = assets,
+            Collection = collectionId,
+            StacExtensions = resource.ResolveDeclaredExtensions(),
+        };
+    }
+
+    private static string ResolveOgcPublicId(Feature feature, string idFieldName)
+    {
+        if (feature.Attributes is not null &&
+            feature.Attributes.TryGetValue(idFieldName, out var configured) &&
+            configured is not null)
+        {
+            var asString = Convert.ToString(configured, CultureInfo.InvariantCulture);
+            if (!string.IsNullOrWhiteSpace(asString))
+            {
+                return asString;
+            }
+        }
+        return feature.ObjectId?.ToString(CultureInfo.InvariantCulture)
+            ?? feature.Id.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static void PopulateTemporalPropertiesV2(
+        IReadOnlyDictionary<string, object?> attributes,
+        MetadataV2Resource resource,
+        Dictionary<string, object?> properties)
+    {
+        var fields = resource.ReadTemporalFields();
+        DateTimeOffset? start = null;
+        DateTimeOffset? end = null;
+
+        if (!string.IsNullOrWhiteSpace(fields.StartTimeField))
+        {
+            start = TryReadTemporalValue(attributes, fields.StartTimeField);
+        }
+        if (!string.IsNullOrWhiteSpace(fields.EndTimeField))
+        {
+            end = TryReadTemporalValue(attributes, fields.EndTimeField);
+        }
+
+        if (start is null && end is null)
+        {
+            var intervalStart = TryReadTemporalValue(attributes, "start_datetime");
+            if (intervalStart is not null)
+            {
+                start = intervalStart;
+                end = TryReadTemporalValue(attributes, "end_datetime");
+            }
+        }
+
+        start ??= TryReadFallbackTemporalValue(attributes);
+
+        if (start is not null && (end is null || end == start))
+        {
+            properties["datetime"] = FormatTemporalValue(start.Value);
+            return;
+        }
+
+        if (start is not null || end is not null)
+        {
+            properties["datetime"] = null;
+            properties["start_datetime"] = start is null ? null : FormatTemporalValue(start.Value);
+            properties["end_datetime"] = end is null ? null : FormatTemporalValue(end.Value);
+            return;
+        }
+
+        properties["datetime"] = null;
+    }
+
     private static string ResolveItemId(Feature feature)
     {
         foreach (var key in new[] { "stac_id", "item_id", "id" })
@@ -324,6 +597,55 @@ internal sealed class StacMappingService
             .ToImmutableArray();
 
         return normalized.Length == 0 ? null : normalized;
+    }
+
+    /// <summary>
+    /// Builds the STAC extent directly from a V2 resource's spatial/temporal extensions.
+    /// Mirrors <see cref="BuildStacExtent"/> for the V2 mapper.
+    /// </summary>
+    private static async Task<StacExtent> BuildStacExtentV2Async(
+        MetadataV2Resource resource,
+        int layerIndex,
+        IFeatureReader featureReader,
+        ICoordinateTransformService? coordinateTransformService,
+        CancellationToken cancellationToken)
+    {
+        var bbox = ImmutableArray.Create(ImmutableArray.Create(-180.0, -90.0, 180.0, 90.0));
+
+        var resourceBbox = resource.ReadBbox();
+        var srid = resource.ReadSrid() ?? 4326;
+        if (resourceBbox is { } extent)
+        {
+            if (await OgcExtentTransformer.TryTransformExtentToCrs84Async(
+                    extent.West,
+                    extent.South,
+                    extent.East,
+                    extent.North,
+                    srid,
+                    coordinateTransformService,
+                    cancellationToken).ConfigureAwait(false) is { } transformedExtent)
+            {
+                bbox = ImmutableArray.Create(ImmutableArray.Create(
+                    transformedExtent.MinLon,
+                    transformedExtent.MinLat,
+                    transformedExtent.MaxLon,
+                    transformedExtent.MaxLat));
+            }
+        }
+
+        var temporalInterval = ImmutableArray.Create(ImmutableArray.Create<string?>(null, null));
+        var temporalExtent = await OgcFeaturesUtilities.BuildTemporalExtentAsync(
+            resource, layerIndex, featureReader, cancellationToken).ConfigureAwait(false);
+        if (temporalExtent is not null)
+        {
+            temporalInterval = temporalExtent.Interval;
+        }
+
+        return new StacExtent
+        {
+            Spatial = new StacSpatialExtent { Bbox = bbox },
+            Temporal = new StacTemporalExtent { Interval = temporalInterval }
+        };
     }
 
     /// <summary>

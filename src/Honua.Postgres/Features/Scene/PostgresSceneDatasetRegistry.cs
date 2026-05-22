@@ -6,6 +6,7 @@ using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
+using Honua.Core.Features.Security.Domain;
 using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;

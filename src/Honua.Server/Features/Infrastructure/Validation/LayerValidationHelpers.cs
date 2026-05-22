@@ -3,6 +3,8 @@
 
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Validation.Abstractions;
@@ -39,6 +41,24 @@ internal static class LayerValidationHelpers
     internal readonly record struct LayerValidationResult(
         bool IsValid,
         LayerDefinition? Layer,
+        IResult? ErrorResult);
+
+    /// <summary>
+    /// Result of V2 publication validation + access checking. Replaces
+    /// <see cref="LayerValidationResult"/> for consumers that have been ported off the v1
+    /// LayerDefinition shape. Carries the publication, the canonical resource, and the
+    /// resolved service so the caller has everything needed for downstream operations.
+    /// </summary>
+    /// <param name="IsValid">Whether validation succeeded.</param>
+    /// <param name="Publication">The matched V2 publication, if any.</param>
+    /// <param name="Resource">The canonical resource backing the publication.</param>
+    /// <param name="Service">The service through which the resource is published.</param>
+    /// <param name="ErrorResult">IResult to return when validation failed.</param>
+    internal readonly record struct MetadataV2ValidationResult(
+        bool IsValid,
+        MetadataV2Publication? Publication,
+        MetadataV2Resource? Resource,
+        MetadataV2Service? Service,
         IResult? ErrorResult);
 
     /// <summary>
@@ -442,4 +462,414 @@ internal static class LayerValidationHelpers
             .ThenBy(service => service.Name, StringComparer.OrdinalIgnoreCase)
             .FirstOrDefault();
     }
+
+    // ---- Metadata v2 validation. Resolves a (publication, resource, service) triple
+    // from the V2 graph snapshot for the given layer id (or collection id) and applies
+    // the same access-policy + protocol-enablement checks as the v1 methods above.
+
+    /// <summary>
+    /// Validates a layer index against the V2 graph snapshot and returns the matched
+    /// publication + resource + service, gated on access policy.
+    /// </summary>
+    public static async Task<MetadataV2ValidationResult> ValidateLayerWithAccessV2Async(
+        HttpContext context,
+        int layerId,
+        ValidationProtocol protocol,
+        AccessScope scope = AccessScope.Read,
+        MetadataV2ServiceType? requiredServiceType = null,
+        CancellationToken cancellationToken = default)
+    {
+        var effectiveToken = protocol == ValidationProtocol.OData
+            ? ODataUtilityService.GetTimeoutAwareCancellationToken(context)
+            : cancellationToken;
+
+        var snapshot = await GetV2SnapshotAsync(context, effectiveToken).ConfigureAwait(false);
+        var (publication, resource, service) = ResolveV2Triple(snapshot, layerId, requiredServiceType);
+
+        if (publication is null || resource is null)
+        {
+            var msg = $"Layer {layerId} not found";
+            var error = protocol switch
+            {
+                ValidationProtocol.OData => CreateODataError(context, msg, StatusCodes.Status404NotFound),
+                ValidationProtocol.OgcFeatures => CreateOgcError(context, msg, StatusCodes.Status404NotFound),
+                _ => StandardErrorHelpers.CreateNotFound(context, msg),
+            };
+            return new MetadataV2ValidationResult(false, null, null, null, error);
+        }
+
+        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service, scope);
+        if (accessError != null)
+        {
+            return new MetadataV2ValidationResult(false, publication, resource, service, accessError);
+        }
+
+        if (requiredServiceType.HasValue && service is not null && service.ServiceType != requiredServiceType.Value)
+        {
+            var msg = $"{requiredServiceType.Value} is not enabled for this service.";
+            var error = protocol switch
+            {
+                ValidationProtocol.OData => CreateODataError(context, msg, StatusCodes.Status404NotFound),
+                ValidationProtocol.OgcFeatures => CreateOgcError(context, msg, StatusCodes.Status404NotFound),
+                _ => StandardErrorHelpers.CreateNotFound(context, msg),
+            };
+            return new MetadataV2ValidationResult(false, publication, resource, service, error);
+        }
+
+        return new MetadataV2ValidationResult(true, publication, resource, service, null);
+    }
+
+    /// <summary>
+    /// Validates a layer index against the V2 graph snapshot using standard error
+    /// responses (no protocol-specific formatting).
+    /// </summary>
+    public static async Task<MetadataV2ValidationResult> ValidateLayerWithAccessV2Async(
+        HttpContext context,
+        int layerId,
+        AccessScope scope = AccessScope.Read,
+        MetadataV2ServiceType? requiredServiceType = null,
+        CancellationToken cancellationToken = default)
+    {
+        var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+        var (publication, resource, service) = ResolveV2Triple(snapshot, layerId, requiredServiceType);
+
+        if (publication is null || resource is null)
+        {
+            var error = StandardErrorHelpers.CreateNotFound(context, $"Layer {layerId} not found");
+            return new MetadataV2ValidationResult(false, null, null, null, error);
+        }
+
+        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service, scope);
+        if (accessError != null)
+        {
+            return new MetadataV2ValidationResult(false, publication, resource, service, accessError);
+        }
+
+        if (requiredServiceType.HasValue && service is not null && service.ServiceType != requiredServiceType.Value)
+        {
+            var error = StandardErrorHelpers.CreateNotFound(
+                context,
+                $"{requiredServiceType.Value} is not enabled for this service.");
+            return new MetadataV2ValidationResult(false, publication, resource, service, error);
+        }
+
+        return new MetadataV2ValidationResult(true, publication, resource, service, null);
+    }
+
+    /// <summary>
+    /// Validates a collection identifier against the V2 graph snapshot. The collection id
+    /// is matched against publication serviceLocalId, path, name, or id (case-insensitive),
+    /// in that order. For unambiguous routing, callers should ensure publications carry a
+    /// distinct <c>ServiceLocalId</c>.
+    /// </summary>
+    public static async Task<MetadataV2ValidationResult> ValidateCollectionWithAccessV2Async(
+        HttpContext context,
+        string collectionId,
+        AccessScope scope = AccessScope.Read,
+        MetadataV2ServiceType? requiredServiceType = MetadataV2ServiceType.OgcApiFeatures,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(collectionId))
+        {
+            return new MetadataV2ValidationResult(
+                false,
+                null,
+                null,
+                null,
+                StandardErrorHelpers.CreateBadRequest(context, "Collection id is required."));
+        }
+
+        var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+        var numericCollectionId = int.TryParse(
+            collectionId.Trim(),
+            System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var parsedCollectionId)
+                ? parsedCollectionId
+                : (int?)null;
+
+        bool MatchesCollectionId(MetadataV2Publication p)
+            => string.Equals(p.ServiceLocalId, collectionId, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(p.Path, collectionId, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(p.Metadata.Name, collectionId, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(p.Metadata.Id, collectionId, StringComparison.OrdinalIgnoreCase) ||
+               (numericCollectionId.HasValue && p.LayerIndex == numericCollectionId.Value);
+
+        MetadataV2Publication? publication = null;
+
+        // When a service type is specified, prefer the matching publication so a STAC
+        // collection request that shares a serviceLocalId with another protocol's
+        // publication (e.g. an Esri Feature Service publication with the same local id)
+        // doesn't get dispatched to the wrong protocol.
+        if (requiredServiceType.HasValue)
+        {
+            publication = snapshot.Graph.Publications.FirstOrDefault(p =>
+                MatchesCollectionId(p) &&
+                snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var s) &&
+                s.ServiceType == requiredServiceType.Value);
+        }
+        publication ??= snapshot.Graph.Publications.FirstOrDefault(MatchesCollectionId);
+
+        if (publication is null)
+        {
+            return new MetadataV2ValidationResult(
+                false,
+                null,
+                null,
+                null,
+                StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found."));
+        }
+
+        var resource = snapshot.ResolveResource(publication);
+        var service = snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var resolvedService)
+            ? resolvedService
+            : null;
+
+        if (resource is null)
+        {
+            return new MetadataV2ValidationResult(
+                false,
+                publication,
+                null,
+                service,
+                StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found."));
+        }
+
+        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service, scope);
+        if (accessError != null)
+        {
+            return new MetadataV2ValidationResult(false, publication, resource, service, accessError);
+        }
+
+        if (requiredServiceType.HasValue && service is not null && service.ServiceType != requiredServiceType.Value)
+        {
+            var error = StandardErrorHelpers.CreateNotFound(
+                context,
+                $"{requiredServiceType.Value} is not enabled for this service.");
+            return new MetadataV2ValidationResult(false, publication, resource, service, error);
+        }
+
+        return new MetadataV2ValidationResult(true, publication, resource, service, null);
+    }
+
+    /// <summary>
+    /// Builds a deterministic layerIndex → <see cref="MetadataV2Service"/> map for a protocol-
+    /// specific route surface. When a publication's layer index could belong to several
+    /// services, the one matching <paramref name="requiredServiceType"/> wins; otherwise the
+    /// service with the lexicographically earliest name keeps routing deterministic.
+    /// </summary>
+    public static IReadOnlyDictionary<int, MetadataV2Service> BuildPrimaryServiceMapV2(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2ServiceType? requiredServiceType = null)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        var byLayer = new Dictionary<int, MetadataV2Service>();
+        foreach (var pub in snapshot.Graph.Publications)
+        {
+            if (!pub.LayerIndex.HasValue)
+            {
+                continue;
+            }
+            if (!snapshot.Index.ServicesById.TryGetValue(pub.ServiceId, out var service))
+            {
+                continue;
+            }
+            if (!byLayer.TryGetValue(pub.LayerIndex.Value, out var existing))
+            {
+                byLayer[pub.LayerIndex.Value] = service;
+                continue;
+            }
+
+            // Resolve ambiguity: prefer service-type match, then lexicographically earliest name.
+            var existingMatches = requiredServiceType.HasValue && existing.ServiceType == requiredServiceType.Value;
+            var candidateMatches = requiredServiceType.HasValue && service.ServiceType == requiredServiceType.Value;
+            if (candidateMatches && !existingMatches)
+            {
+                byLayer[pub.LayerIndex.Value] = service;
+            }
+            else if (existingMatches == candidateMatches &&
+                     string.Compare(service.Metadata.Name, existing.Metadata.Name, StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                byLayer[pub.LayerIndex.Value] = service;
+            }
+        }
+        return byLayer;
+    }
+
+    /// <summary>
+    /// Resolves the primary V2 service for a layer index. Preferred match is on
+    /// <paramref name="requiredServiceType"/>; falls back to the lexicographically earliest
+    /// service name. Returns null when no publication matches.
+    /// </summary>
+    public static async Task<MetadataV2Service?> ResolvePrimaryServiceV2Async(
+        HttpContext context,
+        int layerId,
+        MetadataV2ServiceType? requiredServiceType = null,
+        CancellationToken cancellationToken = default)
+    {
+        var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+        var (_, _, service) = ResolveV2Triple(snapshot, layerId, requiredServiceType);
+        return service;
+    }
+
+    /// <summary>
+    /// Resolves the primary V2 service name for a layer index.
+    /// </summary>
+    public static async Task<string?> ResolvePrimaryServiceNameV2Async(
+        HttpContext context,
+        int layerId,
+        MetadataV2ServiceType? requiredServiceType = null,
+        CancellationToken cancellationToken = default)
+    {
+        var service = await ResolvePrimaryServiceV2Async(context, layerId, requiredServiceType, cancellationToken)
+            .ConfigureAwait(false);
+        return service?.Metadata.Name;
+    }
+
+    private static async Task<MetadataV2GraphSnapshot> GetV2SnapshotAsync(
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        var provider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        return await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static (MetadataV2Publication? Publication, MetadataV2Resource? Resource, MetadataV2Service? Service)
+        ResolveV2Triple(
+            MetadataV2GraphSnapshot snapshot,
+            int layerId,
+            MetadataV2ServiceType? requiredServiceType)
+    {
+        // When a service type is specified, prefer publications on services of that type.
+        var candidatePublications = snapshot.Graph.Publications
+            .Where(p => p.LayerIndex == layerId);
+
+        if (requiredServiceType.HasValue)
+        {
+            var preferred = candidatePublications
+                .Where(p =>
+                    snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var s) &&
+                    s.ServiceType == requiredServiceType.Value)
+                .FirstOrDefault();
+            if (preferred is not null)
+            {
+                var preferredResource = snapshot.ResolveResource(preferred);
+                var preferredService = snapshot.Index.ServicesById[preferred.ServiceId];
+                return (preferred, preferredResource, preferredService);
+            }
+        }
+
+        var publication = candidatePublications
+            .OrderBy(p =>
+                snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var s)
+                    ? s.Metadata.Name
+                    : p.ServiceId,
+                StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
+
+        if (publication is null)
+        {
+            return (null, null, null);
+        }
+
+        var resource = snapshot.ResolveResource(publication);
+        var service = snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var resolvedService)
+            ? resolvedService
+            : null;
+        return (publication, resource, service);
+    }
+
+    /// <summary>
+    /// V2 service-level validation. Looks up a <see cref="MetadataV2Service"/> by name and gates
+    /// it on the access policy. Returns the resolved service plus all of its publications and
+    /// their resources, so capability/metadata handlers can build their response without further
+    /// snapshot walking.
+    /// </summary>
+    /// <param name="context">HTTP context.</param>
+    /// <param name="serviceName">Public service name (case-insensitive).</param>
+    /// <param name="requiredServiceType">Optional <see cref="MetadataV2ServiceType"/> gate; when
+    /// set, only matches services of that type. Use to route a request to (for example) the
+    /// EsriMapService publication when a v1 service name is shared across multiple V2 service
+    /// types.</param>
+    /// <param name="scope">Access scope to check.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public static async Task<MetadataV2ServiceValidationResult> ValidateServiceWithAccessV2Async(
+        HttpContext context,
+        string serviceName,
+        MetadataV2ServiceType? requiredServiceType = null,
+        AccessScope scope = AccessScope.Read,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(serviceName))
+        {
+            return new MetadataV2ServiceValidationResult(
+                false, null, [], [],
+                StandardErrorHelpers.CreateBadRequest(context, "Service name is required."));
+        }
+
+        var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+
+        // Prefer a service-type match; otherwise fall back to name match.
+        MetadataV2Service? service = null;
+        if (requiredServiceType.HasValue)
+        {
+            service = snapshot.Graph.Services.FirstOrDefault(s =>
+                s.ServiceType == requiredServiceType.Value &&
+                string.Equals(s.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase));
+        }
+        service ??= snapshot.Index.ServicesByName.TryGetValue(serviceName, out var s) ? s : null;
+
+        if (service is null)
+        {
+            return new MetadataV2ServiceValidationResult(
+                false, null, [], [],
+                StandardErrorHelpers.CreateNotFound(context, $"Service '{serviceName}' not found."));
+        }
+
+        if (requiredServiceType.HasValue && service.ServiceType != requiredServiceType.Value)
+        {
+            return new MetadataV2ServiceValidationResult(
+                false, service, [], [],
+                StandardErrorHelpers.CreateNotFound(
+                    context, $"{requiredServiceType.Value} is not enabled for service '{serviceName}'."));
+        }
+
+        var serviceAccessError = AccessPolicyHelpers.RequireServiceAccess(context, service, scope);
+        if (serviceAccessError != null)
+        {
+            return new MetadataV2ServiceValidationResult(false, service, [], [], serviceAccessError);
+        }
+
+        var publications = snapshot.PublicationsForService(service.Metadata.Id);
+        var resources = new List<MetadataV2Resource>(publications.Count);
+        foreach (var pub in publications)
+        {
+            var resource = snapshot.ResolveResource(pub);
+            if (resource is null)
+            {
+                continue;
+            }
+            // Drop resources the caller can't read; capability documents normally hide them.
+            if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, service, scope))
+            {
+                continue;
+            }
+            resources.Add(resource);
+        }
+
+        return new MetadataV2ServiceValidationResult(true, service, publications, resources, null);
+    }
 }
+
+/// <summary>
+/// Result of V2 service-level validation. Carries the service plus its full publication set and
+/// the resources visible to the caller, so capability-document handlers don't have to walk the
+/// graph again.
+/// </summary>
+internal readonly record struct MetadataV2ServiceValidationResult(
+    bool IsValid,
+    MetadataV2Service? Service,
+    IReadOnlyList<MetadataV2Publication> Publications,
+    IReadOnlyList<MetadataV2Resource> AccessibleResources,
+    IResult? ErrorResult);

@@ -55,7 +55,12 @@ internal static class RasterMapRenderingPipeline
     private const string InvalidSpatialReferenceMessage = "Invalid spatial reference.";
     private static readonly ConcurrentDictionary<int, CachedRasterStylePlan> _rasterStylePlanCache = new();
 
-    internal static async Task<RasterTileRenderResult> RenderRasterTileAsync(
+    /// <summary>
+    /// Lightweight descriptor used by <see cref="RenderRasterTileCoreAsync"/> for one render layer.
+    /// </summary>
+    internal readonly record struct RenderLayerDescriptor(int LayerId, bool HasGeometry, GeometryType GeometryType);
+
+    internal static Task<RasterTileRenderResult> RenderRasterTileAsync(
         HttpContext context,
         ServiceDefinition service,
         IReadOnlyList<LayerDefinition> renderLayers,
@@ -65,6 +70,62 @@ internal static class RasterMapRenderingPipeline
         int maxFeatures,
         CancellationToken cancellationToken,
         IReadOnlyList<TemporalFilter?>? layerTemporalFilters = null)
+    {
+        var descriptors = new RenderLayerDescriptor[renderLayers.Count];
+        for (var i = 0; i < renderLayers.Count; i++)
+        {
+            var layer = renderLayers[i];
+            descriptors[i] = new RenderLayerDescriptor(layer.Id, layer.HasGeometry, layer.GeometryType);
+        }
+
+        return RenderRasterTileCoreAsync(
+            context,
+            service.SpatialReference.Srid,
+            descriptors,
+            z, y, x,
+            maxFeatures,
+            cancellationToken,
+            layerTemporalFilters);
+    }
+
+    /// <summary>
+    /// V2 overload of <see cref="RenderRasterTileAsync(HttpContext, ServiceDefinition, IReadOnlyList{LayerDefinition}, int, int, int, int, CancellationToken, IReadOnlyList{TemporalFilter?}?)"/>.
+    /// Callers resolve the source spatial-reference SRID up front (from the
+    /// MetadataV2Service or its publications) and pass per-resource render descriptors
+    /// (storage layer id + geometry capability) so this method does not need access to v1
+    /// catalog types.
+    /// </summary>
+    internal static Task<RasterTileRenderResult> RenderRasterTileV2Async(
+        HttpContext context,
+        int serviceSrid,
+        IReadOnlyList<RenderLayerDescriptor> renderLayers,
+        int z,
+        int y,
+        int x,
+        int maxFeatures,
+        CancellationToken cancellationToken,
+        IReadOnlyList<TemporalFilter?>? layerTemporalFilters = null)
+        => RenderRasterTileCoreAsync(
+            context,
+            serviceSrid,
+            renderLayers,
+            z, y, x,
+            maxFeatures,
+            cancellationToken,
+            layerTemporalFilters);
+
+#pragma warning disable CA1068 // legacy callers/tests pass cancellation before optional temporal filters
+    private static async Task<RasterTileRenderResult> RenderRasterTileCoreAsync(
+        HttpContext context,
+        int serviceSrid,
+        IReadOnlyList<RenderLayerDescriptor> renderLayers,
+        int z,
+        int y,
+        int x,
+        int maxFeatures,
+        CancellationToken cancellationToken,
+        IReadOnlyList<TemporalFilter?>? layerTemporalFilters)
+#pragma warning restore CA1068
     {
         var tileBounds = TileMath.GetTileBounds(x, y, z);
         var renderExtent = new SkiaMapRenderer.RenderExtent(
@@ -129,12 +190,12 @@ internal static class RasterMapRenderingPipeline
 
             var stylePlan = await GetRasterStylePlanAsync(
                 styleCatalog,
-                layer.Id,
+                layer.LayerId,
                 cancellationToken).ConfigureAwait(false);
             var featureQuery = CreateRasterFeatureQuery(
                 stylePlan,
                 spatialFilter,
-                service.SpatialReference.Srid,
+                serviceSrid,
                 TileSrid,
                 maxFeatures,
                 temporalFilter: layerTemporalFilters is { Count: > 0 } && layerIndex < layerTemporalFilters.Count
@@ -144,7 +205,7 @@ internal static class RasterMapRenderingPipeline
             var renderedPointCount = await TryRenderRasterPointFastPathAsync(
                 canvas,
                 featureReader,
-                layer.Id,
+                layer.LayerId,
                 layer.GeometryType,
                 stylePlan,
                 featureQuery,
@@ -159,7 +220,7 @@ internal static class RasterMapRenderingPipeline
                 continue;
             }
 
-            var features = await QueryRasterFeaturesAsync(featureReader, layer.Id, featureQuery, cancellationToken)
+            var features = await QueryRasterFeaturesAsync(featureReader, layer.LayerId, featureQuery, cancellationToken)
                 .ConfigureAwait(false);
             if (features.Length == 0)
             {

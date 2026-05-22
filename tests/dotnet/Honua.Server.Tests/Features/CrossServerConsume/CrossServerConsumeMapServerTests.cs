@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -18,7 +19,6 @@ namespace Honua.Server.Tests.Features.CrossServerConsume;
 [Trait("Suite", "CrossServerConsume")]
 public sealed class CrossServerConsumeMapServerTests : IClassFixture<CrossServerConsumeMapServerFixture>
 {
-    private const string MapServerWmtsGap = "gap: camptocamp/mapserver:8.0 exposes WMS/WFS but does not include WMTS_SERVER support; add a MapCache-backed reference source for WMTS.";
     private readonly CrossServerConsumeMapServerFixture _mapServer;
 
     public CrossServerConsumeMapServerTests(CrossServerConsumeMapServerFixture mapServer)
@@ -127,20 +127,55 @@ public sealed class CrossServerConsumeMapServerTests : IClassFixture<CrossServer
         CrossServerConsumeTestSupport.AssertFeatureCollectionHasFeature(document, MapServerFixture.LayerName);
     }
 
-    [ExternalServiceTest(CrossServerConsumeTestSupport.ExternalServicesEnv, Skip = MapServerWmtsGap)]
+    [ExternalServiceTest(CrossServerConsumeTestSupport.ExternalServicesEnv)]
     [Protocol(TestProtocols.Wmts10)]
     [Operation(Operations.Consume)]
-    public Task WmtsGetCapabilities_MapServer_ReturnsLayerDocument()
+    public async Task WmtsGetCapabilities_MapServer_ReturnsLayerDocument()
     {
-        return Task.CompletedTask;
+        var document = await CrossServerConsumeTestSupport.GetXmlAsync(
+            _mapServer.HonuaClient,
+            BuildProxyUrl(
+                _mapServer.WmtsEndpointUrl,
+                ("SERVICE", "WMTS"),
+                ("REQUEST", "GetCapabilities"),
+                ("VERSION", "1.0.0")));
+
+        CrossServerConsumeTestSupport.AssertRoot(document, "Capabilities");
+        CrossServerConsumeTestSupport.AssertDocumentContains(document, MapServerFixture.LayerName);
     }
 
-    [ExternalServiceTest(CrossServerConsumeTestSupport.ExternalServicesEnv, Skip = MapServerWmtsGap)]
+    [ExternalServiceTest(CrossServerConsumeTestSupport.ExternalServicesEnv)]
     [Protocol(TestProtocols.Wmts10)]
     [Operation(Operations.Consume)]
-    public Task WmtsGetTile_MapServer_ReturnsAdvertisedTile()
+    public async Task WmtsGetTile_MapServer_ReturnsAdvertisedTile()
     {
-        return Task.CompletedTask;
+        var capabilities = await CrossServerConsumeTestSupport.GetXmlAsync(
+            _mapServer.HonuaClient,
+            BuildProxyUrl(
+                _mapServer.WmtsEndpointUrl,
+                ("SERVICE", "WMTS"),
+                ("REQUEST", "GetCapabilities"),
+                ("VERSION", "1.0.0")));
+        var tileRequest = CrossServerConsumeTestSupport.SelectFirstAdvertisedTile(
+            capabilities,
+            MapServerFixture.LayerName);
+
+        var image = await CrossServerConsumeTestSupport.GetImageAsync(
+            _mapServer.HonuaClient,
+            BuildProxyUrl(
+                _mapServer.WmtsEndpointUrl,
+                ("SERVICE", "WMTS"),
+                ("REQUEST", "GetTile"),
+                ("VERSION", "1.0.0"),
+                ("LAYER", tileRequest.Layer),
+                ("STYLE", tileRequest.Style),
+                ("FORMAT", tileRequest.Format),
+                ("TILEMATRIXSET", tileRequest.TileMatrixSet),
+                ("TILEMATRIX", tileRequest.TileMatrix),
+                ("TILEROW", tileRequest.TileRow.ToString(CultureInfo.InvariantCulture)),
+                ("TILECOL", tileRequest.TileCol.ToString(CultureInfo.InvariantCulture))));
+
+        image.Should().NotBeEmpty();
     }
 
     private static string BuildProxyUrl(string baseUrl, params (string Name, string Value)[] parameters)

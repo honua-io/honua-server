@@ -3,7 +3,7 @@
 
 using System.Globalization;
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer.Models;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer.Services;
 using Honua.Server.Features.Infrastructure.Models;
@@ -22,16 +22,16 @@ namespace Honua.Server.Features.Protocols.GeoServices.ImageServer.Handlers;
 /// </summary>
 internal sealed class ImageServerAnalyzeHandler
 {
-    private readonly ILayerCatalog _layerCatalog;
+    private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IImageServerRasterFunctionPlanner _planner;
     private readonly ILogger<ImageServerAnalyzeHandler> _logger;
 
     public ImageServerAnalyzeHandler(
-        ILayerCatalog layerCatalog,
+        IMetadataV2GraphProvider graphProvider,
         IImageServerRasterFunctionPlanner planner,
         ILogger<ImageServerAnalyzeHandler> logger)
     {
-        _layerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
+        _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _planner = planner ?? throw new ArgumentNullException(nameof(planner));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -54,8 +54,8 @@ internal sealed class ImageServerAnalyzeHandler
 
         try
         {
-            var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer is null)
+            var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is null)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");

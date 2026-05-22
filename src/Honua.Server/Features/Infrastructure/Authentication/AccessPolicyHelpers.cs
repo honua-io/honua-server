@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Infrastructure.Models;
@@ -142,5 +143,95 @@ internal static class AccessPolicyHelpers
 
         var evaluator = context.RequestServices.GetRequiredService<IAccessPolicyEvaluator>();
         return evaluator.Evaluate(AnonymousPrincipal, layer.Metadata?.AccessPolicy, service?.Metadata?.AccessPolicy, scope).IsAllowed;
+    }
+
+    // ---- Metadata v2 overloads. These read the typed AccessPolicy carried on the
+    // V2 entities directly, removing the need for consumers to thread v1 LayerDefinition /
+    // ServiceDefinition through. They share the underlying RequireAccess / EvaluateAccess
+    // implementations so behaviour is identical.
+
+    public static IResult? RequireResourceAccess(
+        HttpContext context,
+        MetadataV2Resource resource,
+        MetadataV2Service? service = null,
+        AccessScope scope = AccessScope.Read)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        return RequireAccess(context, resource.AccessPolicy, service?.AccessPolicy, scope);
+    }
+
+    public static IResult? RequireServiceAccess(
+        HttpContext context,
+        MetadataV2Service service,
+        AccessScope scope = AccessScope.Read)
+    {
+        ArgumentNullException.ThrowIfNull(service);
+        return RequireAccess(context, null, service.AccessPolicy, scope);
+    }
+
+    public static bool IsResourceAccessible(
+        HttpContext context,
+        MetadataV2Resource resource,
+        MetadataV2Service? service = null,
+        AccessScope scope = AccessScope.Read)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        return EvaluateAccess(context, resource.AccessPolicy, service?.AccessPolicy, scope).IsAllowed;
+    }
+
+    public static bool AllowsAnonymousResourceAccess(
+        HttpContext context,
+        MetadataV2Resource resource,
+        MetadataV2Service? service = null,
+        AccessScope scope = AccessScope.Read)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        var evaluator = context.RequestServices.GetRequiredService<IAccessPolicyEvaluator>();
+        return evaluator.Evaluate(AnonymousPrincipal, resource.AccessPolicy, service?.AccessPolicy, scope).IsAllowed;
+    }
+
+    public static bool AllowsAnonymousServiceAccess(
+        HttpContext context,
+        MetadataV2Service service,
+        AccessScope scope = AccessScope.Read)
+    {
+        ArgumentNullException.ThrowIfNull(service);
+        var evaluator = context.RequestServices.GetRequiredService<IAccessPolicyEvaluator>();
+        return evaluator.Evaluate(AnonymousPrincipal, null, service.AccessPolicy, scope).IsAllowed;
+    }
+
+    public static IResult? RequireAnyResourceAccess(
+        HttpContext context,
+        IEnumerable<MetadataV2Resource> resources,
+        MetadataV2Service? service = null,
+        AccessScope scope = AccessScope.Read)
+    {
+        ArgumentNullException.ThrowIfNull(resources);
+        var requiresAuth = false;
+        var hasDenied = false;
+
+        foreach (var resource in resources)
+        {
+            var decision = EvaluateAccess(context, resource.AccessPolicy, service?.AccessPolicy, scope);
+            if (decision.IsAllowed)
+            {
+                return null;
+            }
+
+            hasDenied = true;
+            if (decision.RequiresAuthentication)
+            {
+                requiresAuth = true;
+            }
+        }
+
+        if (!hasDenied)
+        {
+            return null;
+        }
+
+        return requiresAuth
+            ? StandardErrorHelpers.CreateUnauthorized(context, AuthRequiredMessage)
+            : StandardErrorHelpers.CreateForbidden(context, AccessForbiddenMessage);
     }
 }

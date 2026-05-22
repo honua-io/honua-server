@@ -7,6 +7,8 @@ using System.Text.Json;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.HealthCheck.Abstractions;
@@ -203,6 +205,11 @@ public sealed class WebAppFixture : IAsyncLifetime
                     services.RemoveAll<ILayerCatalog>();
                     services.AddScoped<ILayerCatalog, Honua.Postgres.Features.Catalog.PostgresLayerCatalog>();
 
+                    // Replace the Postgres-backed Metadata v2 provider with an in-memory fixture
+                    // so endpoints that have migrated off ILayerCatalog can read a snapshot without
+                    // a migrated snapshot row being present in the test database.
+                    RegisterDefaultMetadataV2Graph(services);
+
                     // Override database connection provider with test-specific implementation
                     services.RemoveAll<IDatabaseConnectionProvider>();
                     services.AddScoped<IDatabaseConnectionProvider>(serviceProvider =>
@@ -285,6 +292,245 @@ public sealed class WebAppFixture : IAsyncLifetime
         }
 
         await transaction.CommitAsync();
+    }
+
+    /// <summary>
+    /// Builds the default Metadata v2 graph snapshot registered into the test DI container so
+    /// that endpoints which have migrated off <see cref="ILayerCatalog"/> have something to read
+    /// from. Mirrors the layer ids seeded by <c>tests/seed/server.yaml</c> so existence probes
+    /// keyed on the v1 layer id continue to find a matching publication. Tests that need a richer
+    /// graph can replace the registration through <see cref="ConfigureServices"/>.
+    /// </summary>
+    private static MetadataV2Graph BuildDefaultTestGraph()
+    {
+        // The Postgres test seed (tests/seed/server.yaml) registers a single "test" service
+        // with every protocol enabled. Mirror that on the V2 graph so capability gates
+        // (ServiceProtocols.IsProtocolEnabled on the OGC API family) match the v1 behaviour.
+        var allProtocols = Honua.Core.Features.Catalog.Domain.ServiceProtocols.All;
+        var builder = new Honua.TestKit.Infrastructure.TestMetadataV2GraphBuilder()
+            .AddService(
+                "svc-test",
+                "test",
+                MetadataV2ServiceType.OgcApiFeatures,
+                route: "/ogc/features",
+                enabledProtocols: allProtocols);
+
+        // Cover the layer ids inserted by server.yaml (0..2 and the spatial-reference fixtures
+        // at 101..104). Any test that needs a different id range can extend or replace the graph.
+        int[] seededLayerIndices = [0, 1, 2, 3, 4, 5, 101, 102, 103, 104];
+        foreach (var layerIndex in seededLayerIndices)
+        {
+            var resourceId = $"res-layer-{layerIndex}";
+            builder
+                .AddResource(
+                    resourceId,
+                    $"layer-{layerIndex}",
+                    MetadataV2ResourceType.FeatureDataset,
+                    fields: BuildDefaultFeatureSchemaFields(),
+                    spatial: BuildDefaultSpatialMetadata(layerIndex),
+                    temporal: layerIndex == TestLayerId ? BuildDefaultTemporalMetadata() : null)
+                .AddPublication(
+                    id: $"pub-layer-{layerIndex}",
+                    serviceId: "svc-test",
+                    resourceId: resourceId,
+                    layerIndex: layerIndex,
+                    serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        // ImageServer publications for the canonical raster test layer (TestServiceId/TestLayerId).
+        // ImageServer handler tests resolve their layer index against this snapshot.
+        builder
+            .AddResource("res-image-test", "test-layer", MetadataV2ResourceType.RasterDataset)
+            .AddService("svc-image-test", TestServiceId, MetadataV2ServiceType.EsriImageService)
+            .AddPublication(
+                id: "pub-image-test",
+                serviceId: "svc-image-test",
+                resourceId: "res-image-test",
+                layerIndex: TestLayerId,
+                serviceLocalId: "test-layer",
+                publicationType: MetadataV2PublicationType.EsriImageLayer);
+
+        // FeatureServer and MapServer publications for the canonical "test" service.
+        // The GeoServices REST catalog endpoint enumerates these directly from the V2
+        // graph, so the directory only emits FeatureServer/MapServer entries when matching
+        // EsriFeatureService / EsriMapService publications exist. We publish the same
+        // layer ids that server.yaml seeds so /rest/services has services to return and
+        // downstream FeatureServer/MapServer handler ports can resolve them by layer id.
+        builder
+            .AddService("svc-test-feature", "test", MetadataV2ServiceType.EsriFeatureService)
+            .AddService("svc-test-map", "test", MetadataV2ServiceType.EsriMapService)
+            .AddService("svc-test-stac", "test", MetadataV2ServiceType.StacApi, route: "/stac");
+        foreach (var layerIndex in seededLayerIndices)
+        {
+            var resourceId = $"res-layer-{layerIndex}";
+            builder
+                .AddPublication(
+                    id: $"pub-feature-{layerIndex}",
+                    serviceId: "svc-test-feature",
+                    resourceId: resourceId,
+                    layerIndex: layerIndex,
+                    serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+                .AddPublication(
+                    id: $"pub-map-{layerIndex}",
+                    serviceId: "svc-test-map",
+                    resourceId: resourceId,
+                    layerIndex: layerIndex,
+                    serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    publicationType: MetadataV2PublicationType.EsriMapLayer)
+                .AddPublication(
+                    id: $"pub-stac-{layerIndex}",
+                    serviceId: "svc-test-stac",
+                    resourceId: resourceId,
+                    layerIndex: layerIndex,
+                    serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    publicationType: MetadataV2PublicationType.StacCollection);
+        }
+
+        return builder.Build();
+    }
+
+    private static MetadataV2Field[] BuildDefaultFeatureSchemaFields()
+    {
+        return
+        [
+            new MetadataV2Field
+            {
+                Name = "objectid",
+                Type = "integer",
+                Title = "Object ID",
+                Nullable = false,
+                SemanticRoles = ["id.primary"]
+            },
+            new MetadataV2Field
+            {
+                Name = "name",
+                Type = "string",
+                Title = "Name",
+                Nullable = true
+            },
+            new MetadataV2Field
+            {
+                Name = "geometry",
+                Type = "geometry",
+                Title = "Geometry",
+                Nullable = true,
+                SemanticRoles = ["geometry.primary"]
+            },
+            new MetadataV2Field
+            {
+                Name = "timestamp",
+                Type = "datetime",
+                Title = "Timestamp",
+                Nullable = true
+            },
+            new MetadataV2Field
+            {
+                Name = "event_date",
+                Type = "datetime",
+                Title = "Event date",
+                Nullable = true
+            }
+        ];
+    }
+
+    private static JsonElement BuildDefaultSpatialMetadata(int layerIndex)
+    {
+        var srid = layerIndex is 101 or 102 or 103 or 104
+            ? SpatialReferenceTestLayerCatalog.LayerSrid
+            : 4326;
+        var geometryType = layerIndex switch
+        {
+            102 => "LineString",
+            103 => "Polygon",
+            _ => "Point"
+        };
+
+        return JsonSerializer.SerializeToElement(new
+        {
+            srid,
+            crs = $"EPSG:{srid}",
+            geometryType
+        });
+    }
+
+    private static JsonElement BuildDefaultTemporalMetadata()
+    {
+        return JsonSerializer.SerializeToElement(new
+        {
+            startTimeField = "timestamp",
+            endTimeField = "event_date"
+        });
+    }
+
+    private static void RegisterDefaultMetadataV2Graph(IServiceCollection services)
+    {
+        services.RemoveAll<IMetadataV2GraphProvider>();
+        services.AddSingleton<IMetadataV2GraphProvider>(_ =>
+            new Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider(BuildDefaultTestGraph()));
+    }
+
+    /// <summary>
+    /// V2-aware helper for STAC tests: looks up the test V2 graph provider, locates the
+    /// resource by the publication's layer index, and writes <c>stac</c> + <c>temporal</c>
+    /// extension JSON onto it. Mirrors the v1 <c>UpdateLayerMetadataAsync</c> call surface
+    /// the STAC tests used to seed CatalogMetadata.Stac.
+    /// </summary>
+    public void UpdateV2ResourceMetadata(
+        int layerIndex,
+        JsonElement? stacExtension = null,
+        JsonElement? temporal = null,
+        JsonElement? spatial = null)
+    {
+        var provider = GetService<IMetadataV2GraphProvider>() as Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider
+            ?? throw new InvalidOperationException(
+                "Test V2 graph provider not registered as TestMetadataV2GraphProvider.");
+
+        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
+        var pub = snapshot.Graph.Publications.FirstOrDefault(p => p.LayerIndex == layerIndex);
+        if (pub is null)
+        {
+            throw new InvalidOperationException(
+                $"No publication for layer {layerIndex} in the test V2 graph.");
+        }
+
+        var resourceIndex = -1;
+        for (var i = 0; i < snapshot.Graph.Resources.Count; i++)
+        {
+            if (string.Equals(snapshot.Graph.Resources[i].Metadata.Id, pub.ResourceId, StringComparison.Ordinal))
+            {
+                resourceIndex = i;
+                break;
+            }
+        }
+        if (resourceIndex < 0)
+        {
+            throw new InvalidOperationException(
+                $"Publication {pub.Metadata.Id} references missing resource {pub.ResourceId}.");
+        }
+
+        var resources = snapshot.Graph.Resources.ToArray();
+        var resource = resources[resourceIndex];
+
+        var extensions = new Dictionary<string, JsonElement>(resource.Extensions, StringComparer.Ordinal);
+        if (stacExtension.HasValue)
+        {
+            extensions["stac"] = stacExtension.Value;
+        }
+
+        resources[resourceIndex] = resource with
+        {
+            Extensions = extensions,
+            Temporal = temporal ?? resource.Temporal,
+            Spatial = spatial ?? resource.Spatial,
+        };
+
+        var updatedGraph = snapshot.Graph with
+        {
+            Resources = resources,
+            Revision = snapshot.Graph.Revision + 1,
+        };
+        provider.SetGraph(updatedGraph);
     }
 
     /// <summary>
@@ -389,6 +635,12 @@ public sealed class WebAppFixture : IAsyncLifetime
 
                             services.RemoveAll<ILayerCatalog>();
                             services.AddScoped<ILayerCatalog, Honua.Postgres.Features.Catalog.PostgresLayerCatalog>();
+
+                            // Replace the Postgres-backed Metadata v2 provider with an in-memory
+                            // fixture so endpoints that have migrated off ILayerCatalog can read a
+                            // snapshot without a migrated snapshot row being present in the test
+                            // database.
+                            RegisterDefaultMetadataV2Graph(services);
                         });
                     });
 
@@ -845,4 +1097,5 @@ public sealed class WebAppFixture : IAsyncLifetime
 
         return client;
     }
+
 }

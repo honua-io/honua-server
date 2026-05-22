@@ -3,9 +3,9 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
@@ -78,8 +78,8 @@ internal static class ItemEndpoints
         try
         {
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-            var validation = await LayerValidationHelpers.ValidateCollectionWithAccessAsync(
-                context, collectionId, requiredProtocol: ServiceProtocols.Stac, cancellationToken: cancellationToken);
+            var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
+                context, collectionId, requiredServiceType: MetadataV2ServiceType.StacApi, cancellationToken: cancellationToken);
             if (!validation.IsValid)
             {
                 StacTelemetry.SetFailed(activity, "collection_not_found_or_forbidden");
@@ -87,8 +87,13 @@ internal static class ItemEndpoints
                 return validation.ErrorResult!;
             }
 
-            var layer = validation.Layer!;
-            var layerId = layer.Id;
+            var resource = validation.Resource!;
+            var publication = validation.Publication!;
+            var layerId = publication.LayerIndex
+                ?? throw new InvalidOperationException(
+                    $"Publication {publication.Metadata.Id} has no LayerIndex; the STAC items handler requires one.");
+            var resourceSrid = resource.ReadSrid() ?? Wgs84Srid;
+
             var effectiveLimit = Math.Clamp(limit ?? StacConstants.DefaultSearchLimit, 1, StacConstants.MaxSearchLimit);
             var effectiveOffset = Math.Max(offset ?? 0, 0);
 
@@ -96,11 +101,10 @@ internal static class ItemEndpoints
             {
                 Limit = effectiveLimit,
                 Offset = effectiveOffset > 0 ? effectiveOffset : null,
-                SpatialReferenceSrid = layer.SpatialReference.Wkid,
+                SpatialReferenceSrid = resourceSrid,
                 OutputSrid = Wgs84Srid
             };
 
-            // Apply bbox filter
             if (!string.IsNullOrWhiteSpace(bbox))
             {
                 var spatialFilter = StacFilterHelpers.ParseBbox(bbox);
@@ -109,20 +113,17 @@ internal static class ItemEndpoints
                     StacTelemetry.SetFailed(activity, "invalid_bbox");
                     return StandardErrorHelpers.CreateBadRequest(context, "Invalid bbox parameter.");
                 }
-
                 query = query with { SpatialFilter = spatialFilter };
             }
 
-            // Apply datetime filter
             if (!string.IsNullOrWhiteSpace(datetime))
             {
-                var temporalFilter = StacFilterHelpers.ParseDatetime(datetime, layer);
+                var temporalFilter = StacFilterHelpers.ParseDatetime(datetime, resource);
                 if (temporalFilter is null)
                 {
                     StacTelemetry.SetFailed(activity, "invalid_datetime");
                     return StandardErrorHelpers.CreateBadRequest(context, "Invalid datetime parameter.");
                 }
-
                 query = query with { TemporalFilter = temporalFilter };
             }
 
@@ -130,12 +131,13 @@ internal static class ItemEndpoints
             var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
 
             var items = result.Features
-                .Select(f => StacMappingService.MapFeatureToItem(f, layer, baseUrl, geometrySrid: Wgs84Srid))
+                .Select(f => StacMappingService.MapFeatureToItem(f, resource, publication, layerId, baseUrl, geometrySrid: Wgs84Srid))
                 .ToImmutableArray();
 
             var stacBase = $"{baseUrl}/stac";
             var itemsPath = $"{stacBase}/collections/{collectionId}/items";
             var requestedItemsUrl = $"{baseUrl}{context.Request.Path}{context.Request.QueryString}";
+            var collectionTitle = resource.Metadata.Title ?? resource.Metadata.Name;
             var linksBuilder = ImmutableArray.CreateBuilder<Link>();
             linksBuilder.Add(Link.Create(
                 href: requestedItemsUrl,
@@ -146,14 +148,13 @@ internal static class ItemEndpoints
                 href: $"{stacBase}/collections/{collectionId}",
                 rel: RelationTypes.Collection,
                 type: MediaTypes.Json,
-                title: layer.Name));
+                title: collectionTitle));
             linksBuilder.Add(Link.Create(
                 href: stacBase,
                 rel: StacConstants.StacRelations.Root,
                 type: MediaTypes.Json,
                 title: "STAC Catalog"));
 
-            // Add next link when more items exist
             var nextOffset = effectiveOffset + items.Length;
             if (result.TotalCount > nextOffset)
             {
@@ -215,8 +216,8 @@ internal static class ItemEndpoints
         try
         {
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-            var validation = await LayerValidationHelpers.ValidateCollectionWithAccessAsync(
-                context, collectionId, requiredProtocol: ServiceProtocols.Stac, cancellationToken: cancellationToken);
+            var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
+                context, collectionId, requiredServiceType: MetadataV2ServiceType.StacApi, cancellationToken: cancellationToken);
             if (!validation.IsValid)
             {
                 StacTelemetry.SetFailed(activity, "collection_not_found_or_forbidden");
@@ -224,19 +225,25 @@ internal static class ItemEndpoints
                 return validation.ErrorResult!;
             }
 
-            var layer = validation.Layer!;
+            var resource = validation.Resource!;
+            var publication = validation.Publication!;
+            var layerId = publication.LayerIndex
+                ?? throw new InvalidOperationException(
+                    $"Publication {publication.Metadata.Id} has no LayerIndex; the STAC item handler requires one.");
+            var resourceSrid = resource.ReadSrid() ?? Wgs84Srid;
+
             Feature? feature = await TryGetFeatureByCanonicalItemIdAsync(
                 featureReader,
-                layer.Id,
-                layer.SpatialReference.Wkid,
+                layerId,
+                resourceSrid,
                 itemId,
                 cancellationToken);
             if (feature is null && long.TryParse(itemId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var objectId))
             {
                 feature = await TryGetFeatureByObjectIdAsStacAsync(
                     featureReader,
-                    layer.Id,
-                    layer.SpatialReference.Wkid,
+                    layerId,
+                    resourceSrid,
                     objectId,
                     cancellationToken);
             }
@@ -249,7 +256,7 @@ internal static class ItemEndpoints
             }
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-            var item = StacMappingService.MapFeatureToItem(feature.Value, layer, baseUrl, geometrySrid: Wgs84Srid);
+            var item = StacMappingService.MapFeatureToItem(feature.Value, resource, publication, layerId, baseUrl, geometrySrid: Wgs84Srid);
 
             StacTelemetry.SetResultCount(activity, 1);
             return Results.Json(item, StacJsonContext.Default.StacItem, MediaTypes.GeoJson);

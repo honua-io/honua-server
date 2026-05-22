@@ -2,10 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Caching.Abstractions;
+using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Microsoft.AspNetCore.OutputCaching;
 
@@ -327,18 +328,41 @@ internal sealed partial class OutputCacheInvalidationService
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            var layerCatalog = scope.ServiceProvider.GetService<ILayerCatalog>();
-            if (layerCatalog == null)
+            var serviceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var graphProvider = scope.ServiceProvider.GetService<IMetadataV2GraphProvider>();
+            if (graphProvider != null)
             {
-                return [];
+                var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+                foreach (var pub in snapshot.Graph.Publications)
+                {
+                    if (pub.LayerIndex != layerId.Value)
+                    {
+                        continue;
+                    }
+                    if (snapshot.Index.ServicesById.TryGetValue(pub.ServiceId, out var service))
+                    {
+                        serviceIds.Add(NormalizeServiceId(service.Metadata.Name));
+                    }
+                }
             }
 
-            var services = await layerCatalog.ListServicesAsync(cancellationToken).ConfigureAwait(false);
-            return services
-                .Where(service => service.Layers.Any(candidate => candidate.Id == layerId.Value))
-                .Select(service => NormalizeServiceId(service.Name))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToArray();
+            if (serviceIds.Count == 0)
+            {
+                var layerCatalog = scope.ServiceProvider.GetService<ILayerCatalog>();
+                if (layerCatalog != null)
+                {
+                    var services = await layerCatalog.ListServicesAsync(cancellationToken).ConfigureAwait(false);
+                    foreach (var service in services)
+                    {
+                        if (service.Layers.Any(layer => layer.Id == layerId.Value))
+                        {
+                            serviceIds.Add(NormalizeServiceId(service.Name));
+                        }
+                    }
+                }
+            }
+
+            return serviceIds.ToArray();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -359,16 +383,32 @@ internal sealed partial class OutputCacheInvalidationService
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            var layerCatalog = scope.ServiceProvider.GetService<ILayerCatalog>();
-            if (layerCatalog == null)
+            var graphProvider = scope.ServiceProvider.GetService<IMetadataV2GraphProvider>();
+            if (graphProvider != null)
             {
-                return collectionIds.ToArray();
+                var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+                foreach (var pub in snapshot.Graph.Publications)
+                {
+                    if (pub.LayerIndex != layerId)
+                    {
+                        continue;
+                    }
+                    var resource = snapshot.ResolveResource(pub);
+                    if (!string.IsNullOrWhiteSpace(resource?.Metadata.Name))
+                    {
+                        collectionIds.Add(resource.Metadata.Name);
+                    }
+                }
             }
 
-            var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(layer?.Name))
+            var layerCatalog = scope.ServiceProvider.GetService<ILayerCatalog>();
+            if (layerCatalog != null)
             {
-                collectionIds.Add(layer.Name);
+                var layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(layer?.Name))
+                {
+                    collectionIds.Add(layer.Name);
+                }
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -391,32 +431,68 @@ internal sealed partial class OutputCacheInvalidationService
         try
         {
             using var scope = _scopeFactory.CreateScope();
+            var graphProvider = scope.ServiceProvider.GetService<IMetadataV2GraphProvider>();
+            if (graphProvider != null)
+            {
+                var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+                MetadataV2Publication? matchedPub = null;
+                MetadataV2Resource? matchedResource = null;
+
+                if (int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
+                {
+                    matchedPub = snapshot.Graph.Publications
+                        .Where(p => p.LayerIndex == layerId)
+                        .OrderBy(p => p.Metadata.Id, StringComparer.Ordinal)
+                        .FirstOrDefault();
+                    if (matchedPub is not null)
+                    {
+                        matchedResource = snapshot.ResolveResource(matchedPub);
+                    }
+                }
+
+                if (matchedResource is null)
+                {
+                    foreach (var resource in snapshot.Graph.Resources)
+                    {
+                        if (string.Equals(resource.Metadata.Name, collectionId, StringComparison.OrdinalIgnoreCase))
+                        {
+                            matchedResource = resource;
+                            matchedPub = snapshot.Index.PublicationsByResource[resource.Metadata.Id]
+                                .OrderBy(p => p.LayerIndex ?? int.MaxValue)
+                                .FirstOrDefault();
+                            break;
+                        }
+                    }
+                }
+
+                if (matchedResource is not null)
+                {
+                    if (matchedPub?.LayerIndex.HasValue == true)
+                    {
+                        collectionIds.Add(matchedPub.LayerIndex.Value.ToString(CultureInfo.InvariantCulture));
+                    }
+                    if (!string.IsNullOrWhiteSpace(matchedResource.Metadata.Name))
+                    {
+                        collectionIds.Add(matchedResource.Metadata.Name);
+                    }
+                }
+            }
+
             var layerCatalog = scope.ServiceProvider.GetService<ILayerCatalog>();
-            if (layerCatalog == null)
-            {
-                return collectionIds.ToArray();
-            }
-
-            LayerDefinition? layer = null;
-            if (int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
-            {
-                layer = await layerCatalog.GetLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-            }
-
-            if (layer is null)
+            if (layerCatalog != null)
             {
                 var layers = await layerCatalog.ListLayersAsync(cancellationToken).ConfigureAwait(false);
-                layer = layers
-                    .OrderBy(candidate => candidate.Id)
-                    .FirstOrDefault(candidate => string.Equals(candidate.Name, collectionId, StringComparison.OrdinalIgnoreCase));
-            }
-
-            if (layer is not null)
-            {
-                collectionIds.Add(layer.Id.ToString(CultureInfo.InvariantCulture));
-                if (!string.IsNullOrWhiteSpace(layer.Name))
+                foreach (var layer in layers)
                 {
-                    collectionIds.Add(layer.Name);
+                    if (string.Equals(layer.Id.ToString(CultureInfo.InvariantCulture), collectionId, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(layer.Name, collectionId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        collectionIds.Add(layer.Id.ToString(CultureInfo.InvariantCulture));
+                        if (!string.IsNullOrWhiteSpace(layer.Name))
+                        {
+                            collectionIds.Add(layer.Name);
+                        }
+                    }
                 }
             }
         }

@@ -5,11 +5,14 @@ using FluentAssertions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Protocols.Stac.Services;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using NetTopologySuite.Geometries;
@@ -69,6 +72,42 @@ public sealed class StacFilterHelpersTests
 
         visibleLayers.Should().ContainSingle(layer => layer.Id == stacServiceLayer.Id);
         visibleLayers.Should().NotContain(layer => layer.Id == serviceOwnedLayer.Id);
+    }
+
+    [UnitTest]
+    public async Task ResolveVisibleStacPublicationsAsync_RespectsDisabledV2StacProtocol()
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddService(
+                "svc-stac",
+                "stac",
+                MetadataV2ServiceType.StacApi,
+                enabledProtocols: [ServiceProtocols.FeatureServer])
+            .AddResource("res-stac", "stac-resource")
+            .AddPublication(
+                "pub-stac",
+                "svc-stac",
+                "res-stac",
+                layerIndex: 0,
+                serviceLocalId: "0",
+                publicationType: MetadataV2PublicationType.StacCollection)
+            .Build();
+
+        using var provider = new ServiceCollection()
+            .AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph))
+            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
+            .BuildServiceProvider();
+
+        var context = new DefaultHttpContext
+        {
+            RequestServices = provider
+        };
+
+        var visible = await StacV2Lookups.ResolveVisibleStacPublicationsAsync(context, CancellationToken.None);
+        var resolved = await StacV2Lookups.ResolveStacPublicationAsync(context, "0", CancellationToken.None);
+
+        visible.Should().BeEmpty();
+        resolved.Should().BeNull();
     }
 
     [UnitTest]

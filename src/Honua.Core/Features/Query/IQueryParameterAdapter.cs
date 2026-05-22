@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Query;
 
@@ -19,6 +20,20 @@ public interface IQueryParameterAdapter<in TProtocolParams>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Unified query or error result</returns>
     Task<QueryAdapterResult> ConvertAsync(TProtocolParams parameters, LayerDefinition layer, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// V2 overload of <see cref="ConvertAsync(TProtocolParams, LayerDefinition, CancellationToken)"/>.
+    /// Converts protocol-specific parameters using a Metadata v2 canonical resource as the target
+    /// schema. Implementations should validate fields and shape the resulting <see cref="UnifiedQuery"/>
+    /// against <see cref="MetadataV2Resource.SchemaFields"/>.
+    /// </summary>
+    /// <param name="parameters">Protocol-specific parameters.</param>
+    /// <param name="resource">Target canonical resource.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Unified query or error result.</returns>
+    Task<QueryAdapterResult> ConvertAsync(TProtocolParams parameters, MetadataV2Resource resource, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException(
+            $"Adapter '{GetType().Name}' does not yet implement the Metadata v2 ConvertAsync overload.");
 
     /// <summary>
     /// Gets the protocol name for this adapter.

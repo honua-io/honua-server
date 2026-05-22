@@ -4,9 +4,10 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Server.Features.Alerts;
 
@@ -18,7 +19,7 @@ internal sealed partial class AlertPipeline : IAlertPipeline
     private readonly IAlertEventStore _eventStore;
     private readonly IAlertDispatchStore _dispatchStore;
     private readonly IFeatureReader _featureReader;
-    private readonly ILayerCatalog _layerCatalog;
+    private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IAlertEvaluator _evaluator;
     private readonly IAlertEditionPolicy _editionPolicy;
     private readonly ILogger<AlertPipeline> _logger;
@@ -33,7 +34,7 @@ internal sealed partial class AlertPipeline : IAlertPipeline
         IAlertEventStore eventStore,
         IAlertDispatchStore dispatchStore,
         IFeatureReader featureReader,
-        ILayerCatalog layerCatalog,
+        IMetadataV2GraphProvider graphProvider,
         IAlertEvaluator evaluator,
         IAlertEditionPolicy editionPolicy,
         ILogger<AlertPipeline> logger)
@@ -44,7 +45,7 @@ internal sealed partial class AlertPipeline : IAlertPipeline
         _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
         _dispatchStore = dispatchStore ?? throw new ArgumentNullException(nameof(dispatchStore));
         _featureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
-        _layerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
+        _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _evaluator = evaluator ?? throw new ArgumentNullException(nameof(evaluator));
         _editionPolicy = editionPolicy ?? throw new ArgumentNullException(nameof(editionPolicy));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -310,14 +311,17 @@ internal sealed partial class AlertPipeline : IAlertPipeline
 
     private async Task<Dictionary<int, string>> BuildLayerServiceLookupAsync(CancellationToken cancellationToken)
     {
-        var services = await _layerCatalog.ListServicesAsync(cancellationToken).ConfigureAwait(false);
+        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var lookup = new Dictionary<int, string>();
 
-        foreach (var service in services)
+        foreach (var service in snapshot.Graph.Services)
         {
-            foreach (var layer in service.Layers)
+            foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id))
             {
-                _ = lookup.TryAdd(layer.Id, service.Name);
+                if (publication.LayerIndex.HasValue)
+                {
+                    _ = lookup.TryAdd(publication.LayerIndex.Value, service.Metadata.Name);
+                }
             }
         }
 

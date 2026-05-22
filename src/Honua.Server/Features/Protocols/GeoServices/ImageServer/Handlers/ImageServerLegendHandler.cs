@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer.Models;
@@ -40,18 +40,18 @@ internal sealed class ImageServerLegendHandler
         new SKColor(253, 231, 37),
     ];
 
-    private readonly ILayerCatalog _layerCatalog;
+    private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
     private readonly IImageServerLegendSwatchBuilder _swatchBuilder;
     private readonly ILogger<ImageServerLegendHandler> _logger;
 
     public ImageServerLegendHandler(
-        ILayerCatalog layerCatalog,
+        IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
         IImageServerLegendSwatchBuilder swatchBuilder,
         ILogger<ImageServerLegendHandler> logger)
     {
-        _layerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
+        _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
         _swatchBuilder = swatchBuilder ?? throw new ArgumentNullException(nameof(swatchBuilder));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -73,8 +73,8 @@ internal sealed class ImageServerLegendHandler
 
         try
         {
-            var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer is null)
+            var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
@@ -87,7 +87,7 @@ internal sealed class ImageServerLegendHandler
                 return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
             }
 
-            var mergeStrategy = ImageServerMosaicHelpers.ResolveMergeStrategy(layer.Metadata, mosaicRule: null);
+            var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null);
             var statistics = rasters.Length == 1
                 ? await _rasterStore.GetStatisticsAsync(layerId, rasters[0].Id, bands: null, cancellationToken)
                 : await _rasterStore.GetMosaicStatisticsAsync(
@@ -105,7 +105,7 @@ internal sealed class ImageServerLegendHandler
                     new LegendLayer
                     {
                         LayerId = 0,
-                        LayerName = layer.Name,
+                        LayerName = resolved.DisplayName,
                         LayerType = "Raster Layer",
                         MinScale = 0,
                         MaxScale = 0,

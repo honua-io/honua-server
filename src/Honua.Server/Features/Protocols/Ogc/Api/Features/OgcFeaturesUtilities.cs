@@ -6,7 +6,9 @@ using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Caching;
@@ -262,6 +264,163 @@ internal static class OgcFeaturesUtilities
                 FormatTemporalValue(range.Min),
                 FormatTemporalValue(range.Max)))
         };
+    }
+
+    /// <summary>
+    /// Metadata v2 overload of <see cref="BuildTemporalExtentAsync(LayerDefinition, IFeatureReader, CancellationToken)"/>.
+    /// Resolves temporal fields from the V2 <see cref="MetadataV2Resource.Temporal"/> extension
+    /// and probes the underlying feature store keyed on <paramref name="layerIndex"/>. Returns
+    /// <c>null</c> when the resource declares no usable temporal fields, or when the store
+    /// reports no extent.
+    /// </summary>
+    /// <param name="resource">V2 resource carrying the temporal field declaration.</param>
+    /// <param name="layerIndex">Service-local integer layer id used by the feature reader.</param>
+    /// <param name="featureReader">Feature reader providing the extent probe.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public static async Task<TemporalExtent?> BuildTemporalExtentAsync(
+        MetadataV2Resource resource,
+        int layerIndex,
+        IFeatureReader featureReader,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        ArgumentNullException.ThrowIfNull(featureReader);
+
+        if (!TryResolveTemporalFieldsV2(resource, out var startName, out var startType, out var endName, out var endType))
+        {
+            return null;
+        }
+
+        TemporalExtentResult? startExtent;
+        try
+        {
+            startExtent = await featureReader.GetTemporalExtentAsync(
+                layerIndex, startName!, startType, cancellationToken).ConfigureAwait(false);
+        }
+        catch (NotSupportedException)
+        {
+            return null;
+        }
+
+        TemporalExtentResult? endExtent = null;
+        if (!string.IsNullOrWhiteSpace(endName) &&
+            !string.Equals(endName, startName, StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                endExtent = await featureReader.GetTemporalExtentAsync(
+                    layerIndex, endName!, endType, cancellationToken).ConfigureAwait(false);
+            }
+            catch (NotSupportedException)
+            {
+                return null;
+            }
+        }
+
+        var hasExtent = startExtent != null || endExtent != null;
+        if (!hasExtent)
+        {
+            return null;
+        }
+
+        var min = startExtent?.Start;
+        DateTimeOffset? max;
+        if (string.IsNullOrWhiteSpace(endName))
+        {
+            max = startExtent?.End;
+        }
+        else
+        {
+            max = endExtent?.End ?? endExtent?.Start ?? startExtent?.End;
+        }
+
+        return new TemporalExtent
+        {
+            Interval = ImmutableArray.Create(ImmutableArray.Create(
+                FormatTemporalValue(min),
+                FormatTemporalValue(max)))
+        };
+    }
+
+    /// <summary>
+    /// Resolves the start/end temporal field names + canonical types from a V2 resource.
+    /// Reads <see cref="MetadataV2Resource.Temporal"/> for the configured field names and
+    /// looks up the field type in <see cref="MetadataV2Resource.SchemaFields"/>. Returns
+    /// false when no start field is declared, the start field is not present in the schema,
+    /// or the schema field type is not a recognized temporal type.
+    /// </summary>
+    public static bool TryResolveTemporalFieldsV2(
+        MetadataV2Resource resource,
+        out string? startFieldName,
+        out FieldType startFieldType,
+        out string? endFieldName,
+        out FieldType endFieldType)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        startFieldName = null;
+        endFieldName = null;
+        startFieldType = FieldType.DateTime;
+        endFieldType = FieldType.DateTime;
+
+        var fields = resource.ReadTemporalFields();
+        if (string.IsNullOrWhiteSpace(fields.StartTimeField))
+        {
+            return false;
+        }
+
+        if (!TryResolveSchemaTemporalType(resource, fields.StartTimeField, out var startType))
+        {
+            return false;
+        }
+
+        startFieldName = fields.StartTimeField;
+        startFieldType = startType;
+
+        if (string.IsNullOrWhiteSpace(fields.EndTimeField))
+        {
+            return true;
+        }
+
+        if (!TryResolveSchemaTemporalType(resource, fields.EndTimeField, out var endType))
+        {
+            // End field is configured but not in schema: behave like v1 — fail the whole resolution.
+            startFieldName = null;
+            startFieldType = FieldType.DateTime;
+            return false;
+        }
+
+        endFieldName = fields.EndTimeField;
+        endFieldType = endType;
+        return true;
+    }
+
+    private static bool TryResolveSchemaTemporalType(
+        MetadataV2Resource resource,
+        string fieldName,
+        out FieldType type)
+    {
+        foreach (var field in resource.SchemaFields)
+        {
+            if (!string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            switch (field.Type?.Trim().ToLowerInvariant())
+            {
+                case "datetime":
+                case "date-time":
+                case "timestamp":
+                    type = FieldType.DateTime;
+                    return true;
+                case "date":
+                    type = FieldType.Date;
+                    return true;
+            }
+        }
+
+        type = FieldType.DateTime;
+        return false;
     }
 
     private static string? FormatTemporalValue(DateTimeOffset? value)

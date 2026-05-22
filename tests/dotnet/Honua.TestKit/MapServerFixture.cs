@@ -4,6 +4,7 @@
 using System.IO.Compression;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
+using DotNet.Testcontainers.Networks;
 using Xunit;
 
 namespace Honua.TestKit;
@@ -15,15 +16,22 @@ namespace Honua.TestKit;
 public sealed class MapServerFixture : IAsyncLifetime
 {
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
-    private static IContainer? _sharedContainer;
+    private static INetwork? _sharedNetwork;
+    private static IContainer? _sharedMapServerContainer;
+    private static IContainer? _sharedMapCacheContainer;
     private static string? _sharedEndpointUrl;
+    private static string? _sharedWmtsEndpointUrl;
     private static string? _sharedStagingDirectory;
     private static int _sharedRefCount;
     private static bool _sharedInitialized;
 
     private const string MapServerImage = "camptocamp/mapserver:8.0";
+    private const string MapCacheImage = "camptocamp/mapcache:1.10";
     private const int MapServerPort = 80;
+    private const int MapCachePort = 80;
     private const string ContainerMapFilePath = "/etc/mapserver/mapserver.map";
+    private const string MapServerNetworkAlias = "mapserver";
+    private const string MapCacheWmtsPath = "/mapcache/wmts";
 
     /// <summary>
     /// Name of the seeded MapServer polygon layer.
@@ -34,6 +42,11 @@ public sealed class MapServerFixture : IAsyncLifetime
     /// Gets the MapServer OGC endpoint URL with the fixture mapfile parameter applied.
     /// </summary>
     public string EndpointUrl => _sharedEndpointUrl ?? throw new InvalidOperationException("MapServer fixture not initialized.");
+
+    /// <summary>
+    /// Gets the MapCache-backed WMTS endpoint URL for the seeded MapServer layer.
+    /// </summary>
+    public string WmtsEndpointUrl => _sharedWmtsEndpointUrl ?? throw new InvalidOperationException("MapServer fixture not initialized.");
 
     /// <inheritdoc />
     public async Task InitializeAsync()
@@ -84,19 +97,38 @@ public sealed class MapServerFixture : IAsyncLifetime
 
         try
         {
-            _sharedContainer = new ContainerBuilder()
+            _sharedNetwork = new NetworkBuilder().Build();
+            await _sharedNetwork.CreateAsync().ConfigureAwait(false);
+
+            _sharedMapServerContainer = new ContainerBuilder()
                 .WithImage(MapServerImage)
+                .WithNetwork(_sharedNetwork)
+                .WithNetworkAliases(MapServerNetworkAlias)
                 .WithPortBinding(MapServerPort, true)
                 .WithResourceMapping(new DirectoryInfo(stagingDirectory.DataDirectory), "/etc/mapserver/data")
                 .WithResourceMapping(new FileInfo(stagingDirectory.MapFilePath), "/etc/mapserver/")
                 .Build();
 
-            await _sharedContainer.StartAsync().ConfigureAwait(false);
+            await _sharedMapServerContainer.StartAsync().ConfigureAwait(false);
 
-            var port = _sharedContainer.GetMappedPublicPort(MapServerPort);
-            _sharedEndpointUrl = $"http://127.0.0.1:{port}/?map={Uri.EscapeDataString(ContainerMapFilePath)}";
+            var mapServerPort = _sharedMapServerContainer.GetMappedPublicPort(MapServerPort);
+            _sharedEndpointUrl = $"http://127.0.0.1:{mapServerPort}/?map={Uri.EscapeDataString(ContainerMapFilePath)}";
 
             await WaitForMapServerReadyAsync(_sharedEndpointUrl).ConfigureAwait(false);
+
+            _sharedMapCacheContainer = new ContainerBuilder()
+                .WithImage(MapCacheImage)
+                .WithNetwork(_sharedNetwork)
+                .WithPortBinding(MapCachePort, true)
+                .WithResourceMapping(new FileInfo(stagingDirectory.MapCacheFilePath), "/etc/mapcache/")
+                .Build();
+
+            await _sharedMapCacheContainer.StartAsync().ConfigureAwait(false);
+
+            var mapCachePort = _sharedMapCacheContainer.GetMappedPublicPort(MapCachePort);
+            _sharedWmtsEndpointUrl = $"http://127.0.0.1:{mapCachePort}{MapCacheWmtsPath}";
+
+            await WaitForMapCacheReadyAsync(_sharedWmtsEndpointUrl).ConfigureAwait(false);
         }
         catch
         {
@@ -107,9 +139,19 @@ public sealed class MapServerFixture : IAsyncLifetime
 
     private static async Task ResetSharedStateAsync()
     {
-        if (_sharedContainer is not null)
+        if (_sharedMapCacheContainer is not null)
         {
-            await _sharedContainer.DisposeAsync().ConfigureAwait(false);
+            await _sharedMapCacheContainer.DisposeAsync().ConfigureAwait(false);
+        }
+
+        if (_sharedMapServerContainer is not null)
+        {
+            await _sharedMapServerContainer.DisposeAsync().ConfigureAwait(false);
+        }
+
+        if (_sharedNetwork is not null)
+        {
+            await _sharedNetwork.DisposeAsync().ConfigureAwait(false);
         }
 
         if (!string.IsNullOrWhiteSpace(_sharedStagingDirectory) && Directory.Exists(_sharedStagingDirectory))
@@ -117,8 +159,11 @@ public sealed class MapServerFixture : IAsyncLifetime
             Directory.Delete(_sharedStagingDirectory, recursive: true);
         }
 
-        _sharedContainer = null;
+        _sharedNetwork = null;
+        _sharedMapServerContainer = null;
+        _sharedMapCacheContainer = null;
         _sharedEndpointUrl = null;
+        _sharedWmtsEndpointUrl = null;
         _sharedStagingDirectory = null;
         _sharedInitialized = false;
     }
@@ -139,7 +184,10 @@ public sealed class MapServerFixture : IAsyncLifetime
         var mapFilePath = Path.Combine(rootDirectory, "mapserver.map");
         File.WriteAllText(mapFilePath, MapFileContent);
 
-        return new MapServerStagingDirectory(rootDirectory, dataDirectory, mapFilePath);
+        var mapCacheFilePath = Path.Combine(rootDirectory, "mapcache.xml");
+        File.WriteAllText(mapCacheFilePath, MapCacheXmlContent);
+
+        return new MapServerStagingDirectory(rootDirectory, dataDirectory, mapFilePath, mapCacheFilePath);
     }
 
     private static async Task WaitForMapServerReadyAsync(string endpointUrl)
@@ -182,10 +230,54 @@ public sealed class MapServerFixture : IAsyncLifetime
         throw new TimeoutException($"Timed out waiting for MapServer to become ready.{errorDetails}");
     }
 
+    private static async Task WaitForMapCacheReadyAsync(string endpointUrl)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(4);
+        using var httpClient = new HttpClient
+        {
+            Timeout = TimeSpan.FromSeconds(30)
+        };
+
+        Exception? lastError = null;
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            try
+            {
+                using var response = await httpClient.GetAsync(
+                    $"{endpointUrl}?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0").ConfigureAwait(false);
+                var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+                if (response.IsSuccessStatusCode &&
+                    body.Contains("<Capabilities", StringComparison.OrdinalIgnoreCase) &&
+                    body.Contains(LayerName, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                lastError = new InvalidOperationException(
+                    $"MapCache readiness returned {(int)response.StatusCode} {response.ReasonPhrase}.");
+            }
+            catch (Exception ex) when (IsTransientStartupFailure(ex))
+            {
+                lastError = ex;
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+        }
+
+        var errorDetails = lastError is null ? string.Empty : $" Last error: {lastError.Message}";
+        throw new TimeoutException($"Timed out waiting for MapCache to become ready.{errorDetails}");
+    }
+
     private static bool IsTransientStartupFailure(Exception exception)
         => exception is HttpRequestException or TaskCanceledException or TimeoutException;
 
-    private sealed record MapServerStagingDirectory(string RootDirectory, string DataDirectory, string MapFilePath);
+    private sealed record MapServerStagingDirectory(
+        string RootDirectory,
+        string DataDirectory,
+        string MapFilePath,
+        string MapCacheFilePath);
 
     private const string MapFileContent = """
         MAP
@@ -213,10 +305,10 @@ public sealed class MapServerFixture : IAsyncLifetime
             METADATA
               "ows_title" "Honua Consume Test"
               "ows_onlineresource" "http://localhost/?map=/etc/mapserver/mapserver.map&"
-              "ows_srs" "EPSG:3750 EPSG:4326"
+              "ows_srs" "EPSG:3750 EPSG:4326 EPSG:3857"
               "ows_enable_request" "*"
               "wms_enable_request" "*"
-              "wms_srs" "EPSG:3750 EPSG:4326"
+              "wms_srs" "EPSG:3750 EPSG:4326 EPSG:3857"
               "wfs_enable_request" "*"
               "wfs_srs" "EPSG:3750 EPSG:4326"
             END
@@ -243,7 +335,7 @@ public sealed class MapServerFixture : IAsyncLifetime
             METADATA
               "ows_title" "Tsunami Evacuation Zones"
               "wms_title" "Tsunami Evacuation Zones"
-              "wms_srs" "EPSG:3750 EPSG:4326"
+              "wms_srs" "EPSG:3750 EPSG:4326 EPSG:3857"
               "wms_enable_request" "*"
               "wms_queryable" "1"
               "wms_include_items" "all"
@@ -255,5 +347,47 @@ public sealed class MapServerFixture : IAsyncLifetime
             END
           END
         END
+        """;
+
+    private const string MapCacheXmlContent = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <mapcache>
+          <cache name="disk" type="disk">
+            <base>/tmp</base>
+            <symlink_blank/>
+          </cache>
+
+          <source name="mapserver" type="wms">
+            <getmap>
+              <params>
+                <MAP>/etc/mapserver/mapserver.map</MAP>
+                <FORMAT>image/png</FORMAT>
+                <LAYERS>tsunami_zones</LAYERS>
+                <TRANSPARENT>true</TRANSPARENT>
+              </params>
+            </getmap>
+            <http>
+              <url>http://mapserver/</url>
+            </http>
+          </source>
+
+          <tileset name="tsunami_zones">
+            <source>mapserver</source>
+            <cache>disk</cache>
+            <grid>GoogleMapsCompatible</grid>
+            <format>PNG</format>
+            <metatile>1 1</metatile>
+            <metabuffer>0</metabuffer>
+            <expires>3600</expires>
+          </tileset>
+
+          <default_format>PNG</default_format>
+          <service type="wmts" enabled="true"/>
+          <errors>report</errors>
+          <locker type="disk">
+            <directory>/tmp</directory>
+            <timeout>300</timeout>
+          </locker>
+        </mapcache>
         """;
 }

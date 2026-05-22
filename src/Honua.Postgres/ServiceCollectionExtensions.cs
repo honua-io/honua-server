@@ -138,30 +138,13 @@ internal static class ServiceCollectionExtensions
         // Register FieldCollection mobile sync store (#894)
         services.AddScoped<IFieldCollectionSyncStore, PostgresFieldCollectionSyncStore>();
 
-        // Register metadata resource store (ADR-0023)
-        services.AddScoped<IMetadataResourceStore>(serviceProvider =>
-            new PostgresMetadataResourceStore(
+        // Register Metadata v2 graph store (Postgres-backed JSONB + sidecar indexes)
+        services.AddScoped<IMetadataV2GraphStore>(serviceProvider =>
+            new Features.Metadata.PostgresMetadataV2GraphStore(
                 serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
-                serviceProvider.GetService<Honua.Core.Features.Caching.Abstractions.ICacheService>(),
+                configuration["Metadata:Environment"] ?? configuration["Environment"] ?? "default",
                 configuration["Database:Schema"]));
-
-        // Register manifest version store for GitOps drift detection (#515)
-        services.AddScoped<IManifestVersionStore>(serviceProvider =>
-            new PostgresManifestVersionStore(
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
-                configuration["Database:Schema"]));
-
-        // Register manifest pending change store for approval workflows
-        services.AddScoped<IManifestPendingChangeStore>(serviceProvider =>
-            new PostgresManifestPendingChangeStore(
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
-                configuration["Database:Schema"]));
-
-        // Register GitOps watch store for git repository watching (#518)
-        services.AddScoped<IGitOpsWatchStore>(serviceProvider =>
-            new PostgresGitOpsWatchStore(
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
-                configuration["Database:Schema"]));
+        services.AddScoped<IMetadataV2GraphProvider>(sp => sp.GetRequiredService<IMetadataV2GraphStore>());
 
         // Register layer style catalog for MapLibre/GeoServices styling
         services.AddScoped<ILayerStyleCatalog>(serviceProvider =>

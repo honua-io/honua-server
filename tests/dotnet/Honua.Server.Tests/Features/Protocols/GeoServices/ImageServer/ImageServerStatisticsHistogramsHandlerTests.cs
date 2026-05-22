@@ -2,8 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer.Handlers;
@@ -27,14 +27,14 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerStatisticsHistogramsHandlerTests
 {
-    private readonly ILayerCatalog _layerCatalog = Substitute.For<ILayerCatalog>();
+    private readonly TestMetadataV2GraphProvider _graphProvider = BuildGraphWithLayer(1);
     private readonly IRasterStore _rasterStore = Substitute.For<IRasterStore>();
     private readonly ImageServerStatisticsHistogramsHandler _handler;
 
     public ImageServerStatisticsHistogramsHandlerTests()
     {
         _handler = new ImageServerStatisticsHistogramsHandler(
-            _layerCatalog,
+            _graphProvider,
             _rasterStore,
             NullLogger<ImageServerStatisticsHistogramsHandler>.Instance);
     }
@@ -43,8 +43,6 @@ public class ImageServerStatisticsHistogramsHandlerTests
     [Operation(Operations.Query)]
     public async Task ComputeAsync_LayerNotFound_ReturnsNotFound()
     {
-        _layerCatalog.GetLayerAsync(99, Arg.Any<CancellationToken>())
-            .Returns((LayerDefinition?)null);
 
         var context = CreateImageServerContext();
         var result = await _handler.ComputeAsync(context, 99, EmptyValues(), CancellationToken.None);
@@ -57,8 +55,6 @@ public class ImageServerStatisticsHistogramsHandlerTests
     [Operation(Operations.Query)]
     public async Task ComputeAsync_NoRasters_ReturnsNotFound()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs(Array.Empty<RasterInfo>());
 
@@ -73,8 +69,6 @@ public class ImageServerStatisticsHistogramsHandlerTests
     [Operation(Operations.Query)]
     public async Task ComputeAsync_UnsupportedFormat_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
 
         var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
         {
@@ -116,8 +110,6 @@ public class ImageServerStatisticsHistogramsHandlerTests
     [Operation(Operations.Query)]
     public async Task ComputeAsync_NullStatistics_DefaultToZero()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs([CreateTestRasterInfo()]);
         _rasterStore.GetStatisticsAsync(1, 100, Arg.Any<int[]?>(), Arg.Any<CancellationToken>())
@@ -189,8 +181,6 @@ public class ImageServerStatisticsHistogramsHandlerTests
     [Operation(Operations.Query)]
     public async Task ComputeAsync_HistogramParametersInvalidJson_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
 
         var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
         {
@@ -208,8 +198,6 @@ public class ImageServerStatisticsHistogramsHandlerTests
     [Operation(Operations.Query)]
     public async Task ComputeAsync_HistogramParametersNegativeSize_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
 
         var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
         {
@@ -350,8 +338,6 @@ public class ImageServerStatisticsHistogramsHandlerTests
         // for bandIds=3,1 the parallel statistics/histograms arrays would silently
         // misalign — the handler must reorder both to a single canonical order so that
         // statistics[i] and histograms[i] always describe the same band.
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs([CreateTestRasterInfo()]);
 
@@ -439,8 +425,6 @@ public class ImageServerStatisticsHistogramsHandlerTests
     [Operation(Operations.Query)]
     public async Task ComputeAsync_RasterIdsNotInCatalog_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.GetRasterInfoAsync(1, 999, Arg.Any<CancellationToken>())
             .Returns((RasterInfo?)null);
 
@@ -460,8 +444,6 @@ public class ImageServerStatisticsHistogramsHandlerTests
     [Operation(Operations.Query)]
     public async Task ComputeAsync_RasterIdsNonPositive_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
 
         var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
         {
@@ -479,8 +461,6 @@ public class ImageServerStatisticsHistogramsHandlerTests
     [Operation(Operations.Query)]
     public async Task ComputeAsync_BandIdsNonPositive_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
 
         var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
         {
@@ -498,8 +478,6 @@ public class ImageServerStatisticsHistogramsHandlerTests
     [Operation(Operations.Query)]
     public async Task ComputeAsync_RasterStoreThrows_ReturnsServerError()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs([CreateTestRasterInfo()]);
         _rasterStore.GetStatisticsAsync(1, 100, Arg.Any<int[]?>(), Arg.Any<CancellationToken>())
@@ -514,8 +492,6 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
     private void SetupSuccessfulCompute()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs([CreateTestRasterInfo()]);
         _rasterStore.GetStatisticsAsync(1, 100, Arg.Any<int[]?>(), Arg.Any<CancellationToken>())
@@ -561,8 +537,18 @@ public class ImageServerStatisticsHistogramsHandlerTests
         return context;
     }
 
-    private static LayerDefinition CreateTestLayer()
-        => LayerDefinition.CreateBasic(1, "test-layer", GeometryType.Point);
+    private static TestMetadataV2GraphProvider BuildGraphWithLayer(int layerIndex)
+        => new TestMetadataV2GraphBuilder()
+            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ResourceType.RasterDataset)
+            .AddService($"service-{layerIndex}", $"image-svc-{layerIndex}", MetadataV2ServiceType.EsriImageService)
+            .AddPublication(
+                $"publication-{layerIndex}",
+                $"service-{layerIndex}",
+                $"resource-{layerIndex}",
+                layerIndex: layerIndex,
+                serviceLocalId: "test-layer",
+                publicationType: MetadataV2PublicationType.EsriImageLayer)
+            .BuildProvider();
 
     private static RasterInfo CreateTestRasterInfo() => new()
     {

@@ -25,6 +25,7 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 [JsonSerializable(typeof(MetadataV2Condition))]
 [JsonSerializable(typeof(MetadataV2ExtensionPoint))]
 [JsonSerializable(typeof(MetadataV2Field))]
+[JsonSerializable(typeof(MetadataV2Relationship))]
 [JsonSerializable(typeof(IReadOnlyDictionary<string, string>), TypeInfoPropertyName = "ReadOnlyDictionaryStringString")]
 public sealed partial class MetadataV2JsonContext : JsonSerializerContext
 {

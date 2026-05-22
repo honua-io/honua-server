@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer.Models;
@@ -27,16 +27,16 @@ internal sealed class ImageServerStatisticsHistogramsHandler
     /// <summary>Default histogram bin count when the caller does not specify one.</summary>
     private const int DefaultBinCount = 256;
 
-    private readonly ILayerCatalog _layerCatalog;
+    private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
     private readonly ILogger<ImageServerStatisticsHistogramsHandler> _logger;
 
     public ImageServerStatisticsHistogramsHandler(
-        ILayerCatalog layerCatalog,
+        IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
         ILogger<ImageServerStatisticsHistogramsHandler> logger)
     {
-        _layerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
+        _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -58,8 +58,8 @@ internal sealed class ImageServerStatisticsHistogramsHandler
 
         try
         {
-            var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer is null)
+            var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
@@ -142,7 +142,7 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 targetRasters.AddRange(selected);
             }
 
-            var mergeStrategy = ImageServerMosaicHelpers.ResolveMergeStrategy(layer.Metadata, GetString(values, "mosaicRule"));
+            var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, GetString(values, "mosaicRule"));
             var statisticsList = new List<BandStatistic>();
             var histogramsList = new List<BandHistogram>();
             if ((rasterIds is null or { Length: 0 }) && targetRasters.Count > 1)

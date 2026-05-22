@@ -19,7 +19,6 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Metadata.Abstractions;
-using Honua.Core.Features.Metadata.Schema;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Styling;
 using Honua.Core.Features.Styling.Abstractions;
@@ -390,12 +389,8 @@ builder.Services.AddSingleton<Honua.Core.Features.Authorization.Abstractions.IRo
     Honua.Server.Features.Admin.Services.InMemoryRoleStore>();
 builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Authentication.IAdminApiKeyStore>(sp =>
     new Honua.Server.Features.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>()));
-builder.Services.AddSingleton<IMetadataSchemaRegistry, MetadataSchemaRegistry>();
-builder.Services.AddSingleton<IMetadataCompiler, DefaultMetadataCompiler>();
-
-// ---- Extracted: manifest approval workflow + GitOps watch (Startup/ManifestAndGitOpsRegistration.cs)
-builder.Services.AddHonuaManifestAndGitOps(builder.Configuration);
-// ---- End extracted block
+// v1 metadata-resource / manifest-approval / gitops-watch admin surface removed in #1035 cutover.
+// V2 admin UX (epic #1046) edits the canonical MetadataV2Graph document directly via IMetadataV2GraphStore.
 
 // Register shared Infrastructure services
 builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.IGeometryConverter,
@@ -462,23 +457,7 @@ builder.Services.AddHonuaFeatureEventsAndStreaming(builder.Configuration, requir
 // ---- End extracted block
 builder.Services.AddCollaborationSessionTransport();
 
-// Register manifest drift webhook dispatcher (#515)
-builder.Services.AddSingleton<IValidateOptions<Honua.Server.Features.Admin.ManifestDriftWebhookOptions>, Honua.Server.Features.Admin.ManifestDriftWebhookOptionsValidator>();
-builder.Services.AddOptions<Honua.Server.Features.Admin.ManifestDriftWebhookOptions>()
-    .Bind(builder.Configuration.GetSection(Honua.Server.Features.Admin.ManifestDriftWebhookOptions.SectionName));
-builder.Services.AddResilientHttpClient(
-    "manifest-drift-webhook",
-    "manifest-drift-webhook",
-    HttpResiliencePolicies.FastApiDefaults,
-    configureHandler: static () => Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
-builder.Services.AddHostedService(sp =>
-    new Honua.Server.Features.Admin.ManifestDriftWebhookDispatcher(
-        sp.GetRequiredService<IServiceScopeFactory>(),
-        sp.GetService<IDistributedCache>(),
-        sp.GetService<IConnectionMultiplexer>(),
-        sp.GetRequiredService<IHttpClientFactory>(),
-        sp.GetRequiredService<IOptions<Honua.Server.Features.Admin.ManifestDriftWebhookOptions>>(),
-        sp.GetRequiredService<ILogger<Honua.Server.Features.Admin.ManifestDriftWebhookDispatcher>>()));
+// v1 manifest drift webhook dispatcher removed in #1035 cutover.
 
 // Tile-operation job service + warming/background hosted services are registered by
 // AddHonuaImportExportAndTileOperations above.
@@ -518,10 +497,80 @@ builder.Services.AddApiVersioning(options =>
     // Keep versioning metadata explicit without publishing additional major paths.
 });
 
-// ---- Extracted: source-generated JsonSerializerContext registration
-//      (Startup/JsonContextRegistration.cs)
-builder.Services.AddHonuaJsonContexts();
-// ---- End extracted block
+// Configure JSON serialization for ASP.NET Core (needed for minimal API body binding)
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.TypeInfoResolver = JsonTypeInfoResolver.Combine(
+        Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models.FeatureServerJsonContext.Default,
+        Honua.Server.Features.Protocols.GeoServices.ImageServer.Models.ImageServerJsonContext.Default,
+        Honua.Server.Features.Protocols.OData.Models.ODataJsonContext.Default,
+        Honua.Server.Features.Protocols.Ogc.Api.Coverages.Models.OgcCoveragesJsonContext.Default,
+        Honua.Server.Features.Protocols.Ogc.Api.Features.OgcJsonContext.Default,
+        Honua.Server.Features.Protocols.Ogc.Api.Maps.Models.OgcMapsJsonContext.Default,
+        Honua.Server.Features.Protocols.Ogc.Api.Records.OgcRecordsJsonContext.Default,
+        Honua.Server.Features.Protocols.Ogc.Api.Tiles.OgcTilesJsonContext.Default,
+        Honua.Server.Features.Admin.Models.SecureConnectionJsonContext.Default,
+        Honua.Server.Features.Admin.Models.LayerPublishingJsonContext.Default,
+        Honua.Server.Features.Admin.Models.ServiceSettingsJsonContext.Default,
+        Honua.Server.Features.Admin.Models.DeployControlJsonContext.Default,
+        Honua.Server.Features.Infrastructure.Monitoring.MetricsJsonContext.Default,
+        Honua.Server.Features.Import.ImportJsonContext.Default,
+        Honua.Server.Features.Import.RasterImportJsonContext.Default,
+        Honua.Server.Features.Import.GeoservicesImportApiJsonContext.Default,
+        Honua.Server.Features.Import.OgcWfsImportJsonContext.Default,
+        Honua.Server.Features.Import.OgcCoverageImportJsonContext.Default,
+        Honua.Server.Features.Import.OgcWcsImportJsonContext.Default,
+        Honua.Server.Features.Admin.OperationsProgressJsonContext.Default,
+        Honua.Server.Features.Admin.FeatureEventReplayJsonContext.Default,
+        Honua.Server.Features.Mobile.Auth.MobileAuthJsonContext.Default,
+        Honua.Server.Features.Mobile.Diagnostics.MobileExceptionIngestionJsonContext.Default,
+        Honua.Server.Features.Mobile.FieldCollection.FieldCollectionSyncJsonContext.Default,
+        Honua.Server.Features.Admin.TileOperations.TileOperationsJsonContext.Default,
+        Honua.Server.Features.Admin.Models.LayerStyleJsonContext.Default,
+        Honua.Server.Features.Admin.Models.LayerFieldConfigurationJsonContext.Default,
+        Honua.Server.Features.Admin.Models.LayerValidationJsonContext.Default,
+        Honua.Server.Features.Admin.Models.StyleSuggestionJsonContext.Default,
+        Honua.Server.Features.Admin.Models.AlertAdminJsonContext.Default,
+        Honua.Server.Features.Admin.Models.LicenseJsonContext.Default,
+        Honua.Server.Features.Admin.Models.OidcProviderJsonContext.Default,
+        Honua.Server.Features.Admin.Models.UserManagementJsonContext.Default,
+        Honua.Server.Features.Admin.Models.RoleJsonContext.Default,
+        Honua.Server.Features.Admin.Models.AdminApiKeyJsonContext.Default,
+        Honua.Server.Features.Admin.Models.SceneDatasetJsonContext.Default,
+        Honua.Server.Features.Admin.Models.SceneGenerationJsonContext.Default,
+        Honua.Server.Features.Protocols.Scene.Models.PublicSceneDiscoveryJsonContext.Default,
+        Honua.Server.Features.Admin.Models.RateLimitJsonContext.Default,
+        Honua.Server.Features.Admin.Models.TableDiscoveryJsonContext.Default,
+        Honua.Server.Features.Admin.Models.ExternalServiceDiscoveryJsonContext.Default,
+        Honua.Server.Features.Admin.Models.AdminAuthJsonContext.Default,
+        Honua.Server.Features.Admin.Models.ConfigurationJsonContext.Default,
+        Honua.Server.Features.Admin.Models.LicenseAdminJsonContext.Default,
+        Honua.Server.Features.Infrastructure.Licensing.LicenseFileJsonContext.Default,
+        Honua.Server.Features.Admin.Models.IdentityAdminJsonContext.Default,
+        Honua.Server.Features.Admin.Models.CacheAdminJsonContext.Default,
+        Honua.Server.Features.Admin.Models.GeocodingAdminJsonContext.Default,
+        Honua.Server.Features.Admin.Models.FeatureOverviewJsonContext.Default,
+        Honua.Server.Features.Admin.Models.CacheOperationsJsonContext.Default,
+        Honua.Server.Features.Admin.Models.StreamingOperationsJsonContext.Default,
+        Honua.Server.Features.Admin.Models.GeocodingOperationsJsonContext.Default,
+        Honua.Server.Features.CloudDemo.CloudDemoJsonContext.Default,
+        Honua.Server.Features.HealthCheck.HealthJsonContext.Default,
+        Honua.Server.Features.Infrastructure.Models.ProblemJsonContext.Default,
+        Honua.Server.Features.Infrastructure.Middleware.LimitsEnforcementJsonContext.Default,
+        Honua.Server.Features.Infrastructure.Security.CspViolationJsonContext.Default,
+        Honua.Server.Features.Protocols.GeoServices.GeometryService.Models.GeometryServiceJsonContext.Default,
+        Honua.Server.Features.Protocols.GeoServices.NAServer.Models.NAServerJsonContext.Default,
+        Honua.Server.Features.Export.ExportJsonContext.Default,
+        Honua.Server.Features.Protocols.Stac.StacJsonContext.Default,
+        Honua.Server.Features.Protocols.Cog.CogJsonContext.Default,
+        Honua.Server.Features.Protocols.Coverages.Multidimensional.MultidimensionalCoverageJsonContext.Default,
+        Honua.Server.Features.Protocols.Zarr.ZarrJsonContext.Default,
+        Honua.Server.Features.Protocols.SpatialAnalytics.Models.SpatialAnalyticsJsonContext.Default,
+        Honua.Server.Features.Collaboration.Sessions.CollaborationSessionJsonContext.Default,
+        Honua.Server.Features.Collaboration.FeatureLocks.FeatureLockJsonContext.Default,
+        Honua.Core.Features.Authorization.Domain.OperatorAuthorizationJsonContext.Default,
+        Honua.Server.Features.Protocols.Ogc.Api.Processes.OgcProcessesJsonContext.Default);
+});
 
 // Add comprehensive IOptions configuration validation
 builder.Services.AddConfigurationOptionsValidation();
@@ -836,10 +885,7 @@ app.MapLayerPublishingEndpoints();
 app.MapServiceSettingsEndpoints();
 
 // Configure admin metadata version/manifest endpoints
-app.MapAdminMetadataEndpoints();
-app.MapAdminManifestApprovalEndpoints();
-app.MapAdminManifestDriftEndpoints();
-app.MapAdminGitOpsWatchEndpoints();
+// v1 admin endpoint mappings removed in #1035 cutover; V2 admin UX (#1046) lives elsewhere.
 app.MapDeployControlEndpoints();
 
 // Configure admin layer style endpoints
@@ -856,6 +902,7 @@ app.MapAlertAdminEndpoints();
 // Configure platform admin endpoints (license, identity, cache, geocoding, features)
 app.MapLicenseAdminEndpoints();
 app.MapIdentityAdminEndpoints();
+app.MapAdminInfoEndpoints();
 app.MapCacheAdminEndpoints();
 app.MapGeocodingAdminEndpoints();
 app.MapFeatureOverviewEndpoints();
@@ -871,7 +918,7 @@ app.MapRoleEndpoints();
 app.MapAdminApiKeyEndpoints();
 
 // Configure metadata resource endpoints (ADR-0023)
-app.MapMetadataResourceEndpoints();
+// v1 MapMetadataResourceEndpoints removed in #1035 cutover.
 
 // Configure operational monitoring endpoints (#512)
 app.MapCacheOperationsEndpoints();
