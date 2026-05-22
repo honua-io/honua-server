@@ -21,8 +21,6 @@ namespace Honua.Server.Tests.Comprehensive;
 /// <item><term>GET  /api/v1/admin/openapi.json</term><description>happy, 401</description></item>
 /// <item><term>GET  /api/v1/admin/version</term><description>happy, 401</description></item>
 /// <item><term>GET  /api/v1/admin/capabilities</term><description>happy, 401</description></item>
-/// <item><term>GET  /api/v1/admin/manifest</term><description>happy, 401</description></item>
-/// <item><term>POST /api/v1/admin/manifest/apply</term><description>happy, 401</description></item>
 /// <item><term>GET  /api/v1/admin/services</term><description>happy, 401</description></item>
 /// <item><term>GET  /api/v1/admin/services/{name}/settings</term><description>happy, 401</description></item>
 /// <item><term>PUT  /api/v1/admin/services/{name}/protocols</term><description>happy, 401</description></item>
@@ -51,8 +49,6 @@ namespace Honua.Server.Tests.Comprehensive;
 /// <item><term>PUT  /api/v1/admin/connections/{id}/layers/enabled</term><description>happy (bulk)</description></item>
 /// <item><term>GET  /api/v1/admin/metadata/layers/{lid}/style</term><description>happy, 401</description></item>
 /// <item><term>PUT  /api/v1/admin/metadata/layers/{lid}/style</term><description>happy, 401</description></item>
-/// <item><term>GET  /api/v1/admin/metadata/resources</term><description>happy, 401</description></item>
-/// <item><term>POST /api/v1/admin/metadata/resources</term><description>happy, 401</description></item>
 /// <item><term>GET  /api/v1/admin/operations/{id}</term><description>happy, 404, 401</description></item>
 /// <item><term>POST /api/v1/admin/operations/{id}/cancel</term><description>happy, already-cancelled, completed</description></item>
 /// <item><term>GET  /api/v1/admin/operations/active</term><description>happy (filter), empty, 401</description></item>

@@ -178,3 +178,9 @@ Rotate these regularly:
 1. Update the secret in your secret manager.
 2. Redeploy or restart services to pick up changes.
 3. Verify access using a known admin endpoint.
+
+Encryption-at-rest key rotation is exposed through the compliance framework
+admin endpoint (`POST /api/v1/admin/compliance/encryption/rotate-key`); each
+rotation is recorded in the audit log as `encryption.key.rotate`. See
+[Compliance Framework](compliance-framework.md) for the dashboard, residency
+controls, and report export surface.
