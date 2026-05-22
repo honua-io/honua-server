@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Server.Features.Protocols.Ogc.Api.Features.Services;
 
@@ -69,6 +70,17 @@ internal sealed class OgcFeaturesEditParameterAdapter(
         OgcFeaturesEditRequest protocolRequest,
         LayerDefinition layer,
         CancellationToken cancellationToken = default)
+        => ConvertCoreAsync(protocolRequest, cancellationToken);
+
+    public Task<EditAdapterResult> ConvertAsync(
+        OgcFeaturesEditRequest protocolRequest,
+        MetadataV2Resource resource,
+        CancellationToken cancellationToken = default)
+        => ConvertCoreAsync(protocolRequest, cancellationToken);
+
+    private Task<EditAdapterResult> ConvertCoreAsync(
+        OgcFeaturesEditRequest protocolRequest,
+        CancellationToken cancellationToken)
     {
         try
         {
