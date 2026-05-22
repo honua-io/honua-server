@@ -40,12 +40,6 @@ public sealed record MetadataV2ObjectMetadata
     public string Name { get; init; } = string.Empty;
 
     /// <summary>
-    /// Optional namespace for grouping entities.
-    /// </summary>
-    [JsonPropertyName("namespace")]
-    public string? Namespace { get; init; }
-
-    /// <summary>
     /// Human-readable display title.
     /// </summary>
     [JsonPropertyName("title")]
@@ -70,12 +64,6 @@ public sealed record MetadataV2ObjectMetadata
     /// </summary>
     [JsonPropertyName("annotations")]
     public IReadOnlyDictionary<string, string> Annotations { get; init; } = new Dictionary<string, string>();
-
-    /// <summary>
-    /// Entity generation for optimistic concurrency.
-    /// </summary>
-    [JsonPropertyName("generation")]
-    public long? Generation { get; init; }
 
     /// <summary>
     /// Timestamp when the entity was created.

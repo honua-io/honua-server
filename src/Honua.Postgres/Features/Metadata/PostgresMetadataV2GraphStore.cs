@@ -260,7 +260,9 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore
             cmd.Parameters.AddWithValue("@revision", graph.Revision);
             cmd.Parameters.AddWithValue("@id", resource.Metadata.Id);
             cmd.Parameters.AddWithValue("@name", resource.Metadata.Name);
-            cmd.Parameters.AddWithValue("@namespace", (object?)resource.Metadata.Namespace ?? DBNull.Value);
+            // Namespace column kept in the SQL schema for forward-compat;
+            // MetadataV2ObjectMetadata.Namespace was removed in design slice 65/N.
+            cmd.Parameters.AddWithValue("@namespace", DBNull.Value);
             cmd.Parameters.AddWithValue("@type", resource.Type.ToString());
             cmd.Parameters.AddWithValue("@primary", (object?)resource.PrimaryStorageBindingId ?? DBNull.Value);
             await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
