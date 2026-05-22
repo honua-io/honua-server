@@ -181,12 +181,6 @@ public sealed record MetadataV2Resource
     public MetadataV2PermanentFilter? PermanentFilter { get; init; }
 
     /// <summary>
-    /// Lifecycle and observed status.
-    /// </summary>
-    [JsonPropertyName("status")]
-    public MetadataV2Status Status { get; init; } = new();
-
-    /// <summary>
     /// Extension data for the resource.
     /// </summary>
     [JsonPropertyName("extensions")]
@@ -233,12 +227,6 @@ public sealed record MetadataV2Connection
     /// </summary>
     [JsonPropertyName("options")]
     public IReadOnlyDictionary<string, JsonElement> Options { get; init; } = new Dictionary<string, JsonElement>();
-
-    /// <summary>
-    /// Lifecycle and observed status.
-    /// </summary>
-    [JsonPropertyName("status")]
-    public MetadataV2Status Status { get; init; } = new();
 
     /// <summary>
     /// Extension data for the connection.
@@ -305,12 +293,6 @@ public sealed record MetadataV2StorageBinding
     /// </summary>
     [JsonPropertyName("options")]
     public IReadOnlyDictionary<string, JsonElement> Options { get; init; } = new Dictionary<string, JsonElement>();
-
-    /// <summary>
-    /// Lifecycle and observed status.
-    /// </summary>
-    [JsonPropertyName("status")]
-    public MetadataV2Status Status { get; init; } = new();
 
     /// <summary>
     /// Extension data for the storage binding.
@@ -388,12 +370,6 @@ public sealed record MetadataV2Service
     /// </summary>
     [JsonPropertyName("options")]
     public IReadOnlyDictionary<string, JsonElement> Options { get; init; } = new Dictionary<string, JsonElement>();
-
-    /// <summary>
-    /// Lifecycle and observed status.
-    /// </summary>
-    [JsonPropertyName("status")]
-    public MetadataV2Status Status { get; init; } = new();
 
     /// <summary>
     /// Extension data for the service.
@@ -515,12 +491,6 @@ public sealed record MetadataV2Publication
     /// </summary>
     [JsonPropertyName("options")]
     public IReadOnlyDictionary<string, JsonElement> Options { get; init; } = new Dictionary<string, JsonElement>();
-
-    /// <summary>
-    /// Lifecycle and observed status.
-    /// </summary>
-    [JsonPropertyName("status")]
-    public MetadataV2Status Status { get; init; } = new();
 
     /// <summary>
     /// Extension data for the publication.
