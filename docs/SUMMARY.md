@@ -76,6 +76,7 @@
 - [Mobile SDK Roadmap](developer/mobile-sdk-roadmap.md)
 - [FieldCollection Mobile Sync API](developer/fieldcollection-mobile-sync-api.md)
 - [MCP Server](developer/MCP_SERVER.md)
+- [AI Builder SDK Contract](ai-builder-sdk-contract.md)
 - [AI Builder Contract Fixtures](developer/ai-builder-contract-fixtures.md)
 - [Spec Plan/Apply Engine](developer/SPEC_ENGINE.md)
 - [Grounding & Intent Drafting](developer/GROUNDING.md)
