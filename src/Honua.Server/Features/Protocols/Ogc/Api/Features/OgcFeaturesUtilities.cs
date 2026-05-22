@@ -296,6 +296,61 @@ internal static class OgcFeaturesUtilities
             or FieldType.Time
             or FieldType.Uuid;
 
+    /// <summary>
+    /// Metadata v2 overload of <see cref="IsSimpleQueryableField(FieldDefinition)"/>.
+    /// Inspects the <see cref="MetadataV2Field.Type"/> string (provider-native type label) for
+    /// the canonical scalar primitives the OGC API Features queryables schema and items
+    /// query-parameter validator accept as simple filter targets.
+    /// </summary>
+    public static bool IsSimpleQueryableField(MetadataV2Field field)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+        return field.Type?.Trim().ToLowerInvariant() switch
+        {
+            "string" or "text" or "varchar" or "char" => true,
+            "int" or "int32" or "integer" or "smallint" => true,
+            "long" or "int64" or "bigint" or "biginteger" => true,
+            "double" or "float64" or "double precision" => true,
+            "float" or "float32" or "real" or "single" => true,
+            "bool" or "boolean" => true,
+            "datetime" or "date-time" or "timestamp" or "timestamptz" => true,
+            "date" => true,
+            "time" => true,
+            "uuid" or "guid" => true,
+            _ => false
+        };
+    }
+
+    /// <summary>
+    /// Metadata v2 overload of <see cref="ValidateItemsQueryParameters(HttpRequest, LayerDefinition)"/>.
+    /// Builds the allowed query-parameter set from <see cref="MetadataV2Resource.SchemaFields"/>
+    /// instead of the v1 <c>VisibleAttributeFields</c>.
+    /// </summary>
+    public static BadRequest<string>? ValidateItemsQueryParameters(
+        HttpRequest request,
+        MetadataV2Resource resource)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(resource);
+
+        var allowed = new HashSet<string>(AllowedQueryParameters.Items, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var field in resource.SchemaFields)
+        {
+            if (IsSimpleQueryableField(field))
+            {
+                allowed.Add(field.Name);
+            }
+        }
+
+        var validator = request.HttpContext.RequestServices.GetRequiredService<ICommonQueryValidator>();
+        var error = QueryParameterValidationHelpers.GetValidationError(
+            validator,
+            request.Query.Keys.ToArray(),
+            allowed);
+        return error == null ? null : TypedResults.BadRequest(error);
+    }
+
     public static async Task<TemporalExtent?> BuildTemporalExtentAsync(
         LayerDefinition layer,
         IFeatureReader featureReader,
