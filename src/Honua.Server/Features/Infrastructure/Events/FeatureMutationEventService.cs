@@ -43,11 +43,10 @@ internal sealed class FeatureMutationEventService(
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var serviceType = MetadataV2ServiceTypeMapping.Map(serviceProtocol);
-        var serviceId = await LayerValidationHelpers.ResolvePrimaryServiceNameV2Async(
+        var serviceId = await LayerValidationHelpers.ResolvePrimaryServiceNameByProtocolV2Async(
             context,
             layerId,
-            serviceType,
+            serviceProtocol,
             cancellationToken).ConfigureAwait(false);
 
         return serviceId ?? layerId.ToString(CultureInfo.InvariantCulture);

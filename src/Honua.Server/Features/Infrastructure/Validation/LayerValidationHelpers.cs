@@ -719,6 +719,42 @@ internal static class LayerValidationHelpers
         return service?.Metadata.Name;
     }
 
+    /// <summary>
+    /// Resolves the primary V2 service name for a layer index, preferring services
+    /// whose <see cref="MetadataV2Service.Protocols"/> list contains
+    /// <paramref name="requiredProtocol"/>. Use when the caller knows the protocol
+    /// string (e.g. <c>ServiceProtocols.OgcFeatures</c>) but not the legacy
+    /// <see cref="MetadataV2ServiceType"/> enum classification.
+    /// </summary>
+    public static async Task<string?> ResolvePrimaryServiceNameByProtocolV2Async(
+        HttpContext context,
+        int layerId,
+        string? requiredProtocol,
+        CancellationToken cancellationToken = default)
+    {
+        var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+
+        MetadataV2Service? chosen = null;
+        foreach (var pub in snapshot.Graph.Publications)
+        {
+            if (pub.LayerIndex != layerId) continue;
+            if (!snapshot.Index.ServicesById.TryGetValue(pub.ServiceId, out var service)) continue;
+
+            if (!string.IsNullOrWhiteSpace(requiredProtocol) &&
+                !ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
+            {
+                continue;
+            }
+
+            if (chosen is null ||
+                string.Compare(service.Metadata.Name, chosen.Metadata.Name, StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                chosen = service;
+            }
+        }
+        return chosen?.Metadata.Name;
+    }
+
     private static async Task<MetadataV2GraphSnapshot> GetV2SnapshotAsync(
         HttpContext context,
         CancellationToken cancellationToken)

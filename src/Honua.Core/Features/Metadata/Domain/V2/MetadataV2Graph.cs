@@ -358,7 +358,10 @@ public sealed record MetadataV2Service
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();
 
     /// <summary>
-    /// Public service type. This is not a storage type.
+    /// Public service classification used for routing and display only. Protocol
+    /// enablement is governed by <see cref="Protocols"/>; the two are kept independent
+    /// so a service classified as an Esri Feature Service can additionally expose,
+    /// e.g., the OGC API Features protocol on the same publications.
     /// </summary>
     [JsonPropertyName("serviceType")]
     public MetadataV2ServiceType ServiceType { get; init; } = MetadataV2ServiceType.OgcApiFeatures;
@@ -391,17 +394,14 @@ public sealed record MetadataV2Service
     public MetadataV2SpatialReference? SpatialReference { get; init; }
 
     /// <summary>
-    /// Protocol identifiers explicitly enabled on this service. When null, the
-    /// <see cref="ServiceType"/> implies a single canonical protocol (matched by
-    /// <c>MetadataV2ServiceTypeMapping.Map</c>); when set, this list lets a service
-    /// expose more than one protocol simultaneously (e.g. an
-    /// <see cref="MetadataV2ServiceType.OgcApiFeatures"/> service that also advertises
-    /// <c>OGC-API-Maps</c>, <c>OGC-API-Tiles</c>, or <c>OGC-API-Coverages</c> on the same
-    /// publications). Values match the v1 <c>ServiceProtocols.*</c> constants for source
-    /// compatibility.
+    /// Protocols exposed by this service. The single source of truth for protocol
+    /// gating — <c>ServiceProtocols.IsProtocolEnabled(MetadataV2Service, string)</c>
+    /// checks membership here directly. Values are the canonical
+    /// <c>ServiceProtocols.*</c> string constants. Empty means the service exposes
+    /// nothing; it does NOT mean "everything".
     /// </summary>
-    [JsonPropertyName("enabledProtocols")]
-    public IReadOnlyList<string>? EnabledProtocols { get; init; }
+    [JsonPropertyName("protocols")]
+    public IReadOnlyList<string> Protocols { get; init; } = Array.Empty<string>();
 
     /// <summary>
     /// Service-specific options.

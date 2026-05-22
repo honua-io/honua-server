@@ -313,7 +313,7 @@ public sealed class WebAppFixture : IAsyncLifetime
                 "test",
                 MetadataV2ServiceType.OgcApiFeatures,
                 route: "/ogc/features",
-                enabledProtocols: allProtocols);
+                protocols: allProtocols);
 
         // Cover the layer ids inserted by server.yaml (0..2 and the spatial-reference fixtures
         // at 101..104). Any test that needs a different id range can extend or replace the graph.

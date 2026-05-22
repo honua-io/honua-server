@@ -132,39 +132,6 @@ public static class MetadataV2SpatialExtensions
 }
 
 /// <summary>
-/// Maps the v1 service-protocol string identifiers onto <see cref="MetadataV2ServiceType"/>.
-/// </summary>
-public static class MetadataV2ServiceTypeMapping
-{
-    /// <summary>
-    /// Returns the V2 service type matching a v1 protocol name (case-insensitive).
-    /// </summary>
-    public static MetadataV2ServiceType? Map(string? protocol)
-    {
-        if (string.IsNullOrWhiteSpace(protocol))
-        {
-            return null;
-        }
-
-        return protocol.Trim() switch
-        {
-            "OData" or "odata" => MetadataV2ServiceType.OData,
-            "OgcFeatures" or "ogc-features" or "ogc-api-features" => MetadataV2ServiceType.OgcApiFeatures,
-            "FeatureServer" or "feature-server" or "esri-feature-service" => MetadataV2ServiceType.EsriFeatureService,
-            "MapServer" or "map-server" or "esri-map-service" => MetadataV2ServiceType.EsriMapService,
-            "ImageServer" or "image-server" or "esri-image-service" => MetadataV2ServiceType.EsriImageService,
-            "Wms" or "wms" => MetadataV2ServiceType.Wms,
-            "Wmts" or "wmts" => MetadataV2ServiceType.Wmts,
-            "Wfs" or "wfs" => MetadataV2ServiceType.Wfs,
-            "Stac" or "stac" or "stac-api" => MetadataV2ServiceType.StacApi,
-            "Dcat" or "dcat" or "dcat-catalog" => MetadataV2ServiceType.DcatCatalog,
-            "Records" or "records" or "ogc-records" => MetadataV2ServiceType.OgcRecords,
-            _ => null,
-        };
-    }
-}
-
-/// <summary>
 /// Temporal field names extracted from a <see cref="MetadataV2Resource"/>'s temporal extension.
 /// </summary>
 public readonly record struct MetadataV2TemporalFields(string? StartTimeField, string? EndTimeField, string? TrackIdField);
