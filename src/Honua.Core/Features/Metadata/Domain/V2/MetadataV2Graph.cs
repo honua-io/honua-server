@@ -202,10 +202,11 @@ public sealed record MetadataV2Resource
     public MetadataV2ResourceSpatial? Spatial { get; init; }
 
     /// <summary>
-    /// Optional temporal extent metadata.
+    /// Typed temporal metadata (time-field names + optional declared extent).
+    /// Unset for non-time-aware resources.
     /// </summary>
     [JsonPropertyName("temporal")]
-    public JsonElement? Temporal { get; init; }
+    public MetadataV2ResourceTemporal? Temporal { get; init; }
 
     /// <summary>
     /// Lifecycle and observed status.

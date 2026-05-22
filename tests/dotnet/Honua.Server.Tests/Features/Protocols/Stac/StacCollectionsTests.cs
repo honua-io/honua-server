@@ -6,6 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -262,16 +263,15 @@ public sealed class StacCollectionsTests : IAsyncLifetime
                 Honua.Core.Features.Catalog.Domain.CatalogJsonContext.Default.StacCatalogMetadata);
         }
 
-        JsonElement? temporal = null;
+        MetadataV2ResourceTemporal? temporal = null;
         if (metadata.TimeInfo is not null)
         {
-            temporal = JsonSerializer.SerializeToElement(
-                new
-                {
-                    startTimeField = metadata.TimeInfo.StartTimeField,
-                    endTimeField = metadata.TimeInfo.EndTimeField,
-                    trackIdField = metadata.TimeInfo.TrackIdField,
-                });
+            temporal = new MetadataV2ResourceTemporal
+            {
+                StartTimeField = metadata.TimeInfo.StartTimeField,
+                EndTimeField = metadata.TimeInfo.EndTimeField,
+                TrackIdField = metadata.TimeInfo.TrackIdField,
+            };
         }
 
         _fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, stacExtension: stac, temporal: temporal);

@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit.Attributes;
@@ -95,7 +94,12 @@ public sealed class MetadataV2SpatialExtensionsTests
     {
         var resource = new MetadataV2Resource
         {
-            Temporal = JsonSerializer.Deserialize<JsonElement>("""{"startTimeField": "ts_start", "endTimeField": "ts_end", "trackIdField": "track"}"""),
+            Temporal = new MetadataV2ResourceTemporal
+            {
+                StartTimeField = "ts_start",
+                EndTimeField = "ts_end",
+                TrackIdField = "track"
+            },
         };
         var t = resource.ReadTemporalFields();
         t.StartTimeField.Should().Be("ts_start");

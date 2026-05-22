@@ -1,8 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text.Json;
-
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
 /// <summary>
@@ -91,31 +89,17 @@ public static class MetadataV2SpatialExtensions
     }
 
     /// <summary>
-    /// Reads the temporal field names from the resource's temporal slot. Temporal is
-    /// still <see cref="JsonElement"/>-typed; Phase 3 of the v2 design refactor will
-    /// promote it to a typed record like <see cref="MetadataV2ResourceSpatial"/>.
+    /// Reads the temporal field names from the resource's typed temporal slot.
     /// </summary>
     public static MetadataV2TemporalFields ReadTemporalFields(this MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
-        if (resource.Temporal is not { ValueKind: JsonValueKind.Object } temporal)
+        var t = resource.Temporal;
+        if (t is null)
         {
             return new MetadataV2TemporalFields(null, null, null);
         }
-
-        var start = TryReadString(temporal, "startTimeField");
-        var end = TryReadString(temporal, "endTimeField");
-        var track = TryReadString(temporal, "trackIdField");
-        return new MetadataV2TemporalFields(start, end, track);
-    }
-
-    private static string? TryReadString(JsonElement parent, string name)
-    {
-        if (parent.TryGetProperty(name, out var element) && element.ValueKind == JsonValueKind.String)
-        {
-            return element.GetString();
-        }
-        return null;
+        return new MetadataV2TemporalFields(t.StartTimeField, t.EndTimeField, t.TrackIdField);
     }
 
     /// <summary>

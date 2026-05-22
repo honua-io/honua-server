@@ -468,7 +468,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     public void UpdateV2ResourceMetadata(
         int layerIndex,
         JsonElement? stacExtension = null,
-        JsonElement? temporal = null,
+        MetadataV2ResourceTemporal? temporal = null,
         MetadataV2ResourceSpatial? spatial = null)
     {
         var provider = GetService<IMetadataV2GraphProvider>() as Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider
@@ -510,7 +510,7 @@ public sealed class WebAppFixture : IAsyncLifetime
         resources[resourceIndex] = resource with
         {
             Extensions = extensions,
-            Temporal = temporal ?? resource.Temporal,
+            Temporal = temporal is not null ? temporal : resource.Temporal,
             Spatial = spatial is not null ? spatial : resource.Spatial,
         };
 
