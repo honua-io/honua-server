@@ -8,6 +8,7 @@ using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -350,24 +351,23 @@ internal static class CollectionsEndpoints
             collectionId = collectionResolution.ResolvedCollectionId;
             OgcFeaturesLog.CollectionRequested(logger, collectionId);
 
-            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+            var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
                 context,
-                collectionResolution.LayerId,
-                LayerValidationHelpers.ValidationProtocol.OgcFeatures,
-                requiredProtocol: ServiceProtocols.OgcFeatures,
+                collectionId,
+                requiredServiceType: MetadataV2ServiceType.OgcApiFeatures,
                 cancellationToken: effectiveToken);
-            if (!layerValidation.IsValid)
+            if (!validation.IsValid)
             {
-                return layerValidation.ErrorResult!;
+                return validation.ErrorResult!;
             }
 
-            var layer = layerValidation.Layer!;
+            var resource = validation.Resource!;
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var queryablesId = $"{baseUrl}/ogc/features/collections/{Uri.EscapeDataString(collectionId)}/queryables";
 
-            // Build queryables schema from layer fields
-            var queryables = CreateQueryablesSchema(layer, queryablesId);
+            // Build queryables schema from V2 resource fields
+            var queryables = CreateQueryablesSchema(resource, queryablesId);
 
             return OgcCommonUtilities.FormatMetadataResponse(queryables, OgcJsonContext.Default.QueryablesSchema, outputFormat, "Queryables");
         }
@@ -617,6 +617,69 @@ internal static class CollectionsEndpoints
         };
     }
 
+    /// <summary>
+    /// Metadata v2 overload of
+    /// <see cref="CreateQueryablesSchema(LayerDefinition, string)"/>. Builds the queryables
+    /// JSON Schema from <see cref="MetadataV2Resource.SchemaFields"/>, with the primary
+    /// geometry field resolved via
+    /// <see cref="MetadataV2SpatialExtensions.FindPrimaryGeometryField"/>.
+    /// </summary>
+    private static QueryablesSchema CreateQueryablesSchema(
+        MetadataV2Resource resource,
+        string queryablesId)
+    {
+        var properties = ImmutableDictionary.CreateBuilder<string, JsonSchemaProperty>();
+        var requiredFields = new List<string>();
+        var geometryField = resource.FindPrimaryGeometryField();
+        var geometryFieldName = geometryField?.Name;
+
+        foreach (var field in resource.SchemaFields)
+        {
+            // Skip the primary geometry field — it gets a dedicated geometry property below.
+            if (geometryFieldName is not null &&
+                string.Equals(field.Name, geometryFieldName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!OgcFeaturesUtilities.IsSimpleQueryableField(field))
+            {
+                continue;
+            }
+
+            properties[field.Name] = ConvertFieldToJsonSchemaProperty(field);
+
+            if (!field.Nullable)
+            {
+                requiredFields.Add(field.Name);
+            }
+        }
+
+        if (geometryField is not null)
+        {
+            properties[geometryField.Name] = new JsonSchemaProperty
+            {
+                Type = "object",
+                Title = "Geometry",
+                Description = "Geometric representation of the feature",
+                Format = "geometry",
+                Ref = "https://geojson.org/schema/Geometry.json"
+            };
+        }
+
+        var displayName = resource.Metadata.Title ?? resource.Metadata.Name;
+
+        return new QueryablesSchema
+        {
+            Id = queryablesId,
+            Type = "object",
+            Title = $"Queryables for {displayName}",
+            Description = $"Schema for queryable properties of the {displayName} collection",
+            Properties = properties.ToImmutable(),
+            Required = requiredFields.ToImmutableArray()
+        };
+    }
+
     internal static async Task<ImmutableArray<TProjection>> ProjectWithLimitedConcurrencyAsync<TSource, TProjection>(
         IReadOnlyList<TSource> source,
         Func<TSource, CancellationToken, Task<TProjection>> projector,
@@ -673,6 +736,22 @@ internal static class CollectionsEndpoints
     }
 
     /// <summary>
+    /// Metadata v2 overload of <see cref="ConvertFieldToJsonSchemaProperty(FieldDefinition)"/>.
+    /// </summary>
+    private static JsonSchemaProperty ConvertFieldToJsonSchemaProperty(MetadataV2Field field)
+    {
+        var (type, format) = GetJsonSchemaTypeAndFormatV2(field.Type);
+
+        return new JsonSchemaProperty
+        {
+            Type = type,
+            Format = format,
+            Title = field.Title ?? field.Name,
+            Description = field.Description
+        };
+    }
+
+    /// <summary>
     /// Maps FieldType to JSON Schema type and format
     /// </summary>
     private static (string type, string? format) GetJsonSchemaTypeAndFormat(FieldType fieldType)
@@ -688,6 +767,27 @@ internal static class CollectionsEndpoints
             FieldType.Date => ("string", "date"),
             FieldType.Time => ("string", "time"),
             FieldType.Uuid => ("string", "uuid"),
+            _ => ("string", null)
+        };
+
+    /// <summary>
+    /// Metadata v2 overload of <see cref="GetJsonSchemaTypeAndFormat(FieldType)"/>.
+    /// Accepts a free-form provider-native type label (the V2 field type string) and maps it
+    /// to the JSON Schema type/format pair.
+    /// </summary>
+    private static (string type, string? format) GetJsonSchemaTypeAndFormatV2(string? typeLabel)
+        => typeLabel?.Trim().ToLowerInvariant() switch
+        {
+            "string" or "text" or "varchar" or "char" => ("string", null),
+            "int" or "int32" or "integer" or "smallint" => ("integer", null),
+            "long" or "int64" or "bigint" or "biginteger" => ("integer", null),
+            "double" or "float64" or "double precision" => ("number", "double"),
+            "float" or "float32" or "real" or "single" => ("number", "float"),
+            "bool" or "boolean" => ("boolean", null),
+            "datetime" or "date-time" or "timestamp" or "timestamptz" => ("string", "date-time"),
+            "date" => ("string", "date"),
+            "time" => ("string", "time"),
+            "uuid" or "guid" => ("string", "uuid"),
             _ => ("string", null)
         };
 
