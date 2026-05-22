@@ -3,11 +3,12 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
@@ -15,7 +16,6 @@ using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Protocols.Ogc.Common;
 using Honua.Server.Features.Protocols.Ogc.Api.Features;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Protocols.Ogc.Api.Tiles;
 
@@ -51,7 +51,7 @@ internal static class CollectionsEndpoints
     private static async Task<IResult> HandleGetCollections(
         HttpContext context,
         string? f,
-        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
         [FromServices] IFeatureReader featureReader,
         [FromServices] ICoordinateTransformService coordinateTransformService,
         [FromServices] ICrsRegistry crsRegistry,
@@ -74,29 +74,43 @@ internal static class CollectionsEndpoints
             }
 
             var cancellationToken = OgcTilesUtilities.GetTimeoutAwareCancellationToken(context);
-            var layers = await layerCatalog.ListLayersAsync(cancellationToken);
-            var services = await layerCatalog.ListServicesAsync(cancellationToken);
-            var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMap(services, OgcApiTilesProtocol);
-            var visibleLayers = new List<LayerDefinition>(layers.Length);
+            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+
+            // Walk OGC API Tiles publications: each (resource, service) pair gated on
+            // protocol enablement + access policy. Dedupe by resource (prefer IsPrimary).
+            var byResource = new Dictionary<string, (MetadataV2Publication Publication, MetadataV2Service Service, MetadataV2Resource Resource)>(StringComparer.Ordinal);
             var requiresAuth = false;
             var hasDenied = false;
+            var totalPublications = snapshot.Graph.Publications.Count;
 
-            foreach (var layer in layers)
+            foreach (var publication in snapshot.Graph.Publications)
             {
-                var service = GetPrimaryService(layer.Id, primaryServices);
-                if (!IsOgcApiTilesEnabled(layer, service))
+                if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service))
+                {
+                    continue;
+                }
+                if (!ServiceProtocols.IsProtocolEnabled(service, OgcApiTilesProtocol))
+                {
+                    continue;
+                }
+                var resource = snapshot.ResolveResource(publication);
+                if (resource is null)
                 {
                     continue;
                 }
 
                 var decision = AccessPolicyHelpers.EvaluateAccess(
                     context,
-                    layer.Metadata?.AccessPolicy,
-                    service?.Metadata?.AccessPolicy);
+                    resource.AccessPolicy,
+                    service.AccessPolicy);
 
                 if (decision.IsAllowed)
                 {
-                    visibleLayers.Add(layer);
+                    if (!byResource.TryGetValue(resource.Metadata.Id, out var existing) ||
+                        (publication.IsPrimary && !existing.Publication.IsPrimary))
+                    {
+                        byResource[resource.Metadata.Id] = (publication, service, resource);
+                    }
                     continue;
                 }
 
@@ -107,9 +121,13 @@ internal static class CollectionsEndpoints
                 }
             }
 
-            if (visibleLayers.Count == 0)
+            var visible = byResource.Values
+                .OrderBy(t => snapshot.ResolveStorageLayerId(t.Publication) ?? int.MaxValue)
+                .ToArray();
+
+            if (visible.Length == 0)
             {
-                if (layers.Length == 0)
+                if (totalPublications == 0)
                 {
                     return StandardErrorHelpers.CreateNotFound(context, "No collections are available.");
                 }
@@ -124,18 +142,20 @@ internal static class CollectionsEndpoints
                 return StandardErrorHelpers.CreateNotFound(context, "No collections are available.");
             }
 
-            var collections = new CollectionInfo[visibleLayers.Count];
+            var collections = new CollectionInfo[visible.Length];
             await Parallel.ForEachAsync(
-                visibleLayers.Select((layer, index) => (layer, index)),
+                visible.Select((entry, index) => (entry, index)),
                 new ParallelOptions
                 {
                     CancellationToken = cancellationToken,
-                    MaxDegreeOfParallelism = Math.Min(visibleLayers.Count, 8)
+                    MaxDegreeOfParallelism = Math.Min(visible.Length, 8)
                 },
                 async (item, token) =>
                 {
                     collections[item.index] = await CreateCollectionAsync(
-                        item.layer,
+                        item.entry.Resource,
+                        item.entry.Publication,
+                        snapshot,
                         baseUrl,
                         featureReader,
                         coordinateTransformService,
@@ -183,7 +203,7 @@ internal static class CollectionsEndpoints
         string collectionId,
         HttpContext context,
         string? f,
-        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
         [FromServices] IFeatureReader featureReader,
         [FromServices] ICoordinateTransformService coordinateTransformService,
         [FromServices] ICrsRegistry crsRegistry,
@@ -206,27 +226,24 @@ internal static class CollectionsEndpoints
             }
 
             var cancellationToken = OgcTilesUtilities.GetTimeoutAwareCancellationToken(context);
-            var layer = await ResolveCollectionLayerAsync(context, collectionId, cancellationToken);
-            if (layer == null)
+            var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
+                context,
+                collectionId,
+                requiredProtocol: OgcApiTilesProtocol,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (!validation.IsValid)
             {
-                return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+                return validation.ErrorResult!;
             }
 
-            var services = await layerCatalog.ListServicesAsync(cancellationToken);
-            var primaryService = GetPrimaryService(layer.Id, LayerValidationHelpers.BuildPrimaryServiceMap(services, OgcApiTilesProtocol));
-            if (!IsOgcApiTilesEnabled(layer, primaryService))
-            {
-                return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
-            }
-
-            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, primaryService);
-            if (accessError != null)
-            {
-                return accessError;
-            }
+            var resource = validation.Resource!;
+            var publication = validation.Publication!;
+            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
             var collection = await CreateCollectionAsync(
-                layer,
+                resource,
+                publication,
+                snapshot,
                 baseUrl,
                 featureReader,
                 coordinateTransformService,
@@ -264,57 +281,45 @@ internal static class CollectionsEndpoints
         }
     }
 
-    private static ServiceDefinition? GetPrimaryService(
-        int layerId,
-        IReadOnlyDictionary<int, ServiceDefinition> primaryServices)
-        => primaryServices.TryGetValue(layerId, out var service) ? service : null;
-
-    private static bool IsOgcApiTilesEnabled(LayerDefinition layer, ServiceDefinition? service)
-    {
-        var metadata = service?.Metadata ?? layer.Metadata;
-        return ServiceProtocols.IsProtocolEnabled(metadata, OgcApiTilesProtocol);
-    }
-
-    private static async Task<LayerDefinition?> ResolveCollectionLayerAsync(
-        HttpContext context,
-        string collectionId,
-        CancellationToken cancellationToken)
-    {
-        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var validationResult = await resourceValidator.ValidateCollectionAsync(collectionId, cancellationToken);
-        return validationResult.IsValid ? validationResult.Resource : null;
-    }
-
     private static async Task<CollectionInfo> CreateCollectionAsync(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        MetadataV2GraphSnapshot snapshot,
         string baseUrl,
         IFeatureReader featureReader,
         ICoordinateTransformService coordinateTransformService,
         ICrsRegistry crsRegistry,
         CancellationToken cancellationToken)
     {
-        var collectionId = layer.Id.ToString(CultureInfo.InvariantCulture);
+        var collectionId = publication.ServiceLocalId
+            ?? publication.Path
+            ?? resource.Metadata.Name;
+        var displayName = publication.TitleOverride
+            ?? resource.Metadata.Title
+            ?? resource.Metadata.Name;
+        var escapedCollectionId = Uri.EscapeDataString(collectionId);
+
         var collectionLinks = ImmutableArray.Create(
             Link.Create(
-                href: $"{baseUrl}/ogc/tiles/collections/{collectionId}",
+                href: $"{baseUrl}/ogc/tiles/collections/{escapedCollectionId}",
                 rel: RelationTypes.Self,
                 type: MediaTypes.Json,
-                title: layer.Name
+                title: displayName
             ),
             Link.Create(
-                href: $"{baseUrl}/ogc/features/collections/{collectionId}/items",
+                href: $"{baseUrl}/ogc/features/collections/{escapedCollectionId}/items",
                 rel: RelationTypes.Items,
                 type: MediaTypes.GeoJson,
                 title: "Items"
             ),
             Link.Create(
-                href: $"{baseUrl}/ogc/features/collections/{collectionId}/items",
+                href: $"{baseUrl}/ogc/features/collections/{escapedCollectionId}/items",
                 rel: RelationTypes.Data,
                 type: MediaTypes.GeoJson,
                 title: "Data"
             ),
             Link.Create(
-                href: $"{baseUrl}/ogc/tiles/collections/{collectionId}/tiles",
+                href: $"{baseUrl}/ogc/tiles/collections/{escapedCollectionId}/tiles",
                 rel: RelationTypes.TilesetsVector,
                 type: MediaTypes.Json,
                 title: "Vector tilesets"
@@ -328,15 +333,16 @@ internal static class CollectionsEndpoints
         );
 
         SpatialExtent? spatialExtent = null;
-        if (layer.Extent != null)
+        var bbox = resource.ReadBbox();
+        if (bbox is not null)
         {
-            var layerExtent = layer.Extent.Value;
+            var srid = resource.ReadSrid() ?? 4326;
             var transformedExtent = await OgcExtentTransformer.TryTransformExtentToCrs84Async(
-                layerExtent.MinX,
-                layerExtent.MinY,
-                layerExtent.MaxX,
-                layerExtent.MaxY,
-                layerExtent.SpatialReference,
+                bbox.West,
+                bbox.South,
+                bbox.East,
+                bbox.North,
+                srid,
                 coordinateTransformService,
                 cancellationToken);
 
@@ -354,7 +360,17 @@ internal static class CollectionsEndpoints
             }
         }
 
-        var temporalExtent = await OgcFeaturesUtilities.BuildTemporalExtentAsync(layer, featureReader, cancellationToken);
+        TemporalExtent? temporalExtent = null;
+        var storageLayerId = snapshot.ResolveStorageLayerId(publication);
+        if (storageLayerId.HasValue)
+        {
+            temporalExtent = await OgcFeaturesUtilities.BuildTemporalExtentAsync(
+                resource,
+                storageLayerId.Value,
+                featureReader,
+                cancellationToken).ConfigureAwait(false);
+        }
+
         var collectionExtent = spatialExtent == null && temporalExtent == null
             ? null
             : new Extent
@@ -363,19 +379,24 @@ internal static class CollectionsEndpoints
                 Temporal = temporalExtent
             };
 
-        var storageCrsDefinition = await crsRegistry.ResolveAsync(
-            layer.SpatialReference.ToOgcCrs(),
-            cancellationToken);
+        CrsDefinition? storageCrsDefinition = null;
+        var resourceSrid = resource.ReadSrid();
+        if (resourceSrid.HasValue)
+        {
+            storageCrsDefinition = await crsRegistry.ResolveAsync(
+                resourceSrid.Value.ToOgcCrs(),
+                cancellationToken);
+        }
         var supportedCrs = await OgcFeaturesUtilities.GetSupportedCrsUrisAsync(
-            layer,
+            resource,
             crsRegistry,
             cancellationToken);
 
         return new CollectionInfo
         {
             Id = collectionId,
-            Title = layer.Name,
-            Description = layer.Description,
+            Title = displayName,
+            Description = resource.Metadata.Description,
             Links = collectionLinks,
             Extent = collectionExtent,
             Crs = supportedCrs,
