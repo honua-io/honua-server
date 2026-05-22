@@ -158,13 +158,8 @@ public sealed record MetadataV2Resource
     public string? PrimaryStorageBindingId { get; init; }
 
     /// <summary>
-    /// Optional schema or field metadata for the resource.
-    /// </summary>
-    [JsonPropertyName("schema")]
-    public JsonElement? Schema { get; init; }
-
-    /// <summary>
-    /// Canonical schema fields and field-level semantic roles.
+    /// Canonical schema fields and field-level semantic roles. The single source
+    /// of truth for the resource's field set.
     /// </summary>
     [JsonPropertyName("schemaFields")]
     public IReadOnlyList<MetadataV2Field> SchemaFields { get; init; } = Array.Empty<MetadataV2Field>();
