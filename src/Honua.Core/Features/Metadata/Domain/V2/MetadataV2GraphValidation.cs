@@ -48,10 +48,14 @@ public static class MetadataV2GraphValidator
             graph.Publications,
             publication => publication.Metadata.Id);
 
+        var policyIds = graph.Policies.Select(p => p.Metadata.Id).ToHashSet(StringComparer.Ordinal);
+
         ValidateStorageBindings(errors, graph.StorageBindings, resourceIds, connectionIds);
-        ValidateResources(errors, graph.Resources, storageBindingsById);
+        ValidateResources(errors, graph.Resources, storageBindingsById, policyIds);
         ValidatePublications(errors, graph.Publications, resourceIds, storageBindingsById, serviceIds);
         ValidateServices(errors, graph.Services, publicationsById);
+        ValidatePublicationPrimary(errors, graph.Publications);
+        ValidateRoles(errors, graph.Roles, policyIds);
 
         return new MetadataV2GraphValidationResult(errors.Count == 0, errors);
     }
@@ -122,7 +126,8 @@ public static class MetadataV2GraphValidator
     private static void ValidateResources(
         List<string> errors,
         IEnumerable<MetadataV2Resource> resources,
-        Dictionary<string, MetadataV2StorageBinding> storageBindingsById)
+        Dictionary<string, MetadataV2StorageBinding> storageBindingsById,
+        HashSet<string> policyIds)
     {
         foreach (var resource in resources)
         {
@@ -150,6 +155,204 @@ public static class MetadataV2GraphValidator
             {
                 errors.Add(
                     $"resource '{resource.Metadata.Id}' primary storage binding '{resource.PrimaryStorageBindingId}' must be listed in storageBindingIds.");
+            }
+
+            ValidateResourceStorageLayerId(errors, resource, storageBindingIds, storageBindingsById);
+            ValidateResourceSpatial(errors, resource);
+            ValidateResourceTemporal(errors, resource);
+            ValidateResourceSchemaFields(errors, resource);
+            ValidateResourcePolicyIds(errors, resource, policyIds);
+        }
+    }
+
+    private static void ValidateResourceStorageLayerId(
+        List<string> errors,
+        MetadataV2Resource resource,
+        IReadOnlyList<string> storageBindingIds,
+        Dictionary<string, MetadataV2StorageBinding> storageBindingsById)
+    {
+        if (resource.Type is not (MetadataV2ResourceType.FeatureDataset
+            or MetadataV2ResourceType.RasterDataset
+            or MetadataV2ResourceType.Table
+            or MetadataV2ResourceType.TileDataset))
+        {
+            return;
+        }
+
+        if (storageBindingIds.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var id in storageBindingIds)
+        {
+            if (storageBindingsById.TryGetValue(id, out var binding) && binding.StorageLayerId is null)
+            {
+                errors.Add(
+                    $"storage binding '{id}' on resource '{resource.Metadata.Id}' (type '{resource.Type}') must declare storageLayerId.");
+            }
+        }
+    }
+
+    private static void ValidateResourceSpatial(List<string> errors, MetadataV2Resource resource)
+    {
+        var spatial = resource.Spatial;
+        if (spatial is null)
+        {
+            return;
+        }
+
+        if (spatial.SpatialReference is { } sr && sr.ResolveSrid() is null && (sr.Srid is null && string.IsNullOrWhiteSpace(sr.Crs)))
+        {
+            errors.Add(
+                $"resource '{resource.Metadata.Id}' spatial reference has neither srid nor crs.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(spatial.PrimaryGeometryField))
+        {
+            var named = resource.SchemaFields.FirstOrDefault(f =>
+                string.Equals(f.Name, spatial.PrimaryGeometryField, StringComparison.OrdinalIgnoreCase));
+            if (named is null)
+            {
+                errors.Add(
+                    $"resource '{resource.Metadata.Id}' primaryGeometryField '{spatial.PrimaryGeometryField}' is not declared in schemaFields.");
+            }
+            else if (named.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
+            {
+                errors.Add(
+                    $"resource '{resource.Metadata.Id}' primaryGeometryField '{spatial.PrimaryGeometryField}' is type '{named.Type}' (must be Geometry or Geography).");
+            }
+        }
+    }
+
+    private static void ValidateResourceTemporal(List<string> errors, MetadataV2Resource resource)
+    {
+        var temporal = resource.Temporal;
+        if (temporal is null)
+        {
+            return;
+        }
+
+        ValidateTemporalField(errors, resource, temporal.StartTimeField, "startTimeField", required: false);
+        ValidateTemporalField(errors, resource, temporal.EndTimeField, "endTimeField", required: false);
+    }
+
+    private static void ValidateTemporalField(
+        List<string> errors, MetadataV2Resource resource, string? fieldName, string slot, bool required)
+    {
+        if (string.IsNullOrWhiteSpace(fieldName))
+        {
+            if (required)
+            {
+                errors.Add($"resource '{resource.Metadata.Id}' temporal.{slot} is required.");
+            }
+            return;
+        }
+
+        var field = resource.SchemaFields.FirstOrDefault(f =>
+            string.Equals(f.Name, fieldName, StringComparison.OrdinalIgnoreCase));
+        if (field is null)
+        {
+            errors.Add($"resource '{resource.Metadata.Id}' temporal.{slot} '{fieldName}' is not declared in schemaFields.");
+            return;
+        }
+
+        if (field.Type is not (MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time))
+        {
+            errors.Add(
+                $"resource '{resource.Metadata.Id}' temporal.{slot} '{fieldName}' is type '{field.Type}' (must be Date, DateTime, or Time).");
+        }
+    }
+
+    private static void ValidateResourceSchemaFields(List<string> errors, MetadataV2Resource resource)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var primaryGeometryCount = 0;
+        var primaryIdCount = 0;
+
+        foreach (var field in resource.SchemaFields)
+        {
+            if (string.IsNullOrWhiteSpace(field.Name))
+            {
+                errors.Add($"resource '{resource.Metadata.Id}' has a schema field with empty name.");
+                continue;
+            }
+            if (!seen.Add(field.Name))
+            {
+                errors.Add($"resource '{resource.Metadata.Id}' schema field name '{field.Name}' is duplicated.");
+            }
+
+            foreach (var role in field.SemanticRoles)
+            {
+                if (string.Equals(role, "geometry.primary", StringComparison.OrdinalIgnoreCase))
+                {
+                    primaryGeometryCount++;
+                }
+                else if (string.Equals(role, "id.primary", StringComparison.OrdinalIgnoreCase))
+                {
+                    primaryIdCount++;
+                }
+            }
+        }
+
+        if (primaryGeometryCount > 1)
+        {
+            errors.Add(
+                $"resource '{resource.Metadata.Id}' declares {primaryGeometryCount} schema fields with the 'geometry.primary' semantic role (at most one allowed).");
+        }
+        if (primaryIdCount > 1)
+        {
+            errors.Add(
+                $"resource '{resource.Metadata.Id}' declares {primaryIdCount} schema fields with the 'id.primary' semantic role (at most one allowed).");
+        }
+    }
+
+    private static void ValidateResourcePolicyIds(
+        List<string> errors, MetadataV2Resource resource, HashSet<string> policyIds)
+    {
+        foreach (var id in resource.PolicyIds)
+        {
+            if (!policyIds.Contains(id))
+            {
+                errors.Add(
+                    $"resource '{resource.Metadata.Id}' references missing policy '{id}'.");
+            }
+        }
+    }
+
+    private static void ValidatePublicationPrimary(
+        List<string> errors, IReadOnlyList<MetadataV2Publication> publications)
+    {
+        // At most one publication per (resourceId, serviceId) may set IsPrimary = true.
+        var counts = new Dictionary<(string, string), int>();
+        foreach (var pub in publications)
+        {
+            if (!pub.IsPrimary) continue;
+            var key = (pub.ResourceId, pub.ServiceId);
+            counts[key] = counts.TryGetValue(key, out var n) ? n + 1 : 1;
+        }
+        foreach (var ((resourceId, serviceId), n) in counts)
+        {
+            if (n > 1)
+            {
+                errors.Add(
+                    $"resource '{resourceId}' has {n} primary publications on service '{serviceId}' (at most one allowed).");
+            }
+        }
+    }
+
+    private static void ValidateRoles(
+        List<string> errors, IEnumerable<MetadataV2Role> roles, HashSet<string> policyIds)
+    {
+        foreach (var role in roles)
+        {
+            foreach (var id in role.PolicyIds)
+            {
+                if (!policyIds.Contains(id))
+                {
+                    errors.Add(
+                        $"role '{role.Metadata.Id}' references missing policy '{id}'.");
+                }
             }
         }
     }
