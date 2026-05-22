@@ -128,6 +128,38 @@ public sealed class LayerValidationHelpersV2Tests
         result.ErrorResult.Should().NotBeNull();
     }
 
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task ValidateLayerWithAccessV2_WithoutGraphProvider_ReturnsNotFound()
+    {
+        using var serviceProvider = new ServiceCollection().BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = serviceProvider };
+
+        var result = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
+            context,
+            layerId: 0);
+
+        result.IsValid.Should().BeFalse();
+        result.Publication.Should().BeNull();
+        result.Resource.Should().BeNull();
+        result.Service.Should().BeNull();
+        result.ErrorResult.Should().NotBeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task ResolvePrimaryServiceV2_WithoutGraphProvider_ReturnsNull()
+    {
+        using var serviceProvider = new ServiceCollection().BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = serviceProvider };
+
+        var service = await LayerValidationHelpers.ResolvePrimaryServiceV2Async(
+            context,
+            layerId: 0);
+
+        service.Should().BeNull();
+    }
+
     private static (HttpContext Context, MetadataV2Graph Graph) BuildContext(bool allowAnonymous)
     {
         var graph = new TestMetadataV2GraphBuilder()

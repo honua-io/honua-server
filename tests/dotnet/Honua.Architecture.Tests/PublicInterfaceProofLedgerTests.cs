@@ -106,7 +106,11 @@ public sealed partial class PublicInterfaceProofLedgerTests
         {
             "control-plane-admin",
             "feature-server",
-            "ogc-api-features"
+            "ogc-api-features",
+            "migration-scan",
+            "arcgis-import",
+            "geoserver-dry-run",
+            "migration-evidence"
         },
         ["honua-sdk-python"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -115,7 +119,8 @@ public sealed partial class PublicInterfaceProofLedgerTests
         },
         ["honua-sdk-dotnet"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "control-plane-admin"
+            "control-plane-admin",
+            "migration-scan"
         }
     };
 
@@ -447,7 +452,15 @@ public sealed partial class PublicInterfaceProofLedgerTests
 
         workflow.Should().Contain("migration_automation: {");
         workflow.Should().Contain("migration_automation_by_sdk: {");
+        workflow.Should().Contain("results/migration-automation.json");
+        workflow.Should().Contain("--argjson migrationAutomation \"$migration_automation_json\"");
+        workflow.Should().Contain("migration_automation: $migrationAutomation.migration_automation");
+        workflow.Should().Contain("migration_automation_by_sdk: $migrationAutomation.migration_automation_by_sdk");
         workflow.Should().Contain("required: false");
+        workflow.Should().Contain("status: \"failed\"",
+            "missing migration smoke output should be recorded as a failed attempted smoke, not default unsupported evidence");
+        workflow.Should().NotContain("status: \"unsupported\",\n                passed: false,\n                reason: \"Server compatibility artifacts declare migration automation surfaces",
+            "the workflow must consume real SDK-backed smoke evidence instead of hardcoded default unsupported evidence");
 
         foreach (var surfaceId in new[]
                  {
@@ -457,8 +470,8 @@ public sealed partial class PublicInterfaceProofLedgerTests
                      "migration-evidence"
                  })
         {
-            workflow.Should().Contain($"surface: \"{surfaceId}\", status: \"unsupported\", passed: false",
-                $"{surfaceId} must be visible in compat-result.json without claiming SDK support before the SDK lanes exercise it");
+            workflow.Should().Contain($"failed_surface(\"{surfaceId}\"",
+                $"{surfaceId} must be visible in fallback compat-result.json diagnostics if migration smoke evidence is missing");
         }
 
         workflow.Should().Contain("honua-sdk-js#105");
