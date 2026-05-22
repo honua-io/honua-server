@@ -56,24 +56,7 @@ internal static class GeoServicesObjectIdFieldResolver
             IsObjectIdCompatible(field));
 
     private static bool IsObjectIdCompatible(MetadataV2Field field)
-    {
-        // Geometry fields cannot serve as object ids.
-        if (string.Equals(field.Type, "geometry", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        // Accept canonical integer-shaped type labels. Provider-native labels (postgres
-        // 'int4'/'int8', mssql 'bigint', etc.) are normalised here.
-        return field.Type switch
-        {
-            "integer" or "int" or "int32" or "int4"
-                or "biginteger" or "bigint" or "int64" or "int8"
-                or "smallint" or "int16" or "int2"
-                or "tinyint" or "byte" => true,
-            _ => false,
-        };
-    }
+        => field.Type is MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger;
 
     public static string ResolveServiceObjectIdFieldName(ServiceDefinition service)
     {

@@ -142,7 +142,7 @@ public static class MetadataV2SpatialExtensions
         }
         foreach (var field in resource.SchemaFields)
         {
-            if (string.Equals(field.Type, "geometry", StringComparison.OrdinalIgnoreCase))
+            if (field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)
             {
                 return field;
             }

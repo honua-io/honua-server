@@ -159,23 +159,18 @@ internal static class TileJsonEndpoints
         };
     }
 
-    private static string MapFieldTypeName(string typeName)
+    private static string MapFieldTypeName(MetadataV2FieldType typeName)
     {
-        if (string.IsNullOrWhiteSpace(typeName))
+        return typeName switch
         {
-            return "string";
-        }
-        var lower = typeName.ToLowerInvariant();
-        return lower switch
-        {
-            "string" or "text" => "string",
-            "integer" or "int32" or "int" or "int64" or "biginteger" or "long" => "integer",
-            "double" or "float" or "number" or "decimal" or "real" => "number",
-            "boolean" or "bool" => "boolean",
-            "datetime" or "date" or "time" or "timestamp" => "string",
-            "json" or "object" => "object",
-            "binary" or "bytes" => "binary",
-            "uuid" or "guid" => "string",
+            MetadataV2FieldType.String => "string",
+            MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger => "integer",
+            MetadataV2FieldType.Double or MetadataV2FieldType.Float => "number",
+            MetadataV2FieldType.Boolean => "boolean",
+            MetadataV2FieldType.DateTime or MetadataV2FieldType.Date or MetadataV2FieldType.Time => "string",
+            MetadataV2FieldType.Json => "object",
+            MetadataV2FieldType.Binary => "binary",
+            MetadataV2FieldType.Uuid => "string",
             _ => "string",
         };
     }

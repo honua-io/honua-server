@@ -432,6 +432,77 @@ public enum MetadataV2StorageBindingCapability
 }
 
 /// <summary>
+/// Canonical Metadata v2 field type. Mirrors the runtime <c>FieldType</c> enum used by the
+/// query pipeline but lives in the metadata domain so the graph is self-contained.
+/// String-encoded for JSON to keep older snapshots readable; the enum is the source of
+/// truth in code.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<MetadataV2FieldType>))]
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Naming", "CA1720:Identifier contains type name", Justification = "Mirrors the v1 FieldType enum which uses canonical GIS field-type names.")]
+public enum MetadataV2FieldType
+{
+    /// <summary>Unknown or unspecified field type.</summary>
+    [JsonStringEnumMemberName("unknown")]
+    Unknown,
+
+    /// <summary>Text/character field.</summary>
+    [JsonStringEnumMemberName("string")]
+    String,
+
+    /// <summary>32-bit integer.</summary>
+    [JsonStringEnumMemberName("integer")]
+    Integer,
+
+    /// <summary>64-bit integer.</summary>
+    [JsonStringEnumMemberName("biginteger")]
+    BigInteger,
+
+    /// <summary>64-bit floating-point.</summary>
+    [JsonStringEnumMemberName("double")]
+    Double,
+
+    /// <summary>32-bit floating-point.</summary>
+    [JsonStringEnumMemberName("float")]
+    Float,
+
+    /// <summary>Boolean.</summary>
+    [JsonStringEnumMemberName("boolean")]
+    Boolean,
+
+    /// <summary>Timestamp with date and time.</summary>
+    [JsonStringEnumMemberName("datetime")]
+    DateTime,
+
+    /// <summary>Calendar date without time.</summary>
+    [JsonStringEnumMemberName("date")]
+    Date,
+
+    /// <summary>Time of day without date.</summary>
+    [JsonStringEnumMemberName("time")]
+    Time,
+
+    /// <summary>JSON document.</summary>
+    [JsonStringEnumMemberName("json")]
+    Json,
+
+    /// <summary>Binary blob.</summary>
+    [JsonStringEnumMemberName("binary")]
+    Binary,
+
+    /// <summary>UUID/GUID.</summary>
+    [JsonStringEnumMemberName("uuid")]
+    Uuid,
+
+    /// <summary>Geometry value (WKB/WKT/EWKB/etc).</summary>
+    [JsonStringEnumMemberName("geometry")]
+    Geometry,
+
+    /// <summary>Geography value (spherical-coordinate geometry).</summary>
+    [JsonStringEnumMemberName("geography")]
+    Geography
+}
+
+/// <summary>
 /// Lifecycle values shared by Metadata v2 graph entities.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<MetadataV2LifecycleStatus>))]

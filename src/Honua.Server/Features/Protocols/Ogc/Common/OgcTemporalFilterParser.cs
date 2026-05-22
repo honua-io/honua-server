@@ -310,17 +310,14 @@ internal static class OgcTemporalFilterParser
         return false;
     }
 
-    private static bool TryResolveTemporalTypeLabel(string? typeLabel, out FieldType type)
+    private static bool TryResolveTemporalTypeLabel(MetadataV2FieldType typeLabel, out FieldType type)
     {
-        switch (typeLabel?.Trim().ToLowerInvariant())
+        switch (typeLabel)
         {
-            case "datetime":
-            case "date-time":
-            case "timestamp":
-            case "timestamptz":
+            case MetadataV2FieldType.DateTime:
                 type = FieldType.DateTime;
                 return true;
-            case "date":
+            case MetadataV2FieldType.Date:
                 type = FieldType.Date;
                 return true;
             default:

@@ -227,35 +227,26 @@ internal static class OrderByParsing
     }
 
     /// <summary>
-    /// Maps a Metadata v2 field type label onto the v1 <see cref="FieldType"/> enum that
-    /// the unified query model still consumes. Returns <c>null</c> when the type cannot
-    /// be classified — callers tolerate a null type on <see cref="OrderByClause"/>.
+    /// Maps the canonical Metadata v2 <see cref="MetadataV2FieldType"/> onto the v1
+    /// <see cref="FieldType"/> enum the unified query model still consumes.
     /// </summary>
-    private static FieldType? MapV2FieldTypeToFieldType(string? type)
+    private static FieldType? MapV2FieldTypeToFieldType(MetadataV2FieldType? type) => type switch
     {
-        if (string.IsNullOrWhiteSpace(type))
-        {
-            return null;
-        }
-        return type.Trim().ToLowerInvariant() switch
-        {
-            "string" or "text" or "varchar" or "char" => FieldType.String,
-            "uuid" or "guid" => FieldType.Uuid,
-            "integer" or "int" or "int32" or "int4" or "smallint" or "int16" or "int2"
-                or "tinyint" or "byte" => FieldType.Integer,
-            "biginteger" or "bigint" or "int64" or "int8" => FieldType.BigInteger,
-            "double" or "float64" or "float8" or "numeric" or "decimal" => FieldType.Double,
-            "real" or "float" or "float32" or "float4" => FieldType.Float,
-            "boolean" or "bool" => FieldType.Boolean,
-            "date" => FieldType.Date,
-            "time" => FieldType.Time,
-            "datetime" or "timestamp" or "timestamptz" => FieldType.DateTime,
-            "geometry" => FieldType.Geometry,
-            "json" or "jsonb" => FieldType.Json,
-            "binary" or "bytea" or "blob" => FieldType.Binary,
-            _ => null,
-        };
-    }
+        MetadataV2FieldType.String => FieldType.String,
+        MetadataV2FieldType.Uuid => FieldType.Uuid,
+        MetadataV2FieldType.Integer => FieldType.Integer,
+        MetadataV2FieldType.BigInteger => FieldType.BigInteger,
+        MetadataV2FieldType.Double => FieldType.Double,
+        MetadataV2FieldType.Float => FieldType.Float,
+        MetadataV2FieldType.Boolean => FieldType.Boolean,
+        MetadataV2FieldType.Date => FieldType.Date,
+        MetadataV2FieldType.Time => FieldType.Time,
+        MetadataV2FieldType.DateTime => FieldType.DateTime,
+        MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography => FieldType.Geometry,
+        MetadataV2FieldType.Json => FieldType.Json,
+        MetadataV2FieldType.Binary => FieldType.Binary,
+        _ => null,
+    };
 
     private static bool IsValidFeatureServerFieldName(string fieldName)
     {

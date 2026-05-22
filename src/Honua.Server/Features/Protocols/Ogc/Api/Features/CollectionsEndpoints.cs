@@ -772,22 +772,20 @@ internal static class CollectionsEndpoints
 
     /// <summary>
     /// Metadata v2 overload of <see cref="GetJsonSchemaTypeAndFormat(FieldType)"/>.
-    /// Accepts a free-form provider-native type label (the V2 field type string) and maps it
-    /// to the JSON Schema type/format pair.
     /// </summary>
-    private static (string type, string? format) GetJsonSchemaTypeAndFormatV2(string? typeLabel)
-        => typeLabel?.Trim().ToLowerInvariant() switch
+    private static (string type, string? format) GetJsonSchemaTypeAndFormatV2(MetadataV2FieldType type)
+        => type switch
         {
-            "string" or "text" or "varchar" or "char" => ("string", null),
-            "int" or "int32" or "integer" or "smallint" => ("integer", null),
-            "long" or "int64" or "bigint" or "biginteger" => ("integer", null),
-            "double" or "float64" or "double precision" => ("number", "double"),
-            "float" or "float32" or "real" or "single" => ("number", "float"),
-            "bool" or "boolean" => ("boolean", null),
-            "datetime" or "date-time" or "timestamp" or "timestamptz" => ("string", "date-time"),
-            "date" => ("string", "date"),
-            "time" => ("string", "time"),
-            "uuid" or "guid" => ("string", "uuid"),
+            MetadataV2FieldType.String => ("string", null),
+            MetadataV2FieldType.Integer => ("integer", null),
+            MetadataV2FieldType.BigInteger => ("integer", null),
+            MetadataV2FieldType.Double => ("number", "double"),
+            MetadataV2FieldType.Float => ("number", "float"),
+            MetadataV2FieldType.Boolean => ("boolean", null),
+            MetadataV2FieldType.DateTime => ("string", "date-time"),
+            MetadataV2FieldType.Date => ("string", "date"),
+            MetadataV2FieldType.Time => ("string", "time"),
+            MetadataV2FieldType.Uuid => ("string", "uuid"),
             _ => ("string", null)
         };
 

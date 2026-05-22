@@ -87,8 +87,8 @@ public sealed class MetadataV2SpatialExtensionsTests
         {
             SchemaFields =
             [
-                new MetadataV2Field { Name = "shape", Type = "geometry" },
-                new MetadataV2Field { Name = "geom", Type = "wkb", SemanticRoles = ["geometry.primary"] },
+                new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry },
+                new MetadataV2Field { Name = "geom", Type = MetadataV2FieldType.Binary, SemanticRoles = ["geometry.primary"] },
             ],
         };
         resource.FindPrimaryGeometryField()!.Name.Should().Be("geom");
@@ -102,8 +102,8 @@ public sealed class MetadataV2SpatialExtensionsTests
         {
             SchemaFields =
             [
-                new MetadataV2Field { Name = "name", Type = "string" },
-                new MetadataV2Field { Name = "objectid", Type = "int32" },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String },
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer },
             ],
         };
         resource.FindPrimaryIdField()!.Name.Should().Be("objectid");

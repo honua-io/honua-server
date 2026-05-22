@@ -298,27 +298,20 @@ internal static class OgcFeaturesUtilities
 
     /// <summary>
     /// Metadata v2 overload of <see cref="IsSimpleQueryableField(FieldDefinition)"/>.
-    /// Inspects the <see cref="MetadataV2Field.Type"/> string (provider-native type label) for
-    /// the canonical scalar primitives the OGC API Features queryables schema and items
-    /// query-parameter validator accept as simple filter targets.
     /// </summary>
     public static bool IsSimpleQueryableField(MetadataV2Field field)
     {
         ArgumentNullException.ThrowIfNull(field);
-        return field.Type?.Trim().ToLowerInvariant() switch
-        {
-            "string" or "text" or "varchar" or "char" => true,
-            "int" or "int32" or "integer" or "smallint" => true,
-            "long" or "int64" or "bigint" or "biginteger" => true,
-            "double" or "float64" or "double precision" => true,
-            "float" or "float32" or "real" or "single" => true,
-            "bool" or "boolean" => true,
-            "datetime" or "date-time" or "timestamp" or "timestamptz" => true,
-            "date" => true,
-            "time" => true,
-            "uuid" or "guid" => true,
-            _ => false
-        };
+        return field.Type is MetadataV2FieldType.String
+            or MetadataV2FieldType.Integer
+            or MetadataV2FieldType.BigInteger
+            or MetadataV2FieldType.Double
+            or MetadataV2FieldType.Float
+            or MetadataV2FieldType.Boolean
+            or MetadataV2FieldType.DateTime
+            or MetadataV2FieldType.Date
+            or MetadataV2FieldType.Time
+            or MetadataV2FieldType.Uuid;
     }
 
     /// <summary>
@@ -514,14 +507,12 @@ internal static class OgcFeaturesUtilities
                 continue;
             }
 
-            switch (field.Type?.Trim().ToLowerInvariant())
+            switch (field.Type)
             {
-                case "datetime":
-                case "date-time":
-                case "timestamp":
+                case MetadataV2FieldType.DateTime:
                     type = FieldType.DateTime;
                     return true;
-                case "date":
+                case MetadataV2FieldType.Date:
                     type = FieldType.Date;
                     return true;
             }

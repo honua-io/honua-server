@@ -202,10 +202,10 @@ public sealed record MetadataV2Field
     public string Name { get; init; } = string.Empty;
 
     /// <summary>
-    /// Canonical field type or provider-native type label.
+    /// Canonical field type. String-encoded in JSON for snapshot readability.
     /// </summary>
     [JsonPropertyName("type")]
-    public string Type { get; init; } = string.Empty;
+    public MetadataV2FieldType Type { get; init; } = MetadataV2FieldType.Unknown;
 
     /// <summary>
     /// Human-readable field title.

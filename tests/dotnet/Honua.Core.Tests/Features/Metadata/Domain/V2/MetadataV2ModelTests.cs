@@ -67,7 +67,7 @@ public sealed class MetadataV2ModelTests
                 new MetadataV2Field
                 {
                     Name = "shape",
-                    Type = "geometry",
+                    Type = MetadataV2FieldType.Geometry,
                     SemanticRoles =
                     [
                         "geometry.primary"
@@ -171,7 +171,7 @@ public sealed class MetadataV2ModelTests
                 new MetadataV2Field
                 {
                     Name = "parcel_id",
-                    Type = "string",
+                    Type = MetadataV2FieldType.String,
                     SemanticRoles =
                     [
                         "identifier.primary"
@@ -192,7 +192,7 @@ public sealed class MetadataV2ModelTests
                 new MetadataV2Field
                 {
                     Name = "hydrant_id",
-                    Type = "string",
+                    Type = MetadataV2FieldType.String,
                     SemanticRoles =
                     [
                         "identifier.primary"

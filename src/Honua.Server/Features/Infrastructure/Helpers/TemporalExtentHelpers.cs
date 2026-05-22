@@ -137,8 +137,9 @@ internal static class TemporalExtentHelpers
         {
             if (string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
             {
-                var lowerType = field.Type?.ToLowerInvariant();
-                if (lowerType is "date" or "datetime" or "timestamp" or "time")
+                if (field.Type is MetadataV2FieldType.Date
+                    or MetadataV2FieldType.DateTime
+                    or MetadataV2FieldType.Time)
                 {
                     resolvedName = field.Name;
                     return true;
@@ -374,10 +375,10 @@ internal static class TemporalExtentHelpers
         {
             if (string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
             {
-                return field.Type?.ToLowerInvariant() switch
+                return field.Type switch
                 {
-                    "date" => FieldType.Date,
-                    "time" => FieldType.Time,
+                    MetadataV2FieldType.Date => FieldType.Date,
+                    MetadataV2FieldType.Time => FieldType.Time,
                     _ => FieldType.DateTime,
                 };
             }

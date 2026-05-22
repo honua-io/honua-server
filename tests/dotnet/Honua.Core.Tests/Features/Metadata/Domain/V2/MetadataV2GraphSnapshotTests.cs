@@ -134,8 +134,8 @@ public sealed class MetadataV2GraphSnapshotTests
                     PrimaryStorageBindingId = "storage.parcels.postgis",
                     SchemaFields =
                     [
-                        new MetadataV2Field { Name = "parcel_id", Type = "string", SemanticRoles = ["id.primary"] },
-                        new MetadataV2Field { Name = "shape", Type = "geometry", SemanticRoles = ["geometry.primary"] },
+                        new MetadataV2Field { Name = "parcel_id", Type = MetadataV2FieldType.String, SemanticRoles = ["id.primary"] },
+                        new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, SemanticRoles = ["geometry.primary"] },
                     ],
                 }
             ],

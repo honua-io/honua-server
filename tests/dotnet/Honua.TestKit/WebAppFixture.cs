@@ -409,17 +409,17 @@ public sealed class WebAppFixture : IAsyncLifetime
         {
             0 =>
             [
-                new MetadataV2Field { Name = "objectid", Type = "integer", Nullable = false, Description = "Object ID" },
-                new MetadataV2Field { Name = "name", Type = "string", Nullable = true, Description = "Name" },
-                new MetadataV2Field { Name = "description", Type = "string", Nullable = true, Description = "Description" },
-                new MetadataV2Field { Name = "category", Type = "string", Nullable = true, Description = "Category" },
-                new MetadataV2Field { Name = "timestamp", Type = "datetime", Nullable = true, Description = "Timestamp" },
-                new MetadataV2Field { Name = "event_date", Type = "datetime", Nullable = true, Description = "Event date" },
-                new MetadataV2Field { Name = "created_date", Type = "date", Nullable = true, Description = "Created date" },
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Description = "Object ID" },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Description = "Name" },
+                new MetadataV2Field { Name = "description", Type = MetadataV2FieldType.String, Nullable = true, Description = "Description" },
+                new MetadataV2Field { Name = "category", Type = MetadataV2FieldType.String, Nullable = true, Description = "Category" },
+                new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime, Nullable = true, Description = "Timestamp" },
+                new MetadataV2Field { Name = "event_date", Type = MetadataV2FieldType.DateTime, Nullable = true, Description = "Event date" },
+                new MetadataV2Field { Name = "created_date", Type = MetadataV2FieldType.Date, Nullable = true, Description = "Created date" },
                 new MetadataV2Field
                 {
                     Name = "shape",
-                    Type = "geometry",
+                    Type = MetadataV2FieldType.Geometry,
                     Nullable = true,
                     Description = "Geometry",
                     SemanticRoles = ["geometry"],
@@ -427,15 +427,15 @@ public sealed class WebAppFixture : IAsyncLifetime
             ],
             1 =>
             [
-                new MetadataV2Field { Name = "objectid", Type = "integer", Nullable = false, Description = "Object ID" },
-                new MetadataV2Field { Name = "name", Type = "string", Nullable = true, Description = "Name field" },
-                new MetadataV2Field { Name = "related_id", Type = "integer", Nullable = true, Description = "Foreign key to origin layer" },
-                new MetadataV2Field { Name = "description", Type = "string", Nullable = true, Description = "Description" },
-                new MetadataV2Field { Name = "category", Type = "string", Nullable = true, Description = "Category" },
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Description = "Object ID" },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Description = "Name field" },
+                new MetadataV2Field { Name = "related_id", Type = MetadataV2FieldType.Integer, Nullable = true, Description = "Foreign key to origin layer" },
+                new MetadataV2Field { Name = "description", Type = MetadataV2FieldType.String, Nullable = true, Description = "Description" },
+                new MetadataV2Field { Name = "category", Type = MetadataV2FieldType.String, Nullable = true, Description = "Category" },
                 new MetadataV2Field
                 {
                     Name = "shape",
-                    Type = "geometry",
+                    Type = MetadataV2FieldType.Geometry,
                     Nullable = true,
                     Description = "Geometry",
                     SemanticRoles = ["geometry"],
@@ -443,14 +443,14 @@ public sealed class WebAppFixture : IAsyncLifetime
             ],
             2 =>
             [
-                new MetadataV2Field { Name = "objectid", Type = "integer", Nullable = false, Description = "Object ID" },
-                new MetadataV2Field { Name = "name", Type = "string", Nullable = true, Description = "Name field" },
-                new MetadataV2Field { Name = "secondary_id", Type = "integer", Nullable = true, Description = "Foreign key to origin layer" },
-                new MetadataV2Field { Name = "type", Type = "string", Nullable = true, Description = "Type field" },
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Description = "Object ID" },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Description = "Name field" },
+                new MetadataV2Field { Name = "secondary_id", Type = MetadataV2FieldType.Integer, Nullable = true, Description = "Foreign key to origin layer" },
+                new MetadataV2Field { Name = "type", Type = MetadataV2FieldType.String, Nullable = true, Description = "Type field" },
                 new MetadataV2Field
                 {
                     Name = "shape",
-                    Type = "geometry",
+                    Type = MetadataV2FieldType.Geometry,
                     Nullable = true,
                     Description = "Geometry",
                     SemanticRoles = ["geometry"],

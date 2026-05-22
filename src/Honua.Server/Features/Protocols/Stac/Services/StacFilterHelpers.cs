@@ -375,8 +375,9 @@ internal static class StacFilterHelpers
             {
                 if (string.Equals(field.Name, candidate, StringComparison.OrdinalIgnoreCase))
                 {
-                    var lowerType = field.Type?.ToLowerInvariant();
-                    if (lowerType is "date" or "datetime" or "timestamp" or "time")
+                    if (field.Type is MetadataV2FieldType.Date
+                        or MetadataV2FieldType.DateTime
+                        or MetadataV2FieldType.Time)
                     {
                         return candidate;
                     }
