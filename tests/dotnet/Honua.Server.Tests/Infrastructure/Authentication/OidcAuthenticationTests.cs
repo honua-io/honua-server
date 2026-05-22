@@ -598,7 +598,7 @@ public class OidcAuthenticationTests
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/metadata/resources")]
+    [Endpoint("GET /api/v1/admin/version")]
     public async Task AdminEndpoint_OidcEnabled_ReusedBearerToken_IsRejectedWhenReplayProtectionEnabled()
     {
         var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
@@ -609,11 +609,11 @@ public class OidcAuthenticationTests
         using var client = factory.CreateClient();
         var token = GenerateTestJwtToken(roles: ["admin"]);
 
-        var firstRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/metadata/resources");
+        var firstRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/version");
         firstRequest.Headers.Add("Authorization", $"Bearer {token}");
         var firstResponse = await client.SendAsync(firstRequest);
 
-        var secondRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/metadata/resources");
+        var secondRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/version");
         secondRequest.Headers.Add("Authorization", $"Bearer {token}");
         var secondResponse = await client.SendAsync(secondRequest);
 
@@ -622,7 +622,7 @@ public class OidcAuthenticationTests
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/metadata/resources")]
+    [Endpoint("GET /api/v1/admin/version")]
     public async Task AdminEndpoint_OidcEnabled_DistributedCacheWithoutRedis_FallsBackToMemoryReplayProtection()
     {
         var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
@@ -642,11 +642,11 @@ public class OidcAuthenticationTests
         using var client = factory.CreateClient();
         var token = GenerateTestJwtToken(roles: ["admin"]);
 
-        var firstRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/metadata/resources");
+        var firstRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/version");
         firstRequest.Headers.Add("Authorization", $"Bearer {token}");
         var firstResponse = await client.SendAsync(firstRequest);
 
-        var secondRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/metadata/resources");
+        var secondRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/version");
         secondRequest.Headers.Add("Authorization", $"Bearer {token}");
         var secondResponse = await client.SendAsync(secondRequest);
 
