@@ -4,6 +4,8 @@
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Compliance.Abstractions;
 using Honua.Core.Features.Compliance.Domain;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Compliance.Services;
@@ -13,8 +15,21 @@ namespace Honua.Core.Features.Compliance.Services;
 /// operational. Detection is intentionally conservative — when in doubt, the gate
 /// reports "not satisfied" so the snapshot under-claims rather than over-claims.
 /// </summary>
+/// <remarks>
+/// Several capabilities do not yet have first-class capability probes (RBAC roles
+/// actually enforced on endpoints, residency egress guards wired into boundary
+/// call-sites). For those we require an explicit operator attestation through
+/// <see cref="ComplianceDependencyOverrides"/> rather than rely on the presence of
+/// an in-memory placeholder service. This keeps the dashboard honest until a real
+/// signal exists; see <c>docs/operator/compliance-framework.md</c>.
+/// </remarks>
 internal sealed class DefaultComplianceDependencyGate : IComplianceDependencyGate
 {
+    // Known OIDC provider section names under "Oidc". Mirrors OidcAuthenticationOptions
+    // (Honua.Server) — kept here as a literal list to avoid a Honua.Core → Honua.Server
+    // dependency just to read configuration.
+    private static readonly string[] OidcProviderSections = ["AzureAd", "Google", "Generic", "Okta", "Auth0"];
+
     private readonly IOptionsMonitor<ComplianceOptions> _options;
     private readonly IServiceProvider _services;
 
@@ -32,11 +47,11 @@ internal sealed class DefaultComplianceDependencyGate : IComplianceDependencyGat
         return dependency switch
         {
             ComplianceDependency.AuditLog => overrides.AuditLogConfigured ?? IsAuditLogOperational(),
-            ComplianceDependency.Sso => overrides.SsoConfigured ?? IsSsoConfigured(),
-            ComplianceDependency.Rbac => overrides.RbacConfigured ?? IsRbacConfigured(),
+            ComplianceDependency.Sso => overrides.SsoConfigured ?? IsOidcEffectivelyEnabled(),
+            ComplianceDependency.Rbac => overrides.RbacConfigured ?? false,
             ComplianceDependency.EncryptionAtRest => IsEncryptionAtRestOperational(),
             ComplianceDependency.EncryptionInTransit => overrides.TransportEncryptionAttested ?? false,
-            ComplianceDependency.DataResidency => IsResidencyEnforced(),
+            ComplianceDependency.DataResidency => overrides.DataResidencyAttested ?? false,
             _ => false,
         };
     }
@@ -49,11 +64,11 @@ internal sealed class DefaultComplianceDependencyGate : IComplianceDependencyGat
                 ? "Durable audit log sink registered (PostgresAuditLog)."
                 : "Audit log sink falls back to NullAuditLog — events are not persisted.",
             ComplianceDependency.Sso => IsSatisfied(dependency)
-                ? "OIDC identity provider registered."
-                : "OIDC identity provider not configured — only API-key authentication is available.",
+                ? "OIDC enabled with at least one configured provider."
+                : "OIDC is not enabled or no provider has a client ID — set Oidc:Enabled=true with at least one provider, or attest via Compliance:DependencyOverrides:SsoConfigured.",
             ComplianceDependency.Rbac => IsSatisfied(dependency)
-                ? "Role store registered — RBAC primitives are available."
-                : "Role store not registered — RBAC is not enforced.",
+                ? "RBAC enforcement attested by operator."
+                : "RBAC enforcement is not attested — set Compliance:DependencyOverrides:RbacConfigured once role policies are required on protected endpoints.",
             ComplianceDependency.EncryptionAtRest => IsSatisfied(dependency)
                 ? "Encryption-at-rest service registered (AES-256-GCM envelope)."
                 : "Encryption-at-rest service not registered for this deployment.",
@@ -61,8 +76,8 @@ internal sealed class DefaultComplianceDependencyGate : IComplianceDependencyGat
                 ? "Operator attests TLS / HTTPS is enforced upstream of the application."
                 : "Transport encryption not attested — set Compliance:DependencyOverrides:TransportEncryptionAttested.",
             ComplianceDependency.DataResidency => IsSatisfied(dependency)
-                ? "Data-residency policy is enforced."
-                : "Data-residency policy is informational only (not enforced).",
+                ? "Operator attests data residency is enforced at egress boundaries."
+                : "Data residency enforcement is not attested — Compliance:DataResidency:Enforced controls the policy view, but operators must also set Compliance:DependencyOverrides:DataResidencyAttested once egress guards are wired.",
             _ => "Unknown dependency.",
         };
     }
@@ -79,16 +94,39 @@ internal sealed class DefaultComplianceDependencyGate : IComplianceDependencyGat
         return !typeName.Contains("NullAuditLog", StringComparison.Ordinal);
     }
 
-    private bool IsSsoConfigured()
+    private bool IsOidcEffectivelyEnabled()
     {
-        var providerStore = _services.GetService(typeof(Identity.Abstractions.IOidcProviderStore));
-        return providerStore is not null;
-    }
+        // Authoritative signal: configuration. IOidcProviderStore is registered
+        // unconditionally as an in-memory placeholder, so its presence is not a
+        // capability proof — see honua-server-admin tracker for the durable store.
+        var configuration = _services.GetService<IConfiguration>();
+        if (configuration is null)
+        {
+            return false;
+        }
 
-    private bool IsRbacConfigured()
-    {
-        var roleStore = _services.GetService(typeof(Authorization.Abstractions.IRoleStore));
-        return roleStore is not null;
+        var oidc = configuration.GetSection("Oidc");
+        if (!oidc.Exists() || !oidc.GetValue("Enabled", false))
+        {
+            return false;
+        }
+
+        for (var i = 0; i < OidcProviderSections.Length; i++)
+        {
+            var provider = oidc.GetSection(OidcProviderSections[i]);
+            if (!provider.Exists())
+            {
+                continue;
+            }
+
+            if (provider.GetValue("Enabled", false)
+                && !string.IsNullOrWhiteSpace(provider["ClientId"]))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private bool IsEncryptionAtRestOperational()
@@ -96,6 +134,4 @@ internal sealed class DefaultComplianceDependencyGate : IComplianceDependencyGat
         var encryption = _services.GetService(typeof(Security.Abstractions.IConnectionEncryptionService));
         return encryption is not null;
     }
-
-    private bool IsResidencyEnforced() => _options.CurrentValue.DataResidency.Enforced;
 }

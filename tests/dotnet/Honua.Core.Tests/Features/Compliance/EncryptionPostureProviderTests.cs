@@ -6,6 +6,7 @@ using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Compliance;
 using Honua.Core.Features.Compliance.Services;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Compliance;
 
@@ -63,6 +64,25 @@ public sealed class EncryptionPostureProviderTests
     }
 
     [Fact]
+    public async Task Rotate_AuditTokenIsDecoupledFromCallerToken()
+    {
+        // SOC 2 CC6 / FedRAMP IR-4: a committed rotation must persist its audit event
+        // even if the caller disconnects mid-write. The audit token must be internal,
+        // independent of the request-aborted token.
+        var audit = new TokenCapturingAuditLog();
+        var provider = CreateProvider(audit);
+        using var cts = new CancellationTokenSource();
+
+        var outcome = await provider.RotateAsync("alice", cts.Token);
+
+        outcome.Succeeded.Should().BeTrue();
+        audit.CapturedTokens.Should().HaveCount(1);
+        cts.Cancel();
+        audit.CapturedTokens[0].IsCancellationRequested.Should().BeFalse(
+            "cancelling the caller token after RotateAsync returned must not retroactively cancel the audit token");
+    }
+
+    [Fact]
     public async Task Rotate_TwiceQuickly_DoesNotDeadlockOrSkipVersions()
     {
         var provider = CreateProvider();
@@ -117,7 +137,8 @@ public sealed class EncryptionPostureProviderTests
         var provider = new InMemoryEncryptionPostureProvider(
             new TestOptionsMonitor<ComplianceOptions>(opts),
             BuildScopeFactory(NullAuditLog.Instance),
-            TimeProvider.System);
+            TimeProvider.System,
+            NullLogger<InMemoryEncryptionPostureProvider>.Instance);
 
         var posture = provider.GetPosture();
         posture.FipsMode.Should().BeTrue();
@@ -128,7 +149,8 @@ public sealed class EncryptionPostureProviderTests
         new(
             new TestOptionsMonitor<ComplianceOptions>(new ComplianceOptions()),
             BuildScopeFactory(audit ?? NullAuditLog.Instance),
-            TimeProvider.System);
+            TimeProvider.System,
+            NullLogger<InMemoryEncryptionPostureProvider>.Instance);
 
     private static IServiceScopeFactory BuildScopeFactory(IAuditLog audit)
     {
@@ -145,6 +167,17 @@ internal sealed class CapturingAuditLog : IAuditLog
     public Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
     {
         Events.Add(auditEvent);
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class TokenCapturingAuditLog : IAuditLog
+{
+    public List<CancellationToken> CapturedTokens { get; } = new();
+
+    public Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+    {
+        CapturedTokens.Add(cancellationToken);
         return Task.CompletedTask;
     }
 }

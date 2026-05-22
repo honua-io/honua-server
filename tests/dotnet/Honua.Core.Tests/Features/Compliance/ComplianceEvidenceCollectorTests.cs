@@ -142,6 +142,7 @@ public sealed class ComplianceEvidenceCollectorTests
                 SsoConfigured = true,
                 RbacConfigured = true,
                 TransportEncryptionAttested = true,
+                DataResidencyAttested = true,
             },
         });
 
@@ -159,7 +160,11 @@ public sealed class ComplianceEvidenceCollectorTests
         var catalog = new DefaultComplianceControlCatalog();
         var residency = new DefaultDataResidencyPolicyProvider(monitor);
         var scopeFactory = BuildScopeFactory(NullAuditLog.Instance);
-        var encryption = new InMemoryEncryptionPostureProvider(monitor, scopeFactory, TimeProvider.System);
+        var encryption = new InMemoryEncryptionPostureProvider(
+            monitor,
+            scopeFactory,
+            TimeProvider.System,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<InMemoryEncryptionPostureProvider>.Instance);
         var gate = new StaticDependencyGate(opts);
         return new DefaultComplianceEvidenceCollector(catalog, gate, residency, encryption, monitor, TimeProvider.System);
     }
@@ -184,7 +189,7 @@ public sealed class ComplianceEvidenceCollectorTests
             ComplianceDependency.Rbac => _opts.DependencyOverrides.RbacConfigured ?? false,
             ComplianceDependency.EncryptionAtRest => true,
             ComplianceDependency.EncryptionInTransit => _opts.DependencyOverrides.TransportEncryptionAttested ?? false,
-            ComplianceDependency.DataResidency => _opts.DataResidency.Enforced,
+            ComplianceDependency.DataResidency => _opts.DependencyOverrides.DataResidencyAttested ?? false,
             _ => false,
         };
 

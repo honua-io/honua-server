@@ -66,6 +66,7 @@ internal static partial class ComplianceAdminEndpoints
             .WithDisplayName("Export Compliance Report")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces(StatusCodes.Status200OK, contentType: PdfContentType)
+            .Produces(StatusCodes.Status200OK, contentType: CsvContentType)
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status406NotAcceptable);
 

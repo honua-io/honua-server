@@ -5,6 +5,7 @@ using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Compliance.Abstractions;
 using Honua.Core.Features.Compliance.Domain;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Compliance.Services;
@@ -29,11 +30,17 @@ namespace Honua.Core.Features.Compliance.Services;
 /// and returns. No requests are paused, no caches invalidated, no migration scheduled.
 /// </para>
 /// </remarks>
-internal sealed class InMemoryEncryptionPostureProvider : IEncryptionPostureProvider
+internal sealed partial class InMemoryEncryptionPostureProvider : IEncryptionPostureProvider
 {
+    // Bounded timeout for the post-commit audit write. Kept short — the rotation has
+    // already mutated in-memory state, and we never want a slow audit sink to look
+    // like a hung rotation. Long enough to absorb a typical Postgres insert latency.
+    private static readonly TimeSpan AuditTimeout = TimeSpan.FromSeconds(5);
+
     private readonly IOptionsMonitor<ComplianceOptions> _options;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly TimeProvider _timeProvider;
+    private readonly ILogger<InMemoryEncryptionPostureProvider> _logger;
 
     private readonly object _gate = new();
     private readonly List<KeyVersionEntry> _versions = new();
@@ -42,19 +49,26 @@ internal sealed class InMemoryEncryptionPostureProvider : IEncryptionPostureProv
     public InMemoryEncryptionPostureProvider(
         IOptionsMonitor<ComplianceOptions> options,
         IServiceScopeFactory scopeFactory,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ILogger<InMemoryEncryptionPostureProvider> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(scopeFactory);
         ArgumentNullException.ThrowIfNull(timeProvider);
+        ArgumentNullException.ThrowIfNull(logger);
         _options = options;
         _scopeFactory = scopeFactory;
         _timeProvider = timeProvider;
+        _logger = logger;
 
         var now = _timeProvider.GetUtcNow();
         _versions.Add(new KeyVersionEntry(1, now, RetiredAt: null));
         _activeVersion = 1;
     }
+
+    [LoggerMessage(EventId = 4720, Level = LogLevel.Error,
+        Message = "Compliance key rotation v{Previous}->v{Next} committed but audit-log write failed; rotation state advanced without a persisted audit event.")]
+    private partial void LogAuditWriteFailed(int previous, int next, Exception exception);
 
     public EncryptionPosture GetPosture()
     {
@@ -102,11 +116,14 @@ internal sealed class InMemoryEncryptionPostureProvider : IEncryptionPostureProv
             _activeVersion = next;
         }
 
-        // The provider is a singleton (the in-memory key ring must outlive any single
-        // request), but IAuditLog is scoped. Resolve it from a fresh scope per rotation
-        // so we never capture a stale instance from root scope.
-        await using (var scope = _scopeFactory.CreateAsyncScope())
+        // Rotation state is now committed. The audit write must NOT cancel just because
+        // the caller's request token did — that would leave the key version advanced
+        // with no persisted audit trail (SOC 2 CC6 / FedRAMP IR-4 violation). Use a
+        // bounded, request-independent token and treat failures as best-effort.
+        using var auditCts = new CancellationTokenSource(AuditTimeout);
+        try
         {
+            await using var scope = _scopeFactory.CreateAsyncScope();
             var auditLog = scope.ServiceProvider.GetRequiredService<IAuditLog>();
             await auditLog.RecordAsync(new AuditEvent
             {
@@ -120,7 +137,13 @@ internal sealed class InMemoryEncryptionPostureProvider : IEncryptionPostureProv
                 Outcome = AuditOutcome.Success,
                 CorrelationId = $"rotate-{next}",
                 Details = $"{{\"previousVersion\":{previous},\"newVersion\":{next}}}",
-            }, cancellationToken).ConfigureAwait(false);
+            }, auditCts.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+        {
+            // Don't roll back the in-memory rotation — it's already visible to GetPosture.
+            // Surface the failure as a high-signal log line so operators can reconcile.
+            LogAuditWriteFailed(previous, next, ex);
         }
 
         return new KeyRotationOutcome

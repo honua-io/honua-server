@@ -87,12 +87,27 @@ public sealed class ComplianceDependencyOverrides
     /// <summary>Override audit-log availability. <c>null</c> means "let the gate decide".</summary>
     public bool? AuditLogConfigured { get; set; }
 
-    /// <summary>Override SSO/OIDC availability.</summary>
+    /// <summary>
+    /// Override SSO / OIDC availability. <c>null</c> falls back to detecting OIDC via
+    /// configuration (<c>Oidc:Enabled</c> plus at least one provider with a client ID).
+    /// </summary>
     public bool? SsoConfigured { get; set; }
 
-    /// <summary>Override RBAC availability.</summary>
+    /// <summary>
+    /// Override RBAC availability. <c>null</c> defaults to "not attested" because the
+    /// presence of an in-memory role store is not a capability proof — set this once
+    /// role policies are enforced on the protected endpoints in the deployment.
+    /// </summary>
     public bool? RbacConfigured { get; set; }
 
     /// <summary>Override TLS / in-transit encryption attestation.</summary>
     public bool? TransportEncryptionAttested { get; set; }
+
+    /// <summary>
+    /// Operator attestation that data residency is enforced at egress boundaries.
+    /// The <see cref="ComplianceResidencyOptions.Enforced"/> flag drives the policy
+    /// view; this attestation is what flips the compliance dependency to satisfied
+    /// once outbound call sites consult <c>IDataResidencyPolicyProvider</c>.
+    /// </summary>
+    public bool? DataResidencyAttested { get; set; }
 }

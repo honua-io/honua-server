@@ -65,9 +65,10 @@ deployment shows evidence gaps rather than claiming false readiness.
 
     "DependencyOverrides": {
       "AuditLogConfigured": null,                        // null = let the gate auto-detect
-      "SsoConfigured": null,
-      "RbacConfigured": null,
-      "TransportEncryptionAttested": true                // Operator attests upstream TLS
+      "SsoConfigured": null,                             // null = auto-detect via Oidc:Enabled + provider ClientId
+      "RbacConfigured": true,                            // Attest that role policies are enforced on protected endpoints
+      "TransportEncryptionAttested": true,               // Operator attests upstream TLS
+      "DataResidencyAttested": true                      // Attest egress paths consult IDataResidencyPolicyProvider
     }
   }
 }
@@ -75,17 +76,35 @@ deployment shows evidence gaps rather than claiming false readiness.
 
 ### When to use `DependencyOverrides`
 
-The dependency gate inspects the DI container — it can detect whether
-`IAuditLog`, `IRoleStore`, `IOidcProviderStore`, and `IConnectionEncryptionService`
-are registered (and whether the audit log is the `NullAuditLog` fallback). Use
-overrides only when the server cannot probe a dependency directly:
+The dependency gate uses two kinds of signals: probes that can be auto-detected
+(audit-log sink type, OIDC enablement, encryption-at-rest service registration)
+and operator attestations for capabilities the server cannot directly verify.
 
-- **`TransportEncryptionAttested`** — terminate TLS at an upstream load balancer
-  (the application binds to plain HTTP behind the LB). Set this to `true` to
-  acknowledge that in-transit encryption is the operator's responsibility.
-- **`AuditLogConfigured` / `SsoConfigured` / `RbacConfigured`** — set when the
-  capability is supplied by a sidecar or external service rather than registered
-  in this process.
+**Auto-detected:**
+
+- **`AuditLogConfigured`** — defaults to `true` when the registered
+  `IAuditLog` is not the `NullAuditLog` fallback.
+- **`SsoConfigured`** — defaults to `true` when `Oidc:Enabled` is `true` *and*
+  at least one provider section (`AzureAd`, `Google`, `Generic`, `Okta`,
+  `Auth0`) has both `Enabled=true` and a `ClientId`. The presence of
+  `IOidcProviderStore` alone is **not** a signal — the in-memory store is
+  registered unconditionally.
+
+**Operator attestations (must be set explicitly):**
+
+- **`TransportEncryptionAttested`** — terminate TLS at an upstream load
+  balancer; the application binds to plain HTTP behind the LB.
+- **`RbacConfigured`** — set to `true` once admin / protected endpoints
+  actually enforce role policies in this deployment. The presence of the
+  in-memory role store is not enough.
+- **`DataResidencyAttested`** — set to `true` once outbound call sites consult
+  `IDataResidencyPolicyProvider`. The `DataResidency:Enforced` flag drives the
+  policy view but does not, on its own, satisfy the FedRAMP boundary
+  dependency.
+
+Setting any override to `false` forces the dependency to be reported as
+unsatisfied even if the auto-detect would say otherwise — useful when an
+auditor wants to confirm gap behavior.
 
 ## Endpoints
 
