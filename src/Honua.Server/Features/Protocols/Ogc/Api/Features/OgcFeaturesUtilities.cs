@@ -145,6 +145,59 @@ internal static class OgcFeaturesUtilities
     }
 
     /// <summary>
+    /// Metadata v2 overload of
+    /// <see cref="GetSupportedCrsDefinitionsAsync(LayerDefinition, ICrsRegistry, CancellationToken)"/>.
+    /// Resolves the storage CRS from <see cref="MetadataV2SpatialExtensions.ReadSrid"/> on the
+    /// V2 resource and unions it with the default CRS list.
+    /// </summary>
+    public static async Task<IReadOnlyDictionary<string, CrsDefinition>> GetSupportedCrsDefinitionsAsync(
+        MetadataV2Resource resource,
+        ICrsRegistry crsRegistry,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        ArgumentNullException.ThrowIfNull(crsRegistry);
+
+        var definitions = new Dictionary<string, CrsDefinition>(StringComparer.OrdinalIgnoreCase);
+        foreach (var crsIdentifier in _defaultCrsIdentifiers)
+        {
+            var definition = await crsRegistry.ResolveAsync(crsIdentifier, cancellationToken).ConfigureAwait(false);
+            if (definition.HasValue)
+            {
+                definitions[definition.Value.Uri] = definition.Value;
+            }
+        }
+
+        var srid = resource.ReadSrid();
+        if (srid.HasValue)
+        {
+            var storageCrs = srid.Value.ToOgcCrs();
+            var storageDefinition = await crsRegistry.ResolveAsync(storageCrs, cancellationToken).ConfigureAwait(false);
+            if (storageDefinition.HasValue)
+            {
+                definitions[storageDefinition.Value.Uri] = storageDefinition.Value;
+            }
+        }
+
+        return definitions;
+    }
+
+    /// <summary>
+    /// Metadata v2 overload of
+    /// <see cref="GetSupportedCrsUrisAsync(LayerDefinition, ICrsRegistry, CancellationToken)"/>.
+    /// </summary>
+    public static async Task<ImmutableArray<string>> GetSupportedCrsUrisAsync(
+        MetadataV2Resource resource,
+        ICrsRegistry crsRegistry,
+        CancellationToken cancellationToken)
+    {
+        var definitions = await GetSupportedCrsDefinitionsAsync(resource, crsRegistry, cancellationToken).ConfigureAwait(false);
+        return definitions.Keys
+            .OrderBy(static uri => uri, StringComparer.OrdinalIgnoreCase)
+            .ToImmutableArray();
+    }
+
+    /// <summary>
     /// Normalizes CRS inputs to canonical URI forms (e.g. EPSG:4326 -> http://www.opengis.net/def/crs/EPSG/0/4326).
     /// </summary>
     public static string NormalizeCrsUri(string crs)
