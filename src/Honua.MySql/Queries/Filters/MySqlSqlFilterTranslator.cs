@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.MySql.Features.Infrastructure;
@@ -35,6 +36,14 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
         ArgumentNullException.ThrowIfNull(filter);
         ArgumentNullException.ThrowIfNull(layer);
         return TranslateCore(filter, FilterTranslationContext.FromLayer(layer));
+    }
+
+    /// <inheritdoc />
+    public SqlFragment Translate(FilterExpression filter, MetadataV2Resource resource)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        ArgumentNullException.ThrowIfNull(resource);
+        return TranslateCore(filter, FilterTranslationContext.FromResource(resource));
     }
 
     private SqlFragment TranslateCore(FilterExpression filter, FilterTranslationContext context)
