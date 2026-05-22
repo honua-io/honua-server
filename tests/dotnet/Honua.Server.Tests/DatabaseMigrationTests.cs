@@ -225,14 +225,14 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             SELECT COUNT(*)
             FROM honua.layers
             WHERE layer_id IN (68910, 68920)
-              AND table_schema = 'public'
+              AND table_schema = current_schema()
               AND table_name = 'features'
               AND primary_key_column = 'objectid'
               AND geometry_column = 'geometry'
               AND storage_srid = 4326
             """;
         var storageBindingCount = (long)(await storageCmd.ExecuteScalarAsync())!;
-        storageBindingCount.Should().Be(2, "fixture layers should declare provider-ready storage bindings");
+        storageBindingCount.Should().Be(2, "fixture layers should declare provider-ready storage bindings that resolve features to the active schema");
     }
 
     [Fact]
