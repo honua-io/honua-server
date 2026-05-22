@@ -602,7 +602,7 @@ internal static class ODataUtilityService
             ["Id"] = layerIndex,
             ["Name"] = resource.Metadata.Name,
             ["Description"] = resource.Metadata.Description,
-            ["GeometryType"] = resource.ReadGeometryType() ?? string.Empty,
+            ["GeometryType"] = resource.ReadGeometryType().ToString(),
             ["Srid"] = resource.ReadSrid() ?? 0
         };
     }

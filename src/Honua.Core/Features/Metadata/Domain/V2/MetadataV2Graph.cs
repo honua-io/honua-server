@@ -195,10 +195,11 @@ public sealed record MetadataV2Resource
     public AccessPolicy? AccessPolicy { get; init; }
 
     /// <summary>
-    /// Optional spatial extent, CRS, or geometry metadata.
+    /// Typed spatial metadata (CRS, geometry type, bbox, primary geometry field).
+    /// Unset for non-spatial tabular resources.
     /// </summary>
     [JsonPropertyName("spatial")]
-    public JsonElement? Spatial { get; init; }
+    public MetadataV2ResourceSpatial? Spatial { get; init; }
 
     /// <summary>
     /// Optional temporal extent metadata.
@@ -378,6 +379,15 @@ public sealed record MetadataV2Service
     /// </summary>
     [JsonPropertyName("accessPolicy")]
     public AccessPolicy? AccessPolicy { get; init; }
+
+    /// <summary>
+    /// Service-level output CRS. Map/tile services use this as their declared
+    /// rendering CRS; feature services use it when no per-request CRS override is
+    /// provided. Independent of the resource-level <see cref="MetadataV2ResourceSpatial.SpatialReference"/>
+    /// because a service can re-project source data on the fly.
+    /// </summary>
+    [JsonPropertyName("spatialReference")]
+    public MetadataV2SpatialReference? SpatialReference { get; init; }
 
     /// <summary>
     /// Protocol identifiers explicitly enabled on this service. When null, the

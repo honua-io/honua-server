@@ -432,6 +432,50 @@ public enum MetadataV2StorageBindingCapability
 }
 
 /// <summary>
+/// Canonical Metadata v2 geometry type. Mirrors the SFA/OGC simple-feature geometry
+/// taxonomy plus a couple of catch-all values for heterogeneous and unspecified data.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<MetadataV2GeometryType>))]
+public enum MetadataV2GeometryType
+{
+    /// <summary>The resource is not geometric or geometry type is unspecified.</summary>
+    [JsonStringEnumMemberName("none")]
+    None,
+
+    /// <summary>Single-point geometry.</summary>
+    [JsonStringEnumMemberName("point")]
+    Point,
+
+    /// <summary>Multi-point geometry.</summary>
+    [JsonStringEnumMemberName("multipoint")]
+    MultiPoint,
+
+    /// <summary>Single-line-string geometry.</summary>
+    [JsonStringEnumMemberName("linestring")]
+    LineString,
+
+    /// <summary>Multi-line-string geometry.</summary>
+    [JsonStringEnumMemberName("multilinestring")]
+    MultiLineString,
+
+    /// <summary>Single-polygon geometry.</summary>
+    [JsonStringEnumMemberName("polygon")]
+    Polygon,
+
+    /// <summary>Multi-polygon geometry.</summary>
+    [JsonStringEnumMemberName("multipolygon")]
+    MultiPolygon,
+
+    /// <summary>Heterogeneous geometry collection.</summary>
+    [JsonStringEnumMemberName("geometrycollection")]
+    GeometryCollection,
+
+    /// <summary>The dataset mixes multiple geometry types.</summary>
+    [JsonStringEnumMemberName("mixed")]
+    Mixed
+}
+
+/// <summary>
 /// Canonical Metadata v2 field type. Mirrors the runtime <c>FieldType</c> enum used by the
 /// query pipeline but lives in the metadata domain so the graph is self-contained.
 /// String-encoded for JSON to keep older snapshots readable; the enum is the source of

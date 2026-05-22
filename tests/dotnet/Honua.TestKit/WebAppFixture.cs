@@ -469,7 +469,7 @@ public sealed class WebAppFixture : IAsyncLifetime
         int layerIndex,
         JsonElement? stacExtension = null,
         JsonElement? temporal = null,
-        JsonElement? spatial = null)
+        MetadataV2ResourceSpatial? spatial = null)
     {
         var provider = GetService<IMetadataV2GraphProvider>() as Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider
             ?? throw new InvalidOperationException(
@@ -511,7 +511,7 @@ public sealed class WebAppFixture : IAsyncLifetime
         {
             Extensions = extensions,
             Temporal = temporal ?? resource.Temporal,
-            Spatial = spatial ?? resource.Spatial,
+            Spatial = spatial is not null ? spatial : resource.Spatial,
         };
 
         var updatedGraph = snapshot.Graph with

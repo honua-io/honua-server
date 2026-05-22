@@ -118,9 +118,9 @@ internal static class TileJsonEndpoints
         }
 
         var bbox = resource.ReadBbox();
-        if (bbox.HasValue && srid == SpatialReference.WGS84.Wkid)
+        if (bbox is not null && srid == SpatialReference.WGS84.Wkid)
         {
-            return FeatureExtent.Create(bbox.Value.West, bbox.Value.South, bbox.Value.East, bbox.Value.North, SpatialReference.WGS84.Wkid);
+            return FeatureExtent.Create(bbox.West, bbox.South, bbox.East, bbox.North, SpatialReference.WGS84.Wkid);
         }
 
         return null;

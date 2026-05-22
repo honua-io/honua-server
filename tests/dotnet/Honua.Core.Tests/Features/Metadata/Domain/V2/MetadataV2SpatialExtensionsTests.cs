@@ -16,7 +16,13 @@ public sealed class MetadataV2SpatialExtensionsTests
     [Operation(Operations.Metadata)]
     public void ReadSrid_NumericSrid_ReturnsValue()
     {
-        var resource = ResourceWithSpatial("""{"srid": 4326}""");
+        var resource = new MetadataV2Resource
+        {
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = new MetadataV2SpatialReference { Srid = 4326 }
+            }
+        };
         resource.ReadSrid().Should().Be(4326);
     }
 
@@ -24,7 +30,13 @@ public sealed class MetadataV2SpatialExtensionsTests
     [Operation(Operations.Metadata)]
     public void ReadSrid_EpsgCrs_ParsesValue()
     {
-        var resource = ResourceWithSpatial("""{"crs": "EPSG:3857"}""");
+        var resource = new MetadataV2Resource
+        {
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = new MetadataV2SpatialReference { Crs = "EPSG:3857" }
+            }
+        };
         resource.ReadSrid().Should().Be(3857);
     }
 
@@ -40,29 +52,41 @@ public sealed class MetadataV2SpatialExtensionsTests
     [Operation(Operations.Metadata)]
     public void ReadBbox_AllFields_ReturnsBox()
     {
-        var resource = ResourceWithSpatial("""{"bbox": {"west": -180, "south": -90, "east": 180, "north": 90}}""");
+        var resource = new MetadataV2Resource
+        {
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                Bbox = new MetadataV2Bbox { West = -180, South = -90, East = 180, North = 90 }
+            }
+        };
         var bbox = resource.ReadBbox();
         bbox.Should().NotBeNull();
-        bbox!.Value.West.Should().Be(-180);
-        bbox.Value.South.Should().Be(-90);
-        bbox.Value.East.Should().Be(180);
-        bbox.Value.North.Should().Be(90);
+        bbox!.West.Should().Be(-180);
+        bbox.South.Should().Be(-90);
+        bbox.East.Should().Be(180);
+        bbox.North.Should().Be(90);
     }
 
     [UnitTest]
     [Operation(Operations.Metadata)]
-    public void ReadBbox_PartialBox_ReturnsNull()
+    public void ReadBbox_Missing_ReturnsNull()
     {
-        var resource = ResourceWithSpatial("""{"bbox": {"west": -180, "south": -90}}""");
+        var resource = new MetadataV2Resource
+        {
+            Spatial = new MetadataV2ResourceSpatial()
+        };
         resource.ReadBbox().Should().BeNull();
     }
 
     [UnitTest]
     [Operation(Operations.Metadata)]
-    public void ReadGeometryType_ReturnsString()
+    public void ReadGeometryType_ReturnsEnum()
     {
-        var resource = ResourceWithSpatial("""{"geometryType": "Polygon"}""");
-        resource.ReadGeometryType().Should().Be("Polygon");
+        var resource = new MetadataV2Resource
+        {
+            Spatial = new MetadataV2ResourceSpatial { GeometryType = MetadataV2GeometryType.Polygon }
+        };
+        resource.ReadGeometryType().Should().Be(MetadataV2GeometryType.Polygon);
     }
 
     [UnitTest]
@@ -96,6 +120,22 @@ public sealed class MetadataV2SpatialExtensionsTests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
+    public void FindPrimaryGeometryField_ExplicitName_Wins()
+    {
+        var resource = new MetadataV2Resource
+        {
+            Spatial = new MetadataV2ResourceSpatial { PrimaryGeometryField = "shape" },
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry },
+                new MetadataV2Field { Name = "geom", Type = MetadataV2FieldType.Geometry, SemanticRoles = ["geometry.primary"] },
+            ],
+        };
+        resource.FindPrimaryGeometryField()!.Name.Should().Be("shape");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
     public void FindPrimaryIdField_ByObjectIdConvention_ReturnsField()
     {
         var resource = new MetadataV2Resource
@@ -108,7 +148,4 @@ public sealed class MetadataV2SpatialExtensionsTests
         };
         resource.FindPrimaryIdField()!.Name.Should().Be("objectid");
     }
-
-    private static MetadataV2Resource ResourceWithSpatial(string json)
-        => new() { Spatial = JsonSerializer.Deserialize<JsonElement>(json) };
 }
