@@ -932,6 +932,7 @@ class PostGISFixture:
                 "schemaFields": fields_by_layer.get(row_layer_id, []),
                 "spatial": spatial,
                 "status": status,
+                "extensions": {},
             })
             resources_by_id.setdefault(image_resource_id, {
                 "metadata": {
@@ -945,6 +946,7 @@ class PostGISFixture:
                 "primaryStorageBindingId": image_storage_id,
                 "spatial": spatial,
                 "status": status,
+                "extensions": {},
             })
 
             storage_by_id.setdefault(feature_storage_id, {
@@ -1066,6 +1068,7 @@ class PostGISFixture:
                 "name": "python-compatibility-seed",
                 "title": "Python compatibility seed",
             },
+            "catalogs": [],
             "resources": list(resources_by_id.values()),
             "connections": [
                 {
@@ -1078,40 +1081,46 @@ class PostGISFixture:
             "storageBindings": list(storage_by_id.values()),
             "services": list(services_by_id.values()),
             "publications": publications,
+            "projectionProfiles": [],
+            "policies": [],
+            "roles": [],
+            "extensionPoints": [],
         }
 
-        document = json.dumps(graph, separators=(",", ":"), sort_keys=True)
-        etag = f"\"{hashlib.sha256(document.encode('utf-8')).hexdigest()}\""
-        conn.execute(
-            """
-            INSERT INTO honua.metadata_v2_snapshots (
-                environment,
-                revision,
-                schema_version,
-                api_version,
-                document,
-                etag,
-                generated_at
+        for environment in ("default", "Test", "Development"):
+            environment_graph = {**graph, "environment": environment}
+            document = json.dumps(environment_graph, separators=(",", ":"), sort_keys=True)
+            etag = f"\"{hashlib.sha256(document.encode('utf-8')).hexdigest()}\""
+            conn.execute(
+                """
+                INSERT INTO honua.metadata_v2_snapshots (
+                    environment,
+                    revision,
+                    schema_version,
+                    api_version,
+                    document,
+                    etag,
+                    generated_at
+                )
+                VALUES (%s, 1, '2.0.0-alpha.1', 'metadata.honua.io/v2alpha1', %s::jsonb, %s, NOW())
+                ON CONFLICT (environment, revision) DO UPDATE SET
+                    document = EXCLUDED.document,
+                    etag = EXCLUDED.etag,
+                    generated_at = EXCLUDED.generated_at;
+                """,
+                (environment, document, etag),
             )
-            VALUES ('default', 1, '2.0.0-alpha.1', 'metadata.honua.io/v2alpha1', %s::jsonb, %s, NOW())
-            ON CONFLICT (environment, revision) DO UPDATE SET
-                document = EXCLUDED.document,
-                etag = EXCLUDED.etag,
-                generated_at = EXCLUDED.generated_at;
-            """,
-            (document, etag),
-        )
-        conn.execute(
-            """
-            INSERT INTO honua.metadata_v2_current (environment, revision, etag)
-            VALUES ('default', 1, %s)
-            ON CONFLICT (environment) DO UPDATE SET
-                revision = EXCLUDED.revision,
-                etag = EXCLUDED.etag,
-                activated_at = NOW();
-            """,
-            (etag,),
-        )
+            conn.execute(
+                """
+                INSERT INTO honua.metadata_v2_current (environment, revision, etag)
+                VALUES (%s, 1, %s)
+                ON CONFLICT (environment) DO UPDATE SET
+                    revision = EXCLUDED.revision,
+                    etag = EXCLUDED.etag,
+                    activated_at = NOW();
+                """,
+                (environment, etag),
+            )
 
     def seed_test_features(self, schema: str | None = None, layer_id: int = 0) -> None:
         """Seed features with varied attributes and geometry types."""
