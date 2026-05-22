@@ -54,7 +54,7 @@ deployment shows evidence gaps rather than claiming false readiness.
 
     "DataResidency": {
       "Enforced": true,                                  // Set false for informational mode
-      "PrimaryRegion": "us-gov-west-1",                  // Implicitly in AllowedRegions
+      "PrimaryRegion": "us-gov-west-1",                  // Implicitly in AllowedRegions; if blank, falls back to Compliance:PrimaryRegion
       "AllowedRegions": ["us-gov-east-1"]                // Additional regions data may flow to
     },
 
@@ -119,6 +119,13 @@ All endpoints require admin authentication. Report export is also audit-logged
 as `compliance.report.export`; residency evaluation as
 `compliance.residency.evaluate`; key rotation as `encryption.key.rotate`.
 
+Report-format error handling separates parser and renderer faults:
+
+- `400 Bad Request` — `format` was supplied but not `pdf` or `csv`.
+- `406 Not Acceptable` — `format` parsed cleanly but no renderer is registered
+  for it (e.g. a deployment trimmed the renderer enumerable). Default builds
+  ship both renderers, so 406 is reserved for stripped-down deployments.
+
 ## How readiness is computed
 
 For each control:
@@ -151,6 +158,14 @@ historical encryption-at-rest version. Rotation flow:
 3. The previous version is marked "retired" but stays in the ring so existing
    ciphertext keeps decrypting.
 4. A `ConfigChange` audit event with action `encryption.key.rotate` is recorded.
+
+The audit write is deliberately decoupled from the caller's cancellation
+token. Once the new version is committed to the in-memory key ring, the
+audit insert runs under a request-independent token with a 5-second budget
+so a client disconnect cannot strand a committed rotation without an audit
+event. If the audit sink itself errors or exceeds the budget, the rotation
+still commits and the failure is logged as event `4720` (Error) — operators
+should reconcile against the audit log when that event appears.
 
 > **Persistence note.** The key ring is in-memory by design — it tracks
 > *compliance* posture, not the key material `IConnectionEncryptionService`
@@ -209,9 +224,9 @@ curl -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
   -o honua-compliance.pdf
 ```
 
-The CSV opens cleanly in Excel (UTF-8 BOM); the PDF is a self-contained PDF 1.4
-document using the built-in Helvetica font — no external rendering toolchain
-required.
+The CSV opens cleanly in Excel (UTF-8 BOM, CRLF line terminators per RFC 4180);
+the PDF is a self-contained PDF 1.4 document using the built-in Helvetica
+font — no external rendering toolchain required.
 
 ## Limitations
 

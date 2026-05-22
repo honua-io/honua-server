@@ -1,11 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Compliance;
 using Honua.Core.Features.Compliance.Domain;
 using Honua.Core.Features.Compliance.Services;
+using Honua.Core.Features.Security.Abstractions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Compliance;
 
@@ -129,11 +132,51 @@ public sealed class ComplianceDependencyGateTests
         gate.IsSatisfied(ComplianceDependency.DataResidency).Should().BeTrue();
     }
 
+    [Fact]
+    public void EncryptionAtRest_ProbeThrows_ReportsUnsatisfiedInsteadOfPropagating()
+    {
+        // ConnectionEncryptionService throws InvalidOperationException when
+        // Security:ConnectionEncryption:MasterKey is missing. The compliance
+        // dashboard must report the dependency as unsatisfied with a sanitized
+        // message instead of letting the exception escape (which would fail
+        // the entire dashboard / report request).
+        var services = new ServiceCollection();
+        services.AddSingleton<IConnectionEncryptionService>(_ =>
+            throw new InvalidOperationException("Master key not configured."));
+
+        var gate = CreateGate(new ComplianceOptions(), oidcConfig: null, extraServices: services);
+
+        gate.IsSatisfied(ComplianceDependency.EncryptionAtRest).Should().BeFalse();
+        var description = gate.DescribeStatus(ComplianceDependency.EncryptionAtRest);
+        description.Should().Contain("not operational");
+        description.Should().Contain("InvalidOperationException");
+        description.Should().NotContain("Master key not configured", "raw exception messages must not leak");
+    }
+
+    [Fact]
+    public void AuditLog_ProbeThrows_ReportsUnsatisfiedInsteadOfPropagating()
+    {
+        // Defensive sibling of the encryption probe — if a host registers
+        // IAuditLog with a factory that throws, the dashboard must keep working.
+        var services = new ServiceCollection();
+        services.AddSingleton<IAuditLog>(_ =>
+            throw new InvalidOperationException("Audit sink misconfigured."));
+
+        var gate = CreateGate(new ComplianceOptions(), oidcConfig: null, extraServices: services);
+
+        gate.IsSatisfied(ComplianceDependency.AuditLog).Should().BeFalse();
+        var description = gate.DescribeStatus(ComplianceDependency.AuditLog);
+        description.Should().Contain("Audit log probe failed");
+        description.Should().Contain("InvalidOperationException");
+        description.Should().NotContain("misconfigured", "raw exception messages must not leak");
+    }
+
     private static DefaultComplianceDependencyGate CreateGate(
         ComplianceOptions options,
-        IDictionary<string, string?>? oidcConfig)
+        IDictionary<string, string?>? oidcConfig,
+        IServiceCollection? extraServices = null)
     {
-        var services = new ServiceCollection();
+        var services = extraServices ?? new ServiceCollection();
         var configBuilder = new ConfigurationBuilder();
         if (oidcConfig is not null)
         {
@@ -143,6 +186,9 @@ public sealed class ComplianceDependencyGateTests
         services.AddSingleton<IConfiguration>(configBuilder.Build());
 
         var monitor = new TestOptionsMonitor<ComplianceOptions>(options);
-        return new DefaultComplianceDependencyGate(monitor, services.BuildServiceProvider());
+        return new DefaultComplianceDependencyGate(
+            monitor,
+            services.BuildServiceProvider(),
+            NullLogger<DefaultComplianceDependencyGate>.Instance);
     }
 }

@@ -51,10 +51,11 @@ public sealed class ComplianceResidencyOptions
     public bool Enforced { get; set; }
 
     /// <summary>
-    /// Primary region for data-at-rest. Mirrors <see cref="ComplianceOptions.PrimaryRegion"/>
-    /// so the residency section is self-contained for callers that only consult it.
+    /// Primary region for data-at-rest. When left blank, the policy provider falls back to
+    /// <see cref="ComplianceOptions.PrimaryRegion"/> so an operator can set the top-level
+    /// value alone without having to mirror it under <c>DataResidency</c>.
     /// </summary>
-    public string PrimaryRegion { get; set; } = "unspecified";
+    public string PrimaryRegion { get; set; } = string.Empty;
 
     /// <summary>Regions data may flow to. Always includes <see cref="PrimaryRegion"/> implicitly.</summary>
     public List<string> AllowedRegions { get; set; } = new();

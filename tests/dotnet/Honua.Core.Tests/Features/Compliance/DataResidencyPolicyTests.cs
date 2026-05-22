@@ -102,6 +102,31 @@ public sealed class DataResidencyPolicyTests
         provider.Evaluate("us-gov-west-1").Allowed.Should().BeTrue();
         provider.Evaluate("US-GOV-EAST-1").Allowed.Should().BeTrue();
     }
+
+    [Fact]
+    public void TopLevel_PrimaryRegion_Used_WhenNestedResidencyPrimaryRegionIsDefault()
+    {
+        // Operator sets only Compliance:PrimaryRegion (top-level) — the nested
+        // DataResidency:PrimaryRegion is left at its default. The policy must
+        // pick up the top-level value, not deny the operator-intended region.
+        var opts = new ComplianceOptions
+        {
+            PrimaryRegion = "us-gov-west-1",
+            DataResidency = new ComplianceResidencyOptions
+            {
+                Enforced = true,
+                AllowedRegions = new List<string>(),
+            },
+        };
+
+        var provider = new DefaultDataResidencyPolicyProvider(new TestOptionsMonitor<ComplianceOptions>(opts));
+        var policy = provider.GetPolicy();
+
+        policy.PrimaryRegion.Should().Be("us-gov-west-1");
+        policy.AllowedRegions.Should().Contain("us-gov-west-1");
+        provider.Evaluate("us-gov-west-1").Allowed.Should().BeTrue(
+            "the operator-intended primary region must be implicitly allowed via the top-level fallback");
+    }
 }
 
 internal sealed class TestOptionsMonitor<T> : IOptionsMonitor<T>
