@@ -214,6 +214,12 @@ internal sealed class McpWorkspaceResource
     [JsonPropertyName("status")]
     public string Status { get; set; } = string.Empty;
 
+    [JsonPropertyName("cleanupScheduledAt")]
+    public DateTimeOffset? CleanupScheduledAt { get; set; }
+
+    [JsonPropertyName("resultsUri")]
+    public string? ResultsUri { get; set; }
+
     [JsonPropertyName("notImplementedReason")]
     public string? NotImplementedReason { get; set; }
 }
@@ -241,11 +247,41 @@ internal sealed class McpProcessEntry
     [JsonPropertyName("processId")]
     public string ProcessId { get; set; } = string.Empty;
 
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("displayName")]
+    public string DisplayName { get; set; } = string.Empty;
+
+    [JsonPropertyName("family")]
+    public string Family { get; set; } = string.Empty;
+
+    [JsonPropertyName("description")]
+    public string Description { get; set; } = string.Empty;
+
+    [JsonPropertyName("parameters")]
+    public IReadOnlyList<McpProcessParameter> Parameters { get; set; } = [];
+}
+
+internal sealed class McpProcessParameter
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
     [JsonPropertyName("displayName")]
     public string DisplayName { get; set; } = string.Empty;
 
     [JsonPropertyName("description")]
     public string Description { get; set; } = string.Empty;
+
+    [JsonPropertyName("valueType")]
+    public string ValueType { get; set; } = string.Empty;
+
+    [JsonPropertyName("required")]
+    public bool Required { get; set; }
+
+    [JsonPropertyName("defaultValue")]
+    public string? DefaultValue { get; set; }
 }
 
 // -----------------------------------------------------------------------

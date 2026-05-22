@@ -4,12 +4,14 @@
 using System.Globalization;
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Protocols.Mcp.Resources;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -189,7 +191,7 @@ public sealed class McpResourceSerializationTests
 
     [UnitTest]
     [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
-    public async Task WorkspaceResource_ReturnsNotImplementedEnvelopeWithWorkspaceId()
+    public async Task WorkspaceResource_WithoutLifecycleService_ReturnsDegradedEnvelopeWithWorkspaceId()
     {
         var resource = new WorkspaceResource(_jobService, NullLogger<WorkspaceResource>.Instance);
 
@@ -201,13 +203,94 @@ public sealed class McpResourceSerializationTests
         result.Contents.Should().HaveCount(1);
         var body = McpTestFactory.ParseJson(result.Contents[0].Text);
         body.GetProperty("workspaceId").GetString().Should().Be("ws-42");
-        body.GetProperty("status").GetString().Should().Be("not_implemented");
+        body.GetProperty("status").GetString().Should().Be("degraded");
         body.GetProperty("notImplementedReason").GetString().Should().NotBeNullOrEmpty();
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
+    public async Task WorkspaceResource_WithLifecycleService_ReturnsWorkspaceEnvelope()
+    {
+        var lifecycle = Substitute.For<IWorkspaceLifecycleService>();
+        lifecycle.GetWorkspaceAsync("ws-42", Arg.Any<CancellationToken>())
+            .Returns(new Workspace
+            {
+                WorkspaceId = "ws-42",
+                Kind = WorkspaceKind.ResultCollection,
+                Label = "Linked dashboard results",
+                OwnerId = "test-user",
+                State = WorkspaceLifecycleState.Active,
+                Uri = "honua://workspace-storage/ws-42",
+                CreatedAt = DateTimeOffset.Parse("2026-05-18T12:00:00Z", CultureInfo.InvariantCulture),
+                ExpiresAt = DateTimeOffset.Parse("2026-05-19T12:00:00Z", CultureInfo.InvariantCulture),
+                Artifacts =
+                [
+                    new Artifact
+                    {
+                        ArtifactId = "artifact-1",
+                        Kind = ArtifactKind.AppBundle,
+                        Label = "Mini app",
+                        State = ArtifactLifecycleState.Available,
+                        CreatedAt = DateTimeOffset.Parse("2026-05-18T12:05:00Z", CultureInfo.InvariantCulture),
+                        WorkspaceId = "ws-42",
+                        Metadata = new Dictionary<string, string>
+                        {
+                            ["jobId"] = "job-123"
+                        }
+                    }
+                ]
+            });
+
+        await using var services = new ServiceCollection()
+            .AddScoped(_ => lifecycle)
+            .BuildServiceProvider();
+        var resource = new WorkspaceResource(
+            _jobService,
+            services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<WorkspaceResource>.Instance);
+
+        var result = await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://workspaces/ws-42",
+            CancellationToken.None);
+
+        var body = McpTestFactory.ParseJson(result.Contents[0].Text);
+        body.GetProperty("workspaceId").GetString().Should().Be("ws-42");
+        body.GetProperty("kind").GetString().Should().Be("result_collection");
+        body.GetProperty("label").GetString().Should().Be("Linked dashboard results");
+        body.GetProperty("uri").GetString().Should().Be("honua://workspace-storage/ws-42");
+        body.GetProperty("status").GetString().Should().Be("active");
+        body.GetProperty("resultsUri").GetString().Should().Be("honua://jobs/job-123/results");
+        body.TryGetProperty("notImplementedReason", out _).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://workspaces/{workspaceId}")]
+    public async Task WorkspaceResource_MissingWorkspace_PropagatesNotFound()
+    {
+        var lifecycle = Substitute.For<IWorkspaceLifecycleService>();
+        lifecycle.GetWorkspaceAsync("missing", Arg.Any<CancellationToken>())
+            .Returns((Workspace?)null);
+
+        await using var services = new ServiceCollection()
+            .AddScoped(_ => lifecycle)
+            .BuildServiceProvider();
+        var resource = new WorkspaceResource(
+            _jobService,
+            services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<WorkspaceResource>.Instance);
+
+        var act = async () => await resource.ReadAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            "honua://workspaces/missing",
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
     [Endpoint("POST /mcp resources/read honua://catalog/processes")]
-    public async Task ProcessCatalogResource_ReturnsEmptyCatalogWithNotImplementedStatus()
+    public async Task ProcessCatalogResource_ReturnsBuiltInCatalogEntries()
     {
         var resource = new ProcessCatalogResource(_jobService, NullLogger<ProcessCatalogResource>.Instance);
 
@@ -217,9 +300,17 @@ public sealed class McpResourceSerializationTests
             CancellationToken.None);
 
         var body = McpTestFactory.ParseJson(result.Contents[0].Text);
-        body.GetProperty("status").GetString().Should().Be("not_implemented");
-        body.GetProperty("processes").GetArrayLength().Should().Be(0);
-        body.GetProperty("notImplementedReason").GetString().Should().NotBeNullOrEmpty();
+        body.GetProperty("catalogVersion").GetString().Should().Be(BuiltInProcessCatalog.CatalogVersion);
+        body.GetProperty("status").GetString().Should().Be("ok");
+        var processes = body.GetProperty("processes");
+        processes.GetArrayLength().Should().BeGreaterThan(0);
+        var buffer = processes.EnumerateArray()
+            .Single(process => process.GetProperty("processId").GetString() == "geometry.buffer");
+        buffer.GetProperty("name").GetString().Should().Be("Buffer");
+        buffer.GetProperty("family").GetString().Should().Be("geometry");
+        buffer.GetProperty("description").GetString().Should().NotBeNullOrWhiteSpace();
+        buffer.GetProperty("parameters").GetArrayLength().Should().BeGreaterThan(0);
+        body.TryGetProperty("notImplementedReason", out _).Should().BeFalse();
     }
 
     [UnitTest]

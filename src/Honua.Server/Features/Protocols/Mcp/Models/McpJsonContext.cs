@@ -71,6 +71,7 @@ namespace Honua.Server.Features.Protocols.Mcp.Models;
 [JsonSerializable(typeof(McpWorkspaceResource))]
 [JsonSerializable(typeof(McpProcessCatalogResource))]
 [JsonSerializable(typeof(McpProcessEntry))]
+[JsonSerializable(typeof(McpProcessParameter))]
 [JsonSerializable(typeof(McpHostedProvenance))]
 [JsonSerializable(typeof(McpPublishedServiceView))]
 [JsonSerializable(typeof(McpPublishedServiceSummary))]

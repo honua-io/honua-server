@@ -138,6 +138,7 @@ How to build against Honua's APIs, SDKs, and protocols.
 - [MCP Server](developer/MCP_SERVER.md) — JSON-RPC surface for AI agents.
 - [Redis Fallback Patterns](developer/REDIS_FALLBACK_PATTERNS.md)
 - [Spec Engine](developer/SPEC_ENGINE.md)
+- [AI Builder SDK Contract](ai-builder-sdk-contract.md) — Map of honua-server MCP surfaces to the honua-sdk-js AI Spatial App Builder workflow, fixture cases, and capability states.
 - [AI Builder Contract Fixtures](developer/ai-builder-contract-fixtures.md)
 - [SDK Compatibility Matrix](developer/SDK_COMPATIBILITY_MATRIX.md)
 - [SDK Compatibility Metadata](developer/SDK_COMPATIBILITY_METADATA.md)

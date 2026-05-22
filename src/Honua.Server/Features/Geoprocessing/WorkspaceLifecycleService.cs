@@ -36,6 +36,14 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    public Task<Workspace?> GetWorkspaceAsync(
+        string workspaceId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
+        return _workspaceStore.GetAsync(workspaceId, cancellationToken);
+    }
+
     public async Task<Workspace> CreateWorkspaceAsync(
         WorkspaceKind kind,
         string label,

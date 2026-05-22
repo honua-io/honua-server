@@ -275,13 +275,13 @@ public sealed class McpAuthorizationTests
     }
 
     [UnitTest]
-    public void StubResources_ImplementIStubMcpResource_ForTelemetryTagging()
+    public void CoreInspectionResources_AreFunctionalResources_ForTelemetryTagging()
     {
         IMcpResource workspace = new WorkspaceResource(_jobService, NullLogger<WorkspaceResource>.Instance);
         IMcpResource catalog = new ProcessCatalogResource(_jobService, NullLogger<ProcessCatalogResource>.Instance);
 
-        workspace.Should().BeAssignableTo<IStubMcpResource>();
-        catalog.Should().BeAssignableTo<IStubMcpResource>();
+        workspace.Should().NotBeAssignableTo<IStubMcpResource>();
+        catalog.Should().NotBeAssignableTo<IStubMcpResource>();
     }
 
     // The dispatcher-level auth gate runs before param parsing and tool/resource
