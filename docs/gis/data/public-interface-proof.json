@@ -234,7 +234,7 @@
         },
         {
           "proofClass": "tool-interoperability",
-          "proofMechanism": "JavaScript SDK migration scan automation is tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane exercises the wrapper against a real seeded server.",
+          "proofMechanism": "JavaScript SDK migration scan automation is exercised by sdk-server-compatibility through HonuaClient.scanMigrationSource against a real Test-mode server and fixture-backed GeoServer source.",
           "executionLane": "nightly:sdk-server-compatibility",
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
@@ -243,9 +243,9 @@
             "https://github.com/honua-io/honua-sdk-js/issues/105"
           ],
           "ownerRepo": "honua-sdk-js",
-          "status": "bounded-child-ticket",
+          "status": "implemented",
           "linkedTicket": "#105",
-          "versionCaptureRule": "The SDK compatibility evidence records @honua/sdk-js package version, Honua Server commit, seed profile, the migration-scan surface, pass/fail status, unsupported status when applicable, and bounded failure diagnostics."
+          "versionCaptureRule": "The SDK compatibility evidence records @honua/sdk-js package version, Honua Server commit, seed profile, the migration-scan surface, pass/fail status, artifact path, and bounded failure diagnostics."
         },
         {
           "proofClass": "tool-interoperability",
@@ -264,7 +264,7 @@
         },
         {
           "proofClass": "tool-interoperability",
-          "proofMechanism": ".NET SDK migration scan automation is tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane exercises the wrapper against a real seeded server.",
+          "proofMechanism": ".NET SDK migration scan automation is exercised by sdk-server-compatibility through HonuaAdminClient.ScanMigrationSourceAsync against a real Test-mode server and fixture-backed GeoServer source.",
           "executionLane": "nightly:sdk-server-compatibility",
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
@@ -273,9 +273,9 @@
             "https://github.com/honua-io/honua-sdk-dotnet/issues/134"
           ],
           "ownerRepo": "honua-sdk-dotnet",
-          "status": "bounded-child-ticket",
+          "status": "implemented",
           "linkedTicket": "#134",
-          "versionCaptureRule": "The SDK compatibility evidence records Honua.Sdk.* package versions, Honua Server commit, seed profile, the migration-scan surface, pass/fail status, unsupported status when applicable, and bounded failure diagnostics."
+          "versionCaptureRule": "The SDK compatibility evidence records Honua.Sdk.* package versions, Honua Server commit, seed profile, the migration-scan surface, pass/fail status, artifact path, and bounded failure diagnostics."
         }
       ]
     },
@@ -309,7 +309,7 @@
         },
         {
           "proofClass": "tool-interoperability",
-          "proofMechanism": "JavaScript SDK ArcGIS import automation is tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane exercises start, poll, and cancel where supported.",
+          "proofMechanism": "JavaScript SDK ArcGIS import automation is exercised by sdk-server-compatibility through HonuaClient.request against the admin GeoServices import start and poll endpoints on a real seeded server.",
           "executionLane": "nightly:sdk-server-compatibility",
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
@@ -318,9 +318,9 @@
             "https://github.com/honua-io/honua-sdk-js/issues/105"
           ],
           "ownerRepo": "honua-sdk-js",
-          "status": "bounded-child-ticket",
+          "status": "implemented",
           "linkedTicket": "#105",
-          "versionCaptureRule": "The SDK compatibility evidence records @honua/sdk-js package version, Honua Server commit, seed profile, the arcgis-import surface, pass/fail status, unsupported status when applicable, and bounded failure diagnostics."
+          "versionCaptureRule": "The SDK compatibility evidence records @honua/sdk-js package version, Honua Server commit, seed profile, the arcgis-import surface, pass/fail status, artifact path, and bounded failure diagnostics."
         },
         {
           "proofClass": "tool-interoperability",
@@ -384,7 +384,7 @@
         },
         {
           "proofClass": "tool-interoperability",
-          "proofMechanism": "JavaScript SDK GeoServer dry-run automation is tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane exercises start, poll, and cancel against a dry-run fixture.",
+          "proofMechanism": "JavaScript SDK GeoServer dry-run automation is exercised by sdk-server-compatibility through HonuaClient.request against the admin GeoServer import start and poll endpoints on a real Test-mode server with a fixture-backed GeoServer REST source.",
           "executionLane": "nightly:sdk-server-compatibility",
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
@@ -393,9 +393,9 @@
             "https://github.com/honua-io/honua-sdk-js/issues/105"
           ],
           "ownerRepo": "honua-sdk-js",
-          "status": "bounded-child-ticket",
+          "status": "implemented",
           "linkedTicket": "#105",
-          "versionCaptureRule": "The SDK compatibility evidence records @honua/sdk-js package version, Honua Server commit, seed profile, the geoserver-dry-run surface, pass/fail status, unsupported status when applicable, and bounded failure diagnostics."
+          "versionCaptureRule": "The SDK compatibility evidence records @honua/sdk-js package version, Honua Server commit, seed profile, the geoserver-dry-run surface, pass/fail status, artifact path, and bounded failure diagnostics."
         },
         {
           "proofClass": "tool-interoperability",
@@ -460,7 +460,7 @@
         },
         {
           "proofClass": "tool-interoperability",
-          "proofMechanism": "JavaScript SDK typed migration artifact models are tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane parses the inventory, manifest, parity evidence, and readiness models.",
+          "proofMechanism": "JavaScript SDK typed migration artifact models are exercised by sdk-server-compatibility through HonuaClient.request with artifactSet=all, then validated as inventory, manifest, and parity evidence artifacts.",
           "executionLane": "nightly:sdk-server-compatibility",
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
@@ -469,13 +469,13 @@
             "https://github.com/honua-io/honua-sdk-js/issues/105"
           ],
           "ownerRepo": "honua-sdk-js",
-          "status": "bounded-child-ticket",
+          "status": "implemented",
           "linkedTicket": "#105",
-          "versionCaptureRule": "The SDK compatibility evidence records @honua/sdk-js package version, Honua Server commit, seed profile, the migration-evidence surface, pass/fail status, unsupported status when applicable, and bounded failure diagnostics."
+          "versionCaptureRule": "The SDK compatibility evidence records @honua/sdk-js package version, Honua Server commit, seed profile, the migration-evidence surface, pass/fail status, artifact path, and bounded failure diagnostics."
         },
         {
           "proofClass": "tool-interoperability",
-          "proofMechanism": "Python SDK typed migration artifact models are tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane parses the inventory, manifest, parity evidence, and readiness models.",
+          "proofMechanism": "Python SDK typed migration artifact models are tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane parses the inventory, manifest, and parity evidence models.",
           "executionLane": "nightly:sdk-server-compatibility",
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",
@@ -490,7 +490,7 @@
         },
         {
           "proofClass": "tool-interoperability",
-          "proofMechanism": ".NET SDK typed migration artifact models are tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane parses the inventory, manifest, parity evidence, and readiness models.",
+          "proofMechanism": ".NET SDK typed migration artifact models are tracked as a bounded child surface; server compatibility artifacts record unsupported status until the SDK lane parses the inventory, manifest, and parity evidence models.",
           "executionLane": "nightly:sdk-server-compatibility",
           "evidenceLocations": [
             ".github/workflows/sdk-server-compatibility.yml",

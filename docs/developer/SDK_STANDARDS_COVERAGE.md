@@ -46,16 +46,17 @@ The current server-owned SDK compatibility lane records these exercised surfaces
 
 | SDK | Surfaces currently exercised by server compatibility evidence |
 |---|---|
-| JavaScript / TypeScript | `control-plane-admin`, `geoservices-catalog`, `feature-server`, `ogc-api-features` |
+| JavaScript / TypeScript | `control-plane-admin`, `geoservices-catalog`, `feature-server`, `ogc-api-features`, `migration-scan`, `arcgis-import`, `geoserver-dry-run`, `migration-evidence` |
 | Python | `control-plane-admin`, `platform-http`, `geoservices-catalog`, `feature-server` |
-| .NET | `control-plane-admin` |
+| .NET | `control-plane-admin`, `migration-scan` |
 
-The same artifact now also records migration automation surfaces:
+The same artifact also records migration automation surfaces:
 `migration-scan`, `arcgis-import`, `geoserver-dry-run`, and
 `migration-evidence`. These are visible in `protocol_surfaces_by_sdk` and carry
-per-SDK `migration_automation_by_sdk` status. They are not release claims while
-the status is `unsupported`; the SDK-owned tickets must ship wrappers and live
-fixture evidence first.
+per-SDK `migration_automation_by_sdk` status. They are release claims only when
+the relevant SDK cell records `supported` with an uploaded artifact path and the
+SDK package version is published; `unsupported` entries identify remaining
+public SDK API/command gaps.
 
 Rows below can guide copy and SDK backlog decisions, but they become release
 claims only when the relevant SDK package, release note, or compatibility
@@ -78,7 +79,7 @@ artifact names the surface.
 | STAC API | Supported catalog, collection, item, and search surface. | Supported convenience for catalog/search and app-builder workflows where released. | Supported convenience for analysis, ETL, AI/data, and asset catalog/search workflows where released. | Supported or targeted convenience for backend catalog/search workflows where released and evidenced. |
 | OData v4 | Supported BI/query/CRUD surface with spatial functions. | Supported convenience or generic OData client path where released. | Supported convenience for analysis, ETL, BI-adjacent, and data workflow clients where released. | Generic OData ecosystem client path by default; add Honua-specific convenience only for a concrete backend workflow. |
 | Process/job APIs (OGC API Processes, GeoServices GPServer, MCP, gRPC ProcessService) | Supported through the canonical process/job runtime where each adapter is implemented. | Supported convenience for MCP and app-builder/operator workflows where released. | Targeted convenience for AI/data and automation workflows where released. | Targeted convenience for C# service automation and typed gRPC process workflows where released and evidenced. |
-| Migration automation (`migration-scan`, ArcGIS import, GeoServer dry run, parity/readiness evidence artifacts) | Supported server contracts for source inventory scans, ArcGIS/GeoServer import endpoints, and stable migration artifact models. | Targeted convenience tracked by `honua-sdk-js#105`; do not claim support while compatibility evidence records `unsupported`. | Targeted convenience tracked by `honua-sdk-python#49`; do not claim support while compatibility evidence records `unsupported`. | Targeted convenience tracked by `honua-sdk-dotnet#134`; do not claim support while compatibility evidence records `unsupported`. |
+| Migration automation (`migration-scan`, ArcGIS import, GeoServer dry run, parity evidence artifacts) | Supported server contracts for source inventory scans, ArcGIS/GeoServer import endpoints, and stable migration artifact models. | Server compatibility smoke exercises all four surfaces through public JS SDK APIs; claim release support only for published SDK versions with `supported` artifact evidence. | Targeted convenience tracked by `honua-sdk-python#49`; no release claim while compatibility evidence records `unsupported`. | Server compatibility smoke exercises `migration-scan` through `HonuaAdminClient.ScanMigrationSourceAsync`; ArcGIS import, GeoServer dry run, and artifact-bundle evidence remain targeted convenience tracked by `honua-sdk-dotnet#134`. |
 | Field/offline workflows | Server-owned sync and protocol contracts support mobile/offline clients. | Generic protocol unless a web/offline package explicitly covers the workflow. | Generic protocol unless an offline/data package explicitly covers the workflow. | Supported or targeted through the MAUI/offline roadmap and shared .NET SDK packages where released. |
 
 ## Language Positioning

@@ -128,17 +128,20 @@ records:
   runs are introduced
 - seed profile, service id, layer id, and `protocol_surfaces_by_sdk` for the
   exact surfaces each SDK exercised in that cell
-- migration automation surface visibility for `migration-scan`,
-  `arcgis-import`, `geoserver-dry-run`, and `migration-evidence`, including a
-  per-SDK pass/fail flag and `unsupported` status while SDK-owned wrappers and
-  live fixture flows are still tracked in the SDK repositories
+- migration automation smoke evidence for `migration-scan`, `arcgis-import`,
+  `geoserver-dry-run`, and `migration-evidence`, loaded from
+  `results/migration-automation.json` and carrying per-SDK pass/fail status,
+  uploaded artifact paths, and explicit unsupported entries only where a public
+  SDK API/command is still missing
 - pass/fail status, exit code, workflow run metadata, server log path, run log
   path, and a bounded failure log tail for reproduction
 
 Do not infer implemented per-SDK protocol coverage from package-version capture
 alone. For migration automation, follow `migration_automation_by_sdk` before
-making a language-specific SDK claim; entries marked `unsupported` are evidence
-that the surface is recorded but not yet release-supported for that SDK.
+making a language-specific SDK claim. Entries marked `supported` include an
+uploaded artifact path from the smoke runner. Entries marked `unsupported`
+identify a concrete public SDK API/command gap and remain non-claims for that
+language.
 
 The smoke command uses a 40-minute command timeout inside a 75-minute job
 timeout. The remaining job budget covers checkout/setup, kill grace, evidence
@@ -164,7 +167,7 @@ read/write/auth surfaces but carries its own surface set, status vocabulary,
 and per-surface artifact fields. The schema is pinned by the
 [SDK Migration Automation Evidence Manifest](sdk-migration-evidence-manifest.md)
 so SDK repositories can implement live smoke flows against a stable target
-before any cell flips from `unsupported`.
+before a cell records `supported` evidence.
 
 The migration evidence columns recorded per cell are:
 
@@ -173,14 +176,14 @@ The migration evidence columns recorded per cell are:
 | Migration scan | `migration_automation_by_sdk[sdk][surface=migration-scan]` | Source-inventory scan driven through the SDK against the seeded server. |
 | ArcGIS import | `migration_automation_by_sdk[sdk][surface=arcgis-import]` | ArcGIS GeoServices import job started, polled, and read through the SDK. |
 | GeoServer dry-run | `migration_automation_by_sdk[sdk][surface=geoserver-dry-run]` | GeoServer dry-run apply-plan generated and validated through SDK models. |
-| Migration evidence | `migration_automation_by_sdk[sdk][surface=migration-evidence]` | Inventory/manifest/parity/readiness artifact bundle consumed through SDK models. |
+| Migration evidence | `migration_automation_by_sdk[sdk][surface=migration-evidence]` | Inventory/manifest/parity artifact bundle consumed through SDK models. |
 
 Each per-surface entry uses the controlled status vocabulary defined in the
 manifest:
 
-- `unsupported` - SDK has not implemented the wrapper yet. Default for every
-  cell today. `linked_ticket` is required and points at the SDK-owned migration
-  toolkit issue.
+- `unsupported` - SDK has not implemented a public API/command for this surface
+  yet. `linked_ticket` and `reason` are required and point at the SDK-owned
+  migration toolkit contract gap.
 - `supported` - SDK implemented the wrapper and the live smoke flow passed in
   this cell. Requires an `artifact.artifact_path` uploaded alongside
   `compat-result.json`.
@@ -198,10 +201,9 @@ supported cell for that SDK records `status: "supported"` and `passed: true`
 for the surface, the corresponding SDK package version in
 `sdk_package_versions` matches a published release, and the release-train
 manifest links the exact `sdk-compatibility-matrix-<run-id>` artifact that
-contains those cells. Until all three conditions hold, the surface stays at
-`unsupported` and the SDK-driven migration row in
-[Compatibility and Automated Migration Evidence](../contributor/compatibility-and-migration-evidence.md)
-continues to call this out as a backlog gap under
+contains those cells. Until all three conditions hold, treat the surface as
+smoke evidence only; unsupported per-SDK entries and unpublished SDK package
+versions remain backlog gaps under
 [honua-server#1018](https://github.com/honua-io/honua-server/issues/1018).
 
 ## Release-Train Evidence

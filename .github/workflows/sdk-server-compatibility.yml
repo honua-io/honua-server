@@ -392,6 +392,55 @@ jobs:
             failure_tail="$(tail -n 120 results/compatibility-run.log)"
           fi
 
+          if [ -f results/migration-automation.json ] && \
+             jq -e '.migration_automation and .migration_automation_by_sdk' results/migration-automation.json >/dev/null; then
+            migration_automation_json="$(jq -c '{migration_automation, migration_automation_by_sdk}' results/migration-automation.json)"
+          else
+            migration_automation_json="$(
+              jq -nc '
+                def failed_surface($surface; $ticket):
+                  {
+                    surface: $surface,
+                    status: "failed",
+                    passed: false,
+                    linked_ticket: $ticket,
+                    failure: {
+                      stage: "evidence-file",
+                      log_tail_path: "results/compatibility-run.log"
+                    }
+                  };
+                {
+                  migration_automation: {
+                    required: false,
+                    status: "failed",
+                    passed: false,
+                    reason: "SDK migration automation smoke evidence was not produced; see compatibility-run.log."
+                  },
+                  migration_automation_by_sdk: {
+                    js: [
+                      failed_surface("migration-scan"; "honua-sdk-js#105"),
+                      failed_surface("arcgis-import"; "honua-sdk-js#105"),
+                      failed_surface("geoserver-dry-run"; "honua-sdk-js#105"),
+                      failed_surface("migration-evidence"; "honua-sdk-js#105")
+                    ],
+                    python: [
+                      failed_surface("migration-scan"; "honua-sdk-python#49"),
+                      failed_surface("arcgis-import"; "honua-sdk-python#49"),
+                      failed_surface("geoserver-dry-run"; "honua-sdk-python#49"),
+                      failed_surface("migration-evidence"; "honua-sdk-python#49")
+                    ],
+                    dotnet: [
+                      failed_surface("migration-scan"; "honua-sdk-dotnet#134"),
+                      failed_surface("arcgis-import"; "honua-sdk-dotnet#134"),
+                      failed_surface("geoserver-dry-run"; "honua-sdk-dotnet#134"),
+                      failed_surface("migration-evidence"; "honua-sdk-dotnet#134")
+                    ]
+                  }
+                }
+              '
+            )"
+          fi
+
           jq -n \
             --arg serverLabel "$SERVER_LABEL" \
             --arg serverRef "$SERVER_REF" \
@@ -420,6 +469,7 @@ jobs:
             --argjson expectedSupported "$EXPECTED_SUPPORTED" \
             --argjson passed "$passed" \
             --argjson exitCode "$exit_code" \
+            --argjson migrationAutomation "$migration_automation_json" \
             '{
               server_label: $serverLabel,
               server_ref: $serverRef,
@@ -501,32 +551,8 @@ jobs:
                   "migration-evidence"
                 ]
               },
-              migration_automation: {
-                required: false,
-                status: "unsupported",
-                passed: false,
-                reason: "Server compatibility artifacts declare migration automation surfaces, but SDK-owned wrappers and live fixture flows are tracked outside this server slice."
-              },
-              migration_automation_by_sdk: {
-                js: [
-                  { surface: "migration-scan", status: "unsupported", passed: false, linked_ticket: "honua-sdk-js#105" },
-                  { surface: "arcgis-import", status: "unsupported", passed: false, linked_ticket: "honua-sdk-js#105" },
-                  { surface: "geoserver-dry-run", status: "unsupported", passed: false, linked_ticket: "honua-sdk-js#105" },
-                  { surface: "migration-evidence", status: "unsupported", passed: false, linked_ticket: "honua-sdk-js#105" }
-                ],
-                python: [
-                  { surface: "migration-scan", status: "unsupported", passed: false, linked_ticket: "honua-sdk-python#49" },
-                  { surface: "arcgis-import", status: "unsupported", passed: false, linked_ticket: "honua-sdk-python#49" },
-                  { surface: "geoserver-dry-run", status: "unsupported", passed: false, linked_ticket: "honua-sdk-python#49" },
-                  { surface: "migration-evidence", status: "unsupported", passed: false, linked_ticket: "honua-sdk-python#49" }
-                ],
-                dotnet: [
-                  { surface: "migration-scan", status: "unsupported", passed: false, linked_ticket: "honua-sdk-dotnet#134" },
-                  { surface: "arcgis-import", status: "unsupported", passed: false, linked_ticket: "honua-sdk-dotnet#134" },
-                  { surface: "geoserver-dry-run", status: "unsupported", passed: false, linked_ticket: "honua-sdk-dotnet#134" },
-                  { surface: "migration-evidence", status: "unsupported", passed: false, linked_ticket: "honua-sdk-dotnet#134" }
-                ]
-              },
+              migration_automation: $migrationAutomation.migration_automation,
+              migration_automation_by_sdk: $migrationAutomation.migration_automation_by_sdk,
               cell_status: $cellStatus,
               expected_supported: $expectedSupported,
               passed: $passed,
@@ -553,6 +579,12 @@ jobs:
           name: sdk-compat-result-${{ matrix.server_label }}-${{ matrix.sdk_label }}-${{ github.run_id }}
           path: |
             results/compat-result.json
+            results/migration-automation.json
+            results/sdk-js/
+            results/sdk-python/
+            results/sdk-dotnet/
+            results/geoserver-fixture.log
+            results/honua-server-sdk-migration.log
             results/compatibility-run.log
             logs/honua-server-sdk-compat-${{ matrix.server_label }}-${{ matrix.sdk_label }}.log
             ${{ runner.temp }}/sdk-compat/honua-sdk-js/test-results/
