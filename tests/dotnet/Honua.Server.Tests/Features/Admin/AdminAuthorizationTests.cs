@@ -389,6 +389,42 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    // --- ComplianceAdminEndpoints (#352) ---
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/compliance/dashboard")]
+    public async Task GetComplianceDashboard_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/compliance/dashboard");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/compliance/report")]
+    public async Task GetComplianceReport_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/compliance/report?format=csv");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/compliance/residency/evaluate")]
+    public async Task PostComplianceResidencyEvaluate_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.PostAsJsonAsync(
+            "/api/v1/admin/compliance/residency/evaluate",
+            new { region = "us-east-1" });
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/compliance/encryption/rotate-key")]
+    public async Task PostComplianceRotateKey_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.PostAsync("/api/v1/admin/compliance/encryption/rotate-key", null);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
     // --- LicenseAdminEndpoints ---
 
     [IntegrationTest]

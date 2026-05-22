@@ -67,6 +67,7 @@ internal static class JsonContextRegistration
                 Honua.Server.Features.Admin.Models.CacheAdminJsonContext.Default,
                 Honua.Server.Features.Admin.Models.GeocodingAdminJsonContext.Default,
                 Honua.Server.Features.Admin.Models.FeatureOverviewJsonContext.Default,
+                Honua.Server.Features.Admin.Models.ComplianceAdminJsonContext.Default,
                 Honua.Server.Features.Admin.Models.CacheOperationsJsonContext.Default,
                 Honua.Server.Features.Admin.Models.StreamingOperationsJsonContext.Default,
                 Honua.Server.Features.Admin.Models.GeocodingOperationsJsonContext.Default,

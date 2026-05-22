@@ -13,6 +13,7 @@ Deploy, configure, monitor, and manage Honua Server.
 
 - [Environment Variables](../../.env.example) — Complete configuration reference
 - [Security](security.md) — Authentication, authorization, CORS, CSP
+- [Compliance Framework](compliance-framework.md) — SOC 2 / FedRAMP readiness evidence, data residency, key rotation, report export
 - [HTTP Client Resilience](http-client-resilience.md) — Retry, circuit breaker, and timeout tuning for external services
 - [Feature Change Webhooks](feature-change-webhooks.md) — Event notification setup
 - [Feature Streaming](feature-streaming.md) — WebSocket/SSE feature-change subscriptions
