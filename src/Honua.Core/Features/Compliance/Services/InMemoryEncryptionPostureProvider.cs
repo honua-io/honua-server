@@ -11,23 +11,28 @@ using Microsoft.Extensions.Options;
 namespace Honua.Core.Features.Compliance.Services;
 
 /// <summary>
-/// Compliance-managed encryption posture / key-ring. Maintains an in-memory list of
-/// historical key versions and supports runtime rotation without interrupting any
-/// active request — only metadata changes; existing ciphertexts keep decrypting
-/// against the version that produced them.
+/// Compliance-managed encryption posture / key-version timeline. Maintains an
+/// in-memory list of auditor-facing key-version entries and advances the posture
+/// counter on <see cref="RotateAsync"/>. The provider stores version metadata
+/// only — no cipher key material, no ciphertext re-encryption, no envelope
+/// rewrap. Real key-material rotation is the responsibility of the
+/// <c>Honua.Postgres.Features.Security.IConnectionEncryptionService</c> path.
 /// </summary>
 /// <remarks>
 /// <para>
 /// Scope: this provider is the source of truth for the encryption posture reported
 /// in compliance evidence (FedRAMP SC-13 / SC-28). It is intentionally decoupled
-/// from <c>IConnectionEncryptionService</c> — that service has its own
-/// version lifecycle persisted in <c>honua.encryption_keys</c>. The posture
-/// reflects which key versions exist, not which one the connection envelope used.
+/// from <c>IConnectionEncryptionService</c> — that service has its own version
+/// lifecycle persisted in <c>honua.encryption_keys</c>. The posture reflects which
+/// version events the operator has recorded for auditor traceability, not which
+/// key the connection envelope used.
 /// </para>
 /// <para>
-/// Rotation is zero-downtime by construction: <see cref="RotateAsync"/> appends a new
-/// version, updates the active pointer with a single field assignment under a lock,
-/// and returns. No requests are paused, no caches invalidated, no migration scheduled.
+/// <see cref="RotateAsync"/> appends a new version, updates the active pointer with a
+/// single field assignment under a lock, and returns. The operation does not pause
+/// requests, invalidate caches, or schedule data migration — those concerns live in
+/// the connection-encryption code path. Operators wanting to rotate cipher material
+/// must also follow the runbook for <c>Security:ConnectionEncryption:MasterKey</c>.
 /// </para>
 /// </remarks>
 internal sealed partial class InMemoryEncryptionPostureProvider : IEncryptionPostureProvider
@@ -152,7 +157,7 @@ internal sealed partial class InMemoryEncryptionPostureProvider : IEncryptionPos
             PreviousVersion = previous,
             NewVersion = next,
             RotatedAt = now,
-            Message = "Encryption key rotated — new encryptions use the new version; existing ciphertext remains decryptable.",
+            Message = $"Compliance key-version posture advanced from v{previous} to v{next}. This records an auditor-facing rotation event; actual cipher key material is managed by IConnectionEncryptionService and is unaffected by this endpoint.",
         };
     }
 

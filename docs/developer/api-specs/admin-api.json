@@ -2714,8 +2714,8 @@
     "/compliance/encryption/rotate-key": {
       "post": {
         "tags": ["Compliance"],
-        "summary": "Rotate Encryption Key (Compliance)",
-        "description": "Appends a new active encryption-at-rest key version. Zero-downtime: existing ciphertexts continue decrypting against retired versions. The rotation is always audit-logged (best-effort, decoupled from the caller token).",
+        "summary": "Advance Compliance Key-Version Posture",
+        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event — it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
         "operationId": "rotateComplianceEncryptionKey",
         "responses": {
           "200": {

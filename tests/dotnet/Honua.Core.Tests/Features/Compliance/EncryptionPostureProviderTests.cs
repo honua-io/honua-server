@@ -38,11 +38,22 @@ public sealed class EncryptionPostureProviderTests
         outcome.Succeeded.Should().BeTrue();
         outcome.PreviousVersion.Should().Be(1);
         outcome.NewVersion.Should().Be(2);
-        outcome.Message.Should().Contain("existing ciphertext remains decryptable");
+        // The message must NOT claim real cipher rotation. Pin the posture-only framing
+        // so a future refactor can't quietly reintroduce the "new encryptions use the
+        // new version; existing ciphertext remains decryptable" overclaim.
+        outcome.Message.Should().Contain("posture advanced",
+            "the rotation endpoint advances the compliance posture counter, not cipher material");
+        outcome.Message.Should().Contain("IConnectionEncryptionService",
+            "the message must point operators at the service responsible for actual key-material rotation");
+        outcome.Message.Should().NotContain("new encryptions use the new version",
+            "the provider does not own encryption — that language belongs to IConnectionEncryptionService");
+        outcome.Message.Should().NotContain("existing ciphertext remains decryptable",
+            "no ciphertext is touched by this endpoint");
 
         var posture = provider.GetPosture();
         posture.ActiveKeyVersion.Should().Be(2);
-        posture.RetainedKeyVersions.Should().Be(2, "previous version stays retained for decryption");
+        posture.RetainedKeyVersions.Should().Be(2,
+            "previous version is retained in the auditor-facing posture timeline");
         posture.LastRotationAt.Should().NotBeNull();
     }
 

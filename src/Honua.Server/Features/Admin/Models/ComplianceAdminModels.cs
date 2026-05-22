@@ -201,22 +201,27 @@ public sealed class ComplianceResidencyEvaluationResponse
     public required ComplianceResidencyView Policy { get; init; }
 }
 
-/// <summary>Response from a key rotation request.</summary>
+/// <summary>
+/// Response from a compliance key-version rotation request. The endpoint advances
+/// an auditor-facing posture counter and writes an audit event; it does not
+/// re-encrypt data or rotate cipher material (see <c>IConnectionEncryptionService</c>
+/// for actual key-material rotation).
+/// </summary>
 public sealed class ComplianceKeyRotationResponse
 {
-    /// <summary>Whether the rotation succeeded.</summary>
+    /// <summary>Whether the posture-advance event was recorded.</summary>
     [JsonPropertyName("succeeded")]
     public required bool Succeeded { get; init; }
 
-    /// <summary>Key version before the rotation.</summary>
+    /// <summary>Auditor-facing posture version before the rotation event.</summary>
     [JsonPropertyName("previousVersion")]
     public required int PreviousVersion { get; init; }
 
-    /// <summary>Key version after the rotation.</summary>
+    /// <summary>Auditor-facing posture version after the rotation event.</summary>
     [JsonPropertyName("newVersion")]
     public required int NewVersion { get; init; }
 
-    /// <summary>UTC timestamp of the rotation attempt.</summary>
+    /// <summary>UTC timestamp of the rotation event.</summary>
     [JsonPropertyName("rotatedAt")]
     public required DateTimeOffset RotatedAt { get; init; }
 

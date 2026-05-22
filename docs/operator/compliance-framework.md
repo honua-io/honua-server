@@ -26,12 +26,23 @@ If any of those is missing the dashboard reports the dependent controls as
 - **Compliance dashboard.** Admin API surface at
   `GET /api/v1/admin/compliance/dashboard` returns the structured snapshot the
   Admin UI renders for control status, evidence gaps, and audit readiness.
-- **Data residency enforcement.** A configurable policy at `Compliance:DataResidency`
-  that egress paths consult; the policy can be informational (audit only) or
-  enforcing (deny non-listed regions).
-- **Zero-downtime key rotation.** `POST /api/v1/admin/compliance/encryption/rotate-key`
-  appends a new active key version without interrupting running requests; older
-  ciphertexts decrypt against the version that produced them.
+- **Data residency policy + dry-run.** A configurable policy at
+  `Compliance:DataResidency` plus an admin dry-run endpoint
+  (`POST /api/v1/admin/compliance/residency/evaluate`) and an evidence row that
+  surfaces the configured policy in the compliance snapshot. **No production
+  egress code currently consults `IDataResidencyPolicyProvider` directly** —
+  enforcement is operator-attested via
+  `Compliance:DependencyOverrides:DataResidencyAttested` once a deployment wires
+  its egress guards. Today the policy provider serves the dashboard, the dry-run
+  endpoint, and the evidence collector.
+- **Compliance key-version rotation.**
+  `POST /api/v1/admin/compliance/encryption/rotate-key` advances an
+  auditor-facing key-version counter and writes an `encryption.key.rotate`
+  audit event. **This endpoint does not re-encrypt data or rotate the cipher
+  material used by `IConnectionEncryptionService`** — its purpose is to record
+  the rotation event in the audit trail so SOC 2 / FedRAMP evidence reflects
+  the operator action. Cipher-material rotation lives behind the
+  connection-encryption service (see `Security:ConnectionEncryption:MasterKey`).
 - **Compliance report export.** `GET /api/v1/admin/compliance/report?format=pdf|csv`
   renders the snapshot to PDF (auditor-facing) or CSV (evidence matrix). The
   default format is PDF; both are produced from the same `ComplianceSnapshot`.
@@ -53,7 +64,7 @@ deployment shows evidence gaps rather than claiming false readiness.
     "PrimaryRegion": "us-gov-west-1",
 
     "DataResidency": {
-      "Enforced": true,                                  // Set false for informational mode
+      "Enforced": true,                                  // Flips policy view + dry-run verdict; egress enforcement requires operator-wired guards (see Data residency policy section)
       "PrimaryRegion": "us-gov-west-1",                  // Implicitly in AllowedRegions; if blank, falls back to Compliance:PrimaryRegion
       "AllowedRegions": ["us-gov-east-1"]                // Additional regions data may flow to
     },
@@ -113,7 +124,7 @@ auditor wants to confirm gap behavior.
 | `GET`  | `/api/v1/admin/compliance/dashboard`                        | JSON snapshot for the Admin UI dashboard. |
 | `GET`  | `/api/v1/admin/compliance/report?format=pdf\|csv`           | Render and download the report. PDF is the default. |
 | `POST` | `/api/v1/admin/compliance/residency/evaluate`               | Evaluate a region against the active residency policy. Body: `{"region": "us-east-1"}`. |
-| `POST` | `/api/v1/admin/compliance/encryption/rotate-key`            | Rotate the active encryption-at-rest key version. Zero-downtime — existing ciphertext stays readable. |
+| `POST` | `/api/v1/admin/compliance/encryption/rotate-key`            | Advance the compliance key-version posture counter and audit-log the event. Posture-only — does not re-encrypt data or rotate `IConnectionEncryptionService` material. |
 
 All endpoints require admin authentication. Report export is also audit-logged
 as `compliance.report.export`; residency evaluation as
@@ -146,17 +157,22 @@ The dashboard summary shows per-status counts and the **readiness percent**:
 implemented controls as a percentage of applicable controls (excluding N/A
 and Unknown).
 
-## Key rotation procedure
+## Key rotation procedure (compliance posture)
 
-The compliance framework maintains an in-memory key ring that tracks every
-historical encryption-at-rest version. Rotation flow:
+The compliance framework maintains an in-memory **key-version timeline** — it
+records that a rotation event happened (auditor-facing) but does not store or
+manage actual cipher key material. Real key-material rotation is the
+responsibility of `IConnectionEncryptionService` and is **not** triggered by
+this endpoint.
+
+Rotation flow:
 
 1. Operator calls `POST /api/v1/admin/compliance/encryption/rotate-key`.
-2. The provider appends a new version under a single lock, updates the
+2. The provider appends a new version number under a single lock, updates the
    active-version pointer, and returns. No request is paused; no cache is
-   invalidated.
-3. The previous version is marked "retired" but stays in the ring so existing
-   ciphertext keeps decrypting.
+   invalidated; no data is re-encrypted.
+3. The previous version is marked "retired" in the posture timeline so the
+   dashboard can show the historical sequence to auditors.
 4. A `ConfigChange` audit event with action `encryption.key.rotate` is recorded.
 
 The audit write is deliberately decoupled from the caller's cancellation
@@ -167,27 +183,45 @@ event. If the audit sink itself errors or exceeds the budget, the rotation
 still commits and the failure is logged as event `4720` (Error) — operators
 should reconcile against the audit log when that event appears.
 
-> **Persistence note.** The key ring is in-memory by design — it tracks
-> *compliance* posture, not the key material `IConnectionEncryptionService`
-> uses for the secure-connection registry. Rotating the connection-registry's
-> master passphrase still requires a redeploy with a new
-> `Security:ConnectionEncryption:MasterKey` (see
+> **Posture-only — not a real key rotation.** The key-version timeline is
+> in-memory by design and tracks the *compliance event*, not the key material
+> `IConnectionEncryptionService` uses for the secure-connection registry.
+> Rotating the connection-registry's master passphrase still requires a
+> redeploy with a new `Security:ConnectionEncryption:MasterKey` (see
 > [`SecureConnectionEndpoints`](../../src/Honua.Server/Features/Admin/SecureConnectionEndpoints.cs)).
-> The compliance framework's rotation records the *event* and advances the
+> The compliance framework's endpoint records the *event* and advances the
 > auditor-facing version counter so dashboard evidence reflects rotation
-> activity.
+> activity — no ciphertext is touched and no new cipher material is generated.
 
-## Data residency enforcement
+## Data residency policy
 
-When `Compliance:DataResidency:Enforced` is `true`, the residency provider
-denies any region not in the allowed set. The primary region is always
-implicitly allowed (so a deployment "in" the primary region cannot block its
-own writes). Empty region strings are always denied — egress requires an
-explicit region.
+When `Compliance:DataResidency:Enforced` is `true`, the residency policy
+provider reports any region not in the allowed set as denied. The primary
+region is always implicitly allowed (so a deployment "in" the primary region
+cannot block its own writes). Empty region strings are always denied —
+evaluation requires an explicit region.
 
-Egress integration points consult `IDataResidencyPolicyProvider.Evaluate(region)`
-and audit-log the decision. The admin endpoint exists so operators can dry-run
-policies before flipping `Enforced` to `true`.
+**Today the policy provider has three consumers:**
+
+1. The dashboard / evidence collector, which surfaces the policy under the
+   compliance snapshot's `residency` block and uses it to drive the SC-7 and
+   CC6.7 control evidence rows.
+2. The admin dry-run endpoint
+   (`POST /api/v1/admin/compliance/residency/evaluate`), which lets operators
+   test specific regions against the active policy and emits a
+   `compliance.residency.evaluate` audit event for every check.
+3. The compliance audit-evidence pipeline.
+
+**No production egress code in this server currently calls
+`IDataResidencyPolicyProvider.Evaluate(region)`.** Setting `Enforced=true`
+flips the policy view (and the dry-run endpoint's verdict) but does not block
+real egress on its own. Once a deployment wires its outbound call sites to
+consult the provider and audit the decision, the operator should set
+`Compliance:DependencyOverrides:DataResidencyAttested=true` so the FedRAMP
+boundary dependency is reported satisfied. Until then, the compliance gate
+keeps that dependency in "not attested" state — see the
+[Dependency overrides](#when-to-use-dependencyoverrides) section above for
+the broader auto-detect vs operator-attested model.
 
 ## FedRAMP readiness inputs
 
