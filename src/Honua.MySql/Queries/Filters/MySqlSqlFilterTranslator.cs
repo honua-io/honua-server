@@ -34,16 +34,20 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
     {
         ArgumentNullException.ThrowIfNull(filter);
         ArgumentNullException.ThrowIfNull(layer);
+        return TranslateCore(filter, FilterTranslationContext.FromLayer(layer));
+    }
 
+    private SqlFragment TranslateCore(FilterExpression filter, FilterTranslationContext context)
+    {
         _paramIndex = 0;
         _depth = 0;
         _parameters.Clear();
 
-        var sql = TranslateExpression(filter, layer);
+        var sql = TranslateExpression(filter, context);
         return new SqlFragment(sql, _parameters);
     }
 
-    private string TranslateExpression(FilterExpression filter, LayerDefinition layer)
+    private string TranslateExpression(FilterExpression filter, FilterTranslationContext context)
     {
         try
         {
@@ -55,13 +59,13 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
 
             return filter switch
             {
-                BinaryExpression bin => TranslateBinary(bin, layer),
-                UnaryExpression un => TranslateUnary(un, layer),
-                PropertyReference prop => TranslateProperty(prop, layer),
+                BinaryExpression bin => TranslateBinary(bin, context),
+                UnaryExpression un => TranslateUnary(un, context),
+                PropertyReference prop => TranslateProperty(prop, context),
                 Literal lit => TranslateLiteral(lit),
-                SpatialPredicate spatial => TranslateSpatial(spatial, layer),
-                SpatialDistancePredicate spatialDistance => TranslateSpatialDistance(spatialDistance, layer),
-                ValueList list => TranslateValueList(list, layer),
+                SpatialPredicate spatial => TranslateSpatial(spatial, context),
+                SpatialDistancePredicate spatialDistance => TranslateSpatialDistance(spatialDistance, context),
+                ValueList list => TranslateValueList(list, context),
                 _ => throw new NotSupportedException(
                     $"Filter expression '{filter.GetType().Name}' is not supported by the MySQL/MariaDB provider.")
             };
@@ -72,7 +76,7 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
         }
     }
 
-    private string TranslateBinary(BinaryExpression binary, LayerDefinition layer)
+    private string TranslateBinary(BinaryExpression binary, FilterTranslationContext context)
     {
         if (binary.Right is ValueList valueList && valueList.Values.Count == 0)
         {
@@ -80,17 +84,17 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
             {
                 BinaryOperator.In => "FALSE",
                 BinaryOperator.NotIn => "TRUE",
-                _ => TranslateBinaryWithValues(binary, layer)
+                _ => TranslateBinaryWithValues(binary, context)
             };
         }
 
-        return TranslateBinaryWithValues(binary, layer);
+        return TranslateBinaryWithValues(binary, context);
     }
 
-    private string TranslateBinaryWithValues(BinaryExpression binary, LayerDefinition layer)
+    private string TranslateBinaryWithValues(BinaryExpression binary, FilterTranslationContext context)
     {
-        var left = TranslateExpression(binary.Left, layer);
-        var right = TranslateExpression(binary.Right, layer);
+        var left = TranslateExpression(binary.Left, context);
+        var right = TranslateExpression(binary.Right, context);
 
         var op = binary.Operator switch
         {
@@ -129,9 +133,9 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
         return $"{left} {op} {right}";
     }
 
-    private string TranslateUnary(UnaryExpression unary, LayerDefinition layer)
+    private string TranslateUnary(UnaryExpression unary, FilterTranslationContext context)
     {
-        var operand = TranslateExpression(unary.Operand, layer);
+        var operand = TranslateExpression(unary.Operand, context);
 
         return unary.Operator switch
         {
@@ -144,27 +148,26 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
         };
     }
 
-    private static string TranslateProperty(PropertyReference property, LayerDefinition layer)
+    private static string TranslateProperty(PropertyReference property, FilterTranslationContext context)
     {
-        var field = layer.Fields.FirstOrDefault(f =>
-            f.Name.Equals(property.PropertyName, StringComparison.OrdinalIgnoreCase));
+        var field = context.TryGetField(property.PropertyName);
 
         if (field is not null)
         {
-            return MySqlIdentifier.Quote(field.Name);
+            return MySqlIdentifier.Quote(field.Value.Name);
         }
 
-        // No matching field. Geometry aliases (geom/shape/geometry) resolve to the layer's
-        // configured geometry column so predicates such as `geom IS NOT NULL` keep working
-        // when the backing column has a non-default name. This mirrors the alias handling
-        // in TranslateGeometryExpression so attribute and spatial paths agree.
+        // No matching field. Geometry aliases (geom/shape/geometry) resolve to the
+        // resource's configured geometry column so predicates such as `geom IS NOT NULL`
+        // keep working when the backing column has a non-default name. This mirrors the
+        // alias handling in TranslateGeometryExpression so attribute and spatial paths agree.
         if (IsGeometryAlias(property.PropertyName))
         {
-            return GetGeometryColumnExpression(layer);
+            return GetGeometryColumnExpression(context);
         }
 
         throw new ArgumentException(
-            $"Field '{property.PropertyName}' is not defined on layer '{layer.Name}'.");
+            $"Field '{property.PropertyName}' is not defined on layer '{context.ResourceName}'.");
     }
 
     private string TranslateLiteral(Literal literal)
@@ -174,10 +177,10 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
         return paramName;
     }
 
-    private string TranslateSpatial(SpatialPredicate spatial, LayerDefinition layer)
+    private string TranslateSpatial(SpatialPredicate spatial, FilterTranslationContext context)
     {
-        var left = TranslateGeometryExpression(spatial.Left, layer);
-        var right = TranslateGeometryExpression(spatial.Right, layer);
+        var left = TranslateGeometryExpression(spatial.Left, context);
+        var right = TranslateGeometryExpression(spatial.Right, context);
 
         return spatial.Operator switch
         {
@@ -196,7 +199,7 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
         };
     }
 
-    private string TranslateSpatialDistance(SpatialDistancePredicate spatial, LayerDefinition layer)
+    private string TranslateSpatialDistance(SpatialDistancePredicate spatial, FilterTranslationContext context)
     {
         // ST_Distance_Sphere expects WGS84 point geometries; on polygons or lines it would
         // silently degrade to centroid math. The MySqlFeatureQueryBuilder distance path
@@ -204,11 +207,11 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
         // CQL2 translator must enforce the same contract so OGC API Features / OData
         // distance predicates against non-point layers fail loudly instead of returning
         // misleading results.
-        if (layer.GeometryType is not GeometryType.Point and not GeometryType.MultiPoint)
+        if (context.GeometryType is not GeometryType.Point and not GeometryType.MultiPoint)
         {
             throw new NotSupportedException(
                 $"Distance spatial filters are only supported for point layers in the MySQL/MariaDB provider " +
-                $"(layer geometry is {layer.GeometryType}). ST_Distance_Sphere expects point geometries.");
+                $"(layer geometry is {context.GeometryType}). ST_Distance_Sphere expects point geometries.");
         }
 
         // Mirror the MySqlFeatureQueryBuilder.Spatial SRID guard: ST_Distance_Sphere is
@@ -216,17 +219,17 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
         // ER_INVALID_GIS_DATA at the engine; other geographic SRSes use a different
         // mean radius. Reject up front so the CQL2 / OGC API Features filter path fails
         // with the same descriptive contract as the FeatureQuery.SpatialFilter path.
-        if (!MySqlSpatialSql.IsDistanceSphereCompatibleSrid(layer.SpatialReference.Wkid))
+        if (!MySqlSpatialSql.IsDistanceSphereCompatibleSrid(context.Wkid))
         {
             throw new NotSupportedException(
                 $"Distance spatial filters require the layer SRID to be EPSG:4326 or SRID 0 in the MySQL/MariaDB provider " +
-                $"(layer SRID is {layer.SpatialReference.Wkid}). ST_Distance_Sphere is documented as a WGS84 spherical approximation; " +
+                $"(layer SRID is {context.Wkid}). ST_Distance_Sphere is documented as a WGS84 spherical approximation; " +
                 $"pre-project the layer to EPSG:4326 before issuing distance filters.");
         }
 
-        var left = TranslateGeometryExpression(spatial.Left, layer);
-        var right = TranslateGeometryExpression(spatial.Right, layer);
-        var distance = TranslateExpression(spatial.Distance, layer);
+        var left = TranslateGeometryExpression(spatial.Left, context);
+        var right = TranslateGeometryExpression(spatial.Right, context);
+        var distance = TranslateExpression(spatial.Distance, context);
 
         return spatial.Operator switch
         {
@@ -239,45 +242,44 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
         };
     }
 
-    private string TranslateGeometryExpression(FilterExpression expression, LayerDefinition layer)
+    private string TranslateGeometryExpression(FilterExpression expression, FilterTranslationContext context)
     {
         switch (expression)
         {
             case GeometryLiteral geometry:
                 {
-                    if (geometry.Srid != 0 && geometry.Srid != layer.SpatialReference.Wkid)
+                    if (geometry.Srid != 0 && geometry.Srid != context.Wkid)
                     {
                         throw new NotSupportedException(
                             $"Cross-SRID geometry literals are not supported by the MySQL/MariaDB provider " +
-                            $"(layer SRID is {layer.SpatialReference.Wkid}, literal SRID is {geometry.Srid}). " +
+                            $"(layer SRID is {context.Wkid}, literal SRID is {geometry.Srid}). " +
                             $"Pre-project geometries to the layer SRID before filtering.");
                     }
 
                     var wkbParam = $"@p{_paramIndex++}";
                     _parameters.Add(geometry.Wkb);
-                    return MySqlSpatialSql.GeomFromWkb(wkbParam, layer.SpatialReference.Wkid, _engineFlavor);
+                    return MySqlSpatialSql.GeomFromWkb(wkbParam, context.Wkid, _engineFlavor);
                 }
             case PropertyReference property:
                 {
-                    var field = layer.Fields.FirstOrDefault(f =>
-                        f.Name.Equals(property.PropertyName, StringComparison.OrdinalIgnoreCase));
+                    var field = context.TryGetField(property.PropertyName);
 
                     if (field is null)
                     {
                         if (IsGeometryAlias(property.PropertyName))
                         {
-                            return GetGeometryColumnExpression(layer);
+                            return GetGeometryColumnExpression(context);
                         }
 
                         throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
                     }
 
-                    if (!field.IsGeometry)
+                    if (!field.Value.IsGeometry)
                     {
                         throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
                     }
 
-                    return GetGeometryColumnExpression(layer);
+                    return GetGeometryColumnExpression(context);
                 }
             default:
                 throw new NotSupportedException(
@@ -285,15 +287,15 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
         }
     }
 
-    private string TranslateValueList(ValueList valueList, LayerDefinition layer)
+    private string TranslateValueList(ValueList valueList, FilterTranslationContext context)
     {
-        var values = valueList.Values.Select(v => TranslateExpression(v, layer));
+        var values = valueList.Values.Select(v => TranslateExpression(v, context));
         return $"({string.Join(", ", values)})";
     }
 
-    private static string GetGeometryColumnExpression(LayerDefinition layer)
+    private static string GetGeometryColumnExpression(FilterTranslationContext context)
     {
-        var geomField = layer.GeometryField?.Name ?? "geometry";
+        var geomField = context.GeometryColumnName ?? "geometry";
         return MySqlIdentifier.Quote(geomField);
     }
 
