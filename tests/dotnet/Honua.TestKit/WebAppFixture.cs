@@ -322,7 +322,11 @@ public sealed class WebAppFixture : IAsyncLifetime
         {
             var resourceId = $"res-layer-{layerIndex}";
             builder
-                .AddResource(resourceId, $"layer-{layerIndex}", MetadataV2ResourceType.FeatureDataset)
+                .AddResource(
+                    resourceId,
+                    $"layer-{layerIndex}",
+                    MetadataV2ResourceType.FeatureDataset,
+                    fields: GetSeededLayerSchemaFields(layerIndex))
                 .AddPublication(
                     id: $"pub-layer-{layerIndex}",
                     serviceId: "svc-test",
@@ -390,6 +394,70 @@ public sealed class WebAppFixture : IAsyncLifetime
         services.AddSingleton<IMetadataV2GraphProvider>(_ =>
             new Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider(BuildDefaultTestGraph()));
     }
+
+    /// <summary>
+    /// Returns the V2 schema fields for the layers the Postgres test seed
+    /// (tests/seed/server.yaml) populates via the v1 layer_fields table. OGC API
+    /// Features queryables, OData $metadata, STAC properties, and other
+    /// schema-driven endpoints all read this from the V2 resource graph after the
+    /// metadata-v2 cutover. Layers without seeded fields (everything but 0/1/2)
+    /// return an empty list — matching the v1 fixture behavior where those layers
+    /// have no layer_fields rows.
+    /// </summary>
+    private static IEnumerable<MetadataV2Field>? GetSeededLayerSchemaFields(int layerIndex)
+        => layerIndex switch
+        {
+            0 =>
+            [
+                new MetadataV2Field { Name = "objectid", Type = "integer", Nullable = false, Description = "Object ID" },
+                new MetadataV2Field { Name = "name", Type = "string", Nullable = true, Description = "Name" },
+                new MetadataV2Field { Name = "description", Type = "string", Nullable = true, Description = "Description" },
+                new MetadataV2Field { Name = "category", Type = "string", Nullable = true, Description = "Category" },
+                new MetadataV2Field { Name = "timestamp", Type = "datetime", Nullable = true, Description = "Timestamp" },
+                new MetadataV2Field { Name = "event_date", Type = "datetime", Nullable = true, Description = "Event date" },
+                new MetadataV2Field { Name = "created_date", Type = "date", Nullable = true, Description = "Created date" },
+                new MetadataV2Field
+                {
+                    Name = "shape",
+                    Type = "geometry",
+                    Nullable = true,
+                    Description = "Geometry",
+                    SemanticRoles = ["geometry"],
+                },
+            ],
+            1 =>
+            [
+                new MetadataV2Field { Name = "objectid", Type = "integer", Nullable = false, Description = "Object ID" },
+                new MetadataV2Field { Name = "name", Type = "string", Nullable = true, Description = "Name field" },
+                new MetadataV2Field { Name = "related_id", Type = "integer", Nullable = true, Description = "Foreign key to origin layer" },
+                new MetadataV2Field { Name = "description", Type = "string", Nullable = true, Description = "Description" },
+                new MetadataV2Field { Name = "category", Type = "string", Nullable = true, Description = "Category" },
+                new MetadataV2Field
+                {
+                    Name = "shape",
+                    Type = "geometry",
+                    Nullable = true,
+                    Description = "Geometry",
+                    SemanticRoles = ["geometry"],
+                },
+            ],
+            2 =>
+            [
+                new MetadataV2Field { Name = "objectid", Type = "integer", Nullable = false, Description = "Object ID" },
+                new MetadataV2Field { Name = "name", Type = "string", Nullable = true, Description = "Name field" },
+                new MetadataV2Field { Name = "secondary_id", Type = "integer", Nullable = true, Description = "Foreign key to origin layer" },
+                new MetadataV2Field { Name = "type", Type = "string", Nullable = true, Description = "Type field" },
+                new MetadataV2Field
+                {
+                    Name = "shape",
+                    Type = "geometry",
+                    Nullable = true,
+                    Description = "Geometry",
+                    SemanticRoles = ["geometry"],
+                },
+            ],
+            _ => null,
+        };
 
     /// <summary>
     /// V2-aware helper for STAC tests: looks up the test V2 graph provider, locates the
