@@ -24,7 +24,7 @@ public sealed class ComplianceDashboardResponse
     [JsonPropertyName("summary")]
     public required ComplianceSummaryView Summary { get; init; }
 
-    /// <summary>Encryption-at-rest posture (FIPS mode, algorithms, key version).</summary>
+    /// <summary>Compliance encryption posture (FIPS mode, algorithms, auditor-facing key-version timeline).</summary>
     [JsonPropertyName("encryption")]
     public required ComplianceEncryptionView Encryption { get; init; }
 
@@ -65,7 +65,13 @@ public sealed class ComplianceSummaryView
     public required double ReadinessPercent { get; init; }
 }
 
-/// <summary>Encryption-at-rest dashboard projection.</summary>
+/// <summary>
+/// Compliance encryption posture projection for the dashboard. Reports the
+/// auditor-facing key-version timeline maintained by the compliance framework —
+/// these counters record rotation <em>events</em> for evidence purposes and do
+/// not represent cipher key material or ciphertext-decryption keys (that lives
+/// behind <c>IConnectionEncryptionService</c>).
+/// </summary>
 public sealed class ComplianceEncryptionView
 {
     /// <summary>Whether FIPS mode is active.</summary>
@@ -80,19 +86,19 @@ public sealed class ComplianceEncryptionView
     [JsonPropertyName("algorithms")]
     public required IReadOnlyList<string> Algorithms { get; init; }
 
-    /// <summary>Currently active encryption-at-rest key version.</summary>
+    /// <summary>Current auditor-facing compliance key-version counter.</summary>
     [JsonPropertyName("activeKeyVersion")]
     public required int ActiveKeyVersion { get; init; }
 
-    /// <summary>Number of historical key versions retained for decrypting older ciphertext.</summary>
+    /// <summary>Number of retired key-version entries retained in the auditor-facing posture timeline.</summary>
     [JsonPropertyName("retainedKeyVersions")]
     public required int RetainedKeyVersions { get; init; }
 
-    /// <summary>When the active key was issued.</summary>
+    /// <summary>When the active key-version entry was recorded.</summary>
     [JsonPropertyName("activeKeyIssuedAt")]
     public DateTimeOffset? ActiveKeyIssuedAt { get; init; }
 
-    /// <summary>When the active key was last rotated.</summary>
+    /// <summary>When the last compliance key-version rotation event was recorded.</summary>
     [JsonPropertyName("lastRotationAt")]
     public DateTimeOffset? LastRotationAt { get; init; }
 }

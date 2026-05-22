@@ -28,9 +28,15 @@ internal sealed class DefaultDataResidencyPolicyProvider : IDataResidencyPolicyP
         var opts = _options.CurrentValue;
         var residency = opts.DataResidency;
 
+        // Trim once at the boundary so whitespace-padded config (e.g. " us-gov-west-1 ")
+        // does not make the policy reject the operator-intended primary region. The
+        // allowed-region normalizer already trims; the primary needs the same treatment
+        // to keep the implicitly-allowed invariant intact.
         var primary = string.IsNullOrWhiteSpace(residency.PrimaryRegion)
             ? opts.PrimaryRegion
             : residency.PrimaryRegion;
+
+        primary = primary?.Trim() ?? string.Empty;
 
         if (string.IsNullOrWhiteSpace(primary))
         {
@@ -57,20 +63,25 @@ internal sealed class DefaultDataResidencyPolicyProvider : IDataResidencyPolicyP
                 "Region is empty — egress requires an explicit region.");
         }
 
+        // Trim the evaluated region so a caller passing " us-gov-west-1 " gets the same
+        // decision as "us-gov-west-1". Allow-list entries and the primary region are
+        // already stored trimmed by GetPolicy / NormalizeAllowedRegions.
+        var normalizedRegion = region.Trim();
+
         if (!policy.Enforced)
         {
-            return DataResidencyDecision.Allow(region, policy,
+            return DataResidencyDecision.Allow(normalizedRegion, policy,
                 "Residency policy is informational only — egress allowed but recorded.");
         }
 
-        if (policy.IsRegionAllowed(region))
+        if (policy.IsRegionAllowed(normalizedRegion))
         {
-            return DataResidencyDecision.Allow(region, policy,
-                $"Region '{region}' is listed in the active residency allow-list.");
+            return DataResidencyDecision.Allow(normalizedRegion, policy,
+                $"Region '{normalizedRegion}' is listed in the active residency allow-list.");
         }
 
-        return DataResidencyDecision.Deny(region, policy,
-            $"Region '{region}' is not in the active residency allow-list (primary: {policy.PrimaryRegion}).");
+        return DataResidencyDecision.Deny(normalizedRegion, policy,
+            $"Region '{normalizedRegion}' is not in the active residency allow-list (primary: {policy.PrimaryRegion}).");
     }
 
     private static System.Collections.ObjectModel.ReadOnlyCollection<string> NormalizeAllowedRegions(

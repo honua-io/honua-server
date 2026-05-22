@@ -4,9 +4,17 @@
 namespace Honua.Core.Features.Compliance.Domain;
 
 /// <summary>
-/// Snapshot of the deployment's encryption posture — the inputs FedRAMP and SOC 2
-/// auditors expect to see itemised in the system security plan.
+/// Snapshot of the deployment's compliance encryption posture — the inputs FedRAMP
+/// and SOC 2 auditors expect to see itemised in the system security plan.
 /// </summary>
+/// <remarks>
+/// The key-version fields on this record describe the auditor-facing posture
+/// timeline maintained by the compliance framework — they track rotation
+/// <em>events</em> for evidence purposes and do not represent cipher key material
+/// or ciphertext-decryption keys. Actual cipher-material lifecycle lives behind
+/// <c>IConnectionEncryptionService</c>; advancing this posture does not touch
+/// ciphertext or generate new key material.
+/// </remarks>
 public sealed record EncryptionPosture
 {
     /// <summary>
@@ -28,15 +36,15 @@ public sealed record EncryptionPosture
     /// </summary>
     public required IReadOnlyList<string> Algorithms { get; init; }
 
-    /// <summary>Current active encryption-at-rest key version.</summary>
+    /// <summary>Current auditor-facing compliance key-version counter.</summary>
     public required int ActiveKeyVersion { get; init; }
 
-    /// <summary>Total number of historical key versions retained for decryption of older ciphertexts.</summary>
+    /// <summary>Total number of retired key-version entries retained in the auditor-facing posture timeline.</summary>
     public required int RetainedKeyVersions { get; init; }
 
-    /// <summary>UTC timestamp the active key was issued. <c>null</c> if no rotation has occurred.</summary>
+    /// <summary>UTC timestamp the active key-version entry was recorded. <c>null</c> if no rotation event has occurred.</summary>
     public DateTimeOffset? ActiveKeyIssuedAt { get; init; }
 
-    /// <summary>UTC timestamp the active key was last rotated. <c>null</c> if no rotation has occurred.</summary>
+    /// <summary>UTC timestamp the last compliance key-version rotation event was recorded. <c>null</c> if no rotation event has occurred.</summary>
     public DateTimeOffset? LastRotationAt { get; init; }
 }
