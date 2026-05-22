@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.FeatureStore;
@@ -50,6 +51,16 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
     /// <returns>SQL fragment with parameters</returns>
     public SqlFragment Translate(FilterExpression filter, LayerDefinition layer)
         => TranslateCore(filter, FilterTranslationContext.FromLayer(layer));
+
+    /// <summary>
+    /// Translates a filter expression to SQL using a Metadata v2 resource for
+    /// field validation and spatial-reference resolution.
+    /// </summary>
+    /// <param name="filter">Filter expression to translate.</param>
+    /// <param name="resource">Metadata v2 resource.</param>
+    /// <returns>SQL fragment with parameters.</returns>
+    public SqlFragment Translate(FilterExpression filter, MetadataV2Resource resource)
+        => TranslateCore(filter, FilterTranslationContext.FromResource(resource));
 
     private SqlFragment TranslateCore(FilterExpression filter, FilterTranslationContext context)
     {
