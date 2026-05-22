@@ -12,12 +12,18 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 public static class MetadataV2Constants
 {
     /// <summary>
-    /// Initial Metadata v2 schema version.
+    /// Semver version of the graph-document <em>schema</em> (the shape of the JSON
+    /// payload itself). Bumped on every breaking field change. Distinct from
+    /// <see cref="ApiVersion"/>, which identifies the API group/version that
+    /// documents at this schema are exchanged through.
     /// </summary>
     public const string SchemaVersion = "2.0.0-alpha.1";
 
     /// <summary>
-    /// Initial Metadata v2 API version.
+    /// Kubernetes-style group/version identifier for the Metadata v2 API. Used by
+    /// graph-aware admin/observability surfaces to advertise which API contract
+    /// they speak. Independent of <see cref="SchemaVersion"/> — the same API
+    /// version can ship multiple schema revisions inside one major API line.
     /// </summary>
     public const string ApiVersion = "metadata.honua.io/v2alpha1";
 }
