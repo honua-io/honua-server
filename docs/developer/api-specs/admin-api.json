@@ -2625,6 +2625,111 @@
           "404": { "$ref": "#/components/responses/NotFound" }
         }
       }
+    },
+    "/compliance/dashboard": {
+      "get": {
+        "tags": ["Compliance"],
+        "summary": "Get Compliance Dashboard",
+        "description": "Returns the SOC 2 / FedRAMP control evidence snapshot: per-control status, dependency-gate evidence rows, encryption posture, and active residency policy.",
+        "operationId": "getComplianceDashboard",
+        "responses": {
+          "200": {
+            "description": "Compliance snapshot",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseComplianceDashboardResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/compliance/report": {
+      "get": {
+        "tags": ["Compliance"],
+        "summary": "Export Compliance Report",
+        "description": "Renders the current compliance snapshot as a downloadable report. Default format is PDF; pass format=csv for the evidence-matrix CSV.",
+        "operationId": "exportComplianceReport",
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "description": "Report format (pdf or csv). Defaults to pdf when omitted.",
+            "schema": { "type": "string", "enum": ["pdf", "csv"], "default": "pdf" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Report bytes",
+            "content": {
+              "application/pdf": {
+                "schema": { "type": "string", "format": "binary" }
+              },
+              "text/csv": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "406": {
+            "description": "Requested format parses but no renderer is registered for it."
+          }
+        }
+      }
+    },
+    "/compliance/residency/evaluate": {
+      "post": {
+        "tags": ["Compliance"],
+        "summary": "Evaluate Residency Policy",
+        "description": "Dry-runs a region against the active data-residency policy and audit-logs the decision.",
+        "operationId": "evaluateResidencyPolicy",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ComplianceResidencyEvaluationRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Residency decision and active policy view",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseComplianceResidencyEvaluationResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/compliance/encryption/rotate-key": {
+      "post": {
+        "tags": ["Compliance"],
+        "summary": "Advance Compliance Key-Version Posture",
+        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event — it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
+        "operationId": "rotateComplianceEncryptionKey",
+        "responses": {
+          "200": {
+            "description": "Rotation outcome",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseComplianceKeyRotationResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
     }
   },
   "components": {
@@ -5915,6 +6020,149 @@
             "type": "string",
             "format": "date-time"
           }
+        }
+      },
+      "ApiResponseComplianceDashboardResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/ComplianceDashboardResponse" },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ComplianceDashboardResponse": {
+        "type": "object",
+        "required": ["generatedAt", "serverVersion", "summary", "encryption", "residency", "controls"],
+        "properties": {
+          "generatedAt": { "type": "string", "format": "date-time" },
+          "serverVersion": { "type": "string" },
+          "summary": { "$ref": "#/components/schemas/ComplianceSummaryView" },
+          "encryption": { "$ref": "#/components/schemas/ComplianceEncryptionView" },
+          "residency": { "$ref": "#/components/schemas/ComplianceResidencyView" },
+          "controls": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ComplianceControlView" }
+          }
+        }
+      },
+      "ComplianceSummaryView": {
+        "type": "object",
+        "required": ["implemented", "partiallyImplemented", "notImplemented", "notApplicable", "unknown", "readinessPercent"],
+        "properties": {
+          "implemented": { "type": "integer" },
+          "partiallyImplemented": { "type": "integer" },
+          "notImplemented": { "type": "integer" },
+          "notApplicable": { "type": "integer" },
+          "unknown": { "type": "integer" },
+          "readinessPercent": { "type": "number", "format": "double" }
+        }
+      },
+      "ComplianceEncryptionView": {
+        "type": "object",
+        "required": ["fipsMode", "fipsSource", "algorithms", "activeKeyVersion", "retainedKeyVersions"],
+        "properties": {
+          "fipsMode": { "type": "boolean" },
+          "fipsSource": { "type": "string", "description": "operator-attested | runtime-environment-variable | unverified" },
+          "algorithms": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "activeKeyVersion": { "type": "integer" },
+          "retainedKeyVersions": { "type": "integer" },
+          "activeKeyIssuedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "lastRotationAt": { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "ComplianceResidencyView": {
+        "type": "object",
+        "required": ["enforced", "primaryRegion", "allowedRegions"],
+        "properties": {
+          "enforced": { "type": "boolean" },
+          "primaryRegion": { "type": "string" },
+          "allowedRegions": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "ComplianceControlView": {
+        "type": "object",
+        "required": ["framework", "controlId", "title", "description", "status", "relatedControls", "gaps", "evidence"],
+        "properties": {
+          "framework": { "type": "string", "enum": ["Soc2", "FedRamp"] },
+          "controlId": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "status": { "type": "string", "enum": ["Implemented", "PartiallyImplemented", "NotImplemented", "NotApplicable", "Unknown"] },
+          "relatedControls": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "gaps": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "evidence": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ComplianceEvidenceView" }
+          }
+        }
+      },
+      "ComplianceEvidenceView": {
+        "type": "object",
+        "required": ["source", "collectedAt", "claim", "status", "detail"],
+        "properties": {
+          "source": { "type": "string", "description": "Where the evidence was collected from (dependency-gate, encryption-posture, residency-policy, configuration)." },
+          "collectedAt": { "type": "string", "format": "date-time" },
+          "claim": { "type": "string" },
+          "status": { "type": "string", "enum": ["Implemented", "PartiallyImplemented", "NotImplemented", "NotApplicable", "Unknown"] },
+          "detail": { "type": "string" }
+        }
+      },
+      "ComplianceResidencyEvaluationRequest": {
+        "type": "object",
+        "properties": {
+          "region": { "type": "string", "description": "Region code to evaluate against the active policy." }
+        }
+      },
+      "ApiResponseComplianceResidencyEvaluationResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/ComplianceResidencyEvaluationResponse" },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ComplianceResidencyEvaluationResponse": {
+        "type": "object",
+        "required": ["allowed", "region", "reason", "policy"],
+        "properties": {
+          "allowed": { "type": "boolean" },
+          "region": { "type": "string" },
+          "reason": { "type": "string" },
+          "policy": { "$ref": "#/components/schemas/ComplianceResidencyView" }
+        }
+      },
+      "ApiResponseComplianceKeyRotationResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/ComplianceKeyRotationResponse" },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ComplianceKeyRotationResponse": {
+        "type": "object",
+        "required": ["succeeded", "previousVersion", "newVersion", "rotatedAt", "message"],
+        "properties": {
+          "succeeded": { "type": "boolean" },
+          "previousVersion": { "type": "integer" },
+          "newVersion": { "type": "integer" },
+          "rotatedAt": { "type": "string", "format": "date-time" },
+          "message": { "type": "string" }
         }
       }
     }

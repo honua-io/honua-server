@@ -96,6 +96,7 @@ How to deploy, run, harden, and respond to incidents.
 ### Security
 
 - [Security Policy](../SECURITY.md) — supported versions, vulnerability reporting, disclosure process. **(repo root)**
+- [Compliance Framework](operator/compliance-framework.md) — SOC 2 / FedRAMP readiness evidence collection, data residency policy + dry-run, compliance key-version rotation events, and report export.
 - [Base URL & Open Redirect Handling](security/base-url-and-open-redirect-handling.md)
 - [Code Scanning — 2026 Q2 Remediation](security/code-scanning-2026-Q2-remediation.md)
 - [Security-First File Upload Design (ADR 0019)](contributor/adr/0019-security-first-file-upload-design.md)

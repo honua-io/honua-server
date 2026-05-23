@@ -63,6 +63,7 @@ The Honua Admin UI is intended to operate as a UI on top of this control-plane A
 |-- manifest/pending/         # Manifest approval workflows
 |-- gitops/                   # Git repository watching and change history
 |-- tile-operations/          # Tile operation jobs
+|-- compliance/               # SOC 2 / FedRAMP readiness dashboard, residency policy + dry-run, key-version posture rotation, report export
 ```
 
 Additional metrics endpoints:
