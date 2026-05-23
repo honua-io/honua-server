@@ -174,10 +174,104 @@ public sealed record MetadataV2Resource
     public MetadataV2PermanentFilter? PermanentFilter { get; init; }
 
     /// <summary>
+    /// Optional rendering / display hints used by map and feature services
+    /// (min/max scale, default visibility, display field, queryable, Z/M).
+    /// </summary>
+    [JsonPropertyName("display")]
+    public MetadataV2ResourceDisplay? Display { get; init; }
+
+    /// <summary>
+    /// Optional editor-tracking and edit-capability hints used by
+    /// FeatureServer-style edit endpoints.
+    /// </summary>
+    [JsonPropertyName("editing")]
+    public MetadataV2ResourceEditing? Editing { get; init; }
+
+    /// <summary>
     /// Extension data for the resource.
     /// </summary>
     [JsonPropertyName("extensions")]
     public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
+}
+
+/// <summary>
+/// Display / rendering hints for a <see cref="MetadataV2Resource"/>.
+/// </summary>
+public sealed record MetadataV2ResourceDisplay
+{
+    /// <summary>Minimum scale denominator at which the resource is drawn.</summary>
+    [JsonPropertyName("minScale")]
+    public double? MinScale { get; init; }
+
+    /// <summary>Maximum scale denominator at which the resource is drawn.</summary>
+    [JsonPropertyName("maxScale")]
+    public double? MaxScale { get; init; }
+
+    /// <summary>Whether the layer is visible by default in clients. Defaults to true.</summary>
+    [JsonPropertyName("defaultVisibility")]
+    public bool DefaultVisibility { get; init; } = true;
+
+    /// <summary>
+    /// Name of the field used as the display / label field. Must reference a
+    /// declared <see cref="MetadataV2Resource.SchemaFields"/> entry when set.
+    /// </summary>
+    [JsonPropertyName("displayField")]
+    public string? DisplayField { get; init; }
+
+    /// <summary>True when the resource supports attribute queries. Defaults to true.</summary>
+    [JsonPropertyName("queryable")]
+    public bool Queryable { get; init; } = true;
+
+    /// <summary>True when the resource carries Z values in its geometries.</summary>
+    [JsonPropertyName("hasZ")]
+    public bool HasZ { get; init; }
+
+    /// <summary>True when the resource carries M values in its geometries.</summary>
+    [JsonPropertyName("hasM")]
+    public bool HasM { get; init; }
+}
+
+/// <summary>
+/// Editing capability and editor-tracking field hints for a
+/// <see cref="MetadataV2Resource"/>.
+/// </summary>
+public sealed record MetadataV2ResourceEditing
+{
+    /// <summary>
+    /// Name of the global-id field (typically a UUID) used as an
+    /// edit-stable identifier. References a declared
+    /// <see cref="MetadataV2Resource.SchemaFields"/> entry when set.
+    /// </summary>
+    [JsonPropertyName("globalIdField")]
+    public string? GlobalIdField { get; init; }
+
+    /// <summary>Name of the field tracking the creating user.</summary>
+    [JsonPropertyName("creatorField")]
+    public string? CreatorField { get; init; }
+
+    /// <summary>Name of the field tracking the creation timestamp.</summary>
+    [JsonPropertyName("createdAtField")]
+    public string? CreatedAtField { get; init; }
+
+    /// <summary>Name of the field tracking the last editing user.</summary>
+    [JsonPropertyName("editorField")]
+    public string? EditorField { get; init; }
+
+    /// <summary>Name of the field tracking the last update timestamp.</summary>
+    [JsonPropertyName("updatedAtField")]
+    public string? UpdatedAtField { get; init; }
+
+    /// <summary>True when records on this resource may be modified. Defaults to true.</summary>
+    [JsonPropertyName("canModify")]
+    public bool CanModify { get; init; } = true;
+
+    /// <summary>True when the resource supports attachments.</summary>
+    [JsonPropertyName("supportsAttachments")]
+    public bool SupportsAttachments { get; init; }
+
+    /// <summary>True when the resource supports related-record edits. Defaults to true.</summary>
+    [JsonPropertyName("supportsRelatedRecords")]
+    public bool SupportsRelatedRecords { get; init; } = true;
 }
 
 /// <summary>

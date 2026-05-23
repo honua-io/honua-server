@@ -11,6 +11,8 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(MetadataV2Graph))]
 [JsonSerializable(typeof(MetadataV2Resource))]
+[JsonSerializable(typeof(MetadataV2ResourceDisplay))]
+[JsonSerializable(typeof(MetadataV2ResourceEditing))]
 [JsonSerializable(typeof(MetadataV2Connection))]
 [JsonSerializable(typeof(MetadataV2StorageBinding))]
 [JsonSerializable(typeof(MetadataV2Service))]

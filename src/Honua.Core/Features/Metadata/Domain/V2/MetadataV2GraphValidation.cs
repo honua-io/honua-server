@@ -142,6 +142,56 @@ public static class MetadataV2GraphValidator
             ValidateResourceSpatial(errors, resource);
             ValidateResourceTemporal(errors, resource);
             ValidateResourceSchemaFields(errors, resource);
+            ValidateResourceDisplayEditing(errors, resource);
+        }
+    }
+
+    private static void ValidateResourceDisplayEditing(List<string> errors, MetadataV2Resource resource)
+    {
+        if (resource.Display is { } display && !string.IsNullOrWhiteSpace(display.DisplayField))
+        {
+            EnsureFieldDeclared(errors, resource, display.DisplayField, "display.displayField");
+        }
+
+        if (resource.Editing is { } editing)
+        {
+            if (!string.IsNullOrWhiteSpace(editing.GlobalIdField))
+            {
+                EnsureFieldDeclared(errors, resource, editing.GlobalIdField, "editing.globalIdField");
+            }
+            if (!string.IsNullOrWhiteSpace(editing.CreatorField))
+            {
+                EnsureFieldDeclared(errors, resource, editing.CreatorField, "editing.creatorField");
+            }
+            if (!string.IsNullOrWhiteSpace(editing.CreatedAtField))
+            {
+                EnsureFieldDeclared(errors, resource, editing.CreatedAtField, "editing.createdAtField");
+            }
+            if (!string.IsNullOrWhiteSpace(editing.EditorField))
+            {
+                EnsureFieldDeclared(errors, resource, editing.EditorField, "editing.editorField");
+            }
+            if (!string.IsNullOrWhiteSpace(editing.UpdatedAtField))
+            {
+                EnsureFieldDeclared(errors, resource, editing.UpdatedAtField, "editing.updatedAtField");
+            }
+        }
+    }
+
+    private static void EnsureFieldDeclared(
+        List<string> errors, MetadataV2Resource resource, string? fieldName, string slot)
+    {
+        if (string.IsNullOrWhiteSpace(fieldName))
+        {
+            return;
+        }
+
+        var declared = resource.SchemaFields.Any(f =>
+            string.Equals(f.Name, fieldName, StringComparison.OrdinalIgnoreCase));
+        if (!declared)
+        {
+            errors.Add(
+                $"resource '{resource.Metadata.Id}' {slot} '{fieldName}' is not declared in schemaFields.");
         }
     }
 
