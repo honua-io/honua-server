@@ -134,8 +134,7 @@ public sealed record MetadataV2Resource
     public IReadOnlyList<MetadataV2Field> SchemaFields { get; init; } = Array.Empty<MetadataV2Field>();
 
     /// <summary>
-    /// Resource-to-resource relationships exposed by this resource (the v2 equivalent of
-    /// the v1 <c>LayerDefinition.LayerRelationships</c> set).
+    /// Resource-to-resource relationships exposed by this resource.
     /// </summary>
     [JsonPropertyName("relationships")]
     public IReadOnlyList<MetadataV2Relationship> Relationships { get; init; } = Array.Empty<MetadataV2Relationship>();
