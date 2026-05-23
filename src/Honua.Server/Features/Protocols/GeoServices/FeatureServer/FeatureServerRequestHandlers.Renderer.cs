@@ -72,7 +72,13 @@ internal static partial class FeatureServerEndpoints
         }
 
         var geometryType = resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None;
-        if (geometryType == MetadataV2GeometryType.None)
+        // V2 canonical sources may carry geometry on Spatial OR via a
+        // Geometry/Geography schema field (the typed Spatial section is
+        // optional; pre-typed test fixtures still surface geometry only
+        // through the schema). Treat either as "layer supports renderers".
+        var hasGeometry = geometryType != MetadataV2GeometryType.None
+            || resource.SchemaFields.Any(f => f.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography);
+        if (!hasGeometry)
         {
             return StandardErrorHelpers.CreateBadRequest(context, "Layer does not support renderers");
         }
