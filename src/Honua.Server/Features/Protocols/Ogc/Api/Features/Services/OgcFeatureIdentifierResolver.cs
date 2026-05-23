@@ -298,7 +298,10 @@ internal static class OgcFeatureIdentifierResolver
         CancellationToken cancellationToken)
     {
         var idField = ResolvePublicIdField(resource);
-        var storageLayerId = snapshot.ResolveStorageLayerId(publication)
+        // Mirror the OgcFeaturesQueryHandler / FeatureServer V2 ports: when the graph
+        // carries no explicit storage binding, fall back to publication.LayerIndex.
+        var storageLayerId = publication.LayerIndex
+            ?? snapshot.ResolveStorageLayerId(publication)
             ?? snapshot.ResolveStorageLayerId(resource);
 
         if (CanUseObjectIdFastPath(idField) &&
