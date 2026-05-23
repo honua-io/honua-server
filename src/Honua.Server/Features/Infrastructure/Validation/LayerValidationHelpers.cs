@@ -840,6 +840,53 @@ internal static class LayerValidationHelpers
     }
 
     /// <summary>
+    /// V2 sibling of <see cref="ValidateCollectionWriteAccessAsync"/>. Combines
+    /// <see cref="ValidateCollectionWithAccessV2Async"/> with the V2 RBAC data-editor
+    /// helper so OGC API Features CRUD/Transaction handlers can run a single check.
+    /// Returns the matched publication + resource + service plus an
+    /// <see cref="IResult"/> error when validation or authorization fails.
+    /// </summary>
+    /// <param name="context">HTTP context carrying request services and principal.</param>
+    /// <param name="collectionId">Collection identifier from the route.</param>
+    /// <param name="requiredProtocol">Optional protocol gate. Defaults to
+    /// <see cref="ServiceProtocols.OgcFeatures"/> to mirror the v1 method.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public static async Task<MetadataV2ValidationResult> ValidateCollectionWriteAccessV2Async(
+        HttpContext context,
+        string collectionId,
+        string? requiredProtocol = ServiceProtocols.OgcFeatures,
+        CancellationToken cancellationToken = default)
+    {
+        var validation = await ValidateCollectionWithAccessV2Async(
+            context,
+            collectionId,
+            scope: AccessScope.Write,
+            requiredProtocol: requiredProtocol,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!validation.IsValid)
+        {
+            return validation;
+        }
+
+        var rbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+            context,
+            validation.Resource!,
+            validation.Service,
+            cancellationToken).ConfigureAwait(false);
+        if (rbacError != null)
+        {
+            return new MetadataV2ValidationResult(
+                false,
+                validation.Publication,
+                validation.Resource,
+                validation.Service,
+                rbacError);
+        }
+
+        return validation;
+    }
+
+    /// <summary>
     /// V2 service-level validation. Looks up a <see cref="MetadataV2Service"/> by name and gates
     /// it on the access policy. Returns the resolved service plus all of its publications and
     /// their resources, so capability/metadata handlers can build their response without further
