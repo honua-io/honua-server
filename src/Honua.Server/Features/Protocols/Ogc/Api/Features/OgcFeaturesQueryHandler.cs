@@ -13,6 +13,8 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
@@ -85,18 +87,29 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             collectionId = collectionValidation.Value!;
 
-            var layerValidation = await LayerValidationHelpers.ValidateCollectionWithAccessAsync(
+            var layerValidation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
                 context,
                 collectionId,
-                cancellationToken: cancellationToken,
-                requiredProtocol: ServiceProtocols.OgcFeatures);
+                requiredProtocol: ServiceProtocols.OgcFeatures,
+                cancellationToken: cancellationToken);
             if (!layerValidation.IsValid)
             {
                 return layerValidation.ErrorResult!;
             }
 
-            var layer = layerValidation.Layer!;
-            var layerId = layer.Id;
+            var resource = layerValidation.Resource!;
+            var publication = layerValidation.Publication!;
+            var service = layerValidation.Service;
+
+            var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var storageLayerId = snapshot.ResolveStorageLayerId(publication)
+                ?? snapshot.ResolveStorageLayerId(resource);
+            if (storageLayerId is not { } layerId)
+            {
+                return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' has no storage binding.");
+            }
+
             var activity = Activity.Current;
             activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OgcFeatures);
             activity?.SetTag(HonuaTelemetry.Tags.CollectionId, collectionId);
@@ -111,7 +124,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             OgcFeaturesLog.ItemsRequested(_logger, collectionId, limit, offset);
 
-            var validationError = OgcFeaturesUtilities.ValidateItemsQueryParameters(request, layer);
+            var validationError = OgcFeaturesUtilities.ValidateItemsQueryParameters(request, resource);
             if (validationError is not null)
             {
                 return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
@@ -137,7 +150,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                     Crs = crs,
                     F = f
                 },
-                layer,
+                resource,
                 cancellationToken);
             if (!queryAdapterResult.IsSuccess || queryAdapterResult.Query == null)
             {
@@ -146,8 +159,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                     queryAdapterResult.ErrorMessage ?? "Invalid query parameters.");
             }
 
-            var unifiedQuery = _queryProcessor.OptimizeQuery(queryAdapterResult.Query.Value, layer);
-            var unifiedQueryValidation = _queryProcessor.ValidateQuery(unifiedQuery, layer);
+            var unifiedQuery = _queryProcessor.OptimizeQuery(queryAdapterResult.Query.Value, resource);
+            var unifiedQueryValidation = _queryProcessor.ValidateQuery(unifiedQuery, resource);
             if (!unifiedQueryValidation.IsValid)
             {
                 return StandardErrorHelpers.CreateBadRequest(
@@ -155,15 +168,13 @@ internal sealed partial class OgcFeaturesQueryHandler(
                     unifiedQueryValidation.ErrorMessage ?? "Invalid query parameters.");
             }
 
-            var query = _queryProcessor.ToFeatureQuery(unifiedQuery, layer);
-            var service = await LayerValidationHelpers.ResolvePrimaryServiceAsync(
-                context,
-                layerId,
-                ServiceProtocols.OgcFeatures,
-                cancellationToken).ConfigureAwait(false);
+            var query = _queryProcessor.ToFeatureQuery(unifiedQuery, resource);
             var featureReader = await ResolveReaderAsync(
+                snapshot,
                 service,
-                layer,
+                resource,
+                publication,
+                storageLayerId.Value,
                 FeatureProviderReadOperation.Query,
                 cancellationToken).ConfigureAwait(false);
             var resolvedStreamingFeatureStore = featureReader as IStreamingFeatureStore;
@@ -175,7 +186,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             var outputAxisOrder = unifiedQuery.OutputCrs?.AxisOrder ?? AxisOrder.EastNorth;
             var outputCrsUri = unifiedQuery.OutputCrs?.Uri ?? "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
 
-            var hasCompatibleStreamingStore = layer.StorageMapping == null || resolvedStreamingFeatureStore != null;
+            var hasCompatibleStreamingStore = string.IsNullOrEmpty(publication.StorageBindingId) || resolvedStreamingFeatureStore != null;
             var allowStreaming = hasCompatibleStreamingStore &&
                                  (string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase) ||
                                  (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase) &&
@@ -246,7 +257,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                         var streamGmlSchemaUrl = OgcFeaturesUtilities.BuildGmlApplicationSchemaUrl(streamBaseUrl);
                         return new StreamingGmlItemsResult(
                             streamingFeatureStore,
-                            layer,
+                            layerId,
                             query,
                             totalCount,
                             estimatedReturned,
@@ -259,7 +270,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
                     return new StreamingItemsResult(
                         streamingFeatureStore,
-                        layer,
+                        resource,
+                        layerId,
                         query,
                         collectionId,
                         outputAxisOrder,
@@ -292,7 +304,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                                            !includeFeatureLinks &&
                                            _geometryServices.CanUsePreformattedGeoJson;
             var canUseRawPointGeoJsonFastPath = canUseRawGeoJsonFastPath &&
-                                                layer.GeometryType == GeometryType.Point &&
+                                                resource.ReadGeometryType() == MetadataV2GeometryType.Point &&
                                                 query.SpatialFilter?.IsSimpleEnvelope == true;
 
             if (canUseRawPointGeoJsonFastPath &&
@@ -320,12 +332,12 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             ? OgcFeaturesUtilities.BuildFeatureLinks(
                                 request,
                                 collectionId,
-                                OgcFeatureIdentifierResolver.FormatPublicId(feature, layer),
+                                OgcFeatureIdentifierResolver.FormatPublicId(feature, resource),
                                 outputFormat)
                             : null;
                         return ToOgcFeature(
                             feature,
-                            layer,
+                            resource,
                             outputAxisOrder,
                             _geometryServices,
                             projectedProperties,
@@ -343,12 +355,12 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             ? OgcFeaturesUtilities.BuildFeatureLinks(
                                 request,
                                 collectionId,
-                                OgcFeatureIdentifierResolver.FormatPublicId(feature, layer),
+                                OgcFeatureIdentifierResolver.FormatPublicId(feature, resource),
                                 outputFormat)
                             : null;
                         return ToOgcFeature(
                             feature,
-                            layer,
+                            resource,
                             outputAxisOrder,
                             _geometryServices,
                             projectedProperties,
@@ -366,12 +378,12 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             ? OgcFeaturesUtilities.BuildFeatureLinks(
                                 request,
                                 collectionId,
-                                OgcFeatureIdentifierResolver.FormatPublicId(feature, layer),
+                                OgcFeatureIdentifierResolver.FormatPublicId(feature, resource),
                                 outputFormat)
                             : null;
                         return ToOgcFeature(
                             feature,
-                            layer,
+                            resource,
                             outputAxisOrder,
                             _geometryServices,
                             projectedProperties,
@@ -389,12 +401,12 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             ? OgcFeaturesUtilities.BuildFeatureLinks(
                                 request,
                                 collectionId,
-                                OgcFeatureIdentifierResolver.FormatPublicId(feature, layer),
+                                OgcFeatureIdentifierResolver.FormatPublicId(feature, resource),
                                 outputFormat)
                             : null;
                         return ToOgcFeature(
                             feature,
-                            layer,
+                            resource,
                             outputAxisOrder,
                             _geometryServices,
                             projectedProperties,
@@ -446,7 +458,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 var contentType = string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase)
                     ? MediaTypes.GeoJson
                     : MediaTypes.Json;
-                var payload = CreateRawPointFeatureCollectionPayload(pagedRawPointResult.Value.Items, layer, links, queryTotalCount);
+                var payload = CreateRawPointFeatureCollectionPayload(pagedRawPointResult.Value.Items, resource, links, queryTotalCount);
                 if (canCache && cacheKey != null)
                 {
                     var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload.ToArray(), contentType, _etagService);
@@ -462,7 +474,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 var contentType = string.Equals(outputFormat, MediaTypes.GeoJson, StringComparison.OrdinalIgnoreCase)
                     ? MediaTypes.GeoJson
                     : MediaTypes.Json;
-                var payload = CreateRawFeatureCollectionPayload(pagedRawResult.Value.Items, layer, links, queryTotalCount);
+                var payload = CreateRawFeatureCollectionPayload(pagedRawResult.Value.Items, resource, links, queryTotalCount);
                 if (canCache && cacheKey != null)
                 {
                     var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload.ToArray(), contentType, _etagService);
@@ -486,7 +498,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             if (string.Equals(outputFormat, MediaTypes.Csv, StringComparison.OrdinalIgnoreCase))
             {
-                var fieldNames = ResolveCsvFieldNames(layer, projectedProperties);
+                var fieldNames = ResolveCsvFieldNames(resource, projectedProperties);
                 var csv = OgcResponseFormatter.BuildCsvResponse(features, fieldNames);
                 return Results.Text(csv, MediaTypes.Csv);
             }
@@ -556,18 +568,29 @@ internal sealed partial class OgcFeaturesQueryHandler(
             collectionId = collectionValidation.Value!;
             featureId = featureValidation.Value!;
 
-            var layerValidation = await LayerValidationHelpers.ValidateCollectionWithAccessAsync(
+            var layerValidation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
                 context,
                 collectionId,
-                cancellationToken: cancellationToken,
-                requiredProtocol: ServiceProtocols.OgcFeatures);
+                requiredProtocol: ServiceProtocols.OgcFeatures,
+                cancellationToken: cancellationToken);
             if (!layerValidation.IsValid)
             {
                 return layerValidation.ErrorResult!;
             }
 
-            var layer = layerValidation.Layer!;
-            var layerId = layer.Id;
+            var resource = layerValidation.Resource!;
+            var publication = layerValidation.Publication!;
+            var service = layerValidation.Service;
+
+            var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var storageLayerId = snapshot.ResolveStorageLayerId(publication)
+                ?? snapshot.ResolveStorageLayerId(resource);
+            if (storageLayerId is not { } layerId)
+            {
+                return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' has no storage binding.");
+            }
+
             var activity = Activity.Current;
             activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OgcFeatures);
             activity?.SetTag(HonuaTelemetry.Tags.CollectionId, collectionId);
@@ -581,21 +604,21 @@ internal sealed partial class OgcFeaturesQueryHandler(
             featureActivity?.SetTag(HonuaTelemetry.Tags.CollectionId, collectionId);
 
             OgcFeaturesLog.ItemRequested(_logger, collectionId, featureId);
-            var service = await LayerValidationHelpers.ResolvePrimaryServiceAsync(
-                context,
-                layerId,
-                ServiceProtocols.OgcFeatures,
-                cancellationToken).ConfigureAwait(false);
             var featureReader = await ResolveReaderAsync(
+                snapshot,
                 service,
-                layer,
+                resource,
+                publication,
+                storageLayerId.Value,
                 FeatureProviderReadOperation.Query,
                 cancellationToken).ConfigureAwait(false);
 
             var resolvedFeature = await OgcFeatureIdentifierResolver.ResolveAsync(
                 featureReader,
                 _queryProcessor,
-                layer,
+                snapshot,
+                publication,
+                resource,
                 featureId,
                 cancellationToken).ConfigureAwait(false);
             if (!resolvedFeature.HasValue)
@@ -611,7 +634,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             }
 
             var supportedCrs = await OgcFeaturesUtilities.GetSupportedCrsDefinitionsAsync(
-                layer,
+                resource,
                 _crsRegistry,
                 cancellationToken);
             var crsResolution = await OgcFeaturesUtilities.TryResolveCrsAsync(
@@ -653,11 +676,12 @@ internal sealed partial class OgcFeaturesQueryHandler(
             var stopwatch = Stopwatch.StartNew();
             var storedFeature = resolvedFeature.Value.Feature;
 
+            var resourceSrid = resource.ReadSrid() ?? 4326;
             var query = new FeatureQuery
             {
                 ObjectIds = ImmutableArray.Create(objectId),
                 Limit = 1,
-                SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
+                SpatialReferenceSrid = resourceSrid,
                 OutputSrid = crsDefinition.Srid,
                 OutputAxisOrder = crsDefinition.AxisOrder
             };
@@ -684,7 +708,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             var responseFeature = await OgcFeaturesResponseHelpers.LoadFeatureForResponseAsync(
                 featureReader,
                 layerId,
-                layer,
+                resource,
                 objectId,
                 crsDefinition,
                 cancellationToken).ConfigureAwait(false);
@@ -695,11 +719,11 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 return StandardErrorHelpers.CreateInternalServerError(context, "Feature response could not be projected.");
             }
 
-            var responseFeatureId = OgcFeatureIdentifierResolver.FormatPublicId(responseFeature.Value, layer);
+            var responseFeatureId = OgcFeatureIdentifierResolver.FormatPublicId(responseFeature.Value, resource);
             ImmutableArray<Link>? featureLinks = _ogcFeaturesOptions.IncludeFeatureLinks
                 ? OgcFeaturesUtilities.BuildFeatureLinks(request, collectionId, responseFeatureId, outputFormat)
                 : null;
-            var ogcFeature = ToOgcFeature(responseFeature.Value, layer, crsDefinition.AxisOrder, _geometryServices, null, featureLinks);
+            var ogcFeature = ToOgcFeature(responseFeature.Value, resource, crsDefinition.AxisOrder, _geometryServices, null, featureLinks);
 
             if (string.Equals(outputFormat, MediaTypes.Gml, StringComparison.OrdinalIgnoreCase))
             {
@@ -709,7 +733,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
             if (string.Equals(outputFormat, MediaTypes.Csv, StringComparison.OrdinalIgnoreCase))
             {
-                var fieldNames = ResolveCsvFieldNames(layer, null);
+                var fieldNames = ResolveCsvFieldNames(resource, null);
                 var csv = OgcResponseFormatter.BuildCsvResponse([ogcFeature], fieldNames);
                 return Results.Text(csv, MediaTypes.Csv);
             }
@@ -752,14 +776,14 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
     private static GeoJsonFeature ToOgcFeature(
         Feature feature,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         AxisOrder axisOrder,
         OgcFeaturesGeometryServices geometryServices,
         ImmutableHashSet<string>? projectedProperties = null,
         ImmutableArray<Link>? links = null)
         => OgcGeoJsonFeatureBuilder.Create(
             feature,
-            layer,
+            resource,
             axisOrder,
             geometryServices,
             projectedProperties,
@@ -767,24 +791,26 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
     private static GeoJsonFeature ToOgcFeature(
         EncodedGeoJsonFeature feature,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         AxisOrder axisOrder,
         OgcFeaturesGeometryServices geometryServices,
         ImmutableHashSet<string>? projectedProperties = null,
         ImmutableArray<Link>? links = null)
         => OgcGeoJsonFeatureBuilder.Create(
             feature,
-            layer,
+            resource,
             axisOrder,
             geometryServices,
             projectedProperties,
             links: links);
 
     private static string[] ResolveCsvFieldNames(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         ImmutableHashSet<string>? projectedProperties)
     {
-        IEnumerable<string> fieldNames = layer.VisibleAttributeFields.Select(field => field.Name);
+        IEnumerable<string> fieldNames = resource.SchemaFields
+            .Where(field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
+            .Select(field => field.Name);
         if (projectedProperties != null)
         {
             fieldNames = fieldNames.Where(projectedProperties.Contains);
@@ -888,36 +914,47 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
     private static string FormatContentCrs(string crsUri) => $"<{crsUri}>";
 
+    /// <summary>
+    /// Resolves the feature reader for a V2-routed read. Falls back to the
+    /// shared injected reader when the V2 graph carries no storage binding for
+    /// the publication or the provider router is not wired (test fixtures).
+    /// Mirrors v1 <c>ShouldRouteProviderReader</c> semantics over the V2 graph.
+    /// </summary>
     private async Task<IFeatureReader> ResolveReaderAsync(
-        ServiceDefinition? service,
-        LayerDefinition layer,
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Service? service,
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        int storageLayerId,
         FeatureProviderReadOperation operation,
         CancellationToken cancellationToken)
     {
-        if (_providerQueryRouter == null || service == null || !ShouldRouteProviderReader(service, layer))
+        if (_providerQueryRouter == null || service == null || !ShouldRouteProviderReader(publication))
         {
             return _featureReader;
         }
 
         return await _providerQueryRouter
-            .ResolveReaderAsync(service, layer, operation, cancellationToken)
+            .ResolveReaderAsync(snapshot, service, resource, publication, storageLayerId, operation, cancellationToken)
             .ConfigureAwait(false);
     }
 
-    private static bool ShouldRouteProviderReader(ServiceDefinition service, LayerDefinition layer)
-        => service.ConnectionId.HasValue || layer.StorageMapping?.IsSourceBacked == true;
+    private static bool ShouldRouteProviderReader(MetadataV2Publication publication)
+        => !string.IsNullOrEmpty(publication.StorageBindingId);
 
     internal static ReadOnlyMemory<byte> CreateRawFeatureCollectionPayload(
         ImmutableArray<RawGeoJsonFeature> features,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         ImmutableArray<Link> links,
         long? numberMatched)
     {
-        var propertyFields = layer.VisibleAttributeFields
-            .Where(field => !field.Name.Equals(layer.ObjectIdFieldName, StringComparison.OrdinalIgnoreCase))
+        var objectIdName = resource.FindPrimaryIdField()?.Name ?? "objectid";
+        var propertyFields = resource.SchemaFields
+            .Where(field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
+            .Where(field => !field.Name.Equals(objectIdName, StringComparison.OrdinalIgnoreCase))
             .Select(field => field.Name)
             .ToArray();
-        var publicIdPropertyName = ResolveRawPublicIdPropertyName(layer);
+        var publicIdPropertyName = ResolveRawPublicIdPropertyName(resource);
         var buffer = new ArrayBufferWriter<byte>(EstimateRawFeatureCollectionPayloadCapacity(features, propertyFields, links));
         using var writer = new Utf8JsonWriter(buffer);
 
@@ -962,15 +999,17 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
     internal static ReadOnlyMemory<byte> CreateRawPointFeatureCollectionPayload(
         ImmutableArray<RawGeoServicesFeature> features,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         ImmutableArray<Link> links,
         long? numberMatched)
     {
-        var propertyFields = layer.VisibleAttributeFields
-            .Where(field => !field.Name.Equals(layer.ObjectIdFieldName, StringComparison.OrdinalIgnoreCase))
+        var objectIdName = resource.FindPrimaryIdField()?.Name ?? "objectid";
+        var propertyFields = resource.SchemaFields
+            .Where(field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
+            .Where(field => !field.Name.Equals(objectIdName, StringComparison.OrdinalIgnoreCase))
             .Select(field => field.Name)
             .ToArray();
-        var publicIdPropertyName = ResolveRawPublicIdPropertyName(layer);
+        var publicIdPropertyName = ResolveRawPublicIdPropertyName(resource);
         var buffer = new ArrayBufferWriter<byte>(EstimateRawPointFeatureCollectionPayloadCapacity(features, propertyFields, links));
         using var writer = new Utf8JsonWriter(buffer);
 
@@ -1013,18 +1052,22 @@ internal sealed partial class OgcFeaturesQueryHandler(
         return buffer.WrittenMemory;
     }
 
-    private static string? ResolveRawPublicIdPropertyName(LayerDefinition layer)
+    private static string? ResolveRawPublicIdPropertyName(MetadataV2Resource resource)
     {
-        var configuredField = layer.VisibleAttributeFields.FirstOrDefault(
-            field => field.Name.Equals(layer.ObjectIdFieldName, StringComparison.OrdinalIgnoreCase));
+        var objectIdName = resource.FindPrimaryIdField()?.Name ?? "objectid";
+        var visibleFields = resource.SchemaFields
+            .Where(field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography));
+
+        var configuredField = visibleFields.FirstOrDefault(
+            field => field.Name.Equals(objectIdName, StringComparison.OrdinalIgnoreCase));
         if (configuredField?.Name is { Length: > 0 })
         {
             return configuredField.Name;
         }
 
-        if (!layer.ObjectIdFieldName.Equals("id", StringComparison.OrdinalIgnoreCase))
+        if (!objectIdName.Equals("id", StringComparison.OrdinalIgnoreCase))
         {
-            var idField = layer.VisibleAttributeFields.FirstOrDefault(
+            var idField = visibleFields.FirstOrDefault(
                 field => field.Name.Equals("id", StringComparison.OrdinalIgnoreCase));
             if (idField?.Name is { Length: > 0 })
             {
@@ -1267,7 +1310,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
     private static async Task StreamFeatureCollectionAsync(
         HttpContext context,
         IAsyncEnumerable<Feature> features,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         string collectionId,
         AxisOrder axisOrder,
         OgcFeaturesGeometryServices geometryServices,
@@ -1296,10 +1339,10 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 ? OgcFeaturesUtilities.BuildFeatureLinks(
                     context.Request,
                     collectionId,
-                    OgcFeatureIdentifierResolver.FormatPublicId(feature, layer),
+                    OgcFeatureIdentifierResolver.FormatPublicId(feature, resource),
                     outputFormat)
                 : null;
-            var ogcFeature = ToOgcFeature(feature, layer, axisOrder, geometryServices, projectedProperties, featureLinks);
+            var ogcFeature = ToOgcFeature(feature, resource, axisOrder, geometryServices, projectedProperties, featureLinks);
             JsonSerializer.Serialize(writer, ogcFeature, OgcJsonContext.Default.GeoJsonFeature);
 
             numberReturned++;
@@ -1335,7 +1378,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
     private sealed class StreamingItemsResult : IResult
     {
         private readonly IStreamingFeatureStore _streamingFeatureStore;
-        private readonly LayerDefinition _layer;
+        private readonly MetadataV2Resource _resource;
+        private readonly int _storageLayerId;
         private readonly FeatureQuery _query;
         private readonly string _collectionId;
         private readonly AxisOrder _axisOrder;
@@ -1350,7 +1394,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
         public StreamingItemsResult(
             IStreamingFeatureStore streamingFeatureStore,
-            LayerDefinition layer,
+            MetadataV2Resource resource,
+            int storageLayerId,
             FeatureQuery query,
             string collectionId,
             AxisOrder axisOrder,
@@ -1364,7 +1409,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
             CancellationToken requestCancellationToken)
         {
             _streamingFeatureStore = streamingFeatureStore;
-            _layer = layer;
+            _resource = resource;
+            _storageLayerId = storageLayerId;
             _query = query;
             _collectionId = collectionId;
             _axisOrder = axisOrder;
@@ -1391,14 +1437,14 @@ internal sealed partial class OgcFeaturesQueryHandler(
             var cancellationToken = linkedCts.Token;
 
             var stream = _streamingFeatureStore.StreamFeaturesAsync(
-                _layer.Id,
+                _storageLayerId,
                 _query,
                 cancellationToken);
 
             await StreamFeatureCollectionAsync(
                 httpContext,
                 stream,
-                _layer,
+                _resource,
                 _collectionId,
                 _axisOrder,
                 _geometryServices,
@@ -1414,7 +1460,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
     private sealed class StreamingGmlItemsResult : IResult
     {
         private readonly IStreamingFeatureStore _streamingFeatureStore;
-        private readonly LayerDefinition _layer;
+        private readonly int _storageLayerId;
         private readonly FeatureQuery _query;
         private readonly long _numberMatched;
         private readonly int _numberReturned;
@@ -1426,7 +1472,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
 
         public StreamingGmlItemsResult(
             IStreamingFeatureStore streamingFeatureStore,
-            LayerDefinition layer,
+            int storageLayerId,
             FeatureQuery query,
             long numberMatched,
             int numberReturned,
@@ -1437,7 +1483,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             CancellationToken requestCancellationToken)
         {
             _streamingFeatureStore = streamingFeatureStore;
-            _layer = layer;
+            _storageLayerId = storageLayerId;
             _query = query;
             _numberMatched = numberMatched;
             _numberReturned = numberReturned;
@@ -1471,7 +1517,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             var cancellationToken = linkedCts.Token;
 
             var stream = _streamingFeatureStore.StreamGmlFeaturesAsync(
-                _layer.Id,
+                _storageLayerId,
                 _query,
                 cancellationToken);
 
