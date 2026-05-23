@@ -235,8 +235,92 @@ public sealed record MetadataV2Field
     public IReadOnlyList<string> SemanticRoles { get; init; } = Array.Empty<string>();
 
     /// <summary>
+    /// Human-friendly alias. Mapped to Esri-FeatureServer.fields[].alias,
+    /// OData Org.OData.Core.V1.Label, OGC-API-Features Part 5
+    /// schema.properties[].title (fallback to <see cref="Title"/>), and
+    /// GeoPackage gpkg_data_columns.title.
+    /// </summary>
+    [JsonPropertyName("alias")]
+    public string? Alias { get; init; }
+
+    /// <summary>
+    /// True when the field is editable through edit-capable services.
+    /// Defaults to true to preserve existing behaviour.
+    /// </summary>
+    [JsonPropertyName("editable")]
+    public bool Editable { get; init; } = true;
+
+    /// <summary>
+    /// Maximum length for VARCHAR-typed fields. Null for non-string or
+    /// unbounded fields.
+    /// </summary>
+    [JsonPropertyName("length")]
+    public int? Length { get; init; }
+
+    /// <summary>
+    /// Optional default value used by edit-capable services when no value is
+    /// supplied on insert.
+    /// </summary>
+    [JsonPropertyName("defaultValue")]
+    public JsonElement? DefaultValue { get; init; }
+
+    /// <summary>
+    /// Optional value domain (coded values or numeric range).
+    /// </summary>
+    [JsonPropertyName("domain")]
+    public MetadataV2FieldDomain? Domain { get; init; }
+
+    /// <summary>
+    /// Provider-native SQL type label (e.g. <c>VARCHAR(64)</c>,
+    /// <c>NUMERIC(10,2)</c>, <c>TIMESTAMP WITH TIME ZONE</c>). Free-form;
+    /// used by $metadata generators and admin diagnostics.
+    /// </summary>
+    [JsonPropertyName("sqlType")]
+    public string? SqlType { get; init; }
+
+    /// <summary>
     /// Extension data for the field.
     /// </summary>
     [JsonPropertyName("extensions")]
     public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
+}
+
+/// <summary>
+/// Value domain for a <see cref="MetadataV2Field"/> — either an enumerated
+/// list of coded values or a numeric range.
+/// </summary>
+public sealed record MetadataV2FieldDomain
+{
+    /// <summary>
+    /// Domain kind. Canonical values: <c>codedValue</c> or <c>range</c>.
+    /// </summary>
+    [JsonPropertyName("type")]
+    public string Type { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Coded value entries when <see cref="Type"/> is <c>codedValue</c>.
+    /// </summary>
+    [JsonPropertyName("codedValues")]
+    public IReadOnlyList<MetadataV2CodedValue> CodedValues { get; init; } = Array.Empty<MetadataV2CodedValue>();
+
+    /// <summary>
+    /// Range endpoints when <see cref="Type"/> is <c>range</c>. Two-element
+    /// list ordered [min, max], JSON-typed to match the field's value type.
+    /// </summary>
+    [JsonPropertyName("range")]
+    public IReadOnlyList<JsonElement>? Range { get; init; }
+}
+
+/// <summary>
+/// Single entry in a <see cref="MetadataV2FieldDomain"/> coded-value list.
+/// </summary>
+public sealed record MetadataV2CodedValue
+{
+    /// <summary>Code value, JSON-typed to match the field's value type.</summary>
+    [JsonPropertyName("code")]
+    public JsonElement Code { get; init; }
+
+    /// <summary>Human-readable display name for the code.</summary>
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = string.Empty;
 }
