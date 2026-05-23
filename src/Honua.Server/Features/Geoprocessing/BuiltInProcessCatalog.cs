@@ -15,6 +15,8 @@ namespace Honua.Server.Features.Geoprocessing;
 /// </summary>
 internal sealed class BuiltInProcessCatalog : IProcessCatalog
 {
+    public const string CatalogVersion = "honua.process_catalog.builtin.v1";
+
     private readonly FrozenDictionary<string, ProcessDefinition> _processes;
     private readonly ImmutableArray<ProcessDefinition> _all;
     private readonly FrozenDictionary<string, ImmutableArray<ProcessDefinition>> _byCategory;

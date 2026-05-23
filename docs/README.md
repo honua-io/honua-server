@@ -96,6 +96,7 @@ How to deploy, run, harden, and respond to incidents.
 ### Security
 
 - [Security Policy](../SECURITY.md) — supported versions, vulnerability reporting, disclosure process. **(repo root)**
+- [Compliance Framework](operator/compliance-framework.md) — SOC 2 / FedRAMP readiness evidence collection, data residency policy + dry-run, compliance key-version rotation events, and report export.
 - [Base URL & Open Redirect Handling](security/base-url-and-open-redirect-handling.md)
 - [Code Scanning — 2026 Q2 Remediation](security/code-scanning-2026-Q2-remediation.md)
 - [Security-First File Upload Design (ADR 0019)](contributor/adr/0019-security-first-file-upload-design.md)
@@ -138,6 +139,7 @@ How to build against Honua's APIs, SDKs, and protocols.
 - [MCP Server](developer/MCP_SERVER.md) — JSON-RPC surface for AI agents.
 - [Redis Fallback Patterns](developer/REDIS_FALLBACK_PATTERNS.md)
 - [Spec Engine](developer/SPEC_ENGINE.md)
+- [AI Builder SDK Contract](ai-builder-sdk-contract.md) — Map of honua-server MCP surfaces to the honua-sdk-js AI Spatial App Builder workflow, fixture cases, and capability states.
 - [AI Builder Contract Fixtures](developer/ai-builder-contract-fixtures.md)
 - [SDK Compatibility Matrix](developer/SDK_COMPATIBILITY_MATRIX.md)
 - [SDK Compatibility Metadata](developer/SDK_COMPATIBILITY_METADATA.md)

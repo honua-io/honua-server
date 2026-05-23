@@ -907,6 +907,9 @@ app.MapCacheAdminEndpoints();
 app.MapGeocodingAdminEndpoints();
 app.MapFeatureOverviewEndpoints();
 
+// Configure compliance admin endpoints (SOC 2 / FedRAMP readiness, key rotation, report export) (#352)
+app.MapComplianceAdminEndpoints();
+
 // Configure secure connection management endpoints
 app.MapSecureConnectionEndpoints();
 

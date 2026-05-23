@@ -137,6 +137,12 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/geocoding/providers"),
         new("GET", "/api/v1/admin/features"),
 
+        // v1 admin compliance endpoints (#352)
+        new("GET", "/api/v1/admin/compliance/dashboard"),
+        new("GET", "/api/v1/admin/compliance/report"),
+        new("POST", "/api/v1/admin/compliance/residency/evaluate"),
+        new("POST", "/api/v1/admin/compliance/encryption/rotate-key"),
+
         // v1 admin OIDC provider endpoints (#511)
         new("GET", "/api/v1/admin/oidc/providers"),
         new("POST", "/api/v1/admin/oidc/providers"),

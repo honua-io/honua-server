@@ -178,3 +178,13 @@ Rotate these regularly:
 1. Update the secret in your secret manager.
 2. Redeploy or restart services to pick up changes.
 3. Verify access using a known admin endpoint.
+
+Compliance key-version rotation events are exposed through the compliance
+framework admin endpoint
+(`POST /api/v1/admin/compliance/encryption/rotate-key`); each event is recorded
+in the audit log as `encryption.key.rotate`. The endpoint advances an
+auditor-facing posture counter — it does **not** re-encrypt data or rotate the
+cipher material used by `IConnectionEncryptionService`, which lives behind
+`Security:ConnectionEncryption:MasterKey` and requires a redeploy. See
+[Compliance Framework](compliance-framework.md) for the dashboard, residency
+policy surface, and report export.

@@ -254,6 +254,11 @@ public sealed class CrossServerConsumeMapServerFixture : IAsyncLifetime
     public string EndpointUrl => _mapServer.EndpointUrl;
 
     /// <summary>
+    /// Gets the MapCache-backed WMTS endpoint URL for the MapServer reference layer.
+    /// </summary>
+    public string WmtsEndpointUrl => _mapServer.WmtsEndpointUrl;
+
+    /// <summary>
     /// Gets the Honua HTTP client used to route source-server reads through Honua.
     /// </summary>
     public HttpClient HonuaClient => _honua.Client;

@@ -170,8 +170,8 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         var migrationResult = upgrader.PerformUpgrade();
         migrationResult.Successful.Should().BeTrue($"migrations should complete successfully. Error: {migrationResult.Error}");
 
-        var baselineSeedPath = ResolveRepositoryPath("tests/seed/mobile-offline-demo-v1.sql");
-        var conflictSeedPath = ResolveRepositoryPath("tests/seed/mobile-offline-demo-conflict-delta.sql");
+        var baselineSeedPath = RepositoryPaths.Resolve("tests", "seed", "mobile-offline-demo-v1.sql");
+        var conflictSeedPath = RepositoryPaths.Resolve("tests", "seed", "mobile-offline-demo-conflict-delta.sql");
 
         await using var connection = await _postgres.GetConnectionAsync(_schemaName);
 
@@ -225,14 +225,14 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             SELECT COUNT(*)
             FROM honua.layers
             WHERE layer_id IN (68910, 68920)
-              AND table_schema = 'public'
+              AND table_schema = current_schema()
               AND table_name = 'features'
               AND primary_key_column = 'objectid'
               AND geometry_column = 'geometry'
               AND storage_srid = 4326
             """;
         var storageBindingCount = (long)(await storageCmd.ExecuteScalarAsync())!;
-        storageBindingCount.Should().Be(2, "fixture layers should declare provider-ready storage bindings");
+        storageBindingCount.Should().Be(2, "fixture layers should declare provider-ready storage bindings that resolve features to the active schema");
     }
 
     [Fact]
@@ -252,22 +252,6 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         // Assert
         result.Successful.Should().BeFalse("migration should fail with invalid connection");
         result.Error.Should().NotBeNull("error details should be provided");
-    }
-
-    private static string ResolveRepositoryPath(string relativePath)
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null)
-        {
-            if (File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
-            {
-                return Path.Combine(directory.FullName, relativePath);
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new FileNotFoundException($"Unable to locate repository root for {relativePath}.");
     }
 
     private static async Task ExecuteSqlFileAsync(Npgsql.NpgsqlConnection connection, string path)

@@ -12,6 +12,7 @@ Provides:
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 import os
 import inspect
@@ -753,9 +754,383 @@ class PostGISFixture:
                     (layer_id, layer_id, layer_id),
                 )
 
+                self._seed_metadata_v2_snapshot(conn)
+
                 conn.commit()
             finally:
                 conn.execute("SELECT pg_advisory_unlock(%s);", (self.CATALOG_LOCK_KEY,))
+
+    def seed_metadata_v2_snapshot(self, schema: str | None = None) -> None:
+        """Seed a Metadata v2 snapshot from the current v1 compatibility catalog."""
+        with self.get_connection(schema) as conn:
+            conn.execute("SELECT pg_advisory_lock(%s);", (self.CATALOG_LOCK_KEY,))
+            try:
+                self._seed_metadata_v2_snapshot(conn)
+                conn.commit()
+            finally:
+                conn.execute("SELECT pg_advisory_unlock(%s);", (self.CATALOG_LOCK_KEY,))
+
+    @staticmethod
+    def _metadata_id_part(value: object) -> str:
+        text = str(value).strip().lower()
+        safe = "".join(char if char.isalnum() else "-" for char in text).strip("-")
+        while "--" in safe:
+            safe = safe.replace("--", "-")
+        return safe or "default"
+
+    def _seed_metadata_v2_snapshot(self, conn: psycopg.Connection) -> None:
+        """Seed a Metadata v2 snapshot that mirrors the v1 compatibility catalog."""
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS honua.metadata_v2_snapshots (
+                environment       TEXT          NOT NULL,
+                revision          BIGINT        NOT NULL,
+                schema_version    TEXT          NOT NULL,
+                api_version       TEXT          NOT NULL,
+                document          JSONB         NOT NULL,
+                etag              TEXT          NOT NULL,
+                generated_at      TIMESTAMPTZ   NOT NULL,
+                created_at        TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (environment, revision)
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS honua.metadata_v2_current (
+                environment       TEXT          NOT NULL PRIMARY KEY,
+                revision          BIGINT        NOT NULL,
+                etag              TEXT          NOT NULL,
+                activated_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+                FOREIGN KEY (environment, revision)
+                    REFERENCES honua.metadata_v2_snapshots(environment, revision)
+                    ON DELETE RESTRICT
+            );
+            """
+        )
+
+        layer_rows = conn.execute(
+            """
+            SELECT
+                sl.service_name,
+                COALESCE(s.description, ''),
+                l.layer_id,
+                l.layer_name,
+                COALESCE(l.description, ''),
+                l.table_schema,
+                l.table_name,
+                l.geometry_type,
+                l.srid,
+                ST_XMin(l.extent)::double precision,
+                ST_YMin(l.extent)::double precision,
+                ST_XMax(l.extent)::double precision,
+                ST_YMax(l.extent)::double precision
+            FROM honua.service_layers sl
+            JOIN honua.services s ON s.service_name = sl.service_name
+            JOIN honua.layers l ON l.layer_id = sl.layer_id
+            ORDER BY sl.service_name, sl.layer_id;
+            """
+        ).fetchall()
+
+        field_rows = conn.execute(
+            """
+            SELECT layer_id, field_name, field_type, nullable, description
+            FROM honua.layer_fields
+            ORDER BY layer_id, field_order;
+            """
+        ).fetchall()
+        fields_by_layer: dict[int, list[dict[str, object]]] = {}
+        for field_layer_id, field_name, field_type, nullable, description in field_rows:
+            semantic_roles: list[str] = []
+            if field_name == "objectid":
+                semantic_roles.append("id.primary")
+            if field_name in {"shape", "geometry"}:
+                semantic_roles.append("geometry.primary")
+
+            fields_by_layer.setdefault(field_layer_id, []).append({
+                "name": field_name,
+                "type": field_type,
+                "description": description,
+                "nullable": bool(nullable),
+                "semanticRoles": semantic_roles,
+            })
+
+        status = {"lifecycle": "active", "state": "ready"}
+        protocols = [
+            "FeatureServer",
+            "MapServer",
+            "ImageServer",
+            "GPServer",
+            "OgcFeatures",
+            "OGC-API-Maps",
+            "OGC-API-Coverages",
+            "OGC-API-Tiles",
+            "Wfs20",
+            "Wms",
+            "Wmts",
+            "Wcs",
+            "OData",
+            "Grpc",
+            "Stac",
+            "Terrain",
+            "Elevation",
+        ]
+
+        resources_by_id: dict[str, dict[str, object]] = {}
+        storage_by_id: dict[str, dict[str, object]] = {}
+        services_by_id: dict[str, dict[str, object]] = {}
+        publications: list[dict[str, object]] = []
+
+        def add_service(
+            service_id: str,
+            name: str,
+            service_type: str,
+            route: str | None = None,
+        ) -> None:
+            services_by_id.setdefault(service_id, {
+                "metadata": {"id": service_id, "name": name, "title": name},
+                "serviceType": service_type,
+                "route": route,
+                "enabledProtocols": protocols,
+                "status": status,
+            })
+
+        for (
+            row_service_name,
+            row_service_description,
+            row_layer_id,
+            row_layer_name,
+            row_layer_description,
+            table_schema,
+            table_name,
+            geometry_type,
+            srid,
+            west,
+            south,
+            east,
+            north,
+        ) in layer_rows:
+            service_part = self._metadata_id_part(row_service_name)
+            layer_part = self._metadata_id_part(row_layer_id)
+            feature_resource_id = f"res-layer-{layer_part}"
+            image_resource_id = f"res-image-layer-{layer_part}"
+            feature_storage_id = f"storage-layer-{layer_part}"
+            image_storage_id = f"storage-image-layer-{layer_part}"
+
+            spatial = {
+                "srid": srid,
+                "crs": f"EPSG:{srid}",
+                "geometryType": geometry_type,
+                "bbox": {
+                    "west": west,
+                    "south": south,
+                    "east": east,
+                    "north": north,
+                },
+            }
+
+            resources_by_id.setdefault(feature_resource_id, {
+                "metadata": {
+                    "id": feature_resource_id,
+                    "name": row_layer_name,
+                    "title": row_layer_name,
+                    "description": row_layer_description,
+                },
+                "type": "feature-dataset",
+                "storageBindingIds": [feature_storage_id],
+                "primaryStorageBindingId": feature_storage_id,
+                "schemaFields": fields_by_layer.get(row_layer_id, []),
+                "spatial": spatial,
+                "status": status,
+                "extensions": {},
+            })
+            resources_by_id.setdefault(image_resource_id, {
+                "metadata": {
+                    "id": image_resource_id,
+                    "name": f"{row_layer_name} imagery",
+                    "title": row_layer_name,
+                    "description": row_layer_description,
+                },
+                "type": "raster-dataset",
+                "storageBindingIds": [image_storage_id],
+                "primaryStorageBindingId": image_storage_id,
+                "spatial": spatial,
+                "status": status,
+                "extensions": {},
+            })
+
+            storage_by_id.setdefault(feature_storage_id, {
+                "metadata": {"id": feature_storage_id, "name": feature_storage_id},
+                "resourceId": feature_resource_id,
+                "connectionId": "conn-postgres",
+                "storageType": "relational-table",
+                "locator": f"{table_schema}.{table_name}",
+                "capabilities": [
+                    "query",
+                    "filter",
+                    "sort",
+                    "aggregate",
+                    "edit",
+                    "transactions",
+                    "render",
+                    "tile",
+                    "search",
+                ],
+                "status": status,
+            })
+            storage_by_id.setdefault(image_storage_id, {
+                "metadata": {"id": image_storage_id, "name": image_storage_id},
+                "resourceId": image_resource_id,
+                "connectionId": "conn-postgres",
+                "storageType": "relational-table",
+                "locator": "honua.raster_data",
+                "capabilities": ["query", "filter", "render", "tile", "download"],
+                "status": status,
+            })
+
+            feature_service_id = f"svc-{service_part}-feature"
+            map_service_id = f"svc-{service_part}-map"
+            image_service_id = f"svc-{service_part}-image"
+            ogc_service_id = f"svc-{service_part}-ogc"
+            stac_service_id = f"svc-{service_part}-stac"
+
+            add_service(feature_service_id, row_service_name, "esri-feature-service")
+            add_service(map_service_id, row_service_name, "esri-map-service")
+            add_service(image_service_id, row_service_name, "esri-image-service")
+            add_service(ogc_service_id, row_service_name, "ogc-api-features", "/ogc/features")
+            add_service(stac_service_id, row_service_name, "stac-api", "/stac")
+
+            local_id = str(row_layer_id)
+            # ImageServer handlers currently resolve the first layer-index publication,
+            # so place the raster publication before feature publications.
+            publications.extend([
+                {
+                    "metadata": {
+                        "id": f"pub-{service_part}-image-{layer_part}",
+                        "name": local_id,
+                        "title": row_layer_name,
+                        "description": row_service_description,
+                    },
+                    "resourceId": image_resource_id,
+                    "serviceId": image_service_id,
+                    "storageBindingId": image_storage_id,
+                    "publicationType": "esri-image-layer",
+                    "path": local_id,
+                    "layerIndex": row_layer_id,
+                    "serviceLocalId": local_id,
+                    "status": status,
+                },
+                {
+                    "metadata": {"id": f"pub-{service_part}-ogc-{layer_part}", "name": local_id},
+                    "resourceId": feature_resource_id,
+                    "serviceId": ogc_service_id,
+                    "storageBindingId": feature_storage_id,
+                    "publicationType": "ogc-collection",
+                    "path": local_id,
+                    "layerIndex": row_layer_id,
+                    "serviceLocalId": local_id,
+                    "status": status,
+                },
+                {
+                    "metadata": {"id": f"pub-{service_part}-feature-{layer_part}", "name": local_id},
+                    "resourceId": feature_resource_id,
+                    "serviceId": feature_service_id,
+                    "storageBindingId": feature_storage_id,
+                    "publicationType": "esri-feature-layer",
+                    "path": local_id,
+                    "layerIndex": row_layer_id,
+                    "serviceLocalId": local_id,
+                    "status": status,
+                },
+                {
+                    "metadata": {"id": f"pub-{service_part}-map-{layer_part}", "name": local_id},
+                    "resourceId": feature_resource_id,
+                    "serviceId": map_service_id,
+                    "storageBindingId": feature_storage_id,
+                    "publicationType": "esri-map-layer",
+                    "path": local_id,
+                    "layerIndex": row_layer_id,
+                    "serviceLocalId": local_id,
+                    "status": status,
+                },
+                {
+                    "metadata": {"id": f"pub-{service_part}-stac-{layer_part}", "name": local_id},
+                    "resourceId": feature_resource_id,
+                    "serviceId": stac_service_id,
+                    "storageBindingId": feature_storage_id,
+                    "publicationType": "stac-collection",
+                    "path": local_id,
+                    "layerIndex": row_layer_id,
+                    "serviceLocalId": local_id,
+                    "status": status,
+                },
+            ])
+
+        graph = {
+            "schemaVersion": "2.0.0-alpha.1",
+            "apiVersion": "metadata.honua.io/v2alpha1",
+            "revision": 1,
+            "environment": "default",
+            "generatedAt": "2024-01-01T00:00:00+00:00",
+            "namespaces": ["test"],
+            "metadata": {
+                "id": "python-compatibility-seed",
+                "name": "python-compatibility-seed",
+                "title": "Python compatibility seed",
+            },
+            "catalogs": [],
+            "resources": list(resources_by_id.values()),
+            "connections": [
+                {
+                    "metadata": {"id": "conn-postgres", "name": "postgres"},
+                    "type": "managed",
+                    "provider": "postgres",
+                    "status": status,
+                }
+            ],
+            "storageBindings": list(storage_by_id.values()),
+            "services": list(services_by_id.values()),
+            "publications": publications,
+            "projectionProfiles": [],
+            "policies": [],
+            "roles": [],
+            "extensionPoints": [],
+        }
+
+        for environment in ("default", "Test", "Development"):
+            environment_graph = {**graph, "environment": environment}
+            document = json.dumps(environment_graph, separators=(",", ":"), sort_keys=True)
+            etag = f"\"{hashlib.sha256(document.encode('utf-8')).hexdigest()}\""
+            conn.execute(
+                """
+                INSERT INTO honua.metadata_v2_snapshots (
+                    environment,
+                    revision,
+                    schema_version,
+                    api_version,
+                    document,
+                    etag,
+                    generated_at
+                )
+                VALUES (%s, 1, '2.0.0-alpha.1', 'metadata.honua.io/v2alpha1', %s::jsonb, %s, NOW())
+                ON CONFLICT (environment, revision) DO UPDATE SET
+                    document = EXCLUDED.document,
+                    etag = EXCLUDED.etag,
+                    generated_at = EXCLUDED.generated_at;
+                """,
+                (environment, document, etag),
+            )
+            conn.execute(
+                """
+                INSERT INTO honua.metadata_v2_current (environment, revision, etag)
+                VALUES (%s, 1, %s)
+                ON CONFLICT (environment) DO UPDATE SET
+                    revision = EXCLUDED.revision,
+                    etag = EXCLUDED.etag,
+                    activated_at = NOW();
+                """,
+                (environment, etag),
+            )
 
     def seed_test_features(self, schema: str | None = None, layer_id: int = 0) -> None:
         """Seed features with varied attributes and geometry types."""

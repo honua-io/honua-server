@@ -968,6 +968,7 @@ jobs:
         working-directory: tests/js-browser
         env:
           HONUA_BASE_URL: http://localhost:5000
+          HONUA_API_KEY: "ci-admin-password"
           CI: 'true'
 
       - name: Upload test artifacts
