@@ -82,6 +82,115 @@ public sealed record MetadataV2ObjectMetadata
     /// </summary>
     [JsonPropertyName("updatedAt")]
     public DateTimeOffset? UpdatedAt { get; init; }
+
+    /// <summary>
+    /// Free-form discovery keywords. Mapped to OGC-API-Records.keywords,
+    /// STAC.collection.keywords, WMS/WMTS/WFS/WCS &lt;ows:Keywords&gt;, Esri
+    /// documentInfo.Keywords (comma-joined), and OData Org.OData.Core.V1.Tags.
+    /// </summary>
+    [JsonPropertyName("keywords")]
+    public IReadOnlyList<string> Keywords { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// DCAT-style themes/categories (theme URIs or labels). Mapped to
+    /// OGC-API-Records.themes, DCAT dcat:theme, and STAC summaries["theme"]
+    /// where present.
+    /// </summary>
+    [JsonPropertyName("themes")]
+    public IReadOnlyList<string> Themes { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// BCP-47 language tag (for example <c>en</c>, <c>en-US</c>, <c>de-CH</c>).
+    /// Mapped to OGC-API-Records.language, OGC-API-Common landingPage.language,
+    /// and link hreflang.
+    /// </summary>
+    [JsonPropertyName("language")]
+    public string? Language { get; init; }
+
+    /// <summary>
+    /// SPDX identifier (for example <c>CC-BY-4.0</c>, <c>MIT</c>, <c>Apache-2.0</c>)
+    /// or the literal string <c>proprietary</c>. Mapped to STAC.collection.license
+    /// (required), OGC-API-Records.license, and OGC-API rel=license link URLs
+    /// derived from the SPDX identifier.
+    /// </summary>
+    [JsonPropertyName("license")]
+    public string? License { get; init; }
+
+    /// <summary>
+    /// Human-readable attribution / credits string. Mapped to
+    /// OGC-API-Features.collection.attribution, STAC providers[].name,
+    /// WMS &lt;AttributionURL&gt;, Esri copyrightText, and Esri documentInfo.Credits.
+    /// </summary>
+    [JsonPropertyName("attribution")]
+    public string? Attribution { get; init; }
+
+    /// <summary>
+    /// Data producer / source organization. Mapped to OGC-API-Records.publisher,
+    /// DCAT dcat:publisher, STAC providers[role=producer], and Esri
+    /// documentInfo.Subject (loose mapping).
+    /// </summary>
+    [JsonPropertyName("publisher")]
+    public string? Publisher { get; init; }
+
+    /// <summary>
+    /// Point of contact for this entity. Mapped to OGC-API-Common
+    /// landingPage.contact, OGC-API-Records.contacts[], and Esri
+    /// documentInfo.Author.
+    /// </summary>
+    [JsonPropertyName("contactPoint")]
+    public MetadataV2ContactPoint? ContactPoint { get; init; }
+
+    /// <summary>
+    /// External links advertised alongside this entity. Mapped to OGC-API
+    /// &amp; STAC <c>links[]</c> arrays.
+    /// </summary>
+    [JsonPropertyName("links")]
+    public IReadOnlyList<MetadataV2Link> Links { get; init; } = Array.Empty<MetadataV2Link>();
+}
+
+/// <summary>
+/// Point of contact carried on <see cref="MetadataV2ObjectMetadata"/>.
+/// </summary>
+public sealed record MetadataV2ContactPoint
+{
+    /// <summary>Display name of the contact (person or organization).</summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; init; }
+
+    /// <summary>Email address of the contact. Must contain '@' when set.</summary>
+    [JsonPropertyName("email")]
+    public string? Email { get; init; }
+
+    /// <summary>Contact URL (homepage, contact form, …).</summary>
+    [JsonPropertyName("url")]
+    public string? Url { get; init; }
+}
+
+/// <summary>
+/// External link entry, modelled on RFC 8288 / OGC-API &amp; STAC link objects.
+/// </summary>
+public sealed record MetadataV2Link
+{
+    /// <summary>Target URL of the link. Required (non-empty) when emitted.</summary>
+    [JsonPropertyName("href")]
+    public string Href { get; init; } = string.Empty;
+
+    /// <summary>IANA / OGC link relation type (e.g. <c>self</c>, <c>license</c>,
+    /// <c>describedby</c>). Required (non-empty) when emitted.</summary>
+    [JsonPropertyName("rel")]
+    public string Rel { get; init; } = string.Empty;
+
+    /// <summary>Media type of the linked resource (e.g. <c>application/json</c>).</summary>
+    [JsonPropertyName("type")]
+    public string? Type { get; init; }
+
+    /// <summary>Human-readable title of the linked resource.</summary>
+    [JsonPropertyName("title")]
+    public string? Title { get; init; }
+
+    /// <summary>BCP-47 language tag of the linked resource.</summary>
+    [JsonPropertyName("hreflang")]
+    public string? Hreflang { get; init; }
 }
 
 /// <summary>

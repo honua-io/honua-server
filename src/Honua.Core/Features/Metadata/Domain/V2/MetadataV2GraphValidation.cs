@@ -45,6 +45,7 @@ public static class MetadataV2GraphValidator
         ValidatePublications(errors, graph.Publications, resourceIds, storageBindingsById, serviceIds);
         ValidateServices(errors, graph.Services, publicationsById);
         ValidatePublicationPrimary(errors, graph.Publications);
+        ValidateObjectMetadataUniversals(errors, graph);
 
         return new MetadataV2GraphValidationResult(errors.Count == 0, errors);
     }
@@ -343,6 +344,52 @@ public static class MetadataV2GraphValidator
             {
                 errors.Add(
                     $"publication '{publication.Metadata.Id}' uses storage binding '{publication.StorageBindingId}' owned by resource '{storageBinding.ResourceId}'.");
+            }
+        }
+    }
+
+    private static void ValidateObjectMetadataUniversals(List<string> errors, MetadataV2Graph graph)
+    {
+        ValidateOneMetadata(errors, "graph", graph.Metadata);
+        foreach (var r in graph.Resources)
+        {
+            ValidateOneMetadata(errors, $"resource '{r.Metadata.Id}'", r.Metadata);
+        }
+        foreach (var c in graph.Connections)
+        {
+            ValidateOneMetadata(errors, $"connection '{c.Metadata.Id}'", c.Metadata);
+        }
+        foreach (var sb in graph.StorageBindings)
+        {
+            ValidateOneMetadata(errors, $"storage binding '{sb.Metadata.Id}'", sb.Metadata);
+        }
+        foreach (var s in graph.Services)
+        {
+            ValidateOneMetadata(errors, $"service '{s.Metadata.Id}'", s.Metadata);
+        }
+        foreach (var p in graph.Publications)
+        {
+            ValidateOneMetadata(errors, $"publication '{p.Metadata.Id}'", p.Metadata);
+        }
+    }
+
+    private static void ValidateOneMetadata(List<string> errors, string ownerLabel, MetadataV2ObjectMetadata metadata)
+    {
+        if (metadata.ContactPoint is { Email: { } email } && !string.IsNullOrWhiteSpace(email) && !email.Contains('@'))
+        {
+            errors.Add($"{ownerLabel} metadata.contactPoint.email '{email}' must contain '@'.");
+        }
+
+        for (var i = 0; i < metadata.Links.Count; i++)
+        {
+            var link = metadata.Links[i];
+            if (string.IsNullOrWhiteSpace(link.Href))
+            {
+                errors.Add($"{ownerLabel} metadata.links[{i}].href is required.");
+            }
+            if (string.IsNullOrWhiteSpace(link.Rel))
+            {
+                errors.Add($"{ownerLabel} metadata.links[{i}].rel is required.");
             }
         }
     }
