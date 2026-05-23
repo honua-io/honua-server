@@ -68,7 +68,11 @@ internal static partial class FeatureServerEndpoints
 
         var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var storageLayerId = snapshot.ResolveStorageLayerId(publication);
+        // Mirror the V2 metadata builders' resolution order
+        // (FeatureServerUtilities.V2.MapLayerInfoV2): integer storage handle is
+        // publication.LayerIndex when the graph doesn't carry an explicit
+        // storage binding for this publication.
+        var storageLayerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication);
         if (storageLayerId is null)
         {
             return StandardErrorHelpers.CreateNotFound(

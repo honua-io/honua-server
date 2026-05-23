@@ -169,19 +169,20 @@ internal static partial class FeatureServerEndpoints
 
         foreach (var (publication, resource) in accessibleLayers)
         {
-            var storageLayerId = snapshot.ResolveStorageLayerId(publication);
-            if (storageLayerId is null)
+            // Mirror the V2 metadata builders' resolution order
+            // (FeatureServerUtilities.V2.MapLayerInfoV2): the integer storage
+            // handle for IFeatureReader is publication.LayerIndex when the graph
+            // doesn't carry an explicit storage binding for this publication.
+            var resolvedLayerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication);
+            if (resolvedLayerId is null)
             {
-                // Publication isn't bound to a storage layer; skip rather than fail the whole
-                // request — mirrors the v1 path which silently skipped unbound layers.
                 continue;
             }
 
-            var resolvedLayerId = publication.LayerIndex ?? storageLayerId.Value;
-            var estimates = await featureReader.GetEstimatesAsync(storageLayerId.Value, cancellationToken);
+            var estimates = await featureReader.GetEstimatesAsync(resolvedLayerId.Value, cancellationToken);
             layerEstimates.Add(new ServiceLayerEstimateInfo
             {
-                Id = resolvedLayerId,
+                Id = resolvedLayerId.Value,
                 Count = estimates.EstimatedCount,
                 Extent = estimates.Extent.HasValue ? estimates.Extent.Value.ToExtentInfo() : null
             });
