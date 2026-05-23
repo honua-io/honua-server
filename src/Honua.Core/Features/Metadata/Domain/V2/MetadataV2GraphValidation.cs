@@ -46,6 +46,7 @@ public static class MetadataV2GraphValidator
         ValidateServices(errors, graph.Services, publicationsById);
         ValidatePublicationPrimary(errors, graph.Publications);
         ValidateObjectMetadataUniversals(errors, graph);
+        ValidateStyleResources(errors, graph);
 
         return new MetadataV2GraphValidationResult(errors.Count == 0, errors);
     }
@@ -394,6 +395,79 @@ public static class MetadataV2GraphValidator
             {
                 errors.Add(
                     $"publication '{publication.Metadata.Id}' uses storage binding '{publication.StorageBindingId}' owned by resource '{storageBinding.ResourceId}'.");
+            }
+        }
+    }
+
+    private static readonly HashSet<string> CanonicalStyleEncodings = new(StringComparer.Ordinal)
+    {
+        "mapbox-style",
+        "sld-1.0.0",
+        "sld-1.1.0",
+        "esri-drawing-info",
+        "esri-image-renderer",
+        "3d-tiles-styling",
+    };
+
+    private static void ValidateStyleResources(List<string> errors, MetadataV2Graph graph)
+    {
+        var styleResources = graph.Resources
+            .Where(r => r.Type == MetadataV2ResourceType.Style)
+            .ToDictionary(r => r.Metadata.Id, StringComparer.Ordinal);
+
+        foreach (var resource in graph.Resources)
+        {
+            // StyleResourceIds entries must reference declared Resources of Type=Style.
+            for (var i = 0; i < resource.StyleResourceIds.Count; i++)
+            {
+                var styleId = resource.StyleResourceIds[i];
+                if (string.IsNullOrWhiteSpace(styleId))
+                {
+                    errors.Add(
+                        $"resource '{resource.Metadata.Id}' styleResourceIds[{i}] is empty.");
+                    continue;
+                }
+                if (!styleResources.ContainsKey(styleId))
+                {
+                    errors.Add(
+                        $"resource '{resource.Metadata.Id}' styleResourceIds[{i}] '{styleId}' is not a declared resource of type Style.");
+                }
+            }
+
+            // Resources with Type=Style MUST have Style.Encodings non-empty.
+            if (resource.Type == MetadataV2ResourceType.Style)
+            {
+                var style = resource.Style;
+                if (style is null || style.Encodings.Count == 0)
+                {
+                    errors.Add(
+                        $"resource '{resource.Metadata.Id}' is type Style but has no style.encodings.");
+                }
+                else
+                {
+                    for (var i = 0; i < style.Encodings.Count; i++)
+                    {
+                        var encoding = style.Encodings[i];
+                        var hasBody = !string.IsNullOrEmpty(encoding.Body);
+                        var hasBinding = !string.IsNullOrEmpty(encoding.StorageBindingId);
+                        if (hasBody == hasBinding)
+                        {
+                            errors.Add(
+                                $"resource '{resource.Metadata.Id}' style.encodings[{i}] must set exactly one of body or storageBindingId.");
+                        }
+
+                        if (string.IsNullOrWhiteSpace(encoding.Encoding))
+                        {
+                            errors.Add(
+                                $"resource '{resource.Metadata.Id}' style.encodings[{i}].encoding is required.");
+                        }
+                        else if (!CanonicalStyleEncodings.Contains(encoding.Encoding) && !encoding.Encoding.StartsWith("x-", StringComparison.Ordinal))
+                        {
+                            errors.Add(
+                                $"resource '{resource.Metadata.Id}' style.encodings[{i}].encoding '{encoding.Encoding}' is not a canonical value (mapbox-style, sld-1.0.0, sld-1.1.0, esri-drawing-info, esri-image-renderer, 3d-tiles-styling) and is not prefixed with 'x-'.");
+                        }
+                    }
+                }
             }
         }
     }

@@ -21,7 +21,8 @@ public sealed class MetadataV2GraphIndex
         IReadOnlyDictionary<string, MetadataV2Service> servicesByName,
         IReadOnlyDictionary<string, MetadataV2Publication> publicationsById,
         ILookup<string, MetadataV2Publication> publicationsByService,
-        ILookup<string, MetadataV2Publication> publicationsByResource)
+        ILookup<string, MetadataV2Publication> publicationsByResource,
+        ILookup<string, MetadataV2Resource> resourcesByStyleResourceId)
     {
         ResourcesById = resourcesById;
         ResourcesByName = resourcesByName;
@@ -35,6 +36,7 @@ public sealed class MetadataV2GraphIndex
         PublicationsById = publicationsById;
         PublicationsByService = publicationsByService;
         PublicationsByResource = publicationsByResource;
+        ResourcesByStyleResourceId = resourcesByStyleResourceId;
     }
 
     public IReadOnlyDictionary<string, MetadataV2Resource> ResourcesById { get; }
@@ -65,6 +67,12 @@ public sealed class MetadataV2GraphIndex
     public IReadOnlyDictionary<string, MetadataV2Publication> PublicationsById { get; }
     public ILookup<string, MetadataV2Publication> PublicationsByService { get; }
     public ILookup<string, MetadataV2Publication> PublicationsByResource { get; }
+
+    /// <summary>
+    /// Reverse lookup from a style resource id to every resource that
+    /// references it through <see cref="MetadataV2Resource.StyleResourceIds"/>.
+    /// </summary>
+    public ILookup<string, MetadataV2Resource> ResourcesByStyleResourceId { get; }
 
     /// <summary>
     /// Builds an index from a graph document.
@@ -120,6 +128,14 @@ public sealed class MetadataV2GraphIndex
         var publicationsByService = graph.Publications.ToLookup(p => p.ServiceId, StringComparer.Ordinal);
         var publicationsByResource = graph.Publications.ToLookup(p => p.ResourceId, StringComparer.Ordinal);
 
+        // Flatten (resource, styleResourceId) pairs into a reverse lookup so
+        // callers can answer "which resources use style X?" in O(1).
+        var resourcesByStyleResourceId = graph.Resources
+            .SelectMany(r => (r.StyleResourceIds ?? Array.Empty<string>())
+                .Where(id => !string.IsNullOrEmpty(id))
+                .Select(id => (StyleId: id, Resource: r)))
+            .ToLookup(pair => pair.StyleId, pair => pair.Resource, StringComparer.Ordinal);
+
         return new MetadataV2GraphIndex(
             resourcesById,
             resourcesByName,
@@ -132,6 +148,7 @@ public sealed class MetadataV2GraphIndex
             servicesByName,
             publicationsById,
             publicationsByService,
-            publicationsByResource);
+            publicationsByResource,
+            resourcesByStyleResourceId);
     }
 }

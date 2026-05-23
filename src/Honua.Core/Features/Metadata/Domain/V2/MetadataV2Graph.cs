@@ -174,6 +174,21 @@ public sealed record MetadataV2Resource
     public MetadataV2PermanentFilter? PermanentFilter { get; init; }
 
     /// <summary>
+    /// Style resources that render this resource. <c>[0]</c> is the primary
+    /// style by convention. Each entry MUST reference a declared resource of
+    /// <see cref="MetadataV2ResourceType.Style"/>.
+    /// </summary>
+    [JsonPropertyName("styleResourceIds")]
+    public IReadOnlyList<string> StyleResourceIds { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Style payload — populated on resources whose
+    /// <see cref="Type"/> is <see cref="MetadataV2ResourceType.Style"/>.
+    /// </summary>
+    [JsonPropertyName("style")]
+    public MetadataV2ResourceStyle? Style { get; init; }
+
+    /// <summary>
     /// Optional rendering / display hints used by map and feature services
     /// (min/max scale, default visibility, display field, queryable, Z/M).
     /// </summary>
