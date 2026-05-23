@@ -16,6 +16,7 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 [JsonSerializable(typeof(MetadataV2Connection))]
 [JsonSerializable(typeof(MetadataV2StorageBinding))]
 [JsonSerializable(typeof(MetadataV2Service))]
+[JsonSerializable(typeof(MetadataV2ServiceSettings))]
 [JsonSerializable(typeof(MetadataV2Publication))]
 [JsonSerializable(typeof(MetadataV2ObjectMetadata))]
 [JsonSerializable(typeof(MetadataV2ContactPoint))]

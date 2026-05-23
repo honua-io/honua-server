@@ -459,10 +459,80 @@ public sealed record MetadataV2Service
     public IReadOnlyDictionary<string, JsonElement> Options { get; init; } = new Dictionary<string, JsonElement>();
 
     /// <summary>
+    /// Optional service-level settings (record/feature/image limits, formats,
+    /// timeouts, attachment caps). Consumed by every protocol cluster.
+    /// </summary>
+    [JsonPropertyName("settings")]
+    public MetadataV2ServiceSettings? Settings { get; init; }
+
+    /// <summary>
     /// Extension data for the service.
     /// </summary>
     [JsonPropertyName("extensions")]
     public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
+}
+
+/// <summary>
+/// Service-level operational settings shared across protocols. Slots are
+/// nullable to allow protocol-specific defaults when unset.
+/// </summary>
+public sealed record MetadataV2ServiceSettings
+{
+    /// <summary>Maximum records per query (paging cap).</summary>
+    [JsonPropertyName("maxRecordCount")]
+    public int? MaxRecordCount { get; init; }
+
+    /// <summary>Default records per query when the client does not request one.</summary>
+    [JsonPropertyName("defaultRecordCount")]
+    public int? DefaultRecordCount { get; init; }
+
+    /// <summary>Maximum rendered image width in pixels.</summary>
+    [JsonPropertyName("maxImageWidth")]
+    public int? MaxImageWidth { get; init; }
+
+    /// <summary>Maximum rendered image height in pixels.</summary>
+    [JsonPropertyName("maxImageHeight")]
+    public int? MaxImageHeight { get; init; }
+
+    /// <summary>Default rendering DPI.</summary>
+    [JsonPropertyName("defaultDpi")]
+    public int? DefaultDpi { get; init; }
+
+    /// <summary>Maximum features returned per layer per request.</summary>
+    [JsonPropertyName("maxFeaturesPerLayer")]
+    public int? MaxFeaturesPerLayer { get; init; }
+
+    /// <summary>Default response format token (e.g. <c>json</c>, <c>geojson</c>).</summary>
+    [JsonPropertyName("defaultFormat")]
+    public string? DefaultFormat { get; init; }
+
+    /// <summary>Response formats this service is allowed to emit.</summary>
+    [JsonPropertyName("supportedFormats")]
+    public IReadOnlyList<string> SupportedFormats { get; init; } = Array.Empty<string>();
+
+    /// <summary>Default tile matrix set identifier for tile services.</summary>
+    [JsonPropertyName("defaultTileMatrixSet")]
+    public string? DefaultTileMatrixSet { get; init; }
+
+    /// <summary>True when this service supports attachments.</summary>
+    [JsonPropertyName("supportsAttachments")]
+    public bool SupportsAttachments { get; init; }
+
+    /// <summary>Maximum attachment size in bytes.</summary>
+    [JsonPropertyName("maxAttachmentSizeBytes")]
+    public long? MaxAttachmentSizeBytes { get; init; }
+
+    /// <summary>Per-query timeout in milliseconds.</summary>
+    [JsonPropertyName("queryTimeoutMs")]
+    public int? QueryTimeoutMs { get; init; }
+
+    /// <summary>Maximum edit operations per applyEdits transaction.</summary>
+    [JsonPropertyName("maxEditsPerTransaction")]
+    public int? MaxEditsPerTransaction { get; init; }
+
+    /// <summary>Maximum request payload size in bytes.</summary>
+    [JsonPropertyName("maxPayloadBytes")]
+    public long? MaxPayloadBytes { get; init; }
 }
 
 /// <summary>

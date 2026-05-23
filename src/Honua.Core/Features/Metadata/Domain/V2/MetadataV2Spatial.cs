@@ -125,4 +125,33 @@ public sealed record MetadataV2ResourceSpatial
     /// </summary>
     [JsonPropertyName("primaryGeometryField")]
     public string? PrimaryGeometryField { get; init; }
+
+    /// <summary>
+    /// CRSes this resource can serve from in addition to
+    /// <see cref="SpatialReference"/>. Mapped to OGC-API-Features Part 2
+    /// <c>collection.crs[]</c> and WFS-2 <c>OtherCRS</c>. When empty,
+    /// consumers fall back to a single-element list of
+    /// <see cref="SpatialReference"/>.
+    /// </summary>
+    [JsonPropertyName("supportedCrs")]
+    public IReadOnlyList<MetadataV2SpatialReference> SupportedCrs { get; init; } =
+        Array.Empty<MetadataV2SpatialReference>();
+
+    /// <summary>
+    /// On-disk storage CRS, which can differ from the advertised
+    /// <see cref="SpatialReference"/> for projected-on-read deployments.
+    /// Mapped to OGC-API-Features Part 2 <c>collection.storageCrs</c> and
+    /// GeoParquet <c>geo.columns[].crs</c>.
+    /// </summary>
+    [JsonPropertyName("storageCrs")]
+    public MetadataV2SpatialReference? StorageCrs { get; init; }
+
+    /// <summary>
+    /// Coordinate epoch (decimal year) for time-varying CRSes such as
+    /// ITRF realisations. Mapped to OGC-API-Features Part 2
+    /// <c>collection.storageCrsCoordinateEpoch</c> and GeoParquet
+    /// <c>geo.columns[].epoch</c>.
+    /// </summary>
+    [JsonPropertyName("storageCrsCoordinateEpoch")]
+    public double? StorageCrsCoordinateEpoch { get; init; }
 }

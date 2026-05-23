@@ -451,8 +451,40 @@ public static class MetadataV2GraphValidator
     {
         // Service→publications is now derived from publication.ServiceId only;
         // the redundant Service.PublicationIds slot was removed in design slice 55/N.
-        // This method is kept as a hook for future service-only invariants.
-        _ = errors; _ = services; _ = publicationsById;
+        _ = publicationsById;
+
+        foreach (var service in services)
+        {
+            if (service.Settings is { } settings)
+            {
+                ValidatePositiveInt(errors, service, settings.MaxRecordCount, "settings.maxRecordCount");
+                ValidatePositiveInt(errors, service, settings.DefaultRecordCount, "settings.defaultRecordCount");
+                ValidatePositiveInt(errors, service, settings.MaxImageWidth, "settings.maxImageWidth");
+                ValidatePositiveInt(errors, service, settings.MaxImageHeight, "settings.maxImageHeight");
+                ValidatePositiveInt(errors, service, settings.DefaultDpi, "settings.defaultDpi");
+                ValidatePositiveInt(errors, service, settings.MaxFeaturesPerLayer, "settings.maxFeaturesPerLayer");
+                ValidatePositiveInt(errors, service, settings.QueryTimeoutMs, "settings.queryTimeoutMs");
+                ValidatePositiveInt(errors, service, settings.MaxEditsPerTransaction, "settings.maxEditsPerTransaction");
+                ValidatePositiveLong(errors, service, settings.MaxAttachmentSizeBytes, "settings.maxAttachmentSizeBytes");
+                ValidatePositiveLong(errors, service, settings.MaxPayloadBytes, "settings.maxPayloadBytes");
+            }
+        }
+    }
+
+    private static void ValidatePositiveInt(List<string> errors, MetadataV2Service service, int? value, string slot)
+    {
+        if (value is int v && v <= 0)
+        {
+            errors.Add($"service '{service.Metadata.Id}' {slot} must be positive (was {v}).");
+        }
+    }
+
+    private static void ValidatePositiveLong(List<string> errors, MetadataV2Service service, long? value, string slot)
+    {
+        if (value is long v && v <= 0)
+        {
+            errors.Add($"service '{service.Metadata.Id}' {slot} must be positive (was {v}).");
+        }
     }
 }
 
