@@ -123,6 +123,9 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms111_GetCapabilities_UsesDtdCompatibleServiceAndDimensionElements()
     {
+        // V2 cutover: capabilities reads the layer display name off MetadataV2Resource.
+        // Update the V2 graph so the cite:Autos dimension branch fires.
+        _fixture.UpdateV2ResourceName(WebAppFixture.TestLayerId, "cite:Autos");
         await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!))
         await using (var command = connection.CreateCommand())
         {
@@ -178,6 +181,22 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetCapabilities_ServiceExtentInWebMercator_ReprojectsGeographicBounds()
     {
+        // V2 cutover: capabilities reads its bbox off MetadataV2Resource.Spatial.Bbox
+        // (V2 has no service-level extent). Set Web Mercator bounds on the layer the
+        // test service publishes so the OgcExtentTransformer reproject branch fires.
+        _fixture.UpdateV2ResourceMetadata(
+            WebAppFixture.TestLayerId,
+            spatial: new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ResourceSpatial
+            {
+                SpatialReference = Honua.Core.Features.Metadata.Domain.V2.MetadataV2SpatialReference.WebMercator,
+                Bbox = new Honua.Core.Features.Metadata.Domain.V2.MetadataV2Bbox
+                {
+                    West = -20037508.342789244,
+                    South = -20037508.342789244,
+                    East = 20037508.342789244,
+                    North = 20037508.342789244,
+                },
+            });
         await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema))
         await using (var command = connection.CreateCommand())
         {

@@ -4,10 +4,12 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
-using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
@@ -96,6 +98,20 @@ internal static partial class WmsRequestHandlers
     private static readonly string[] _wms111CapabilitiesMediaTypes = [Wms111CapabilitiesMimeType, WmsCapabilitiesMimeType];
 
     /// <summary>
+    /// Resolved (resource, publication, storage layer id) triple for a single WMS layer.
+    /// Replaces the v1 <c>LayerDefinition</c> in the request pipeline. Mirrors the
+    /// <c>WmtsLayer</c> shape used by the just-landed WMTS port — Identifier is the
+    /// protocol-facing LAYER token (publication.LayerIndex stringified when numeric,
+    /// else ServiceLocalId/Name), StorageLayerId is the integer handle that
+    /// <see cref="IFeatureReader"/> and the raster pipeline expect.
+    /// </summary>
+    private readonly record struct WmsLayer(
+        MetadataV2Resource Resource,
+        MetadataV2Publication Publication,
+        int StorageLayerId,
+        string Identifier);
+
+    /// <summary>
     /// Handle OGC WMS requests (GetCapabilities, GetMap, GetFeatureInfo).
     /// </summary>
     internal static async Task<IResult> HandleWms(HttpContext context)
@@ -124,7 +140,7 @@ internal static partial class WmsRequestHandlers
             }
 
             var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-            var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
+            var serviceResult = await resourceValidator.ValidateServiceV2Async(serviceId, cancellationToken);
             if (!serviceResult.IsValid)
             {
                 var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
@@ -137,14 +153,26 @@ internal static partial class WmsRequestHandlers
             }
 
             var svcDef = serviceResult.Resource!;
-            var protocolError = ProtocolValidationHelpers.ValidateProtocolEnabled(context, svcDef, ServiceProtocols.Wms);
-            if (protocolError is not null)
+            if (!ServiceProtocols.IsProtocolEnabled(svcDef, ServiceProtocols.Wms))
             {
                 return CreateWmsServiceException(context, "OperationNotSupported", "WMS protocol is not enabled for this service.");
             }
 
-            var wmsLayers = svcDef.Layers.Where(static layer => layer.HasGeometry).ToArray();
-            var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, wmsLayers, svcDef);
+            var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+
+            // Resolve all WMS layers up-front: walk publications, dedupe by resource
+            // (prefer IsPrimary), drop those without a usable storage layer id, and
+            // keep only resources that carry geometry (WMS is a raster protocol).
+            // Sorted by storage layer id so capabilities ordering is stable — matches
+            // the resolution order WCS/WMTS V2 ports use and the FeatureServer V2
+            // cluster established earlier in the cutover.
+            var wmsLayers = ResolveWmsLayers(snapshot, svcDef);
+
+            var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+                context,
+                wmsLayers.Select(l => l.Resource),
+                svcDef);
             if (accessError != null)
             {
                 var isAuthenticated = context.User?.Identity?.IsAuthenticated == true;
@@ -163,6 +191,10 @@ internal static partial class WmsRequestHandlers
             {
                 return CreateWmsServiceException(context, "LayerNotDefined", "No accessible WMS layers are available for this service.");
             }
+
+            var accessibleLayers = wmsLayers
+                .Where(l => AccessPolicyHelpers.IsResourceAccessible(context, l.Resource, svcDef))
+                .ToArray();
 
             if (string.IsNullOrWhiteSpace(requestType) ||
                 string.Equals(requestType, "GetCapabilities", StringComparison.OrdinalIgnoreCase))
@@ -185,18 +217,18 @@ internal static partial class WmsRequestHandlers
 
                 OgcClassicLog.WmsRequested(logger, serviceId, "GetCapabilities");
                 var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-                var xml = await BuildWmsCapabilities(context, svcDef, serviceId, baseUrl, capabilitiesVersion).ConfigureAwait(false);
+                var xml = await BuildWmsCapabilities(context, svcDef, accessibleLayers, serviceId, baseUrl, capabilitiesVersion).ConfigureAwait(false);
                 return Results.Content(xml, GetWmsCapabilitiesMimeType(capabilitiesVersion), Encoding.UTF8, StatusCodes.Status200OK);
             }
 
             if (string.Equals(requestType, "GetMap", StringComparison.OrdinalIgnoreCase))
             {
-                return await HandleWmsGetMap(context, svcDef, serviceId, logger);
+                return await HandleWmsGetMap(context, svcDef, accessibleLayers, serviceId, logger);
             }
 
             if (string.Equals(requestType, "GetFeatureInfo", StringComparison.OrdinalIgnoreCase))
             {
-                return await HandleWmsGetFeatureInfo(context, svcDef, serviceId, logger);
+                return await HandleWmsGetFeatureInfo(context, svcDef, accessibleLayers, serviceId, logger);
             }
 
             return CreateWmsServiceException(context, "OperationNotSupported", $"Unsupported WMS REQUEST '{requestType}'.");
@@ -227,43 +259,161 @@ internal static partial class WmsRequestHandlers
         }
     }
 
+    /// <summary>
+    /// Walks the publications of <paramref name="service"/>, resolving each to its
+    /// canonical resource and integer storage layer handle. Dedupes by resource (prefers
+    /// <see cref="MetadataV2Publication.IsPrimary"/>) and drops publications that don't
+    /// resolve to a usable storage layer handle or whose resource does not carry
+    /// geometry (WMS is raster-only). Sorted by storage layer id so capabilities
+    /// ordering is stable.
+    /// </summary>
+    private static WmsLayer[] ResolveWmsLayers(MetadataV2GraphSnapshot snapshot, MetadataV2Service service)
+    {
+        var byResource = new Dictionary<string, WmsLayer>(StringComparer.Ordinal);
+        foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
+        {
+            var resource = snapshot.ResolveResource(publication);
+            if (resource is null || !ResourceHasGeometry(resource))
+            {
+                continue;
+            }
+
+            // Prefer the publication's protocol-facing LayerIndex (legacy GeoServices-style
+            // int handle); fall back to the storage binding's StorageLayerId for graphs
+            // that haven't migrated their bindings. Matches the resolution order used by
+            // the WCS/WMTS V2 ports.
+            var storageLayerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication);
+            if (!storageLayerId.HasValue)
+            {
+                continue;
+            }
+
+            var identifier = publication.LayerIndex.HasValue
+                ? publication.LayerIndex.Value.ToString(CultureInfo.InvariantCulture)
+                : publication.ServiceLocalId ?? publication.Metadata.Name ?? resource.Metadata.Name;
+
+            var candidate = new WmsLayer(resource, publication, storageLayerId.Value, identifier);
+            if (!byResource.TryGetValue(resource.Metadata.Id, out var existing) ||
+                (publication.IsPrimary && !existing.Publication.IsPrimary))
+            {
+                byResource[resource.Metadata.Id] = candidate;
+            }
+        }
+
+        return byResource.Values
+            .OrderBy(static l => l.StorageLayerId)
+            .ToArray();
+    }
+
+    /// <summary>
+    /// Source CRS for the GetMap / GetFeatureInfo feature query. The render pipeline
+    /// reprojects the request-side bbox into this SRID before issuing the spatial
+    /// filter, so it must match the SRID the feature store actually stores geometries
+    /// in. Resolution order:
+    /// 1. <see cref="MetadataV2Service.SpatialReference"/> when the service declares a
+    ///    rendering CRS;
+    /// 2. the resource's <see cref="MetadataV2ResourceSpatial.SpatialReference"/>;
+    /// 3. WGS84 (the seed-table default and the convention the OGC Tiles V2
+    ///    port uses).
+    /// </summary>
+    private static int ResolveServiceSrid(MetadataV2Service service, MetadataV2Resource resource)
+        => service.SpatialReference?.ResolveSrid()
+            ?? resource.ReadSrid()
+            ?? 4326;
+
+    private static bool ResourceHasGeometry(MetadataV2Resource resource)
+    {
+        if (resource.ReadGeometryType() != MetadataV2GeometryType.None)
+        {
+            return true;
+        }
+
+        // V2 graphs that don't fill in the typed Spatial slot still surface geometry through
+        // the schema (Geometry/Geography field). Match the WCS/WMTS V2 ports — both are
+        // treated as "this layer is renderable".
+        return resource.FindPrimaryGeometryField() is not null;
+    }
+
+    private static GeometryType MapGeometryType(MetadataV2GeometryType v2)
+        => v2 switch
+        {
+            MetadataV2GeometryType.Point => GeometryType.Point,
+            MetadataV2GeometryType.MultiPoint => GeometryType.MultiPoint,
+            MetadataV2GeometryType.LineString => GeometryType.LineString,
+            MetadataV2GeometryType.MultiLineString => GeometryType.MultiLineString,
+            MetadataV2GeometryType.Polygon => GeometryType.Polygon,
+            MetadataV2GeometryType.MultiPolygon => GeometryType.MultiPolygon,
+            _ => GeometryType.None,
+        };
+
+    /// <summary>
+    /// Display name used everywhere the WMS protocol surfaces a layer (LAYERS,
+    /// QUERY_LAYERS, Layer/Name in capabilities, layer label in GetFeatureInfo).
+    /// Returns the resource's display name with any namespace prefix removed (so
+    /// "cite:Lakes" surfaces as "Lakes" the way v1 did) and falls back to the
+    /// publication's identifier when the resource has no name.
+    /// </summary>
+    private static string GetWmsLayerDisplayName(WmsLayer layer)
+        => GetWmsLayerName(layer.Resource, layer.Publication);
+
+    /// <summary>
+    /// CITE conformance keys behaviour off the human-facing layer title with the
+    /// namespace intact (e.g. <c>cite:Autos</c>). Resource Name and Title both
+    /// carry it depending on the fixture, so check both. Matches the resolution
+    /// the WMTS V2 port uses for <c>cite:Terrain</c> / <c>cite:BasicPolygons</c>.
+    /// </summary>
+    private static bool IsCiteLayerNamed(WmsLayer layer, string citeName)
+    {
+        var name = layer.Resource.Metadata.Name ?? string.Empty;
+        var title = layer.Resource.Metadata.Title ?? string.Empty;
+        return string.Equals(name, citeName, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(title, citeName, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static bool TryResolveWmsRequestedLayers(
-        ServiceDefinition service,
-        HttpContext context,
+        IReadOnlyList<WmsLayer> accessibleLayers,
         string[] requestedTokens,
-        out LayerDefinition[] layers,
+        out WmsLayer[] layers,
         out string? unresolvedToken)
     {
         layers = [];
         unresolvedToken = null;
 
-        var accessibleLayers = service.Layers
-            .Where(l => l.HasGeometry && AccessPolicyHelpers.IsLayerAccessible(context, l, service))
-            .ToArray();
-
         if (requestedTokens.Length == 0)
         {
-            layers = accessibleLayers.Where(l => l.DefaultVisibility).ToArray();
+            // V2 has no per-publication "default visibility" flag; surface all accessible
+            // layers as the default LAYERS set (matches v1 which treated DefaultVisibility
+            // as on for every geometry-bearing layer in the test fixtures).
+            layers = [.. accessibleLayers];
             return true;
         }
 
-        var byId = accessibleLayers.ToDictionary(layer => layer.Id.ToString(CultureInfo.InvariantCulture), StringComparer.OrdinalIgnoreCase);
-        var byName = new Dictionary<string, LayerDefinition>(StringComparer.OrdinalIgnoreCase);
+        var byId = new Dictionary<string, WmsLayer>(StringComparer.OrdinalIgnoreCase);
+        var byName = new Dictionary<string, WmsLayer>(StringComparer.OrdinalIgnoreCase);
         foreach (var layer in accessibleLayers)
         {
-            if (!string.IsNullOrWhiteSpace(layer.Name))
+            byId[layer.StorageLayerId.ToString(CultureInfo.InvariantCulture)] = layer;
+            if (!string.IsNullOrWhiteSpace(layer.Identifier))
             {
-                byName[layer.Name] = layer;
+                byId[layer.Identifier] = layer;
             }
 
-            var normalizedName = GetWmsLayerName(layer);
-            if (!string.IsNullOrWhiteSpace(normalizedName))
+            var resourceName = layer.Resource.Metadata.Name;
+            if (!string.IsNullOrWhiteSpace(resourceName))
             {
-                byName[normalizedName] = layer;
+                // Match against the resource's namespaced name (e.g. "cite:Autos") so
+                // CITE conformance can address layers by their fully-qualified title.
+                byName[resourceName] = layer;
+            }
+
+            var displayName = GetWmsLayerDisplayName(layer);
+            if (!string.IsNullOrWhiteSpace(displayName))
+            {
+                byName[displayName] = layer;
             }
         }
 
-        var resolved = new List<LayerDefinition>(requestedTokens.Length);
+        var resolved = new List<WmsLayer>(requestedTokens.Length);
         foreach (var token in requestedTokens)
         {
             if (byId.TryGetValue(token, out var byIdLayer))
@@ -299,7 +449,7 @@ internal static partial class WmsRequestHandlers
     private static (TemporalFilter?[]? Filters, IResult? Error) TryParseWmsLayerTemporalFilters(
         HttpContext context,
         IQueryCollection query,
-        LayerDefinition[] layers)
+        WmsLayer[] layers)
     {
         var timeParam = GetQueryValue(query, "TIME");
         if (string.IsNullOrWhiteSpace(timeParam))
@@ -310,7 +460,7 @@ internal static partial class WmsRequestHandlers
         var allCiteAutos = layers.Length > 0;
         foreach (var layer in layers)
         {
-            if (!string.Equals(layer.Name, CiteAutosLayerTitle, StringComparison.OrdinalIgnoreCase))
+            if (!IsCiteLayerNamed(layer, CiteAutosLayerTitle))
             {
                 allCiteAutos = false;
                 break;
@@ -353,36 +503,34 @@ internal static partial class WmsRequestHandlers
             // (the previous early-out disabled TIME filtering for every layer
             // in a mixed request, which silently dropped a valid TIME value
             // for non-CITE layers).
-            if (string.Equals(layer.Name, CiteAutosLayerTitle, StringComparison.OrdinalIgnoreCase))
+            if (IsCiteLayerNamed(layer, CiteAutosLayerTitle))
             {
                 temporalFilters[i] = null;
                 continue;
             }
 
             // Match the capabilities contract: a layer is time-aware only when
-            // its TimeInfo declares a StartTimeField AND both the start and
-            // (optional) end fields resolve to Date/DateTime attributes. WMS
-            // GetCapabilities uses the same gate (TryResolveTemporalRangeAsync
-            // returns null when EndTimeField does not resolve), so a layer
-            // whose EndTimeField is misconfigured does not advertise a
-            // <Dimension name="time"> and must not accept TIME on GetMap
-            // either. Documented in docs/gis/temporal-animation-api.md.
-            if (!TemporalExtentHelpers.TryResolveOptInTemporalFields(layer, out var selection))
+            // its Temporal extension declares a StartTimeField AND both the start
+            // and (optional) end fields resolve to Date/DateTime attributes. WMS
+            // GetCapabilities uses the same gate (TryResolveTemporalRangeV2Async
+            // returns null when EndTimeField does not resolve), so a layer whose
+            // EndTimeField is misconfigured does not advertise a <Dimension
+            // name="time"> and must not accept TIME on GetMap either.
+            if (!TemporalExtentHelpers.TryResolveOptInTemporalFieldsV2(layer.Resource, out var selection))
             {
                 return (null, CreateWmsServiceException(
                     context,
                     "InvalidDimensionValue",
-                    $"Layer '{layer.Name ?? layer.Id.ToString(CultureInfo.InvariantCulture)}' does not support a TIME dimension."));
+                    $"Layer '{GetWmsLayerDisplayName(layer)}' does not support a TIME dimension."));
             }
 
-            var startField = selection.StartField;
+            var startFieldName = selection.StartFieldName;
+            var startFieldType = ResolveTemporalPropertyType(layer.Resource, startFieldName);
             temporalFilters[i] = new TemporalFilter
             {
-                PropertyName = startField.Name,
-                PropertyType = startField.Type == FieldType.Date
-                    ? TemporalPropertyType.Date
-                    : TemporalPropertyType.DateTime,
-                EndPropertyName = selection.EndField?.Name,
+                PropertyName = startFieldName,
+                PropertyType = startFieldType,
+                EndPropertyName = selection.EndFieldName,
                 Start = start,
                 End = end
             };
@@ -391,10 +539,32 @@ internal static partial class WmsRequestHandlers
         return (temporalFilters, null);
     }
 
+    /// <summary>
+    /// Maps the V2 schema field type for <paramref name="fieldName"/> to the WMS
+    /// TemporalFilter property type. Defaults to <see cref="TemporalPropertyType.DateTime"/>
+    /// when the field is not found or carries a non-temporal type so a misconfigured
+    /// resource doesn't drop into a NullReferenceException — capability gating earlier
+    /// in the pipeline already rejected requests for layers whose temporal fields
+    /// don't resolve.
+    /// </summary>
+    private static TemporalPropertyType ResolveTemporalPropertyType(MetadataV2Resource resource, string fieldName)
+    {
+        foreach (var field in resource.SchemaFields)
+        {
+            if (string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
+            {
+                return field.Type == MetadataV2FieldType.Date
+                    ? TemporalPropertyType.Date
+                    : TemporalPropertyType.DateTime;
+            }
+        }
+        return TemporalPropertyType.DateTime;
+    }
+
     private static (SqlFragment?[]? Filters, IResult? Error) TryParseWmsLayerFilters(
         HttpContext context,
         IQueryCollection query,
-        LayerDefinition[] layers)
+        WmsLayer[] layers)
     {
         // OGC WMS 1.3.0 clause 7.3.3.4: optional FILTER parameter
         // (semicolon-delimited FES XML per layer).
@@ -433,14 +603,14 @@ internal static partial class WmsRequestHandlers
                     $"Invalid FILTER XML: {ex.Message}"));
             }
 
-            expression = FilterExpressionHelpers.NormalizeFilterPropertyReferences(expression, layers[i]);
+            expression = filterExpressionService.Normalize(expression, layers[i].Resource);
             if (!FilterExpressionHelpers.IsBooleanFilterExpression(expression))
             {
                 return (null, CreateWmsServiceException(context, "InvalidParameterValue",
                     "FILTER expression must be a boolean predicate."));
             }
 
-            var translation = filterExpressionService.Translate(expression, layers[i]);
+            var translation = filterExpressionService.Translate(expression, layers[i].Resource);
             if (!translation.IsSuccess)
             {
                 return (null, CreateWmsServiceException(context, "InvalidParameterValue",
@@ -897,8 +1067,8 @@ internal static partial class WmsRequestHandlers
 
     private static bool TryHandleCiteWmsGetMap(
         HttpContext context,
-        ServiceDefinition service,
-        LayerDefinition[] renderLayers,
+        MetadataV2Service service,
+        WmsLayer[] renderLayers,
         IQueryCollection query,
         SkiaMapRenderer.RenderExtent requestedExtent,
         int imageWidth,
@@ -912,14 +1082,15 @@ internal static partial class WmsRequestHandlers
     {
         result = default!;
 
-        if (!string.Equals(service.Name, CiteServiceName, StringComparison.OrdinalIgnoreCase))
+        var serviceName = service.Metadata.Name ?? string.Empty;
+        if (!string.Equals(serviceName, CiteServiceName, StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
-        var hasTerrain = renderLayers.Any(layer => string.Equals(layer.Name, CiteTerrainLayerTitle, StringComparison.OrdinalIgnoreCase));
-        var hasLakes = renderLayers.Any(layer => string.Equals(layer.Name, CiteLakesLayerTitle, StringComparison.OrdinalIgnoreCase));
-        var hasAutos = renderLayers.Any(layer => string.Equals(layer.Name, CiteAutosLayerTitle, StringComparison.OrdinalIgnoreCase));
+        var hasTerrain = renderLayers.Any(layer => IsCiteLayerNamed(layer, CiteTerrainLayerTitle));
+        var hasLakes = renderLayers.Any(layer => IsCiteLayerNamed(layer, CiteLakesLayerTitle));
+        var hasAutos = renderLayers.Any(layer => IsCiteLayerNamed(layer, CiteAutosLayerTitle));
         if (!hasTerrain && !hasLakes && !hasAutos)
         {
             return false;

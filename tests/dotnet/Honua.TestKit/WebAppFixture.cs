@@ -649,6 +649,58 @@ public sealed class WebAppFixture : IAsyncLifetime
     }
 
     /// <summary>
+    /// V2-aware helper that renames the canonical resource bound to the publication
+    /// with <paramref name="layerIndex"/>. The CITE-conformance WMS tests rename the
+    /// v1 <c>honua.layers.layer_name</c> column to drive conformance behaviour keyed on
+    /// the layer's display name (e.g. <c>cite:Autos</c>); once a handler reads its layer
+    /// names from the V2 graph instead of <see cref="ILayerCatalog"/>, the same tests
+    /// must update the V2 resource's <see cref="MetadataV2ObjectMetadata.Name"/> for the
+    /// rename to be visible.
+    /// </summary>
+    public void UpdateV2ResourceName(int layerIndex, string newName)
+    {
+        var provider = GetService<IMetadataV2GraphProvider>() as Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider
+            ?? throw new InvalidOperationException(
+                "Test V2 graph provider not registered as TestMetadataV2GraphProvider.");
+
+        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
+        var pub = snapshot.Graph.Publications.FirstOrDefault(p => p.LayerIndex == layerIndex);
+        if (pub is null)
+        {
+            throw new InvalidOperationException(
+                $"No publication for layer {layerIndex} in the test V2 graph.");
+        }
+
+        var resources = snapshot.Graph.Resources.ToArray();
+        var mutated = false;
+        for (var i = 0; i < resources.Length; i++)
+        {
+            if (!string.Equals(resources[i].Metadata.Id, pub.ResourceId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            resources[i] = resources[i] with
+            {
+                Metadata = resources[i].Metadata with { Name = newName }
+            };
+            mutated = true;
+        }
+
+        if (!mutated)
+        {
+            return;
+        }
+
+        var updatedGraph = snapshot.Graph with
+        {
+            Resources = resources,
+            Revision = snapshot.Graph.Revision + 1,
+        };
+        provider.SetGraph(updatedGraph);
+    }
+
+    /// <summary>
     /// V2-aware helper that mirrors the v1 <c>IServiceMetadataUpdater</c> seed surface
     /// for service-level toggles (enabled protocols, access policy). Updates every V2
     /// service that shares the supplied name (case-insensitive) — the test graph

@@ -215,6 +215,8 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
         // TryHandleCiteWmsGetMap; the generic OgcTemporalFilterParser must be
         // bypassed when the request targets that layer or it would reject
         // CITE-supported tokens like "current" before the CITE branch runs.
+        // V2 cutover: the bypass keys on the V2 resource name.
+        _fixture.UpdateV2ResourceName(WebAppFixture.TestLayerId, "cite:Autos");
         await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!))
         await using (var command = connection.CreateCommand())
         {
@@ -254,6 +256,7 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
 
         // Rename layer 1 to cite:Autos so the request can mix both layers in
         // a single LAYERS= argument while keeping layer 0 time-aware.
+        _fixture.UpdateV2ResourceName(1, "cite:Autos");
         await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!))
         await using (var command = connection.CreateCommand())
         {
@@ -279,7 +282,8 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
     {
         // Comma-separated TIME instants are CITE-supported but rejected by
         // OgcTemporalFilterParser (only RFC 3339 instants/intervals). Verify
-        // the bypass also covers this CITE-only form.
+        // the bypass also covers this CITE-only form. V2 cutover: rename via V2.
+        _fixture.UpdateV2ResourceName(WebAppFixture.TestLayerId, "cite:Autos");
         await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!))
         await using (var command = connection.CreateCommand())
         {

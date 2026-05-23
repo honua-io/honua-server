@@ -3,8 +3,8 @@
 
 using System.Diagnostics;
 using System.Globalization;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Monitoring;
@@ -25,7 +25,8 @@ internal static partial class WmsRequestHandlers
 {
     private static async Task<IResult> HandleWmsGetMap(
         HttpContext context,
-        ServiceDefinition service,
+        MetadataV2Service service,
+        WmsLayer[] accessibleLayers,
         string serviceId,
         ILogger logger)
     {
@@ -130,7 +131,7 @@ internal static partial class WmsRequestHandlers
             return CreateWmsServiceException(context, "InvalidParameterValue", "LAYERS must contain at least one layer name.");
         }
 
-        if (!TryResolveWmsRequestedLayers(service, context, layerTokens, out var renderLayers, out var unresolvedLayer))
+        if (!TryResolveWmsRequestedLayers(accessibleLayers, layerTokens, out var renderLayers, out var unresolvedLayer))
         {
             var layerLabel = string.IsNullOrWhiteSpace(unresolvedLayer) ? "requested layer" : unresolvedLayer;
             return CreateWmsServiceException(context, "LayerNotDefined", $"Layer '{layerLabel}' is not defined.");
@@ -201,25 +202,12 @@ internal static partial class WmsRequestHandlers
             return citeResult;
         }
 
-        var queryExtent = requestedExtent;
-        if (requestSrid != service.SpatialReference.Srid)
-        {
-            var extentTransformResult = await TryTransformExtentAsync(
-                context,
-                requestedExtent,
-                requestSrid,
-                service.SpatialReference.Srid,
-                cancellationToken);
-            if (!extentTransformResult.IsSuccess)
-            {
-                return CreateWmsServiceException(context, "InvalidCRS", extentTransformResult.Error ?? "Invalid spatial reference.");
-            }
-
-            queryExtent = extentTransformResult.Extent;
-        }
-
-        var spatialFilter = CreateBboxSpatialFilter(queryExtent, service.SpatialReference.Srid);
-
+        // Resolve the source SRID per requested layer: the V2 graph carries spatial
+        // metadata on the service and on each resource, and they can diverge for
+        // services that aggregate resources from heterogeneous CRSes. Walk the
+        // request once and group layers by their effective rendering SRID so the
+        // single canvas can apply per-group reprojection of the request bbox into
+        // the storage CRS the feature reader expects.
         using var surface = SKSurface.Create(new SKImageInfo(imageWidth, imageHeight, SKColorType.Rgba8888, SKAlphaType.Premul));
         if (surface is null)
         {
@@ -228,8 +216,7 @@ internal static partial class WmsRequestHandlers
 
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var styleCatalog = context.RequestServices.GetRequiredService<ILayerStyleCatalog>();
-        var mapConfig = service.Metadata?.MapServer;
-        var maxFeatures = mapConfig?.MaxFeaturesPerLayer ?? MaxFeaturesPerLayer;
+        var maxFeatures = MaxFeaturesPerLayer;
         var totalFeatureCount = 0;
 
         var canvas = surface.Canvas;
@@ -241,19 +228,43 @@ internal static partial class WmsRequestHandlers
             var layer = renderLayers[i];
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!layer.HasGeometry)
+            if (!ResourceHasGeometry(layer.Resource))
             {
                 continue;
             }
 
+            // Per-layer source SRID — see ResolveServiceSrid for the resolution order.
+            // The feature store stores geometries in this CRS, so the request bbox is
+            // reprojected into it before the SpatialFilter is issued.
+            var serviceSrid = ResolveServiceSrid(service, layer.Resource);
+            var queryExtent = requestedExtent;
+            if (requestSrid != serviceSrid)
+            {
+                var extentTransformResult = await TryTransformExtentAsync(
+                    context,
+                    requestedExtent,
+                    requestSrid,
+                    serviceSrid,
+                    cancellationToken);
+                if (!extentTransformResult.IsSuccess)
+                {
+                    return CreateWmsServiceException(context, "InvalidCRS", extentTransformResult.Error ?? "Invalid spatial reference.");
+                }
+
+                queryExtent = extentTransformResult.Extent;
+            }
+
+            var spatialFilter = CreateBboxSpatialFilter(queryExtent, serviceSrid);
+            var geometryType = MapGeometryType(layer.Resource.ReadGeometryType());
+
             var stylePlan = await GetRasterStylePlanAsync(
                 styleCatalog,
-                layer.Id,
+                layer.StorageLayerId,
                 cancellationToken).ConfigureAwait(false);
             var featureQuery = CreateRasterFeatureQuery(
                 stylePlan,
                 spatialFilter,
-                service.SpatialReference.Srid,
+                serviceSrid,
                 requestSrid,
                 maxFeatures,
                 layerFilters?[i],
@@ -262,8 +273,8 @@ internal static partial class WmsRequestHandlers
             var renderedPointCount = await TryRenderRasterPointFastPathAsync(
                 canvas,
                 featureReader,
-                layer.Id,
-                layer.GeometryType,
+                layer.StorageLayerId,
+                geometryType,
                 stylePlan,
                 featureQuery,
                 requestedExtent,
@@ -277,14 +288,14 @@ internal static partial class WmsRequestHandlers
                 continue;
             }
 
-            var features = await QueryRasterFeaturesAsync(featureReader, layer.Id, featureQuery, cancellationToken);
+            var features = await QueryRasterFeaturesAsync(featureReader, layer.StorageLayerId, featureQuery, cancellationToken);
             if (features.Length == 0)
             {
                 continue;
             }
 
             totalFeatureCount += features.Length;
-            RenderLayerToCanvas(canvas, features, stylePlan.StyleLayers, transformFn, layer.GeometryType);
+            RenderLayerToCanvas(canvas, features, stylePlan.StyleLayers, transformFn, geometryType);
         }
 
         var imageBytes = SkiaMapRenderer.EncodeSurface(surface, imageFormat);

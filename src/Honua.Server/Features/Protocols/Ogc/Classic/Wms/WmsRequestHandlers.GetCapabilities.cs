@@ -3,14 +3,13 @@
 
 using System.Globalization;
 using System.Text;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
-using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.Server.Features.Infrastructure.Services;
+using Honua.Server.Features.Protocols.Ogc.Api.Features;
 using Honua.Server.Features.Protocols.Ogc.Classic;
 using Microsoft.Extensions.DependencyInjection;
 using static Honua.Server.Features.Infrastructure.Rendering.RasterMapRenderingPipeline;
@@ -20,7 +19,7 @@ namespace Honua.Server.Features.Protocols.Ogc.Classic.Wms;
 
 internal static partial class WmsRequestHandlers
 {
-    private static void AppendWmsCiteDimensions(StringBuilder sb, LayerDefinition layer, string indent, bool isWms111)
+    private static void AppendWmsCiteDimensions(StringBuilder sb, WmsLayer layer, string indent, bool isWms111)
     {
         var definition = GetCiteWmsDimensionDefinition(layer);
         if (definition is null)
@@ -107,19 +106,23 @@ internal static partial class WmsRequestHandlers
     private static async Task AppendWmsTemporalDimensionAsync(
         HttpContext context,
         StringBuilder sb,
-        LayerDefinition layer,
+        WmsLayer layer,
         string indent,
         bool isWms111)
     {
         // CITE Autos has its own hardcoded "time" dimension already emitted by
         // AppendWmsCiteDimensions; do not duplicate.
-        if (string.Equals(layer.Name, CiteAutosLayerTitle, StringComparison.OrdinalIgnoreCase))
+        if (IsCiteLayerNamed(layer, CiteAutosLayerTitle))
         {
             return;
         }
 
-        if (layer.Metadata?.TimeInfo is null ||
-            string.IsNullOrWhiteSpace(layer.Metadata.TimeInfo.StartTimeField))
+        // Gate temporal dimension emission on the V2 opt-in resolver: a layer carries a
+        // time dimension only when its Temporal extension declares a StartTimeField that
+        // resolves to a Date/DateTime schema field. Matches the GetMap path (see
+        // TryParseWmsLayerTemporalFilters) so capabilities and request validation share
+        // one definition of "time-aware".
+        if (!TemporalExtentHelpers.TryResolveOptInTemporalFieldsV2(layer.Resource, out _))
         {
             return;
         }
@@ -131,8 +134,9 @@ internal static partial class WmsRequestHandlers
         }
 
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var range = await TemporalExtentHelpers.TryResolveTemporalRangeAsync(
-            layer,
+        var range = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(
+            layer.Resource,
+            layer.StorageLayerId,
             featureReader,
             cancellationToken).ConfigureAwait(false);
         if (range is null || !range.Value.HasExtent || range.Value.Min is null || range.Value.Max is null)
@@ -182,9 +186,9 @@ internal static partial class WmsRequestHandlers
             .AppendLine("\" />");
     }
 
-    private static CiteWmsDimensionDefinition? GetCiteWmsDimensionDefinition(LayerDefinition layer)
+    private static CiteWmsDimensionDefinition? GetCiteWmsDimensionDefinition(WmsLayer layer)
     {
-        if (string.Equals(layer.Name, CiteTerrainLayerTitle, StringComparison.OrdinalIgnoreCase))
+        if (IsCiteLayerNamed(layer, CiteTerrainLayerTitle))
         {
             return new CiteWmsDimensionDefinition(
                 Name: "elevation",
@@ -197,7 +201,7 @@ internal static partial class WmsRequestHandlers
                 Extent: "0/425/1");
         }
 
-        if (string.Equals(layer.Name, CiteLakesLayerTitle, StringComparison.OrdinalIgnoreCase))
+        if (IsCiteLayerNamed(layer, CiteLakesLayerTitle))
         {
             return new CiteWmsDimensionDefinition(
                 Name: "elevation",
@@ -210,7 +214,7 @@ internal static partial class WmsRequestHandlers
                 Extent: "500,490,480");
         }
 
-        if (string.Equals(layer.Name, CiteAutosLayerTitle, StringComparison.OrdinalIgnoreCase))
+        if (IsCiteLayerNamed(layer, CiteAutosLayerTitle))
         {
             return new CiteWmsDimensionDefinition(
                 Name: "time",
@@ -228,7 +232,8 @@ internal static partial class WmsRequestHandlers
 
     private static async Task<string> BuildWmsCapabilities(
         HttpContext context,
-        ServiceDefinition service,
+        MetadataV2Service service,
+        IReadOnlyList<WmsLayer> accessibleLayers,
         string serviceId,
         string baseUrl,
         string version)
@@ -240,6 +245,10 @@ internal static partial class WmsRequestHandlers
         var wmsEndpoint = $"{normalizedBaseUrl}/rest/services/{serviceId}/MapServer/WMS";
         var wmsUrlPrefix = $"{wmsEndpoint}?";
         var metadataUrl = $"{wmsEndpoint}?SERVICE=WMS&REQUEST=GetCapabilities&VERSION={responseVersion}";
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        var coordinateTransformService = context.RequestServices.GetService<ICoordinateTransformService>();
+        var serviceTitle = service.Metadata.Title ?? service.Metadata.Name ?? serviceId;
+        var serviceAbstract = service.Metadata.Description ?? "Honua WMS service";
 
         var sb = new StringBuilder(8192);
         sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
@@ -265,12 +274,12 @@ internal static partial class WmsRequestHandlers
 
         sb.AppendLine("  <Service>");
         sb.AppendLine("    <Name>WMS</Name>");
-        sb.Append("    <Title>").Append(EscapeXml(service.Name ?? serviceId)).AppendLine("</Title>");
-        sb.Append("    <Abstract>").Append(EscapeXml(service.Description ?? "Honua WMS service")).AppendLine("</Abstract>");
+        sb.Append("    <Title>").Append(EscapeXml(serviceTitle)).AppendLine("</Title>");
+        sb.Append("    <Abstract>").Append(EscapeXml(serviceAbstract)).AppendLine("</Abstract>");
         sb.AppendLine("    <KeywordList>");
         sb.AppendLine("      <Keyword>WMS</Keyword>");
         sb.AppendLine("      <Keyword>OGC</Keyword>");
-        sb.Append("      <Keyword>").Append(EscapeXml(service.Name ?? serviceId)).AppendLine("</Keyword>");
+        sb.Append("      <Keyword>").Append(EscapeXml(service.Metadata.Name ?? serviceId)).AppendLine("</Keyword>");
         sb.AppendLine("    </KeywordList>");
         AppendWmsOnlineResource(sb, "    ", wmsEndpoint, isWms111);
         sb.AppendLine("    <ContactInformation>");
@@ -348,8 +357,8 @@ internal static partial class WmsRequestHandlers
         sb.AppendLine("    </Exception>");
 
         sb.AppendLine("    <Layer>");
-        sb.Append("      <Title>").Append(EscapeXml(service.Name ?? serviceId)).AppendLine("</Title>");
-        sb.Append("      <Abstract>").Append(EscapeXml(service.Description ?? "Honua WMS root layer")).AppendLine("</Abstract>");
+        sb.Append("      <Title>").Append(EscapeXml(serviceTitle)).AppendLine("</Title>");
+        sb.Append("      <Abstract>").Append(EscapeXml(service.Metadata.Description ?? "Honua WMS root layer")).AppendLine("</Abstract>");
         sb.Append("      <").Append(crsElementName).AppendLine(">EPSG:4326</" + crsElementName + ">");
         sb.Append("      <").Append(crsElementName).AppendLine(">EPSG:3857</" + crsElementName + ">");
         if (!isWms111)
@@ -357,24 +366,27 @@ internal static partial class WmsRequestHandlers
             sb.AppendLine("      <CRS>CRS:84</CRS>");
         }
 
-        if (service.EffectiveExtent.HasValue)
-        {
-            var rootExtent = service.EffectiveExtent.Value;
-            await AppendWmsGeographicBoundsAsync(context, sb, rootExtent, "      ", isWms111).ConfigureAwait(false);
-        }
+        // Root-layer bbox: union of per-resource CRS84 bboxes when V2 carries any,
+        // otherwise fall back to world bounds. V2 has no service-level extent; v1's
+        // ServiceDefinition.EffectiveExtent defaulted to world (-180,-90,180,90) via
+        // the seed, and WMS clients rely on the root layer carrying *some* extent to
+        // bootstrap zoom-to-layer behavior, so the world fallback preserves that
+        // contract until graphs carry per-resource bboxes.
+        var rootExtent = await TryComputeRootWgs84ExtentAsync(
+            accessibleLayers,
+            coordinateTransformService,
+            cancellationToken).ConfigureAwait(false) ?? WorldWgs84Extent;
+        await AppendWmsGeographicBoundsAsync(context, sb, rootExtent, "      ", isWms111).ConfigureAwait(false);
 
-        var visibleLayers = service.Layers
-            .Where(l => l.HasGeometry && AccessPolicyHelpers.IsLayerAccessible(context, l, service))
-            .ToArray();
-        foreach (var layer in visibleLayers)
+        foreach (var layer in accessibleLayers)
         {
-            var layerName = GetWmsLayerName(layer);
-            var layerTitle = layer.Name ?? layerName;
-            var layerAbstract = layer.Description ?? $"WMS layer {layerName}";
+            var layerName = GetWmsLayerDisplayName(layer);
+            var resourceTitle = layer.Resource.Metadata.Title ?? layer.Resource.Metadata.Name ?? layerName;
+            var layerAbstract = layer.Resource.Metadata.Description ?? $"WMS layer {layerName}";
 
             sb.AppendLine("      <Layer queryable=\"1\">");
             sb.Append("        <Name>").Append(EscapeXml(layerName)).AppendLine("</Name>");
-            sb.Append("        <Title>").Append(EscapeXml(layerTitle)).AppendLine("</Title>");
+            sb.Append("        <Title>").Append(EscapeXml(resourceTitle)).AppendLine("</Title>");
             sb.Append("        <Abstract>").Append(EscapeXml(layerAbstract)).AppendLine("</Abstract>");
             sb.AppendLine("        <KeywordList>");
             sb.Append("          <Keyword>").Append(EscapeXml(layerName)).AppendLine("</Keyword>");
@@ -386,11 +398,11 @@ internal static partial class WmsRequestHandlers
                 sb.AppendLine("        <CRS>CRS:84</CRS>");
             }
 
-            var extent = layer.Extent ?? service.EffectiveExtent;
-            if (extent.HasValue)
-            {
-                await AppendWmsGeographicBoundsAsync(context, sb, extent.Value, "        ", isWms111).ConfigureAwait(false);
-            }
+            var layerExtent = await TryGetLayerWgs84ExtentAsync(
+                layer.Resource,
+                coordinateTransformService,
+                cancellationToken).ConfigureAwait(false) ?? rootExtent;
+            await AppendWmsGeographicBoundsAsync(context, sb, layerExtent, "        ", isWms111).ConfigureAwait(false);
 
             AppendWmsCiteDimensions(sb, layer, "        ", isWms111);
             await AppendWmsTemporalDimensionAsync(context, sb, layer, "        ", isWms111).ConfigureAwait(false);
@@ -412,53 +424,104 @@ internal static partial class WmsRequestHandlers
         return sb.ToString();
     }
 
-    private static async Task AppendWmsGeographicBoundsAsync(
+    /// <summary>
+    /// CRS84 bbox for one V2 resource: reads <see cref="MetadataV2ResourceSpatial.Bbox"/>
+    /// in the resource's spatial reference and reprojects to CRS84 via
+    /// <see cref="OgcExtentTransformer.TryTransformExtentToCrs84Async"/> (which
+    /// short-circuits the 4326 case). Returns null when the resource has no bbox or
+    /// the transform fails — the caller falls back to the root extent.
+    /// </summary>
+    private static async Task<Wgs84Extent?> TryGetLayerWgs84ExtentAsync(
+        MetadataV2Resource resource,
+        ICoordinateTransformService? coordinateTransformService,
+        CancellationToken cancellationToken)
+    {
+        var bbox = resource.ReadBbox();
+        if (bbox is null)
+        {
+            return null;
+        }
+
+        var srid = resource.ReadSrid() ?? 4326;
+        var transformed = await OgcExtentTransformer
+            .TryTransformExtentToCrs84Async(
+                bbox.West,
+                bbox.South,
+                bbox.East,
+                bbox.North,
+                srid,
+                coordinateTransformService,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (transformed is null)
+        {
+            return null;
+        }
+
+        return new Wgs84Extent(
+            Math.Min(transformed.Value.MinLon, transformed.Value.MaxLon),
+            Math.Min(transformed.Value.MinLat, transformed.Value.MaxLat),
+            Math.Max(transformed.Value.MinLon, transformed.Value.MaxLon),
+            Math.Max(transformed.Value.MinLat, transformed.Value.MaxLat));
+    }
+
+    /// <summary>
+    /// Union of per-resource CRS84 bboxes. V2 carries no service-level extent, so the
+    /// root <c>Layer</c>'s bbox is the bounding union of every accessible resource that
+    /// declares a bbox. Returns null when no resource declares one, in which case
+    /// capabilities omits the root extent (matches the WCS V2 port).
+    /// </summary>
+    private static async Task<Wgs84Extent?> TryComputeRootWgs84ExtentAsync(
+        IReadOnlyList<WmsLayer> layers,
+        ICoordinateTransformService? coordinateTransformService,
+        CancellationToken cancellationToken)
+    {
+        Wgs84Extent? aggregate = null;
+        foreach (var layer in layers)
+        {
+            var extent = await TryGetLayerWgs84ExtentAsync(layer.Resource, coordinateTransformService, cancellationToken)
+                .ConfigureAwait(false);
+            if (extent is null)
+            {
+                continue;
+            }
+
+            aggregate = aggregate is null
+                ? extent
+                : new Wgs84Extent(
+                    Math.Min(aggregate.Value.MinLon, extent.Value.MinLon),
+                    Math.Min(aggregate.Value.MinLat, extent.Value.MinLat),
+                    Math.Max(aggregate.Value.MaxLon, extent.Value.MaxLon),
+                    Math.Max(aggregate.Value.MaxLat, extent.Value.MaxLat));
+        }
+
+        return aggregate;
+    }
+
+    private static Task AppendWmsGeographicBoundsAsync(
         HttpContext context,
         StringBuilder sb,
-        FeatureExtent extent,
+        Wgs84Extent extent,
         string indent,
         bool isWms111)
     {
-        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var geographicExtent = extent;
-        if (extent.SpatialReference != 4326)
-        {
-            var transformResult = await TryTransformExtentAsync(
-                context,
-                new SkiaMapRenderer.RenderExtent(extent.MinX, extent.MinY, extent.MaxX, extent.MaxY),
-                extent.SpatialReference,
-                4326,
-                cancellationToken).ConfigureAwait(false);
-
-            if (!transformResult.IsSuccess)
-            {
-                return;
-            }
-
-            geographicExtent = FeatureExtent.Create(
-                transformResult.Extent.MinX,
-                transformResult.Extent.MinY,
-                transformResult.Extent.MaxX,
-                transformResult.Extent.MaxY,
-                4326);
-        }
-
+        _ = context; // reserved for future transform error reporting; matches v1 signature.
         if (isWms111)
         {
             AppendWms111LatLonBoundingBox(
                 sb,
-                geographicExtent.MinX,
-                geographicExtent.MinY,
-                geographicExtent.MaxX,
-                geographicExtent.MaxY,
+                extent.MinLon,
+                extent.MinLat,
+                extent.MaxLon,
+                extent.MaxLat,
                 indent);
             AppendWmsBoundingBox(
                 sb,
                 "EPSG:4326",
-                geographicExtent.MinX,
-                geographicExtent.MinY,
-                geographicExtent.MaxX,
-                geographicExtent.MaxY,
+                extent.MinLon,
+                extent.MinLat,
+                extent.MaxLon,
+                extent.MaxLat,
                 indent,
                 isWms111);
         }
@@ -466,30 +529,32 @@ internal static partial class WmsRequestHandlers
         {
             AppendWmsGeographicBoundingBox(
                 sb,
-                geographicExtent.MinX,
-                geographicExtent.MinY,
-                geographicExtent.MaxX,
-                geographicExtent.MaxY,
+                extent.MinLon,
+                extent.MinLat,
+                extent.MaxLon,
+                extent.MaxLat,
                 indent);
             AppendWmsBoundingBox(
                 sb,
                 "CRS:84",
-                geographicExtent.MinX,
-                geographicExtent.MinY,
-                geographicExtent.MaxX,
-                geographicExtent.MaxY,
+                extent.MinLon,
+                extent.MinLat,
+                extent.MaxLon,
+                extent.MaxLat,
                 indent,
                 isWms111);
             AppendWmsBoundingBox(
                 sb,
                 "EPSG:4326",
-                geographicExtent.MinX,
-                geographicExtent.MinY,
-                geographicExtent.MaxX,
-                geographicExtent.MaxY,
+                extent.MinLon,
+                extent.MinLat,
+                extent.MaxLon,
+                extent.MaxLat,
                 indent,
                 isWms111);
         }
+
+        return Task.CompletedTask;
     }
 
     private static void AppendWmsGeographicBoundingBox(
@@ -566,6 +631,12 @@ internal static partial class WmsRequestHandlers
             .Append(maxY.ToString("F6", CultureInfo.InvariantCulture))
             .AppendLine("\" />");
     }
+
+    /// <summary>CRS84 (lon/lat) bbox computed from a resource's bbox.</summary>
+    private readonly record struct Wgs84Extent(double MinLon, double MinLat, double MaxLon, double MaxLat);
+
+    /// <summary>World-wide CRS84 fallback used when no resource on the service declares a bbox.</summary>
+    private static readonly Wgs84Extent WorldWgs84Extent = new(-180d, -90d, 180d, 90d);
 
     private readonly record struct CiteWmsDimensionDefinition(
         string Name,
