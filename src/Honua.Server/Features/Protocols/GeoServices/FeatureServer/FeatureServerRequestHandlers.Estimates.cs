@@ -130,7 +130,7 @@ internal static partial class FeatureServerEndpoints
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceAsync(
+        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceV2Async(
             resourceValidator,
             serviceId,
             context,
@@ -142,8 +142,11 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = serviceValidationResult.Service!;
+        var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+
         var values = ToCaseInsensitiveDictionary(context.Request.Query);
-        if (!TryResolveRequestedServiceLayers(service, values, out var selectedLayers, out _, out var selectionError))
+        if (!TryResolveRequestedServiceLayersV2(service, snapshot, values, out var selectedLayers, out _, out var selectionError))
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
@@ -151,22 +154,34 @@ internal static partial class FeatureServerEndpoints
                 [selectionError ?? "Invalid layer selection."]);
         }
 
-        var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, selectedLayers, service);
+        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+            context,
+            selectedLayers.Select(pair => pair.Resource),
+            service);
         if (accessError != null)
         {
             return accessError;
         }
 
-        var accessibleLayers = FilterAccessibleLayers(context, service, selectedLayers);
+        var accessibleLayers = FilterAccessibleLayersV2(context, service, selectedLayers);
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var layerEstimates = new List<ServiceLayerEstimateInfo>(accessibleLayers.Length);
 
-        foreach (var layer in accessibleLayers)
+        foreach (var (publication, resource) in accessibleLayers)
         {
-            var estimates = await featureReader.GetEstimatesAsync(layer.Id, cancellationToken);
+            var storageLayerId = snapshot.ResolveStorageLayerId(publication);
+            if (storageLayerId is null)
+            {
+                // Publication isn't bound to a storage layer; skip rather than fail the whole
+                // request — mirrors the v1 path which silently skipped unbound layers.
+                continue;
+            }
+
+            var resolvedLayerId = publication.LayerIndex ?? storageLayerId.Value;
+            var estimates = await featureReader.GetEstimatesAsync(storageLayerId.Value, cancellationToken);
             layerEstimates.Add(new ServiceLayerEstimateInfo
             {
-                Id = layer.Id,
+                Id = resolvedLayerId,
                 Count = estimates.EstimatedCount,
                 Extent = estimates.Extent.HasValue ? estimates.Extent.Value.ToExtentInfo() : null
             });
