@@ -132,16 +132,4 @@ public readonly struct FilterFieldSchema
         _ => FieldType.String,
     };
 
-    /// <summary>
-    /// Returns the wrapped v1 layer when this schema came from a <see cref="LayerDefinition"/>;
-    /// otherwise null. Use to call legacy v1-only translators that still need the full
-    /// <see cref="LayerDefinition"/> shape.
-    /// </summary>
-    public LayerDefinition? V1Layer => _layer;
-
-    /// <summary>
-    /// Returns the wrapped V2 resource when this schema came from a
-    /// <see cref="MetadataV2Resource"/>; otherwise null.
-    /// </summary>
-    public MetadataV2Resource? V2Resource => _resource;
 }

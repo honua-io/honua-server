@@ -267,44 +267,4 @@ public static class FilterExpressionNormalizer
         throw new ArgumentException($"Field '{propertyName}' expects a numeric value.");
     }
 
-    private static bool TryGetFieldType(LayerDefinition layer, string field, out FieldType fieldType)
-    {
-        if (field.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
-        {
-            fieldType = FieldType.BigInteger;
-            return true;
-        }
-
-        if (field.Equals("layerid", StringComparison.OrdinalIgnoreCase) ||
-            field.Equals("layer_id", StringComparison.OrdinalIgnoreCase))
-        {
-            fieldType = FieldType.Integer;
-            return true;
-        }
-
-        if (field.Equals("geometry", StringComparison.OrdinalIgnoreCase) ||
-            field.Equals("shape", StringComparison.OrdinalIgnoreCase))
-        {
-            fieldType = FieldType.Geometry;
-            return true;
-        }
-
-        if (field.Equals("created_at", StringComparison.OrdinalIgnoreCase) ||
-            field.Equals("updated_at", StringComparison.OrdinalIgnoreCase))
-        {
-            fieldType = FieldType.DateTime;
-            return true;
-        }
-
-        var fieldDefinition = layer.Fields.FirstOrDefault(f =>
-            f.Name.Equals(field, StringComparison.OrdinalIgnoreCase));
-        if (fieldDefinition != null)
-        {
-            fieldType = fieldDefinition.Type;
-            return true;
-        }
-
-        fieldType = FieldType.String;
-        return false;
-    }
 }
