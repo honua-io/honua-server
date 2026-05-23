@@ -13,10 +13,12 @@ using YamlDotNet.Serialization.NamingConventions;
 
 namespace Honua.Server.Tests.Seed;
 
+[Collection("SeedCompatibility")]
 [Protocol(Protocols.Infrastructure)]
 public sealed class ClientCompatSeedSequenceTests
 {
     private const string PostgisImage = "postgis/postgis:16-3.4";
+    private const string TestRunIdEnv = "HONUA_TEST_RUN_ID";
 
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
@@ -28,11 +30,18 @@ public sealed class ClientCompatSeedSequenceTests
             .WithUsername("postgres")
             .WithPassword("compat_password")
             .WithEnvironment("POSTGIS_GDAL_ENABLED_DRIVERS", "ENABLE_ALL")
+            .WithLabel("honua.test.owner", "honua-server")
+            .WithLabel("honua.test.run_id", Environment.GetEnvironmentVariable(TestRunIdEnv) ?? "manual")
             .Build();
 
         await container.StartAsync();
 
-        await using var dataSource = NpgsqlDataSource.Create(container.GetConnectionString());
+        var connectionString = new NpgsqlConnectionStringBuilder(container.GetConnectionString())
+        {
+            Timeout = 60,
+            CommandTimeout = 120
+        }.ToString();
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
         await ExecuteSqlFileAsync(dataSource, RepositoryPaths.Resolve("tests", "seed", "client-compat-v1.sql"));
         await ExecuteYamlSqlAsync(dataSource, RepositoryPaths.Resolve("tests", "seed", "browser-compat.yaml"));
 
