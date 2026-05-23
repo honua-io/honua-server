@@ -196,6 +196,9 @@ sql:
           nodata_pixel_count = EXCLUDED.nodata_pixel_count,
           computed_at = NOW();
 
-  # Refresh Metadata v2 after browser-specific layers are present.
+  # Refresh Metadata v2 after browser-specific layers are present. The SQL
+  # base seed applied before this file owns the helper in both supported paths:
+  # tests/seed/base-schema.sql for browser CI and tests/seed/client-compat-v1.sql
+  # for docker/client-compat/seed/run.sh.
   - |
       SELECT honua.seed_metadata_v2_compat_snapshot();
