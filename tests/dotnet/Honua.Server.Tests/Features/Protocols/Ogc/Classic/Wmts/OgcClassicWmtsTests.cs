@@ -6,10 +6,15 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts;
 
@@ -78,15 +83,30 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
     public async Task Wmts_GetCapabilities_WithProjectedExtent_UsesTransformFallbackForWgs84BoundingBox()
     {
+        // Seed a V2 graph with a single WMTS-enabled service whose primary resource
+        // declares its extent in a projected CRS (UTM zone 10N, SRID 26910). The WMTS
+        // capabilities builder reads the bbox off resource.Spatial and must reproject
+        // it through ICoordinateTransformService to CRS84 — exercising the transform
+        // fallback that v1 used to validate via ILayerCatalog.
+        const string serviceId = "projected-metadata";
+        const int storageLayerId = 2001;
+        const int projectedSrid = 26910;
+        var projectedGraph = BuildProjectedExtentGraph(serviceId, storageLayerId, projectedSrid);
+        var graphProvider = new TestMetadataV2GraphProvider(projectedGraph);
+
         var fixture = new WebAppFixture()
-            .ReplaceService<ILayerCatalog>(new ProjectedExtentLayerCatalog());
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IMetadataV2GraphProvider>();
+                services.AddSingleton<IMetadataV2GraphProvider>(graphProvider);
+            });
 
         try
         {
             await fixture.InitializeAsync();
 
             var response = await fixture.Client.GetAsync(
-                $"/rest/services/{ProjectedExtentLayerCatalog.ServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities");
+                $"/rest/services/{serviceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities");
 
             var content = await response.Content.ReadAsStringAsync();
             response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -98,6 +118,87 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         {
             await fixture.DisposeAsync();
         }
+    }
+
+    private static MetadataV2Graph BuildProjectedExtentGraph(string serviceId, int storageLayerId, int projectedSrid)
+    {
+        // UTM zone 10N extent — a 100km square in the northern hemisphere that
+        // OgcExtentTransformer.TryTransformExtentToCrs84Async projects into negative
+        // longitude (Pacific Northwest), matching the WGS84BoundingBox assertions.
+        const double minX = 500_000d;
+        const double minY = 4_100_000d;
+        const double maxX = 600_000d;
+        const double maxY = 4_200_000d;
+
+        var resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-projected", Name = "projected-layer" },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            SchemaFields =
+            [
+                new MetadataV2Field
+                {
+                    Name = "shape",
+                    Type = MetadataV2FieldType.Geometry,
+                },
+            ],
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                GeometryType = MetadataV2GeometryType.Point,
+                SpatialReference = new MetadataV2SpatialReference
+                {
+                    Srid = projectedSrid,
+                    Crs = $"EPSG:{projectedSrid}",
+                    IsGeographic = false,
+                },
+                Bbox = new MetadataV2Bbox
+                {
+                    West = minX,
+                    South = minY,
+                    East = maxX,
+                    North = maxY,
+                },
+            },
+            StorageBindingIds = ["binding-projected"],
+        };
+
+        var binding = new MetadataV2StorageBinding
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "binding-projected", Name = "binding-projected" },
+            ResourceId = "res-projected",
+            StorageType = MetadataV2StorageType.RelationalTable,
+            Locator = "projected_layer",
+            StorageLayerId = storageLayerId,
+        };
+
+        var service = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "svc-projected", Name = serviceId },
+            Protocols = [ServiceProtocols.Wmts, ServiceProtocols.MapServer],
+        };
+
+        var publication = new MetadataV2Publication
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "pub-projected", Name = "projected-layer" },
+            ServiceId = "svc-projected",
+            ResourceId = "res-projected",
+            StorageBindingId = "binding-projected",
+            PublicationType = MetadataV2PublicationType.EsriMapLayer,
+            Identifier = new MetadataV2PublicationIdentifier
+            {
+                Value = storageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                IsNumeric = true,
+            },
+            IsPrimary = true,
+        };
+
+        return new MetadataV2Graph
+        {
+            Resources = [resource],
+            StorageBindings = [binding],
+            Services = [service],
+            Publications = [publication],
+        };
     }
 
     [IntegrationTest]
