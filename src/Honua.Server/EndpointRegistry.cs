@@ -361,6 +361,15 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/operations/type/{operationType}"),
         new("GET", "/api/v1/admin/feature-events/replay"),
 
+        // Console durable job observability endpoints (#1170)
+        new("GET", "/api/v1/admin/jobs"),
+        new("GET", "/api/v1/admin/jobs/{jobId}"),
+        new("GET", "/api/v1/admin/jobs/{jobId}/logs"),
+        new("GET", "/api/v1/admin/jobs/{jobId}/artifacts"),
+        new("GET", "/api/v1/admin/jobs/{jobId}/actions"),
+        new("POST", "/api/v1/admin/jobs/{jobId}/cancel"),
+        new("POST", "/api/v1/admin/jobs/{jobId}/retry"),
+
         // Mobile runtime auth and diagnostics endpoints (#924)
         new("POST", "/api/mobile/exceptions"),
 
