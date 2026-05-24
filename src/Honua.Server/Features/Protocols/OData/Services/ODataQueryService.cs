@@ -84,6 +84,58 @@ internal sealed partial class ODataQueryService
     }
 
     /// <summary>
+    /// Metadata v2 overload of <see cref="BuildFeatureQueryAsync(string?, string?, int?, int?, LayerDefinition, string?, string?, bool?, string?, string?, CancellationToken)"/>.
+    /// Routes the OData query parameters through the V2 <see cref="IQueryParameterAdapter{TProtocolParams}.ConvertAsync(TProtocolParams, MetadataV2Resource, CancellationToken)"/>
+    /// path and the V2 <see cref="IQueryProcessor"/> overloads so $filter SQL translation
+    /// and $select validation honour the canonical resource's <see cref="MetadataV2Resource.SchemaFields"/>.
+    /// </summary>
+    public async Task<(FeatureQuery Query, string? Error)> BuildFeatureQueryAsync(
+        string? filter,
+        string? orderby,
+        int? resultRecordCount,
+        int? resultOffset,
+        MetadataV2Resource resource,
+        string? select = null,
+        string? expand = null,
+        bool? count = null,
+        string? compute = null,
+        string? format = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+
+        var conversion = await _queryParameterAdapter.ConvertAsync(
+            new ODataQueryParameters
+            {
+                Filter = filter,
+                OrderBy = orderby,
+                Top = resultRecordCount,
+                Skip = resultOffset,
+                Select = select,
+                Expand = expand,
+                Count = count,
+                Compute = compute,
+                Format = format
+            },
+            resource,
+            cancellationToken).ConfigureAwait(false);
+
+        if (!conversion.IsSuccess || conversion.Query == null)
+        {
+            return (new FeatureQuery(), conversion.ErrorMessage ?? "Invalid OData query.");
+        }
+
+        var validation = _queryProcessor.ValidateQuery(conversion.Query.Value, resource);
+        if (!validation.IsValid)
+        {
+            return (new FeatureQuery(), validation.ErrorMessage ?? "Invalid OData query.");
+        }
+
+        var optimized = _queryProcessor.OptimizeQuery(conversion.Query.Value, resource);
+        return (_queryProcessor.ToFeatureQuery(optimized, resource), null);
+    }
+
+    /// <summary>
     /// Applies basic filtering to layer collections using simple OData expressions.
     /// </summary>
     public IEnumerable<LayerDefinition> ApplyBasicFilter(

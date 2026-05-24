@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Protocols.OData.Models;
 
 namespace Honua.Server.Features.Protocols.OData.Services;
@@ -50,6 +51,36 @@ internal sealed class ODataQuerySearchService
             resultRecordCount,
             resultOffset,
             layer,
+            select,
+            expand,
+            count,
+            compute,
+            format,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Metadata v2 overload of <see cref="BuildFeatureQueryAsync(string?, string?, int?, int?, LayerDefinition, string?, string?, bool?, string?, string?, CancellationToken)"/>.
+    /// </summary>
+    public async Task<(FeatureQuery Query, string? Error)> BuildFeatureQueryAsync(
+        string? filter,
+        string? orderby,
+        int? resultRecordCount,
+        int? resultOffset,
+        MetadataV2Resource resource,
+        string? select = null,
+        string? expand = null,
+        bool? count = null,
+        string? compute = null,
+        string? format = null,
+        CancellationToken cancellationToken = default)
+    {
+        return await _queryService.BuildFeatureQueryAsync(
+            filter,
+            orderby,
+            resultRecordCount,
+            resultOffset,
+            resource,
             select,
             expand,
             count,
