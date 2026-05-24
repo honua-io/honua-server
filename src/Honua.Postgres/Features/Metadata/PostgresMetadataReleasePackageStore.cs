@@ -65,7 +65,16 @@ internal sealed class PostgresMetadataReleasePackageStore : IMetadataReleasePack
         command.Parameters.AddWithValue("@created_at", package.CreatedAt);
         command.Parameters.AddWithValue("@updated_at", package.UpdatedAt);
 
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            throw new InvalidOperationException(
+                "Metadata release package conflicts with an existing package.", ex);
+        }
+
         return package;
     }
 

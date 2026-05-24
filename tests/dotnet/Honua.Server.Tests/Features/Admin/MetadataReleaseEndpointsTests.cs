@@ -162,6 +162,35 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
         manifest.Spec.Targets.Should().ContainSingle(target => target.Environment == "staging");
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/metadata/release-packages")]
+    public async Task CreateReleasePackage_WithDuplicateDefaultNamespacePackageKey_ReturnsConflict()
+    {
+        var body = JsonSerializer.Serialize(
+            new CreateMetadataReleasePackageRequest
+            {
+                PackageKey = "duplicate-package-key",
+                SourceEnvironment = "dev",
+                TargetEnvironments = ["staging"],
+                SemanticIds = ["res.parcels"],
+            },
+            MetadataReleaseJsonContext.Default.CreateMetadataReleasePackageRequest);
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var firstResponse = await _client.PostAsync(
+            "/api/v1/admin/metadata/release-packages",
+            content);
+
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var secondResponse = await _client.PostAsync(
+            "/api/v1/admin/metadata/release-packages",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        secondResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var payload = await secondResponse.Content.ReadAsStringAsync();
+        payload.Should().Contain("Metadata release package conflicts with an existing package.");
+    }
+
     private static MetadataV2Graph BuildGraph(string environment, long revision)
     {
         var passwordOption = JsonSerializer.Deserialize<JsonElement>("\"super-secret-password\"");

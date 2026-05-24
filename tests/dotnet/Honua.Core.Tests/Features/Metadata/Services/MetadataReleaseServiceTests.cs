@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Text.Json;
 using Honua.Core.Features.Console.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -16,6 +17,32 @@ namespace Honua.Core.Tests.Features.Metadata.Services;
 [Operation(Operations.Metadata)]
 public sealed class MetadataReleaseServiceTests
 {
+    [UnitTest]
+    public async Task GetSemanticInventoryAsync_WhenObserved_EmitsRegisteredMetadataActivity()
+    {
+        var activities = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = static source => source.Name == "Honua.Core.Metadata",
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = activity => activities.Add(activity),
+        };
+        ActivitySource.AddActivityListener(listener);
+        var service = CreateService(BuildGraph("dev", 41, MetadataV2ResourceType.Map));
+
+        await service.GetSemanticInventoryAsync(
+            "dev",
+            new MetadataSemanticInventoryFilter
+            {
+                ArtifactKind = MetadataSemanticArtifactKind.Resource,
+            });
+
+        activities.Should().Contain(activity =>
+            activity.Source.Name == "Honua.Core.Metadata" &&
+            activity.OperationName == "honua.metadata.release.inventory" &&
+            activity.TagObjects.Any(tag => tag.Key == "metadata.inventory.count" && Equals(tag.Value, 1)));
+    }
+
     [UnitTest]
     public async Task GetSemanticInventoryAsync_WithKindAndResourceTypeFilters_ReturnsRevisionStampedEntries()
     {
@@ -117,6 +144,48 @@ public sealed class MetadataReleaseServiceTests
             state.Environment == "staging" &&
             state.CurrentMetadataRevision == 7 &&
             state.BindingState == MetadataEnvironmentBindingState.Bound);
+    }
+
+    [UnitTest]
+    public async Task CreateReleasePackageAsync_WithRequestContentVersion_KeepsArtifactContentVersionWhenPresent()
+    {
+        var service = CreateService(
+            BuildGraph("dev", 41, MetadataV2ResourceType.FeatureDataset),
+            BuildGraph("staging", 7, MetadataV2ResourceType.FeatureDataset));
+
+        var package = await service.CreateReleasePackageAsync(
+            new CreateMetadataReleasePackageRequest
+            {
+                SourceEnvironment = "dev",
+                TargetEnvironments = ["staging"],
+                SemanticIds = ["res.parcels"],
+                DesiredContentVersionId = "request-content-v2",
+            },
+            "user-1");
+
+        package.Entries.Should().ContainSingle()
+            .Subject.DesiredContentVersionId.Should().Be("content-v1");
+    }
+
+    [UnitTest]
+    public async Task CreateReleasePackageAsync_WithRequestContentVersion_UsesRequestFallbackWhenArtifactHasNone()
+    {
+        var service = CreateService(
+            BuildGraph("dev", 41, MetadataV2ResourceType.FeatureDataset),
+            BuildGraph("staging", 7, MetadataV2ResourceType.FeatureDataset));
+
+        var package = await service.CreateReleasePackageAsync(
+            new CreateMetadataReleasePackageRequest
+            {
+                SourceEnvironment = "dev",
+                TargetEnvironments = ["staging"],
+                SemanticIds = ["pub.parcels"],
+                DesiredContentVersionId = "request-content-v2",
+            },
+            "user-1");
+
+        package.Entries.Should().ContainSingle()
+            .Subject.DesiredContentVersionId.Should().Be("request-content-v2");
     }
 
     [UnitTest]

@@ -24,7 +24,10 @@ CREATE TABLE IF NOT EXISTS honua.metadata_v2_release_packages (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_metadata_v2_release_packages_key
-    ON honua.metadata_v2_release_packages (package_namespace, package_key);
+    ON honua.metadata_v2_release_packages (
+        (COALESCE(NULLIF(BTRIM(package_namespace), ''), '')),
+        package_key
+    );
 
 CREATE INDEX IF NOT EXISTS idx_metadata_v2_release_packages_created
     ON honua.metadata_v2_release_packages (created_at DESC);

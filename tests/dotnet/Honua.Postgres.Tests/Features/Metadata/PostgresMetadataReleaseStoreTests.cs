@@ -99,6 +99,30 @@ public sealed class PostgresMetadataReleaseStoreTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task ReleasePackageStore_CreateAsync_WithDuplicateDefaultNamespaceKey_ThrowsConflict()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataReleaseStoreTests));
+        try
+        {
+            await EnsureTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataReleasePackageStore(provider, schema);
+            var first = BuildPackage(Guid.NewGuid(), "promote-parcels", null);
+            var duplicate = BuildPackage(Guid.NewGuid(), "promote-parcels", null);
+
+            await store.CreateAsync(first);
+            var act = () => store.CreateAsync(duplicate);
+
+            await act.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("Metadata release package conflicts with an existing package.");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     private async Task EnsureTablesAsync(string schema)
     {
         await using var connection = await fixtureConnection(schema).ConfigureAwait(false);
@@ -143,6 +167,12 @@ public sealed class PostgresMetadataReleaseStoreTests(PostgresFixture fixture)
                 CONSTRAINT metadata_v2_release_packages_status
                     CHECK (status IN ('draft','ready','staged','superseded','cancelled'))
             );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_metadata_v2_release_packages_key
+                ON "{schema}".metadata_v2_release_packages (
+                    (COALESCE(NULLIF(BTRIM(package_namespace), ''), '')),
+                    package_key
+                );
             """;
         await command.ExecuteNonQueryAsync();
 
@@ -196,6 +226,49 @@ public sealed class PostgresMetadataReleaseStoreTests(PostgresFixture fixture)
                 },
             ],
         };
+
+    private static MetadataReleasePackage BuildPackage(Guid packageId, string packageKey, string? packageNamespace)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new MetadataReleasePackage
+        {
+            PackageId = packageId,
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = packageId.ToString("D"),
+                Name = packageKey,
+                Namespace = packageNamespace,
+                Title = "Promote parcels",
+            },
+            SourceEnvironment = "dev",
+            SourceRevision = 41,
+            SourceEtag = "etag-dev-41",
+            TargetEnvironments = ["staging"],
+            Entries =
+            [
+                new MetadataReleaseEntry
+                {
+                    SemanticId = "res.parcels",
+                    ArtifactKind = MetadataSemanticArtifactKind.Resource,
+                    ResourceType = MetadataV2ResourceType.FeatureDataset,
+                    DesiredMetadataRevision = 41,
+                    DesiredContentVersionId = "content-v1",
+                    TargetStates =
+                    [
+                        new MetadataReleaseTargetState
+                        {
+                            Environment = "staging",
+                            CurrentMetadataRevision = 7,
+                            BindingState = MetadataEnvironmentBindingState.Bound,
+                        },
+                    ],
+                },
+            ],
+            CreatedBy = "user-1",
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+    }
 
     private sealed class TestConnectionProvider(NpgsqlDataSource dataSource, string schemaName) : IDatabaseConnectionProvider
     {

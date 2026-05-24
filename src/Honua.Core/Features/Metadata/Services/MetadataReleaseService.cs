@@ -27,7 +27,7 @@ public sealed class MetadataReleaseService(
     private const string ContentVersionAnnotation = "honua.io/content-version-id";
     private const string ContentVersionCamelAnnotation = "contentVersionId";
     private const string ProvenanceAnnotation = "honua.io/provenance-ref";
-    private static readonly ActivitySource ActivitySource = new("Honua.Metadata.Release");
+    private static readonly ActivitySource ActivitySource = new("Honua.Core.Metadata");
 
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
@@ -163,9 +163,12 @@ public sealed class MetadataReleaseService(
                 });
             }
 
-            var desiredContentVersionId = string.IsNullOrWhiteSpace(request.DesiredContentVersionId)
-                ? artifact.ContentVersionId
+            var requestedContentVersionId = string.IsNullOrWhiteSpace(request.DesiredContentVersionId)
+                ? null
                 : request.DesiredContentVersionId!.Trim();
+            var desiredContentVersionId = string.IsNullOrWhiteSpace(artifact.ContentVersionId)
+                ? requestedContentVersionId
+                : artifact.ContentVersionId;
             var desiredProvenance = request.Provenance.Count > 0 ? request.Provenance : artifact.Provenance;
 
             entries.Add(new MetadataReleaseEntry

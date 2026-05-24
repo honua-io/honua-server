@@ -10,6 +10,7 @@ namespace Honua.Core.Features.Metadata.Services;
 internal sealed class InMemoryMetadataReleasePackageStore : IMetadataReleasePackageStore
 {
     private readonly ConcurrentDictionary<Guid, MetadataReleasePackage> _packages = new();
+    private readonly ConcurrentDictionary<PackageIdentity, Guid> _packageKeys = new();
 
     public Task<MetadataReleasePackage> CreateAsync(
         MetadataReleasePackage package,
@@ -18,8 +19,16 @@ internal sealed class InMemoryMetadataReleasePackageStore : IMetadataReleasePack
         ArgumentNullException.ThrowIfNull(package);
         cancellationToken.ThrowIfCancellationRequested();
 
+        var identity = PackageIdentity.From(package.Metadata);
+        if (!_packageKeys.TryAdd(identity, package.PackageId))
+        {
+            throw new InvalidOperationException(
+                $"Metadata release package key '{identity.PackageKey}' already exists in namespace '{identity.Namespace}'.");
+        }
+
         if (!_packages.TryAdd(package.PackageId, package))
         {
+            _packageKeys.TryRemove(identity, out _);
             throw new InvalidOperationException($"Metadata release package '{package.PackageId}' already exists.");
         }
 
@@ -33,5 +42,20 @@ internal sealed class InMemoryMetadataReleasePackageStore : IMetadataReleasePack
         cancellationToken.ThrowIfCancellationRequested();
         _packages.TryGetValue(packageId, out var package);
         return Task.FromResult(package);
+    }
+
+    private readonly record struct PackageIdentity(string Namespace, string PackageKey)
+    {
+        public static PackageIdentity From(MetadataV2ObjectMetadata metadata)
+        {
+            var packageKey = string.IsNullOrWhiteSpace(metadata.Name)
+                ? throw new ArgumentException("Package metadata name is required.", nameof(metadata))
+                : metadata.Name.Trim();
+            var packageNamespace = string.IsNullOrWhiteSpace(metadata.Namespace)
+                ? string.Empty
+                : metadata.Namespace.Trim();
+
+            return new PackageIdentity(packageNamespace, packageKey);
+        }
     }
 }
