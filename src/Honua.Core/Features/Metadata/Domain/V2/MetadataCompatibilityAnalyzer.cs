@@ -902,7 +902,6 @@ public static class MetadataCompatibilityAnalyzer
 
         var updated = new List<MetadataCompatibilityFinding>(findings.Count);
         var scriptMismatchFindings = new List<MetadataCompatibilityFinding>();
-        var mismatchKeys = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var finding in findings)
         {
@@ -913,6 +912,8 @@ public static class MetadataCompatibilityAnalyzer
             }
 
             var covered = false;
+            var candidateMismatchFindings = new List<MetadataCompatibilityFinding>();
+            var candidateMismatchKeys = new HashSet<string>(StringComparer.Ordinal);
             foreach (var script in dataScripts)
             {
                 if (!AppliesToTarget(script, targetEnvironment) ||
@@ -935,9 +936,9 @@ public static class MetadataCompatibilityAnalyzer
                 }
 
                 var key = string.Concat(script.ScriptId, "|", finding.Code, "|", finding.AffectedSemanticId);
-                if (mismatchKeys.Add(key))
+                if (candidateMismatchKeys.Add(key))
                 {
-                    scriptMismatchFindings.Add(Finding(
+                    candidateMismatchFindings.Add(Finding(
                         MetadataCompatibilityCode.ScriptBeforeContractMismatch,
                         MetadataCompatibilityFindingSeverity.Error,
                         MetadataCompatibilityFindingKind.Script,
@@ -956,6 +957,7 @@ public static class MetadataCompatibilityAnalyzer
             if (!covered)
             {
                 updated.Add(finding);
+                scriptMismatchFindings.AddRange(candidateMismatchFindings);
             }
         }
 
@@ -1045,7 +1047,7 @@ public static class MetadataCompatibilityAnalyzer
             MetadataCompatibilityCode.StorageTypeMismatch =>
                 FindArtifactContract(contract, finding)?.Storage?.StorageType?.ToString() == finding.Actual.Value,
             MetadataCompatibilityCode.StorageCapabilityMissing =>
-                FindArtifactContract(contract, finding)?.Storage is not null,
+                StorageContractMatchesMissingCapability(FindArtifactContract(contract, finding), finding),
             MetadataCompatibilityCode.ServiceTypeMismatch =>
                 FindArtifactContract(contract, finding)?.ServiceType?.ToString() == finding.Actual.Value,
             MetadataCompatibilityCode.ServiceProtocolMissing =>
@@ -1059,6 +1061,14 @@ public static class MetadataCompatibilityAnalyzer
             _ => false,
         };
     }
+
+    private static bool StorageContractMatchesMissingCapability(
+        MetadataScriptResourceContract? contract,
+        MetadataCompatibilityFinding finding)
+        => !string.IsNullOrWhiteSpace(finding.Expected.Value) &&
+            contract?.Storage is not null &&
+            !contract.Storage.Capabilities.Any(capability =>
+                string.Equals(capability.ToString(), finding.Expected.Value, StringComparison.Ordinal));
 
     private static bool TargetArtifactExists(MetadataV2GraphSnapshot targetSnapshot, MetadataCompatibilityFinding finding)
         => finding.AffectedSemanticKind switch

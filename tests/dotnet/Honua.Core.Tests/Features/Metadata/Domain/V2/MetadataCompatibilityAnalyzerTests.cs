@@ -144,6 +144,39 @@ public sealed class MetadataCompatibilityAnalyzerTests
     }
 
     [UnitTest]
+    public void Analyze_LaterScriptCoversFinding_DoesNotKeepEarlierBeforeContractMismatch()
+    {
+        var source = Snapshot(BuildGraph("dev", 41));
+        var target = Snapshot(BuildGraph("staging", 7, includeField: false));
+        var package = Package(Entry("res.parcels", MetadataSemanticArtifactKind.Resource));
+        var mismatchedScript = MissingFieldScript(reversible: true, beforeFieldExists: true) with
+        {
+            ScriptId = "script.wrong-before",
+        };
+        var coveringScript = MissingFieldScript(reversible: true, beforeFieldExists: false) with
+        {
+            ScriptId = "script.add-apn-later",
+        };
+
+        var report = MetadataCompatibilityAnalyzer.Analyze(
+            package,
+            source,
+            target,
+            [mismatchedScript, coveringScript],
+            GeneratedAt);
+
+        report.Status.Should().Be(MetadataCompatibilityStatus.Warning);
+        report.UncoveredErrorCount.Should().Be(0);
+        report.CoveredErrorCount.Should().Be(1);
+        report.Findings.Should().ContainSingle(finding =>
+            finding.Code == MetadataCompatibilityCode.FieldMissing &&
+            finding.CoverageState == MetadataCompatibilityCoverageState.CoveredByScript &&
+            finding.CoveringScriptId == "script.add-apn-later");
+        report.Findings.Should().NotContain(finding =>
+            finding.Code == MetadataCompatibilityCode.ScriptBeforeContractMismatch);
+    }
+
+    [UnitTest]
     public void Analyze_ExistsOnlyScriptForMissingArtifacts_LeavesFindingsBlocked()
     {
         var source = Snapshot(BuildGraph("dev", 41));
@@ -256,6 +289,65 @@ public sealed class MetadataCompatibilityAnalyzerTests
         report.CoveredErrorCount.Should().Be(1);
         report.Findings.Should().ContainSingle(finding =>
             finding.Code == MetadataCompatibilityCode.StorageBindingMissing &&
+            finding.CoverageState == MetadataCompatibilityCoverageState.CoveredByScript);
+    }
+
+    [UnitTest]
+    public void Analyze_StorageCapabilityBeforeContractAlreadyHasMissingCapability_LeavesFindingBlocked()
+    {
+        var source = Snapshot(BuildGraph(
+            "dev",
+            41,
+            storageCapabilities:
+            [
+                MetadataV2StorageBindingCapability.Query,
+                MetadataV2StorageBindingCapability.Edit,
+            ]));
+        var target = Snapshot(BuildGraph("staging", 7));
+        var package = Package(Entry("res.parcels", MetadataSemanticArtifactKind.Resource));
+
+        var report = MetadataCompatibilityAnalyzer.Analyze(
+            package,
+            source,
+            target,
+            [StorageCapabilityScript(beforeIncludesMissingCapability: true)],
+            GeneratedAt);
+
+        report.Status.Should().Be(MetadataCompatibilityStatus.Blocked);
+        report.CoveredErrorCount.Should().Be(0);
+        report.Findings.Should().Contain(finding =>
+            finding.Code == MetadataCompatibilityCode.StorageCapabilityMissing &&
+            finding.CoverageState == MetadataCompatibilityCoverageState.Uncovered);
+        report.Findings.Should().Contain(finding =>
+            finding.Code == MetadataCompatibilityCode.ScriptBeforeContractMismatch);
+    }
+
+    [UnitTest]
+    public void Analyze_StorageCapabilityBeforeContractOmitsMissingCapability_CoversFinding()
+    {
+        var source = Snapshot(BuildGraph(
+            "dev",
+            41,
+            storageCapabilities:
+            [
+                MetadataV2StorageBindingCapability.Query,
+                MetadataV2StorageBindingCapability.Edit,
+            ]));
+        var target = Snapshot(BuildGraph("staging", 7));
+        var package = Package(Entry("res.parcels", MetadataSemanticArtifactKind.Resource));
+
+        var report = MetadataCompatibilityAnalyzer.Analyze(
+            package,
+            source,
+            target,
+            [StorageCapabilityScript(beforeIncludesMissingCapability: false)],
+            GeneratedAt);
+
+        report.Status.Should().Be(MetadataCompatibilityStatus.Warning);
+        report.UncoveredErrorCount.Should().Be(0);
+        report.CoveredErrorCount.Should().Be(1);
+        report.Findings.Should().ContainSingle(finding =>
+            finding.Code == MetadataCompatibilityCode.StorageCapabilityMissing &&
             finding.CoverageState == MetadataCompatibilityCoverageState.CoveredByScript);
     }
 
@@ -559,6 +651,61 @@ public sealed class MetadataCompatibilityAnalyzerTests
             },
         };
 
+    private static MetadataDataScriptEntry StorageCapabilityScript(bool beforeIncludesMissingCapability)
+        => new()
+        {
+            ScriptId = "script.add-storage-capability",
+            Kind = "sql",
+            Reversible = true,
+            DeclaredOperations = ["add-storage-capability"],
+            BeforeContract = new MetadataDataScriptContract
+            {
+                Resources =
+                [
+                    new MetadataScriptResourceContract
+                    {
+                        SemanticId = "res.parcels",
+                        SemanticKind = MetadataSemanticArtifactKind.Resource,
+                        Exists = true,
+                        Storage = new MetadataScriptStorageContract
+                        {
+                            StorageBindingId = "storage.parcels",
+                            StorageType = MetadataV2StorageType.RelationalTable,
+                            Capabilities = beforeIncludesMissingCapability
+                                ?
+                                [
+                                    MetadataV2StorageBindingCapability.Query,
+                                    MetadataV2StorageBindingCapability.Edit,
+                                ]
+                                : [MetadataV2StorageBindingCapability.Query],
+                        },
+                    },
+                ],
+            },
+            AfterContract = new MetadataDataScriptContract
+            {
+                Resources =
+                [
+                    new MetadataScriptResourceContract
+                    {
+                        SemanticId = "res.parcels",
+                        SemanticKind = MetadataSemanticArtifactKind.Resource,
+                        Exists = true,
+                        Storage = new MetadataScriptStorageContract
+                        {
+                            StorageBindingId = "storage.parcels",
+                            StorageType = MetadataV2StorageType.RelationalTable,
+                            Capabilities =
+                            [
+                                MetadataV2StorageBindingCapability.Query,
+                                MetadataV2StorageBindingCapability.Edit,
+                            ],
+                        },
+                    },
+                ],
+            },
+        };
+
     private static MetadataV2GraphSnapshot Snapshot(MetadataV2Graph graph)
         => new(graph, $"etag-{graph.Environment}-{graph.Revision}", GeneratedAt);
 
@@ -577,7 +724,8 @@ public sealed class MetadataCompatibilityAnalyzerTests
         bool includeStorage = true,
         bool includeSpatial = true,
         string publicationResourceId = "res.parcels",
-        string publicationServiceId = "svc.features")
+        string publicationServiceId = "svc.features",
+        IReadOnlyList<MetadataV2StorageBindingCapability>? storageCapabilities = null)
     {
         var spatial = JsonSerializer.Deserialize<JsonElement>(
             $$"""{"srid":{{srid}},"geometryType":"Point"}""");
@@ -639,7 +787,7 @@ public sealed class MetadataCompatibilityAnalyzerTests
                         ResourceId = "res.parcels",
                         StorageType = MetadataV2StorageType.RelationalTable,
                         Locator = "shared.parcels",
-                        Capabilities = [MetadataV2StorageBindingCapability.Query],
+                        Capabilities = storageCapabilities ?? [MetadataV2StorageBindingCapability.Query],
                     },
                 ]
                 : Array.Empty<MetadataV2StorageBinding>(),
