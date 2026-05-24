@@ -5756,7 +5756,8 @@
           },
           "requireChainTrust": {
             "type": "boolean",
-            "default": false
+            "default": false,
+            "description": "Required to be true when acceptedIssuerSubjects is non-empty; subject-DN matching alone is forgeable, so the chain must be cryptographically verified."
           },
           "chainRevocationMode": {
             "type": "string",

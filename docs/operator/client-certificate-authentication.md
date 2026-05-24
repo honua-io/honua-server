@@ -41,6 +41,7 @@ keys are never configured or stored by Honua Server.
           "AcceptedIssuerSubjects": [ "CN=Honua Prod Operator CA" ],
           "AllowedSanTypes": [ "SanUri", "SanEmail" ],
           "RequireClientAuthenticationEku": true,
+          "RequireChainTrust": true,
           "ExpirationWarningThresholdDays": 21,
           "RotationGracePeriodDays": 7,
           "PrincipalMappings": [
@@ -71,6 +72,7 @@ keys are never configured or stored by Honua Server.
           "AcceptedIssuerSubjects": [ "CN=Honua Stage Operator CA" ],
           "AllowedSanTypes": [ "SanUri" ],
           "RequireClientAuthenticationEku": true,
+          "RequireChainTrust": true,
           "RotationGracePeriodDays": 3,
           "PrincipalMappings": [
             {
@@ -99,6 +101,19 @@ against the SHA-1 thumbprints of issuer/CA certificates in the chain (the leaf
 is never accepted as its own issuer). `CustomTrustAnchorCertificates` profiles
 require the chain to terminate at one of the configured anchor certificates and
 should set `RequireChainTrust` to true so full chain validation runs.
+
+Subject-DN matching alone is forgeable: an attacker can mint a self-signed
+certificate with any `Issuer` field they choose. Honua therefore requires that
+every enabled trust profile that configures `AcceptedIssuerSubjects` also sets
+`RequireChainTrust: true`, so the certificate chain is cryptographically
+verified against the OS trust store (or the profile's
+`CustomTrustAnchorCertificates`). Both the startup options validator and the
+admin upsert endpoint reject `AcceptedIssuerSubjects` without
+`RequireChainTrust=true`; for private CAs that are not in the OS trust store,
+pair it with `CustomTrustAnchorCertificates`. Profiles that rely solely on
+`AcceptedIssuerThumbprints` or `CustomTrustAnchorCertificates` already require
+the chain to expose the matching element/anchor, so they are not subject to
+the subject-DN forgery risk.
 
 Custom trust anchors must parse as PEM or base64 DER public certificates.
 Malformed anchors are rejected at startup options binding and at admin

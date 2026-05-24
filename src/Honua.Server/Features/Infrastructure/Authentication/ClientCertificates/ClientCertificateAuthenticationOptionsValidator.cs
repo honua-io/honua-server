@@ -86,6 +86,18 @@ internal sealed class ClientCertificateAuthenticationOptionsValidator
                 failures.Add($"{ClientCertificateAuthenticationOptions.SectionName}:TrustProfiles:{profile.ProfileId} must include at least one accepted issuer subject, accepted issuer thumbprint, or custom trust anchor certificate.");
             }
 
+            // AcceptedIssuerSubjects matches the presented certificate's claimed Issuer DN,
+            // which an attacker can forge in a self-signed cert. The match is only meaningful
+            // when paired with cryptographic chain validation. Refuse to start with the
+            // forgeable configuration so operators have to opt into either chain trust or a
+            // chain-validated mechanism (issuer thumbprints, custom trust anchors).
+            if (profile.Enabled &&
+                profile.AcceptedIssuerSubjects.Any(static value => !string.IsNullOrWhiteSpace(value)) &&
+                !profile.RequireChainTrust)
+            {
+                failures.Add($"{ClientCertificateAuthenticationOptions.SectionName}:TrustProfiles:{profile.ProfileId}:AcceptedIssuerSubjects requires RequireChainTrust=true so the certificate chain is cryptographically verified; subject-DN matching alone is forgeable.");
+            }
+
             ValidateCustomTrustAnchors(profile, failures);
             ValidateMappings(profile, failures);
         }
@@ -137,6 +149,16 @@ internal sealed class ClientCertificateAuthenticationOptionsValidator
             if (string.IsNullOrWhiteSpace(mapping.PrincipalId))
             {
                 failures.Add($"{ClientCertificateAuthenticationOptions.SectionName}:TrustProfiles:{profile.ProfileId}:PrincipalMappings:{mapping.MappingId}:PrincipalId is required.");
+            }
+
+            // An inverted validity window silently disables the mapping at request time
+            // (IsMappingInWindow always returns false), which can break required mTLS access
+            // without any signal. Reject at configuration time so misconfiguration surfaces
+            // immediately, matching the admin-upsert validation.
+            if (mapping.NotBefore.HasValue && mapping.NotAfter.HasValue &&
+                mapping.NotBefore.Value > mapping.NotAfter.Value)
+            {
+                failures.Add($"{ClientCertificateAuthenticationOptions.SectionName}:TrustProfiles:{profile.ProfileId}:PrincipalMappings:{mapping.MappingId}:NotBefore must be on or before NotAfter when both are provided.");
             }
         }
     }

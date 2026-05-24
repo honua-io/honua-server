@@ -167,6 +167,14 @@ internal static class ClientCertificateAdminEndpoints
                 "Enabled profiles require at least one accepted issuer subject, accepted issuer thumbprint, or custom trust anchor certificate."));
         }
 
+        if (request.Enabled &&
+            acceptedIssuerSubjects.Any(static value => !string.IsNullOrWhiteSpace(value)) &&
+            !request.RequireChainTrust)
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                "AcceptedIssuerSubjects requires RequireChainTrust=true so the certificate chain is cryptographically verified; subject-DN matching alone is forgeable."));
+        }
+
         if (!TryParseIdentityTypes(allowedSanTypesInput, out var allowedSanTypes, out var error))
         {
             return TypedResults.BadRequest(ApiResponse<object>.Failure(error));

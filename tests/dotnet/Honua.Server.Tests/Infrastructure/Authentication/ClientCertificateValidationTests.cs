@@ -252,20 +252,78 @@ public sealed class ClientCertificateValidationTests
     public void OptionsValidator_WithTwoProfilesAndDistinctMappings_Succeeds()
     {
         using var prodCertificate = CreateCertificate("CN=Honua Native Prod", uri: "spiffe://honua/prod/admin");
+        var prodProfile = CreateProfile("prod-native", "prod", prodCertificate.Issuer, "spiffe://honua/prod/admin");
+        prodProfile.RequireChainTrust = true;
+        var stageProfile = CreateProfile("stage-native", "stage", "CN=Honua Stage Issuer", "spiffe://honua/stage/admin");
+        stageProfile.RequireChainTrust = true;
         var options = new ClientCertificateAuthenticationOptions
         {
             Mode = ClientCertificateAuthenticationMode.RequiredForAdmin,
             EnvironmentId = "prod",
-            TrustProfiles =
-            [
-                CreateProfile("prod-native", "prod", prodCertificate.Issuer, "spiffe://honua/prod/admin"),
-                CreateProfile("stage-native", "stage", "CN=Honua Stage Issuer", "spiffe://honua/stage/admin")
-            ]
+            TrustProfiles = [prodProfile, stageProfile]
         };
 
         var result = new ClientCertificateAuthenticationOptionsValidator().Validate(null, options);
 
         result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void OptionsValidator_WithAcceptedIssuerSubjectsButNoChainTrust_Fails()
+    {
+        var profile = CreateProfile("prod-native", "prod", "CN=Honua Native Prod", "spiffe://honua/prod/admin");
+        profile.RequireChainTrust = false;
+        var options = new ClientCertificateAuthenticationOptions
+        {
+            Mode = ClientCertificateAuthenticationMode.RequiredForAdmin,
+            EnvironmentId = "prod",
+            TrustProfiles = [profile]
+        };
+
+        var result = new ClientCertificateAuthenticationOptionsValidator().Validate(null, options);
+
+        result.Succeeded.Should().BeFalse();
+        result.FailureMessage.Should().Contain("AcceptedIssuerSubjects");
+        result.FailureMessage.Should().Contain("RequireChainTrust");
+    }
+
+    [Fact]
+    public void OptionsValidator_WithThumbprintOnlyProfileAndNoChainTrust_Succeeds()
+    {
+        var profile = CreateProfile("prod-native", "prod", "CN=ignored", "spiffe://honua/prod/admin");
+        profile.AcceptedIssuerSubjects = [];
+        profile.AcceptedIssuerThumbprints = ["AABBCCDDEEFF00112233445566778899AABBCCDD"];
+        profile.RequireChainTrust = false;
+        var options = new ClientCertificateAuthenticationOptions
+        {
+            Mode = ClientCertificateAuthenticationMode.RequiredForAdmin,
+            EnvironmentId = "prod",
+            TrustProfiles = [profile]
+        };
+
+        var result = new ClientCertificateAuthenticationOptionsValidator().Validate(null, options);
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void OptionsValidator_WithInvertedMappingValidityWindow_Fails()
+    {
+        var profile = CreateProfile("prod-native", "prod", "CN=Honua Native Prod", "spiffe://honua/prod/admin");
+        profile.RequireChainTrust = true;
+        profile.PrincipalMappings[0].NotBefore = DateTimeOffset.UtcNow.AddDays(10);
+        profile.PrincipalMappings[0].NotAfter = DateTimeOffset.UtcNow.AddDays(1);
+        var options = new ClientCertificateAuthenticationOptions
+        {
+            Mode = ClientCertificateAuthenticationMode.RequiredForAdmin,
+            EnvironmentId = "prod",
+            TrustProfiles = [profile]
+        };
+
+        var result = new ClientCertificateAuthenticationOptionsValidator().Validate(null, options);
+
+        result.Succeeded.Should().BeFalse();
+        result.FailureMessage.Should().Contain("NotBefore");
     }
 
     [Fact]

@@ -103,6 +103,7 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                     EnvironmentId = "prod",
                     DisplayName = "Runtime production operators",
                     AcceptedIssuerSubjects = ["CN=Runtime Trust Issuer"],
+                    RequireChainTrust = true,
                     ExpirationWarningThresholdDays = 12
                 });
 

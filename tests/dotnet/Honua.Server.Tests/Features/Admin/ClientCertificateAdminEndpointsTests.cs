@@ -209,11 +209,12 @@ public sealed class ClientCertificateAdminEndpointsTests : IDisposable
     public async Task ValidateCertificate_WithMappedCertificate_ReturnsValidResult()
     {
         using var certificate = CreateCertificate("CN=Honua Native Prod", "spiffe://honua/prod/admin");
-        var profileId = await CreateProfileAndReadIdAsync(certificate.Issuer);
+        var anchorPem = PemEncoding.WriteString("CERTIFICATE", certificate.RawData);
+        var profileId = await CreateProfileAndReadIdAsync(certificate.Issuer, anchorPem);
         await CreateMappingAsync(profileId);
         var request = new ValidateClientCertificateRequest
         {
-            Certificate = PemEncoding.WriteString("CERTIFICATE", certificate.RawData),
+            Certificate = anchorPem,
             Encoding = "pem",
             ProfileId = profileId
         };
@@ -351,6 +352,36 @@ public sealed class ClientCertificateAdminEndpointsTests : IDisposable
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/security/client-certificates/profiles")]
+    public async Task CreateProfile_WithAcceptedIssuerSubjectsButNoChainTrust_ReturnsBadRequest()
+    {
+        var profileId = $"profile-{Guid.NewGuid():N}";
+        var request = new UpsertClientCertificateTrustProfileRequest
+        {
+            ProfileId = profileId,
+            EnvironmentId = "prod",
+            DisplayName = "Forgeable subject-only profile",
+            AcceptedIssuerSubjects = ["CN=Honua Native Prod"],
+            AllowedSanTypes = ["sanUri"],
+            RequireClientAuthenticationEku = true,
+            RequireChainTrust = false,
+            ChainRevocationMode = "NoCheck",
+            ExpirationWarningThresholdDays = 15,
+            RotationGracePeriodDays = 7,
+        };
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/security/client-certificates/profiles",
+            request,
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("AcceptedIssuerSubjects", body, StringComparison.Ordinal);
+        Assert.Contains("RequireChainTrust", body, StringComparison.Ordinal);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/security/client-certificates/profiles")]
     public async Task CreateProfile_WithMalformedCustomTrustAnchor_ReturnsBadRequest()
     {
         var profileId = $"profile-{Guid.NewGuid():N}";
@@ -389,6 +420,7 @@ public sealed class ClientCertificateAdminEndpointsTests : IDisposable
             ["Authentication:ClientCertificates:TrustProfiles:0:ProfileId"] = "prod-native",
             ["Authentication:ClientCertificates:TrustProfiles:0:EnvironmentId"] = "prod",
             ["Authentication:ClientCertificates:TrustProfiles:0:AcceptedIssuerSubjects:0"] = "CN=Honua Native Prod",
+            ["Authentication:ClientCertificates:TrustProfiles:0:RequireChainTrust"] = "true",
             ["Authentication:ClientCertificates:TrustProfiles:0:PrincipalMappings:0:MappingId"] = "prod-admin",
             ["Authentication:ClientCertificates:TrustProfiles:0:PrincipalMappings:0:MatchType"] = "SanUri",
             ["Authentication:ClientCertificates:TrustProfiles:0:PrincipalMappings:0:MatchValue"] = "spiffe://honua/prod/admin",
@@ -434,18 +466,22 @@ public sealed class ClientCertificateAdminEndpointsTests : IDisposable
             });
         });
 
-    private async Task<HttpResponseMessage> CreateProfileAsync(string issuer = "CN=Honua Native Prod")
+    private async Task<HttpResponseMessage> CreateProfileAsync(
+        string issuer = "CN=Honua Native Prod",
+        string? anchorPem = null)
     {
         var profileId = $"profile-{Guid.NewGuid():N}";
         return await _client.PostAsJsonAsync(
             "/api/v1/admin/security/client-certificates/profiles",
-            CreateProfileRequest(profileId, issuer),
+            CreateProfileRequest(profileId, issuer, anchorPem: anchorPem),
             _jsonOptions);
     }
 
-    private async Task<string> CreateProfileAndReadIdAsync(string issuer = "CN=Honua Native Prod")
+    private async Task<string> CreateProfileAndReadIdAsync(
+        string issuer = "CN=Honua Native Prod",
+        string? anchorPem = null)
     {
-        var response = await CreateProfileAsync(issuer);
+        var response = await CreateProfileAsync(issuer, anchorPem);
         var data = await ReadDataAsync(response);
         return data.GetProperty("profileId").GetString()!;
     }
@@ -454,15 +490,18 @@ public sealed class ClientCertificateAdminEndpointsTests : IDisposable
         string profileId,
         string issuer = "CN=Honua Native Prod",
         string displayName = "Production native operators",
-        int rotationGracePeriodDays = 7)
+        int rotationGracePeriodDays = 7,
+        string? anchorPem = null)
         => new()
         {
             ProfileId = profileId,
             EnvironmentId = "prod",
             DisplayName = displayName,
             AcceptedIssuerSubjects = [issuer],
+            CustomTrustAnchorCertificates = anchorPem is null ? [] : [anchorPem],
             AllowedSanTypes = ["sanUri"],
             RequireClientAuthenticationEku = true,
+            RequireChainTrust = true,
             ExpirationWarningThresholdDays = 15,
             RotationGracePeriodDays = rotationGracePeriodDays
         };
