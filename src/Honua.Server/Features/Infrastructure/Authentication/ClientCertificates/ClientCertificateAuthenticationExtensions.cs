@@ -22,6 +22,7 @@ internal static class ClientCertificateAuthenticationExtensions
         services.TryAddSingleton<ClientCertificateExtractor>();
         services.TryAddSingleton<IClientCertificateTrustStore, InMemoryClientCertificateTrustStore>();
         services.TryAddSingleton<IClientCertificateValidator, ClientCertificateValidator>();
+        services.TryAddSingleton<ClientCertificateAuthenticationDependencies>();
 
         _ = services.AddAuthentication()
             .AddScheme<AuthenticationSchemeOptions, ClientCertificateAuthenticationHandler>(

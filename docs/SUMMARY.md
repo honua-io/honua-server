@@ -12,6 +12,7 @@
 - [MySQL / MariaDB Provider](operator/mysql-provider.md)
 - [TLS Connection Guide](operator/tls-connection-guide.md)
 - [Security](operator/security.md)
+- [Client Certificate Authentication](operator/client-certificate-authentication.md)
 - [Compliance Framework](operator/compliance-framework.md)
 - [HTTP Client Resilience](operator/http-client-resilience.md)
 - [Monitoring & Observability](operator/monitoring.md)

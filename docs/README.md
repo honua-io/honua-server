@@ -63,6 +63,7 @@ How to deploy, run, harden, and respond to incidents.
 - [Monitoring](operator/monitoring.md) — metrics, traces, and SLO surfaces.
 - [Troubleshooting](operator/troubleshooting.md)
 - [Security](operator/security.md) — operator-facing hardening guidance.
+- [Client Certificate Authentication](operator/client-certificate-authentication.md) — native/admin mTLS modes, trust profiles, mappings, revocations, and response contracts.
 - [TLS Connection Guide](operator/tls-connection-guide.md)
 - [HTTP Client Resilience](operator/http-client-resilience.md)
 - [Tile Operations Runbook](operator/tile-operations-runbook.md)

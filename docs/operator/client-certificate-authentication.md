@@ -167,7 +167,31 @@ with stable codes such as:
 - `client_certificate_wrong_environment`
 - `client_certificate_missing_identity`
 - `client_certificate_unmapped_identity`
+- `client_certificate_invalid_eku`
+- `client_certificate_forwarding_untrusted`
+- `client_certificate_forwarding_invalid`
 - `client_certificate_insufficient_rbac`
+
+The problem-details shape is stable for required-mode failures:
+
+```json
+{
+  "type": "https://honua.io/problems/security/client-certificate-missing",
+  "title": "Unauthorized",
+  "status": 401,
+  "detail": "A client certificate is required for this request.",
+  "code": "client_certificate_missing",
+  "instance": "/api/v1/admin/version",
+  "correlationId": "0HN...",
+  "timestamp": "2026-05-23T18:00:00.0000000+00:00",
+  "environmentId": "prod"
+}
+```
+
+`client_certificate_insufficient_rbac` returns `403`; other validation
+failures return `401`. Certificate validation probes do not use problem
+details for untrusted certificates: `POST /api/v1/admin/security/client-certificates/validate`
+returns `200` with `data.valid=false` and a stable `data.code`.
 
 Authentication attempts and trust changes emit audit events using actions such
 as `mtls.login.success`, `mtls.login.failure`, `mtls.profile.create`,
@@ -183,10 +207,41 @@ Trust profiles, mappings, revocations, and validation probes are available under
 Configuration-defined trust profiles are loaded at startup. Admin mutations
 update the active server trust store and should be mirrored into your
 configuration source of truth for durable restart and multi-node rollout.
-The anonymous `/api/v1/admin/auth/config` bootstrap endpoint exposes only
-non-secret mTLS hints: mode, environment id, required surfaces, supported
-transports, accepted issuer hints, expiration warning threshold, and whether
-forwarded-certificate mode is enabled.
+
+Responses use the standard admin envelope:
+
+```json
+{
+  "success": true,
+  "data": {},
+  "message": null,
+  "timestamp": "2026-05-23T18:00:00.0000000+00:00"
+}
+```
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/v1/admin/security/client-certificates/profiles` | List trust profiles. |
+| `POST /api/v1/admin/security/client-certificates/profiles` | Create a trust profile. Enabled profiles need an issuer subject, issuer thumbprint, or custom trust anchor. |
+| `GET /api/v1/admin/security/client-certificates/profiles/{profileId}` | Read one trust profile. |
+| `PUT /api/v1/admin/security/client-certificates/profiles/{profileId}` | Replace trust profile metadata. |
+| `DELETE /api/v1/admin/security/client-certificates/profiles/{profileId}` | Disable a trust profile. |
+| `GET /api/v1/admin/security/client-certificates/profiles/{profileId}/mappings` | List principal mappings. |
+| `POST /api/v1/admin/security/client-certificates/profiles/{profileId}/mappings` | Create a principal mapping. |
+| `PUT /api/v1/admin/security/client-certificates/profiles/{profileId}/mappings/{mappingId}` | Replace a principal mapping. |
+| `DELETE /api/v1/admin/security/client-certificates/profiles/{profileId}/mappings/{mappingId}` | Disable a principal mapping. |
+| `GET /api/v1/admin/security/client-certificates/profiles/{profileId}/revocations` | List revocation entries. |
+| `POST /api/v1/admin/security/client-certificates/profiles/{profileId}/revocations` | Revoke by SHA-256 fingerprint, or by issuer plus serial number. |
+| `DELETE /api/v1/admin/security/client-certificates/profiles/{profileId}/revocations/{revocationId}` | Remove a revocation entry. |
+| `POST /api/v1/admin/security/client-certificates/validate` | Validate a PEM, URL-encoded PEM, or base64 DER public client certificate without storing it. |
+
+The `/api/v1/admin/auth/config` bootstrap endpoint is anonymous for normal
+admin auth and exposes only non-secret mTLS hints: mode, environment id,
+required surfaces, supported transports, accepted issuer hints, expiration
+warning threshold, and whether forwarded-certificate mode is enabled. Required
+client-certificate modes still apply when the path matches
+`ProtectedAdminPathPrefixes`; narrow those prefixes if native clients must
+fetch issuer hints before presenting a certificate.
 
 Browser Console and gRPC-Web users are not required to present client
 certificates by this feature. Native Console and SDK clients can use full

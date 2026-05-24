@@ -99,6 +99,10 @@ Challenge behavior:
 - API key challenges include `WWW-Authenticate: ApiKey ...`.
 - When Basic compatibility mode is enabled, challenges also include `WWW-Authenticate: Basic ...`.
 - Bearer-token failures return Bearer challenge headers from the JWT handler.
+- Required client-certificate failures return sanitized `application/problem+json`
+  payloads with stable `client_certificate_*` codes. See
+  [Client Certificate Authentication](client-certificate-authentication.md) for
+  the response shape and admin trust-management endpoints.
 
 ---
 

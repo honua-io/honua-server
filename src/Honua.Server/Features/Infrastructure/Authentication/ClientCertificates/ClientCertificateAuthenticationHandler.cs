@@ -16,14 +16,12 @@ internal sealed class ClientCertificateAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     ILoggerFactory logger,
     UrlEncoder encoder,
-    ClientCertificateExtractor extractor,
-    IClientCertificateValidator validator,
-    IOptionsMonitor<ClientCertificateAuthenticationOptions> clientCertificateOptions)
+    ClientCertificateAuthenticationDependencies dependencies)
     : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
-    private readonly ClientCertificateExtractor _extractor = extractor;
-    private readonly IClientCertificateValidator _validator = validator;
-    private readonly IOptionsMonitor<ClientCertificateAuthenticationOptions> _clientCertificateOptions = clientCertificateOptions;
+    private readonly ClientCertificateExtractor _extractor = dependencies?.Extractor ?? throw new ArgumentNullException(nameof(dependencies));
+    private readonly IClientCertificateValidator _validator = dependencies.Validator;
+    private readonly IOptionsMonitor<ClientCertificateAuthenticationOptions> _clientCertificateOptions = dependencies.Options;
 
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
