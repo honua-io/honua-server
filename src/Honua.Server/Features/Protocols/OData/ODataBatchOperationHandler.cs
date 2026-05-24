@@ -557,15 +557,6 @@ internal sealed partial class ODataBatchOperationHandler(
         };
     }
 
-    private static bool IsODataEnabled(
-        LayerDefinition layer,
-        ServiceDefinition? service)
-    {
-        return service == null
-            ? ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.OData)
-            : ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.OData);
-    }
-
     private async Task PublishBatchFeatureEventsAsync(
         HttpContext context,
         ODataBatchRequest batchRequest,
