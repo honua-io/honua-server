@@ -205,6 +205,46 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/metadata/release-packages")]
+    public async Task CreateReleasePackage_WithRepeatedGeneratedTitleKeys_ReturnsCreatedPackages()
+    {
+        var body = JsonSerializer.Serialize(
+            new CreateMetadataReleasePackageRequest
+            {
+                Title = "Promote parcels",
+                SourceEnvironment = "dev",
+                TargetEnvironments = ["staging"],
+                SemanticIds = ["res.parcels"],
+            },
+            MetadataReleaseJsonContext.Default.CreateMetadataReleasePackageRequest);
+
+        var firstResponse = await _client.PostAsync(
+            "/api/v1/admin/metadata/release-packages",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+        var secondResponse = await _client.PostAsync(
+            "/api/v1/admin/metadata/release-packages",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        secondResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var firstPayload = await firstResponse.Content.ReadAsStringAsync();
+        var secondPayload = await secondResponse.Content.ReadAsStringAsync();
+        var first = JsonSerializer.Deserialize(
+            firstPayload,
+            MetadataReleaseJsonContext.Default.MetadataReleasePackage);
+        var second = JsonSerializer.Deserialize(
+            secondPayload,
+            MetadataReleaseJsonContext.Default.MetadataReleasePackage);
+
+        first.Should().NotBeNull();
+        second.Should().NotBeNull();
+        first!.Metadata.Name.Should().StartWith("promote-parcels-");
+        second!.Metadata.Name.Should().StartWith("promote-parcels-");
+        second.Metadata.Name.Should().NotBe(first.Metadata.Name);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/metadata/release-packages")]
     public async Task CreateReleasePackage_WithDuplicateDefaultNamespacePackageKey_ReturnsConflict()
     {
         var body = JsonSerializer.Serialize(

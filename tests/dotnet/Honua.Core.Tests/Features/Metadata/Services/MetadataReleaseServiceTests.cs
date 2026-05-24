@@ -169,6 +169,61 @@ public sealed class MetadataReleaseServiceTests
     }
 
     [UnitTest]
+    public async Task CreateReleasePackageAsync_WithDesiredRevision_ResolvesArtifactsFromRequestedSourceSnapshot()
+    {
+        var service = CreateService(
+            BuildGraph("dev", 40, MetadataV2ResourceType.FeatureDataset, "content-v40"),
+            BuildGraph("dev", 41, MetadataV2ResourceType.FeatureDataset, "content-v41"),
+            BuildGraph("staging", 7, MetadataV2ResourceType.FeatureDataset));
+
+        var package = await service.CreateReleasePackageAsync(
+            new CreateMetadataReleasePackageRequest
+            {
+                SourceEnvironment = "dev",
+                TargetEnvironments = ["staging"],
+                SemanticIds = ["res.parcels"],
+                DesiredRevision = 40,
+            },
+            "user-1");
+
+        package.SourceRevision.Should().Be(40);
+        package.SourceEtag.Should().Be("etag-dev-40");
+        package.Entries.Should().ContainSingle()
+            .Subject.DesiredContentVersionId.Should().Be("content-v40");
+    }
+
+    [UnitTest]
+    public async Task CreateReleasePackageAsync_WithGeneratedTitleKey_CreatesUniquePackageNames()
+    {
+        var service = CreateService(
+            BuildGraph("dev", 41, MetadataV2ResourceType.FeatureDataset),
+            BuildGraph("staging", 7, MetadataV2ResourceType.FeatureDataset));
+
+        var first = await service.CreateReleasePackageAsync(
+            new CreateMetadataReleasePackageRequest
+            {
+                Title = "Promote parcels",
+                SourceEnvironment = "dev",
+                TargetEnvironments = ["staging"],
+                SemanticIds = ["res.parcels"],
+            },
+            "user-1");
+        var second = await service.CreateReleasePackageAsync(
+            new CreateMetadataReleasePackageRequest
+            {
+                Title = "Promote parcels",
+                SourceEnvironment = "dev",
+                TargetEnvironments = ["staging"],
+                SemanticIds = ["res.parcels"],
+            },
+            "user-1");
+
+        first.Metadata.Name.Should().StartWith("promote-parcels-");
+        second.Metadata.Name.Should().StartWith("promote-parcels-");
+        second.Metadata.Name.Should().NotBe(first.Metadata.Name);
+    }
+
+    [UnitTest]
     public async Task CreateReleasePackageAsync_WithRequestContentVersion_KeepsArtifactContentVersionWhenPresent()
     {
         var service = CreateService(
@@ -256,7 +311,7 @@ public sealed class MetadataReleaseServiceTests
     public async Task GetGitOpsManifestAsync_ForPersistedPackage_UsesSourceGeneratedSecretSafeShape()
     {
         var service = CreateService(
-            BuildGraph("dev", 41, MetadataV2ResourceType.FeatureDataset),
+            BuildGraph("dev", 42, MetadataV2ResourceType.FeatureDataset),
             BuildGraph("staging", 7, MetadataV2ResourceType.FeatureDataset));
         var package = await service.CreateReleasePackageAsync(
             new CreateMetadataReleasePackageRequest
@@ -274,7 +329,7 @@ public sealed class MetadataReleaseServiceTests
         manifest.Should().NotBeNull();
         manifest!.ApiVersion.Should().Be(MetadataV2Constants.ApiVersion);
         manifest.Kind.Should().Be("MetadataReleasePackage");
-        manifest.Spec.Source.Revision.Should().Be(41);
+        manifest.Spec.Source.Revision.Should().Be(42);
         manifest.Spec.Entries.Should().ContainSingle(entry =>
             entry.SemanticId == "pub.parcels" &&
             entry.DesiredMetadataRevision == 42 &&
@@ -300,7 +355,8 @@ public sealed class MetadataReleaseServiceTests
     private static MetadataV2Graph BuildGraph(
         string environment,
         long revision,
-        MetadataV2ResourceType resourceType)
+        MetadataV2ResourceType resourceType,
+        string contentVersionId = "content-v1")
     {
         var passwordOption = JsonSerializer.Deserialize<JsonElement>("\"super-secret-password\"");
         return new MetadataV2Graph
@@ -320,7 +376,7 @@ public sealed class MetadataReleaseServiceTests
                         Generation = revision,
                         Annotations = new Dictionary<string, string>
                         {
-                            ["honua.io/content-version-id"] = "content-v1",
+                            ["honua.io/content-version-id"] = contentVersionId,
                         },
                     },
                     Type = resourceType,
@@ -410,32 +466,49 @@ public sealed class MetadataReleaseServiceTests
 
     private sealed class StaticEnvironmentReader : IMetadataV2EnvironmentSnapshotReader
     {
-        private readonly Dictionary<string, MetadataV2GraphSnapshot> _snapshots;
+        private readonly Dictionary<string, MetadataV2GraphSnapshot> _currentSnapshots;
+        private readonly Dictionary<string, Dictionary<long, MetadataV2GraphSnapshot>> _snapshotsByRevision;
 
         public StaticEnvironmentReader(IEnumerable<MetadataV2Graph> graphs)
         {
-            _snapshots = graphs.ToDictionary(
-                static graph => graph.Environment,
-                static graph => new MetadataV2GraphSnapshot(
+            _snapshotsByRevision = new Dictionary<string, Dictionary<long, MetadataV2GraphSnapshot>>(
+                StringComparer.OrdinalIgnoreCase);
+            _currentSnapshots = new Dictionary<string, MetadataV2GraphSnapshot>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var graph in graphs)
+            {
+                var snapshot = new MetadataV2GraphSnapshot(
                     graph,
                     $"etag-{graph.Environment}-{graph.Revision}",
-                    DateTimeOffset.UtcNow),
-                StringComparer.OrdinalIgnoreCase);
+                    DateTimeOffset.UtcNow);
+                if (!_snapshotsByRevision.TryGetValue(graph.Environment, out var revisions))
+                {
+                    revisions = new Dictionary<long, MetadataV2GraphSnapshot>();
+                    _snapshotsByRevision[graph.Environment] = revisions;
+                }
+
+                revisions[graph.Revision] = snapshot;
+                if (!_currentSnapshots.TryGetValue(graph.Environment, out var current) || graph.Revision > current.Revision)
+                {
+                    _currentSnapshots[graph.Environment] = snapshot;
+                }
+            }
         }
 
         public ValueTask<MetadataV2GraphSnapshot?> GetCurrentAsync(
             string environment,
             CancellationToken cancellationToken = default)
             => ValueTask.FromResult(
-                _snapshots.TryGetValue(environment, out var snapshot) ? snapshot : null);
+                _currentSnapshots.TryGetValue(environment, out var snapshot) ? snapshot : null);
 
         public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(
             string environment,
             long revision,
             CancellationToken cancellationToken = default)
         {
-            var snapshot = _snapshots.TryGetValue(environment, out var current) && current.Revision == revision
-                ? current
+            var snapshot = _snapshotsByRevision.TryGetValue(environment, out var revisions) &&
+                revisions.TryGetValue(revision, out var requested)
+                ? requested
                 : null;
             return ValueTask.FromResult(snapshot);
         }
@@ -447,7 +520,7 @@ public sealed class MetadataReleaseServiceTests
             await Task.Yield();
             foreach (var environment in environments)
             {
-                if (_snapshots.TryGetValue(environment, out var snapshot))
+                if (_currentSnapshots.TryGetValue(environment, out var snapshot))
                 {
                     yield return new MetadataV2EnvironmentRevision
                     {

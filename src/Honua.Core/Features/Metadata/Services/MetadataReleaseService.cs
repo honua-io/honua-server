@@ -129,10 +129,15 @@ public sealed class MetadataReleaseService(
         activity?.SetTag("metadata.target_environment.count", targetEnvironments.Count);
         activity?.SetTag("metadata.semantic_id.count", semanticIds.Count);
 
-        var sourceSnapshot = await snapshotReader.GetCurrentAsync(request.SourceEnvironment, cancellationToken)
-            .ConfigureAwait(false)
-            ?? throw new KeyNotFoundException(
-                $"Metadata v2 environment '{request.SourceEnvironment}' does not have an active revision.");
+        var sourceSnapshot = request.DesiredRevision is long desiredRevision
+            ? await snapshotReader.GetByRevisionAsync(request.SourceEnvironment, desiredRevision, cancellationToken)
+                .ConfigureAwait(false)
+                ?? throw new KeyNotFoundException(
+                    $"Metadata v2 environment '{request.SourceEnvironment}' does not have revision '{desiredRevision.ToString(CultureInfo.InvariantCulture)}'.")
+            : await snapshotReader.GetCurrentAsync(request.SourceEnvironment, cancellationToken)
+                .ConfigureAwait(false)
+                ?? throw new KeyNotFoundException(
+                    $"Metadata v2 environment '{request.SourceEnvironment}' does not have an active revision.");
 
         var targetSnapshots = new Dictionary<string, MetadataV2GraphSnapshot>(StringComparer.OrdinalIgnoreCase);
         foreach (var targetEnvironment in targetEnvironments)
@@ -190,7 +195,7 @@ public sealed class MetadataReleaseService(
         var now = _timeProvider.GetUtcNow();
         var packageId = Guid.NewGuid();
         var packageKey = string.IsNullOrWhiteSpace(request.PackageKey)
-            ? BuildPackageKey(request, now)
+            ? BuildPackageKey(request, now, packageId)
             : request.PackageKey!.Trim();
         var metadata = new MetadataV2ObjectMetadata
         {
@@ -856,12 +861,12 @@ public sealed class MetadataReleaseService(
         }
     }
 
-    private static string BuildPackageKey(CreateMetadataReleasePackageRequest request, DateTimeOffset now)
+    private static string BuildPackageKey(CreateMetadataReleasePackageRequest request, DateTimeOffset now, Guid packageId)
     {
         var basis = string.IsNullOrWhiteSpace(request.Title)
-            ? $"metadata-release-{request.SourceEnvironment}-{now:yyyyMMddHHmmss}"
+            ? $"metadata-release-{request.SourceEnvironment}"
             : request.Title!;
-        var builder = new StringBuilder(basis.Length);
+        var builder = new StringBuilder(basis.Length + 26);
         foreach (var ch in basis.Trim().ToLowerInvariant())
         {
             if (char.IsLetterOrDigit(ch))
@@ -875,7 +880,14 @@ public sealed class MetadataReleaseService(
         }
 
         var result = builder.ToString().Trim('-');
-        return string.IsNullOrEmpty(result) ? $"metadata-release-{now:yyyyMMddHHmmss}" : result;
+        if (string.IsNullOrEmpty(result))
+        {
+            result = "metadata-release";
+        }
+
+        var timestamp = now.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
+        var nonce = packageId.ToString("N")[..8];
+        return string.Concat(result, "-", timestamp, "-", nonce);
     }
 
     private sealed record ResolvedSemanticArtifact(
