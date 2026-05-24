@@ -27,6 +27,7 @@ using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Features.CloudDemo;
 using Honua.Server.Features.Collaboration;
+using Honua.Server.Features.Console;
 using Honua.Server.Features.Collaboration.Sessions;
 using Honua.Server.Features.Export;
 using Honua.Server.Features.PrintingTools;
@@ -392,6 +393,13 @@ builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Authenticatio
 // v1 metadata-resource / manifest-approval / gitops-watch admin surface removed in #1035 cutover.
 // V2 admin UX (epic #1046) edits the canonical MetadataV2Graph document directly via IMetadataV2GraphStore.
 
+// Console metadata v2 content + RBAC baseline (#1162). Persistent store lands in #1163.
+builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleContentStore>(sp =>
+    new Honua.Server.Features.Console.Services.InMemoryConsoleContentStore(
+        sp.GetService<TimeProvider>() ?? TimeProvider.System));
+builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleActionEvaluator,
+    Honua.Server.Features.Console.Services.ConsoleActionEvaluator>();
+
 // Register shared Infrastructure services
 builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.IGeometryConverter,
     Honua.Server.Features.Infrastructure.Services.GeometryConverter>();
@@ -535,6 +543,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.OidcProviderJsonContext.Default,
         Honua.Server.Features.Admin.Models.UserManagementJsonContext.Default,
         Honua.Server.Features.Admin.Models.RoleJsonContext.Default,
+        Honua.Server.Features.Console.Models.ConsoleJsonContext.Default,
         Honua.Server.Features.Admin.Models.AdminApiKeyJsonContext.Default,
         Honua.Server.Features.Admin.Models.SceneDatasetJsonContext.Default,
         Honua.Server.Features.Admin.Models.SceneGenerationJsonContext.Default,
@@ -918,6 +927,11 @@ app.MapLicenseEndpoints();
 app.MapOidcProviderEndpoints();
 app.MapUserManagementEndpoints();
 app.MapRoleEndpoints();
+
+// Configure Console metadata v2 content + RBAC endpoints (#1162)
+app.MapConsoleSessionEndpoints();
+app.MapConsoleContentEndpoints();
+app.MapConsoleActionEndpoints();
 app.MapAdminApiKeyEndpoints();
 
 // Configure metadata resource endpoints (ADR-0023)

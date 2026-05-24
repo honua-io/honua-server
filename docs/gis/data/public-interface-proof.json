@@ -205,6 +205,50 @@
       ]
     },
     {
+      "surfaceId": "console-content-rbac",
+      "displayName": "Console metadata v2 content and RBAC baseline",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/console/**",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [
+        "/api/v1/console/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and ConsoleSessionEndpointTests integration tests asserting session bootstrap, content CRUD, action checks, and provenance traversal under admin authorization",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Console/ConsoleSessionEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1162",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Source-generated ConsoleJsonContext keeps the wire shapes AOT-safe and SDK-consumable; the docs/admin-api/console-content-and-rbac.md contract describes the canonical item, action, and provenance shapes",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/Console/Models/ConsoleJsonContext.cs",
+            "src/Honua.Core/Features/Console/Domain/ConsoleContentItem.cs",
+            "docs/admin-api/console-content-and-rbac.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1162",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "migration-scan",
       "displayName": "Migration source inventory scan",
       "surfaceKind": "http-route-family",
