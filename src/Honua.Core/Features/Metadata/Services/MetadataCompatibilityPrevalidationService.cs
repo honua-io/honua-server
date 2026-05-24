@@ -204,10 +204,7 @@ public sealed class MetadataCompatibilityPrevalidationService(
                 throw new ArgumentException("DataScripts cannot contain a script with a blank scriptId.", nameof(dataScripts));
             }
 
-            if (script.DeclaredOperations is null)
-            {
-                throw new ArgumentException("Data script declaredOperations must be an array.", nameof(dataScripts));
-            }
+            ValidateCollection(script.DeclaredOperations, script.ScriptId, "declaredOperations", nameof(dataScripts));
 
             ValidateContract(script.BeforeContract, script.ScriptId, "beforeContract");
             ValidateContract(script.AfterContract, script.ScriptId, "afterContract");
@@ -226,39 +223,33 @@ public sealed class MetadataCompatibilityPrevalidationService(
             return;
         }
 
-        if (contract.Resources is null)
-        {
-            throw new ArgumentException($"Data script '{scriptId}' {propertyName}.resources must be an array.", propertyName);
-        }
+        ValidateCollection(contract.Resources, scriptId, $"{propertyName}.resources", propertyName);
 
         var fieldCount = 0;
         foreach (var resource in contract.Resources)
         {
-            if (resource is null)
-            {
-                throw new ArgumentException(
-                    $"Data script '{scriptId}' {propertyName}.resources cannot contain null entries.",
-                    propertyName);
-            }
-
             if (string.IsNullOrWhiteSpace(resource.SemanticId))
             {
                 throw new ArgumentException($"Data script '{scriptId}' contains a contract resource with a blank semanticId.", propertyName);
             }
 
-            if (resource.Fields is null)
-            {
-                throw new ArgumentException($"Data script '{scriptId}' contract fields must be an array.", propertyName);
-            }
+            ValidateCollection(resource.Fields, scriptId, $"{propertyName}.resources.fields", propertyName);
+            ValidateCollection(resource.RequiredIdentifiers, scriptId, $"{propertyName}.resources.requiredIdentifiers", propertyName);
+            ValidateCollection(resource.Domains, scriptId, $"{propertyName}.resources.domains", propertyName);
+            ValidateCollection(resource.Indexes, scriptId, $"{propertyName}.resources.indexes", propertyName);
+            ValidateCollection(resource.Capabilities, scriptId, $"{propertyName}.resources.capabilities", propertyName);
+            ValidateCollection(resource.SupportedFormats, scriptId, $"{propertyName}.resources.supportedFormats", propertyName);
 
             foreach (var field in resource.Fields)
             {
-                if (field is null)
-                {
-                    throw new ArgumentException(
-                        $"Data script '{scriptId}' contract fields cannot contain null entries.",
-                        propertyName);
-                }
+                ValidateCollection(field.SemanticRoles, scriptId, $"{propertyName}.resources.fields.semanticRoles", propertyName);
+                ValidateCollection(field.Domains, scriptId, $"{propertyName}.resources.fields.domains", propertyName);
+                ValidateCollection(field.Indexes, scriptId, $"{propertyName}.resources.fields.indexes", propertyName);
+            }
+
+            if (resource.Storage is not null)
+            {
+                ValidateCollection(resource.Storage.Capabilities, scriptId, $"{propertyName}.resources.storage.capabilities", propertyName);
             }
 
             fieldCount += resource.Fields.Count;
@@ -266,6 +257,28 @@ public sealed class MetadataCompatibilityPrevalidationService(
             {
                 throw new ArgumentException(
                     $"Data script '{scriptId}' cannot declare more than {MaxScriptFields} contract fields.",
+                    propertyName);
+            }
+        }
+    }
+
+    private static void ValidateCollection<T>(
+        IReadOnlyList<T>? values,
+        string scriptId,
+        string collectionPath,
+        string propertyName)
+    {
+        if (values is null)
+        {
+            throw new ArgumentException($"Data script '{scriptId}' {collectionPath} must be an array.", propertyName);
+        }
+
+        foreach (var value in values)
+        {
+            if (value is null)
+            {
+                throw new ArgumentException(
+                    $"Data script '{scriptId}' {collectionPath} cannot contain null entries.",
                     propertyName);
             }
         }

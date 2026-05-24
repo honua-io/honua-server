@@ -8924,7 +8924,7 @@
           },
           "declaredOperations": {
             "type": "array",
-            "description": "Optional operation labels. Omit for no labels; explicit null is rejected.",
+            "description": "Optional operation labels. Omit for no labels; explicit null arrays or entries are rejected.",
             "items": { "type": "string" }
           },
           "notes": { "type": "string" }
@@ -8935,7 +8935,7 @@
         "properties": {
           "resources": {
             "type": "array",
-            "description": "Semantic artifact contracts. Omit for an empty contract; explicit null is rejected.",
+            "description": "Semantic artifact contracts. Omit for an empty contract; explicit null arrays or entries are rejected.",
             "items": { "$ref": "#/components/schemas/MetadataScriptResourceContract" }
           }
         }
@@ -8971,18 +8971,22 @@
           "layerIndex": { "type": "integer", "format": "int32" },
           "fields": {
             "type": "array",
+            "description": "Fields expected before or after the script. Omit for no fields; explicit null arrays or entries are rejected.",
             "items": { "$ref": "#/components/schemas/MetadataScriptFieldContract" }
           },
           "requiredIdentifiers": {
             "type": "array",
+            "description": "Required field identifiers expected before or after the script. Omit for none; explicit null arrays or entries are rejected.",
             "items": { "type": "string" }
           },
           "domains": {
             "type": "array",
+            "description": "Canonical domain identifiers expected before or after the script. Omit for none; explicit null arrays or entries are rejected.",
             "items": { "type": "string" }
           },
           "indexes": {
             "type": "array",
+            "description": "Canonical index identifiers expected before or after the script. Omit for none; explicit null arrays or entries are rejected.",
             "items": { "type": "string" }
           },
           "spatial": { "$ref": "#/components/schemas/MetadataScriptSpatialContract" },
@@ -8990,10 +8994,12 @@
           "storage": { "$ref": "#/components/schemas/MetadataScriptStorageContract" },
           "capabilities": {
             "type": "array",
+            "description": "Service or publication capabilities expected before or after the script. Omit for none; explicit null arrays or entries are rejected.",
             "items": { "type": "string" }
           },
           "supportedFormats": {
             "type": "array",
+            "description": "Publication formats expected before or after the script. Omit for none; explicit null arrays or entries are rejected.",
             "items": { "type": "string" }
           }
         }
@@ -9009,14 +9015,17 @@
           "nullable": { "type": "boolean" },
           "semanticRoles": {
             "type": "array",
+            "description": "Semantic roles expected on the field. Omit for none; explicit null arrays or entries are rejected.",
             "items": { "type": "string" }
           },
           "domains": {
             "type": "array",
+            "description": "Canonical domain identifiers expected on the field. Omit for none; explicit null arrays or entries are rejected.",
             "items": { "type": "string" }
           },
           "indexes": {
             "type": "array",
+            "description": "Canonical index identifiers expected on the field. Omit for none; explicit null arrays or entries are rejected.",
             "items": { "type": "string" }
           }
         }
@@ -9046,6 +9055,7 @@
           },
           "capabilities": {
             "type": "array",
+            "description": "Storage binding capabilities. Omit for none; explicit null arrays are rejected.",
             "items": {
               "type": "string",
               "enum": ["query", "filter", "sort", "aggregate", "edit", "transactions", "render", "tile", "download", "search"]

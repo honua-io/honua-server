@@ -438,7 +438,118 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
                   ]
                 }
                 """,
-                "Data script 'script.bad-field' contract fields cannot contain null entries."),
+                "Data script 'script.bad-field' afterContract.resources.fields cannot contain null entries."),
+            (
+                """
+                {
+                  "releasePackageId": "33333333-3333-3333-3333-333333333333",
+                  "targetEnvironment": "staging",
+                  "dataScripts": [
+                    {
+                      "scriptId": "script.bad-operations",
+                      "declaredOperations": null
+                    }
+                  ]
+                }
+                """,
+                "Data script 'script.bad-operations' declaredOperations must be an array."),
+            (
+                """
+                {
+                  "releasePackageId": "33333333-3333-3333-3333-333333333333",
+                  "targetEnvironment": "staging",
+                  "dataScripts": [
+                    {
+                      "scriptId": "script.bad-resource-capabilities",
+                      "declaredOperations": [],
+                      "afterContract": {
+                        "resources": [
+                          {
+                            "semanticId": "svc.features",
+                            "semanticKind": "service",
+                            "capabilities": null
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+                """,
+                "Data script 'script.bad-resource-capabilities' afterContract.resources.capabilities must be an array."),
+            (
+                """
+                {
+                  "releasePackageId": "33333333-3333-3333-3333-333333333333",
+                  "targetEnvironment": "staging",
+                  "dataScripts": [
+                    {
+                      "scriptId": "script.bad-publication-formats",
+                      "declaredOperations": [],
+                      "afterContract": {
+                        "resources": [
+                          {
+                            "semanticId": "pub.parcels",
+                            "semanticKind": "publication",
+                            "supportedFormats": null
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+                """,
+                "Data script 'script.bad-publication-formats' afterContract.resources.supportedFormats must be an array."),
+            (
+                """
+                {
+                  "releasePackageId": "33333333-3333-3333-3333-333333333333",
+                  "targetEnvironment": "staging",
+                  "dataScripts": [
+                    {
+                      "scriptId": "script.bad-field-roles",
+                      "declaredOperations": [],
+                      "afterContract": {
+                        "resources": [
+                          {
+                            "semanticId": "res.parcels",
+                            "fields": [
+                              {
+                                "name": "apn",
+                                "semanticRoles": null
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+                """,
+                "Data script 'script.bad-field-roles' afterContract.resources.fields.semanticRoles must be an array."),
+            (
+                """
+                {
+                  "releasePackageId": "33333333-3333-3333-3333-333333333333",
+                  "targetEnvironment": "staging",
+                  "dataScripts": [
+                    {
+                      "scriptId": "script.bad-storage-capabilities",
+                      "declaredOperations": [],
+                      "afterContract": {
+                        "resources": [
+                          {
+                            "semanticId": "res.parcels",
+                            "storage": {
+                              "capabilities": null
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+                """,
+                "Data script 'script.bad-storage-capabilities' afterContract.resources.storage.capabilities must be an array."),
         ];
 
         foreach (var (body, expectedMessage) in cases)
@@ -452,6 +563,40 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
             using var document = JsonDocument.Parse(payload);
             document.RootElement.GetProperty("detail").GetString().Should().Contain(expectedMessage);
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Validation)]
+    [Endpoint("POST /api/v1/admin/metadata/prevalidate")]
+    public async Task Prevalidate_WithOmittedDataScriptCollections_TreatsCollectionsAsEmpty()
+    {
+        const string body =
+            """
+            {
+              "releasePackageId": "33333333-3333-3333-3333-333333333333",
+              "targetEnvironment": "staging",
+              "dataScripts": [
+                {
+                  "scriptId": "script.omitted-collections",
+                  "afterContract": {
+                    "resources": [
+                      {
+                        "semanticId": "res.parcels"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+            """;
+
+        var response = await _client.PostAsync(
+            "/api/v1/admin/metadata/prevalidate",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var report = await ReadPrevalidationReportAsync(response);
+        report.Status.Should().Be(MetadataCompatibilityStatus.Unknown);
     }
 
     [IntegrationTest]

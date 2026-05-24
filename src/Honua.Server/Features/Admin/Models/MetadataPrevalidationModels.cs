@@ -38,8 +38,103 @@ internal sealed record MetadataPrevalidateRequest
             ReleasePackageId = ReleasePackageId,
             ReleasePackage = ReleasePackage,
             TargetEnvironment = TargetEnvironment,
-            DataScripts = DataScripts ?? Array.Empty<MetadataDataScriptEntry>(),
+            DataScripts = NormalizeDataScripts(DataScripts),
         };
+
+    private static MetadataDataScriptEntry[] NormalizeDataScripts(
+        IReadOnlyList<MetadataDataScriptEntry>? dataScripts)
+    {
+        if (dataScripts is null || dataScripts.Count == 0)
+        {
+            return Array.Empty<MetadataDataScriptEntry>();
+        }
+
+        var normalized = new MetadataDataScriptEntry[dataScripts.Count];
+        for (var index = 0; index < dataScripts.Count; index++)
+        {
+            var script = dataScripts[index];
+            normalized[index] = script is null
+                ? null!
+                : script with
+                {
+                    DeclaredOperations = script.DeclaredOperations ?? Array.Empty<string>(),
+                    BeforeContract = NormalizeContract(script.BeforeContract),
+                    AfterContract = NormalizeContract(script.AfterContract),
+                };
+        }
+
+        return normalized;
+    }
+
+    private static MetadataDataScriptContract? NormalizeContract(MetadataDataScriptContract? contract)
+        => contract is null
+            ? null
+            : contract with
+            {
+                Resources = NormalizeResources(contract.Resources),
+            };
+
+    private static MetadataScriptResourceContract[] NormalizeResources(
+        IReadOnlyList<MetadataScriptResourceContract>? resources)
+    {
+        if (resources is null || resources.Count == 0)
+        {
+            return Array.Empty<MetadataScriptResourceContract>();
+        }
+
+        var normalized = new MetadataScriptResourceContract[resources.Count];
+        for (var index = 0; index < resources.Count; index++)
+        {
+            var resource = resources[index];
+            normalized[index] = resource is null
+                ? null!
+                : resource with
+                {
+                    Fields = NormalizeFields(resource.Fields),
+                    RequiredIdentifiers = resource.RequiredIdentifiers ?? Array.Empty<string>(),
+                    Domains = resource.Domains ?? Array.Empty<string>(),
+                    Indexes = resource.Indexes ?? Array.Empty<string>(),
+                    Storage = NormalizeStorage(resource.Storage),
+                    Capabilities = resource.Capabilities ?? Array.Empty<string>(),
+                    SupportedFormats = resource.SupportedFormats ?? Array.Empty<string>(),
+                };
+        }
+
+        return normalized;
+    }
+
+    private static MetadataScriptFieldContract[] NormalizeFields(
+        IReadOnlyList<MetadataScriptFieldContract>? fields)
+    {
+        if (fields is null || fields.Count == 0)
+        {
+            return Array.Empty<MetadataScriptFieldContract>();
+        }
+
+        var normalized = new MetadataScriptFieldContract[fields.Count];
+        for (var index = 0; index < fields.Count; index++)
+        {
+            var field = fields[index];
+            normalized[index] = field is null
+                ? null!
+                : field with
+                {
+                    SemanticRoles = field.SemanticRoles ?? Array.Empty<string>(),
+                    Domains = field.Domains ?? Array.Empty<string>(),
+                    Indexes = field.Indexes ?? Array.Empty<string>(),
+                };
+        }
+
+        return normalized;
+    }
+
+    private static MetadataScriptStorageContract? NormalizeStorage(MetadataScriptStorageContract? storage)
+        => storage is null
+            ? null
+            : storage with
+            {
+                Capabilities = storage.Capabilities ?? Array.Empty<MetadataV2StorageBindingCapability>(),
+            };
 }
 
 /// <summary>

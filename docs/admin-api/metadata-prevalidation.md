@@ -32,7 +32,7 @@ Request validation:
 - Exactly one of `releasePackageId` or `releasePackage` is required.
 - `targetEnvironment` is trimmed and must not be blank.
 - Up to 100 data scripts may be supplied.
-- Each script needs a non-blank `scriptId`. `declaredOperations`, contract `resources`, and contract `fields` may be omitted and are treated as empty arrays; when present, they must be arrays and explicit `null` is rejected.
+- Each script needs a non-blank `scriptId`. Script contract collections may be omitted and are treated as empty arrays; when present, they must be arrays and explicit `null` arrays or entries are rejected. This includes `declaredOperations`, `resources`, `fields`, `requiredIdentifiers`, `domains`, `indexes`, `capabilities`, `supportedFormats`, `semanticRoles`, and storage `capabilities`.
 - A single script may declare up to 1000 contract fields.
 
 ## Response

@@ -83,13 +83,154 @@ internal static class MetadataPrevalidationEndpoints
             throw new ArgumentException("Request body must be a JSON object.");
         }
 
-        if (document.RootElement.TryGetProperty("dataScripts", out var dataScripts) &&
-            dataScripts.ValueKind == JsonValueKind.Null)
+        ValidateDataScriptCollections(document.RootElement);
+
+        return document.RootElement.Deserialize(MetadataPrevalidationJsonContext.Default.MetadataPrevalidateRequest)
+            ?? throw new ArgumentException("Request body is required.");
+    }
+
+    private static void ValidateDataScriptCollections(JsonElement root)
+    {
+        if (!root.TryGetProperty("dataScripts", out var dataScripts))
+        {
+            return;
+        }
+
+        if (dataScripts.ValueKind != JsonValueKind.Array)
         {
             throw new ArgumentException("DataScripts must be an array.");
         }
 
-        return document.RootElement.Deserialize(MetadataPrevalidationJsonContext.Default.MetadataPrevalidateRequest)
-            ?? throw new ArgumentException("Request body is required.");
+        foreach (var script in dataScripts.EnumerateArray())
+        {
+            if (script.ValueKind == JsonValueKind.Null)
+            {
+                throw new ArgumentException("DataScripts cannot contain null entries.");
+            }
+
+            if (script.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var scriptId = ReadScriptId(script);
+            ValidateOptionalArray(script, "declaredOperations", scriptId, "declaredOperations");
+            ValidateContractCollections(script, "beforeContract", scriptId);
+            ValidateContractCollections(script, "afterContract", scriptId);
+        }
+    }
+
+    private static void ValidateContractCollections(JsonElement script, string propertyName, string scriptId)
+    {
+        if (!script.TryGetProperty(propertyName, out var contract) ||
+            contract.ValueKind == JsonValueKind.Null ||
+            contract.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        if (!ValidateOptionalArray(contract, "resources", scriptId, $"{propertyName}.resources", out var resources))
+        {
+            return;
+        }
+
+        foreach (var resource in resources.EnumerateArray())
+        {
+            if (resource.ValueKind == JsonValueKind.Null)
+            {
+                throw new ArgumentException($"Data script '{scriptId}' {propertyName}.resources cannot contain null entries.");
+            }
+
+            if (resource.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            ValidateOptionalArray(resource, "requiredIdentifiers", scriptId, $"{propertyName}.resources.requiredIdentifiers");
+            ValidateOptionalArray(resource, "domains", scriptId, $"{propertyName}.resources.domains");
+            ValidateOptionalArray(resource, "indexes", scriptId, $"{propertyName}.resources.indexes");
+            ValidateOptionalArray(resource, "capabilities", scriptId, $"{propertyName}.resources.capabilities");
+            ValidateOptionalArray(resource, "supportedFormats", scriptId, $"{propertyName}.resources.supportedFormats");
+
+            if (ValidateOptionalArray(resource, "fields", scriptId, $"{propertyName}.resources.fields", out var fields))
+            {
+                ValidateFieldCollections(fields, scriptId, propertyName);
+            }
+
+            if (resource.TryGetProperty("storage", out var storage) &&
+                storage.ValueKind == JsonValueKind.Object)
+            {
+                ValidateOptionalArray(storage, "capabilities", scriptId, $"{propertyName}.resources.storage.capabilities");
+            }
+        }
+    }
+
+    private static void ValidateFieldCollections(JsonElement fields, string scriptId, string propertyName)
+    {
+        foreach (var field in fields.EnumerateArray())
+        {
+            if (field.ValueKind == JsonValueKind.Null)
+            {
+                throw new ArgumentException($"Data script '{scriptId}' {propertyName}.resources.fields cannot contain null entries.");
+            }
+
+            if (field.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            ValidateOptionalArray(field, "semanticRoles", scriptId, $"{propertyName}.resources.fields.semanticRoles");
+            ValidateOptionalArray(field, "domains", scriptId, $"{propertyName}.resources.fields.domains");
+            ValidateOptionalArray(field, "indexes", scriptId, $"{propertyName}.resources.fields.indexes");
+        }
+    }
+
+    private static bool ValidateOptionalArray(
+        JsonElement owner,
+        string propertyName,
+        string scriptId,
+        string collectionPath)
+        => ValidateOptionalArray(owner, propertyName, scriptId, collectionPath, out _);
+
+    private static bool ValidateOptionalArray(
+        JsonElement owner,
+        string propertyName,
+        string scriptId,
+        string collectionPath,
+        out JsonElement array)
+    {
+        array = default;
+        if (!owner.TryGetProperty(propertyName, out var value))
+        {
+            return false;
+        }
+
+        if (value.ValueKind != JsonValueKind.Array)
+        {
+            throw new ArgumentException($"Data script '{scriptId}' {collectionPath} must be an array.");
+        }
+
+        foreach (var item in value.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.Null)
+            {
+                throw new ArgumentException($"Data script '{scriptId}' {collectionPath} cannot contain null entries.");
+            }
+        }
+
+        array = value;
+        return true;
+    }
+
+    private static string ReadScriptId(JsonElement script)
+    {
+        if (script.TryGetProperty("scriptId", out var scriptId) &&
+            scriptId.ValueKind == JsonValueKind.String &&
+            !string.IsNullOrWhiteSpace(scriptId.GetString()))
+        {
+            return scriptId.GetString()!;
+        }
+
+        return "<unknown>";
     }
 }
