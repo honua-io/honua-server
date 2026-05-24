@@ -533,9 +533,10 @@ The public `GET /api/styles/{layerId}.json` endpoint accepts an optional `?theme
 Metadata v2 release prevalidation accepts either `releasePackageId` or an inline
 `releasePackage`, plus a `targetEnvironment` and optional declared
 `dataScripts`. Omit `dataScripts` for no scripts; explicit `null` is rejected.
-It does not execute scripts. It reports `ready`, `warning`, `blocked`, or
-`unknown`, carries `canCreatePullRequest` / `canPromote` gates, lists affected
-dependents, and classifies rollback readiness. See
+Script-level `targetEnvironment` narrows a declaration to a matching target. It
+does not execute scripts. It reports `ready`, `warning`, `blocked`, or `unknown`,
+carries `canCreatePullRequest` / `canPromote` gates, lists affected dependents,
+and classifies rollback readiness. See
 [Metadata Prevalidation Admin API](../admin-api/metadata-prevalidation.md) for
 the full contract.
 

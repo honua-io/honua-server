@@ -21,7 +21,7 @@ Provide exactly one package source:
 - `releasePackageId`: persisted `MetadataReleasePackage` identifier.
 - `releasePackage`: inline `MetadataReleasePackage` payload for pre-PR drafts.
 
-Required fields:
+Request fields:
 
 - `targetEnvironment`: target environment name.
 - `dataScripts`: optional declared script contracts. Omit for no scripts; when present it must be an array. Explicit `null` is rejected.
@@ -32,12 +32,28 @@ Request validation:
 - Exactly one of `releasePackageId` or `releasePackage` is required.
 - `targetEnvironment` is trimmed and must not be blank.
 - Up to 100 data scripts may be supplied.
-- Each script needs a non-blank `scriptId`. Script contract collections may be omitted and are treated as empty arrays; when present, they must be arrays and explicit `null` arrays or entries are rejected. This includes `declaredOperations`, `resources`, `fields`, `requiredIdentifiers`, `domains`, `indexes`, `capabilities`, `supportedFormats`, `semanticRoles`, and storage `capabilities`.
+- Each script needs a non-blank `scriptId`. A script-level
+  `targetEnvironment` is optional; omitted or blank applies to every target, and
+  a populated value is trimmed and matched case-insensitively against the
+  requested target environment.
+- `beforeContract` and `afterContract` may be omitted when not known. Script
+  contract collections may be omitted and are treated as empty arrays; when
+  present, they must be arrays and explicit `null` arrays or entries are
+  rejected. This includes `declaredOperations`, `resources`, `fields`,
+  `requiredIdentifiers`, `domains`, `indexes`, `capabilities`,
+  `supportedFormats`, `semanticRoles`, and storage `capabilities`.
 - A single script may declare up to 1000 contract fields.
 
 ## Response
 
 The response is `ApiResponse<MetadataCompatibilityReport>`.
+
+Malformed JSON or validation failures return `400` as
+`application/problem+json` with a safe detail message. Missing persisted
+packages, unavailable source revisions, and unavailable target snapshots are not
+`404` responses from this endpoint; they return a successful admin envelope with
+`status: "unknown"` and a `metadata.compat.state.unavailable` finding so
+automation can gate on one report shape.
 
 Top-level report fields:
 

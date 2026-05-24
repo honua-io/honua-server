@@ -175,11 +175,13 @@ Release evidence:
 - Declared data scripts are never executed by prevalidation. They cover findings
   only when their before-contract matches target state and their after-contract
   satisfies the missing requirement; `exists: true` alone does not cover missing
-  resources, services, publications, or storage bindings.
+  resources, services, publications, or storage bindings. Script-level
+  `targetEnvironment` narrows coverage to the matching target environment.
 - Core analysis and the admin endpoint have tests for ready, blocked, warning,
   unavailable-state, script-covered, exists-only non-coverage,
-  before-contract-mismatch, explicit `dataScripts: null` rejection, and rollback
-  readiness outcomes.
+  before-contract-mismatch, explicit `dataScripts: null` and nested null
+  collection rejection, omitted collection normalization, and rollback readiness
+  outcomes.
 
 ## Review Output
 

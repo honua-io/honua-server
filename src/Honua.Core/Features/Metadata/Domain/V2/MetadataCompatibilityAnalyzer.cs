@@ -1043,7 +1043,7 @@ public static class MetadataCompatibilityAnalyzer
             MetadataCompatibilityCode.TemporalFieldMismatch =>
                 TemporalContractMatchesActual(FindArtifactContract(contract, finding), finding),
             MetadataCompatibilityCode.StorageBindingMissing =>
-                FindArtifactContract(contract, finding)?.Storage is null,
+                StorageBindingBeforeContractMatches(FindArtifactContract(contract, finding)),
             MetadataCompatibilityCode.StorageTypeMismatch =>
                 FindArtifactContract(contract, finding)?.Storage?.StorageType?.ToString() == finding.Actual.Value,
             MetadataCompatibilityCode.StorageCapabilityMissing =>
@@ -1069,6 +1069,9 @@ public static class MetadataCompatibilityAnalyzer
             contract?.Storage is not null &&
             !contract.Storage.Capabilities.Any(capability =>
                 string.Equals(capability.ToString(), finding.Expected.Value, StringComparison.Ordinal));
+
+    private static bool StorageBindingBeforeContractMatches(MetadataScriptResourceContract? contract)
+        => contract is not null && contract.Storage is null;
 
     private static bool TargetArtifactExists(MetadataV2GraphSnapshot targetSnapshot, MetadataCompatibilityFinding finding)
         => finding.AffectedSemanticKind switch

@@ -8730,11 +8730,11 @@
           },
           "targetEnvironment": {
             "type": "string",
-            "description": "Target environment whose current Metadata v2 graph snapshot is compared."
+            "description": "Target environment whose current Metadata v2 graph snapshot is compared. The value is trimmed and must not be blank."
           },
           "dataScripts": {
             "type": "array",
-            "description": "Optional declared data script contracts. Omit for no scripts; explicit null is rejected. Prevalidation analyzes these declarations but never executes scripts.",
+            "description": "Optional declared data script contracts. Omit for no scripts; explicit null arrays or entries are rejected. Prevalidation analyzes these declarations but never executes scripts.",
             "items": { "$ref": "#/components/schemas/MetadataDataScriptEntry" }
           }
         }
@@ -8915,11 +8915,17 @@
           "scriptId": { "type": "string" },
           "title": { "type": "string" },
           "kind": { "type": "string" },
-          "targetEnvironment": { "type": "string" },
+          "targetEnvironment": {
+            "type": "string",
+            "description": "Optional target environment for this script. Omitted or blank applies to every target; populated values are trimmed and matched case-insensitively."
+          },
           "reversible": { "type": "boolean" },
-          "beforeContract": { "$ref": "#/components/schemas/MetadataDataScriptContract" },
+          "beforeContract": {
+            "description": "Declared pre-script state. Omit when not known; child collection arrays may be omitted but explicit null arrays or entries are rejected.",
+            "allOf": [{ "$ref": "#/components/schemas/MetadataDataScriptContract" }]
+          },
           "afterContract": {
-            "description": "Declared post-script state. Missing-artifact coverage requires expected discriminator/detail fields, not only exists=true.",
+            "description": "Declared post-script state. Omit when no script coverage is claimed. Missing-artifact coverage requires expected discriminator/detail fields, not only exists=true.",
             "allOf": [{ "$ref": "#/components/schemas/MetadataDataScriptContract" }]
           },
           "declaredOperations": {
@@ -9055,7 +9061,7 @@
           },
           "capabilities": {
             "type": "array",
-            "description": "Storage binding capabilities. Omit for none; explicit null arrays are rejected.",
+            "description": "Storage binding capabilities. Omit for none; explicit null arrays or entries are rejected.",
             "items": {
               "type": "string",
               "enum": ["query", "filter", "sort", "aggregate", "edit", "transactions", "render", "tile", "download", "search"]

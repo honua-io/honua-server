@@ -293,6 +293,29 @@ public sealed class MetadataCompatibilityAnalyzerTests
     }
 
     [UnitTest]
+    public void Analyze_StorageContractWithoutBeforeResource_LeavesMissingBindingBlocked()
+    {
+        var source = Snapshot(BuildGraph("dev", 41));
+        var target = Snapshot(BuildGraph("staging", 7, includeStorage: false));
+        var package = Package(Entry("res.parcels", MetadataSemanticArtifactKind.Resource));
+
+        var report = MetadataCompatibilityAnalyzer.Analyze(
+            package,
+            source,
+            target,
+            [MissingStorageBindingScript(includeRequiredDetails: true, includeBeforeResourceContract: false)],
+            GeneratedAt);
+
+        report.Status.Should().Be(MetadataCompatibilityStatus.Blocked);
+        report.CoveredErrorCount.Should().Be(0);
+        report.Findings.Should().Contain(finding =>
+            finding.Code == MetadataCompatibilityCode.StorageBindingMissing &&
+            finding.CoverageState == MetadataCompatibilityCoverageState.Uncovered);
+        report.Findings.Should().Contain(finding =>
+            finding.Code == MetadataCompatibilityCode.ScriptBeforeContractMismatch);
+    }
+
+    [UnitTest]
     public void Analyze_StorageCapabilityBeforeContractAlreadyHasMissingCapability_LeavesFindingBlocked()
     {
         var source = Snapshot(BuildGraph(
@@ -610,7 +633,9 @@ public sealed class MetadataCompatibilityAnalyzerTests
             },
         };
 
-    private static MetadataDataScriptEntry MissingStorageBindingScript(bool includeRequiredDetails)
+    private static MetadataDataScriptEntry MissingStorageBindingScript(
+        bool includeRequiredDetails,
+        bool includeBeforeResourceContract = true)
         => new()
         {
             ScriptId = "script.bind-storage",
@@ -619,15 +644,17 @@ public sealed class MetadataCompatibilityAnalyzerTests
             DeclaredOperations = ["bind-storage"],
             BeforeContract = new MetadataDataScriptContract
             {
-                Resources =
-                [
-                    new MetadataScriptResourceContract
-                    {
-                        SemanticId = "res.parcels",
-                        SemanticKind = MetadataSemanticArtifactKind.Resource,
-                        Exists = true,
-                    },
-                ],
+                Resources = includeBeforeResourceContract
+                    ?
+                    [
+                        new MetadataScriptResourceContract
+                        {
+                            SemanticId = "res.parcels",
+                            SemanticKind = MetadataSemanticArtifactKind.Resource,
+                            Exists = true,
+                        },
+                    ]
+                    : Array.Empty<MetadataScriptResourceContract>(),
             },
             AfterContract = new MetadataDataScriptContract
             {
