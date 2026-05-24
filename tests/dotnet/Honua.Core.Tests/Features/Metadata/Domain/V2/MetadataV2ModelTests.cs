@@ -330,7 +330,14 @@ public sealed class MetadataV2ModelTests
             nameof(MetadataV2ResourceType.Process),
             nameof(MetadataV2ResourceType.Style),
             nameof(MetadataV2ResourceType.Document),
-            nameof(MetadataV2ResourceType.ExternalResource));
+            nameof(MetadataV2ResourceType.ExternalResource),
+            nameof(MetadataV2ResourceType.Map),
+            nameof(MetadataV2ResourceType.Dashboard),
+            nameof(MetadataV2ResourceType.Form),
+            nameof(MetadataV2ResourceType.App),
+            nameof(MetadataV2ResourceType.Workflow),
+            nameof(MetadataV2ResourceType.GeoprocessingService),
+            nameof(MetadataV2ResourceType.EtlPipeline));
 
         Enum.GetNames<MetadataV2PublicationType>().Should().Contain(
             [

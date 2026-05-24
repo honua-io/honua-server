@@ -155,6 +155,14 @@ internal static class ServiceCollectionExtensions
                 configuration["Metadata:Environment"] ?? configuration["Environment"] ?? "default",
                 configuration["Database:Schema"]));
         services.AddScoped<IMetadataV2GraphProvider>(sp => sp.GetRequiredService<IMetadataV2GraphStore>());
+        services.AddScoped<IMetadataV2EnvironmentSnapshotReader>(serviceProvider =>
+            new Features.Metadata.PostgresMetadataV2EnvironmentSnapshotReader(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+        services.AddScoped<IMetadataReleasePackageStore>(serviceProvider =>
+            new Features.Metadata.PostgresMetadataReleasePackageStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
 
         // Register layer style catalog for MapLibre/GeoServices styling
         services.AddScoped<ILayerStyleCatalog>(serviceProvider =>
