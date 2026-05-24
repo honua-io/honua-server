@@ -44,7 +44,7 @@ Error contract (matching the established admin endpoint pattern):
 | `PUT` | `/content/{id}` | Full replacement update. Honours optimistic concurrency via `generation`. |
 | `PATCH` | `/content/{id}` | Partial update for displayable fields (title, description, tags, labels, visibility). Does not touch `generation`. |
 | `DELETE` | `/content/{id}` | Delete the item. |
-| `GET` | `/content/{id}/provenance?depth=` | Resolve the transitive provenance chain anchored on the item (default depth 5). |
+| `GET` | `/content/{id}/provenance?depth=` | Resolve the transitive provenance chain anchored on the item (`depth` defaults to 5; values are clamped to `[1, 5]`). |
 | `POST` | `/actions/check` | Bulk evaluate Console verbs over a set of item ids and/or route keys. |
 
 ## Content item shape
@@ -230,8 +230,13 @@ that supply neither `itemId` nor `routeKey` are rejected with
 `kind` values: `catalog-resource`, `published-service`, `studio-artifact`,
 `generated-app`. Well-known `rel` values: `derived-from`, `publishes`,
 `generated-by`, `input-of`. Free-form values are permitted for adapter-specific
-lineage. The `GET …/provenance` endpoint walks references transitively, capped
-at `depth=5` by default, and breaks cycles by tracking visited ids.
+lineage. The `GET …/provenance` endpoint walks references transitively and
+breaks cycles by tracking visited ids. The `depth` query parameter defaults to
+5 and is clamped to the `[1, 5]` range — deeper traversal is intentionally a
+follow-on (see Known follow-ons). The traversal also defensively skips
+provenance edges with a null reference or null/whitespace `itemId`, so legacy
+or future-store data cannot break reads even when the create/PUT validator did
+not yet reject them.
 
 ## Bootstrap response
 
