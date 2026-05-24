@@ -58,6 +58,7 @@ The Honua Admin UI is intended to operate as a UI on top of this control-plane A
 |-- roles/                    # Role CRUD and permissions
 |-- users/                    # User management and effective permissions
 |-- oidc/providers/           # OIDC provider CRUD and testing
+|-- security/client-certificates/ # Native/admin mTLS trust profiles, mappings, revocations, validation
 |-- feature-events/           # Feature change event replay
 |-- manifest/drift            # Manifest drift, versions
 |-- manifest/pending/         # Manifest approval workflows
@@ -113,9 +114,13 @@ Additional metrics endpoints:
 - `X-API-Key` (default)
 - `Authorization: Bearer <jwt>` when OIDC is enabled
 - `Authorization: Basic ...` only when Basic compatibility mode is enabled
+- Valid mapped client certificate when `Authentication:ClientCertificates:Mode`
+  is `Optional`, `RequiredForAdmin`, or `RequiredForEnvironment`
 
 - Precedence:
 - Bearer is evaluated first when OIDC is enabled and a Bearer header is present
+- A valid mapped client certificate can authenticate a native/admin principal;
+  required mTLS modes validate the certificate before normal RBAC
 - Otherwise `X-API-Key` is evaluated
 - Basic compatibility is evaluated only when enabled and no valid `X-API-Key` is present
 
@@ -123,6 +128,29 @@ Additional metrics endpoints:
 - `WWW-Authenticate: ApiKey ...` is always returned for API-key challenges
 - `WWW-Authenticate: Basic ...` is added when Basic compatibility mode is enabled
 - Bearer failures include standard Bearer challenge headers
+- Required mTLS failures return `application/problem+json` with stable
+  `client_certificate_*` codes instead of raw TLS or provider errors
+
+### **Client Certificate Trust Management**
+
+Native/admin mTLS policy is configured under
+`Authentication:ClientCertificates` and administered through the security
+control-plane surface. The Admin API manages public trust metadata only; private
+keys stay in operator/client certificate stores.
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/admin/auth/config` | GET | No API-key/OIDC bootstrap metadata, including non-secret mTLS mode, environment, issuer hints, and required surfaces. Required mTLS prefix enforcement can still apply. |
+| `/api/v1/admin/security/client-certificates/profiles` | GET/POST | List or create trust profiles |
+| `/api/v1/admin/security/client-certificates/profiles/{profileId}` | GET/PUT/DELETE | Read, update, or disable a trust profile |
+| `/api/v1/admin/security/client-certificates/profiles/{profileId}/mappings` | GET/POST | List or create principal mappings |
+| `/api/v1/admin/security/client-certificates/profiles/{profileId}/mappings/{mappingId}` | PUT/DELETE | Update or disable a principal mapping |
+| `/api/v1/admin/security/client-certificates/profiles/{profileId}/revocations` | GET/POST | List or add revocation entries |
+| `/api/v1/admin/security/client-certificates/profiles/{profileId}/revocations/{revocationId}` | DELETE | Remove a revocation entry |
+| `/api/v1/admin/security/client-certificates/validate` | POST | Validate a PEM, URL-encoded PEM, or base64 DER public client certificate without storing it |
+
+For configuration examples and the full response contract, see
+[Client Certificate Authentication](client-certificate-authentication.md).
 
 ---
 

@@ -24,6 +24,17 @@ This guide covers authentication, authorization, edge security, and related oper
 - Optional static signing-key mode for controlled environments/tests:
 - `Oidc__TokenValidation__SymmetricSigningKey=<shared-secret>`
 
+**Client certificates / mTLS**: optional for native operator clients and
+admin/control-plane surfaces.
+- Configure `Authentication__ClientCertificates__Mode` as `Disabled`,
+  `Optional`, `RequiredForNative`, `RequiredForAdmin`, or
+  `RequiredForEnvironment`.
+- Define per-environment trust profiles and principal mappings under
+  `Authentication__ClientCertificates__TrustProfiles`.
+- See [Client Certificate Authentication](client-certificate-authentication.md)
+  for direct Kestrel, ingress/proxy, cloud load balancer, and gRPC transport
+  guidance.
+
 ### Development authentication bypass (Test only)
 
 `HONUA_DEV_AUTH=true` exists exclusively so the in-process integration test
@@ -76,9 +87,11 @@ Authentication schemes:
 - **API key** via `X-API-Key` (automation and service access).
 - **HTTP Basic compatibility** (optional) for legacy clients, using the Basic password as the API key.
 - **OIDC** for browser-based Admin UI and token-based access.
+- **Client certificate** (optional or required by configured surface) for native operator clients.
 
 Authentication precedence:
 - If OIDC is enabled and `Authorization: Bearer ...` is present, Bearer auth is evaluated first.
+- If a valid client certificate is presented and accepted by policy, it can authenticate a mapped native principal.
 - Otherwise, `X-API-Key` is evaluated.
 - Basic compatibility is only evaluated when enabled and when no valid `X-API-Key` header is present.
 
@@ -86,6 +99,10 @@ Challenge behavior:
 - API key challenges include `WWW-Authenticate: ApiKey ...`.
 - When Basic compatibility mode is enabled, challenges also include `WWW-Authenticate: Basic ...`.
 - Bearer-token failures return Bearer challenge headers from the JWT handler.
+- Required client-certificate failures return sanitized `application/problem+json`
+  payloads with stable `client_certificate_*` codes. See
+  [Client Certificate Authentication](client-certificate-authentication.md) for
+  the response shape and admin trust-management endpoints.
 
 ---
 

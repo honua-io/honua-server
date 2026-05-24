@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Honua Server Management API",
-    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints for configuration, import scanning, connections, layers, styles, observability, runtime licensing, and deploy control. For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
+    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints for configuration, import scanning, connections, layers, styles, observability, runtime licensing, deploy control, and native client-certificate trust management. For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
     "version": "1.0.0",
     "contact": {
       "name": "Honua Server",
@@ -30,6 +30,11 @@
       "BasicAuth": []
     }
   ],
+  "x-honua-client-certificate-auth": {
+    "configurationSection": "Authentication:ClientCertificates",
+    "modes": ["Disabled", "Optional", "RequiredForNative", "RequiredForAdmin", "RequiredForEnvironment"],
+    "note": "OpenAPI 3.0 cannot directly model TLS client-certificate presentation. Required admin/native mTLS modes are enforced before normal RBAC and return application/problem+json with stable client_certificate_* codes."
+  },
   "tags": [
     {
       "name": "Configuration",
@@ -82,6 +87,10 @@
     {
       "name": "Features",
       "description": "Edition-gated feature catalog and active entitlement state"
+    },
+    {
+      "name": "Security",
+      "description": "Authentication policy metadata and client-certificate trust management"
     }
   ],
   "paths": {
@@ -2626,6 +2635,426 @@
         }
       }
     },
+    "/auth/config": {
+      "get": {
+        "tags": ["Security"],
+        "summary": "Get Admin Auth Configuration",
+        "description": "Bootstrap endpoint for Admin UI and native clients. It does not require API-key, OIDC, or admin-session auth, but required client-certificate prefix enforcement can still apply. Returns OIDC provider labels plus non-secret client-certificate policy hints such as mode, environment id, required surfaces, supported transports, accepted issuer hints, expiration warning threshold, and forwarded-certificate status. Issuer hints are sourced from the live trust store, so admin-API profile create/update/disable mutations are reflected immediately without a restart.",
+        "operationId": "getAdminAuthConfig",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Client-safe authentication bootstrap metadata",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AdminAuthConfigResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/security/client-certificates/profiles": {
+      "get": {
+        "tags": ["Security"],
+        "summary": "List Client Certificate Trust Profiles",
+        "description": "Lists active and disabled client-certificate trust profiles in the in-memory trust store. Configuration-defined profiles are loaded at startup; admin mutations should be mirrored to the deployment source of truth for durable multi-node rollout.",
+        "operationId": "listClientCertificateTrustProfiles",
+        "responses": {
+          "200": {
+            "description": "Client-certificate trust profiles",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseClientCertificateTrustProfileResponseArray" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "post": {
+        "tags": ["Security"],
+        "summary": "Create Client Certificate Trust Profile",
+        "description": "Creates a client-certificate trust profile. Enabled profiles require at least one accepted issuer subject, accepted issuer thumbprint, or custom trust anchor certificate.",
+        "operationId": "createClientCertificateTrustProfile",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpsertClientCertificateTrustProfileRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Trust profile created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseClientCertificateTrustProfileResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/security/client-certificates/profiles/{profileId}": {
+      "get": {
+        "tags": ["Security"],
+        "summary": "Get Client Certificate Trust Profile",
+        "operationId": "getClientCertificateTrustProfile",
+        "parameters": [
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trust profile",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseClientCertificateTrustProfileResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "put": {
+        "tags": ["Security"],
+        "summary": "Update Client Certificate Trust Profile",
+        "operationId": "updateClientCertificateTrustProfile",
+        "parameters": [
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpsertClientCertificateTrustProfileRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Trust profile updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseClientCertificateTrustProfileResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "delete": {
+        "tags": ["Security"],
+        "summary": "Disable Client Certificate Trust Profile",
+        "description": "Disables a trust profile without deleting its mappings or revocation entries.",
+        "operationId": "disableClientCertificateTrustProfile",
+        "parameters": [
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trust profile disabled",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseClientCertificateTrustProfileResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/security/client-certificates/profiles/{profileId}/mappings": {
+      "get": {
+        "tags": ["Security"],
+        "summary": "List Client Certificate Principal Mappings",
+        "operationId": "listClientCertificatePrincipalMappings",
+        "parameters": [
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Principal mappings",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseClientCertificatePrincipalMappingResponseArray" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "post": {
+        "tags": ["Security"],
+        "summary": "Create Client Certificate Principal Mapping",
+        "operationId": "createClientCertificatePrincipalMapping",
+        "parameters": [
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpsertClientCertificatePrincipalMappingRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Principal mapping created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseClientCertificatePrincipalMappingResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/security/client-certificates/profiles/{profileId}/mappings/{mappingId}": {
+      "put": {
+        "tags": ["Security"],
+        "summary": "Update Client Certificate Principal Mapping",
+        "operationId": "updateClientCertificatePrincipalMapping",
+        "parameters": [
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "mappingId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpsertClientCertificatePrincipalMappingRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Principal mapping updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseClientCertificatePrincipalMappingResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "delete": {
+        "tags": ["Security"],
+        "summary": "Disable Client Certificate Principal Mapping",
+        "operationId": "disableClientCertificatePrincipalMapping",
+        "parameters": [
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "mappingId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Principal mapping disabled",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseClientCertificatePrincipalMappingResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/security/client-certificates/profiles/{profileId}/revocations": {
+      "get": {
+        "tags": ["Security"],
+        "summary": "List Client Certificate Revocations",
+        "operationId": "listClientCertificateRevocations",
+        "parameters": [
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revocation entries",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseClientCertificateRevocationEntryResponseArray" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "post": {
+        "tags": ["Security"],
+        "summary": "Add Client Certificate Revocation",
+        "description": "Adds a revocation by SHA-256 fingerprint or by issuer plus serial number.",
+        "operationId": "addClientCertificateRevocation",
+        "parameters": [
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AddClientCertificateRevocationRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Revocation added",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseClientCertificateRevocationEntryResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/security/client-certificates/profiles/{profileId}/revocations/{revocationId}": {
+      "delete": {
+        "tags": ["Security"],
+        "summary": "Remove Client Certificate Revocation",
+        "operationId": "removeClientCertificateRevocation",
+        "parameters": [
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "revocationId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revocation removed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseObject" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/security/client-certificates/validate": {
+      "post": {
+        "tags": ["Security"],
+        "summary": "Validate Client Certificate",
+        "description": "Validates a supplied public client certificate against configured trust profiles without storing the certificate. A parsed-but-untrusted certificate returns 200 with data.valid=false and a stable data.code; 400 is reserved for missing/blank certificate bodies and unknown encoding values.",
+        "operationId": "validateClientCertificate",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ValidateClientCertificateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validation result. A parsed but untrusted certificate returns 200 with data.valid=false and a stable data.code value.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseValidateClientCertificateResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
     "/compliance/dashboard": {
       "get": {
         "tags": ["Compliance"],
@@ -5135,6 +5564,499 @@
         "properties": {
           "success": { "type": "boolean" },
           "data": { "$ref": "#/components/schemas/AdminVersionResponse" },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "AdminAuthConfigResponse": {
+        "type": "object",
+        "required": ["oidcEnabled", "providers", "clientCertificates"],
+        "properties": {
+          "oidcEnabled": {
+            "type": "boolean",
+            "description": "Whether at least one configured OIDC provider is available for admin login."
+          },
+          "providers": {
+            "type": "array",
+            "description": "Client-safe OIDC provider labels. Authority, tenant, client id, and secrets are never returned.",
+            "items": { "$ref": "#/components/schemas/AdminAuthProviderInfo" }
+          },
+          "clientCertificates": {
+            "$ref": "#/components/schemas/AdminAuthClientCertificateInfo"
+          }
+        }
+      },
+      "AdminAuthProviderInfo": {
+        "type": "object",
+        "required": ["key", "displayName"],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Provider selection key such as azuread, google, oidc, okta, or auth0."
+          },
+          "displayName": {
+            "type": "string",
+            "description": "Provider display name shown to operators."
+          }
+        }
+      },
+      "AdminAuthClientCertificateInfo": {
+        "type": "object",
+        "required": [
+          "mode",
+          "environmentId",
+          "requiredForAdmin",
+          "requiredForNative",
+          "supportedTransports",
+          "acceptedIssuerSubjects",
+          "acceptedIssuerThumbprints",
+          "forwardedCertificateEnabled"
+        ],
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["Disabled", "Optional", "RequiredForNative", "RequiredForAdmin", "RequiredForEnvironment"],
+            "description": "Configured client-certificate authentication mode."
+          },
+          "environmentId": {
+            "type": "string",
+            "description": "Server environment id used for trust-profile matching."
+          },
+          "requiredForAdmin": {
+            "type": "boolean",
+            "description": "Whether configured admin path prefixes require a valid mapped client certificate."
+          },
+          "requiredForNative": {
+            "type": "boolean",
+            "description": "Whether configured native gRPC services require a valid mapped client certificate."
+          },
+          "supportedTransports": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["https", "grpc-https"] },
+            "description": "Transports that can satisfy native client-certificate authentication. Empty when mode is Disabled."
+          },
+          "acceptedIssuerSubjects": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Issuer subject hints from enabled profiles for this environment, returned in the canonicalized form (uppercase, no internal whitespace) used for certificate matching."
+          },
+          "acceptedIssuerThumbprints": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Issuer thumbprint hints from enabled profiles for this environment, returned in the canonicalized form (uppercase, no internal whitespace) used for certificate matching."
+          },
+          "expirationWarningThresholdDays": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Minimum warning threshold across enabled profiles for this environment, or null when none are enabled."
+          },
+          "forwardedCertificateEnabled": {
+            "type": "boolean",
+            "description": "Whether trusted forwarded client-certificate headers are enabled."
+          }
+        }
+      },
+      "ClientCertificateTrustProfileResponse": {
+        "type": "object",
+        "required": [
+          "profileId",
+          "environmentId",
+          "displayName",
+          "enabled",
+          "acceptedIssuerThumbprints",
+          "acceptedIssuerSubjects",
+          "allowedSanTypes",
+          "allowSubjectFallback",
+          "requireClientAuthenticationEku",
+          "requireChainTrust",
+          "chainRevocationMode",
+          "expirationWarningThresholdDays",
+          "rotationGracePeriodDays",
+          "revision",
+          "principalMappings",
+          "revocations"
+        ],
+        "properties": {
+          "profileId": { "type": "string" },
+          "environmentId": { "type": "string" },
+          "displayName": { "type": "string" },
+          "enabled": { "type": "boolean" },
+          "acceptedIssuerThumbprints": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "acceptedIssuerSubjects": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "allowedSanTypes": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ClientCertificateIdentityType" }
+          },
+          "allowSubjectFallback": { "type": "boolean" },
+          "requireClientAuthenticationEku": { "type": "boolean" },
+          "requireChainTrust": { "type": "boolean" },
+          "chainRevocationMode": {
+            "type": "string",
+            "enum": ["NoCheck", "Offline", "Online"]
+          },
+          "expirationWarningThresholdDays": { "type": "integer" },
+          "rotationGracePeriodDays": { "type": "integer" },
+          "revision": { "type": "integer", "format": "int64" },
+          "principalMappings": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ClientCertificatePrincipalMappingResponse" }
+          },
+          "revocations": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ClientCertificateRevocationEntryResponse" }
+          }
+        }
+      },
+      "UpsertClientCertificateTrustProfileRequest": {
+        "type": "object",
+        "required": ["environmentId"],
+        "properties": {
+          "profileId": {
+            "type": "string",
+            "description": "Optional trust profile id for create requests."
+          },
+          "environmentId": {
+            "type": "string",
+            "description": "Honua environment id this profile applies to."
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "acceptedIssuerThumbprints": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "SHA-1 thumbprints of accepted issuer/CA certificates (leaf thumbprints are not honored). Matching is gated by cryptographic chain build, so the issuing CA must be reachable through the OS trust store or the profile's customTrustAnchorCertificates; a thumbprint that only appears in a forged leaf's attached chain will not match."
+          },
+          "acceptedIssuerSubjects": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "allowedSanTypes": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ClientCertificateIdentityType" },
+            "default": ["sanUri", "sanEmail", "sanDns"]
+          },
+          "allowSubjectFallback": {
+            "type": "boolean",
+            "default": false
+          },
+          "requireClientAuthenticationEku": {
+            "type": "boolean",
+            "default": true
+          },
+          "requireChainTrust": {
+            "type": "boolean",
+            "default": false,
+            "description": "Required to be true when acceptedIssuerSubjects is non-empty; subject-DN matching alone is forgeable, so the chain must be cryptographically verified. Thumbprint and custom-anchor profiles already perform cryptographic chain build during the issuer-hint check; enabling requireChainTrust additionally applies the configured chainRevocationMode (Online/Offline)."
+          },
+          "chainRevocationMode": {
+            "type": "string",
+            "enum": ["NoCheck", "Offline", "Online"],
+            "default": "NoCheck"
+          },
+          "expirationWarningThresholdDays": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 30
+          },
+          "rotationGracePeriodDays": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0
+          },
+          "customTrustAnchorCertificates": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Custom trust anchor public certificates as PEM or base64 DER. Private keys are never accepted. The presented chain must build successfully under custom-root trust mode and terminate at one of these anchors; cryptographic chain verification is enforced regardless of requireChainTrust."
+          }
+        }
+      },
+      "ClientCertificatePrincipalMappingResponse": {
+        "type": "object",
+        "required": ["mappingId", "matchType", "matchValue", "principalId", "displayName", "roles", "environmentScopes", "enabled", "revision"],
+        "properties": {
+          "mappingId": { "type": "string" },
+          "matchType": { "$ref": "#/components/schemas/ClientCertificateIdentityType" },
+          "matchValue": {
+            "type": "string",
+            "description": "Normalized identity match value."
+          },
+          "principalId": { "type": "string" },
+          "displayName": { "type": "string" },
+          "roles": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "tenantId": {
+            "type": "string",
+            "nullable": true
+          },
+          "environmentScopes": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "enabled": { "type": "boolean" },
+          "notBefore": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "notAfter": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "revision": { "type": "integer", "format": "int64" }
+        }
+      },
+      "UpsertClientCertificatePrincipalMappingRequest": {
+        "type": "object",
+        "required": ["matchType", "matchValue", "principalId"],
+        "properties": {
+          "mappingId": {
+            "type": "string",
+            "description": "Optional mapping id for create requests."
+          },
+          "matchType": { "$ref": "#/components/schemas/ClientCertificateIdentityType" },
+          "matchValue": { "type": "string" },
+          "principalId": { "type": "string" },
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "roles": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "tenantId": {
+            "type": "string",
+            "nullable": true
+          },
+          "environmentScopes": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "notBefore": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "notAfter": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "ClientCertificateRevocationEntryResponse": {
+        "type": "object",
+        "required": ["revocationId", "reason", "revokedAt", "actor", "enabled"],
+        "properties": {
+          "revocationId": { "type": "string" },
+          "fingerprintSha256": {
+            "type": "string",
+            "nullable": true
+          },
+          "issuer": {
+            "type": "string",
+            "nullable": true
+          },
+          "serialNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": { "type": "string" },
+          "revokedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "actor": { "type": "string" },
+          "enabled": { "type": "boolean" }
+        }
+      },
+      "AddClientCertificateRevocationRequest": {
+        "type": "object",
+        "properties": {
+          "revocationId": {
+            "type": "string",
+            "description": "Optional revocation id for idempotent automation."
+          },
+          "fingerprintSha256": {
+            "type": "string",
+            "description": "Revoked certificate SHA-256 fingerprint."
+          },
+          "issuer": {
+            "type": "string",
+            "description": "Revoked issuer distinguished name, used with serialNumber."
+          },
+          "serialNumber": {
+            "type": "string",
+            "description": "Revoked certificate serial number, used with issuer."
+          },
+          "reason": {
+            "type": "string",
+            "default": "unspecified"
+          }
+        }
+      },
+      "ValidateClientCertificateRequest": {
+        "type": "object",
+        "required": ["certificate"],
+        "properties": {
+          "certificate": {
+            "type": "string",
+            "description": "PEM, URL-encoded PEM, or base64 DER public client certificate."
+          },
+          "encoding": {
+            "type": "string",
+            "enum": ["pem", "urlEncodedPem", "base64Der"],
+            "default": "pem"
+          },
+          "profileId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional expected trust profile id."
+          }
+        }
+      },
+      "ValidateClientCertificateResponse": {
+        "type": "object",
+        "required": ["valid", "code", "detail"],
+        "properties": {
+          "valid": { "type": "boolean" },
+          "code": {
+            "type": "string",
+            "enum": [
+              "success",
+              "client_certificate_missing",
+              "client_certificate_expired",
+              "client_certificate_not_yet_valid",
+              "client_certificate_untrusted_issuer",
+              "client_certificate_untrusted_chain",
+              "client_certificate_revoked",
+              "client_certificate_wrong_environment",
+              "client_certificate_missing_identity",
+              "client_certificate_unmapped_identity",
+              "client_certificate_invalid_eku",
+              "client_certificate_forwarding_untrusted",
+              "client_certificate_forwarding_invalid",
+              "client_certificate_insufficient_rbac"
+            ]
+          },
+          "detail": { "type": "string" },
+          "principalId": {
+            "type": "string",
+            "nullable": true
+          },
+          "trustProfileId": {
+            "type": "string",
+            "nullable": true
+          },
+          "mappingId": {
+            "type": "string",
+            "nullable": true
+          },
+          "environmentId": {
+            "type": "string",
+            "nullable": true
+          },
+          "fingerprintSha256": {
+            "type": "string",
+            "nullable": true
+          },
+          "daysUntilExpiry": {
+            "type": "integer",
+            "nullable": true
+          }
+        }
+      },
+      "ClientCertificateIdentityType": {
+        "type": "string",
+        "enum": ["fingerprintSha256", "sanUri", "sanEmail", "sanDns", "subject"]
+      },
+      "ApiResponseClientCertificateTrustProfileResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/ClientCertificateTrustProfileResponse" },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiResponseClientCertificateTrustProfileResponseArray": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ClientCertificateTrustProfileResponse" }
+          },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiResponseClientCertificatePrincipalMappingResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/ClientCertificatePrincipalMappingResponse" },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiResponseClientCertificatePrincipalMappingResponseArray": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ClientCertificatePrincipalMappingResponse" }
+          },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiResponseClientCertificateRevocationEntryResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/ClientCertificateRevocationEntryResponse" },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiResponseClientCertificateRevocationEntryResponseArray": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ClientCertificateRevocationEntryResponse" }
+          },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiResponseValidateClientCertificateResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/ValidateClientCertificateResponse" },
           "message": { "type": "string" },
           "timestamp": { "type": "string", "format": "date-time" }
         }

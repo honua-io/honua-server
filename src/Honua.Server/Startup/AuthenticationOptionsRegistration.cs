@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Authentication.ClientCertificates;
 using Honua.Server.Features.Mobile.Auth;
 
 namespace Honua.Server.Startup;
@@ -90,6 +91,7 @@ internal static class AuthenticationOptionsRegistration
 
         // Authentication and authorization handlers
         services.AddApiKeyAuthentication();
+        services.AddHonuaClientCertificateAuthentication(configuration);
         services.AddOidcAuthentication(configuration);
         services.AddOidcAuthorization(configuration);
         services.AddSingleton<AdminAuthSessionStore>();

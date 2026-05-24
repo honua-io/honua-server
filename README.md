@@ -159,7 +159,7 @@ The source-backed feature map is maintained in [docs/features/README.md](docs/fe
 
 **Caching** — Multi-layer: output cache, Redis, in-memory fallback.
 
-**Auth** — API key authentication, OIDC (server-side plumbing), and optional Redis metadata cache.
+**Auth** — API key authentication, OIDC for browser/admin flows, and optional client-certificate authentication for native/admin mTLS with per-environment trust profiles.
 
 **Observability** — OpenTelemetry traces and metrics, structured logging, health endpoints.
 

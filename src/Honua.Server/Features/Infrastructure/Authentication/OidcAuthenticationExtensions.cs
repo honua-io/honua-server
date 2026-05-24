@@ -13,6 +13,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using StackExchange.Redis;
+using Honua.Server.Features.Infrastructure.Authentication.ClientCertificates;
 
 namespace Honua.Server.Features.Infrastructure.Authentication;
 
@@ -159,6 +160,17 @@ public static class OidcAuthenticationExtensions
                     return AdminSessionScheme;
                 }
 
+                var clientCertificateOptions = context.RequestServices
+                    .GetService<IOptions<ClientCertificateAuthenticationOptions>>()?
+                    .Value;
+                if (clientCertificateOptions?.Mode != ClientCertificateAuthenticationMode.Disabled &&
+                    (context.Connection.ClientCertificate is not null ||
+                     (clientCertificateOptions?.ForwardedCertificate.Enabled == true &&
+                      context.Request.Headers.ContainsKey(clientCertificateOptions.ForwardedCertificate.HeaderName))))
+                {
+                    return ClientCertificateAuthenticationDefaults.AuthenticationScheme;
+                }
+
                 // Fall back to API key authentication
                 return AuthenticationExtensions.ApiKeyScheme;
             };
@@ -188,10 +200,11 @@ public static class OidcAuthenticationExtensions
             return services;
         }
 
-        // Update the admin policy to accept OIDC-authenticated users with admin roles
+        // Update the admin policy to accept composite OIDC/JWT/session and
+        // client-certificate principals with admin roles.
         services.PostConfigure<Microsoft.AspNetCore.Authorization.AuthorizationOptions>(authzOptions =>
         {
-            var schemes = BuildSchemes(oidcOptions);
+            var schemes = BuildSchemes();
             var adminRoles = BuildRoleSet(oidcOptions.AdminRoles, "admin", "administrator", "Administrator");
 
             UpdateRolePolicy(
@@ -210,37 +223,17 @@ public static class OidcAuthenticationExtensions
         return services;
     }
 
-    private static List<string> BuildSchemes(OidcAuthenticationOptions oidcOptions)
+    private static List<string> BuildSchemes()
     {
+        // Admin APIs authenticate through the composite scheme. Interactive provider
+        // schemes are used by backend-assisted login endpoints; adding them to API
+        // authorization policies makes failed bearer-token requests perform OIDC
+        // metadata discovery during challenge handling.
         var schemes = new List<string>
         {
-            CompositeScheme
+            CompositeScheme,
+            ClientCertificateAuthenticationDefaults.AuthenticationScheme
         };
-
-        if (oidcOptions.AzureAd?.IsValid == true)
-        {
-            schemes.Add(AzureAdScheme);
-        }
-
-        if (oidcOptions.Google?.IsValid == true)
-        {
-            schemes.Add(GoogleScheme);
-        }
-
-        if (oidcOptions.Generic?.IsValid == true)
-        {
-            schemes.Add(OidcScheme);
-        }
-
-        if (oidcOptions.Okta?.IsValid == true)
-        {
-            schemes.Add(OktaScheme);
-        }
-
-        if (oidcOptions.Auth0?.IsValid == true)
-        {
-            schemes.Add(Auth0Scheme);
-        }
 
         return schemes;
     }

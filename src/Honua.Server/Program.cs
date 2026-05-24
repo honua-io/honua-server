@@ -36,6 +36,7 @@ using Honua.Server.Features.FileStorage;
 using Honua.Server.Features.HealthCheck;
 using Honua.Server.Features.Import;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Authentication.ClientCertificates;
 using Honua.Server.Features.Infrastructure.AuditLog;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Configuration;
@@ -70,6 +71,7 @@ using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Enrichers.Span;
 using StackExchange.Redis;
+using Microsoft.AspNetCore.Server.Kestrel.Https;
 
 // CLEAN ARCHITECTURE COMPOSITION ROOT
 // This is the application layer that wires dependencies:
@@ -107,6 +109,18 @@ if (serveStacOpsDemo && !builder.Environment.IsDevelopment())
 
 // Load optional security configuration without overriding environment-specific settings.
 StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, builder.Environment);
+var clientCertificateMode = builder.Configuration.GetValue<ClientCertificateAuthenticationMode>(
+    "Authentication:ClientCertificates:Mode");
+if (clientCertificateMode != ClientCertificateAuthenticationMode.Disabled)
+{
+    builder.WebHost.ConfigureKestrel(options =>
+    {
+        options.ConfigureHttpsDefaults(httpsOptions =>
+        {
+            httpsOptions.ClientCertificateMode = ClientCertificateMode.AllowCertificate;
+        });
+    });
+}
 builder.Services.AddDataProtection();
 
 // Enable Aspire integrations only when Aspire configuration is present.
@@ -552,6 +566,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.TableDiscoveryJsonContext.Default,
         Honua.Server.Features.Admin.Models.ExternalServiceDiscoveryJsonContext.Default,
         Honua.Server.Features.Admin.Models.AdminAuthJsonContext.Default,
+        Honua.Server.Features.Admin.Models.ClientCertificateJsonContext.Default,
         Honua.Server.Features.Admin.Models.ConfigurationJsonContext.Default,
         Honua.Server.Features.Admin.Models.LicenseAdminJsonContext.Default,
         Honua.Server.Features.Infrastructure.Licensing.LicenseFileJsonContext.Default,
@@ -565,6 +580,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.CloudDemo.CloudDemoJsonContext.Default,
         Honua.Server.Features.HealthCheck.HealthJsonContext.Default,
         Honua.Server.Features.Infrastructure.Models.ProblemJsonContext.Default,
+        Honua.Server.Features.Infrastructure.Authentication.ClientCertificates.ClientCertificateInfrastructureJsonContext.Default,
         Honua.Server.Features.Infrastructure.Middleware.LimitsEnforcementJsonContext.Default,
         Honua.Server.Features.Infrastructure.Security.CspViolationJsonContext.Default,
         Honua.Server.Features.Protocols.GeoServices.GeometryService.Models.GeometryServiceJsonContext.Default,
@@ -600,6 +616,12 @@ if (activeDbConnectionTracker != null)
 
 if (forwardedHeadersEnabled)
 {
+    app.Use(async (context, next) =>
+    {
+        context.Items[ClientCertificateHttpContextItems.OriginalProxyPeerIpAddress] =
+            context.Connection.RemoteIpAddress;
+        await next(context).ConfigureAwait(false);
+    });
     app.UseForwardedHeaders();
 }
 
@@ -827,6 +849,23 @@ app.UseSerilogRequestLogging(options =>
 // Add global exception handling middleware after request logging.
 app.UseGlobalExceptionHandling();
 
+// Capture the original gRPC-Web indicator before UseGrpcWeb rewrites Content-Type
+// from application/grpc-web* to application/grpc, so the client-certificate
+// enforcement middleware downstream can still distinguish gRPC-Web from native gRPC
+// and skip mTLS enforcement for browser/gRPC-Web callers. Only Content-Type is
+// authoritative here — it matches what UseGrpcWeb itself uses for protocol
+// detection, and treating a client-supplied X-Grpc-Web header as sufficient
+// would let an unauthenticated caller bypass required native mTLS by setting a
+// single header alongside application/grpc.
+app.Use(async (context, next) =>
+{
+    var contentType = context.Request.ContentType;
+    var isGrpcWeb = !string.IsNullOrWhiteSpace(contentType) &&
+        contentType.StartsWith("application/grpc-web", StringComparison.OrdinalIgnoreCase);
+    context.Items[ClientCertificateHttpContextItems.OriginalGrpcWebRequest] = isGrpcWeb;
+    await next(context).ConfigureAwait(false);
+});
+
 // Enable gRPC-Web for all gRPC services (before CORS and endpoint mapping)
 app.UseGrpcWeb(new GrpcWebOptions { DefaultEnabled = true });
 
@@ -835,6 +874,10 @@ app.UseHonuaCors(app.Environment);
 
 // Validate query, form, and selected header inputs before authentication and endpoint execution.
 app.UseInputValidation();
+
+// Validate optional/required client certificates before the regular auth stack so
+// required mTLS surfaces can return machine-readable errors instead of TLS handshakes.
+app.UseHonuaClientCertificateAuthentication();
 
 // Add authentication and authorization middleware early to short-circuit unauthorized requests
 app.UseApiKeyAuthentication();
@@ -929,6 +972,7 @@ app.MapComplianceAdminEndpoints();
 
 // Configure secure connection management endpoints
 app.MapSecureConnectionEndpoints();
+app.MapClientCertificateAdminEndpoints();
 
 // Configure control plane IAM endpoints (#511)
 app.MapLicenseEndpoints();
@@ -1176,4 +1220,3 @@ async Task RunPostGisPreflightCheckAsync()
 
     Honua.Server.Features.Infrastructure.Logging.Log.PostGisPreflightCheckFailedDevelopment(app.Logger, errorMessage);
 }
-
