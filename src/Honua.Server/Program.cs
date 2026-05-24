@@ -57,6 +57,7 @@ using Honua.Server.Features.Mobile.Diagnostics;
 using Honua.Server.Features.Mobile.FieldCollection;
 using Honua.Server.Features.Orchestration;
 using Honua.Server.Features.Studio;
+using Honua.Server.Features.PackageReview;
 using Honua.Server.Features.Streaming;
 using Honua.Server.Startup;
 using Honua.ServiceDefaults;
@@ -587,6 +588,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.CacheOperationsJsonContext.Default,
         Honua.Server.Features.Admin.Models.StreamingOperationsJsonContext.Default,
         Honua.Server.Features.Admin.Models.GeocodingOperationsJsonContext.Default,
+        Honua.Server.Features.PackageReview.PackageReviewJsonContext.Default,
         Honua.Server.Features.CloudDemo.CloudDemoJsonContext.Default,
         Honua.Server.Features.HealthCheck.HealthJsonContext.Default,
         Honua.Server.Features.Infrastructure.Models.ProblemJsonContext.Default,
@@ -999,6 +1001,7 @@ app.MapConsoleContentEndpoints();
 app.MapConsoleActionEndpoints();
 app.MapStudioPackageEndpoints();
 app.MapAdminApiKeyEndpoints();
+app.MapPackageReviewEndpoints();
 
 // Configure metadata resource endpoints (ADR-0023)
 // v1 MapMetadataResourceEndpoints removed in #1035 cutover.

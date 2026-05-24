@@ -384,6 +384,8 @@ List parameterized resource URIs:
 |------|--------|-----------------|-----------------|
 | `honua_validate_plan` | functional | `IGeoprocessingJobService.ValidatePlan` | `planning` |
 | `honua_dry_run_plan` | functional | `IGeoprocessingJobService.DryRunPlan` | `planning` |
+| `honua_validate_package` | functional | `IPackageReviewService.ReviewAsync` | `planning` |
+| `honua_preview_package` | functional | `IPackageReviewService.ReviewAsync` | `planning` |
 | `honua_execute_plan` | functional | `IGeoprocessingJobService.SubmitJobAsync` | `execution` |
 | `honua_cancel_job` | functional | `IGeoprocessingJobService.CancelJobAsync` | `lifecycle` |
 | `honua_plan_analysis` | functional | `IPlanAnalysisService.PlanAsync` (fixture replay by default; host-replaceable live planner) | `planning` |
@@ -424,6 +426,11 @@ catalog discovery on top of the same authorization graph via
   `{ isExecutable, requiresApproval, violations, warnings }`.
 - `honua_dry_run_plan` returns
   `{ estimatedDurationSeconds, estimatedArtifacts, sideEffects }`.
+- `honua_validate_package` and `honua_preview_package` accept the shared
+  package-review request documented in
+  [Package Review API](package-review-api.md). Both tools return the canonical
+  `PackageReviewResponse`; `honua_preview_package` forces read-only preview
+  planning on the server side.
 - `honua_execute_plan` accepts an optional `idempotencyKey`. Blank or
   whitespace keys are normalized to `null` before delegation. Success returns
   `{ jobId, status, createdAt, resourceUri }`.

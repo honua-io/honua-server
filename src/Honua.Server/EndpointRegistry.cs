@@ -200,6 +200,8 @@ public static class EndpointRegistry
         new("DELETE", "/api/v1/console/content/{id}"),
         new("GET", "/api/v1/console/content/{id}/provenance"),
         new("POST", "/api/v1/console/actions/check"),
+        new("POST", "/api/v1/admin/packages/validate"),
+        new("POST", "/api/v1/admin/packages/preview"),
 
         // v1 Studio package lifecycle endpoints (#1180)
         new("GET", "/api/v1/studio/package-families"),

@@ -79,6 +79,7 @@ internal static class JsonContextRegistration
                 Honua.Server.Features.Admin.Models.CacheOperationsJsonContext.Default,
                 Honua.Server.Features.Admin.Models.StreamingOperationsJsonContext.Default,
                 Honua.Server.Features.Admin.Models.GeocodingOperationsJsonContext.Default,
+                Honua.Server.Features.PackageReview.PackageReviewJsonContext.Default,
                 Honua.Server.Features.CloudDemo.CloudDemoJsonContext.Default,
                 Honua.Server.Features.HealthCheck.HealthJsonContext.Default,
                 Honua.Server.Features.Infrastructure.Models.ProblemJsonContext.Default,

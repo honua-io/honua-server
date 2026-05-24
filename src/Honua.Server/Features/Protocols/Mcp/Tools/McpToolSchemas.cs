@@ -67,10 +67,53 @@ internal static class McpToolSchemas
         }
         """;
 
+    private const string PackageReviewArgumentSchemaJson = """
+        {
+          "type": "object",
+          "required": ["packageFamily"],
+          "properties": {
+            "contractVersion": {
+              "type": "string",
+              "description": "Package-review contract version. Current value is honua.package_review.v1."
+            },
+            "packageFamily": {
+              "type": "string",
+              "enum": ["query", "analysis_plan", "map_package", "dashboard_report", "form", "app_package", "workflow", "gp", "etl"]
+            },
+            "packageId": { "type": "string" },
+            "requestedAction": { "type": "string" },
+            "format": { "type": "string" },
+            "packagePayload": {
+              "type": ["object", "array", "string", "number", "boolean", "null"],
+              "description": "Opaque package payload inspected only by the matching package-family adapter."
+            },
+            "requirements": {
+              "type": "object",
+              "description": "Shared data binding, permission, schema, CRS, capability, dependency, and approval requirements."
+            },
+            "estimate": {
+              "type": "object",
+              "description": "Optional upstream estimate echoed in the shared package-review response."
+            },
+            "includePreviewPlan": { "type": "boolean" },
+            "includePassFindings": { "type": "boolean" },
+            "resourceRefs": {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            }
+          }
+        }
+        """;
+
     /// <summary>
     /// Schema for the <c>honua_plan_analysis</c> tool input.
     /// </summary>
     public static readonly JsonElement PlanAnalysisArgumentSchema = Parse(PlanAnalysisArgumentSchemaJson);
+
+    /// <summary>
+    /// Schema for the package-review tools.
+    /// </summary>
+    public static readonly JsonElement PackageReviewArgumentSchema = Parse(PackageReviewArgumentSchemaJson);
 
     /// <summary>
     /// Schema for <see cref="Models.McpPlanArgument"/>, shared by validate_plan

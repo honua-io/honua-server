@@ -37,6 +37,7 @@ using Honua.Server.Features.Protocols.Ogc.Api.Processes;
 using Honua.Server.Features.Protocols.Ogc.Api.Records;
 using Honua.Server.Features.Protocols.Ogc.Api.Tiles;
 using Honua.Server.Features.Orchestration;
+using Honua.Server.Features.PackageReview;
 using Honua.Server.Features.PrintingTools;
 using Honua.Server.Features.Protocols.Tiles;
 using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
@@ -101,6 +102,7 @@ internal static class FeatureRegistrationExtensions
         services.AddAnalysisContent(configuration);
         services.AddAnalysisReporting(configuration);
         services.AddCapabilityManifest();
+        services.AddPackageReview();
         services.AddMcpOperatorSurface(configuration);
         services.AddSpecGrounding();
         services.AddSpatialAnalytics();

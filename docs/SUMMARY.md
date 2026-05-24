@@ -79,6 +79,7 @@
 - [Analysis Content (Admin API)](admin-api/analysis-content.md)
 - [Scene Dataset Registry (Admin API)](admin-api/scene-dataset-registry.md)
 - [Form Package API](developer/form-package-api.md)
+- [Package Review API](developer/package-review-api.md)
 - [SDK Compatibility](developer/SDK_COMPATIBILITY_MATRIX.md)
 - [SDK Migration Automation Evidence Manifest](developer/sdk-migration-evidence-manifest.md)
 - [SDK Standards Coverage](developer/SDK_STANDARDS_COVERAGE.md)
