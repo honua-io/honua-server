@@ -4,6 +4,8 @@
 using System.Globalization;
 using System.Net.Http;
 using Honua.Core.Features.Alerts.Abstractions;
+using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
@@ -29,6 +31,7 @@ using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.Admin;
 using Honua.Postgres.Features.Alerts;
+using Honua.Postgres.Features.AuditLog;
 using Honua.Postgres.Features.Attachments;
 using Honua.Postgres.Features.Catalog;
 using Honua.Postgres.Features.FeatureStore;
@@ -46,6 +49,7 @@ using Honua.Postgres.Features.Styling;
 using Honua.Postgres.Features.Metadata;
 using Honua.Postgres.Features.FeatureStore.Services;
 using Honua.Postgres.Features.Mobile.FieldCollection;
+using Honua.Postgres.Features.Observability;
 using Honua.Postgres.Features.Raster;
 using Honua.Postgres.Features.Security;
 using Honua.Postgres.Queries.Filters;
@@ -111,6 +115,12 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IAlertDispatchStore, PostgresAlertDispatchStore>();
         services.AddScoped<IAlertCheckpointStore, PostgresAlertCheckpointStore>();
         services.AddScoped<IAlertAdminStore, PostgresAlertAdminStore>();
+        services.AddScoped<IAlertEventQuery, PostgresAlertEventQuery>();
+        services.AddScoped<IAlertLifecycleStore, PostgresAlertLifecycleStore>();
+
+        // Console Operate read APIs (#1168)
+        services.AddScoped<IAuditLogReader, PostgresAuditLogReader>();
+        services.AddScoped<IInvestigationStore, PostgresInvestigationStore>();
 
         // Register database performance metrics provider
         services.AddScoped<IDatabasePerformanceMetricsProvider, PostgresDatabasePerformanceMetricsProvider>();
