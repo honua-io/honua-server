@@ -8,6 +8,8 @@ using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Metadata.Services;
+using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Infrastructure.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -246,6 +248,171 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Validation)]
+    [Endpoint("POST /api/v1/admin/metadata/prevalidate")]
+    public async Task Prevalidate_WithInlinePackage_ReturnsBlockedCompatibilityReport()
+    {
+        var body = JsonSerializer.Serialize(
+            new MetadataPrevalidateRequest
+            {
+                ReleasePackage = BuildInlinePackage(),
+                TargetEnvironment = "staging",
+            },
+            MetadataPrevalidationJsonContext.Default.MetadataPrevalidateRequest);
+
+        var response = await _client.PostAsync(
+            "/api/v1/admin/metadata/prevalidate",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var report = await ReadPrevalidationReportAsync(response);
+        report.Status.Should().Be(MetadataCompatibilityStatus.Blocked);
+        report.CanCreatePullRequest.Should().BeFalse();
+        report.Findings.Should().Contain(finding =>
+            finding.Code == MetadataCompatibilityCode.FieldMissing &&
+            finding.AffectedSemanticId == "field.parcels.apn");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Validation)]
+    [Endpoint("POST /api/v1/admin/metadata/prevalidate")]
+    public async Task Prevalidate_WithPersistedPackageId_ReturnsCompatibilityReport()
+    {
+        var createBody = JsonSerializer.Serialize(
+            new CreateMetadataReleasePackageRequest
+            {
+                SourceEnvironment = "dev",
+                TargetEnvironments = ["staging"],
+                SemanticIds = ["res.parcels"],
+            },
+            MetadataReleaseJsonContext.Default.CreateMetadataReleasePackageRequest);
+        var createResponse = await _client.PostAsync(
+            "/api/v1/admin/metadata/release-packages",
+            new StringContent(createBody, Encoding.UTF8, "application/json"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = JsonSerializer.Deserialize(
+            await createResponse.Content.ReadAsStringAsync(),
+            MetadataReleaseJsonContext.Default.MetadataReleasePackage);
+
+        var body = JsonSerializer.Serialize(
+            new MetadataPrevalidateRequest
+            {
+                ReleasePackageId = created!.PackageId,
+                TargetEnvironment = "staging",
+            },
+            MetadataPrevalidationJsonContext.Default.MetadataPrevalidateRequest);
+
+        var response = await _client.PostAsync(
+            "/api/v1/admin/metadata/prevalidate",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var report = await ReadPrevalidationReportAsync(response);
+        report.ReleasePackageId.Should().Be(created.PackageId);
+        report.TargetEnvironment.Should().Be("staging");
+        report.Status.Should().Be(MetadataCompatibilityStatus.Blocked);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Validation)]
+    [Endpoint("POST /api/v1/admin/metadata/prevalidate")]
+    public async Task Prevalidate_WithCoveringDataScript_ReturnsWarningReport()
+    {
+        var body = JsonSerializer.Serialize(
+            new MetadataPrevalidateRequest
+            {
+                ReleasePackage = BuildInlinePackage(),
+                TargetEnvironment = "staging",
+                DataScripts =
+                [
+                    new MetadataDataScriptEntry
+                    {
+                        ScriptId = "script.add-apn",
+                        Kind = "sql",
+                        Reversible = true,
+                        DeclaredOperations = ["add-field"],
+                        BeforeContract = MissingFieldContract(exists: false),
+                        AfterContract = MissingFieldContract(exists: true),
+                    },
+                ],
+            },
+            MetadataPrevalidationJsonContext.Default.MetadataPrevalidateRequest);
+
+        var response = await _client.PostAsync(
+            "/api/v1/admin/metadata/prevalidate",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var report = await ReadPrevalidationReportAsync(response);
+        report.Status.Should().Be(MetadataCompatibilityStatus.Warning);
+        report.UncoveredErrorCount.Should().Be(0);
+        report.Findings.Should().Contain(finding =>
+            finding.Code == MetadataCompatibilityCode.FieldMissing &&
+            finding.CoverageState == MetadataCompatibilityCoverageState.CoveredByScript &&
+            finding.CoveringScriptId == "script.add-apn");
+        report.RollbackReadiness.Classification.Should().Be(MetadataRollbackReadinessClassification.ScriptReversible);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Validation)]
+    [Endpoint("POST /api/v1/admin/metadata/prevalidate")]
+    public async Task Prevalidate_WithInvalidRequestShape_ReturnsBadRequest()
+    {
+        var response = await _client.PostAsync(
+            "/api/v1/admin/metadata/prevalidate",
+            new StringContent("{\"targetEnvironment\":\"staging\"}", Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var payload = await response.Content.ReadAsStringAsync();
+        payload.Should().Contain("Exactly one of ReleasePackageId or ReleasePackage is required.");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Validation)]
+    [Endpoint("POST /api/v1/admin/metadata/prevalidate")]
+    public async Task Prevalidate_WithUnavailableTarget_ReturnsUnknownReport()
+    {
+        var body = JsonSerializer.Serialize(
+            new MetadataPrevalidateRequest
+            {
+                ReleasePackage = BuildInlinePackage(),
+                TargetEnvironment = "prod",
+            },
+            MetadataPrevalidationJsonContext.Default.MetadataPrevalidateRequest);
+
+        var response = await _client.PostAsync(
+            "/api/v1/admin/metadata/prevalidate",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var report = await ReadPrevalidationReportAsync(response);
+        report.Status.Should().Be(MetadataCompatibilityStatus.Unknown);
+        report.CanPromote.Should().BeFalse();
+        report.Findings.Should().ContainSingle(finding => finding.Code == MetadataCompatibilityCode.StateUnavailable);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Validation)]
+    [Endpoint("POST /api/v1/admin/metadata/prevalidate")]
+    public async Task Prevalidate_WithoutAdminAuth_ReturnsUnauthorized()
+    {
+        using var unauthorizedClient = _fixture.CreateClient();
+        var body = JsonSerializer.Serialize(
+            new MetadataPrevalidateRequest
+            {
+                ReleasePackage = BuildInlinePackage(),
+                TargetEnvironment = "staging",
+            },
+            MetadataPrevalidationJsonContext.Default.MetadataPrevalidateRequest);
+
+        var response = await unauthorizedClient.PostAsync(
+            "/api/v1/admin/metadata/prevalidate",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/metadata/release-packages")]
     public async Task CreateReleasePackage_WithRepeatedGeneratedTitleKeys_ReturnsCreatedPackages()
     {
@@ -415,6 +582,72 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
             ],
         };
     }
+
+    private static async Task<MetadataCompatibilityReport> ReadPrevalidationReportAsync(HttpResponseMessage response)
+    {
+        var payload = await response.Content.ReadAsStringAsync();
+        var envelope = JsonSerializer.Deserialize(
+            payload,
+            MetadataPrevalidationJsonContext.Default.ApiResponseMetadataCompatibilityReport);
+        envelope.Should().NotBeNull();
+        envelope!.Success.Should().BeTrue();
+        envelope.Data.Should().NotBeNull();
+        return envelope.Data!;
+    }
+
+    private static MetadataReleasePackage BuildInlinePackage()
+        => new()
+        {
+            PackageId = Guid.Parse("33333333-3333-3333-3333-333333333333"),
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "pkg.parcels",
+                Name = "promote-parcels",
+                Title = "Promote parcels",
+            },
+            SourceEnvironment = "dev",
+            SourceRevision = 41,
+            SourceEtag = "etag-dev-41",
+            TargetEnvironments = ["staging"],
+            Entries =
+            [
+                new MetadataReleaseEntry
+                {
+                    SemanticId = "res.parcels",
+                    ArtifactKind = MetadataSemanticArtifactKind.Resource,
+                    ResourceType = MetadataV2ResourceType.Map,
+                    DesiredMetadataRevision = 41,
+                },
+            ],
+            CreatedBy = "tester",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        };
+
+    private static MetadataDataScriptContract MissingFieldContract(bool exists)
+        => new()
+        {
+            Resources =
+            [
+                new MetadataScriptResourceContract
+                {
+                    SemanticId = "res.parcels",
+                    SemanticKind = MetadataSemanticArtifactKind.Resource,
+                    Exists = true,
+                    Fields =
+                    [
+                        new MetadataScriptFieldContract
+                        {
+                            SemanticId = "field.parcels.apn",
+                            Name = "apn",
+                            Exists = exists,
+                            Type = "string",
+                            Nullable = false,
+                        },
+                    ],
+                },
+            ],
+        };
 
     private static MetadataV2Field[] BuildSchemaFields(bool includeSchemaField)
     {

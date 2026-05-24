@@ -538,6 +538,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.LayerPublishingJsonContext.Default,
         Honua.Server.Features.Admin.Models.ServiceSettingsJsonContext.Default,
         Honua.Core.Features.Metadata.Domain.V2.MetadataReleaseJsonContext.Default,
+        Honua.Server.Features.Admin.Models.MetadataPrevalidationJsonContext.Default,
         Honua.Server.Features.Admin.Models.DeployControlJsonContext.Default,
         Honua.Server.Features.Infrastructure.Monitoring.MetricsJsonContext.Default,
         Honua.Server.Features.Import.ImportJsonContext.Default,
@@ -946,6 +947,7 @@ app.MapServiceSettingsEndpoints();
 // Configure admin metadata version/manifest endpoints
 // v1 admin endpoint mappings removed in #1035 cutover; V2 admin UX (#1046) lives elsewhere.
 app.MapMetadataReleaseEndpoints();
+app.MapMetadataPrevalidationEndpoints();
 app.MapDeployControlEndpoints();
 
 // Configure admin layer style endpoints
