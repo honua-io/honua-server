@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -90,6 +91,129 @@ public sealed class ClientCertificateEnforcementMiddlewareTests
 
         nextCalled.Should().BeTrue();
         context.User.Should().BeSameAs(principal);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_ForwardedCertificate_UsesOriginalProxyPeerIpAfterForwardedHeadersRewrite()
+    {
+        using var certificate = CreateCertificate();
+        var context = new DefaultHttpContext
+        {
+            RequestServices = new ServiceCollection().BuildServiceProvider(),
+        };
+        context.Connection.RemoteIpAddress = IPAddress.Parse("203.0.113.40");
+        context.Items[ClientCertificateHttpContextItems.OriginalProxyPeerIpAddress] = IPAddress.Parse("10.0.0.7");
+        context.Request.Headers["X-Forwarded-Client-Cert"] =
+            Convert.ToBase64String(certificate.Export(X509ContentType.Cert));
+
+        var principal = CreatePrincipal("native-prod-forwarded");
+        var validator = new StubValidator(ClientCertificateValidationResult.Success(
+            principal,
+            profileId: "prod-native",
+            mappingId: "prod-forwarded",
+            environmentId: "prod",
+            fingerprintSha256: "FINGERPRINT",
+            issuerHash: "HASH",
+            daysUntilExpiry: 30,
+            principalId: "native-prod-forwarded"));
+        var nextCalled = false;
+        var middleware = CreateMiddleware(
+            validator,
+            new ClientCertificateAuthenticationOptions
+            {
+                Mode = ClientCertificateAuthenticationMode.Optional,
+                EnvironmentId = "prod",
+                ForwardedCertificate = new ForwardedClientCertificateOptions
+                {
+                    Enabled = true,
+                    HeaderName = "X-Forwarded-Client-Cert",
+                    Encoding = ForwardedClientCertificateEncoding.Base64Der,
+                    TrustedProxyNetworks = ["10.0.0.0/24"],
+                },
+            },
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            });
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeTrue();
+        context.User.Should().BeSameAs(principal);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_RequiredForNative_WithNativeGrpcPathWithoutCertificate_Rejects()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services.BuildServiceProvider(),
+        };
+        context.Request.Path = "/geospatial.v1.FeatureService/Query";
+        context.Request.ContentType = "application/grpc";
+        context.Response.Body = new MemoryStream();
+        var nextCalled = false;
+        var middleware = CreateMiddleware(
+            new StubValidator(null),
+            new ClientCertificateAuthenticationOptions
+            {
+                Mode = ClientCertificateAuthenticationMode.RequiredForNative,
+                EnvironmentId = "prod",
+                ProtectedGrpcServices = ["geospatial.v1.FeatureService"],
+            },
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            });
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeFalse();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+    }
+
+    [Theory]
+    [InlineData("application/grpc-web+proto", null)]
+    [InlineData(null, "1")]
+    public async Task InvokeAsync_RequiredForNative_WithGrpcWebRequestWithoutCertificate_CallsNext(
+        string? contentType,
+        string? grpcWebHeader)
+    {
+        var context = new DefaultHttpContext
+        {
+            RequestServices = new ServiceCollection().BuildServiceProvider(),
+        };
+        context.Request.Path = "/geospatial.v1.FeatureService/Query";
+        context.Request.ContentType = contentType;
+        if (grpcWebHeader is not null)
+        {
+            context.Request.Headers["X-Grpc-Web"] = grpcWebHeader;
+        }
+
+        var nextCalled = false;
+        var middleware = CreateMiddleware(
+            new StubValidator(null),
+            new ClientCertificateAuthenticationOptions
+            {
+                Mode = ClientCertificateAuthenticationMode.RequiredForNative,
+                EnvironmentId = "prod",
+                ProtectedGrpcServices = ["geospatial.v1.FeatureService"],
+            },
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            });
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeTrue();
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
     }
 

@@ -47,7 +47,7 @@ internal sealed class ClientCertificateExtractor(
             return ClientCertificateExtractionResult.NotPresent();
         }
 
-        var remoteIp = context.Connection.RemoteIpAddress;
+        var remoteIp = ResolveProxyPeerIpAddress(context);
         if (remoteIp is null || !IsTrustedProxy(remoteIp, forwarded.TrustedProxyNetworks))
         {
             return ClientCertificateExtractionResult.Failure(
@@ -110,6 +110,17 @@ internal sealed class ClientCertificateExtractor(
         }
 
         return false;
+    }
+
+    private static IPAddress? ResolveProxyPeerIpAddress(HttpContext context)
+    {
+        if (context.Items.TryGetValue(ClientCertificateHttpContextItems.OriginalProxyPeerIpAddress, out var value) &&
+            value is IPAddress originalProxyPeerIpAddress)
+        {
+            return originalProxyPeerIpAddress;
+        }
+
+        return context.Connection.RemoteIpAddress;
     }
 
     private static bool TryMatchesNetwork(IPAddress remoteIp, string network)

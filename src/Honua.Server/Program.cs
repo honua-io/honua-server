@@ -614,6 +614,12 @@ if (activeDbConnectionTracker != null)
 
 if (forwardedHeadersEnabled)
 {
+    app.Use(async (context, next) =>
+    {
+        context.Items[ClientCertificateHttpContextItems.OriginalProxyPeerIpAddress] =
+            context.Connection.RemoteIpAddress;
+        await next(context).ConfigureAwait(false);
+    });
     app.UseForwardedHeaders();
 }
 

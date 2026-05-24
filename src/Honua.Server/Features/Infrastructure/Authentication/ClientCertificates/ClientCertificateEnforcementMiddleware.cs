@@ -160,6 +160,11 @@ internal sealed class ClientCertificateEnforcementMiddleware(
 
     private static bool IsProtectedGrpcRequest(HttpContext context, ClientCertificateAuthenticationOptions options)
     {
+        if (IsGrpcWebRequest(context))
+        {
+            return false;
+        }
+
         var path = context.Request.Path.Value;
         if (string.IsNullOrWhiteSpace(path))
         {
@@ -172,6 +177,18 @@ internal sealed class ClientCertificateEnforcementMiddleware(
         return services.Any(service =>
             !string.IsNullOrWhiteSpace(service) &&
             path.StartsWith($"/{service.Trim('/')}/", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsGrpcWebRequest(HttpContext context)
+    {
+        var contentType = context.Request.ContentType;
+        if (!string.IsNullOrWhiteSpace(contentType) &&
+            contentType.StartsWith("application/grpc-web", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return context.Request.Headers.ContainsKey("X-Grpc-Web");
     }
 }
 
