@@ -121,13 +121,13 @@ JSON submission example:
 }
 ```
 
-`formVersion` is optional. When omitted, the current published version is used. If `clientId` is omitted, the server uses `X-Honua-Client-Id` when present.
+`formVersion` is optional. When omitted, the current published version is used. If `clientId` is omitted, the server uses `X-Honua-Client-Id` when present. JSON submissions can carry field values and geometry, but attachment bytes require `multipart/form-data`; descriptors without their referenced multipart file part are rejected before the edit is applied.
 
 Runtime validation checks:
 
 - Package status, allowed operation, and `targetFeatureId` for update/delete.
 - Required values, read-only fields, JSON value types, domain membership, and target field compatibility.
-- Point geometry shape and SRID. Geometry uses GeoServices-style `{ "x": number, "y": number, "spatialReference": { "wkid": number } }`; `x` and `y` may be JSON numbers or numeric strings, and `wkid` must match the target layer SRID when supplied.
+- Point geometry shape, finite coordinates, and SRID. Geometry uses GeoServices-style `{ "x": number, "y": number, "spatialReference": { "wkid": number } }`; `x` and `y` may be finite JSON numbers or numeric strings, and `spatialReference.wkid` or `spatialReference.latestWkid` must match the target layer SRID when supplied.
 - Required attachment fields, package and per-field attachment counts, package/field/global MIME type allowlists, file part presence, file size, filename/content security, and global attachment limits.
 
 Accepted submissions are translated into the shared edit pipeline (`IEditProcessor` and `IFeatureWriter`). Non-attachment field values are mapped from form `fieldId` to target layer `targetField`. Attachment upload runs only after the feature edit produces or resolves a target feature id.
@@ -163,7 +163,7 @@ Multipart submissions must include a `submission` JSON part plus file parts refe
 }
 ```
 
-The server normalizes missing descriptor `filename`, `contentType`, and `sizeBytes` from the uploaded file when the multipart part exists. Descriptor and file MIME types must satisfy the package allowlist, any per-field allowlist, and the global server allowlist; when a package or field allowlist is empty, the next broader policy supplies the constraint. Accepted files are stored through the FeatureServer attachment store and return per-file outcomes.
+The server normalizes missing descriptor `filename`, `contentType`, and `sizeBytes` from the uploaded file when the multipart part exists. Descriptor and file MIME types must satisfy the package allowlist, any per-field allowlist, and the global server allowlist; when a package or field allowlist is empty, the next broader policy supplies the constraint. Accepted files are stored through the FeatureServer attachment store and return per-file outcomes. Descriptors that name missing parts are rejected with attachment validation issues and do not run the feature edit path.
 
 ## Submission Response
 
@@ -206,6 +206,8 @@ HTTP and response status behavior:
 - `404` when the published package or target service/layer cannot be found.
 - `409` when an idempotency key is reused with a different payload or the prior submission is still pending.
 - `500` with `status: "failed"` and retry guidance when the server cannot complete the submission.
+
+`retry` is omitted from accepted responses and included on rejected/failed responses when clients need retry guidance. Validation rejections use `retryable: false`; package-policy denials and server failures use `retryable: true` with a sanitized reason and optional `retryAfterSeconds`.
 
 Attachment outcomes use `accepted`, `rejected`, or `failed`. A feature edit can be accepted while one or more attachment outcomes are rejected or failed after the target feature id is resolved. Rejection and failure reasons are sanitized. Each outcome is persisted with the submission id and audited as a form attachment policy event.
 
