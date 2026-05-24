@@ -430,7 +430,13 @@ catalog discovery on top of the same authorization graph via
   package-review request documented in
   [Package Review API](package-review-api.md). Both tools return the canonical
   `PackageReviewResponse`; `honua_preview_package` forces read-only preview
-  planning on the server side.
+  planning on the server side, while `honua_validate_package` forces
+  `includePreviewPlan: false`. Package-review tools require the same
+  authenticated operator flow as other planning tools and authorize with the
+  process read grant before calling `IPackageReviewService`.
+  Clients should disable execute and publish controls from `canExecute` and
+  `canPublish`; unresolved `blocker` findings are already scoped to
+  `execute`, `publish`, or `both`.
 - `honua_execute_plan` accepts an optional `idempotencyKey`. Blank or
   whitespace keys are normalized to `null` before delegation. Success returns
   `{ jobId, status, createdAt, resourceUri }`.

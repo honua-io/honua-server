@@ -7,8 +7,8 @@ publish catalog entries, write artifacts, or mutate published state.
 
 ## HTTP Endpoints
 
-Both endpoints require admin authorization and return
-`ApiResponse<PackageReviewResponse>`.
+Both endpoints require admin authorization. Successful HTTP responses are wrapped
+as `ApiResponse<PackageReviewResponse>` with the review payload in `data`.
 
 | Endpoint | Behavior |
 |----------|----------|
@@ -22,18 +22,28 @@ The MCP operator surface exposes the same response contract through:
 | `honua_validate_package` | Validates a package and returns `PackageReviewResponse`. |
 | `honua_preview_package` | Validates a package with read-only preview planning enabled and returns `PackageReviewResponse`. |
 
+MCP tool calls require an authenticated operator principal with process read
+authorization. Successful MCP responses return the same `PackageReviewResponse`
+in `result.structuredContent` and as serialized JSON text in `result.content`.
+
 ## Request
 
 ```json
 {
   "contractVersion": "honua.package_review.v1",
-  "packageFamily": "analysis_plan",
+  "packageFamily": "app_package",
   "packageId": "traffic-delay-v1",
   "requestedAction": "publish",
-  "format": "mcp-plan",
+  "format": "honua-app-package",
   "packagePayload": {},
   "includePreviewPlan": false,
   "includePassFindings": false,
+  "estimate": {
+    "rowCount": 1500000,
+    "durationMs": 45000,
+    "costWeight": 1500,
+    "confidence": "high"
+  },
   "requirements": {
     "dataBindings": [],
     "permissions": [],
@@ -59,15 +69,21 @@ The server normalizes `/validate` requests to `includePreviewPlan: false` and
 `/preview` requests to `includePreviewPlan: true`, so clients can use separate
 buttons without trusting caller-supplied flags.
 
+`analysis_plan` and `gp` packages may include an analysis-plan payload in
+`packagePayload`. That payload is parsed into the canonical geoprocessing
+`AnalysisPlan` shape and validated through the same plan validator used by
+`honua_validate_plan`, dry-run, execute, gRPC, and GPServer paths.
+
 ## Response Contract
 
-`PackageReviewResponse` is the canonical shape across HTTP and MCP:
+`PackageReviewResponse` is the canonical shape across HTTP and MCP. JSON uses
+camelCase and omits null properties.
 
 ```json
 {
   "contractVersion": "honua.package_review.v1",
-  "reviewId": "pkgrev_...",
-  "packageFamily": "analysis_plan",
+  "reviewId": "prv_...",
+  "packageFamily": "app_package",
   "packageId": "traffic-delay-v1",
   "status": "blocked",
   "canExecute": false,
@@ -76,16 +92,16 @@ buttons without trusting caller-supplied flags.
   "checkedAt": "2026-05-24T10:00:00Z",
   "findings": [
     {
-      "code": "APPROVAL_REQUIRED",
+      "code": "approval_required",
       "severity": "blocker",
       "category": "approval",
       "disposition": "requires_approval",
       "appliesTo": "publish",
-      "message": "Package requires approval before continuation.",
+      "message": "Package requires approval before the requested action can continue.",
       "requiredAction": {
-        "actionKind": "request_approval",
+        "actionKind": "obtain_approval",
         "targetPath": "$.requirements.approvals[0]",
-        "title": "Request approval"
+        "title": "Obtain the required approval."
       },
       "affectedArtifact": {
         "kind": "approval",
@@ -93,14 +109,14 @@ buttons without trusting caller-supplied flags.
       },
       "evidence": [
         {
-          "kind": "policy",
+          "kind": "approval",
+          "expected": "approved",
+          "actual": "not_approved",
           "policyRef": "publish-review"
         }
       ]
     }
   ],
-  "previewPlan": null,
-  "estimate": null,
   "links": {},
   "resourceRefs": {}
 }
@@ -120,17 +136,22 @@ Action gates:
 |-------|---------|
 | `canExecute` | `false` when an unresolved `blocker` applies to `execute` or `both`. |
 | `canPublish` | `false` when an unresolved `blocker` applies to `publish` or `both`. |
-| `requiresApproval` | `true` when any finding has disposition `requires_approval`. |
+| `requiresApproval` | `true` when an unresolved approval finding remains. |
 
 Console and generated-app clients should disable execute or publish controls
 from `canExecute` and `canPublish`, not by reinterpreting finding codes.
+The supported action scopes are `both`, `execute`, `publish`, and `review`.
 
 ## Findings
 
-Findings are ordered with unresolved blockers first, then warnings, info, and
-pass findings. Each finding carries a stable code, severity, category,
+Findings are ordered by severity (`blocker`, `warning`, `info`, `pass`), then by
+category and code. Each finding carries a stable code, severity, category,
 disposition, affected action scope, optional required action, optional affected
-artifact, and evidence entries that are safe to show to clients.
+artifact, and evidence entries that are safe to show to clients. Pass findings
+are emitted only when `includePassFindings` is `true`.
+
+Disposition values are `unresolved`, `resolved`, `auth_denied`, `unsupported`,
+and `requires_approval`.
 
 Shared requirement validation covers:
 
@@ -147,23 +168,30 @@ Shared requirement validation covers:
 | `formats` | Unsupported package or artifact formats. |
 | `approvals` | Required approval that has not yet been granted. |
 
+The service also emits request-shape blockers such as
+`missing_package_family`, `unsupported_package_family`, and
+`unsupported_contract_version`. If a supplied estimate is expensive
+(`rowCount` or `featureCount` at least 1,000,000, `durationMs` at least 30,000,
+`durationSeconds` at least 30, or `costWeight` at least 1,000), the response
+includes an `expensive_preview_estimate` warning and echoes the estimate.
+
 ## Read-Only Preview Planning
 
 Preview planning is informational. A preview response may include:
 
 ```json
 {
-  "planId": "preview_...",
+  "planId": "preview:app_package:traffic-delay-v1",
   "mayMutatePublishedState": false,
   "operations": [
     {
-      "operationId": "op_1",
-      "operationKind": "validate_inputs",
+      "operationId": "review",
+      "operationKind": "app_package",
       "inputRefs": ["service:traffic"],
-      "outputArtifactKinds": [],
+      "outputArtifactKinds": ["app_package"],
       "dependsOn": [],
       "mayMutatePublishedState": false,
-      "requiredCapabilities": ["query"]
+      "requiredCapabilities": ["app.builder"]
     }
   ]
 }
@@ -173,3 +201,8 @@ Preview planning is informational. A preview response may include:
 operation. Clients should treat any future value of `true` as non-previewable
 and refuse to publish or execute from that response.
 
+Generic package families receive a single read-only `review` operation when
+preview is requested. For `analysis_plan` and `gp`, preview planning is returned
+only when the canonical geoprocessing validator reports the plan is executable;
+the preview operations mirror the submitted plan steps and include each step's
+input refs, dependencies, and required process capability.
