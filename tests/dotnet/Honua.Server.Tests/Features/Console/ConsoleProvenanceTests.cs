@@ -106,4 +106,24 @@ public class ConsoleProvenanceTests
         Assert.Equal("input-of", refSlot.Rel);
         Assert.Equal("ns", refSlot.Namespace);
     }
+
+    [UnitTest]
+    public async Task GetProvenanceChain_SkipsEdgesWithEmptyItemId()
+    {
+        // Endpoint validation now rejects empty itemId at write time, but the
+        // traversal must still be safe against pre-existing or future-store
+        // edges that slipped through — otherwise a single bad edge breaks
+        // every subsequent provenance read.
+        var store = new InMemoryConsoleContentStore(TimeProvider.System);
+        await store.CreateAsync(Item("good", ConsoleContentItemType.Layer));
+        await store.CreateAsync(Item("anchor", ConsoleContentItemType.Service,
+            new ConsoleProvenanceRef { Kind = "catalog-resource", ItemId = string.Empty, Rel = "derived-from" },
+            new ConsoleProvenanceRef { Kind = "catalog-resource", ItemId = "good", Rel = "publishes" }));
+
+        var chain = await store.GetProvenanceChainAsync("anchor", maxDepth: 5, CancellationToken.None);
+
+        Assert.Equal(2, chain.Count);
+        Assert.Equal("anchor", chain[0].Id);
+        Assert.Equal("good", chain[1].Id);
+    }
 }

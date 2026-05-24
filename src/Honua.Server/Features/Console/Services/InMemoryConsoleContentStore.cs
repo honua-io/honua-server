@@ -170,6 +170,13 @@ internal sealed class InMemoryConsoleContentStore : IConsoleContentStore
 
             foreach (var reference in current.Provenance)
             {
+                // The endpoint validates provenance on create/PUT, but defend
+                // against a malformed edge that pre-dates the validator (or that
+                // a future persistent store may surface) — skip nulls and
+                // empty ids rather than NRE on visited.Add(null).
+                if (reference is null || string.IsNullOrWhiteSpace(reference.ItemId))
+                    continue;
+
                 if (!visited.Add(reference.ItemId))
                     continue;
 

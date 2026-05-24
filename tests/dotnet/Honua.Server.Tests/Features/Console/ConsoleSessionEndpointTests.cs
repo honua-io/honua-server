@@ -493,6 +493,44 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/console/actions/check")]
+    public async Task CheckActions_WithNullTargetEntry_ReturnsBadRequest()
+    {
+        // The targets array is required, but JSON null entries inside it pass
+        // deserialization. Dereferencing target.ItemId without a null check
+        // previously surfaced as a 500; the contract is a 400.
+        using var content = new StringContent(
+            """
+            {"targets":[null]}
+            """,
+            System.Text.Encoding.UTF8,
+            "application/json");
+
+        var response = await _client.PostAsync("/api/v1/console/actions/check", content);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/content")]
+    public async Task CreateContent_WithProvenanceMissingItemId_ReturnsBadRequest()
+    {
+        // A provenance edge with an empty itemId would persist and then NRE
+        // during GET /provenance traversal. Reject it at write time so the
+        // store never accepts a poisoned edge.
+        using var content = new StringContent(
+            """
+            {"name":"bad-prov","itemType":"layer","provenance":[{"kind":"catalog-resource","itemId":"","rel":"derived-from"}]}
+            """,
+            System.Text.Encoding.UTF8,
+            "application/json");
+
+        var response = await _client.PostAsync("/api/v1/console/content", content);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/console/content/{id}/provenance")]
     public async Task GetProvenance_ReturnsChain()
     {

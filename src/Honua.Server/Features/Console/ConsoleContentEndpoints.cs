@@ -204,6 +204,11 @@ internal static class ConsoleContentEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure(teamScopeError));
             }
 
+            if (!TryValidateProvenance(request.Provenance, out var provenanceError))
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(provenanceError));
+            }
+
             var item = ConsoleContentMapper.FromCreateRequest(request, context.User);
             var stored = await store.CreateAsync(item, context.RequestAborted).ConfigureAwait(false);
             var withActions = await ConsoleContentMapper.WithComputedActionsAsync(stored, evaluator, context.User, context.RequestAborted).ConfigureAwait(false);
@@ -252,6 +257,11 @@ internal static class ConsoleContentEndpoints
             if (!TryValidateTeamScope(request.Visibility, request.TeamScopeId, out var teamScopeError))
             {
                 return TypedResults.BadRequest(ApiResponse<object>.Failure(teamScopeError));
+            }
+
+            if (!TryValidateProvenance(request.Provenance, out var provenanceError))
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(provenanceError));
             }
 
             var existing = await store.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
@@ -495,6 +505,49 @@ internal static class ConsoleContentEndpoints
             error = "visibility 'team' requires a non-empty teamScopeId.";
             return false;
         }
+        error = string.Empty;
+        return true;
+    }
+
+    /// <summary>
+    /// Rejects create/PUT requests whose provenance entries are null or carry
+    /// null/whitespace required fields. Without this guard a malformed payload
+    /// would persist and later NRE during traversal in
+    /// <c>GET /content/{id}/provenance</c>.
+    /// </summary>
+    private static bool TryValidateProvenance(IReadOnlyList<ConsoleProvenanceRef>? provenance, out string error)
+    {
+        if (provenance is null || provenance.Count == 0)
+        {
+            error = string.Empty;
+            return true;
+        }
+
+        for (var i = 0; i < provenance.Count; i++)
+        {
+            var reference = provenance[i];
+            if (reference is null)
+            {
+                error = $"provenance[{i}] must not be null.";
+                return false;
+            }
+            if (string.IsNullOrWhiteSpace(reference.ItemId))
+            {
+                error = $"provenance[{i}].itemId must be a non-empty string.";
+                return false;
+            }
+            if (string.IsNullOrWhiteSpace(reference.Kind))
+            {
+                error = $"provenance[{i}].kind must be a non-empty string.";
+                return false;
+            }
+            if (string.IsNullOrWhiteSpace(reference.Rel))
+            {
+                error = $"provenance[{i}].rel must be a non-empty string.";
+                return false;
+            }
+        }
+
         error = string.Empty;
         return true;
     }

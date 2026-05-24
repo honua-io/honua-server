@@ -85,6 +85,13 @@ internal static class ConsoleActionEndpoints
             var routeKeys = new List<string>();
             foreach (var target in request.Targets)
             {
+                // The targets array is required, but System.Text.Json still
+                // deserializes individual null entries into the list. Reject
+                // them explicitly so {"targets":[null]} returns a 400 instead
+                // of NRE'ing into the generic 500 path below.
+                if (target is null)
+                    return TypedResults.BadRequest(ApiResponse<object>.Failure("Each target must specify itemId or routeKey."));
+
                 if (!string.IsNullOrWhiteSpace(target.ItemId))
                     itemIds.Add(target.ItemId);
                 else if (!string.IsNullOrWhiteSpace(target.RouteKey))

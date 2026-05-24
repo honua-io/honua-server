@@ -160,6 +160,16 @@ than overloaded on `PUT`:
   are rejected with `400 Bad Request` even though the underlying
   `JsonStringEnumConverter` would otherwise admit them; the validator uses
   AOT-safe switch-based whitelists to stay reflection-free.
+- **Provenance edge validation.** `POST`/`PUT` requests whose
+  `provenance` array contains a null entry, or an entry whose
+  `itemId`, `kind`, or `rel` is null or whitespace, are rejected with
+  `400 Bad Request`. The error message names the offending index
+  (e.g. `provenance[1].itemId must be a non-empty string.`). Without
+  this guard a malformed edge would persist and NRE during transitive
+  resolution in `GET /content/{id}/provenance`. The provenance traversal
+  also defensively skips null or empty-id edges in the store, so legacy
+  data (or a future persistent backend that surfaces an invalid edge)
+  cannot break later reads.
 
 ## RBAC verbs
 
@@ -208,6 +218,11 @@ identifier and partitions the requested verb set into `allowed`/`denied`:
 When the request omits an `actions` list the server evaluates the full
 seven-verb set; clients should pass an explicit `actions` filter when only a
 subset is interesting to keep the response compact.
+
+`targets` is required and must contain at least one entry. Individual
+`null` entries inside the array (e.g. `{"targets":[null]}`) and entries
+that supply neither `itemId` nor `routeKey` are rejected with
+`400 Bad Request` rather than masked as a 500.
 
 ## Provenance
 
