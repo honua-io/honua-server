@@ -550,6 +550,13 @@ Focused guidance and a concrete JSON example:
 | `/api/v1/admin/operations/{operationId}/cancel` | POST | Cancel operation |
 | `/api/v1/admin/operations/active` | GET | List active operations |
 | `/api/v1/admin/operations/type/{operationType}` | GET | List operations by type |
+| `/api/v1/admin/jobs` | GET | List durable execution jobs with cursor pagination and queue/status/resource filters |
+| `/api/v1/admin/jobs/{jobId}` | GET | Get durable execution job detail |
+| `/api/v1/admin/jobs/{jobId}/logs` | GET | Page structured execution logs |
+| `/api/v1/admin/jobs/{jobId}/artifacts` | GET | Page artifact references with availability state |
+| `/api/v1/admin/jobs/{jobId}/actions` | GET | List available job control actions |
+| `/api/v1/admin/jobs/{jobId}/cancel` | POST | Cancel a queued, provisioning, or running job |
+| `/api/v1/admin/jobs/{jobId}/retry` | POST | Retry a failed or cancelled job when policy allows |
 
 Supported `operationType` values: `Upload`, `Import`, `Ingest`, `ExternalImport`,
 `TileCache`, `PMTilesArchive`, `PMTilesPublish`, `Export`, `RasterImport`, `Print`,
@@ -570,10 +577,29 @@ through these same operations endpoints using the
 progress from pluggable batch-compute backends into `IUniversalProgressStore`
 so all jobs — local and remote — appear through the operations surface.
 The substrate tracks additional claim, heartbeat, and retry state internally
-through `IExecutionJobStore`; structured execution logs are stored via
-`IExecutionLogStore` and are not yet exposed through a public API endpoint.
-See [Operations — Job Orchestration](operations.md#job-orchestration) for
+through `IExecutionJobStore`. Console job endpoints expose the same durable
+records for historical query, detail, logs, artifacts, actions, cancellation,
+and retry. Structured execution logs are stored via `IExecutionLogStore` and
+are available through `GET /api/v1/admin/jobs/{jobId}/logs` with cursor
+pagination.
+
+The jobs list accepts filters for `status`, `kind`, `backend`, `queue`,
+`actor`/`requestedBy`, `correlationId`, `traceId`, `definitionId`,
+`resourceRef`, `environment`, `server`, `releaseId`, `changeSetId`, `alertId`,
+`from`, `to`, `limit`, and `cursor`. The `queue` filter matches the same
+resolved value returned in summaries: `honua.job.queue` when present,
+otherwise the job backend. Responses are plain camelCase JSON DTOs with
+`Cache-Control: no-store`; per-job reads also emit `X-Correlation-Id` when
+present. The full response contract, artifact availability states, action
+rules, retry/cancel conflict behavior, and Operate event deep links are
+documented in [Console Job Observability](../admin-api/console-job-observability.md).
+See [Operations - Job Orchestration](operations.md#job-orchestration) for
 lifecycle and tuning details.
+
+Manual retry reuses the same durable job id. Local jobs are requeued through
+`IJobQueue`; remote jobs require a registered backend with retry support and set
+`nextRetryAt` for the execution-job reconciler instead of writing to the local
+queue.
 
 Workflow runs produced by the declarative orchestration layer surface through
 the same endpoints using the `Orchestration` operation type. The progress

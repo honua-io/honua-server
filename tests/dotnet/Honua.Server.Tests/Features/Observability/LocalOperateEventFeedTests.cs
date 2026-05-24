@@ -6,9 +6,12 @@ using FluentAssertions;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Observability.Domain;
+using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -387,6 +390,136 @@ public sealed class LocalOperateEventFeedTests
         page.Items[0].EventId.Should().Be("job:job-failed");
     }
 
+    [UnitTest]
+    public async Task ListAsync_JobSource_MergesDurableAndProgressSources()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var progressStore = new FakeProgressStore();
+        progressStore.Add(NewJob("progress-only", now.AddMinutes(-1)));
+        progressStore.Add(NewJob("durable-job", now.AddMinutes(-2)));
+
+        var jobStore = new FakeExecutionJobStore();
+        jobStore.Add(NewExecutionJob("durable-job", now, ExecutionJobStatus.Running));
+
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            progressStore: progressStore,
+            jobStore: jobStore);
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            PageSize = 10
+        });
+
+        var operationIds = page.Items.Select(item => item.OperationId).ToArray();
+        operationIds.Should().HaveCount(2);
+        operationIds.Should().Contain("durable-job");
+        operationIds.Should().Contain("progress-only");
+        page.Items.Should().ContainSingle(item => item.OperationId == "durable-job");
+        page.Items.Single(item => item.OperationId == "durable-job").Title.Should().Be("Geoprocessing Running");
+    }
+
+    [UnitTest]
+    public async Task ListAsync_JobSource_OperationIdFallsBackToProgressWhenDurableMissing()
+    {
+        var progressStore = new FakeProgressStore();
+        progressStore.AddOutOfBand("specific", NewJob("specific", DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            progressStore: progressStore,
+            jobStore: new FakeExecutionJobStore());
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            OperationId = "specific",
+            PageSize = 10
+        });
+
+        page.Items.Should().ContainSingle();
+        page.Items[0].EventId.Should().Be("job:specific");
+        progressStore.ActiveIdsCalls.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task ListAsync_JobSource_DurableResourceRefMatchesJobMetadata()
+    {
+        var jobStore = new FakeExecutionJobStore();
+        jobStore.Add(NewExecutionJob(
+            "durable-resource",
+            DateTimeOffset.UtcNow,
+            ExecutionJobStatus.Running,
+            new Dictionary<string, string>
+            {
+                [ExecutionJobParameterKeys.ResourceRefs] = "service/parcels|layer/parcels"
+            }));
+
+        var feed = new LocalOperateEventFeed(NullLogger<LocalOperateEventFeed>.Instance, jobStore: jobStore);
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            ResourceRef = "service/parcels",
+            PageSize = 10
+        });
+
+        page.Items.Should().ContainSingle();
+        page.Items[0].OperationId.Should().Be("durable-resource");
+        page.Items[0].ResourceRef.Should().Be("job/durable-resource");
+    }
+
+    [UnitTest]
+    public async Task ListAsync_JobSource_DurableFromFilterUsesEventTimestamp()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var jobStore = new FakeExecutionJobStore();
+        jobStore.Add(
+            NewExecutionJob(
+                "created-newer-not-updated",
+                now.AddMinutes(-20),
+                ExecutionJobStatus.Running,
+                createdAt: now.AddMinutes(-21)),
+            NewExecutionJob(
+                "created-older-updated-recently",
+                now,
+                ExecutionJobStatus.Running,
+                createdAt: now.AddHours(-2)));
+
+        var feed = new LocalOperateEventFeed(NullLogger<LocalOperateEventFeed>.Instance, jobStore: jobStore);
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            From = now.AddMinutes(-1),
+            PageSize = 1
+        });
+
+        page.Items.Should().ContainSingle();
+        page.Items[0].OperationId.Should().Be("created-older-updated-recently");
+        jobStore.SeenQueries.Should().OnlyContain(query => query.CreatedFrom == null);
+    }
+
+    [UnitTest]
+    public async Task ListAsync_JobSource_DurableSeverityFilterAppliesBeforeTrimming()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var jobStore = new FakeExecutionJobStore();
+        jobStore.Add(
+            NewExecutionJob("created-newer-running", now, ExecutionJobStatus.Running),
+            NewExecutionJob("created-older-failed", now.AddMinutes(-1), ExecutionJobStatus.Failed));
+
+        var feed = new LocalOperateEventFeed(NullLogger<LocalOperateEventFeed>.Instance, jobStore: jobStore);
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            MinimumSeverity = OperateEventSeverity.Error,
+            PageSize = 1
+        });
+
+        page.Items.Should().ContainSingle();
+        page.Items[0].OperationId.Should().Be("created-older-failed");
+        jobStore.SeenQueries.Should().ContainSingle();
+        jobStore.SeenQueries[0].Statuses.Should().Equal(ExecutionJobStatus.Failed);
+    }
+
     private static AlertEventSummary NewSummary(long id, AlertSeverity severity, DateTimeOffset occurredAt)
         => new()
         {
@@ -413,6 +546,35 @@ public sealed class LocalOperateEventFeedTests
             Type = OperationType.Import,
             Status = status,
             StartedAt = startedAt
+        };
+
+    private static ExecutionJobRecord NewExecutionJob(
+        string operationId,
+        DateTimeOffset updatedAt,
+        ExecutionJobStatus status,
+        IReadOnlyDictionary<string, string>? parameters = null,
+        DateTimeOffset? createdAt = null,
+        DateTimeOffset? completedAt = null)
+        => new()
+        {
+            OperationId = operationId,
+            Status = status,
+            CreatedAt = createdAt ?? updatedAt.AddMinutes(-1),
+            UpdatedAt = updatedAt,
+            CompletedAt = completedAt,
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = "alice",
+                CorrelationId = "corr-" + operationId
+            },
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "workload-" + operationId,
+                Parameters = parameters ?? new Dictionary<string, string>()
+            }
         };
 
     private sealed class FakeAlertQuery : IAlertEventQuery
@@ -603,6 +765,100 @@ public sealed class LocalOperateEventFeedTests
         public Task<IReadOnlyList<TProgress>> GetActiveOperationsAsync<TProgress>(OperationType operationType, CancellationToken cancellationToken = default)
             where TProgress : class, IOperationProgress
             => throw new NotSupportedException();
+    }
+
+    private sealed class FakeExecutionJobStore : IExecutionJobStore
+    {
+        private readonly Dictionary<string, ExecutionJobRecord> _records = new(StringComparer.Ordinal);
+        public List<ExecutionJobQuery> SeenQueries { get; } = new();
+
+        public void Add(params ExecutionJobRecord[] records)
+        {
+            foreach (var record in records)
+            {
+                _records[record.OperationId] = record;
+            }
+        }
+
+        public Task<bool> TryAcquireLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task<bool> RenewLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task ReleaseLeaseAsync(string operationId, string ownerId, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<bool> TryCreateAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            if (_records.ContainsKey(job.OperationId))
+            {
+                return Task.FromResult(false);
+            }
+
+            _records[job.OperationId] = job;
+            return Task.FromResult(true);
+        }
+
+        public Task<ExecutionJobRecord?> GetAsync(string operationId, CancellationToken cancellationToken = default)
+            => Task.FromResult(_records.GetValueOrDefault(operationId));
+
+        public Task SetAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            _records[job.OperationId] = job;
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> TrySetAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            _records[job.OperationId] = job;
+            return Task.FromResult(true);
+        }
+
+        public Task<ExecutionJobPage> QueryAsync(ExecutionJobQuery query, CancellationToken cancellationToken = default)
+        {
+            SeenQueries.Add(query);
+
+            var items = _records.Values
+                .Where(job => query.Statuses.Count == 0 || query.Statuses.Contains(job.Status))
+                .Where(job => !query.Kind.HasValue || job.Spec.Kind == query.Kind.Value)
+                .Where(job => string.IsNullOrWhiteSpace(query.Backend) || string.Equals(query.Backend, job.Spec.Backend, StringComparison.OrdinalIgnoreCase))
+                .Where(job => string.IsNullOrWhiteSpace(query.Queue) || string.Equals(query.Queue, ExecutionJobMetadata.ResolveQueue(job), StringComparison.OrdinalIgnoreCase))
+                .Where(job => string.IsNullOrWhiteSpace(query.RequestedBy) || string.Equals(query.RequestedBy, job.Audit.RequestedBy, StringComparison.OrdinalIgnoreCase))
+                .Where(job => string.IsNullOrWhiteSpace(query.CorrelationId) || string.Equals(query.CorrelationId, job.Audit.CorrelationId, StringComparison.Ordinal))
+                .Where(job => string.IsNullOrWhiteSpace(query.TraceId) || MatchesParameter(job, ExecutionJobParameterKeys.TraceId, query.TraceId))
+                .Where(job => string.IsNullOrWhiteSpace(query.ResourceRef) || MatchesResourceRef(job, query.ResourceRef))
+                .Where(job => string.IsNullOrWhiteSpace(query.ReleaseId) || MatchesParameter(job, ExecutionJobParameterKeys.ReleaseId, query.ReleaseId))
+                .Where(job => string.IsNullOrWhiteSpace(query.ChangeSetId) || MatchesParameter(job, ExecutionJobParameterKeys.ChangeSetId, query.ChangeSetId))
+                .Where(job => !query.CreatedFrom.HasValue || job.CreatedAt >= query.CreatedFrom.Value)
+                .Where(job => !query.CreatedTo.HasValue || job.CreatedAt < query.CreatedTo.Value)
+                .OrderByDescending(job => job.CreatedAt)
+                .ThenByDescending(job => job.OperationId, StringComparer.Ordinal)
+                .ToArray();
+            var offset = ParseCursor(query.Cursor);
+            var limit = Math.Max(1, query.Limit);
+            var page = items.Skip(offset).Take(limit).ToArray();
+            var nextOffset = offset + page.Length;
+            var nextCursor = nextOffset < items.Length
+                ? nextOffset.ToString(CultureInfo.InvariantCulture)
+                : null;
+
+            return Task.FromResult(new ExecutionJobPage { Items = page, NextCursor = nextCursor });
+        }
+
+        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(_records.Values.ToArray());
+
+        private static bool MatchesParameter(ExecutionJobRecord job, string key, string? expected)
+            => job.Spec.Parameters.TryGetValue(key, out var actual) &&
+               string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase);
+
+        private static bool MatchesResourceRef(ExecutionJobRecord job, string? expected)
+            => job.Spec.Parameters.TryGetValue(ExecutionJobParameterKeys.ResourceRefs, out var raw) &&
+               raw.Split(
+                    ExecutionJobParameterKeys.MetadataListSeparator,
+                    StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Contains(expected, StringComparer.OrdinalIgnoreCase);
     }
 
     private sealed class FakeProgress : IOperationProgress

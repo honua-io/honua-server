@@ -249,6 +249,64 @@
       ]
     },
     {
+      "surfaceId": "console-job-observability",
+      "displayName": "Console durable job observability API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/admin/jobs/**",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [
+        "/api/v1/admin/jobs"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and ConsoleJobEndpointsTests integration tests assert the list, detail, logs, artifacts, actions, cancel, retry, and authorization surfaces",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/Jobs/ConsoleJobEndpointsTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/AdminAuthorizationTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1170",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Source-generated ConsoleJobJsonContext keeps job viewer DTOs AOT-safe; the admin API contract documents filters, response fields, cursor semantics, artifact states, controls, and Operate event deep links",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/Admin/Jobs/ConsoleJobJsonContext.cs",
+            "src/Honua.Server/Features/Admin/Jobs/ConsoleJobModels.cs",
+            "docs/admin-api/console-job-observability.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1170",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Redis execution substrate and Operate event feed tests verify cursor query indexes, queue/backend fallback filtering, structured log pagination, artifact/log persistence, retry/cancel durability across local queue and remote retry paths, and durable job event projection",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/ControlPlane/RedisExecutionSubstrateIntegrationTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Observability/LocalOperateEventFeedTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1170",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "migration-scan",
       "displayName": "Migration source inventory scan",
       "surfaceKind": "http-route-family",

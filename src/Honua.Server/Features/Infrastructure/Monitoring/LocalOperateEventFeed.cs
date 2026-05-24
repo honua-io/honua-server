@@ -6,10 +6,13 @@ using System.Globalization;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
+using Honua.Server.Features.Infrastructure.ControlPlane;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Infrastructure.Monitoring;
@@ -36,22 +39,41 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
 {
     internal const int MaxPageSize = 200;
     private const int MaxSourceScanPages = 4;
+    private const int DurableJobScanPageSize = 50;
+    private static readonly ExecutionJobStatus[] NoticeExecutionJobStatuses =
+    [
+        ExecutionJobStatus.Succeeded,
+        ExecutionJobStatus.Failed,
+        ExecutionJobStatus.Cancelled
+    ];
+    private static readonly ExecutionJobStatus[] WarningExecutionJobStatuses =
+    [
+        ExecutionJobStatus.Failed,
+        ExecutionJobStatus.Cancelled
+    ];
+    private static readonly ExecutionJobStatus[] ErrorExecutionJobStatuses =
+    [
+        ExecutionJobStatus.Failed
+    ];
 
     private readonly IAlertEventQuery? _alertQuery;
     private readonly IAuditLogReader? _auditReader;
     private readonly IUniversalProgressStore? _progressStore;
+    private readonly IExecutionJobStore? _jobStore;
     private readonly ILogger<LocalOperateEventFeed> _logger;
 
     public LocalOperateEventFeed(
         ILogger<LocalOperateEventFeed> logger,
         IAlertEventQuery? alertQuery = null,
         IAuditLogReader? auditReader = null,
-        IUniversalProgressStore? progressStore = null)
+        IUniversalProgressStore? progressStore = null,
+        IExecutionJobStore? jobStore = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _alertQuery = alertQuery;
         _auditReader = auditReader;
         _progressStore = progressStore;
+        _jobStore = jobStore;
     }
 
     public async Task<OperateEventPage> ListAsync(OperateEventFilter filter, CancellationToken cancellationToken = default)
@@ -74,7 +96,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             ? LoadAuditAsync(filter, pageSize, cancellationToken)
             : Task.FromResult<IReadOnlyList<OperateEvent>>(Array.Empty<OperateEvent>());
 
-        var jobTask = Wanted(OperateEventKind.Job) && _progressStore is not null
+        var jobTask = Wanted(OperateEventKind.Job) && (_progressStore is not null || _jobStore is not null)
             ? LoadJobsAsync(filter, pageSize, cancellationToken)
             : Task.FromResult<IReadOnlyList<OperateEvent>>(Array.Empty<OperateEvent>());
 
@@ -114,7 +136,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             ObservabilityFeedLog.JobSourceFailed(_logger, ex);
         }
 
-        collected.RemoveAll(item => !MatchesFilter(filter, item));
+        collected.RemoveAll(item => !MatchesFilter(filter, item, matchResourceRef: false));
 
         collected.Sort(static (left, right) => right.OccurredAt.CompareTo(left.OccurredAt));
         var trimmed = collected.Take(pageSize).ToArray();
@@ -267,29 +289,57 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         int pageSize,
         CancellationToken cancellationToken)
     {
+        if (TryGetDirectJobLookup(filter, out var operationId))
+        {
+            return await LoadSingleJobAsync(filter, operationId, cancellationToken).ConfigureAwait(false);
+        }
+
+        var results = new List<OperateEvent>(pageSize * 2);
+        var seenOperationIds = new HashSet<string>(StringComparer.Ordinal);
+        var seenEventIds = new HashSet<string>(StringComparer.Ordinal);
+
+        if (_jobStore is not null)
+        {
+            AddUniqueJobEvents(
+                results,
+                await LoadDurableJobsAsync(filter, pageSize, cancellationToken).ConfigureAwait(false),
+                seenOperationIds,
+                seenEventIds);
+        }
+
+        if (_progressStore is not null)
+        {
+            AddUniqueJobEvents(
+                results,
+                await LoadProgressJobsAsync(filter, pageSize, cancellationToken).ConfigureAwait(false),
+                seenOperationIds,
+                seenEventIds);
+        }
+
+        results.Sort(static (left, right) => right.OccurredAt.CompareTo(left.OccurredAt));
+        if (results.Count <= pageSize)
+        {
+            return results;
+        }
+
+        return results.GetRange(0, pageSize);
+    }
+
+    private async Task<IReadOnlyList<OperateEvent>> LoadProgressJobsAsync(
+        OperateEventFilter filter,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
         Debug.Assert(_progressStore is not null);
 
-        if (!JobSourceCanMatch(filter))
+        if (!ProgressJobSourceCanMatch(filter))
         {
             return Array.Empty<OperateEvent>();
         }
 
         if (!string.IsNullOrWhiteSpace(filter.ResourceRef))
         {
-            if (!TryParseJobResourceRef(filter.ResourceRef, out var resourceOperationId))
-            {
-                return Array.Empty<OperateEvent>();
-            }
-
-            return await LoadSingleJobAsync(filter, resourceOperationId, cancellationToken).ConfigureAwait(false);
-        }
-
-        // Fast path: a specific OperationId was requested. The active-IDs list
-        // is unordered (ConcurrentDictionary.Keys / Redis SMEMBERS) and may
-        // not even contain the id if the operation finished — fetch it directly.
-        if (!string.IsNullOrWhiteSpace(filter.OperationId))
-        {
-            return await LoadSingleJobAsync(filter, filter.OperationId, cancellationToken).ConfigureAwait(false);
+            return Array.Empty<OperateEvent>();
         }
 
         var ids = await _progressStore!.GetActiveOperationIdsAsync(operationType: null, cancellationToken).ConfigureAwait(false);
@@ -344,6 +394,28 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         string operationId,
         CancellationToken cancellationToken)
     {
+        if (_jobStore is not null)
+        {
+            var job = await _jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            if (job is not null)
+            {
+                var durable = MapExecutionJob(job);
+                return MatchesDurableJobFilter(filter, job, durable) ? new[] { durable } : Array.Empty<OperateEvent>();
+            }
+        }
+
+        return _progressStore is null
+            ? Array.Empty<OperateEvent>()
+            : await LoadSingleProgressJobAsync(filter, operationId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<IReadOnlyList<OperateEvent>> LoadSingleProgressJobAsync(
+        OperateEventFilter filter,
+        string operationId,
+        CancellationToken cancellationToken)
+    {
+        Debug.Assert(_progressStore is not null);
+
         IOperationProgress? progress;
         try
         {
@@ -369,7 +441,72 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         return new[] { value };
     }
 
-    private static bool MatchesFilter(OperateEventFilter filter, OperateEvent value)
+    private async Task<IReadOnlyList<OperateEvent>> LoadDurableJobsAsync(
+        OperateEventFilter filter,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        Debug.Assert(_jobStore is not null);
+
+        if (!DurableJobSourceCanMatch(filter))
+        {
+            return Array.Empty<OperateEvent>();
+        }
+
+        var results = new List<OperateEvent>(pageSize);
+        var scanLimit = Math.Min(MaxPageSize, Math.Max(pageSize, DurableJobScanPageSize));
+        var statuses = ToExecutionJobStatuses(filter.MinimumSeverity);
+        string? cursor = null;
+        for (var scanPage = 0; scanPage < MaxSourceScanPages && results.Count < pageSize; scanPage++)
+        {
+            var page = await _jobStore.QueryAsync(
+                    new ExecutionJobQuery
+                    {
+                        Statuses = statuses,
+                        RequestedBy = filter.Actor,
+                        CorrelationId = filter.CorrelationId,
+                        TraceId = filter.TraceId,
+                        ResourceRef = filter.ResourceRef,
+                        ReleaseId = filter.ReleaseId,
+                        ChangeSetId = filter.ChangeSetId,
+                        // Lower time bounds are event-time filters because durable
+                        // job events emit UpdatedAt/CompletedAt, not CreatedAt.
+                        // CreatedTo is still safe: a job cannot emit before creation.
+                        CreatedTo = filter.To,
+                        Cursor = cursor,
+                        Limit = scanLimit
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            foreach (var job in page.Items)
+            {
+                var value = MapExecutionJob(job);
+                if (!MatchesDurableJobFilter(filter, job, value))
+                {
+                    continue;
+                }
+
+                results.Add(value);
+                if (results.Count == pageSize)
+                {
+                    break;
+                }
+            }
+
+            if (string.IsNullOrEmpty(page.NextCursor) ||
+                string.Equals(page.NextCursor, cursor, StringComparison.Ordinal))
+            {
+                break;
+            }
+
+            cursor = page.NextCursor;
+        }
+
+        return results;
+    }
+
+    private static bool MatchesFilter(OperateEventFilter filter, OperateEvent value, bool matchResourceRef = true)
     {
         if (filter.From is { } fromBound && value.OccurredAt < fromBound)
         {
@@ -439,13 +576,69 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             return false;
         }
 
-        if (!string.IsNullOrWhiteSpace(filter.ResourceRef) &&
+        if (matchResourceRef &&
+            !string.IsNullOrWhiteSpace(filter.ResourceRef) &&
             !string.Equals(value.ResourceRef, filter.ResourceRef, StringComparison.Ordinal))
         {
             return false;
         }
 
         return true;
+    }
+
+    private static bool MatchesDurableJobFilter(
+        OperateEventFilter filter,
+        ExecutionJobRecord job,
+        OperateEvent value)
+    {
+        if (!MatchesFilter(filter, value, matchResourceRef: false))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(filter.ResourceRef) ||
+            string.Equals(value.ResourceRef, filter.ResourceRef, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return GetResourceRefs(job).Contains(filter.ResourceRef, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static bool TryGetDirectJobLookup(OperateEventFilter filter, out string operationId)
+    {
+        if (!string.IsNullOrWhiteSpace(filter.ResourceRef) &&
+            TryParseJobResourceRef(filter.ResourceRef, out operationId))
+        {
+            return true;
+        }
+
+        operationId = filter.OperationId ?? string.Empty;
+        return !string.IsNullOrWhiteSpace(operationId);
+    }
+
+    private static void AddUniqueJobEvents(
+        List<OperateEvent> target,
+        IReadOnlyList<OperateEvent> source,
+        HashSet<string> seenOperationIds,
+        HashSet<string> seenEventIds)
+    {
+        foreach (var item in source)
+        {
+            if (!string.IsNullOrWhiteSpace(item.OperationId))
+            {
+                if (!seenOperationIds.Add(item.OperationId))
+                {
+                    continue;
+                }
+            }
+            else if (!seenEventIds.Add(item.EventId))
+            {
+                continue;
+            }
+
+            target.Add(item);
+        }
     }
 
     private static bool AlertSourceCanMatch(OperateEventFilter filter)
@@ -466,7 +659,13 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
            string.IsNullOrWhiteSpace(filter.ReleaseId) &&
            string.IsNullOrWhiteSpace(filter.ChangeSetId);
 
-    private static bool JobSourceCanMatch(OperateEventFilter filter)
+    private static bool DurableJobSourceCanMatch(OperateEventFilter filter)
+        => string.IsNullOrWhiteSpace(filter.ServiceId) &&
+           filter.LayerId is null &&
+           string.IsNullOrWhiteSpace(filter.RequestId) &&
+           filter.MinimumSeverity != OperateEventSeverity.Critical;
+
+    private static bool ProgressJobSourceCanMatch(OperateEventFilter filter)
         => string.IsNullOrWhiteSpace(filter.ServiceId) &&
            filter.LayerId is null &&
            string.IsNullOrWhiteSpace(filter.CorrelationId) &&
@@ -494,6 +693,16 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             OperateEventSeverity.Error => new[] { AuditOutcome.Failure },
             OperateEventSeverity.Critical => Array.Empty<AuditOutcome>(),
             _ => null
+        };
+
+    private static ExecutionJobStatus[] ToExecutionJobStatuses(OperateEventSeverity? minimumSeverity)
+        => minimumSeverity switch
+        {
+            null or OperateEventSeverity.Info => Array.Empty<ExecutionJobStatus>(),
+            OperateEventSeverity.Notice => NoticeExecutionJobStatuses,
+            OperateEventSeverity.Warning => WarningExecutionJobStatuses,
+            OperateEventSeverity.Error => ErrorExecutionJobStatuses,
+            _ => Array.Empty<ExecutionJobStatus>()
         };
 
     private static bool TryParseAlertResourceRef(string resourceRef, out long eventId)
@@ -591,6 +800,26 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         };
     }
 
+    private static OperateEvent MapExecutionJob(ExecutionJobRecord job)
+    {
+        return new OperateEvent
+        {
+            EventId = "job:" + job.OperationId,
+            Kind = OperateEventKind.Job,
+            Severity = MapExecutionJobSeverity(job.Status),
+            OccurredAt = job.CompletedAt ?? job.UpdatedAt,
+            Title = $"{job.Spec.Kind} {job.Status}",
+            Summary = job.CurrentPhase,
+            Actor = job.Audit.RequestedBy,
+            CorrelationId = job.Audit.CorrelationId,
+            TraceId = GetParameter(job, ExecutionJobParameterKeys.TraceId),
+            OperationId = job.OperationId,
+            ReleaseId = GetParameter(job, ExecutionJobParameterKeys.ReleaseId),
+            ChangeSetId = GetParameter(job, ExecutionJobParameterKeys.ChangeSetId),
+            ResourceRef = "job/" + job.OperationId
+        };
+    }
+
     private static OperateEventSeverity MapAlertSeverity(AlertSeverity severity) => severity switch
     {
         AlertSeverity.Info => OperateEventSeverity.Info,
@@ -614,6 +843,32 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         OperationStatus.Completed => OperateEventSeverity.Notice,
         _ => OperateEventSeverity.Info
     };
+
+    private static OperateEventSeverity MapExecutionJobSeverity(ExecutionJobStatus status) => status switch
+    {
+        ExecutionJobStatus.Failed => OperateEventSeverity.Error,
+        ExecutionJobStatus.Cancelled => OperateEventSeverity.Warning,
+        ExecutionJobStatus.Succeeded => OperateEventSeverity.Notice,
+        _ => OperateEventSeverity.Info
+    };
+
+    private static string? GetParameter(ExecutionJobRecord job, string key)
+        => ExecutionJobMetadata.GetParameter(job, key);
+
+    private static string[] GetResourceRefs(ExecutionJobRecord job)
+    {
+        var raw = GetParameter(job, ExecutionJobParameterKeys.ResourceRefs);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return Array.Empty<string>();
+        }
+
+        return raw.Split(
+                ExecutionJobParameterKeys.MetadataListSeparator,
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
 
     private sealed record AuditResourceFilter(string ResourceType, string? ResourceId);
 }
