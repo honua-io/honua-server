@@ -101,6 +101,7 @@ See the [OGC API Coverages Coverage](../../gis/specifications/ogc-api-coverages-
 - Monitor system health and observability
 - Access recent errors and telemetry status
 - Inspect deploy preflight and upgrade-readiness state per Honua instance
+- Manage geofence alert zones, realtime alert rules, draft validation, enable/disable state, and delivery health for Console Operate workflows
 - Inspect runtime license status, upload signed license files when enabled, and read the active feature/entitlement inventory
 
 {% swagger src="admin-api.json" %}

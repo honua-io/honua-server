@@ -253,6 +253,41 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/alerts/rules")]
+    public async Task CreateRule_WithZoneIdOnThresholdRule_ReturnsBadRequestWithoutPersisting()
+    {
+        var serviceId = $"rules-{Guid.NewGuid():N}";
+        var zoneId = await CreateZoneAsync(serviceId);
+        var payload = new
+        {
+            serviceId,
+            layerId = 1,
+            zoneId = (long?)zoneId,
+            ruleName = "Zone Scoped Threshold",
+            triggerType = "threshold",
+            conditionsJson = "{\"field\":\"speedKmh\",\"operator\":\">\",\"value\":30}",
+            cooldownSeconds = 30,
+            severity = "warning",
+            editionRequired = "pro",
+            channels = Array.Empty<string>(),
+            isActive = true
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/alerts/rules", payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using (var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync()))
+        {
+            document.RootElement.GetProperty("success").GetBoolean().Should().BeFalse();
+            document.RootElement.GetProperty("message").GetString().Should().Contain("ZoneId");
+        }
+
+        var listResponse = await _client.GetAsync($"/api/v1/admin/alerts/rules?serviceId={serviceId}&layerId=1");
+        using var listDocument = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
+        listDocument.RootElement.GetProperty("data").GetArrayLength().Should().Be(0);
+    }
+
+    [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/alerts/zones/{zoneId}")]
     public async Task UpdateZone_NonexistentZoneId_Returns404()
     {
@@ -450,6 +485,37 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/alerts/rules/test")]
+    public async Task TestRule_WithZoneIdOnThresholdRule_ReturnsValidationError()
+    {
+        var payload = new
+        {
+            rule = new
+            {
+                serviceId = $"rule-test-{Guid.NewGuid():N}",
+                layerId = 1,
+                zoneId = (long?)999999999,
+                ruleName = "Draft Zone Scoped Threshold",
+                triggerType = "threshold",
+                conditionsJson = "{\"field\":\"speedKmh\",\"operator\":\">\",\"value\":30}",
+                cooldownSeconds = 30,
+                severity = "warning",
+                editionRequired = "pro",
+                channels = Array.Empty<string>(),
+                isActive = true
+            }
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/alerts/rules/test", payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        data.GetProperty("isValid").GetBoolean().Should().BeFalse();
+        data.GetProperty("errors")[0].GetString().Should().Contain("ZoneId");
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/alerts/rules")]
     public async Task CreateRule_RecordsAuditEvidence()
     {
@@ -576,6 +642,21 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/alerts/rules/{ruleId}/health")]
+    public async Task GetRuleHealth_WithUnavailableDeliveryChannel_ReturnsPolicyState()
+    {
+        await AssertHealthChannelStatusAsync(
+            allowedChannels: [],
+            configuredChannels: [AlertChannelType.Webhook],
+            expectedStatus: "unauthorized");
+
+        await AssertHealthChannelStatusAsync(
+            allowedChannels: [AlertChannelType.Webhook],
+            configuredChannels: [],
+            expectedStatus: "unconfigured");
+    }
+
     private async Task<long> CreateZoneAsync(string serviceId)
     {
         var payload = new
@@ -605,7 +686,9 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
     private static WebAppFixture CreateStubbedFixture(
         IAlertAdminStore store,
         IAuditLog auditLog,
-        IAlertEventQuery eventQuery)
+        IAlertEventQuery eventQuery,
+        IReadOnlyCollection<AlertChannelType>? allowedChannels = null,
+        IReadOnlyCollection<AlertChannelType>? configuredChannels = null)
     {
         return new WebAppFixture()
             .ConfigureServices(services =>
@@ -621,7 +704,78 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
                 services.AddSingleton(eventQuery);
             })
             .ReplaceService<IAlertEditionPolicy>(
-                new TestAlertEditionPolicy([AlertChannelType.Webhook], [AlertChannelType.Webhook]));
+                new TestAlertEditionPolicy(
+                    allowedChannels ?? [AlertChannelType.Webhook],
+                    configuredChannels ?? [AlertChannelType.Webhook]));
+    }
+
+    private static async Task AssertHealthChannelStatusAsync(
+        IReadOnlyCollection<AlertChannelType> allowedChannels,
+        IReadOnlyCollection<AlertChannelType> configuredChannels,
+        string expectedStatus)
+    {
+        var store = new StubAlertAdminStore();
+        store.Rules[43] = new AlertRuleDefinition
+        {
+            RuleId = 43,
+            ServiceId = "svc",
+            LayerId = 1,
+            RuleName = "Webhook Rule",
+            TriggerType = AlertTriggerType.Threshold,
+            ConditionsJson = "{\"field\":\"speedKmh\",\"operator\":\">\",\"value\":30}",
+            CooldownSeconds = 30,
+            Severity = AlertSeverity.Warning,
+            EditionRequired = AlertEdition.Pro,
+            Channels = ImmutableArray.Create(AlertChannelType.Webhook),
+            IsActive = true
+        };
+        store.Health = new AlertRuleHealthSnapshot
+        {
+            RuleId = 43,
+            ActiveIncidentCount = 0,
+            RecentTriggerCount = 0,
+            CoolingDownFeatureCount = 0,
+            DeliveryFailureCount = 0,
+            DeadLetterCount = 0,
+            DeliveryChannels = ImmutableArray.Create(new AlertRuleDeliveryHealth
+            {
+                ChannelType = AlertChannelType.Webhook,
+                PendingCount = 0,
+                ProcessingCount = 0,
+                DeliveredCount = 0,
+                FailedCount = 0,
+                DeadLetterCount = 0
+            })
+        };
+
+        var fixture = CreateStubbedFixture(
+            store,
+            new CapturingAuditLog(),
+            new StubAlertEventQuery(),
+            allowedChannels,
+            configuredChannels);
+
+        try
+        {
+            await fixture.InitializeAsync();
+            using var client = fixture.CreateAdminClient();
+
+            var response = await client.GetAsync("/api/v1/admin/alerts/rules/43/health");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            document.RootElement
+                .GetProperty("data")
+                .GetProperty("deliveryChannels")[0]
+                .GetProperty("status")
+                .GetString()
+                .Should()
+                .Be(expectedStatus);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     private sealed class TestAlertEditionPolicy : IAlertEditionPolicy

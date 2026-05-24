@@ -373,6 +373,7 @@ internal static class AlertAdminEndpoints
         long ruleId,
         [FromServices] IAlertAdminStore store,
         [FromServices] IAlertEventQuery eventQuery,
+        [FromServices] IAlertEditionPolicy editionPolicy,
         CancellationToken cancellationToken)
     {
         var rule = await store.GetRuleAsync(ruleId, cancellationToken).ConfigureAwait(false);
@@ -394,7 +395,7 @@ internal static class AlertAdminEndpoints
         }, cancellationToken).ConfigureAwait(false);
 
         return Results.Json(
-            ApiResponse<AlertRuleHealthResponse>.CreateSuccess(MapRuleHealthResponse(rule, health, triggers.Items)),
+            ApiResponse<AlertRuleHealthResponse>.CreateSuccess(MapRuleHealthResponse(rule, health, triggers.Items, editionPolicy)),
             AlertAdminJsonContext.Default.ApiResponseAlertRuleHealthResponse);
     }
 
@@ -589,6 +590,21 @@ internal static class AlertAdminEndpoints
         List<string> warnings,
         CancellationToken cancellationToken)
     {
+        if (!RequiresZone(rule.TriggerType))
+        {
+            if (rule.ZoneId.HasValue)
+            {
+                errors.Add("ZoneId is only supported for enter, exit, and dwell alert rules.");
+            }
+
+            if (draftZone is not null)
+            {
+                errors.Add("Draft zones are only supported for enter, exit, and dwell alert rules.");
+            }
+
+            return;
+        }
+
         if (draftZone is not null)
         {
             if (geometryService is null)
@@ -618,11 +634,6 @@ internal static class AlertAdminEndpoints
                 warnings.Add("Both ZoneId and a draft zone were provided; validation used the draft zone geometry.");
             }
 
-            return;
-        }
-
-        if (!RequiresZone(rule.TriggerType))
-        {
             return;
         }
 
@@ -849,7 +860,8 @@ internal static class AlertAdminEndpoints
     private static AlertRuleHealthResponse MapRuleHealthResponse(
         AlertRuleDefinition rule,
         AlertRuleHealthSnapshot health,
-        IReadOnlyList<AlertEventSummary> recentTriggers)
+        IReadOnlyList<AlertEventSummary> recentTriggers,
+        IAlertEditionPolicy editionPolicy)
     {
         return new AlertRuleHealthResponse
         {
@@ -863,23 +875,29 @@ internal static class AlertAdminEndpoints
             DeliveryFailureCount = health.DeliveryFailureCount,
             DeadLetterCount = health.DeadLetterCount,
             LinkedEventIds = health.LinkedEventIds.ToArray(),
-            DeliveryChannels = MapDeliveryHealth(rule, health.DeliveryChannels),
+            DeliveryChannels = MapDeliveryHealth(rule, health.DeliveryChannels, editionPolicy),
             RecentTriggers = recentTriggers.Select(MapRecentTrigger).ToArray()
         };
     }
 
     private static AlertRuleDeliveryHealthResponse[] MapDeliveryHealth(
         AlertRuleDefinition rule,
-        ImmutableArray<AlertRuleDeliveryHealth> deliveryHealth)
+        ImmutableArray<AlertRuleDeliveryHealth> deliveryHealth,
+        IAlertEditionPolicy editionPolicy)
     {
         var byChannel = deliveryHealth.ToDictionary(static health => health.ChannelType);
+        var validationByChannel = BuildChannelValidation(rule, editionPolicy)
+            .ToDictionary(
+                static validation => validation.Channel,
+                static validation => validation.Status,
+                StringComparer.Ordinal);
         var channels = rule.Channels.IsDefaultOrEmpty
             ? deliveryHealth.Select(static health => health.ChannelType).ToArray()
             : rule.Channels.Concat(deliveryHealth.Select(static health => health.ChannelType)).Distinct().ToArray();
 
         return channels
             .Select(channel => byChannel.TryGetValue(channel, out var health)
-                ? MapDeliveryHealth(rule, health)
+                ? MapDeliveryHealth(rule, health, validationByChannel.GetValueOrDefault(channel.ToExternalName()))
                 : MapDeliveryHealth(rule, new AlertRuleDeliveryHealth
                 {
                     ChannelType = channel,
@@ -888,18 +906,19 @@ internal static class AlertAdminEndpoints
                     DeliveredCount = 0,
                     FailedCount = 0,
                     DeadLetterCount = 0
-                }))
+                }, validationByChannel.GetValueOrDefault(channel.ToExternalName())))
             .ToArray();
     }
 
     private static AlertRuleDeliveryHealthResponse MapDeliveryHealth(
         AlertRuleDefinition rule,
-        AlertRuleDeliveryHealth health)
+        AlertRuleDeliveryHealth health,
+        string? validationStatus)
     {
         return new AlertRuleDeliveryHealthResponse
         {
             Channel = health.ChannelType.ToExternalName(),
-            Status = ResolveDeliveryHealthStatus(rule, health),
+            Status = ResolveDeliveryHealthStatus(rule, health, validationStatus),
             PendingCount = health.PendingCount,
             ProcessingCount = health.ProcessingCount,
             DeliveredCount = health.DeliveredCount,
@@ -925,8 +944,16 @@ internal static class AlertAdminEndpoints
         };
     }
 
-    private static string ResolveDeliveryHealthStatus(AlertRuleDefinition rule, AlertRuleDeliveryHealth health)
+    private static string ResolveDeliveryHealthStatus(
+        AlertRuleDefinition rule,
+        AlertRuleDeliveryHealth health,
+        string? validationStatus)
     {
+        if (validationStatus is ChannelStatusUnauthorized or ChannelStatusUnconfigured or ChannelStatusDisabled)
+        {
+            return validationStatus;
+        }
+
         if (!rule.IsActive)
         {
             return ChannelStatusDisabled;
