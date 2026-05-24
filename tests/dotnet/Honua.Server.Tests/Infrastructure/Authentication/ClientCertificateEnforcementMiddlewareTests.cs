@@ -218,6 +218,78 @@ public sealed class ClientCertificateEnforcementMiddlewareTests
     }
 
     [Fact]
+    public async Task InvokeAsync_RequiredForNative_UsesOriginalGrpcWebFlagAfterUseGrpcWebRewrite()
+    {
+        // UseGrpcWeb rewrites Content-Type from application/grpc-web* to application/grpc
+        // before the enforcement middleware runs. The capture middleware in Program.cs
+        // records the original protocol via HttpContext.Items so detection still works.
+        var context = new DefaultHttpContext
+        {
+            RequestServices = new ServiceCollection().BuildServiceProvider(),
+        };
+        context.Request.Path = "/geospatial.v1.FeatureService/Query";
+        context.Request.ContentType = "application/grpc";
+        context.Items[ClientCertificateHttpContextItems.OriginalGrpcWebRequest] = true;
+
+        var nextCalled = false;
+        var middleware = CreateMiddleware(
+            new StubValidator(null),
+            new ClientCertificateAuthenticationOptions
+            {
+                Mode = ClientCertificateAuthenticationMode.RequiredForNative,
+                EnvironmentId = "prod",
+                ProtectedGrpcServices = ["geospatial.v1.FeatureService"],
+            },
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            });
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeTrue();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_RequiredForNative_OriginalGrpcWebFalseRejectsNativeGrpc()
+    {
+        // Even when the capture middleware ran, native HTTP/2 gRPC requests (the flag
+        // is false) must still be enforced under RequiredForNative.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services.BuildServiceProvider(),
+        };
+        context.Request.Path = "/geospatial.v1.FeatureService/Query";
+        context.Request.ContentType = "application/grpc";
+        context.Items[ClientCertificateHttpContextItems.OriginalGrpcWebRequest] = false;
+        context.Response.Body = new MemoryStream();
+
+        var nextCalled = false;
+        var middleware = CreateMiddleware(
+            new StubValidator(null),
+            new ClientCertificateAuthenticationOptions
+            {
+                Mode = ClientCertificateAuthenticationMode.RequiredForNative,
+                EnvironmentId = "prod",
+                ProtectedGrpcServices = ["geospatial.v1.FeatureService"],
+            },
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            });
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeFalse();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+    }
+
+    [Fact]
     public async Task InvokeAsync_RequiredForAdmin_WithoutCertificate_RejectsAndDoesNotCallNext()
     {
         var services = new ServiceCollection();

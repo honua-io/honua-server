@@ -847,6 +847,20 @@ app.UseSerilogRequestLogging(options =>
 // Add global exception handling middleware after request logging.
 app.UseGlobalExceptionHandling();
 
+// Capture the original gRPC-Web indicator before UseGrpcWeb rewrites Content-Type
+// from application/grpc-web* to application/grpc, so the client-certificate
+// enforcement middleware downstream can still distinguish gRPC-Web from native gRPC
+// and skip mTLS enforcement for browser/gRPC-Web callers.
+app.Use(async (context, next) =>
+{
+    var contentType = context.Request.ContentType;
+    var isGrpcWeb = (!string.IsNullOrWhiteSpace(contentType) &&
+            contentType.StartsWith("application/grpc-web", StringComparison.OrdinalIgnoreCase)) ||
+        context.Request.Headers.ContainsKey("X-Grpc-Web");
+    context.Items[ClientCertificateHttpContextItems.OriginalGrpcWebRequest] = isGrpcWeb;
+    await next(context).ConfigureAwait(false);
+});
+
 // Enable gRPC-Web for all gRPC services (before CORS and endpoint mapping)
 app.UseGrpcWeb(new GrpcWebOptions { DefaultEnabled = true });
 

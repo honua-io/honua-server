@@ -9,4 +9,5 @@ internal static class ClientCertificateHttpContextItems
     public const string ValidationResult = "__honua_client_certificate_validation";
     public const string AuditEmitted = "__honua_client_certificate_audit_emitted";
     public const string OriginalProxyPeerIpAddress = "__honua_client_certificate_original_proxy_peer_ip";
+    public const string OriginalGrpcWebRequest = "__honua_client_certificate_original_grpc_web_request";
 }
