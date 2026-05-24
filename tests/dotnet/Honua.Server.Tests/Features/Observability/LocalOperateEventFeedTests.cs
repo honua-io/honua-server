@@ -197,6 +197,49 @@ public sealed class LocalOperateEventFeedTests
         page.Items[0].EventId.Should().Be("audit:1");
     }
 
+    [UnitTest]
+    public async Task ListAsync_JobSource_KeepsNewestWhenIdsExceedPageSize()
+    {
+        // Unordered active-ids: oldest first, newest last. The bug was truncating
+        // before sorting, which silently dropped the newest job.
+        var store = new FakeProgressStore();
+        store.Add(NewJob("job-old", DateTimeOffset.UtcNow.AddMinutes(-30)));
+        store.Add(NewJob("job-mid", DateTimeOffset.UtcNow.AddMinutes(-15)));
+        store.Add(NewJob("job-new", DateTimeOffset.UtcNow.AddMinutes(-1)));
+
+        var feed = new LocalOperateEventFeed(NullLogger<LocalOperateEventFeed>.Instance, progressStore: store);
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            PageSize = 1
+        });
+
+        page.Items.Should().HaveCount(1);
+        page.Items[0].EventId.Should().Be("job:job-new");
+    }
+
+    [UnitTest]
+    public async Task ListAsync_JobSource_OperationIdFiltersDirectly()
+    {
+        // The requested job is NOT in the active-ids list (operation finished
+        // and was evicted), but is reachable via direct GetProgressAsync.
+        var store = new FakeProgressStore();
+        store.Add(NewJob("active-1", DateTimeOffset.UtcNow.AddMinutes(-2)));
+        store.AddOutOfBand("specific", NewJob("specific", DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        var feed = new LocalOperateEventFeed(NullLogger<LocalOperateEventFeed>.Instance, progressStore: store);
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            OperationId = "specific",
+            PageSize = 10
+        });
+
+        page.Items.Should().HaveCount(1);
+        page.Items[0].EventId.Should().Be("job:specific");
+        store.ActiveIdsCalls.Should().Be(0, "direct lookup must skip the unordered active-ids list");
+    }
+
     private static AlertEventSummary NewSummary(long id, AlertSeverity severity, DateTimeOffset occurredAt)
         => new()
         {
@@ -211,6 +254,15 @@ public sealed class LocalOperateEventFeedTests
             IncidentStatus = AlertIncidentStatus.Started,
             IncidentDurationMs = 0,
             LifecycleStatus = AlertLifecycleStatus.Open
+        };
+
+    private static FakeProgress NewJob(string operationId, DateTimeOffset startedAt)
+        => new()
+        {
+            OperationId = operationId,
+            Type = OperationType.Import,
+            Status = OperationStatus.Processing,
+            StartedAt = startedAt
         };
 
     private sealed class FakeAlertQuery : IAlertEventQuery
@@ -239,5 +291,61 @@ public sealed class LocalOperateEventFeedTests
 
         public Task<AuditEventPage> ListAsync(AuditLogFilter filter, CancellationToken cancellationToken = default)
             => Task.FromResult(new AuditEventPage { Items = Items, NextCursor = null });
+    }
+
+    private sealed class FakeProgressStore : IUniversalProgressStore
+    {
+        private readonly List<string> _activeIds = new();
+        private readonly Dictionary<string, IOperationProgress> _records = new();
+        public int ActiveIdsCalls { get; private set; }
+
+        public void Add(IOperationProgress progress)
+        {
+            _activeIds.Add(progress.OperationId);
+            _records[progress.OperationId] = progress;
+        }
+
+        public void AddOutOfBand(string operationId, IOperationProgress progress)
+        {
+            // Reachable via direct fetch but NOT in the active-ids enumeration.
+            _records[operationId] = progress;
+        }
+
+        public Task<IReadOnlyList<string>> GetActiveOperationIdsAsync(OperationType? operationType = null, CancellationToken cancellationToken = default)
+        {
+            ActiveIdsCalls++;
+            return Task.FromResult<IReadOnlyList<string>>(_activeIds.ToList());
+        }
+
+        public Task<IOperationProgress?> GetProgressAsync(string operationId, CancellationToken cancellationToken = default)
+            => Task.FromResult(_records.GetValueOrDefault(operationId));
+
+        public Task<TProgress?> GetProgressAsync<TProgress>(string operationId, CancellationToken cancellationToken = default)
+            where TProgress : class, IOperationProgress
+            => Task.FromResult(_records.GetValueOrDefault(operationId) as TProgress);
+
+        public Task SetProgressAsync(string operationId, IOperationProgress progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task DeleteProgressAsync(string operationId, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<TProgress>> GetActiveOperationsAsync<TProgress>(OperationType operationType, CancellationToken cancellationToken = default)
+            where TProgress : class, IOperationProgress
+            => throw new NotSupportedException();
+    }
+
+    private sealed class FakeProgress : IOperationProgress
+    {
+        public required string OperationId { get; init; }
+        public required OperationType Type { get; init; }
+        public required OperationStatus Status { get; init; }
+        public double? PercentComplete { get; init; }
+        public required DateTimeOffset StartedAt { get; init; }
+        public DateTimeOffset? CompletedAt { get; init; }
+        public TimeSpan Duration => (CompletedAt ?? DateTimeOffset.UtcNow) - StartedAt;
+        public string? ErrorMessage { get; init; }
+        public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
+        public string? CurrentPhase { get; init; }
     }
 }

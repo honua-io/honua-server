@@ -228,20 +228,26 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
     {
         Debug.Assert(_progressStore is not null);
 
+        // Fast path: a specific OperationId was requested. The active-IDs list
+        // is unordered (ConcurrentDictionary.Keys / Redis SMEMBERS) and may
+        // not even contain the id if the operation finished — fetch it directly.
+        if (!string.IsNullOrWhiteSpace(filter.OperationId))
+        {
+            return await LoadSingleJobAsync(filter, filter.OperationId, cancellationToken).ConfigureAwait(false);
+        }
+
         var ids = await _progressStore!.GetActiveOperationIdsAsync(operationType: null, cancellationToken).ConfigureAwait(false);
         if (ids.Count == 0)
         {
             return Array.Empty<OperateEvent>();
         }
 
-        var results = new List<OperateEvent>(Math.Min(ids.Count, pageSize));
+        // GetActiveOperationIdsAsync returns IDs in undefined order; we must
+        // load and order everything before truncating so the newest jobs are
+        // not silently dropped when ids.Count > pageSize.
+        var mapped = new List<OperateEvent>(ids.Count);
         foreach (var id in ids)
         {
-            if (results.Count >= pageSize)
-            {
-                break;
-            }
-
             cancellationToken.ThrowIfCancellationRequested();
             IOperationProgress? progress;
             try
@@ -259,21 +265,67 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
                 continue;
             }
 
-            var mapped = MapProgress(progress);
-            if (filter.From is { } fromBound && mapped.OccurredAt < fromBound)
+            var value = MapProgress(progress);
+            if (!WithinTimeRange(filter, value))
             {
                 continue;
             }
 
-            if (filter.To is { } toBound && mapped.OccurredAt >= toBound)
-            {
-                continue;
-            }
-
-            results.Add(mapped);
+            mapped.Add(value);
         }
 
-        return results;
+        mapped.Sort(static (left, right) => right.OccurredAt.CompareTo(left.OccurredAt));
+        if (mapped.Count <= pageSize)
+        {
+            return mapped;
+        }
+
+        return mapped.GetRange(0, pageSize);
+    }
+
+    private async Task<IReadOnlyList<OperateEvent>> LoadSingleJobAsync(
+        OperateEventFilter filter,
+        string operationId,
+        CancellationToken cancellationToken)
+    {
+        IOperationProgress? progress;
+        try
+        {
+            progress = await _progressStore!.GetProgressAsync(operationId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            ObservabilityFeedLog.ProgressFetchFailed(_logger, operationId, ex);
+            return Array.Empty<OperateEvent>();
+        }
+
+        if (progress is null)
+        {
+            return Array.Empty<OperateEvent>();
+        }
+
+        var value = MapProgress(progress);
+        if (!WithinTimeRange(filter, value))
+        {
+            return Array.Empty<OperateEvent>();
+        }
+
+        return new[] { value };
+    }
+
+    private static bool WithinTimeRange(OperateEventFilter filter, OperateEvent value)
+    {
+        if (filter.From is { } fromBound && value.OccurredAt < fromBound)
+        {
+            return false;
+        }
+
+        if (filter.To is { } toBound && value.OccurredAt >= toBound)
+        {
+            return false;
+        }
+
+        return true;
     }
 
     private static OperateEvent MapAlertEvent(AlertEventSummary summary)
