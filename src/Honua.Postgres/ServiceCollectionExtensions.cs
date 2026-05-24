@@ -27,6 +27,7 @@ using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Mobile.FieldCollection.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.Admin;
@@ -52,6 +53,7 @@ using Honua.Postgres.Features.Mobile.FieldCollection;
 using Honua.Postgres.Features.Observability;
 using Honua.Postgres.Features.Raster;
 using Honua.Postgres.Features.Security;
+using Honua.Postgres.Features.Studio;
 using Honua.Postgres.Queries.Filters;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -161,6 +163,10 @@ internal static class ServiceCollectionExtensions
                 configuration["Database:Schema"]));
         services.AddScoped<IMetadataReleasePackageStore>(serviceProvider =>
             new Features.Metadata.PostgresMetadataReleasePackageStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+        services.AddScoped<IStudioPackageStore>(serviceProvider =>
+            new PostgresStudioPackageStore(
                 serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 

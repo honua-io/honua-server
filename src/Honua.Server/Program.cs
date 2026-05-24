@@ -56,6 +56,7 @@ using Honua.Server.Features.Mobile.Auth;
 using Honua.Server.Features.Mobile.Diagnostics;
 using Honua.Server.Features.Mobile.FieldCollection;
 using Honua.Server.Features.Orchestration;
+using Honua.Server.Features.Studio;
 using Honua.Server.Features.Streaming;
 using Honua.Server.Startup;
 using Honua.ServiceDefaults;
@@ -563,6 +564,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.UserManagementJsonContext.Default,
         Honua.Server.Features.Admin.Models.RoleJsonContext.Default,
         Honua.Server.Features.Console.Models.ConsoleJsonContext.Default,
+        Honua.Server.Features.Studio.Models.StudioApiJsonContext.Default,
+        Honua.Core.Features.Studio.Domain.StudioJsonContext.Default,
         Honua.Server.Features.Admin.Models.AdminApiKeyJsonContext.Default,
         Honua.Server.Features.Admin.Models.SceneDatasetJsonContext.Default,
         Honua.Server.Features.Admin.Models.SceneGenerationJsonContext.Default,
@@ -992,6 +995,7 @@ app.MapRoleEndpoints();
 app.MapConsoleSessionEndpoints();
 app.MapConsoleContentEndpoints();
 app.MapConsoleActionEndpoints();
+app.MapStudioPackageEndpoints();
 app.MapAdminApiKeyEndpoints();
 
 // Configure metadata resource endpoints (ADR-0023)

@@ -76,6 +76,9 @@ public static class Operations
     // Content Operations
     public const string ContentNegotiation = "ContentNegotiation";
 
+    // Studio Operations
+    public const string StudioLifecycle = "StudioLifecycle";
+
     // Error Handling
     public const string ErrorHandling = "ErrorHandling";
 

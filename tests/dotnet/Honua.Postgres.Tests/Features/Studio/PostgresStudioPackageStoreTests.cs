@@ -1,0 +1,236 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Data;
+using System.Data.Common;
+using System.Globalization;
+using System.Text.Json;
+using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Studio.Domain;
+using Honua.Postgres.Features.Studio;
+using Honua.TestKit;
+using Honua.TestKit.Attributes;
+using Npgsql;
+
+namespace Honua.Postgres.Tests.Features.Studio;
+
+[Collection("Database")]
+public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
+{
+    [IntegrationTest]
+    public async Task PackageStore_CreateVersionPublishAndRollback_PersistsImmutableVersionState()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresStudioPackageStore(provider, schema);
+            var draft = BuildDraft("1=1");
+
+            var created = await store.CreateDraftAsync(draft);
+            var loadedDraft = await store.GetDraftAsync(created.DraftId);
+
+            loadedDraft.Should().NotBeNull();
+            loadedDraft!.PackageKey.Should().Be("parcels-query");
+            loadedDraft.Validation.Status.Should().Be(StudioPackageValidationStatus.Valid);
+
+            var version = await store.CreateVersionAsync(created, "first save", "tester");
+            version.VersionNumber.Should().Be(1);
+            version.Dependencies.Should().ContainSingle(d => d.Ref == "content.parcels");
+
+            var loadedVersion = await store.GetVersionAsync(version.ItemId, version.VersionId);
+            loadedVersion.Should().NotBeNull();
+            loadedVersion!.ContentHash.Should().Be(version.ContentHash);
+            loadedVersion.Envelope.Body!.Value.GetProperty("where").GetString().Should().Be("1=1");
+
+            var dependencyRows = await CountDependencyRowsAsync(schema, version.VersionId);
+            dependencyRows.Should().Be(1);
+
+            var updatedDraft = created with
+            {
+                Envelope = BuildEnvelope("POPULATION > 1000"),
+                Generation = created.Generation,
+            };
+            var updated = await store.UpdateDraftAsync(updatedDraft);
+            updated.Should().NotBeNull();
+            var secondVersion = await store.CreateVersionAsync(updated!, "second save", "tester");
+
+            var publication = await store.CreatePublicationRequestAsync(new StudioPublicationRequest
+            {
+                RequestId = Guid.NewGuid(),
+                ItemId = secondVersion.ItemId,
+                VersionId = secondVersion.VersionId,
+                Intent = secondVersion.Envelope.PublicationIntent,
+                Status = StudioPublicationRequestStatus.Accepted,
+                Validation = secondVersion.Validation,
+                RequestedBy = "tester",
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
+            publication.Status.Should().Be(StudioPublicationRequestStatus.Accepted);
+
+            var rollback = await store.RollbackAsync(
+                version.ItemId,
+                version.VersionId,
+                StudioRollbackPointer.Both,
+                "tester",
+                "restore first version");
+
+            rollback.Pointers.CurrentVersionId.Should().Be(version.VersionId);
+            rollback.Pointers.PublishedVersionId.Should().Be(version.VersionId);
+
+            var originalAfterRollback = await store.GetVersionAsync(version.ItemId, version.VersionId);
+            originalAfterRollback.Should().NotBeNull();
+            originalAfterRollback!.Envelope.Body!.Value.GetProperty("where").GetString().Should().Be("1=1");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    private async Task EnsureStudioTablesAsync(string schema)
+    {
+        var root = FindRepoRoot();
+        var migrationPath = Path.Combine(root, "src", "Honua.Server", "Migrations", "035_CreateStudioPackageLifecycle.sql");
+        var sql = await File.ReadAllTextAsync(migrationPath);
+        sql = sql.Replace("honua.", $"\"{schema}\".", StringComparison.Ordinal);
+        await fixture.ExecuteAsync(sql, schema);
+    }
+
+    private async Task<int> CountDependencyRowsAsync(string schema, Guid versionId)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT COUNT(*)
+            FROM "{schema}".studio_content_version_dependencies
+            WHERE version_id = @version_id
+            """;
+        command.Parameters.AddWithValue("@version_id", versionId);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+    }
+
+    private static StudioPackageDraft BuildDraft(string where)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new StudioPackageDraft
+        {
+            DraftId = Guid.NewGuid(),
+            ItemId = Guid.NewGuid(),
+            PackageKey = "parcels-query",
+            WorkspaceId = "studio",
+            OwnerId = "tester",
+            Family = StudioPackageFamily.Query,
+            Envelope = BuildEnvelope(where),
+            Validation = new StudioValidationSummary
+            {
+                Status = StudioPackageValidationStatus.Valid,
+                GeneratedAt = now,
+            },
+            Generation = 1,
+            CreatedBy = "tester",
+            UpdatedBy = "tester",
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+    }
+
+    private static StudioPackageEnvelope BuildEnvelope(string where)
+    {
+        using var body = JsonDocument.Parse($$"""{"where":"{{where}}"}""");
+        return new StudioPackageEnvelope
+        {
+            Family = StudioPackageFamily.Query,
+            SchemaVersion = "1.0",
+            Format = "studio_query_package.v1",
+            Bindings =
+            [
+                new StudioPackageBinding
+                {
+                    Key = "source",
+                    Kind = "content",
+                    Ref = "content.parcels",
+                    Crs = "EPSG:4326",
+                    Srid = 4326,
+                },
+            ],
+            Dependencies =
+            [
+                new StudioPackageDependency
+                {
+                    Kind = "content-item",
+                    Ref = "content.parcels",
+                    VersionId = "v1",
+                },
+            ],
+            Provenance =
+            [
+                new StudioProvenanceRef
+                {
+                    Kind = "prompt",
+                    Ref = "prompt-1",
+                    Rel = "generated-by",
+                },
+            ],
+            PublicationIntent = new StudioPublicationIntent { Route = "/studio/parcels", Visibility = "organization" },
+            Body = body.RootElement.Clone(),
+        };
+    }
+
+    private static string FindRepoRoot()
+    {
+        var current = new DirectoryInfo(AppContext.BaseDirectory);
+        while (current is not null)
+        {
+            if (File.Exists(Path.Combine(current.FullName, "src", "Honua.Server", "Migrations", "035_CreateStudioPackageLifecycle.sql")))
+            {
+                return current.FullName;
+            }
+
+            current = current.Parent;
+        }
+
+        throw new DirectoryNotFoundException("Repository root could not be located.");
+    }
+
+    private sealed class TestConnectionProvider(NpgsqlDataSource dataSource, string schemaName) : IDatabaseConnectionProvider
+    {
+        public string GetConnectionString() => dataSource.ConnectionString;
+
+        public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
+        {
+            var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SET search_path TO \"{schemaName}\", public;";
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            return connection;
+        }
+
+        public async Task<(DbConnection Connection, DbTransaction Transaction)> OpenTransactionAsync(
+            IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
+            CancellationToken cancellationToken = default)
+        {
+            var connection = await OpenConnectionAsync(cancellationToken);
+            try
+            {
+                var transaction = await connection.BeginTransactionAsync(isolationLevel, cancellationToken);
+                return (connection, transaction);
+            }
+            catch
+            {
+                await connection.DisposeAsync();
+                throw;
+            }
+        }
+
+        public Task<T> ExecuteWithDeadlockRetryAsync<T>(
+            Func<Task<T>> operation,
+            CancellationToken cancellationToken = default)
+            => operation();
+
+        public Task ExecuteWithDeadlockRetryAsync(Func<Task> operation, CancellationToken cancellationToken = default)
+            => operation();
+    }
+}

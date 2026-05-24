@@ -9,6 +9,7 @@ Build applications and integrations with Honua APIs and SDKs.
 - [Metadata and Catalog Parity Matrix](metadata-catalog-parity-matrix.md) — Canonical server endpoint inventory and SDK parity contract for catalog and metadata reads
 - [Console Content and RBAC (Admin API)](../admin-api/console-content-and-rbac.md) — Honua Console metadata v2 session bootstrap, content CRUD/list/search, action-check, and provenance traversal under `/api/v1/console/**`
 - [Console Job Observability (Admin API)](../admin-api/console-job-observability.md) — Durable job list/detail/log/artifact/action contract for Console job viewers under `/api/v1/admin/jobs/**`
+- [Studio Package Lifecycle API](../admin-api/studio-package-lifecycle.md) — shared package draft, immutable version, publish, reopen, compare, rollback, and SDK projection contract under `/api/v1/studio/**`
 - [Scene Dataset Registry (Admin API)](../admin-api/scene-dataset-registry.md) — Register, list, update, deactivate, and resolve hosted 3D scene datasets
 - [NVIDIA Construction Demo Fixture](../demo/nvidia-construction.md) — Local-first 3D Tiles + observations sidecar fixture for the NVIDIA demo (no AWS, Azure, or Cesium ion)
 - [FieldCollection Mobile Sync API](fieldcollection-mobile-sync-api.md) — Generation, sync-cursor, pull, and push endpoints under `/api/v1/fieldcollection/` consumed by the `honua-mobile` offline sync clients

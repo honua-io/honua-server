@@ -1,0 +1,36 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using Honua.Core.Features.Studio.Domain;
+
+namespace Honua.Core.Features.Studio.Services;
+
+/// <summary>
+/// Computes deterministic hashes for immutable Studio package envelopes.
+/// </summary>
+public static class StudioPackageHash
+{
+    /// <summary>
+    /// Computes a lower-case hex SHA-256 hash for a package envelope.
+    /// </summary>
+    public static string Compute(StudioPackageEnvelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(envelope, StudioJsonContext.Default.StudioPackageEnvelope);
+        var hash = SHA256.HashData(bytes);
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Computes a lower-case hex SHA-256 hash for a UTF-8 JSON string.
+    /// </summary>
+    public static string ComputeJson(string json)
+    {
+        ArgumentNullException.ThrowIfNull(json);
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(json));
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+}

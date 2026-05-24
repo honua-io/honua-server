@@ -200,6 +200,22 @@ public static class EndpointRegistry
         new("GET", "/api/v1/console/content/{id}/provenance"),
         new("POST", "/api/v1/console/actions/check"),
 
+        // v1 Studio package lifecycle endpoints (#1180)
+        new("GET", "/api/v1/studio/package-families"),
+        new("POST", "/api/v1/studio/package-drafts"),
+        new("GET", "/api/v1/studio/package-drafts/{draftId}"),
+        new("PUT", "/api/v1/studio/package-drafts/{draftId}"),
+        new("DELETE", "/api/v1/studio/package-drafts/{draftId}"),
+        new("POST", "/api/v1/studio/package-drafts/{draftId}/validate"),
+        new("POST", "/api/v1/studio/package-drafts/{draftId}/preview-plan"),
+        new("POST", "/api/v1/studio/package-drafts/{draftId}/content-versions"),
+        new("GET", "/api/v1/studio/content-items/{itemId}/versions"),
+        new("GET", "/api/v1/studio/content-items/{itemId}/versions/{versionId}"),
+        new("POST", "/api/v1/studio/content-items/{itemId}/version-comparisons"),
+        new("POST", "/api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests"),
+        new("POST", "/api/v1/studio/content-items/{itemId}/versions/{versionId}/reopen"),
+        new("POST", "/api/v1/studio/content-items/{itemId}/rollback-requests"),
+
         // v1 admin metadata resource CRUD endpoints removed in #1035 cutover.
         // (Layer-style/fields/filter/validation endpoints below still serve v1 layer ids.)
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/style"),
