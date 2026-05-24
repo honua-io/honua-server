@@ -377,7 +377,7 @@ internal sealed class AlertRuleDeliveryHealthResponse
     public required string Channel { get; init; }
 
     /// <summary>
-    /// Channel state: configured, disabled, rate_limited, or failing.
+    /// Channel state: configured, unconfigured, disabled, unauthorized, rate_limited, or failing.
     /// </summary>
     public required string Status { get; init; }
 
@@ -417,7 +417,7 @@ internal sealed class AlertRuleDeliveryHealthResponse
     public DateTimeOffset? LastDeliveredAt { get; init; }
 
     /// <summary>
-    /// Last sanitized delivery error.
+    /// Last sanitized delivery error summary.
     /// </summary>
     public string? LastError { get; init; }
 }

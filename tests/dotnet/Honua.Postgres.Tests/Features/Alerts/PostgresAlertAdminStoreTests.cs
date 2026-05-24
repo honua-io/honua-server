@@ -4,6 +4,7 @@
 using System.Data;
 using System.Data.Common;
 using System.Globalization;
+using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Postgres.Features.Alerts;
 using Honua.TestKit;
@@ -26,7 +27,7 @@ public sealed class PostgresAlertAdminStoreTests(PostgresFixture fixture)
 
         try
         {
-            var startedAt = new DateTimeOffset(2026, 5, 24, 10, 0, 0, TimeSpan.Zero);
+            var startedAt = DateTimeOffset.UtcNow.AddMinutes(-10);
             var resolvedAt = startedAt.AddMinutes(5);
 
             await InsertRuleAsync(ruleId: 101, triggerType: 1, conditionsJson: "{}");
@@ -66,6 +67,44 @@ public sealed class PostgresAlertAdminStoreTests(PostgresFixture fixture)
             resolvedThreshold.RecentTriggerCount.Should().Be(2);
             activeThreshold.Should().NotBeNull();
             activeThreshold!.ActiveIncidentCount.Should().Be(1);
+        }
+        finally
+        {
+            await ClearAlertTablesAsync();
+        }
+    }
+
+    [IntegrationTest]
+    public async Task GetRuleHealthAsync_SanitizesDeliveryLastError()
+    {
+        await EnsureAlertSchemaAsync();
+        await ClearAlertTablesAsync();
+
+        try
+        {
+            await InsertRuleAsync(ruleId: 201, triggerType: 4,
+                conditionsJson: """{"field":"speedKmh","operator":">","value":30}""");
+            var eventId = await InsertEventAsync(
+                ruleId: 201,
+                triggerType: 4,
+                incidentStatus: 1,
+                occurredAt: DateTimeOffset.UtcNow.AddMinutes(-5),
+                objectId: 11);
+            await InsertDispatchAsync(
+                eventId,
+                "Webhook failed for https://user:secret@example.test/hook?api_key=super-secret");
+
+            var store = new PostgresAlertAdminStore(new TestConnectionProvider(fixture.DataSource));
+
+            var health = await store.GetRuleHealthAsync(201, recentTriggerLimit: 10);
+
+            health.Should().NotBeNull();
+            var channel = health!.DeliveryChannels.Should().ContainSingle().Which;
+            channel.FailedCount.Should().Be(1);
+            var lastError = channel.LastError;
+            lastError.Should().Be(AlertDeliveryErrorSummaries.Failed);
+            Assert.DoesNotContain("secret", lastError!, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("api_key", lastError!, StringComparison.OrdinalIgnoreCase);
         }
         finally
         {
@@ -222,7 +261,7 @@ public sealed class PostgresAlertAdminStoreTests(PostgresFixture fixture)
         await command.ExecuteNonQueryAsync();
     }
 
-    private async Task InsertEventAsync(
+    private async Task<long> InsertEventAsync(
         long ruleId,
         short triggerType,
         short incidentStatus,
@@ -237,7 +276,8 @@ public sealed class PostgresAlertAdminStoreTests(PostgresFixture fixture)
                 severity, occurred_at, payload, incident_status, incident_duration_ms)
             VALUES (
                 @dedupe_key, @rule_id, 'svc-a', 1, @objectid, @trigger_type, 1,
-                'warning', @occurred_at, '{}'::jsonb, @incident_status, 0);
+                'warning', @occurred_at, '{}'::jsonb, @incident_status, 0)
+            RETURNING event_id;
             """;
         command.Parameters.AddWithValue("dedupe_key", Guid.NewGuid().ToString("N"));
         command.Parameters.AddWithValue("rule_id", ruleId);
@@ -245,6 +285,23 @@ public sealed class PostgresAlertAdminStoreTests(PostgresFixture fixture)
         command.Parameters.AddWithValue("trigger_type", triggerType);
         command.Parameters.AddWithValue("occurred_at", occurredAt);
         command.Parameters.AddWithValue("incident_status", incidentStatus);
+        var result = await command.ExecuteScalarAsync();
+        return Convert.ToInt64(result, CultureInfo.InvariantCulture);
+    }
+
+    private async Task InsertDispatchAsync(long eventId, string lastError)
+    {
+        await using var connection = await fixture.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO honua.alert_dispatch (
+                event_id, channel_type, status, attempts, max_attempts, next_attempt_at,
+                last_attempt_at, last_error)
+            VALUES (
+                @event_id, 1, 3, 1, 5, now(), now(), @last_error);
+            """;
+        command.Parameters.AddWithValue("event_id", eventId);
+        command.Parameters.AddWithValue("last_error", lastError);
         await command.ExecuteNonQueryAsync();
     }
 

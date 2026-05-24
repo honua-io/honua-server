@@ -350,7 +350,7 @@ public sealed record AlertRuleDeliveryHealth
     public DateTimeOffset? LastDeliveredAt { get; init; }
 
     /// <summary>
-    /// Most recent sanitized delivery error for this channel, when present.
+    /// Most recent sanitized delivery error summary for this channel, when present.
     /// </summary>
     public string? LastError { get; init; }
 }

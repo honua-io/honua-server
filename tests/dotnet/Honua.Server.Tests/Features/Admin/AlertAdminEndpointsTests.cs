@@ -633,7 +633,9 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var data = document.RootElement.GetProperty("data");
             data.GetProperty("activeIncidentCount").GetInt32().Should().Be(1);
-            data.GetProperty("deliveryChannels")[0].GetProperty("status").GetString().Should().Be("rate_limited");
+            var deliveryChannel = data.GetProperty("deliveryChannels")[0];
+            deliveryChannel.GetProperty("status").GetString().Should().Be("rate_limited");
+            deliveryChannel.GetProperty("lastError").GetString().Should().Be(AlertDeliveryErrorSummaries.RateLimited);
             data.GetProperty("recentTriggers")[0].GetProperty("resourceRef").GetString().Should().Be("alert/101");
         }
         finally

@@ -712,7 +712,9 @@ invalid drafts return `200` with `data.isValid=false`, `errors`, `warnings`,
 per-channel `deliveryChannels`, and `evaluatedAt`. Delivery validation and rule
 health statuses are `configured`, `unconfigured`, `disabled`, and
 `unauthorized`; rule health can additionally report `rate_limited` or `failing`
-for channels with recent delivery errors. The optional draft `zone` is only
+for channels with recent delivery errors. Delivery channel `lastError` values are
+sanitized summaries, such as `Delivery rate limited.` or `Delivery failed.`;
+raw provider exception text is not returned. The optional draft `zone` is only
 accepted for `enter`, `exit`, and `dwell` rules, must use the same `serviceId`
 as the rule, and is used for geometry validation without persistence. If both a
 draft `zone` and `zoneId` are supplied on a geofence draft, validation uses the
@@ -724,8 +726,14 @@ draft zone geometry and returns a warning.
 `deliveryFailureCount`, `deadLetterCount`, `linkedEventIds`,
 `deliveryChannels`, and up to 10 `recentTriggers`. Recent trigger summaries use
 `resourceRef` values of the form `alert/{eventId}` so Console Operate can link
-to the normalized alert event. Alert zone/rule changes write config-change audit
-events with actions `alert_zone.create`, `alert_zone.update`,
+to the normalized alert event. `activeIncidentCount` is derived from the current
+evaluator state, not from historical alert events: `enter` and `dwell` rules
+count state rows where the feature is currently inside the zone, `threshold`
+rules count state rows where the threshold is currently breached, and `exit`
+transition events do not keep an active incident open after the feature has
+left. `recentTriggerCount` counts alert events from the previous 24 hours.
+Alert zone/rule changes write config-change audit events with actions
+`alert_zone.create`, `alert_zone.update`,
 `alert_zone.delete`, `alert_rule.create`, `alert_rule.update`,
 `alert_rule.enable`, `alert_rule.disable`, and `alert_rule.delete`.
 

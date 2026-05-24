@@ -643,7 +643,7 @@
           "Alerts"
         ],
         "summary": "Get Alert Rule Health",
-        "description": "Inspect evaluator state, active incidents, recent triggers, delivery failures, dead-letter state, and channel health for an alert rule.",
+        "description": "Inspect evaluator state, active incidents, recent triggers, delivery failures, dead-letter state, and channel health for an alert rule. Active incidents are derived from current evaluator state, not historical alert-event rows.",
         "operationId": "getAlertRuleHealth",
         "parameters": [
           {
@@ -4225,45 +4225,54 @@
           "lastEvaluatedAt": {
             "type": "string",
             "format": "date-time",
-            "nullable": true
+            "nullable": true,
+            "description": "Most recent evaluator state update for this rule, when available."
           },
           "lastTriggeredAt": {
             "type": "string",
             "format": "date-time",
-            "nullable": true
+            "nullable": true,
+            "description": "Most recent alert event emitted for this rule, when available."
           },
           "activeIncidentCount": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0
+            "minimum": 0,
+            "description": "Count of current evaluator state rows that represent active incidents. Enter and dwell rules count features currently inside the zone; threshold rules count currently breached threshold state; exit transition events do not keep an active incident open after the feature has left."
           },
           "recentTriggerCount": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0
+            "minimum": 0,
+            "description": "Count of alert events for this rule in the previous 24 hours."
           },
           "coolingDownFeatureCount": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0
+            "minimum": 0,
+            "description": "Count of evaluator state rows currently inside their cooldown window."
           },
           "nextCooldownExpiresAt": {
             "type": "string",
             "format": "date-time",
-            "nullable": true
+            "nullable": true,
+            "description": "Latest cooldown expiry across currently cooling down feature states."
           },
           "deliveryFailureCount": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0
+            "minimum": 0,
+            "description": "Count of retryable delivery failures for this rule."
           },
           "deadLetterCount": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0
+            "minimum": 0,
+            "description": "Count of dead-lettered delivery rows for this rule."
           },
           "linkedEventIds": {
             "type": "array",
+            "description": "Newest-first recent event identifiers linked to this rule, capped by the server at 10 entries.",
             "items": {
               "type": "integer",
               "format": "int64"
@@ -4308,7 +4317,8 @@
               "unauthorized",
               "rate_limited",
               "failing"
-            ]
+            ],
+            "description": "Channel health status. Policy and configuration states take precedence; rate_limited and failing reflect recent delivery errors."
           },
           "pendingCount": {
             "type": "integer",
@@ -4348,7 +4358,7 @@
           "lastError": {
             "type": "string",
             "nullable": true,
-            "description": "Most recent sanitized delivery error."
+            "description": "Most recent sanitized delivery error summary. Raw provider error text is not returned."
           }
         }
       },

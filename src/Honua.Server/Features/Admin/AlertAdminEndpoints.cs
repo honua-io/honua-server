@@ -926,7 +926,7 @@ internal static class AlertAdminEndpoints
             DeadLetterCount = health.DeadLetterCount,
             LastAttemptAt = health.LastAttemptAt,
             LastDeliveredAt = health.LastDeliveredAt,
-            LastError = health.LastError
+            LastError = AlertDeliveryErrorSummaries.ToSanitizedSummary(health.LastError)
         };
     }
 
@@ -961,18 +961,10 @@ internal static class AlertAdminEndpoints
 
         if (health.DeadLetterCount > 0 || health.FailedCount > 0)
         {
-            return IsRateLimitError(health.LastError) ? ChannelStatusRateLimited : ChannelStatusFailing;
+            return AlertDeliveryErrorSummaries.IsRateLimited(health.LastError) ? ChannelStatusRateLimited : ChannelStatusFailing;
         }
 
         return ChannelStatusConfigured;
-    }
-
-    private static bool IsRateLimitError(string? value)
-    {
-        return value is not null &&
-               (value.Contains("429", StringComparison.OrdinalIgnoreCase) ||
-                value.Contains("too many requests", StringComparison.OrdinalIgnoreCase) ||
-                value.Contains("rate limit", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool TryParseWkt(

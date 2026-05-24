@@ -427,7 +427,7 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
                 DeadLetterCount = reader.GetInt32(5),
                 LastAttemptAt = reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
                 LastDeliveredAt = reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
-                LastError = reader.IsDBNull(8) ? null : reader.GetString(8)
+                LastError = AlertDeliveryErrorSummaries.ToSanitizedSummary(reader.IsDBNull(8) ? null : reader.GetString(8))
             });
         }
 
