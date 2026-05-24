@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Honua Server Management API",
-    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints for configuration, import scanning, connections, layers, styles, observability, runtime licensing, deploy control, and native client-certificate trust management. For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
+    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints for configuration, import scanning, connections, layers, styles, observability, realtime alert management, runtime licensing, deploy control, and native client-certificate trust management. For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
     "version": "1.0.0",
     "contact": {
       "name": "Honua Server",
@@ -367,7 +367,7 @@
           "Alerts"
         ],
         "summary": "Create Alert Rule",
-        "description": "Create a realtime alert rule after validating trigger, conditions, zone reference, edition, and delivery channels.",
+        "description": "Create a realtime alert rule after validating trigger, conditions, geofence zone reference, edition, and delivery channels. Persisted enter/exit/dwell rules require zoneId; threshold rules must omit zoneId.",
         "operationId": "createAlertRule",
         "requestBody": {
           "required": true,
@@ -408,7 +408,7 @@
           "Alerts"
         ],
         "summary": "Test Alert Rule",
-        "description": "Validate a draft alert rule and optional draft zone without persisting either resource. Invalid drafts return 200 with data.isValid=false and validation details.",
+        "description": "Validate a draft alert rule and optional geofence draft zone without persisting either resource. Invalid drafts return 200 with data.isValid=false and validation details. Draft zones are only accepted for enter, exit, and dwell rules.",
         "operationId": "testAlertRule",
         "requestBody": {
           "required": true,
@@ -490,7 +490,7 @@
           "Alerts"
         ],
         "summary": "Update Alert Rule",
-        "description": "Replace an alert rule by identifier after validating trigger, conditions, zone reference, edition, and delivery channels.",
+        "description": "Replace an alert rule by identifier after validating trigger, conditions, geofence zone reference, edition, and delivery channels. Persisted enter/exit/dwell rules require zoneId; threshold rules must omit zoneId.",
         "operationId": "updateAlertRule",
         "parameters": [
           {
@@ -3946,7 +3946,7 @@
             "type": "integer",
             "format": "int64",
             "nullable": true,
-            "description": "Required for persisted enter, exit, and dwell rules."
+            "description": "Required for persisted enter, exit, and dwell rules. Must be omitted for threshold rules."
           },
           "ruleName": {
             "type": "string",
@@ -4009,7 +4009,7 @@
                 "azure_eventhub"
               ]
             },
-            "description": "Delivery channel names. Responses always use canonical snake-case names."
+            "description": "Delivery channel names. May be omitted or empty when no external dispatch sink should be used. Responses always use canonical snake-case names."
           },
           "isActive": {
             "type": "boolean",
@@ -4126,7 +4126,7 @@
               }
             ],
             "nullable": true,
-            "description": "Optional draft zone used to validate geofence rules without persisting the zone."
+            "description": "Optional draft zone used to validate enter, exit, and dwell geofence rules without persisting the zone. The draft zone serviceId must match the rule serviceId; if both zone and zoneId are supplied, validation uses the draft zone geometry and returns a warning."
           }
         }
       },

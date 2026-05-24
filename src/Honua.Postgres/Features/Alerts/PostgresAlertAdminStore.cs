@@ -298,7 +298,7 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
             RuleId = ruleId,
             LastEvaluatedAt = state.LastEvaluatedAt,
             LastTriggeredAt = events.LastTriggeredAt,
-            ActiveIncidentCount = events.ActiveIncidentCount,
+            ActiveIncidentCount = state.ActiveIncidentCount,
             RecentTriggerCount = events.RecentTriggerCount,
             CoolingDownFeatureCount = state.CoolingDownFeatureCount,
             NextCooldownExpiresAt = state.NextCooldownExpiresAt,
@@ -326,7 +326,11 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
                        WHERE @cooldown_seconds > 0
                          AND last_alert_at IS NOT NULL
                          AND @now < last_alert_at + make_interval(secs => @cooldown_seconds)
-                   )
+                   ) AS next_cooldown_expires_at,
+                   COUNT(*) FILTER (
+                       WHERE (@count_inside_state AND inside = TRUE)
+                          OR (@count_threshold_state AND threshold_state ->> 'breached' = 'true')
+                   )::int AS active_incident_count
             FROM honua.alert_state
             WHERE rule_id = @rule_id
             """;
@@ -335,13 +339,16 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
         command.Parameters.AddWithValue("rule_id", NpgsqlDbType.Bigint, rule.RuleId);
         command.Parameters.AddWithValue("cooldown_seconds", NpgsqlDbType.Integer, rule.CooldownSeconds);
         command.Parameters.AddWithValue("now", NpgsqlDbType.TimestampTz, now);
+        command.Parameters.AddWithValue("count_inside_state", NpgsqlDbType.Boolean, UsesInsideActiveState(rule.TriggerType));
+        command.Parameters.AddWithValue("count_threshold_state", NpgsqlDbType.Boolean, rule.TriggerType == AlertTriggerType.Threshold);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         _ = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
         return new RuleStateHealth(
             reader.IsDBNull(0) ? null : reader.GetFieldValue<DateTimeOffset>(0),
             reader.IsDBNull(1) ? 0 : reader.GetInt32(1),
-            reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2));
+            reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2),
+            reader.GetInt32(3));
     }
 
     private static async Task<RuleEventHealth> GetRuleEventHealthAsync(
@@ -355,12 +362,6 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
                 (SELECT MAX(occurred_at)
                  FROM honua.alert_events
                  WHERE rule_id = @rule_id) AS last_triggered_at,
-                (SELECT COUNT(*)::int
-                 FROM honua.alert_events e
-                 LEFT JOIN honua.alert_event_lifecycle l ON l.event_id = e.event_id
-                 WHERE e.rule_id = @rule_id
-                   AND e.incident_status IN (1, 2)
-                   AND COALESCE(l.lifecycle_status, 0) <> 3) AS active_incident_count,
                 (SELECT COUNT(*)::int
                  FROM honua.alert_events
                  WHERE rule_id = @rule_id
@@ -380,11 +381,10 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         _ = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
-        var eventIds = reader.GetFieldValue<long[]>(3);
+        var eventIds = reader.GetFieldValue<long[]>(2);
         return new RuleEventHealth(
             reader.IsDBNull(0) ? null : reader.GetFieldValue<DateTimeOffset>(0),
             reader.GetInt32(1),
-            reader.GetInt32(2),
             ImmutableArray.CreateRange(eventIds));
     }
 
@@ -437,13 +437,16 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
     private sealed record RuleStateHealth(
         DateTimeOffset? LastEvaluatedAt,
         int CoolingDownFeatureCount,
-        DateTimeOffset? NextCooldownExpiresAt);
+        DateTimeOffset? NextCooldownExpiresAt,
+        int ActiveIncidentCount);
 
     private sealed record RuleEventHealth(
         DateTimeOffset? LastTriggeredAt,
-        int ActiveIncidentCount,
         int RecentTriggerCount,
         ImmutableArray<long> LinkedEventIds);
+
+    private static bool UsesInsideActiveState(AlertTriggerType triggerType)
+        => triggerType is AlertTriggerType.Enter or AlertTriggerType.Dwell;
 
     private static NpgsqlCommand BuildZoneWriteCommand(string sql, NpgsqlConnection connection, AlertZoneDefinition zone)
     {

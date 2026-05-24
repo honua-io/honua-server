@@ -671,19 +671,21 @@ use this contract:
 
 `triggerType` accepts `enter`, `exit`, `dwell`, or `threshold`; `severity`
 accepts `info`, `warning`, or `critical`; `editionRequired` accepts `pro` or
-`enterprise`; `cooldownSeconds` must be zero or greater. Geofence triggers
-(`enter`, `exit`, `dwell`) require `zoneId` when persisted. `dwell` conditions
-must be a JSON object with positive `dwellSeconds`. `threshold` conditions must
-be a JSON object with non-empty `field`, an `operator` of `>`, `>=`, `<`, `<=`,
-`==`, or `!=`, and a numeric `value`.
+`enterprise`; `cooldownSeconds` must be zero or greater. Persisted geofence
+triggers (`enter`, `exit`, `dwell`) require `zoneId`. `zoneId` is only valid for
+those geofence triggers; threshold rules must omit it. `dwell` conditions must
+be a JSON object with positive `dwellSeconds`. `threshold` conditions must be a
+JSON object with non-empty `field`, an `operator` of `>`, `>=`, `<`, `<=`, `==`,
+or `!=`, and a numeric `value`.
 
 Delivery channel names are canonical snake-case tokens: `webhook`,
 `websocket`, `email`, `digest`, `aws_sns`, `azure_eventgrid`, `slack`,
 `microsoft_teams`, `aws_sqs`, and `azure_eventhub`. Some compatibility aliases
 parse on write (`teams`, `awssns`, `awssqs`, `azureeventgrid`,
-`azureeventhub`), but responses always use canonical names. Pro alerting allows
-`enter`/`exit` rules and `webhook`; Enterprise allows all implemented trigger
-types and channels when the channel is configured.
+`azureeventhub`), but responses always use canonical names. `channels` may be
+omitted or empty for rules that should not dispatch to external sinks. Pro
+alerting allows `enter`/`exit` rules and `webhook`; Enterprise allows all
+implemented trigger types and channels when the channel is configured.
 
 `POST /api/v1/admin/alerts/rules/test` validates a draft without persisting it:
 
@@ -697,7 +699,7 @@ types and channels when the channel is configured.
     "conditionsJson": "{\"field\":\"speedKmh\",\"operator\":\">\",\"value\":30}",
     "cooldownSeconds": 30,
     "severity": "warning",
-    "editionRequired": "pro",
+    "editionRequired": "enterprise",
     "channels": ["webhook"],
     "isActive": true
   },
@@ -710,7 +712,11 @@ invalid drafts return `200` with `data.isValid=false`, `errors`, `warnings`,
 per-channel `deliveryChannels`, and `evaluatedAt`. Delivery validation and rule
 health statuses are `configured`, `unconfigured`, `disabled`, and
 `unauthorized`; rule health can additionally report `rate_limited` or `failing`
-for channels with recent delivery errors.
+for channels with recent delivery errors. The optional draft `zone` is only
+accepted for `enter`, `exit`, and `dwell` rules, must use the same `serviceId`
+as the rule, and is used for geometry validation without persistence. If both a
+draft `zone` and `zoneId` are supplied on a geofence draft, validation uses the
+draft zone geometry and returns a warning.
 
 `GET /api/v1/admin/alerts/rules/{ruleId}/health` returns the rule state snapshot:
 `lastEvaluatedAt`, `lastTriggeredAt`, `activeIncidentCount`,

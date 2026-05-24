@@ -321,7 +321,7 @@ internal sealed class AlertRuleHealthResponse
     public DateTimeOffset? LastTriggeredAt { get; init; }
 
     /// <summary>
-    /// Count of open or acknowledged started/ongoing incidents.
+    /// Count of current evaluator state rows that represent active incidents.
     /// </summary>
     public required int ActiveIncidentCount { get; init; }
 
