@@ -270,6 +270,32 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("PUT /api/v1/console/content/{id}")]
+    public async Task ReplaceContent_WithOverlongNamespace_ReturnsBadRequest()
+    {
+        var createResponse = await _client.PostAsJsonAsync("/api/v1/console/content", new CreateConsoleContentItemRequest
+        {
+            Name = "put-namespace-target",
+            ItemType = ConsoleContentItemType.Dashboard,
+            Visibility = ConsoleVisibility.Organization,
+        }, JsonOptions);
+        var created = JsonSerializer.Deserialize<ApiResponse<ConsoleContentItem>>(
+            await createResponse.Content.ReadAsStringAsync(), JsonOptions)!;
+
+        var update = new UpdateConsoleContentItemRequest
+        {
+            Name = "put-namespace-target",
+            ItemType = ConsoleContentItemType.Dashboard,
+            Namespace = new string('n', 201),
+            Generation = created.Data!.Generation,
+        };
+
+        var putResponse = await _client.PutAsJsonAsync($"/api/v1/console/content/{created.Data.Id}", update, JsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, putResponse.StatusCode);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/console/content/search")]
     public async Task SearchContent_FindsByTerm()
     {

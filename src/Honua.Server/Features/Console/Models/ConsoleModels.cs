@@ -94,6 +94,7 @@ public sealed class UpdateConsoleContentItemRequest
     public required ConsoleContentItemType ItemType { get; init; }
 
     /// <summary>Namespace.</summary>
+    [StringLength(200)]
     [JsonPropertyName("namespace")]
     public string? Namespace { get; init; }
 
