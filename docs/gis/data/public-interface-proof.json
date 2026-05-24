@@ -205,6 +205,49 @@
       ]
     },
     {
+      "surfaceId": "forms-runtime",
+      "displayName": "Form package runtime API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Forms API",
+      "canonicalIdentifier": "/api/v1/forms/**",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/v1/forms/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus form package endpoint integration tests cover published package readback, offline policy, submissions, idempotency, and attachment persistence.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Forms/FormPackageEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#1184",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Form package contract and offline policy semantics are documented for Console, mobile, and SDK clients.",
+          "executionLane": "docs+review",
+          "evidenceLocations": [
+            "docs/developer/form-package-api.md",
+            "src/Honua.Core/Features/Forms/Packages/FormPackageContracts.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#1184",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "console-content-rbac",
       "displayName": "Console metadata v2 content and RBAC baseline",
       "surfaceKind": "http-route-family",

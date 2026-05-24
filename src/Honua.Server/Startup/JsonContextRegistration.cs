@@ -44,6 +44,7 @@ internal static class JsonContextRegistration
                 Honua.Server.Features.Mobile.Auth.MobileAuthJsonContext.Default,
                 Honua.Server.Features.Mobile.Diagnostics.MobileExceptionIngestionJsonContext.Default,
                 Honua.Server.Features.Mobile.FieldCollection.FieldCollectionSyncJsonContext.Default,
+                Honua.Core.Features.Forms.Packages.FormPackageJsonContext.Default,
                 Honua.Server.Features.Admin.TileOperations.TileOperationsJsonContext.Default,
                 Honua.Server.Features.Admin.Models.LayerStyleJsonContext.Default,
                 Honua.Server.Features.Admin.Models.LayerFieldConfigurationJsonContext.Default,

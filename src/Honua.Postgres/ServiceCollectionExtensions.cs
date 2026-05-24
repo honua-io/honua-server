@@ -10,6 +10,7 @@ using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Forms.Packages;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.AutoDocs;
 using Honua.Core.Features.Import;
@@ -51,6 +52,7 @@ using Honua.Postgres.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.Styling;
 using Honua.Postgres.Features.Metadata;
 using Honua.Postgres.Features.FeatureStore.Services;
+using Honua.Postgres.Features.Forms;
 using Honua.Postgres.Features.Mobile.FieldCollection;
 using Honua.Postgres.Features.Observability;
 using Honua.Postgres.Features.Raster;
@@ -151,6 +153,9 @@ internal static class ServiceCollectionExtensions
 
         // Register FieldCollection mobile sync store (#894)
         services.AddScoped<IFieldCollectionSyncStore, PostgresFieldCollectionSyncStore>();
+
+        // Register Forms package store (#1184)
+        services.AddScoped<IFormPackageStore, PostgresFormPackageStore>();
 
         // Register Metadata v2 graph store (Postgres-backed JSONB + sidecar indexes)
         services.AddScoped<IMetadataV2GraphStore>(serviceProvider =>
