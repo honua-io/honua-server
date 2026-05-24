@@ -7,6 +7,7 @@ Build applications and integrations with Honua APIs and SDKs.
 - [API Examples](API_EXAMPLES.md) — Request/response examples for major Honua protocols
 - [Integration Patterns](INTEGRATION_PATTERNS.md) — Common integration approaches with code samples
 - [Metadata and Catalog Parity Matrix](metadata-catalog-parity-matrix.md) — Canonical server endpoint inventory and SDK parity contract for catalog and metadata reads
+- [Capability Manifest](capability-manifest.md) — Neutral runtime capability discovery for Console, MCP, QGIS, native hosts, and SDK clients
 - [Console Content and RBAC (Admin API)](../admin-api/console-content-and-rbac.md) — Honua Console metadata v2 session bootstrap, content CRUD/list/search, action-check, and provenance traversal under `/api/v1/console/**`
 - [Console Job Observability (Admin API)](../admin-api/console-job-observability.md) — Durable job list/detail/log/artifact/action contract for Console job viewers under `/api/v1/admin/jobs/**`
 - [Studio Package Lifecycle API](../admin-api/studio-package-lifecycle.md) — shared package draft, immutable version, publish, reopen, compare, rollback, and SDK projection contract under `/api/v1/studio/**`

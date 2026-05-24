@@ -6,6 +6,7 @@ using Honua.Core.Features.Metadata;
 using Honua.Postgres.Features.Scene;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.AnalysisContent;
+using Honua.Server.Features.Capabilities;
 using Honua.Server.Features.Infrastructure.Scene;
 using Honua.Server.Features.Alerts;
 using Honua.Server.Features.CloudDemo;
@@ -99,6 +100,7 @@ internal static class FeatureRegistrationExtensions
         services.AddGeoprocessing(configuration);
         services.AddAnalysisContent(configuration);
         services.AddAnalysisReporting(configuration);
+        services.AddCapabilityManifest();
         services.AddMcpOperatorSurface(configuration);
         services.AddSpecGrounding();
         services.AddSpatialAnalytics();
@@ -166,6 +168,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapGPServerEndpoints();
         endpoints.MapAnalysisContentEndpoints();
         endpoints.MapAnalysisReporting();
+        endpoints.MapCapabilityManifestEndpoints();
         endpoints.MapMcpOperatorSurface();
         endpoints.MapSpecGroundingEndpoints();
         endpoints.MapSpecEndpoints();

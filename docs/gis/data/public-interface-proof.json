@@ -3,6 +3,50 @@
   "updatedUtc": "2026-05-24T00:00:00Z",
   "surfaces": [
     {
+      "surfaceId": "capability-manifest",
+      "displayName": "Server capability manifest",
+      "surfaceKind": "http-route",
+      "protocol": "Capability Manifest HTTP",
+      "canonicalIdentifier": "/api/v1/capabilities/manifest",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [],
+      "endpointExactMatches": [
+        "/api/v1/capabilities/manifest"
+      ],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and CapabilityManifestEndpointTests integration tests assert anonymous, admin-scoped, unknown-environment, invalid-scope, no-store, and content-negotiation behavior.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Capabilities/CapabilityManifestEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1186",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Source-generated CapabilityManifestJsonContext keeps the wire shape AOT-safe; docs/developer/capability-manifest.md documents the raw manifest, scope validation, availability gates, limit sections, reason codes, cache policy, and SDK projection rules.",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/Capabilities/Models/CapabilityManifestJsonContext.cs",
+            "src/Honua.Server/Features/Capabilities/Models/CapabilityManifestModels.cs",
+            "docs/developer/capability-manifest.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1186",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "platform-http",
       "displayName": "Platform HTTP primitives",
       "surfaceKind": "http-route-family",

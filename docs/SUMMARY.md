@@ -69,6 +69,7 @@
 - [Overview](developer/README.md)
 - [API Examples](developer/API_EXAMPLES.md)
 - [Integration Patterns](developer/INTEGRATION_PATTERNS.md)
+- [Capability Manifest](developer/capability-manifest.md)
 - [Metadata and Catalog Parity Matrix](developer/metadata-catalog-parity-matrix.md)
 - [NVIDIA Construction Demo Fixture](demo/nvidia-construction.md)
 - [Console Content and RBAC (Admin API)](admin-api/console-content-and-rbac.md)

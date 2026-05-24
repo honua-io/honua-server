@@ -101,6 +101,10 @@ export class HonuaClient {
 
 **Keep SDKs small**: focus on request building, auth, and error translation. Let app code handle domain rules.
 
+### **Runtime Capability Discovery**
+
+Clients that expose optional package, temporal, sync, realtime, native transport, mTLS, GitOps, job, upload, edit, or analysis workflows should call `GET /api/v1/capabilities/manifest` before enabling those controls. Use `capabilities[].id`, `transports.items[].id`, `available`, and `reasonCode` to explain unsupported or currently unavailable states. Treat the manifest as discovery only; the operation endpoint remains authoritative for authorization and resource validation.
+
 ---
 
 ## **Pattern 3: ETL Pipeline Integration**

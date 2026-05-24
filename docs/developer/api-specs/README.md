@@ -102,6 +102,12 @@ See the [OGC API Coverages Coverage](../../gis/specifications/ogc-api-coverages-
 > contract is maintained in
 > [Studio Package Lifecycle API](../../admin-api/studio-package-lifecycle.md)
 > until a dedicated Studio OpenAPI document is published.
+>
+> **Runtime capability discovery**: `GET /api/v1/capabilities/manifest` is a
+> public, request-scoped discovery contract outside the admin OpenAPI snapshot.
+> It accepts optional `environment` and `workspaceId` hints and returns package,
+> transport, policy, entitlement, and limit state for Console, SDK, MCP, QGIS,
+> and native-host clients. See [Capability Manifest](../capability-manifest.md).
 
 **What you can do**:
 - Manage database connections (create, test, list)

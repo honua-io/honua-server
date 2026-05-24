@@ -34,6 +34,7 @@ The Honua Admin UI is intended to operate as a UI on top of this control-plane A
 | `/api/v1/admin` | Admin API root |
 | `/api/v1/admin/config` | Runtime configuration and env var reference |
 | `/api/v1/admin/openapi.json` | Admin API OpenAPI schema snapshot served by runtime |
+| `/api/v1/capabilities/manifest` | Public request-scoped capability manifest for clients and SDKs |
 | `/openapi.json` | OGC API Features OpenAPI schema |
 | `/healthz/live` | Liveness check |
 | `/healthz/ready` | Readiness check |
@@ -77,7 +78,7 @@ Additional metrics endpoints:
 |-- memory
 ```
 
-**Note**: Some admin surfaces vary by build. SDK-facing compatibility should not guess. Use `GET /api/v1/admin/capabilities` for the stable runtime handshake, `/api/v1/admin/config` for runtime validation details, and `/api/v1/admin/openapi.json` for the bundled `docs/developer/api-specs/admin-api.json` contract snapshot used for SDK generation.
+**Note**: Some admin surfaces vary by build. SDK-facing compatibility should not guess. Use `GET /api/v1/admin/capabilities` for the stable admin compatibility handshake, `GET /api/v1/capabilities/manifest` for public package/transport/limit/policy discovery, `/api/v1/admin/config` for runtime validation details, and `/api/v1/admin/openapi.json` for the bundled `docs/developer/api-specs/admin-api.json` contract snapshot used for SDK generation. See [Capability Manifest](../developer/capability-manifest.md) for the public manifest contract.
 
 ## **SDKs and Contract Governance**
 
@@ -85,6 +86,7 @@ Additional metrics endpoints:
 - Use `GET /api/v1/admin/capabilities` as the canonical compatibility document.
 - Treat `data.compatibility` as the stable SDK-facing shape for server version, control-plane major, release channel, deprecation markers, and coarse feature flags.
 - Do not infer feature support from `serverVersion` alone, and do not probe multiple endpoints when `data.compatibility` is present.
+- Use `GET /api/v1/capabilities/manifest` before enabling package, temporal, sync, realtime, native transport, mTLS, GitOps, job, upload, edit, or analysis controls. Its `supported`, `available`, and `reasonCode` fields are informational; operation endpoints still enforce authorization and resource checks.
 
 - Generate control-plane SDK artifacts locally:
 

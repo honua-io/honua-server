@@ -136,6 +136,7 @@ How to build against Honua's APIs, SDKs, and protocols.
 - [Developer Guide (index)](developer/README.md)
 - [API Examples](developer/API_EXAMPLES.md)
 - [Integration Patterns](developer/INTEGRATION_PATTERNS.md)
+- [Capability Manifest](developer/capability-manifest.md) — neutral runtime capability discovery for Console, MCP, QGIS, native hosts, and SDK clients.
 - [Grounding](developer/GROUNDING.md) — natural-language grounding for AI builders.
 - [MCP Server](developer/MCP_SERVER.md) — JSON-RPC surface for AI agents.
 - [Redis Fallback Patterns](developer/REDIS_FALLBACK_PATTERNS.md)

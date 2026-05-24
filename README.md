@@ -114,6 +114,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 | Terrain-RGB Elevation Tiles | `/terrain/{datasetId}/tile.json`, `/terrain/{datasetId}/{z}/{x}/{y}.png` | MapLibre/Mapbox `raster-dem` clients |
 | Elevation Query / Profile API | `/elevation/{datasetId}/value`, `/elevation/{datasetId}/profile` | Field workflows, route planning, utility inspection, no-code dashboards |
 | MapLibre Styles | `/api/styles/{layerId}.json` | MapLibre |
+| Capability Manifest | `/api/v1/capabilities/manifest` | Console, SDKs, MCP, QGIS plugins, native hosts |
 | Admin API | `/api/v1/admin` | Standalone Admin UI, automation scripts |
 | Studio Package Lifecycle | `/api/v1/studio` | Honua Console, SDKs, generated apps |
 | Form Package API | `/api/v1/admin/forms/packages`, `/api/v1/forms/packages` | Console Form Builder, field clients, mobile/offline SDKs |
@@ -160,6 +161,8 @@ The source-backed feature map is maintained in [docs/features/README.md](docs/fe
 **Service import and migration planning** — Import public, queryable ArcGIS GeoServices REST feature/map-service layers into PostGIS, with optional auto-publishing. Scan ArcGIS GeoServices REST and GeoServer REST sources for deterministic migration inventories; GeoServer catalog migration is currently dry-run planning only.
 
 **Admin** — REST API for managing connections, services, layers, relationships, styles (with auto-cartographic suggestions), and import jobs. The Blazor admin UI lives in the separate `honua-server-admin` repo and is deployed as a standalone static app.
+
+**Runtime capability discovery** — `GET /api/v1/capabilities/manifest` exposes the request-scoped capability manifest used by Console, SDKs, MCP, QGIS plugins, and native hosts to discover package families, transports, limits, entitlement state, and environment/workspace availability without treating the manifest as an authorization grant.
 
 **Runtime licensing** — Offline Ed25519-signed JSON license files can be loaded from `Licensing:LicensePath` or uploaded through the admin API when enabled. Missing or invalid configured files fall back to Community mode; paid features are activated only by active entitlement keys and return HTTP `402 Payment Required` or gRPC `FAILED_PRECONDITION` when missing.
 

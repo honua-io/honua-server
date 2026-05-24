@@ -79,6 +79,7 @@ public static class EndpointRegistry
         new("PUT", "/api/v1/admin/openapi.json"),
         new("DELETE", "/api/v1/admin/openapi.json"),
         new("PATCH", "/api/v1/admin/openapi.json"),
+        new("GET", "/api/v1/capabilities/manifest"),
         new("GET", "/api/v1/admin/connections/{id}/tables"),
         new("POST", "/api/v1/admin/connections/{id}/tables"),
         new("PUT", "/api/v1/admin/connections/{id}/tables"),
