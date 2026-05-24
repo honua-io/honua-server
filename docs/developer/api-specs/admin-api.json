@@ -5735,7 +5735,8 @@
           },
           "acceptedIssuerThumbprints": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": { "type": "string" },
+            "description": "SHA-1 thumbprints of accepted issuer/CA certificates (leaf thumbprints are not honored). Matching is gated by cryptographic chain build, so the issuing CA must be reachable through the OS trust store or the profile's customTrustAnchorCertificates; a thumbprint that only appears in a forged leaf's attached chain will not match."
           },
           "acceptedIssuerSubjects": {
             "type": "array",
@@ -5757,7 +5758,7 @@
           "requireChainTrust": {
             "type": "boolean",
             "default": false,
-            "description": "Required to be true when acceptedIssuerSubjects is non-empty; subject-DN matching alone is forgeable, so the chain must be cryptographically verified."
+            "description": "Required to be true when acceptedIssuerSubjects is non-empty; subject-DN matching alone is forgeable, so the chain must be cryptographically verified. Thumbprint and custom-anchor profiles already perform cryptographic chain build during the issuer-hint check; enabling requireChainTrust additionally applies the configured chainRevocationMode (Online/Offline)."
           },
           "chainRevocationMode": {
             "type": "string",
@@ -5777,7 +5778,7 @@
           "customTrustAnchorCertificates": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "Custom trust anchor public certificates as PEM or base64 DER. Private keys are never accepted."
+            "description": "Custom trust anchor public certificates as PEM or base64 DER. Private keys are never accepted. The presented chain must build successfully under custom-root trust mode and terminate at one of these anchors; cryptographic chain verification is enforced regardless of requireChainTrust."
           }
         }
       },
