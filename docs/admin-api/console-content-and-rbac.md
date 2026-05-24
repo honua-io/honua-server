@@ -125,6 +125,21 @@ than overloaded on `PUT`:
   when supplied but does **not** influence audit stamping — a privileged
   caller creating a content item on behalf of another user is still
   recorded as the acting principal in `createdById`/`updatedById`.
+- **Team-scope precondition.** `visibility: "team"` is only valid when a
+  non-empty `teamScopeId` is paired with it. `POST` and `PUT` requests that
+  supply `visibility: "team"` without a `teamScopeId` are rejected with
+  `400 Bad Request`. Because `PATCH` cannot change `teamScopeId` (the patch
+  contract is restricted to displayable fields), `PATCH` requests that set
+  `visibility: "team"` are rejected unless the stored item already carries a
+  `teamScopeId` — clients must use `PUT` to establish the team scope before
+  the visibility transition.
+- **Closed enum sets.** Body enums (`itemType`, `visibility`, `lifecycle`,
+  `operationalState`, and each entry of the action-check `actions` array)
+  are validated against the documented string set. Requests carrying
+  undefined numeric values such as `"itemType": 999` or `"actions": [999]`
+  are rejected with `400 Bad Request` even though the underlying
+  `JsonStringEnumConverter` would otherwise admit them; the validator uses
+  AOT-safe switch-based whitelists to stay reflection-free.
 
 ## RBAC verbs
 

@@ -64,6 +64,21 @@ internal static class ConsoleActionEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure("At least one target is required."));
             }
 
+            if (request.Actions is { Count: > 0 } supplied)
+            {
+                // Reject undefined numeric values (e.g. actions: [999]) — the
+                // default JsonStringEnumConverter accepts integers, but the
+                // contract is a closed string set.
+                foreach (var action in supplied)
+                {
+                    if (!ConsoleEnumParser.IsDefined(action))
+                    {
+                        return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                            $"actions contain undefined value '{(int)action}'."));
+                    }
+                }
+            }
+
             var actions = request.Actions is { Count: > 0 } ? request.Actions : AllActions;
 
             var itemIds = new List<string>();

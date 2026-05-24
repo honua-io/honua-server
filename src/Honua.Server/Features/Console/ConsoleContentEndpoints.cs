@@ -194,6 +194,16 @@ internal static class ConsoleContentEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure(validationError));
             }
 
+            if (!TryValidateContractEnums(request.ItemType, request.Visibility, request.Lifecycle, request.OperationalState, out var enumError))
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(enumError));
+            }
+
+            if (!TryValidateTeamScope(request.Visibility, request.TeamScopeId, out var teamScopeError))
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(teamScopeError));
+            }
+
             var item = ConsoleContentMapper.FromCreateRequest(request, context.User);
             var stored = await store.CreateAsync(item, context.RequestAborted).ConfigureAwait(false);
             var withActions = await ConsoleContentMapper.WithComputedActionsAsync(stored, evaluator, context.User, context.RequestAborted).ConfigureAwait(false);
@@ -232,6 +242,16 @@ internal static class ConsoleContentEndpoints
             if (!TryValidate(request, out var validationError))
             {
                 return TypedResults.BadRequest(ApiResponse<object>.Failure(validationError));
+            }
+
+            if (!TryValidateContractEnums(request.ItemType, request.Visibility, request.Lifecycle, request.OperationalState, out var enumError))
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(enumError));
+            }
+
+            if (!TryValidateTeamScope(request.Visibility, request.TeamScopeId, out var teamScopeError))
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(teamScopeError));
             }
 
             var existing = await store.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
@@ -287,6 +307,27 @@ internal static class ConsoleContentEndpoints
             if (!TryValidate(request, out var validationError))
             {
                 return TypedResults.BadRequest(ApiResponse<object>.Failure(validationError));
+            }
+
+            if (request.Visibility.HasValue && !ConsoleEnumParser.IsDefined(request.Visibility.Value))
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                    $"visibility '{(int)request.Visibility.Value}' is not a defined Console visibility scope."));
+            }
+
+            // Cross-field check: PATCH cannot raise visibility to team unless the
+            // stored item already has a team scope. The patch contract intentionally
+            // excludes teamScopeId, so adjusting team scope requires a full PUT.
+            if (request.Visibility == ConsoleVisibility.Team)
+            {
+                var existingForCheck = await store.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
+                if (existingForCheck is null)
+                    return TypedResults.NotFound(ApiResponse<object>.Failure("Console content item not found."));
+                if (string.IsNullOrWhiteSpace(existingForCheck.TeamScopeId))
+                {
+                    return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                        "visibility 'team' requires a non-empty teamScopeId; use PUT to set the team scope before patching visibility."));
+                }
             }
 
             var patch = ConsoleContentMapper.FromPatchRequest(request, context.User);
@@ -388,6 +429,61 @@ internal static class ConsoleContentEndpoints
         }
         error = string.Join(", ", validationResults.Select(r => r.ErrorMessage));
         return false;
+    }
+
+    /// <summary>
+    /// Rejects requests whose enum-valued body fields carry undefined numeric
+    /// values (e.g. <c>itemType: 999</c>). The default
+    /// <c>JsonStringEnumConverter</c> accepts integer values, so contract
+    /// guarantees from the closed string set in <see cref="ConsoleContentItemType"/>
+    /// etc. must be enforced explicitly at the boundary.
+    /// </summary>
+    private static bool TryValidateContractEnums(
+        ConsoleContentItemType itemType,
+        ConsoleVisibility? visibility,
+        Honua.Core.Features.Metadata.Domain.V2.MetadataV2LifecycleStatus? lifecycle,
+        Honua.Core.Features.Metadata.Domain.V2.MetadataV2OperationalState? operationalState,
+        out string error)
+    {
+        if (!ConsoleEnumParser.IsDefined(itemType))
+        {
+            error = $"itemType '{(int)itemType}' is not a defined Console content item type.";
+            return false;
+        }
+        if (visibility.HasValue && !ConsoleEnumParser.IsDefined(visibility.Value))
+        {
+            error = $"visibility '{(int)visibility.Value}' is not a defined Console visibility scope.";
+            return false;
+        }
+        if (lifecycle.HasValue && !ConsoleEnumParser.IsDefined(lifecycle.Value))
+        {
+            error = $"lifecycle '{(int)lifecycle.Value}' is not a defined Metadata v2 lifecycle status.";
+            return false;
+        }
+        if (operationalState.HasValue && !ConsoleEnumParser.IsDefined(operationalState.Value))
+        {
+            error = $"operationalState '{(int)operationalState.Value}' is not a defined Metadata v2 operational state.";
+            return false;
+        }
+        error = string.Empty;
+        return true;
+    }
+
+    /// <summary>
+    /// Rejects create/PUT requests that select team visibility without supplying
+    /// the team scope id that the RBAC evaluator needs to gate access. Without
+    /// this guard, the item would be unreachable by non-owners despite the
+    /// documented contract.
+    /// </summary>
+    private static bool TryValidateTeamScope(ConsoleVisibility? visibility, string? teamScopeId, out string error)
+    {
+        if (visibility == ConsoleVisibility.Team && string.IsNullOrWhiteSpace(teamScopeId))
+        {
+            error = "visibility 'team' requires a non-empty teamScopeId.";
+            return false;
+        }
+        error = string.Empty;
+        return true;
     }
 
     private static bool TryParseItemTypeList(string? value, out IReadOnlyList<ConsoleContentItemType>? values, out string error)

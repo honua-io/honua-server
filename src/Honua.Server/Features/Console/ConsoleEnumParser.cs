@@ -2,14 +2,79 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Console.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Server.Features.Console;
 
 /// <summary>
-/// AOT-safe wire-name parsers for Console enum query parameters.
+/// AOT-safe wire-name parsers and value whitelist checks for Console enum
+/// query and body parameters. Switch-based to stay reflection-free under
+/// trimming/Native AOT.
 /// </summary>
 internal static class ConsoleEnumParser
 {
+    /// <summary>
+    /// Returns true when the value is a defined member of the enum. Used to
+    /// reject undefined numeric values (e.g. <c>itemType: 999</c>) that the
+    /// default <c>JsonStringEnumConverter</c> would otherwise accept.
+    /// </summary>
+    public static bool IsDefined(ConsoleContentItemType value) => value switch
+    {
+        ConsoleContentItemType.Service
+            or ConsoleContentItemType.Layer
+            or ConsoleContentItemType.SavedMap
+            or ConsoleContentItemType.Dashboard
+            or ConsoleContentItemType.Report
+            or ConsoleContentItemType.GeneratedApp
+            or ConsoleContentItemType.OpenData => true,
+        _ => false,
+    };
+
+    /// <inheritdoc cref="IsDefined(ConsoleContentItemType)" />
+    public static bool IsDefined(ConsoleVisibility value) => value switch
+    {
+        ConsoleVisibility.Personal
+            or ConsoleVisibility.Team
+            or ConsoleVisibility.Organization
+            or ConsoleVisibility.Public => true,
+        _ => false,
+    };
+
+    /// <inheritdoc cref="IsDefined(ConsoleContentItemType)" />
+    public static bool IsDefined(ConsoleContentAction value) => value switch
+    {
+        ConsoleContentAction.View
+            or ConsoleContentAction.Edit
+            or ConsoleContentAction.Publish
+            or ConsoleContentAction.Share
+            or ConsoleContentAction.Embed
+            or ConsoleContentAction.Operate
+            or ConsoleContentAction.Administer => true,
+        _ => false,
+    };
+
+    /// <inheritdoc cref="IsDefined(ConsoleContentItemType)" />
+    public static bool IsDefined(MetadataV2LifecycleStatus value) => value switch
+    {
+        MetadataV2LifecycleStatus.Draft
+            or MetadataV2LifecycleStatus.Active
+            or MetadataV2LifecycleStatus.Deprecated
+            or MetadataV2LifecycleStatus.Retired
+            or MetadataV2LifecycleStatus.Archived => true,
+        _ => false,
+    };
+
+    /// <inheritdoc cref="IsDefined(ConsoleContentItemType)" />
+    public static bool IsDefined(MetadataV2OperationalState value) => value switch
+    {
+        MetadataV2OperationalState.Unknown
+            or MetadataV2OperationalState.Ready
+            or MetadataV2OperationalState.Pending
+            or MetadataV2OperationalState.Degraded
+            or MetadataV2OperationalState.Failed => true,
+        _ => false,
+    };
+
     public static bool TryParse(string raw, out ConsoleContentItemType value)
     {
         switch (raw)

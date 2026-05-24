@@ -384,6 +384,115 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/console/content")]
+    public async Task CreateContent_WithTeamVisibilityButNoTeamScope_ReturnsBadRequest()
+    {
+        // team visibility requires a non-empty teamScopeId so the RBAC evaluator
+        // can resolve team-scope membership. Accepting team visibility without a
+        // scope would silently make the item unreachable to anyone except the owner.
+        var create = new CreateConsoleContentItemRequest
+        {
+            Name = "team-no-scope",
+            ItemType = ConsoleContentItemType.Layer,
+            Visibility = ConsoleVisibility.Team,
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/console/content", create, JsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/console/content/{id}")]
+    public async Task ReplaceContent_WithTeamVisibilityButNoTeamScope_ReturnsBadRequest()
+    {
+        var createResponse = await _client.PostAsJsonAsync("/api/v1/console/content", new CreateConsoleContentItemRequest
+        {
+            Name = "team-put-target",
+            ItemType = ConsoleContentItemType.Layer,
+            Visibility = ConsoleVisibility.Organization,
+        }, JsonOptions);
+        var created = JsonSerializer.Deserialize<ApiResponse<ConsoleContentItem>>(
+            await createResponse.Content.ReadAsStringAsync(), JsonOptions)!;
+
+        var replace = new UpdateConsoleContentItemRequest
+        {
+            Name = "team-put-target",
+            ItemType = ConsoleContentItemType.Layer,
+            Visibility = ConsoleVisibility.Team,
+            Generation = created.Data!.Generation,
+        };
+
+        var putResponse = await _client.PutAsJsonAsync($"/api/v1/console/content/{created.Data.Id}", replace, JsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, putResponse.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PATCH /api/v1/console/content/{id}")]
+    public async Task PatchContent_VisibilityToTeam_WithoutTeamScope_ReturnsBadRequest()
+    {
+        // PATCH does not expose teamScopeId by contract, so promoting visibility
+        // to team without first setting a team scope via PUT must be rejected.
+        var createResponse = await _client.PostAsJsonAsync("/api/v1/console/content", new CreateConsoleContentItemRequest
+        {
+            Name = "patch-team-target",
+            ItemType = ConsoleContentItemType.Layer,
+            Visibility = ConsoleVisibility.Organization,
+        }, JsonOptions);
+        var created = JsonSerializer.Deserialize<ApiResponse<ConsoleContentItem>>(
+            await createResponse.Content.ReadAsStringAsync(), JsonOptions)!;
+
+        var patch = new PatchConsoleContentItemRequest
+        {
+            Visibility = ConsoleVisibility.Team,
+        };
+        using var patchRequest = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/console/content/{created.Data!.Id}")
+        {
+            Content = JsonContent.Create(patch, options: JsonOptions),
+        };
+
+        var patchResponse = await _client.SendAsync(patchRequest);
+
+        Assert.Equal(HttpStatusCode.BadRequest, patchResponse.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/content")]
+    public async Task CreateContent_WithUndefinedItemTypeNumber_ReturnsBadRequest()
+    {
+        // JsonStringEnumConverter accepts integer values, so the contract has to
+        // be enforced at the boundary. A body like {"itemType": 999} must yield
+        // a 400 instead of a 500 (or silent accept of an undefined value).
+        using var content = new StringContent(
+            """
+            {"name":"bad-enum","itemType":999}
+            """,
+            System.Text.Encoding.UTF8,
+            "application/json");
+
+        var response = await _client.PostAsync("/api/v1/console/content", content);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/actions/check")]
+    public async Task CheckActions_WithUndefinedActionNumber_ReturnsBadRequest()
+    {
+        using var content = new StringContent(
+            """
+            {"targets":[{"itemId":"anything"}],"actions":[999]}
+            """,
+            System.Text.Encoding.UTF8,
+            "application/json");
+
+        var response = await _client.PostAsync("/api/v1/console/actions/check", content);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/console/content/{id}/provenance")]
     public async Task GetProvenance_ReturnsChain()
     {
