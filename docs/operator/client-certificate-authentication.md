@@ -149,12 +149,15 @@ Native gRPC mTLS requires HTTPS/HTTP2 to Kestrel or trusted TLS termination in
 front of Honua. Local h2c development ports cannot satisfy mTLS-required modes.
 
 Required native mTLS modes detect gRPC-Web requests by `Content-Type:
-application/grpc-web*` or the `X-Grpc-Web` header and skip the certificate
-check for those requests, while native HTTP/2 gRPC to the same
-`ProtectedGrpcServices` paths is still enforced. Browser Console and gRPC-Web
-users are therefore not required to present a client certificate by this
-feature; native Console and SDK clients can use full HTTPS/HTTP2 and OS
-certificate-store selection.
+application/grpc-web*` (the same signal ASP.NET Core's `UseGrpcWeb` uses for
+protocol detection) and skip the certificate check for those requests, while
+native HTTP/2 gRPC to the same `ProtectedGrpcServices` paths is still
+enforced. The client-supplied `X-Grpc-Web` header is intentionally not
+honoured on its own — accepting it would let an unauthenticated caller bypass
+the native mTLS gate by adding a single header to an `application/grpc`
+request. Browser Console and gRPC-Web users are therefore not required to
+present a client certificate by this feature; native Console and SDK clients
+can use full HTTPS/HTTP2 and OS certificate-store selection.
 
 ### Trusted Proxy Or Ingress
 

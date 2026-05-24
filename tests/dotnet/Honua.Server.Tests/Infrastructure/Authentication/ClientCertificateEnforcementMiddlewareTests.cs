@@ -179,11 +179,11 @@ public sealed class ClientCertificateEnforcementMiddlewareTests
     }
 
     [Theory]
-    [InlineData("application/grpc-web+proto", null)]
-    [InlineData(null, "1")]
-    public async Task InvokeAsync_RequiredForNative_WithGrpcWebRequestWithoutCertificate_CallsNext(
-        string? contentType,
-        string? grpcWebHeader)
+    [InlineData("application/grpc-web+proto")]
+    [InlineData("application/grpc-web-text+proto")]
+    [InlineData("application/grpc-web")]
+    public async Task InvokeAsync_RequiredForNative_WithGrpcWebContentTypeWithoutCertificate_CallsNext(
+        string contentType)
     {
         var context = new DefaultHttpContext
         {
@@ -191,10 +191,6 @@ public sealed class ClientCertificateEnforcementMiddlewareTests
         };
         context.Request.Path = "/geospatial.v1.FeatureService/Query";
         context.Request.ContentType = contentType;
-        if (grpcWebHeader is not null)
-        {
-            context.Request.Headers["X-Grpc-Web"] = grpcWebHeader;
-        }
 
         var nextCalled = false;
         var middleware = CreateMiddleware(
@@ -215,6 +211,45 @@ public sealed class ClientCertificateEnforcementMiddlewareTests
 
         nextCalled.Should().BeTrue();
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_RequiredForNative_WithXGrpcWebHeaderButNativeContentType_Rejects()
+    {
+        // X-Grpc-Web is a client-supplied header and is not part of the gRPC-Web spec
+        // that UseGrpcWeb protocol-detects on. Treating it as sufficient on its own
+        // would let any caller spoof gRPC-Web framing by adding one header to a native
+        // application/grpc request and bypass required native mTLS.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services.BuildServiceProvider(),
+        };
+        context.Request.Path = "/geospatial.v1.FeatureService/Query";
+        context.Request.ContentType = "application/grpc";
+        context.Request.Headers["X-Grpc-Web"] = "1";
+        context.Response.Body = new MemoryStream();
+
+        var nextCalled = false;
+        var middleware = CreateMiddleware(
+            new StubValidator(null),
+            new ClientCertificateAuthenticationOptions
+            {
+                Mode = ClientCertificateAuthenticationMode.RequiredForNative,
+                EnvironmentId = "prod",
+                ProtectedGrpcServices = ["geospatial.v1.FeatureService"],
+            },
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            });
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeFalse();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
     }
 
     [Fact]

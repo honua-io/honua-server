@@ -184,7 +184,10 @@ internal sealed class ClientCertificateEnforcementMiddleware(
         // UseGrpcWeb runs ahead of this middleware and rewrites Content-Type from
         // application/grpc-web* to application/grpc, so the captured pre-rewrite flag is
         // the authoritative signal. Fall back to the live request only when the capture
-        // middleware was not registered (defensive; integration tests rely on it).
+        // middleware was not registered (defensive; unit tests still drive this path).
+        // Both paths gate on Content-Type only because that is what UseGrpcWeb uses to
+        // protocol-detect gRPC-Web; trusting a client-supplied X-Grpc-Web header would
+        // let an unauthenticated caller bypass required native mTLS.
         if (context.Items.TryGetValue(ClientCertificateHttpContextItems.OriginalGrpcWebRequest, out var value) &&
             value is bool wasGrpcWeb)
         {
@@ -192,13 +195,8 @@ internal sealed class ClientCertificateEnforcementMiddleware(
         }
 
         var contentType = context.Request.ContentType;
-        if (!string.IsNullOrWhiteSpace(contentType) &&
-            contentType.StartsWith("application/grpc-web", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        return context.Request.Headers.ContainsKey("X-Grpc-Web");
+        return !string.IsNullOrWhiteSpace(contentType) &&
+            contentType.StartsWith("application/grpc-web", StringComparison.OrdinalIgnoreCase);
     }
 }
 

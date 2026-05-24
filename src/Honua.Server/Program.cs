@@ -850,13 +850,16 @@ app.UseGlobalExceptionHandling();
 // Capture the original gRPC-Web indicator before UseGrpcWeb rewrites Content-Type
 // from application/grpc-web* to application/grpc, so the client-certificate
 // enforcement middleware downstream can still distinguish gRPC-Web from native gRPC
-// and skip mTLS enforcement for browser/gRPC-Web callers.
+// and skip mTLS enforcement for browser/gRPC-Web callers. Only Content-Type is
+// authoritative here — it matches what UseGrpcWeb itself uses for protocol
+// detection, and treating a client-supplied X-Grpc-Web header as sufficient
+// would let an unauthenticated caller bypass required native mTLS by setting a
+// single header alongside application/grpc.
 app.Use(async (context, next) =>
 {
     var contentType = context.Request.ContentType;
-    var isGrpcWeb = (!string.IsNullOrWhiteSpace(contentType) &&
-            contentType.StartsWith("application/grpc-web", StringComparison.OrdinalIgnoreCase)) ||
-        context.Request.Headers.ContainsKey("X-Grpc-Web");
+    var isGrpcWeb = !string.IsNullOrWhiteSpace(contentType) &&
+        contentType.StartsWith("application/grpc-web", StringComparison.OrdinalIgnoreCase);
     context.Items[ClientCertificateHttpContextItems.OriginalGrpcWebRequest] = isGrpcWeb;
     await next(context).ConfigureAwait(false);
 });

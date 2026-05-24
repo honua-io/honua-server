@@ -45,8 +45,13 @@ public sealed class ClientCertificateGrpcWebPipelineTests
 
     [IntegrationTest]
     [Endpoint("POST /geospatial.v1.SpecService/PlanSpec")]
-    public async Task RequiredForNative_WithGrpcWebXGrpcWebHeader_DoesNotReturn401()
+    public async Task RequiredForNative_WithXGrpcWebHeaderButNativeContentType_Returns401()
     {
+        // X-Grpc-Web is a client-supplied header and is not part of the gRPC-Web
+        // protocol detection that UseGrpcWeb performs. The capture middleware must
+        // not treat it as authoritative; otherwise an unauthenticated caller could
+        // bypass required native mTLS by adding one header to an application/grpc
+        // request.
         using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
@@ -59,8 +64,8 @@ public sealed class ClientCertificateGrpcWebPipelineTests
 
         using var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized,
-            "X-Grpc-Web alone must mark the request as gRPC-Web for the capture middleware");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+            "a client-supplied X-Grpc-Web header alongside application/grpc must not bypass required native mTLS");
     }
 
     [IntegrationTest]
