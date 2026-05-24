@@ -75,6 +75,15 @@ See the [OGC API Coverages Coverage](../../gis/specifications/ogc-api-coverages-
 
 ---
 
+## Runtime Capability Manifest
+
+**Protocol**: Honua runtime capability discovery
+**Endpoint**: `/api/v1/capabilities/manifest`
+**Authentication**: Optional; anonymous callers receive the public/default tenant view
+**Response Types**: `application/json`, `application/vnd.honua.capability-manifest+json`
+
+Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SDK clients need to decide whether package families, temporal features, offline sync, realtime streams, jobs, GitOps, native transports, gRPC, mTLS, uploads, edits, or analysis controls should be enabled for the current request scope. The response is generated per request, is marked `no-store`, and is informational only; operation endpoints remain the source of truth for authorization. See [Capability Manifest](../capability-manifest.md) for the field contract and stable capability ids.
+
 ## Server Management API
 
 **Protocol**: REST API

@@ -1,6 +1,6 @@
 # Capability Manifest
 
-`GET /api/v1/capabilities/manifest` returns the server capability manifest for the current request scope. It is a neutral discovery contract for Console, MCP, QGIS plugins, native hosts, and SDK clients. It is not an authorization grant, and it does not replace the admin-only `GET /api/v1/admin/capabilities` endpoint.
+`GET /api/v1/capabilities/manifest` returns the server capability manifest for the current request scope. It is a neutral discovery contract for Console, MCP, QGIS plugins, native hosts, and SDK clients. It is not an authorization grant, and it does not replace the admin-only `GET /api/v1/admin/capabilities` endpoint used by control-plane SDKs.
 
 ## Request
 
@@ -13,9 +13,16 @@
 | Response types | `application/json`, `application/vnd.honua.capability-manifest+json` |
 | Cache policy | `Cache-Control: no-store`, `Pragma: no-cache`, `Expires: 0` |
 
-`environment` and `workspaceId` are optional scope hints. When supplied, each value is trimmed and must be non-empty, 128 characters or fewer, and limited to ASCII letters, digits, `-`, `_`, `.`, `:`, and `@`. Invalid identifiers return a safe `400` response without provider details. Unknown or currently unavailable environments do not fail the request; the manifest returns `environment.available=false` and marks environment-scoped capabilities unavailable with `reasonCode=environment-unavailable`.
+`environment` and `workspaceId` are optional scope hints. When supplied they are trimmed and must be non-empty, 128 characters or fewer, and limited to ASCII letters, digits, `-`, `_`, `.`, `:`, and `@`. Empty, oversized, or unsafe identifiers return a safe `400` response. Unknown or currently unavailable environments do not fail the request; the manifest returns `environment.available=false` and marks environment-scoped capabilities unavailable with `reasonCode=environment-unavailable`.
 
-The endpoint returns `application/vnd.honua.capability-manifest+json` when the `Accept` header contains that media type. All other successful requests return `application/json`.
+Clients can request the Honua media type when they want to distinguish this contract from generic JSON:
+
+```bash
+curl -H "Accept: application/vnd.honua.capability-manifest+json" \
+  "https://your-honua-server.example/api/v1/capabilities/manifest?environment=prod&workspaceId=field-team"
+```
+
+If the `Accept` header contains `application/vnd.honua.capability-manifest+json`, the response uses that content type. Otherwise the endpoint returns `application/json`.
 
 ## Document Shape
 
@@ -33,6 +40,118 @@ The response has `schemaVersion=honua.capability_manifest.v1` and includes:
 | `limits` | Runtime limits for previews, query, analysis, publication, jobs, uploads, streaming, edits, geometry, and attachments. |
 | `policies` | License/entitlement state, caller capability strings, and the non-authorizing manifest notice. |
 | `links` | Related surfaces, including the manifest itself, feature streaming capabilities, and admin capabilities. |
+
+Optional nullable fields are omitted when null. Clients should treat an absent optional field the same as `null`.
+
+Example response excerpt, with required sections such as `packages` and `limits` omitted for brevity:
+
+```json
+{
+  "schemaVersion": "honua.capability_manifest.v1",
+  "issuedAt": "2026-05-24T21:00:00Z",
+  "scope": {
+    "tenantId": "tenant-a",
+    "tenantSource": "Default",
+    "environment": "prod",
+    "workspaceId": "field-team",
+    "workspaceAvailable": true,
+    "authenticated": true
+  },
+  "server": {
+    "serverVersion": "1.0.0",
+    "apiVersion": "v1",
+    "metadataApiVersion": "metadata.honua.io/v2alpha1",
+    "metadataSchemaVersion": "2.0.0-alpha.1",
+    "deploymentEnvironment": "Production"
+  },
+  "environment": {
+    "environmentId": "prod",
+    "requested": true,
+    "available": true,
+    "revision": 42,
+    "loadedAt": "2026-05-24T20:55:00Z"
+  },
+  "capabilities": [
+    {
+      "id": "publication.metadata-release",
+      "category": "publication",
+      "supported": true,
+      "available": true,
+      "messageKey": "capabilities.publication.metadata-release.available"
+    }
+  ],
+  "transports": {
+    "items": [
+      {
+        "id": "mcp",
+        "supported": true,
+        "available": true,
+        "messageKey": "transports.mcp.available"
+      }
+    ],
+    "mtlsMode": "optional",
+    "forwardedClientCertificateEnabled": false
+  },
+  "policies": {
+    "currentEdition": "Pro",
+    "licenseValidationState": "Valid",
+    "licenseValid": true,
+    "callerCapabilities": ["catalog.publish"],
+    "entitlements": [
+      {
+        "key": "import.file",
+        "active": true,
+        "minimumEdition": "Pro"
+      }
+    ],
+    "authorizationNotice": "Manifest availability is informational only; operation endpoints remain the source of truth for authorization, tenant, environment, license, and resource checks."
+  },
+  "links": [
+    {
+      "rel": "self",
+      "href": "/api/v1/capabilities/manifest",
+      "type": "application/vnd.honua.capability-manifest+json"
+    }
+  ]
+}
+```
+
+## Capability IDs
+
+The initial `honua.capability_manifest.v1` document emits these capability ids:
+
+| Category | IDs |
+|---|---|
+| `packages` | `package.metadata-v2`, `package.release-package`, `package.gitops-manifest`, `package.map`, `package.app` |
+| `temporal` | `temporal.filtering`, `temporal.extent-discovery`, `temporal.histogram`, `temporal.time-series-tiles` |
+| `sync` | `sync.offline` |
+| `realtime` | `realtime.feature-streams` |
+| `alerts` | `alerts.geofence` |
+| `jobs` | `jobs.runner` |
+| `gitops` | `gitops.release-manifest` |
+| `transports` | `transport.grpc`, `transport.grpc-web`, `transport.native-grpc`, `transport.mcp`, `transport.qgis` |
+| `security` | `security.mtls` |
+| `preview` | `preview.file-import` |
+| `query` | `query.features` |
+| `analysis` | `analysis.spatial` |
+| `publication` | `publication.metadata-release` |
+| `upload` | `upload.file` |
+| `edit` | `edit.features` |
+
+Each capability record uses:
+
+| Field | Meaning |
+|---|---|
+| `supported` | Whether this server build has the backing implementation registered. |
+| `available` | Whether the capability is usable for this request after configuration, environment, workspace, authentication, license, entitlement, and policy checks. |
+| `reasonCode` | Present only when unavailable. Use this for deterministic control state. |
+| `entitlementKey` | Present for edition-gated capabilities. |
+| `minimumEdition` | Present when an entitlement has a known minimum edition. |
+| `messageKey` | Stable UI copy key. Available capabilities use `capabilities.{id}.available`; unavailable capabilities use `capabilities.{id}.{reasonCode}`. |
+
+Transport ids under `transports.items` are `rest-http`, `geoservices-rest`, `ogc-http`, `odata`, `stac`, `tiles`, `grpc`, `grpc-web`, `native-grpc`, `mcp`, `qgis`, and `mtls`. Transport message keys use the `transports.{id}.*` prefix. The top-level `transports.mtlsMode` value is one of `disabled`, `optional`, `required-for-native`, `required-for-admin`, or `required-for-environment`.
+
+Package families under `packages.families` are `metadata-v2-graph`, `metadata-release-package`, `gitops-metadata-release-manifest`, `map-package`, and `app-package`. `packages.storageFamilies` and `packages.publicationFamilies` are generated from the Metadata v2 enum values so clients can render storage/publication choices without duplicating server-side lists.
 
 Reason codes are stable client-facing strings:
 

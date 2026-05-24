@@ -13,7 +13,8 @@ This map summarizes source-backed runtime capabilities in `honua-server`.
 
 ## Control Plane
 
-- Public runtime capability manifest for package, transport, limit, policy, environment, and workspace discovery, plus admin APIs for auth, capabilities, version, connections, service settings, layer publishing, Metadata v2 environment inventory, release packages, compatibility prevalidation, metadata resources, styles, SLD import/export, style suggestions, imports, manifests, GitOps watch/drift/approval, deployment control, observability, geofence zones and alert rules, form package authoring/publishing, cache, rate limits, license, identity/OIDC, users, roles, geocoding, tile operations, and scene datasets.
+- Public capability manifest at `/api/v1/capabilities/manifest` for Console, MCP, QGIS plugins, native hosts, and SDK clients to discover package family support, temporal/sync/realtime/jobs/GitOps/transport/mTLS states, runtime limits, policy hints, license/entitlement decisions, environment/workspace availability, and related capability links without probing individual endpoints.
+- Admin APIs for auth, capabilities, version, connections, service settings, layer publishing, Metadata v2 environment inventory, release packages, compatibility prevalidation, metadata resources, styles, SLD import/export, style suggestions, imports, manifests, GitOps watch/drift/approval, deployment control, observability, geofence zones and alert rules, form package authoring/publishing, cache, rate limits, license, identity/OIDC, users, roles, geocoding, tile operations, and scene datasets.
 - Console/Studio APIs for server-owned content metadata, action checks, mutable Studio package drafts, immutable content versions, validation, preview plans, publication requests, reopen, comparison, and rollback for query, analysis, map, dashboard, report, form, app, workflow, GP, and ETL packages.
 - Analysis content APIs for saving query/package content versions, previewing saved queries, submitting/rerunning analysis packages, resolving artifact bindings, and exposing safe failed-job diagnostics.
 - Spec workspace endpoints for validate, plan, apply, cancel, artifacts, and grounding helpers.
@@ -28,10 +29,10 @@ This map summarizes source-backed runtime capabilities in `honua-server`.
 ## Source Evidence
 
 - Endpoint inventory: `src/Honua.Server/Features/**/*Endpoints.cs`
-- Capability manifest: `src/Honua.Server/Features/Capabilities/`
 - Scene APIs: `src/Honua.Server/Features/Admin/SceneDatasetEndpoints.cs`, `src/Honua.Server/Features/Protocols/Scene/SceneEndpoints.cs`
 - Terrain/elevation/vector tiles: `src/Honua.Server/Features/Protocols/Terrain/`, `Elevation/`, `Tiles/`
 - Admin/control plane: `src/Honua.Server/Features/Admin/`
+- Capability manifest: `src/Honua.Server/Features/Capabilities/`
 - Import/migration: `src/Honua.Server/Features/Import/`
 - Forms package/submission contracts: `src/Honua.Core/Features/Forms/Packages/`, `src/Honua.Server/Features/Forms/`, `src/Honua.Postgres/Features/Forms/`
 - Monitoring and health: `src/Honua.Server/Features/Infrastructure/Monitoring/`, `src/Honua.Server/Features/HealthCheck/`

@@ -31,6 +31,10 @@ graph TD
 
 ---
 
+## **Runtime Capability Discovery**
+
+Clients that need to render feature-specific controls should fetch `GET /api/v1/capabilities/manifest` before relying on hardcoded assumptions. The manifest is public, request-scoped, and marked `no-store`; it reports package families, temporal/sync/realtime/jobs/GitOps/transport/mTLS availability, runtime limits, and policy or entitlement reason codes for the current tenant, optional `environment`, optional `workspaceId`, and principal. Treat it as informational UI/bootstrap data only. Authorization still happens at the operation endpoint. See [Capability Manifest](capability-manifest.md) for the response contract and stable ids.
+
 ## **Pattern 1: Direct API Integration**
 
 **Best for**: Simple apps, prototypes, direct client access

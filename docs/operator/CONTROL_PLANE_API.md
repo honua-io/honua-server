@@ -34,7 +34,7 @@ The Honua Admin UI is intended to operate as a UI on top of this control-plane A
 | `/api/v1/admin` | Admin API root |
 | `/api/v1/admin/config` | Runtime configuration and env var reference |
 | `/api/v1/admin/openapi.json` | Admin API OpenAPI schema snapshot served by runtime |
-| `/api/v1/capabilities/manifest` | Public request-scoped capability manifest for clients and SDKs |
+| `/api/v1/capabilities/manifest` | Public neutral runtime capability manifest for Console, MCP, QGIS, native hosts, and SDK clients |
 | `/openapi.json` | OGC API Features OpenAPI schema |
 | `/healthz/live` | Liveness check |
 | `/healthz/ready` | Readiness check |
@@ -78,7 +78,7 @@ Additional metrics endpoints:
 |-- memory
 ```
 
-**Note**: Some admin surfaces vary by build. SDK-facing compatibility should not guess. Use `GET /api/v1/admin/capabilities` for the stable admin compatibility handshake, `GET /api/v1/capabilities/manifest` for public package/transport/limit/policy discovery, `/api/v1/admin/config` for runtime validation details, and `/api/v1/admin/openapi.json` for the bundled `docs/developer/api-specs/admin-api.json` contract snapshot used for SDK generation. See [Capability Manifest](../developer/capability-manifest.md) for the public manifest contract.
+**Note**: Some admin surfaces vary by build. Control-plane SDK compatibility should not guess. Use `GET /api/v1/admin/capabilities` for the authenticated admin runtime handshake, `/api/v1/admin/config` for runtime validation details, and `/api/v1/admin/openapi.json` for the bundled `docs/developer/api-specs/admin-api.json` contract snapshot used for SDK generation. Use the public `GET /api/v1/capabilities/manifest` when clients need user/environment/workspace-scoped feature availability such as package families, temporal support, sync/realtime, jobs, GitOps, transports, mTLS, runtime limits, and entitlement/policy hints. See [Capability Manifest](../developer/capability-manifest.md) for the public manifest contract.
 
 ## **SDKs and Contract Governance**
 
