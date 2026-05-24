@@ -396,13 +396,15 @@ public sealed class WebAppFixture : IAsyncLifetime
     }
 
     /// <summary>
-    /// Returns the V2 schema fields for the layers the Postgres test seed
-    /// (tests/seed/server.yaml) populates via the v1 layer_fields table. OGC API
-    /// Features queryables, OData $metadata, STAC properties, and other
-    /// schema-driven endpoints all read this from the V2 resource graph after the
-    /// metadata-v2 cutover. Layers without seeded fields (everything but 0/1/2)
-    /// return an empty list — matching the v1 fixture behavior where those layers
-    /// have no layer_fields rows.
+    /// Returns the V2 schema fields for the layers the Postgres test seeds
+    /// (tests/seed/server.yaml, tests/seed/odata.yaml) populate via the v1
+    /// layer_fields table. Returns the union of all known seed fields so the same
+    /// fixture works for tests selecting different seed files. OGC API Features
+    /// queryables, OData $metadata, STAC properties, and other schema-driven
+    /// endpoints all read this from the V2 resource graph after the metadata-v2
+    /// cutover. Layers without seeded fields (everything but 0/1/2) return an
+    /// empty list — matching the v1 fixture behavior where those layers have no
+    /// layer_fields rows.
     /// </summary>
     private static IEnumerable<MetadataV2Field>? GetSeededLayerSchemaFields(int layerIndex)
         => layerIndex switch
@@ -416,6 +418,14 @@ public sealed class WebAppFixture : IAsyncLifetime
                 new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime, Nullable = true, Description = "Timestamp" },
                 new MetadataV2Field { Name = "event_date", Type = MetadataV2FieldType.DateTime, Nullable = true, Description = "Event date" },
                 new MetadataV2Field { Name = "created_date", Type = MetadataV2FieldType.Date, Nullable = true, Description = "Created date" },
+                new MetadataV2Field { Name = "population", Type = MetadataV2FieldType.Integer, Nullable = true, Description = "City population" },
+                new MetadataV2Field { Name = "area_sq_km", Type = MetadataV2FieldType.Double, Nullable = true, Description = "Area in square kilometers" },
+                new MetadataV2Field { Name = "is_capital", Type = MetadataV2FieldType.Boolean, Nullable = true, Description = "Whether city is a state capital" },
+                new MetadataV2Field { Name = "state", Type = MetadataV2FieldType.String, Nullable = true, Description = "State name" },
+                new MetadataV2Field { Name = "country", Type = MetadataV2FieldType.String, Nullable = true, Description = "Country name" },
+                new MetadataV2Field { Name = "founded_year", Type = MetadataV2FieldType.Integer, Nullable = true, Description = "Year the city was founded" },
+                new MetadataV2Field { Name = "rating", Type = MetadataV2FieldType.Double, Nullable = true, Description = "City rating" },
+                new MetadataV2Field { Name = "notes", Type = MetadataV2FieldType.String, Nullable = true, Description = "Additional notes" },
                 new MetadataV2Field
                 {
                     Name = "shape",
@@ -430,8 +440,10 @@ public sealed class WebAppFixture : IAsyncLifetime
                 new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Description = "Object ID" },
                 new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Description = "Name field" },
                 new MetadataV2Field { Name = "related_id", Type = MetadataV2FieldType.Integer, Nullable = true, Description = "Foreign key to origin layer" },
+                new MetadataV2Field { Name = "city_id", Type = MetadataV2FieldType.Integer, Nullable = true, Description = "Origin city ID" },
                 new MetadataV2Field { Name = "description", Type = MetadataV2FieldType.String, Nullable = true, Description = "Description" },
-                new MetadataV2Field { Name = "category", Type = MetadataV2FieldType.String, Nullable = true, Description = "Category" },
+                new MetadataV2Field { Name = "category", Type = MetadataV2FieldType.String, Nullable = true, Description = "Landmark category" },
+                new MetadataV2Field { Name = "established_year", Type = MetadataV2FieldType.Integer, Nullable = true, Description = "Year established" },
                 new MetadataV2Field
                 {
                     Name = "shape",
