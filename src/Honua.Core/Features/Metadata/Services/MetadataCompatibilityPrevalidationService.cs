@@ -194,6 +194,11 @@ public sealed class MetadataCompatibilityPrevalidationService(
 
         foreach (var script in dataScripts)
         {
+            if (script is null)
+            {
+                throw new ArgumentException("DataScripts cannot contain null entries.", nameof(dataScripts));
+            }
+
             if (string.IsNullOrWhiteSpace(script.ScriptId))
             {
                 throw new ArgumentException("DataScripts cannot contain a script with a blank scriptId.", nameof(dataScripts));
@@ -229,6 +234,13 @@ public sealed class MetadataCompatibilityPrevalidationService(
         var fieldCount = 0;
         foreach (var resource in contract.Resources)
         {
+            if (resource is null)
+            {
+                throw new ArgumentException(
+                    $"Data script '{scriptId}' {propertyName}.resources cannot contain null entries.",
+                    propertyName);
+            }
+
             if (string.IsNullOrWhiteSpace(resource.SemanticId))
             {
                 throw new ArgumentException($"Data script '{scriptId}' contains a contract resource with a blank semanticId.", propertyName);
@@ -237,6 +249,16 @@ public sealed class MetadataCompatibilityPrevalidationService(
             if (resource.Fields is null)
             {
                 throw new ArgumentException($"Data script '{scriptId}' contract fields must be an array.", propertyName);
+            }
+
+            foreach (var field in resource.Fields)
+            {
+                if (field is null)
+                {
+                    throw new ArgumentException(
+                        $"Data script '{scriptId}' contract fields cannot contain null entries.",
+                        propertyName);
+                }
             }
 
             fieldCount += resource.Fields.Count;

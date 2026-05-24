@@ -387,6 +387,76 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Validation)]
     [Endpoint("POST /api/v1/admin/metadata/prevalidate")]
+    public async Task Prevalidate_WithNullDataScriptContractEntries_ReturnsBadRequest()
+    {
+        (string Body, string ExpectedMessage)[] cases =
+        [
+            (
+                """
+                {
+                  "releasePackageId": "33333333-3333-3333-3333-333333333333",
+                  "targetEnvironment": "staging",
+                  "dataScripts": [null]
+                }
+                """,
+                "DataScripts cannot contain null entries."),
+            (
+                """
+                {
+                  "releasePackageId": "33333333-3333-3333-3333-333333333333",
+                  "targetEnvironment": "staging",
+                  "dataScripts": [
+                    {
+                      "scriptId": "script.bad-resource",
+                      "declaredOperations": [],
+                      "afterContract": {
+                        "resources": [null]
+                      }
+                    }
+                  ]
+                }
+                """,
+                "Data script 'script.bad-resource' afterContract.resources cannot contain null entries."),
+            (
+                """
+                {
+                  "releasePackageId": "33333333-3333-3333-3333-333333333333",
+                  "targetEnvironment": "staging",
+                  "dataScripts": [
+                    {
+                      "scriptId": "script.bad-field",
+                      "declaredOperations": [],
+                      "afterContract": {
+                        "resources": [
+                          {
+                            "semanticId": "res.parcels",
+                            "fields": [null]
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+                """,
+                "Data script 'script.bad-field' contract fields cannot contain null entries."),
+        ];
+
+        foreach (var (body, expectedMessage) in cases)
+        {
+            var response = await _client.PostAsync(
+                "/api/v1/admin/metadata/prevalidate",
+                new StringContent(body, Encoding.UTF8, "application/json"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var payload = await response.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(payload);
+            document.RootElement.GetProperty("detail").GetString().Should().Contain(expectedMessage);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Validation)]
+    [Endpoint("POST /api/v1/admin/metadata/prevalidate")]
     public async Task Prevalidate_WithUnavailableTarget_ReturnsUnknownReport()
     {
         var body = JsonSerializer.Serialize(
