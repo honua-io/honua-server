@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using FluentAssertions;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
@@ -165,6 +166,60 @@ public sealed class LocalOperateEventFeedTests
     }
 
     [UnitTest]
+    public async Task ListAsync_AlertSource_AppliesSeverityBeforeSourcePagination()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var alertQuery = new FakeAlertQuery
+        {
+            Items =
+            {
+                NewSummary(1, AlertSeverity.Info, now),
+                NewSummary(2, AlertSeverity.Critical, now.AddMinutes(-1))
+            }
+        };
+
+        var feed = new LocalOperateEventFeed(NullLogger<LocalOperateEventFeed>.Instance, alertQuery);
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            MinimumSeverity = OperateEventSeverity.Warning,
+            PageSize = 1
+        });
+
+        page.Items.Should().ContainSingle();
+        page.Items[0].EventId.Should().Be("alert:2");
+        alertQuery.SeenFilters.Should().Contain(filter =>
+            filter.Severities != null &&
+            filter.Severities.Contains(AlertSeverity.Warning) &&
+            filter.Severities.Contains(AlertSeverity.Critical));
+    }
+
+    [UnitTest]
+    public async Task ListAsync_AlertSource_ResourceRefFetchesDirectEvent()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var alertQuery = new FakeAlertQuery
+        {
+            Items =
+            {
+                NewSummary(1, AlertSeverity.Critical, now),
+                NewSummary(2, AlertSeverity.Warning, now.AddMinutes(-1))
+            }
+        };
+
+        var feed = new LocalOperateEventFeed(NullLogger<LocalOperateEventFeed>.Instance, alertQuery);
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            ResourceRef = "alert/2",
+            PageSize = 1
+        });
+
+        page.Items.Should().ContainSingle();
+        page.Items[0].EventId.Should().Be("alert:2");
+        alertQuery.ListCalls.Should().Be(0);
+        alertQuery.GetCalls.Should().Be(1);
+    }
+
+    [UnitTest]
     public async Task ListAsync_FiltersByCorrelationIdAcrossSources()
     {
         var auditReader = new FakeAuditReader
@@ -195,6 +250,78 @@ public sealed class LocalOperateEventFeedTests
 
         page.Items.Should().HaveCount(1);
         page.Items[0].EventId.Should().Be("audit:1");
+    }
+
+    [UnitTest]
+    public async Task ListAsync_AuditSource_AppliesResourceRefBeforeSourcePagination()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var auditReader = new FakeAuditReader
+        {
+            Items =
+            {
+                new AuditEventRecord
+                {
+                    AuditId = 1, Timestamp = now,
+                    EventType = AuditEventType.AdminAction, Actor = "alice",
+                    ActorType = AuditActorType.UserId, ResourceType = "job",
+                    ResourceId = "new", Action = "job.retry",
+                    Outcome = AuditOutcome.Success, CorrelationId = "corr-1"
+                },
+                new AuditEventRecord
+                {
+                    AuditId = 2, Timestamp = now.AddMinutes(-1),
+                    EventType = AuditEventType.AdminAction, Actor = "alice",
+                    ActorType = AuditActorType.UserId, ResourceType = "alert_event",
+                    ResourceId = "42", Action = "alert.resolve",
+                    Outcome = AuditOutcome.Success, CorrelationId = "corr-2"
+                }
+            }
+        };
+
+        var feed = new LocalOperateEventFeed(NullLogger<LocalOperateEventFeed>.Instance, auditReader: auditReader);
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            ResourceRef = "alert_event/42",
+            PageSize = 1
+        });
+
+        page.Items.Should().ContainSingle();
+        page.Items[0].EventId.Should().Be("audit:2");
+        auditReader.SeenFilters.Should().Contain(filter =>
+            filter.ResourceType == "alert_event" && filter.ResourceId == "42");
+    }
+
+    [UnitTest]
+    public async Task ListAsync_ServiceFilter_DropsUnscopedSources()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var alertQuery = new FakeAlertQuery
+        {
+            Items = { NewSummary(1, AlertSeverity.Warning, now) }
+        };
+        var auditReader = new FakeAuditReader
+        {
+            Items =
+            {
+                new AuditEventRecord
+                {
+                    AuditId = 1, Timestamp = now.AddMinutes(1),
+                    EventType = AuditEventType.AdminAction, Actor = "alice",
+                    ActorType = AuditActorType.UserId, ResourceType = "alert_event",
+                    ResourceId = "1", Action = "alert.acknowledge",
+                    Outcome = AuditOutcome.Success, CorrelationId = "corr-1"
+                }
+            }
+        };
+        var store = new FakeProgressStore();
+        store.Add(NewJob("job-1", now.AddMinutes(2)));
+
+        var feed = new LocalOperateEventFeed(NullLogger<LocalOperateEventFeed>.Instance, alertQuery, auditReader, store);
+        var page = await feed.ListAsync(new OperateEventFilter { ServiceId = "svc", PageSize = 10 });
+
+        page.Items.Should().ContainSingle();
+        page.Items[0].Kind.Should().Be(OperateEventKind.Alert);
     }
 
     [UnitTest]
@@ -240,6 +367,26 @@ public sealed class LocalOperateEventFeedTests
         store.ActiveIdsCalls.Should().Be(0, "direct lookup must skip the unordered active-ids list");
     }
 
+    [UnitTest]
+    public async Task ListAsync_JobSource_AppliesSeverityBeforeTrimming()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var store = new FakeProgressStore();
+        store.Add(NewJob("job-processing", now));
+        store.Add(NewJob("job-failed", now.AddMinutes(-1), OperationStatus.Failed));
+
+        var feed = new LocalOperateEventFeed(NullLogger<LocalOperateEventFeed>.Instance, progressStore: store);
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            MinimumSeverity = OperateEventSeverity.Error,
+            PageSize = 1
+        });
+
+        page.Items.Should().ContainSingle();
+        page.Items[0].EventId.Should().Be("job:job-failed");
+    }
+
     private static AlertEventSummary NewSummary(long id, AlertSeverity severity, DateTimeOffset occurredAt)
         => new()
         {
@@ -256,24 +403,86 @@ public sealed class LocalOperateEventFeedTests
             LifecycleStatus = AlertLifecycleStatus.Open
         };
 
-    private static FakeProgress NewJob(string operationId, DateTimeOffset startedAt)
+    private static FakeProgress NewJob(
+        string operationId,
+        DateTimeOffset startedAt,
+        OperationStatus status = OperationStatus.Processing)
         => new()
         {
             OperationId = operationId,
             Type = OperationType.Import,
-            Status = OperationStatus.Processing,
+            Status = status,
             StartedAt = startedAt
         };
 
     private sealed class FakeAlertQuery : IAlertEventQuery
     {
         public List<AlertEventSummary> Items { get; } = new();
+        public List<AlertEventFilter> SeenFilters { get; } = new();
+        public int ListCalls { get; private set; }
+        public int GetCalls { get; private set; }
 
         public Task<AlertEventPage> ListAsync(AlertEventFilter filter, CancellationToken cancellationToken = default)
-            => Task.FromResult(new AlertEventPage { Items = Items, NextCursor = null });
+        {
+            ListCalls++;
+            SeenFilters.Add(filter);
+
+            var filtered = Items.AsEnumerable();
+            if (filter.From is { } from)
+            {
+                filtered = filtered.Where(item => item.OccurredAt >= from);
+            }
+
+            if (filter.To is { } to)
+            {
+                filtered = filtered.Where(item => item.OccurredAt < to);
+            }
+
+            if (!string.IsNullOrWhiteSpace(filter.ServiceId))
+            {
+                filtered = filtered.Where(item => item.ServiceId == filter.ServiceId);
+            }
+
+            if (filter.LayerId is { } layerId)
+            {
+                filtered = filtered.Where(item => item.LayerId == layerId);
+            }
+
+            if (filter.ObjectId is { } objectId)
+            {
+                filtered = filtered.Where(item => item.ObjectId == objectId);
+            }
+
+            if (filter.RuleId is { } ruleId)
+            {
+                filtered = filtered.Where(item => item.RuleId == ruleId);
+            }
+
+            if (filter.Severities is { Count: > 0 } severities)
+            {
+                filtered = filtered.Where(item => severities.Contains(item.Severity));
+            }
+
+            var ordered = filtered
+                .OrderByDescending(item => item.OccurredAt)
+                .ThenByDescending(item => item.EventId)
+                .ToArray();
+            var offset = ParseCursor(filter.Cursor);
+            var pageSize = Math.Max(1, filter.PageSize);
+            var page = ordered.Skip(offset).Take(pageSize).ToArray();
+            var nextOffset = offset + page.Length;
+            var nextCursor = nextOffset < ordered.Length
+                ? nextOffset.ToString(CultureInfo.InvariantCulture)
+                : null;
+
+            return Task.FromResult(new AlertEventPage { Items = page, NextCursor = nextCursor });
+        }
 
         public Task<AlertEventSummary?> GetAsync(long eventId, CancellationToken cancellationToken = default)
-            => Task.FromResult<AlertEventSummary?>(Items.FirstOrDefault(item => item.EventId == eventId));
+        {
+            GetCalls++;
+            return Task.FromResult<AlertEventSummary?>(Items.FirstOrDefault(item => item.EventId == eventId));
+        }
     }
 
     private sealed class ThrowingAlertQuery : IAlertEventQuery
@@ -288,10 +497,71 @@ public sealed class LocalOperateEventFeedTests
     private sealed class FakeAuditReader : IAuditLogReader
     {
         public List<AuditEventRecord> Items { get; } = new();
+        public List<AuditLogFilter> SeenFilters { get; } = new();
 
         public Task<AuditEventPage> ListAsync(AuditLogFilter filter, CancellationToken cancellationToken = default)
-            => Task.FromResult(new AuditEventPage { Items = Items, NextCursor = null });
+        {
+            SeenFilters.Add(filter);
+
+            var filtered = Items.AsEnumerable();
+            if (filter.From is { } from)
+            {
+                filtered = filtered.Where(item => item.Timestamp >= from);
+            }
+
+            if (filter.To is { } to)
+            {
+                filtered = filtered.Where(item => item.Timestamp < to);
+            }
+
+            if (!string.IsNullOrWhiteSpace(filter.Actor))
+            {
+                filtered = filtered.Where(item => item.Actor == filter.Actor);
+            }
+
+            if (!string.IsNullOrWhiteSpace(filter.ResourceType))
+            {
+                filtered = filtered.Where(item => item.ResourceType == filter.ResourceType);
+            }
+
+            if (!string.IsNullOrWhiteSpace(filter.ResourceId))
+            {
+                filtered = filtered.Where(item => item.ResourceId == filter.ResourceId);
+            }
+
+            if (!string.IsNullOrWhiteSpace(filter.Action))
+            {
+                filtered = filtered.Where(item => item.Action == filter.Action);
+            }
+
+            if (!string.IsNullOrWhiteSpace(filter.CorrelationId))
+            {
+                filtered = filtered.Where(item => item.CorrelationId == filter.CorrelationId);
+            }
+
+            if (filter.Outcomes is { Count: > 0 } outcomes)
+            {
+                filtered = filtered.Where(item => outcomes.Contains(item.Outcome));
+            }
+
+            var ordered = filtered
+                .OrderByDescending(item => item.Timestamp)
+                .ThenByDescending(item => item.AuditId)
+                .ToArray();
+            var offset = ParseCursor(filter.Cursor);
+            var pageSize = Math.Max(1, filter.PageSize);
+            var page = ordered.Skip(offset).Take(pageSize).ToArray();
+            var nextOffset = offset + page.Length;
+            var nextCursor = nextOffset < ordered.Length
+                ? nextOffset.ToString(CultureInfo.InvariantCulture)
+                : null;
+
+            return Task.FromResult(new AuditEventPage { Items = page, NextCursor = nextCursor });
+        }
     }
+
+    private static int ParseCursor(string? cursor)
+        => int.TryParse(cursor, NumberStyles.Integer, CultureInfo.InvariantCulture, out var offset) ? offset : 0;
 
     private sealed class FakeProgressStore : IUniversalProgressStore
     {

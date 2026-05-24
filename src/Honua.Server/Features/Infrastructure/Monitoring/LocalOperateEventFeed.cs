@@ -35,6 +35,7 @@ namespace Honua.Server.Features.Infrastructure.Monitoring;
 internal sealed class LocalOperateEventFeed : IOperateEventFeed
 {
     internal const int MaxPageSize = 200;
+    private const int MaxSourceScanPages = 4;
 
     private readonly IAlertEventQuery? _alertQuery;
     private readonly IAuditLogReader? _auditReader;
@@ -113,50 +114,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             ObservabilityFeedLog.JobSourceFailed(_logger, ex);
         }
 
-        if (filter.MinimumSeverity is { } min)
-        {
-            collected.RemoveAll(item => item.Severity < min);
-        }
-
-        if (!string.IsNullOrWhiteSpace(filter.CorrelationId))
-        {
-            collected.RemoveAll(item => !string.Equals(item.CorrelationId, filter.CorrelationId, StringComparison.Ordinal));
-        }
-
-        if (!string.IsNullOrWhiteSpace(filter.TraceId))
-        {
-            collected.RemoveAll(item => !string.Equals(item.TraceId, filter.TraceId, StringComparison.Ordinal));
-        }
-
-        if (!string.IsNullOrWhiteSpace(filter.RequestId))
-        {
-            collected.RemoveAll(item => !string.Equals(item.RequestId, filter.RequestId, StringComparison.Ordinal));
-        }
-
-        if (!string.IsNullOrWhiteSpace(filter.OperationId))
-        {
-            collected.RemoveAll(item => !string.Equals(item.OperationId, filter.OperationId, StringComparison.Ordinal));
-        }
-
-        if (!string.IsNullOrWhiteSpace(filter.ReleaseId))
-        {
-            collected.RemoveAll(item => !string.Equals(item.ReleaseId, filter.ReleaseId, StringComparison.Ordinal));
-        }
-
-        if (!string.IsNullOrWhiteSpace(filter.ChangeSetId))
-        {
-            collected.RemoveAll(item => !string.Equals(item.ChangeSetId, filter.ChangeSetId, StringComparison.Ordinal));
-        }
-
-        if (!string.IsNullOrWhiteSpace(filter.Actor))
-        {
-            collected.RemoveAll(item => !string.Equals(item.Actor, filter.Actor, StringComparison.Ordinal));
-        }
-
-        if (!string.IsNullOrWhiteSpace(filter.ResourceRef))
-        {
-            collected.RemoveAll(item => !string.Equals(item.ResourceRef, filter.ResourceRef, StringComparison.Ordinal));
-        }
+        collected.RemoveAll(item => !MatchesFilter(filter, item));
 
         collected.Sort(static (left, right) => right.OccurredAt.CompareTo(left.OccurredAt));
         var trimmed = collected.Take(pageSize).ToArray();
@@ -176,20 +134,63 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
     {
         Debug.Assert(_alertQuery is not null);
 
+        if (!AlertSourceCanMatch(filter))
+        {
+            return Array.Empty<OperateEvent>();
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.ResourceRef))
+        {
+            if (!TryParseAlertResourceRef(filter.ResourceRef, out var eventId))
+            {
+                return Array.Empty<OperateEvent>();
+            }
+
+            var item = await _alertQuery!.GetAsync(eventId, cancellationToken).ConfigureAwait(false);
+            if (item is null)
+            {
+                return Array.Empty<OperateEvent>();
+            }
+
+            var value = MapAlertEvent(item);
+            return MatchesFilter(filter, value) ? new[] { value } : Array.Empty<OperateEvent>();
+        }
+
         var alertFilter = new AlertEventFilter
         {
             From = filter.From,
             To = filter.To,
             ServiceId = filter.ServiceId,
             LayerId = filter.LayerId,
+            Severities = ToAlertSeverities(filter.MinimumSeverity),
             PageSize = pageSize
         };
 
-        var page = await _alertQuery!.ListAsync(alertFilter, cancellationToken).ConfigureAwait(false);
-        var results = new List<OperateEvent>(page.Items.Count);
-        foreach (var item in page.Items)
+        var results = new List<OperateEvent>(pageSize);
+        string? cursor = null;
+        for (var scanPage = 0; scanPage < MaxSourceScanPages && results.Count < pageSize; scanPage++)
         {
-            results.Add(MapAlertEvent(item));
+            var page = await _alertQuery!.ListAsync(alertFilter with { Cursor = cursor }, cancellationToken).ConfigureAwait(false);
+            foreach (var item in page.Items)
+            {
+                var value = MapAlertEvent(item);
+                if (MatchesFilter(filter, value))
+                {
+                    results.Add(value);
+                    if (results.Count == pageSize)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            if (string.IsNullOrEmpty(page.NextCursor) ||
+                string.Equals(page.NextCursor, cursor, StringComparison.Ordinal))
+            {
+                break;
+            }
+
+            cursor = page.NextCursor;
         }
 
         return results;
@@ -202,20 +203,60 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
     {
         Debug.Assert(_auditReader is not null);
 
+        if (!AuditSourceCanMatch(filter))
+        {
+            return Array.Empty<OperateEvent>();
+        }
+
+        var outcomes = ToAuditOutcomes(filter.MinimumSeverity);
+        if (outcomes is { Length: 0 })
+        {
+            return Array.Empty<OperateEvent>();
+        }
+
+        var resourceFilter = ParseAuditResourceRef(filter.ResourceRef);
+        if (!string.IsNullOrWhiteSpace(filter.ResourceRef) && resourceFilter is null)
+        {
+            return Array.Empty<OperateEvent>();
+        }
+
         var auditFilter = new AuditLogFilter
         {
             From = filter.From,
             To = filter.To,
             Actor = filter.Actor,
+            ResourceType = resourceFilter?.ResourceType,
+            ResourceId = resourceFilter?.ResourceId,
+            Outcomes = outcomes,
             CorrelationId = filter.CorrelationId,
             PageSize = pageSize
         };
 
-        var page = await _auditReader!.ListAsync(auditFilter, cancellationToken).ConfigureAwait(false);
-        var results = new List<OperateEvent>(page.Items.Count);
-        foreach (var item in page.Items)
+        var results = new List<OperateEvent>(pageSize);
+        string? cursor = null;
+        for (var scanPage = 0; scanPage < MaxSourceScanPages && results.Count < pageSize; scanPage++)
         {
-            results.Add(MapAuditRecord(item));
+            var page = await _auditReader!.ListAsync(auditFilter with { Cursor = cursor }, cancellationToken).ConfigureAwait(false);
+            foreach (var item in page.Items)
+            {
+                var value = MapAuditRecord(item);
+                if (MatchesFilter(filter, value))
+                {
+                    results.Add(value);
+                    if (results.Count == pageSize)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            if (string.IsNullOrEmpty(page.NextCursor) ||
+                string.Equals(page.NextCursor, cursor, StringComparison.Ordinal))
+            {
+                break;
+            }
+
+            cursor = page.NextCursor;
         }
 
         return results;
@@ -227,6 +268,21 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         CancellationToken cancellationToken)
     {
         Debug.Assert(_progressStore is not null);
+
+        if (!JobSourceCanMatch(filter))
+        {
+            return Array.Empty<OperateEvent>();
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.ResourceRef))
+        {
+            if (!TryParseJobResourceRef(filter.ResourceRef, out var resourceOperationId))
+            {
+                return Array.Empty<OperateEvent>();
+            }
+
+            return await LoadSingleJobAsync(filter, resourceOperationId, cancellationToken).ConfigureAwait(false);
+        }
 
         // Fast path: a specific OperationId was requested. The active-IDs list
         // is unordered (ConcurrentDictionary.Keys / Redis SMEMBERS) and may
@@ -266,7 +322,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             }
 
             var value = MapProgress(progress);
-            if (!WithinTimeRange(filter, value))
+            if (!MatchesFilter(filter, value))
             {
                 continue;
             }
@@ -305,7 +361,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         }
 
         var value = MapProgress(progress);
-        if (!WithinTimeRange(filter, value))
+        if (!MatchesFilter(filter, value))
         {
             return Array.Empty<OperateEvent>();
         }
@@ -313,7 +369,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         return new[] { value };
     }
 
-    private static bool WithinTimeRange(OperateEventFilter filter, OperateEvent value)
+    private static bool MatchesFilter(OperateEventFilter filter, OperateEvent value)
     {
         if (filter.From is { } fromBound && value.OccurredAt < fromBound)
         {
@@ -325,7 +381,161 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             return false;
         }
 
+        if (!string.IsNullOrWhiteSpace(filter.ServiceId) &&
+            !string.Equals(value.ServiceId, filter.ServiceId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (filter.LayerId is { } layerId && value.LayerId != layerId)
+        {
+            return false;
+        }
+
+        if (filter.MinimumSeverity is { } min && value.Severity < min)
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.CorrelationId) &&
+            !string.Equals(value.CorrelationId, filter.CorrelationId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.TraceId) &&
+            !string.Equals(value.TraceId, filter.TraceId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.RequestId) &&
+            !string.Equals(value.RequestId, filter.RequestId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.OperationId) &&
+            !string.Equals(value.OperationId, filter.OperationId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.ReleaseId) &&
+            !string.Equals(value.ReleaseId, filter.ReleaseId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.ChangeSetId) &&
+            !string.Equals(value.ChangeSetId, filter.ChangeSetId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Actor) &&
+            !string.Equals(value.Actor, filter.Actor, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.ResourceRef) &&
+            !string.Equals(value.ResourceRef, filter.ResourceRef, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
         return true;
+    }
+
+    private static bool AlertSourceCanMatch(OperateEventFilter filter)
+        => string.IsNullOrWhiteSpace(filter.CorrelationId) &&
+           string.IsNullOrWhiteSpace(filter.TraceId) &&
+           string.IsNullOrWhiteSpace(filter.RequestId) &&
+           string.IsNullOrWhiteSpace(filter.OperationId) &&
+           string.IsNullOrWhiteSpace(filter.ReleaseId) &&
+           string.IsNullOrWhiteSpace(filter.ChangeSetId) &&
+           string.IsNullOrWhiteSpace(filter.Actor);
+
+    private static bool AuditSourceCanMatch(OperateEventFilter filter)
+        => string.IsNullOrWhiteSpace(filter.ServiceId) &&
+           filter.LayerId is null &&
+           string.IsNullOrWhiteSpace(filter.TraceId) &&
+           string.IsNullOrWhiteSpace(filter.RequestId) &&
+           string.IsNullOrWhiteSpace(filter.OperationId) &&
+           string.IsNullOrWhiteSpace(filter.ReleaseId) &&
+           string.IsNullOrWhiteSpace(filter.ChangeSetId);
+
+    private static bool JobSourceCanMatch(OperateEventFilter filter)
+        => string.IsNullOrWhiteSpace(filter.ServiceId) &&
+           filter.LayerId is null &&
+           string.IsNullOrWhiteSpace(filter.CorrelationId) &&
+           string.IsNullOrWhiteSpace(filter.TraceId) &&
+           string.IsNullOrWhiteSpace(filter.RequestId) &&
+           string.IsNullOrWhiteSpace(filter.ReleaseId) &&
+           string.IsNullOrWhiteSpace(filter.ChangeSetId) &&
+           string.IsNullOrWhiteSpace(filter.Actor) &&
+           filter.MinimumSeverity != OperateEventSeverity.Critical;
+
+    private static AlertSeverity[]? ToAlertSeverities(OperateEventSeverity? minimumSeverity)
+        => minimumSeverity switch
+        {
+            null or OperateEventSeverity.Info => null,
+            OperateEventSeverity.Notice or OperateEventSeverity.Warning => new[] { AlertSeverity.Warning, AlertSeverity.Critical },
+            OperateEventSeverity.Error or OperateEventSeverity.Critical => new[] { AlertSeverity.Critical },
+            _ => null
+        };
+
+    private static AuditOutcome[]? ToAuditOutcomes(OperateEventSeverity? minimumSeverity)
+        => minimumSeverity switch
+        {
+            null or OperateEventSeverity.Info or OperateEventSeverity.Notice => null,
+            OperateEventSeverity.Warning => new[] { AuditOutcome.Failure, AuditOutcome.Denied },
+            OperateEventSeverity.Error => new[] { AuditOutcome.Failure },
+            OperateEventSeverity.Critical => Array.Empty<AuditOutcome>(),
+            _ => null
+        };
+
+    private static bool TryParseAlertResourceRef(string resourceRef, out long eventId)
+    {
+        const string Prefix = "alert/";
+        eventId = 0;
+        return resourceRef.StartsWith(Prefix, StringComparison.Ordinal) &&
+               long.TryParse(resourceRef[Prefix.Length..], NumberStyles.Integer, CultureInfo.InvariantCulture, out eventId);
+    }
+
+    private static bool TryParseJobResourceRef(string resourceRef, out string operationId)
+    {
+        const string Prefix = "job/";
+        operationId = string.Empty;
+        if (!resourceRef.StartsWith(Prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        operationId = resourceRef[Prefix.Length..];
+        return !string.IsNullOrWhiteSpace(operationId);
+    }
+
+    private static AuditResourceFilter? ParseAuditResourceRef(string? resourceRef)
+    {
+        if (string.IsNullOrWhiteSpace(resourceRef))
+        {
+            return null;
+        }
+
+        var slash = resourceRef.IndexOf('/');
+        if (slash < 0)
+        {
+            return new AuditResourceFilter(resourceRef, ResourceId: null);
+        }
+
+        if (slash == 0 || slash == resourceRef.Length - 1)
+        {
+            return null;
+        }
+
+        return new AuditResourceFilter(resourceRef[..slash], resourceRef[(slash + 1)..]);
     }
 
     private static OperateEvent MapAlertEvent(AlertEventSummary summary)
@@ -404,6 +614,8 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         OperationStatus.Completed => OperateEventSeverity.Notice,
         _ => OperateEventSeverity.Info
     };
+
+    private sealed record AuditResourceFilter(string ResourceType, string? ResourceId);
 }
 
 internal static partial class ObservabilityFeedLog

@@ -180,7 +180,7 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/investigations/{investigationId}/pins")]
-    public async Task AddPin_RejectsNumericEventKind()
+    public async Task AddPin_RejectsDefinedNumericEventKind()
     {
         var created = await _client.PostAsJsonAsync("/api/v1/admin/investigations", new { title = "incident-num" });
         var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("investigationId").GetString()!;
@@ -189,7 +189,7 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
             new
             {
                 eventRef = "alert:1",
-                eventKind = "99",
+                eventKind = "1",
                 occurredAt = DateTimeOffset.UtcNow
             });
 
@@ -198,14 +198,14 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("PATCH /api/v1/admin/investigations/{investigationId}")]
-    public async Task UpdateInvestigation_RejectsNumericStatus()
+    public async Task UpdateInvestigation_RejectsDefinedNumericStatus()
     {
         var created = await _client.PostAsJsonAsync("/api/v1/admin/investigations", new { title = "incident-status-num" });
         var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("investigationId").GetString()!;
 
         var patch = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/admin/investigations/{id}")
         {
-            Content = JsonContent.Create(new { status = "2" })
+            Content = JsonContent.Create(new { status = "1" })
         };
         var response = await _client.SendAsync(patch);
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -247,6 +247,19 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
         using var detailsDoc = JsonDocument.Parse(_audit.Recorded[0].Details);
         detailsDoc.RootElement.GetProperty("resourceKind").GetString().Should().Be("changeSet");
         detailsDoc.RootElement.GetProperty("resourceId").GetString().Should().Be(hostileResourceId);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/investigations/{investigationId}/links")]
+    public async Task AddLink_RejectsDefinedNumericResourceKind()
+    {
+        var created = await _client.PostAsJsonAsync("/api/v1/admin/investigations", new { title = "incident-link-num" });
+        var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("investigationId").GetString()!;
+
+        var response = await _client.PostAsJsonAsync($"/api/v1/admin/investigations/{id}/links",
+            new { resourceKind = "1", resourceId = "42" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]

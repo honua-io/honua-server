@@ -95,6 +95,24 @@ public sealed class ObservabilityEventEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/events")]
+    public async Task ListEvents_RejectsDefinedNumericKind()
+    {
+        var response = await _client.GetAsync("/api/v1/admin/observability/events?kind=1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/events")]
+    public async Task ListEvents_RejectsDefinedNumericMinimumSeverity()
+    {
+        var response = await _client.GetAsync("/api/v1/admin/observability/events?minSeverity=3");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/observability/audit")]
     public async Task ListAudit_ReturnsItemsAndPaginates()
     {

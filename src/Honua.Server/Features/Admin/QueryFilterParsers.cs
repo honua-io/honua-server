@@ -121,23 +121,49 @@ internal static class QueryFilterParsers
     }
 
     /// <summary>
-    /// Parses an enum value while rejecting numeric strings that resolve to
-    /// undefined members. This avoids leaking malformed admin input into the
-    /// stores, where unsupported numeric values would surface as 500s.
+    /// Parses an enum value while rejecting numeric wire tokens. The admin API
+    /// contracts use symbolic enum names, so both defined and undefined numbers
+    /// are treated as malformed input.
     /// </summary>
     public static bool TryParseDefinedEnum<TEnum>(string value, out TEnum parsed)
         where TEnum : struct, Enum
     {
+        var token = value.AsSpan().Trim();
+        if (token.Length == 0 || IsIntegerToken(token))
+        {
+            parsed = default;
+            return false;
+        }
+
         if (!Enum.TryParse<TEnum>(value, ignoreCase: true, out parsed))
         {
             return false;
         }
 
-        // Enum.TryParse accepts arbitrary numeric strings (e.g. "99"); guard against
-        // names that are purely digits/whitespace and confirm the resulting member exists.
+        // Enum.TryParse also accepts comma-delimited names and other values that
+        // do not correspond to a single member; keep query/body contracts exact.
         if (!Enum.IsDefined(parsed))
         {
             return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsIntegerToken(ReadOnlySpan<char> token)
+    {
+        var start = token[0] is '+' or '-' ? 1 : 0;
+        if (start == token.Length)
+        {
+            return false;
+        }
+
+        for (var i = start; i < token.Length; i++)
+        {
+            if (token[i] is < '0' or > '9')
+            {
+                return false;
+            }
         }
 
         return true;
