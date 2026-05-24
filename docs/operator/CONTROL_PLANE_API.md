@@ -582,7 +582,16 @@ records for historical query, detail, logs, artifacts, actions, cancellation,
 and retry. Structured execution logs are stored via `IExecutionLogStore` and
 are available through `GET /api/v1/admin/jobs/{jobId}/logs` with cursor
 pagination.
-See [Operations — Job Orchestration](operations.md#job-orchestration) for
+
+The jobs list accepts filters for `status`, `kind`, `backend`, `queue`,
+`actor`/`requestedBy`, `correlationId`, `traceId`, `definitionId`,
+`resourceRef`, `environment`, `server`, `releaseId`, `changeSetId`, `alertId`,
+`from`, `to`, `limit`, and `cursor`. Responses are plain camelCase JSON DTOs
+with `Cache-Control: no-store`; per-job reads also emit `X-Correlation-Id`
+when present. The full response contract, artifact availability states,
+action rules, retry/cancel conflict behavior, and Operate event deep links are
+documented in [Console Job Observability](../admin-api/console-job-observability.md).
+See [Operations - Job Orchestration](operations.md#job-orchestration) for
 lifecycle and tuning details.
 
 Workflow runs produced by the declarative orchestration layer surface through

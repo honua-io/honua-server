@@ -31,6 +31,8 @@ Admin-only diagnostics:
 |----------|---------------|
 | `GET /api/v1/admin/observability/errors` | Recent error history |
 | `GET /api/v1/admin/observability/telemetry` | Tracing status |
+| `GET /api/v1/admin/observability/events` | Console Operate event timeline, including durable job projections when `kind=job` |
+| `GET /api/v1/admin/jobs` | Durable execution job history with filters, cursor pagination, status, phase, resource refs, artifacts, and latest state event |
 | `GET /api/v1/admin/performance/database/query-cache/statistics` | Prepared statement cache health |
 
 Detailed operational diagnostics (also admin-authenticated):
@@ -125,6 +127,29 @@ Monitor for `JobExecutionService`, `JobReconciliationService`, and
 stale heartbeats, abandoned jobs, retry exhaustion, and claim-recovery
 events. For lifecycle details and tuning, see
 [Operations — Job Orchestration](operations.md#job-orchestration).
+
+Console job viewer APIs read the same durable substrate through
+`/api/v1/admin/jobs/**`. They return `Cache-Control: no-store`, expose
+structured log pages from `IExecutionLogStore`, distinguish artifact
+availability states, and advertise allowed `cancel`/`retry` controls from the
+current job status, RBAC, approval policy, queue availability, and retry
+budget. Durable jobs also project into
+`GET /api/v1/admin/observability/events?kind=job` by `operationId`,
+`correlationId`, `traceId`, `releaseId`, `changeSetId`, `actor`, and
+`resourceRef=job/{jobId}`. See
+[Console Job Observability](../admin-api/console-job-observability.md) for the
+wire contract.
+
+**ConsoleJobService** (operator control actions):
+
+| EventId | Level | Signal |
+|---------|-------|--------|
+| 117000 | Information | Job control action applied; includes action, job id, and resulting status |
+| 117001 | Warning | Artifact metadata lookup failed for a reference; the API returns `ProviderError` |
+| 117002 | Error | Manual retry queue write failed; the service attempts to restore terminal state |
+| 117003 | Warning | Queue removal failed after cancellation; durable cancellation still returns when persisted |
+| 117004 | Warning | Manual retry compensation conflicted with a newer job state |
+| 117005 | Warning | Manual retry compensation failed while handling a queue write failure |
 
 **Recommended alerts:**
 

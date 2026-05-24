@@ -342,7 +342,10 @@ warnings are retained on the job record for post-mortem inspection.
 Structured logs are available through
 `GET /api/v1/admin/jobs/{jobId}/logs` with cursor pagination. The same
 admin jobs surface also exposes durable job detail, artifacts, available
-actions, cancellation, and retry controls.
+actions, cancellation, and retry controls. See
+[Console Job Observability](../admin-api/console-job-observability.md) for the
+wire contract, cursor parameters, artifact availability states, and action
+rules.
 
 ### Monitoring
 
@@ -356,8 +359,10 @@ Active jobs surface through the existing operations endpoints:
 - `GET /api/v1/admin/jobs/{jobId}/logs` — structured execution logs
 - `GET /api/v1/admin/jobs/{jobId}/artifacts` — artifact references and availability
 - `GET /api/v1/admin/jobs/{jobId}/actions` — currently available controls
-- `POST /api/v1/admin/jobs/{jobId}/cancel` — cancel queued/running jobs
+- `POST /api/v1/admin/jobs/{jobId}/cancel` — cancel queued/provisioning/running jobs
 - `POST /api/v1/admin/jobs/{jobId}/retry` — retry failed/cancelled jobs when allowed
+- `GET /api/v1/admin/observability/events?kind=job&operationId={jobId}` — Operate event projection for a job
+- `GET /api/v1/admin/observability/events?kind=job&correlationId={correlationId}` — correlated Operate event projection
 
 > **Note:** The operations endpoints read from `IUniversalProgressStore`.
 > The execution-job reconciler bridges progress from `IExecutionJobStore`

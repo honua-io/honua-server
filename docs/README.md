@@ -157,6 +157,7 @@ How to build against Honua's APIs, SDKs, and protocols.
 ### Admin API
 
 - [Console Content and RBAC (Baseline)](admin-api/console-content-and-rbac.md) — Metadata v2 content item, session bootstrap, action-check, and provenance endpoints under `/api/v1/console/**` (#1162).
+- [Console Job Observability](admin-api/console-job-observability.md) — Durable execution job list, detail, logs, artifacts, action, cancel, retry, and Operate event correlation endpoints under `/api/v1/admin/jobs/**` (#1170).
 - [Scene Dataset Registry](admin-api/scene-dataset-registry.md)
 
 ## Contributor Guides

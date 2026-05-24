@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Honua Server Management API",
-    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints for configuration, import scanning, connections, layers, styles, observability, realtime alert management, runtime licensing, deploy control, and native client-certificate trust management. For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
+    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints for configuration, import scanning, connections, layers, styles, observability, realtime alert management, durable job viewing, runtime licensing, deploy control, and native client-certificate trust management. For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
     "version": "1.0.0",
     "contact": {
       "name": "Honua Server",
@@ -67,6 +67,10 @@
     {
       "name": "Alerts",
       "description": "Console Operate geofence zones, alert rules, draft validation, and delivery health"
+    },
+    {
+      "name": "Jobs",
+      "description": "Console durable job observability, logs, artifacts, and controls"
     },
     {
       "name": "Metadata Resources",
@@ -2269,6 +2273,905 @@
         }
       }
     },
+    "/jobs": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "List Console Jobs",
+        "description": "List durable execution jobs for Console job viewers. Results are ordered by createdAt descending, use opaque cursor pagination, and are returned as a plain JSON DTO with Cache-Control: no-store.",
+        "operationId": "listConsoleJobs",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated or repeated execution status filter.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/ConsoleJobStatus"
+              }
+            },
+            "style": "form",
+            "explode": false
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "description": "Execution job kind filter.",
+            "schema": {
+              "$ref": "#/components/schemas/ConsoleJobKind"
+            }
+          },
+          {
+            "name": "backend",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "queue",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "required": false,
+            "description": "Submitting actor. Alias: requestedBy.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "requestedBy",
+            "in": "query",
+            "required": false,
+            "description": "Submitting actor alias.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "correlationId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "traceId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "definitionId",
+            "in": "query",
+            "required": false,
+            "description": "Matches honua.job.definition_id or honua.geoprocessing.plan_id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resourceRef",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "server",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "releaseId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "changeSetId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "alertId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "Inclusive createdAt lower bound.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "Exclusive createdAt upper bound.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Opaque cursor returned by a previous page.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Requested page size. Defaults to 50 and is clamped by the backing store.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50,
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Console job page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleJobListResponse"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "503": {
+            "description": "Execution job store is unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/{jobId}": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Get Console Job Detail",
+        "description": "Get durable execution job detail for a Console job viewer. Returns X-Correlation-Id when the job has a correlation id.",
+        "operationId": "getConsoleJob",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConsoleJobId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Console job detail",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Job correlation id when available.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleJobDetail"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "503": {
+            "description": "Execution job store is unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/{jobId}/logs": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Get Console Job Logs",
+        "description": "Page structured execution logs for a durable job. If the log store is unavailable, returns state=unavailable with an empty item list.",
+        "operationId": "getConsoleJobLogs",
+        "parameters": [
+          { "$ref": "#/components/parameters/ConsoleJobId" },
+          { "$ref": "#/components/parameters/ConsoleJobCursor" },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Requested log page size. Defaults to 100 and Redis clamps to 1..500.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100,
+              "minimum": 1,
+              "maximum": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Console job log page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleJobLogPageResponse"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "503": {
+            "description": "Execution job store is unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/{jobId}/artifacts": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Get Console Job Artifacts",
+        "description": "Page artifact references for a durable job and expose safe provider links when available.",
+        "operationId": "getConsoleJobArtifacts",
+        "parameters": [
+          { "$ref": "#/components/parameters/ConsoleJobId" },
+          { "$ref": "#/components/parameters/ConsoleJobCursor" },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Requested artifact page size. Defaults to 100 and is clamped to 1..200.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100,
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Console job artifact page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleJobArtifactPageResponse"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "503": {
+            "description": "Execution job store is unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/{jobId}/actions": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Get Console Job Actions",
+        "description": "Return cancel/retry action descriptors currently applicable to the job.",
+        "operationId": "getConsoleJobActions",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConsoleJobId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Console job action descriptors",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleJobActionsResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "503": {
+            "description": "Execution job store is unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/{jobId}/cancel": {
+      "post": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Cancel Console Job",
+        "description": "Cancel a queued, provisioning, or running durable execution job. May return approval-required problem details when destructive action approval is required.",
+        "operationId": "cancelConsoleJob",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConsoleJobId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Job cancellation applied or already cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleJobControlResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "503": {
+            "description": "Execution job store or backend is unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/{jobId}/retry": {
+      "post": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Retry Console Job",
+        "description": "Retry a failed or cancelled durable execution job when the retry policy budget and job queue allow it.",
+        "operationId": "retryConsoleJob",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConsoleJobId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Job queued for manual retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleJobControlResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "503": {
+            "description": "Job queue is unavailable or the retry queue write failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "tags": [
+          "Configuration"
+        ],
+        "summary": "Get Admin OpenAPI Specification",
+        "description": "Returns the bundled OpenAPI contract snapshot for the admin/control-plane API.",
+        "operationId": "getAdminOpenApi",
+        "parameters": [
+          {
+            "name": "f",
+            "in": "query",
+            "required": false,
+            "description": "Optional format selector.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Admin OpenAPI specification",
+            "content": {
+              "application/vnd.oai.openapi+json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/services": {
+      "get": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "List Services",
+        "description": "List available services with enabled protocol metadata.",
+        "operationId": "listServices",
+        "responses": {
+          "200": {
+            "description": "Service list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseServiceSummaryArray"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/services/{serviceName}/settings": {
+      "get": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Get Service Settings",
+        "description": "Get protocol, access policy, temporal metadata, and MapServer settings for a service.",
+        "operationId": "getServiceSettings",
+        "parameters": [
+          {
+            "name": "serviceName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseServiceSettingsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/services/{serviceName}/protocols": {
+      "put": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Update Service Protocols",
+        "description": "Update enabled protocols for a service.",
+        "operationId": "updateServiceProtocols",
+        "parameters": [
+          {
+            "name": "serviceName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProtocolsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated service settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseServiceSettingsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/services/{serviceName}/mapserver": {
+      "put": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Update MapServer Settings",
+        "description": "Update MapServer rendering defaults and limits for a service.",
+        "operationId": "updateServiceMapServer",
+        "parameters": [
+          {
+            "name": "serviceName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMapServerSettingsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated service settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseServiceSettingsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/services/{serviceName}/access-policy": {
+      "put": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Update Service Access Policy",
+        "description": "Update service-level read and write access policy.",
+        "operationId": "updateServiceAccessPolicy",
+        "parameters": [
+          {
+            "name": "serviceName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAccessPolicyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated service settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseServiceSettingsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/services/{serviceName}/timeinfo": {
+      "put": {
+        "tags": [
+          "Services"
+        ],
+        "summary": "Update Service Time Info",
+        "description": "Update service-level temporal metadata fields.",
+        "operationId": "updateServiceTimeInfo",
+        "parameters": [
+          {
+            "name": "serviceName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTimeInfoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated service settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseServiceSettingsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/services/{serviceName}/layers/{layerId}/metadata": {
+      "put": {
+        "tags": [
+          "Services",
+          "Layers"
+        ],
+        "summary": "Update Layer Metadata",
+        "description": "Patch layer-level access policy and temporal metadata for a service layer.",
+        "operationId": "updateLayerMetadata",
+        "parameters": [
+          {
+            "name": "serviceName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "layerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLayerMetadataRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated layer metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseLayerMetadataResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/version": {
+      "get": {
+        "tags": ["Metadata"],
+        "summary": "Get Admin Version Info",
+        "description": "Returns server version, metadata API version, and current server time.",
+        "operationId": "getAdminVersion",
+        "responses": {
+          "200": {
+            "description": "Admin version information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminVersionResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
     "/license": {
       "get": {
         "tags": ["License"],
@@ -3767,6 +4670,26 @@
         "description": "Optional HTTP Basic compatibility mode for legacy clients (requires HTTPS in production). Basic is used only when compatibility mode is enabled and API key auth did not succeed."
       }
     },
+    "parameters": {
+      "ConsoleJobId": {
+        "name": "jobId",
+        "in": "path",
+        "required": true,
+        "description": "Durable execution job identifier.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "ConsoleJobCursor": {
+        "name": "cursor",
+        "in": "query",
+        "required": false,
+        "description": "Opaque cursor returned by a previous page.",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
     "responses": {
       "BadRequest": {
         "description": "Bad request - invalid parameters",
@@ -4690,6 +5613,514 @@
             "type": "boolean",
             "description": "Whether manifest apply prune is supported"
           }
+        }
+      },
+      "ApiResponseAdminCapabilitiesResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AdminCapabilitiesResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ConnectionListResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConnectionSummary"
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ConnectionSummary": {
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Unique connection identifier"
+          },
+          "name": {
+            "type": "string",
+            "description": "Connection display name"
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional connection description"
+          },
+          "host": {
+            "type": "string",
+            "description": "Database host"
+          },
+          "port": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Database port"
+          },
+          "databaseName": {
+            "type": "string",
+            "description": "Database name"
+          },
+          "username": {
+            "type": "string",
+            "description": "Database username"
+          },
+          "sslRequired": {
+            "type": "boolean",
+            "description": "Whether SSL is required"
+          },
+          "sslMode": {
+            "type": "string",
+            "enum": [
+              "Disable",
+              "Allow",
+              "Prefer",
+              "Require",
+              "VerifyCA",
+              "VerifyFull"
+            ],
+            "description": "SSL mode"
+          },
+          "storageType": {
+            "type": "string",
+            "enum": [
+              "managed",
+              "external"
+            ],
+            "description": "Credential storage type"
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "Whether connection is active"
+          },
+          "healthStatus": {
+            "type": "string",
+            "description": "Health status string"
+          },
+          "lastHealthCheck": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last health check timestamp"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Creation timestamp"
+          },
+          "createdBy": {
+            "type": "string",
+            "description": "Creator identity"
+          }
+        }
+      },
+      "ConsoleJobKind": {
+        "type": "string",
+        "enum": [
+          "Geoprocessing",
+          "ExtractTransformLoad",
+          "TileCache"
+        ]
+      },
+      "ConsoleJobStatus": {
+        "type": "string",
+        "enum": [
+          "Queued",
+          "Provisioning",
+          "Running",
+          "Succeeded",
+          "Failed",
+          "Cancelled"
+        ]
+      },
+      "ConsoleJobListResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConsoleJobSummary"
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true,
+            "description": "Opaque cursor for the next page."
+          }
+        }
+      },
+      "ConsoleJobSummary": {
+        "type": "object",
+        "required": [
+          "jobId",
+          "kind",
+          "backend",
+          "targetKind",
+          "workloadName",
+          "status",
+          "priority",
+          "createdAt",
+          "updatedAt",
+          "resourceRefs",
+          "latestEvent",
+          "links"
+        ],
+        "properties": {
+          "jobId": { "type": "string" },
+          "kind": { "$ref": "#/components/schemas/ConsoleJobKind" },
+          "queue": { "type": "string", "nullable": true },
+          "backend": { "type": "string" },
+          "targetKind": { "type": "string" },
+          "workloadName": { "type": "string" },
+          "definitionId": { "type": "string", "nullable": true },
+          "status": { "$ref": "#/components/schemas/ConsoleJobStatus" },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "Low",
+              "Normal",
+              "High",
+              "Critical"
+            ]
+          },
+          "requestedBy": { "type": "string", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "completedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "durationMs": { "type": "integer", "format": "int64", "nullable": true },
+          "percentComplete": { "type": "number", "format": "double", "nullable": true },
+          "currentPhase": { "type": "string", "nullable": true },
+          "attemptCount": { "type": "integer", "format": "int32" },
+          "maxAttempts": { "type": "integer", "format": "int32" },
+          "nextRetryAt": { "type": "string", "format": "date-time", "nullable": true },
+          "correlationId": { "type": "string", "nullable": true },
+          "traceId": { "type": "string", "nullable": true },
+          "resourceRefs": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "artifactCount": { "type": "integer", "format": "int32" },
+          "latestEvent": { "$ref": "#/components/schemas/ConsoleJobLatestEvent" },
+          "links": { "$ref": "#/components/schemas/ConsoleJobLinks" }
+        }
+      },
+      "ConsoleJobDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ConsoleJobSummary"
+          },
+          {
+            "type": "object",
+            "required": [
+              "warnings",
+              "retryPolicy",
+              "childJobIds",
+              "selectedMetadata",
+              "stages",
+              "actions"
+            ],
+            "properties": {
+              "providerOperationId": { "type": "string", "nullable": true },
+              "claimedBy": { "type": "string", "nullable": true },
+              "claimedAt": { "type": "string", "format": "date-time", "nullable": true },
+              "lastHeartbeatAt": { "type": "string", "format": "date-time", "nullable": true },
+              "cancellationRequestedAt": { "type": "string", "format": "date-time", "nullable": true },
+              "warnings": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "failure": {
+                "nullable": true,
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ConsoleJobFailure"
+                  }
+                ]
+              },
+              "retryPolicy": { "$ref": "#/components/schemas/ConsoleJobRetryPolicy" },
+              "parentJobId": { "type": "string", "nullable": true },
+              "childJobIds": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "selectedMetadata": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "stages": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ConsoleJobStage"
+                }
+              },
+              "actions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ConsoleJobActionDescriptor"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ConsoleJobLatestEvent": {
+        "type": "object",
+        "required": [
+          "type",
+          "occurredAt",
+          "status"
+        ],
+        "properties": {
+          "type": { "type": "string" },
+          "occurredAt": { "type": "string", "format": "date-time" },
+          "status": { "$ref": "#/components/schemas/ConsoleJobStatus" },
+          "phase": { "type": "string", "nullable": true },
+          "message": { "type": "string", "nullable": true }
+        }
+      },
+      "ConsoleJobLinks": {
+        "type": "object",
+        "required": [
+          "self",
+          "logs",
+          "artifacts",
+          "actions"
+        ],
+        "properties": {
+          "self": { "type": "string" },
+          "logs": { "type": "string" },
+          "artifacts": { "type": "string" },
+          "actions": { "type": "string" },
+          "cancel": { "type": "string", "nullable": true },
+          "retry": { "type": "string", "nullable": true },
+          "eventsByJob": { "type": "string", "nullable": true },
+          "eventsByCorrelation": { "type": "string", "nullable": true }
+        }
+      },
+      "ConsoleJobFailure": {
+        "type": "object",
+        "required": [
+          "message",
+          "classification"
+        ],
+        "properties": {
+          "message": { "type": "string" },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "execution_failed",
+              "cancelled"
+            ]
+          }
+        }
+      },
+      "ConsoleJobRetryPolicy": {
+        "type": "object",
+        "required": [
+          "strategy"
+        ],
+        "properties": {
+          "maxAttempts": { "type": "integer", "format": "int32" },
+          "strategy": { "type": "string" },
+          "baseDelayMs": { "type": "integer", "format": "int64" },
+          "maxDelayMs": { "type": "integer", "format": "int64" }
+        }
+      },
+      "ConsoleJobStage": {
+        "type": "object",
+        "required": [
+          "name",
+          "status"
+        ],
+        "properties": {
+          "name": { "type": "string" },
+          "status": { "$ref": "#/components/schemas/ConsoleJobStatus" },
+          "startedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "completedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "percentComplete": { "type": "number", "format": "double", "nullable": true }
+        }
+      },
+      "ConsoleJobActionDescriptor": {
+        "type": "object",
+        "required": [
+          "name",
+          "method",
+          "href"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "cancel",
+              "retry"
+            ]
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "POST"
+            ]
+          },
+          "href": { "type": "string" },
+          "allowed": { "type": "boolean" },
+          "disabledReason": { "type": "string", "nullable": true },
+          "requiresApproval": { "type": "boolean" }
+        }
+      },
+      "ConsoleJobActionsResponse": {
+        "type": "object",
+        "required": [
+          "jobId",
+          "actions"
+        ],
+        "properties": {
+          "jobId": { "type": "string" },
+          "correlationId": { "type": "string", "nullable": true },
+          "actions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConsoleJobActionDescriptor"
+            }
+          }
+        }
+      },
+      "ConsoleJobLogPageResponse": {
+        "type": "object",
+        "required": [
+          "jobId",
+          "state",
+          "items"
+        ],
+        "properties": {
+          "jobId": { "type": "string" },
+          "correlationId": { "type": "string", "nullable": true },
+          "state": {
+            "type": "string",
+            "enum": [
+              "available",
+              "unavailable"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConsoleJobLogEntry"
+            }
+          },
+          "nextCursor": { "type": "string", "nullable": true }
+        }
+      },
+      "ConsoleJobLogEntry": {
+        "type": "object",
+        "required": [
+          "timestamp",
+          "level",
+          "message"
+        ],
+        "properties": {
+          "timestamp": { "type": "string", "format": "date-time" },
+          "level": { "type": "string" },
+          "message": { "type": "string" },
+          "phase": { "type": "string", "nullable": true },
+          "metadata": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ConsoleJobArtifactPageResponse": {
+        "type": "object",
+        "required": [
+          "jobId",
+          "items"
+        ],
+        "properties": {
+          "jobId": { "type": "string" },
+          "correlationId": { "type": "string", "nullable": true },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConsoleJobArtifact"
+            }
+          },
+          "nextCursor": { "type": "string", "nullable": true }
+        }
+      },
+      "ConsoleJobArtifact": {
+        "type": "object",
+        "required": [
+          "artifactId",
+          "availability"
+        ],
+        "properties": {
+          "artifactId": { "type": "string" },
+          "availability": {
+            "type": "string",
+            "enum": [
+              "Available",
+              "Unavailable",
+              "Expired",
+              "Redacted",
+              "ProviderError"
+            ]
+          },
+          "kind": { "type": "string", "nullable": true },
+          "label": { "type": "string", "nullable": true },
+          "contentType": { "type": "string", "nullable": true },
+          "sizeBytes": { "type": "integer", "format": "int64", "nullable": true },
+          "providerLink": { "type": "string", "nullable": true },
+          "message": { "type": "string", "nullable": true }
+        }
+      },
+      "ConsoleJobControlResponse": {
+        "type": "object",
+        "required": [
+          "jobId",
+          "action",
+          "status",
+          "message"
+        ],
+        "properties": {
+          "jobId": { "type": "string" },
+          "correlationId": { "type": "string", "nullable": true },
+          "action": {
+            "type": "string",
+            "enum": [
+              "cancel",
+              "retry"
+            ]
+          },
+          "status": { "$ref": "#/components/schemas/ConsoleJobStatus" },
+          "message": { "type": "string" }
         }
       },
       "ApiResponseAdminCapabilitiesResponse": {

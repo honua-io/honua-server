@@ -72,6 +72,7 @@
 - [Metadata and Catalog Parity Matrix](developer/metadata-catalog-parity-matrix.md)
 - [NVIDIA Construction Demo Fixture](demo/nvidia-construction.md)
 - [Console Content and RBAC (Admin API)](admin-api/console-content-and-rbac.md)
+- [Console Job Observability (Admin API)](admin-api/console-job-observability.md)
 - [Scene Dataset Registry (Admin API)](admin-api/scene-dataset-registry.md)
 - [SDK Compatibility](developer/SDK_COMPATIBILITY_MATRIX.md)
 - [SDK Migration Automation Evidence Manifest](developer/sdk-migration-evidence-manifest.md)

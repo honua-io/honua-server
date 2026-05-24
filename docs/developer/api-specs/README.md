@@ -99,6 +99,7 @@ See the [OGC API Coverages Coverage](../../gis/specifications/ogc-api-coverages-
 - Manage map styles and layer styling
 - Scan GeoServer REST and ArcGIS GeoServices REST FeatureServer/MapServer service roots into deterministic migration inventory artifacts with compatibility rollups
 - Monitor system health and observability
+- Inspect durable background jobs, structured logs, artifacts, control actions, and Operate event correlations
 - Access recent errors and telemetry status
 - Inspect deploy preflight and upgrade-readiness state per Honua instance
 - Manage geofence alert zones, realtime alert rules, draft validation, enable/disable state, and delivery health for Console Operate workflows
@@ -188,6 +189,7 @@ Control-plane SDK governance and contract diff checks:
 
 - [**Geospatial Data APIs**](../../gis/STANDARDS_APIS.md) - Protocol overview and selection guide
 - [**Server Management API**](../../operator/CONTROL_PLANE_API.md) - Admin API guide and key workflows
+- [**Console Job Observability**](../../admin-api/console-job-observability.md) - Durable job viewer contract for Console and admin integrations
 - [**Control Plane Versioning Policy**](../CONTROL_PLANE_VERSIONING_POLICY.md) - Breaking-change and deprecation lifecycle
 - [**Control Plane Migration Guide**](../CONTROL_PLANE_MIGRATION_GUIDE.md) - SDK quickstart and upgrade steps
 - [**API Examples**](../API_EXAMPLES.md) - Code examples for the major shipped protocols
