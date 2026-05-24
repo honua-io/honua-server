@@ -147,7 +147,7 @@ internal static class MetadataReleaseEndpoints
                 StatusCodes.Status409Conflict,
                 "Metadata release package conflicts with an existing package.");
         }
-        catch (Exception)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context,

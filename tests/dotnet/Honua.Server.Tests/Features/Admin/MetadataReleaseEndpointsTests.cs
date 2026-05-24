@@ -42,7 +42,7 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
                     new StaticEnvironmentReader(
                         BuildGraph("dev", 41),
                         BuildGraph("staging", 7)));
-                services.AddSingleton<IMetadataReleasePackageStore, InMemoryMetadataReleasePackageStore>();
+                services.AddSingleton<IMetadataReleasePackageStore, CancellationAwareReleasePackageStore>();
             });
     }
 
@@ -232,6 +232,29 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
         payload.Should().Contain("Metadata release package conflicts with an existing package.");
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/metadata/release-packages")]
+    public async Task CreateReleasePackage_WhenStoreCancellationOccurs_DoesNotMapToPackageCreateFailure()
+    {
+        var body = JsonSerializer.Serialize(
+            new CreateMetadataReleasePackageRequest
+            {
+                PackageKey = "cancelled-package",
+                SourceEnvironment = "dev",
+                TargetEnvironments = ["staging"],
+                SemanticIds = ["res.parcels"],
+            },
+            MetadataReleaseJsonContext.Default.CreateMetadataReleasePackageRequest);
+
+        var response = await _client.PostAsync(
+            "/api/v1/admin/metadata/release-packages",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.RequestTimeout);
+        var payload = await response.Content.ReadAsStringAsync();
+        payload.Should().NotContain("Metadata release package could not be created.");
+    }
+
     private static MetadataV2Graph BuildGraph(string environment, long revision)
     {
         var passwordOption = JsonSerializer.Deserialize<JsonElement>("\"super-secret-password\"");
@@ -361,5 +384,27 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
                 }
             }
         }
+    }
+
+    private sealed class CancellationAwareReleasePackageStore : IMetadataReleasePackageStore
+    {
+        private readonly InMemoryMetadataReleasePackageStore _inner = new();
+
+        public Task<MetadataReleasePackage> CreateAsync(
+            MetadataReleasePackage package,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.Equals(package.Metadata.Name, "cancelled-package", StringComparison.Ordinal))
+            {
+                throw new OperationCanceledException("Simulated package store cancellation.");
+            }
+
+            return _inner.CreateAsync(package, cancellationToken);
+        }
+
+        public Task<MetadataReleasePackage?> GetAsync(
+            Guid packageId,
+            CancellationToken cancellationToken = default)
+            => _inner.GetAsync(packageId, cancellationToken);
     }
 }
