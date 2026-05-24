@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Claims;
@@ -407,6 +408,27 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
             CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<ExecutionLogEntry>>(
                 _entries.TryGetValue(operationId, out var entries) ? entries : []);
+
+        public Task<ExecutionLogPage> QueryAsync(
+            string operationId,
+            ExecutionLogQuery query,
+            CancellationToken cancellationToken = default)
+        {
+            var offset = int.TryParse(query.Cursor, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedOffset)
+                && parsedOffset > 0
+                ? parsedOffset
+                : 0;
+            var limit = Math.Max(1, query.Limit);
+            var entries = _entries.TryGetValue(operationId, out var found) ? found : [];
+            var page = entries.Skip(offset).Take(limit + 1).ToArray();
+            var hasMore = page.Length > limit;
+
+            return Task.FromResult(new ExecutionLogPage
+            {
+                Items = hasMore ? page.Take(limit).ToArray() : page,
+                NextCursor = hasMore ? (offset + limit).ToString(CultureInfo.InvariantCulture) : null
+            });
+        }
 
         public Task SetRetentionAsync(
             string operationId,
