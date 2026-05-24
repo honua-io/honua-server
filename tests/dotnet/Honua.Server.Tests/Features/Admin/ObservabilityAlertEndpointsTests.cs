@@ -138,6 +138,14 @@ public sealed class ObservabilityAlertEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/alerts")]
+    public async Task ListAlerts_RejectsNumericSeverityFilter()
+    {
+        var response = await _client.GetAsync("/api/v1/admin/observability/alerts?severity=99");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/observability/alerts/{eventId}")]
     public async Task GetSingleAlert_Returns200_WhenFound()
     {

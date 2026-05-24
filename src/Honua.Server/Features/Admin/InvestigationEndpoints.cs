@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text.Json;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
@@ -141,6 +142,11 @@ internal static class InvestigationEndpoints
             return BadRequest("A JSON body is required.");
         }
 
+        if (body.Title is not null && string.IsNullOrWhiteSpace(body.Title))
+        {
+            return BadRequest("'title' must not be empty or whitespace.");
+        }
+
         if (body.Title is { Length: > MaxTitleLength })
         {
             return BadRequest($"'title' must not exceed {MaxTitleLength} characters.");
@@ -154,7 +160,7 @@ internal static class InvestigationEndpoints
         InvestigationStatus? status = null;
         if (!string.IsNullOrWhiteSpace(body.Status))
         {
-            if (!Enum.TryParse<InvestigationStatus>(body.Status, ignoreCase: true, out var parsed))
+            if (!QueryFilterParsers.TryParseDefinedEnum<InvestigationStatus>(body.Status, out var parsed))
             {
                 return BadRequest("'status' must be 'open' or 'closed'.");
             }
@@ -189,7 +195,7 @@ internal static class InvestigationEndpoints
             return BadRequest("'eventRef' and 'eventKind' are required.");
         }
 
-        if (!Enum.TryParse<OperateEventKind>(body.EventKind, ignoreCase: true, out var kind))
+        if (!QueryFilterParsers.TryParseDefinedEnum<OperateEventKind>(body.EventKind, out var kind))
         {
             return BadRequest($"'eventKind' contains unsupported value '{body.EventKind}'.");
         }
@@ -201,14 +207,18 @@ internal static class InvestigationEndpoints
 
         var actor = ResolveActor(context);
         var now = DateTimeOffset.UtcNow;
-        var record = await store.AddPinAsync(investigationId, body.EventRef.Trim(), kind, body.OccurredAt, body.Note, actor, now, cancellationToken)
+        var eventRef = body.EventRef.Trim();
+        var record = await store.AddPinAsync(investigationId, eventRef, kind, body.OccurredAt, body.Note, actor, now, cancellationToken)
             .ConfigureAwait(false);
         if (record is null)
         {
             return NotFound(investigationId);
         }
 
-        await RecordAuditAsync(auditLog, context, actor, investigationId, "investigation.pin.add", $"{{\"eventRef\":\"{body.EventRef.Trim()}\"}}", cancellationToken)
+        var pinDetails = JsonSerializer.Serialize(
+            new InvestigationPinAddAuditDetails { EventRef = eventRef },
+            InvestigationJsonContext.Default.InvestigationPinAddAuditDetails);
+        await RecordAuditAsync(auditLog, context, actor, investigationId, "investigation.pin.add", pinDetails, cancellationToken)
             .ConfigureAwait(false);
 
         return Results.Json(MapRecord(record), InvestigationJsonContext.Default.InvestigationResponse);
@@ -251,7 +261,7 @@ internal static class InvestigationEndpoints
             return BadRequest("'resourceId' and 'resourceKind' are required.");
         }
 
-        if (!Enum.TryParse<InvestigationResourceKind>(body.ResourceKind, ignoreCase: true, out var kind))
+        if (!QueryFilterParsers.TryParseDefinedEnum<InvestigationResourceKind>(body.ResourceKind, out var kind))
         {
             return BadRequest($"'resourceKind' must be one of alert, job, release, changeSet.");
         }
@@ -262,16 +272,23 @@ internal static class InvestigationEndpoints
         }
 
         var actor = ResolveActor(context);
-        var record = await store.AddLinkAsync(investigationId, kind, body.ResourceId.Trim(), body.Note, actor, DateTimeOffset.UtcNow, cancellationToken)
+        var resourceId = body.ResourceId.Trim();
+        var record = await store.AddLinkAsync(investigationId, kind, resourceId, body.Note, actor, DateTimeOffset.UtcNow, cancellationToken)
             .ConfigureAwait(false);
         if (record is null)
         {
             return NotFound(investigationId);
         }
 
-        await RecordAuditAsync(auditLog, context, actor, investigationId, "investigation.link.add",
-            $"{{\"resourceKind\":\"{kind.ToString().ToLowerInvariant()}\",\"resourceId\":\"{body.ResourceId.Trim()}\"}}",
-            cancellationToken).ConfigureAwait(false);
+        var linkDetails = JsonSerializer.Serialize(
+            new InvestigationLinkAddAuditDetails
+            {
+                ResourceKind = ToCamel(kind.ToString()),
+                ResourceId = resourceId
+            },
+            InvestigationJsonContext.Default.InvestigationLinkAddAuditDetails);
+        await RecordAuditAsync(auditLog, context, actor, investigationId, "investigation.link.add", linkDetails, cancellationToken)
+            .ConfigureAwait(false);
 
         return Results.Json(MapRecord(record), InvestigationJsonContext.Default.InvestigationResponse);
     }
@@ -314,7 +331,7 @@ internal static class InvestigationEndpoints
         InvestigationStatus? status = null;
         if (query.TryGetValue("status", out var rawStatus) && !string.IsNullOrWhiteSpace(rawStatus))
         {
-            if (!Enum.TryParse<InvestigationStatus>(rawStatus!, ignoreCase: true, out var parsedStatus))
+            if (!QueryFilterParsers.TryParseDefinedEnum<InvestigationStatus>(rawStatus!, out var parsedStatus))
             {
                 error = "'status' must be 'open' or 'closed'.";
                 return false;
@@ -373,7 +390,7 @@ internal static class InvestigationEndpoints
         {
             PinId = pin.PinId,
             EventRef = pin.EventRef,
-            EventKind = pin.EventKind.ToString().ToLowerInvariant(),
+            EventKind = ToCamel(pin.EventKind.ToString()),
             OccurredAt = pin.OccurredAt,
             Note = pin.Note,
             CreatedAt = pin.CreatedAt,
@@ -386,12 +403,22 @@ internal static class InvestigationEndpoints
         return new InvestigationLinkResponse
         {
             LinkId = link.LinkId,
-            ResourceKind = link.ResourceKind.ToString().ToLowerInvariant(),
+            ResourceKind = ToCamel(link.ResourceKind.ToString()),
             ResourceId = link.ResourceId,
             Note = link.Note,
             CreatedAt = link.CreatedAt,
             CreatedBy = link.CreatedBy
         };
+    }
+
+    private static string ToCamel(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return value;
+        }
+
+        return char.ToLowerInvariant(value[0]) + value[1..];
     }
 
     private static string ResolveActor(HttpContext context)

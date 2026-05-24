@@ -106,7 +106,7 @@ internal static class QueryFilterParsers
 
             foreach (var part in entry.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
-                if (!Enum.TryParse<TEnum>(part, ignoreCase: true, out var parsed))
+                if (!TryParseDefinedEnum<TEnum>(part, out var parsed))
                 {
                     error = $"'{key}' contains unsupported value '{part}'.";
                     return false;
@@ -117,6 +117,29 @@ internal static class QueryFilterParsers
         }
 
         values = collected.Count > 0 ? collected : null;
+        return true;
+    }
+
+    /// <summary>
+    /// Parses an enum value while rejecting numeric strings that resolve to
+    /// undefined members. This avoids leaking malformed admin input into the
+    /// stores, where unsupported numeric values would surface as 500s.
+    /// </summary>
+    public static bool TryParseDefinedEnum<TEnum>(string value, out TEnum parsed)
+        where TEnum : struct, Enum
+    {
+        if (!Enum.TryParse<TEnum>(value, ignoreCase: true, out parsed))
+        {
+            return false;
+        }
+
+        // Enum.TryParse accepts arbitrary numeric strings (e.g. "99"); guard against
+        // names that are purely digits/whitespace and confirm the resulting member exists.
+        if (!Enum.IsDefined(parsed))
+        {
+            return false;
+        }
+
         return true;
     }
 }

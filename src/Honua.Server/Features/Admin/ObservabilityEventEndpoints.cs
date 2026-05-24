@@ -103,7 +103,7 @@ internal static class ObservabilityEventEndpoints
         OperateEventSeverity? minSeverity = null;
         if (query.TryGetValue("minSeverity", out var rawSeverity) && !string.IsNullOrWhiteSpace(rawSeverity))
         {
-            if (!Enum.TryParse<OperateEventSeverity>(rawSeverity!, ignoreCase: true, out var parsedSeverity))
+            if (!QueryFilterParsers.TryParseDefinedEnum<OperateEventSeverity>(rawSeverity!, out var parsedSeverity))
             {
                 error = $"'minSeverity' contains unsupported value '{rawSeverity}'.";
                 return false;

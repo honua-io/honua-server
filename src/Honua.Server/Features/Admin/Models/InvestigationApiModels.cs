@@ -191,3 +191,22 @@ internal sealed class AddInvestigationLinkRequest
     /// <summary>Optional operator note.</summary>
     public string? Note { get; init; }
 }
+
+/// <summary>
+/// Structured details for the <c>investigation.pin.add</c> audit record.
+/// Serialized as JSON so operator-supplied refs are properly escaped.
+/// </summary>
+internal sealed class InvestigationPinAddAuditDetails
+{
+    public required string EventRef { get; init; }
+}
+
+/// <summary>
+/// Structured details for the <c>investigation.link.add</c> audit record.
+/// Serialized as JSON so operator-supplied resource ids are properly escaped.
+/// </summary>
+internal sealed class InvestigationLinkAddAuditDetails
+{
+    public required string ResourceKind { get; init; }
+    public required string ResourceId { get; init; }
+}

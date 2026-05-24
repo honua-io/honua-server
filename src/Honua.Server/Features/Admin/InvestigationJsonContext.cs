@@ -23,6 +23,8 @@ namespace Honua.Server.Features.Admin;
 [JsonSerializable(typeof(UpdateInvestigationRequest))]
 [JsonSerializable(typeof(AddInvestigationPinRequest))]
 [JsonSerializable(typeof(AddInvestigationLinkRequest))]
+[JsonSerializable(typeof(InvestigationPinAddAuditDetails))]
+[JsonSerializable(typeof(InvestigationLinkAddAuditDetails))]
 [JsonSerializable(typeof(IReadOnlyList<InvestigationPinResponse>))]
 [JsonSerializable(typeof(IReadOnlyList<InvestigationLinkResponse>))]
 [JsonSerializable(typeof(IReadOnlyList<InvestigationSummaryResponse>))]

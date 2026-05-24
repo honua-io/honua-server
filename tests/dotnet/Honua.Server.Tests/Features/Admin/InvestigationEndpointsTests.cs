@@ -179,6 +179,103 @@ public sealed class InvestigationEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/investigations/{investigationId}/pins")]
+    public async Task AddPin_RejectsNumericEventKind()
+    {
+        var created = await _client.PostAsJsonAsync("/api/v1/admin/investigations", new { title = "incident-num" });
+        var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("investigationId").GetString()!;
+
+        var response = await _client.PostAsJsonAsync($"/api/v1/admin/investigations/{id}/pins",
+            new
+            {
+                eventRef = "alert:1",
+                eventKind = "99",
+                occurredAt = DateTimeOffset.UtcNow
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PATCH /api/v1/admin/investigations/{investigationId}")]
+    public async Task UpdateInvestigation_RejectsNumericStatus()
+    {
+        var created = await _client.PostAsJsonAsync("/api/v1/admin/investigations", new { title = "incident-status-num" });
+        var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("investigationId").GetString()!;
+
+        var patch = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/admin/investigations/{id}")
+        {
+            Content = JsonContent.Create(new { status = "2" })
+        };
+        var response = await _client.SendAsync(patch);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PATCH /api/v1/admin/investigations/{investigationId}")]
+    public async Task UpdateInvestigation_RejectsWhitespaceTitle()
+    {
+        var created = await _client.PostAsJsonAsync("/api/v1/admin/investigations", new { title = "incident-ws" });
+        var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("investigationId").GetString()!;
+
+        var patch = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/admin/investigations/{id}")
+        {
+            Content = JsonContent.Create(new { title = "   " })
+        };
+        var response = await _client.SendAsync(patch);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/investigations/{investigationId}/links")]
+    public async Task AddLink_PreservesCamelCaseAndEscapesJsonDetails()
+    {
+        var created = await _client.PostAsJsonAsync("/api/v1/admin/investigations", new { title = "incident-link-camel" });
+        var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("investigationId").GetString()!;
+        _audit.Recorded.Clear();
+
+        var hostileResourceId = "rel\"\\bad";
+        var response = await _client.PostAsJsonAsync($"/api/v1/admin/investigations/{id}/links",
+            new { resourceKind = "changeSet", resourceId = hostileResourceId });
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("links")[0].GetProperty("resourceKind").GetString().Should().Be("changeSet");
+
+        _audit.Recorded.Should().ContainSingle();
+        // Audit detail must be valid JSON with escaped operator input.
+        using var detailsDoc = JsonDocument.Parse(_audit.Recorded[0].Details);
+        detailsDoc.RootElement.GetProperty("resourceKind").GetString().Should().Be("changeSet");
+        detailsDoc.RootElement.GetProperty("resourceId").GetString().Should().Be(hostileResourceId);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/investigations/{investigationId}/pins")]
+    public async Task AddPin_EscapesHostileEventRefInAuditJson()
+    {
+        var created = await _client.PostAsJsonAsync("/api/v1/admin/investigations", new { title = "incident-pin-escape" });
+        var id = JsonDocument.Parse(await created.Content.ReadAsStringAsync()).RootElement.GetProperty("investigationId").GetString()!;
+        _audit.Recorded.Clear();
+
+        var hostileEventRef = "alert:7\"\\evil";
+        var response = await _client.PostAsJsonAsync($"/api/v1/admin/investigations/{id}/pins",
+            new
+            {
+                eventRef = hostileEventRef,
+                eventKind = "syncConflict",
+                occurredAt = DateTimeOffset.UtcNow
+            });
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("pins")[0].GetProperty("eventKind").GetString().Should().Be("syncConflict");
+
+        _audit.Recorded.Should().ContainSingle();
+        using var detailsDoc = JsonDocument.Parse(_audit.Recorded[0].Details);
+        detailsDoc.RootElement.GetProperty("eventRef").GetString().Should().Be(hostileEventRef);
+    }
+
+    [IntegrationTest]
     [Endpoint("DELETE /api/v1/admin/investigations/{investigationId}/links/{linkId}")]
     public async Task RemoveLink_DeletesLinked()
     {
