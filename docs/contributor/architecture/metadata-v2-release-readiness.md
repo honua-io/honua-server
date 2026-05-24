@@ -151,6 +151,34 @@ Release evidence:
   persistent backing is tracked under #1163 and is not required to gate this
   baseline.
 
+## GitOps Release Prevalidation (#1164)
+
+Derived from:
+
+- [#1163](https://github.com/honua-io/honua-server/issues/1163)
+- [#1164](https://github.com/honua-io/honua-server/issues/1164)
+
+Release evidence:
+
+- `/api/v1/admin/metadata/prevalidate` is documented in
+  [Metadata Prevalidation Admin API](../../admin-api/metadata-prevalidation.md)
+  and listed in `EndpointRegistry.All`.
+- The endpoint accepts either a persisted `releasePackageId` or an inline
+  `MetadataReleasePackage`, plus a target environment and optional declared
+  data-script contracts.
+- Reports include deterministic `metadata.compat.*` finding codes, secret-safe
+  expected/actual values, affected semantic ids, required actions, coverage
+  state, affected dependents, and rollback readiness.
+- `canCreatePullRequest` and `canPromote` are false for `blocked` and
+  `unknown`; script-covered errors downgrade the overall status to `warning`
+  while preserving the automation gates.
+- Declared data scripts are never executed by prevalidation. They cover findings
+  only when their before-contract matches target state and their after-contract
+  satisfies the missing requirement.
+- Core analysis and the admin endpoint have tests for ready, blocked, warning,
+  unavailable-state, script-covered, before-contract-mismatch, and rollback
+  readiness outcomes.
+
 ## Review Output
 
 For a Metadata v2 release candidate, capture:

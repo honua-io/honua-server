@@ -226,7 +226,7 @@ public static class MetadataCompatibilityAnalyzer
                 null,
                 sourceParent.Metadata.Title ?? sourceParent.Metadata.Name,
                 "The target environment is missing the parent resource for a required field.",
-                Value("resource", sourceParent.Metadata.Id),
+                Value("resourceType", sourceParent.Type.ToString()),
                 Value("resource", "missing"),
                 MetadataCompatibilityRequiredAction.AddResource,
                 MetadataCompatibilityCoverageState.Uncovered));
@@ -534,7 +534,10 @@ public static class MetadataCompatibilityAnalyzer
                 null,
                 source.Metadata.Title ?? source.Metadata.Name,
                 "The target resource is missing a required primary storage binding.",
-                Value("storageBinding", source.PrimaryStorageBindingId ?? sourceBinding.Metadata.Id),
+                Value(
+                    "storageBinding",
+                    source.PrimaryStorageBindingId ?? sourceBinding.Metadata.Id,
+                    StorageDetails(sourceBinding)),
                 Value("storageBinding", "missing"),
                 MetadataCompatibilityRequiredAction.UpdateStorage,
                 MetadataCompatibilityCoverageState.Uncovered));
@@ -612,7 +615,7 @@ public static class MetadataCompatibilityAnalyzer
                 null,
                 source.Metadata.Title ?? source.Metadata.Name,
                 "The target environment is missing a required service.",
-                Value("serviceType", source.ServiceType.ToString()),
+                Value("serviceType", source.ServiceType.ToString(), ServiceDetails(source)),
                 Value("service", "missing"),
                 MetadataCompatibilityRequiredAction.AddService,
                 MetadataCompatibilityCoverageState.Uncovered));
@@ -979,7 +982,7 @@ public static class MetadataCompatibilityAnalyzer
 
         return finding.Code switch
         {
-            MetadataCompatibilityCode.ResourceMissing => FindArtifactContract(contract, finding)?.Exists == true,
+            MetadataCompatibilityCode.ResourceMissing => ResourceContractSatisfies(FindArtifactContract(contract, finding), finding),
             MetadataCompatibilityCode.ResourceTypeMismatch => FindArtifactContract(contract, finding)?.ResourceType?.ToString() == finding.Expected.Value,
             MetadataCompatibilityCode.FieldMissing or
             MetadataCompatibilityCode.FieldTypeMismatch or
@@ -991,10 +994,10 @@ public static class MetadataCompatibilityAnalyzer
             MetadataCompatibilityCode.StorageBindingMissing or
             MetadataCompatibilityCode.StorageTypeMismatch or
             MetadataCompatibilityCode.StorageCapabilityMissing => StorageContractSatisfies(FindArtifactContract(contract, finding), finding),
-            MetadataCompatibilityCode.ServiceMissing => FindArtifactContract(contract, finding)?.Exists == true,
+            MetadataCompatibilityCode.ServiceMissing => ServiceContractSatisfies(FindArtifactContract(contract, finding), finding),
             MetadataCompatibilityCode.ServiceTypeMismatch => FindArtifactContract(contract, finding)?.ServiceType?.ToString() == finding.Expected.Value,
             MetadataCompatibilityCode.ServiceProtocolMissing => FindArtifactContract(contract, finding)?.Capabilities.Contains(finding.Expected.Value ?? string.Empty, StringComparer.OrdinalIgnoreCase) == true,
-            MetadataCompatibilityCode.PublicationMissing => FindArtifactContract(contract, finding)?.Exists == true,
+            MetadataCompatibilityCode.PublicationMissing => PublicationContractSatisfies(FindArtifactContract(contract, finding), finding),
             MetadataCompatibilityCode.PublicationTypeMismatch => FindArtifactContract(contract, finding)?.PublicationType?.ToString() == finding.Expected.Value,
             MetadataCompatibilityCode.PublicationFormatMissing => FindArtifactContract(contract, finding)?.SupportedFormats.Contains(finding.Expected.Value ?? string.Empty, StringComparer.OrdinalIgnoreCase) == true,
             MetadataCompatibilityCode.PublicationCapabilityMissing => FindArtifactContract(contract, finding)?.Capabilities.Contains(finding.Expected.Value ?? string.Empty, StringComparer.OrdinalIgnoreCase) == true,
@@ -1085,6 +1088,52 @@ public static class MetadataCompatibilityAnalyzer
         return contract.Resources.FirstOrDefault(resource =>
             string.Equals(resource.SemanticId, resourceId, StringComparison.Ordinal) &&
             resource.SemanticKind == MetadataSemanticArtifactKind.Resource);
+    }
+
+    private static bool ResourceContractSatisfies(
+        MetadataScriptResourceContract? contract,
+        MetadataCompatibilityFinding finding)
+        => contract?.Exists == true &&
+            contract.ResourceType?.ToString() == finding.Expected.Value;
+
+    private static bool ServiceContractSatisfies(
+        MetadataScriptResourceContract? contract,
+        MetadataCompatibilityFinding finding)
+    {
+        if (contract?.Exists != true ||
+            contract.ServiceType?.ToString() != finding.Expected.Value)
+        {
+            return false;
+        }
+
+        if (!ContractDetailMatches(contract.Route, finding.Expected.Details, "route"))
+        {
+            return false;
+        }
+
+        return ContractContainsAll(
+            contract.Capabilities,
+            finding.Expected.Details,
+            "enabledProtocols");
+    }
+
+    private static bool PublicationContractSatisfies(
+        MetadataScriptResourceContract? contract,
+        MetadataCompatibilityFinding finding)
+    {
+        if (contract?.Exists != true ||
+            contract.PublicationType?.ToString() != finding.Expected.Value)
+        {
+            return false;
+        }
+
+        return ContractDetailMatches(contract.ResourceId, finding.Expected.Details, "resourceId") &&
+            ContractDetailMatches(contract.ServiceId, finding.Expected.Details, "serviceId") &&
+            ContractDetailMatches(contract.Path, finding.Expected.Details, "path") &&
+            ContractDetailMatches(contract.ServiceLocalId, finding.Expected.Details, "serviceLocalId") &&
+            ContractDetailMatches(contract.LayerIndex?.ToString(CultureInfo.InvariantCulture), finding.Expected.Details, "layerIndex") &&
+            ContractContainsAll(contract.SupportedFormats, finding.Expected.Details, "supportedFormats") &&
+            ContractContainsAll(contract.Capabilities, finding.Expected.Details, "capabilities");
     }
 
     private static bool FieldContractSatisfies(
@@ -1207,11 +1256,53 @@ public static class MetadataCompatibilityAnalyzer
 
         return finding.Code switch
         {
-            MetadataCompatibilityCode.StorageBindingMissing => true,
+            MetadataCompatibilityCode.StorageBindingMissing =>
+                ContractDetailMatches(contract.Storage.StorageBindingId, finding.Expected.Value) &&
+                ContractDetailMatches(contract.Storage.StorageType?.ToString(), finding.Expected.Details, "storageType") &&
+                ContractContainsAll(contract.Storage.Capabilities.Select(static capability => capability.ToString()), finding.Expected.Details, "capabilities"),
             MetadataCompatibilityCode.StorageTypeMismatch => contract.Storage.StorageType?.ToString() == finding.Expected.Value,
             MetadataCompatibilityCode.StorageCapabilityMissing => contract.Storage.Capabilities.Any(capability => capability.ToString() == finding.Expected.Value),
             _ => false,
         };
+    }
+
+    private static bool ContractDetailMatches(
+        string? actual,
+        IReadOnlyDictionary<string, string> expectedDetails,
+        string key)
+    {
+        if (!expectedDetails.TryGetValue(key, out var expected))
+        {
+            return true;
+        }
+
+        return ContractDetailMatches(actual, expected);
+    }
+
+    private static bool ContractDetailMatches(string? actual, string? expected)
+        => string.Equals(actual ?? string.Empty, expected ?? string.Empty, StringComparison.Ordinal);
+
+    private static bool ContractContainsAll(
+        IEnumerable<string> actualValues,
+        IReadOnlyDictionary<string, string> expectedDetails,
+        string key)
+    {
+        if (!expectedDetails.TryGetValue(key, out var expected) ||
+            string.IsNullOrWhiteSpace(expected))
+        {
+            return true;
+        }
+
+        var actual = new HashSet<string>(actualValues, StringComparer.OrdinalIgnoreCase);
+        foreach (var expectedValue in expected.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!actual.Contains(expectedValue))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static MetadataAffectedDependent[] BuildAffectedDependents(
@@ -1616,6 +1707,21 @@ public static class MetadataCompatibilityAnalyzer
             ["trackIdField"] = fields.TrackIdField ?? string.Empty,
         };
 
+    private static Dictionary<string, string> StorageDetails(MetadataV2StorageBinding binding)
+        => new(StringComparer.Ordinal)
+        {
+            ["storageBindingId"] = binding.Metadata.Id,
+            ["storageType"] = binding.StorageType.ToString(),
+            ["capabilities"] = JoinTokens(binding.Capabilities.Select(static capability => capability.ToString())),
+        };
+
+    private static Dictionary<string, string> ServiceDetails(MetadataV2Service service)
+        => new(StringComparer.Ordinal)
+        {
+            ["route"] = service.Route ?? string.Empty,
+            ["enabledProtocols"] = JoinTokens(service.EnabledProtocols ?? Array.Empty<string>()),
+        };
+
     private static Dictionary<string, string> PublicationDetails(MetadataV2Publication publication)
         => new(StringComparer.Ordinal)
         {
@@ -1624,7 +1730,16 @@ public static class MetadataCompatibilityAnalyzer
             ["path"] = publication.Path ?? string.Empty,
             ["serviceLocalId"] = publication.ServiceLocalId ?? string.Empty,
             ["layerIndex"] = publication.LayerIndex?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            ["supportedFormats"] = JoinTokens(publication.SupportedFormats),
+            ["capabilities"] = JoinTokens(publication.Capabilities),
         };
+
+    private static string JoinTokens(IEnumerable<string> values)
+        => string.Join(
+            ",",
+            values
+                .Where(static value => !string.IsNullOrWhiteSpace(value))
+                .Order(StringComparer.OrdinalIgnoreCase));
 
     private static string[] ExtractTokens(
         IReadOnlyDictionary<string, JsonElement> values,

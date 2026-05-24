@@ -2,7 +2,17 @@
 
 `POST /api/v1/admin/metadata/prevalidate` generates a server-owned compatibility report for a Metadata v2 release package against a named target environment. Console can call it before opening a Git PR, and CI can call the same endpoint after a release package is committed.
 
-The endpoint is admin-authorized and does not execute data scripts. It compares the proposed package state with the target environment's current Metadata v2 graph snapshot.
+The endpoint is admin-authorized and does not execute data scripts. It compares the proposed package state with the target environment's current Metadata v2 graph snapshot, using the package source graph revision as the desired-state side of the comparison.
+
+Related Metadata v2 release endpoints:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/v1/admin/metadata/environments/{environment}/inventory` | Returns revision-stamped semantic inventory for a target environment. |
+| `POST /api/v1/admin/metadata/environment-bindings/query` | Returns secret-safe binding summaries for semantic ids across environments. |
+| `POST /api/v1/admin/metadata/release-packages` | Creates a persisted `MetadataReleasePackage` from source and target environments. |
+| `GET /api/v1/admin/metadata/release-packages/{packageId}` | Reads a persisted release package. |
+| `GET /api/v1/admin/metadata/release-packages/{packageId}/gitops-manifest` | Exports a GitOps-safe JSON manifest for the package. |
 
 ## Request
 
@@ -14,11 +24,36 @@ Provide exactly one package source:
 Required fields:
 
 - `targetEnvironment`: target environment name.
-- `dataScripts`: optional declared script contracts. Scripts may cover findings only when `beforeContract` matches current target state and `afterContract` satisfies the missing requirement.
+- `dataScripts`: optional declared script contracts. Send an array when present; `null` is rejected.
+
+Request validation:
+
+- `releasePackageId` must not be an empty GUID.
+- Exactly one of `releasePackageId` or `releasePackage` is required.
+- `targetEnvironment` is trimmed and must not be blank.
+- Up to 100 data scripts may be supplied.
+- Each script needs a non-blank `scriptId`, `declaredOperations` as an array, and optional `beforeContract` / `afterContract` objects whose `resources` and `fields` members are arrays.
+- A single script may declare up to 1000 contract fields.
 
 ## Response
 
 The response is `ApiResponse<MetadataCompatibilityReport>`.
+
+Top-level report fields:
+
+| Field | Notes |
+|---|---|
+| `targetEnvironment` | Environment analyzed after normalization. |
+| `releasePackageId`, `packageKey` | Package identity when known. |
+| `sourceEnvironment`, `sourceRevision`, `sourceEtag` | Desired-state source package graph. |
+| `targetRevision`, `targetEtag` | Current target graph snapshot used for comparison. |
+| `generatedAt` | Server UTC generation timestamp. |
+| `status` | `ready`, `warning`, `blocked`, or `unknown`. |
+| `canCreatePullRequest`, `canPromote` | `false` for `blocked` and `unknown`; `true` for `ready` and `warning`. |
+| `uncoveredErrorCount`, `coveredErrorCount`, `warningCount`, `scriptCount` | Rollup counters for automation gates. |
+| `findings` | Deterministically ordered finding list. |
+| `affectedDependents` | Blast-radius inventory for Console visualization. |
+| `rollbackReadiness` | Rollback classification and required operator posture. |
 
 Report status values:
 
@@ -27,16 +62,124 @@ Report status values:
 - `blocked`: at least one error finding is not covered by a declared script.
 - `unknown`: source package state, target graph state, or comparable declared metadata is unavailable.
 
-`canCreatePullRequest` and `canPromote` are `false` for `blocked` and `unknown` reports.
+`canCreatePullRequest` and `canPromote` are both status-derived. Script-covered error findings allow those gates to pass, but the report remains `warning` so callers can show the required script step.
 
 ## Findings
 
 Each finding includes a stable `code`, `severity`, `kind`, affected semantic id/kind, safe `expected` and `actual` details, `requiredAction`, and data-script coverage state.
 
+Finding kinds are `state`, `resource`, `field`, `identifier`, `spatial`, `temporal`, `storage`, `service`, `publication`, `projection`, `policy`, and `script`. Severities are `info`, `warning`, and `error`.
+
+Coverage states:
+
+- `not-applicable`: no data-script coverage is needed.
+- `uncovered`: an error finding still blocks the gate.
+- `covered-by-script`: a declared script can cover the finding.
+- `unknown`: state is unavailable or the declared metadata is insufficient.
+
+Stable finding codes use the `metadata.compat.*` namespace. Current codes cover unavailable state, missing or mismatched resources, fields, identifiers, spatial metadata, temporal metadata, storage bindings, services, publications, projection semantics, policy references, and script before-contract mismatches.
+
+Data scripts may cover findings only when the `beforeContract` matches the current target state and `afterContract` satisfies the missing requirement. If a script's before-contract does not match the target state, the original finding remains uncovered and the report includes `metadata.compat.script.before_contract_mismatch`.
+
+For missing artifacts, `exists: true` alone is not sufficient coverage. The `afterContract` must also declare the expected discriminator and details: `resourceType` for resources, `serviceType` and `route` for services, `publicationType` plus `resourceId`, `serviceId`, path/local id details for publications, and `storage.storageBindingId`, `storage.storageType`, and required storage capabilities for storage bindings.
+
+## Rollback Readiness
+
 Rollback readiness is classified as:
 
-- `metadata-only`
-- `service-revision`
-- `script-reversible`
-- `snapshot-required`
-- `manual`
+- `metadata-only`: only Metadata v2 graph/package state needs rollback.
+- `service-revision`: service or publication identity changed and rollback should use a service revision.
+- `script-reversible`: covered data-impacting changes use scripts declared as reversible.
+- `snapshot-required`: at least one covering script is not declared reversible.
+- `manual`: state/script applicability is unknown, or uncovered data-impacting errors need operator planning.
+
+## Example
+
+```http
+POST /api/v1/admin/metadata/prevalidate
+Content-Type: application/json
+X-API-Key: <admin-api-key>
+
+{
+  "releasePackageId": "33333333-3333-3333-3333-333333333333",
+  "targetEnvironment": "staging",
+  "dataScripts": [
+    {
+      "scriptId": "script.add-apn",
+      "kind": "sql",
+      "reversible": true,
+      "declaredOperations": ["add-field"],
+      "beforeContract": {
+        "resources": [
+          {
+            "semanticId": "res.parcels",
+            "semanticKind": "resource",
+            "exists": true,
+            "fields": [
+              { "semanticId": "field.parcels.apn", "name": "apn", "exists": false }
+            ]
+          }
+        ]
+      },
+      "afterContract": {
+        "resources": [
+          {
+            "semanticId": "res.parcels",
+            "semanticKind": "resource",
+            "exists": true,
+            "fields": [
+              { "semanticId": "field.parcels.apn", "name": "apn", "exists": true, "type": "string", "nullable": false }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
+```
+
+Successful responses use the normal admin envelope:
+
+```json
+{
+  "success": true,
+  "data": {
+    "targetEnvironment": "staging",
+    "releasePackageId": "33333333-3333-3333-3333-333333333333",
+    "status": "warning",
+    "canCreatePullRequest": true,
+    "canPromote": true,
+    "uncoveredErrorCount": 0,
+    "coveredErrorCount": 1,
+    "warningCount": 0,
+    "scriptCount": 1,
+    "findings": [
+      {
+        "code": "metadata.compat.field.missing",
+        "severity": "error",
+        "kind": "field",
+        "affectedSemanticId": "field.parcels.apn",
+        "affectedSemanticKind": "field",
+        "affectedParentSemanticId": "res.parcels",
+        "message": "Required field is missing in the target environment.",
+        "expected": { "label": "field", "value": "apn", "details": { "type": "string" } },
+        "actual": { "label": "field", "value": "missing" },
+        "requiredAction": "run-data-script",
+        "coverageState": "covered-by-script",
+        "coveringScriptId": "script.add-apn"
+      }
+    ],
+    "affectedDependents": [],
+    "rollbackReadiness": {
+      "classification": "script-reversible",
+      "requiresSnapshot": false,
+      "requiresManualAction": false,
+      "scriptIds": ["script.add-apn"]
+    }
+  }
+}
+```
+
+## Observability
+
+The core service emits the `honua.metadata.compatibility.prevalidate` activity with target environment, package id, source revision, script count, finding count, uncovered/covered error counts, dependent count, status, and target revision tags. Structured logs use event ids `116400` through `116402`.

@@ -144,6 +144,122 @@ public sealed class MetadataCompatibilityAnalyzerTests
     }
 
     [UnitTest]
+    public void Analyze_ExistsOnlyScriptForMissingArtifacts_LeavesFindingsBlocked()
+    {
+        var source = Snapshot(BuildGraph("dev", 41));
+        var target = Snapshot(BuildGraph(
+            "staging",
+            7,
+            includeResource: false,
+            includeStorage: false,
+            includeService: false,
+            includePublication: false));
+        var package = Package(
+            Entry("res.parcels", MetadataSemanticArtifactKind.Resource),
+            Entry("svc.features", MetadataSemanticArtifactKind.Service),
+            Entry("pub.parcels", MetadataSemanticArtifactKind.Publication));
+
+        var report = MetadataCompatibilityAnalyzer.Analyze(
+            package,
+            source,
+            target,
+            [MissingArtifactsScript(includeRequiredDetails: false)],
+            GeneratedAt);
+
+        report.Status.Should().Be(MetadataCompatibilityStatus.Blocked);
+        report.CoveredErrorCount.Should().Be(0);
+        report.Findings.Should().Contain(finding =>
+            finding.Code == MetadataCompatibilityCode.ResourceMissing &&
+            finding.CoverageState == MetadataCompatibilityCoverageState.Uncovered);
+        report.Findings.Should().Contain(finding =>
+            finding.Code == MetadataCompatibilityCode.ServiceMissing &&
+            finding.CoverageState == MetadataCompatibilityCoverageState.Uncovered);
+        report.Findings.Should().Contain(finding =>
+            finding.Code == MetadataCompatibilityCode.PublicationMissing &&
+            finding.CoverageState == MetadataCompatibilityCoverageState.Uncovered);
+    }
+
+    [UnitTest]
+    public void Analyze_FullScriptContractsForMissingArtifacts_CoverFindings()
+    {
+        var source = Snapshot(BuildGraph("dev", 41));
+        var target = Snapshot(BuildGraph(
+            "staging",
+            7,
+            includeResource: false,
+            includeStorage: false,
+            includeService: false,
+            includePublication: false));
+        var package = Package(
+            Entry("res.parcels", MetadataSemanticArtifactKind.Resource),
+            Entry("svc.features", MetadataSemanticArtifactKind.Service),
+            Entry("pub.parcels", MetadataSemanticArtifactKind.Publication));
+
+        var report = MetadataCompatibilityAnalyzer.Analyze(
+            package,
+            source,
+            target,
+            [MissingArtifactsScript(includeRequiredDetails: true)],
+            GeneratedAt);
+
+        report.Status.Should().Be(MetadataCompatibilityStatus.Warning);
+        report.UncoveredErrorCount.Should().Be(0);
+        report.CoveredErrorCount.Should().Be(3);
+        report.Findings.Should().Contain(finding =>
+            finding.Code == MetadataCompatibilityCode.ResourceMissing &&
+            finding.CoverageState == MetadataCompatibilityCoverageState.CoveredByScript);
+        report.Findings.Should().Contain(finding =>
+            finding.Code == MetadataCompatibilityCode.ServiceMissing &&
+            finding.CoverageState == MetadataCompatibilityCoverageState.CoveredByScript);
+        report.Findings.Should().Contain(finding =>
+            finding.Code == MetadataCompatibilityCode.PublicationMissing &&
+            finding.CoverageState == MetadataCompatibilityCoverageState.CoveredByScript);
+    }
+
+    [UnitTest]
+    public void Analyze_StorageContractWithoutBindingDetails_LeavesMissingBindingBlocked()
+    {
+        var source = Snapshot(BuildGraph("dev", 41));
+        var target = Snapshot(BuildGraph("staging", 7, includeStorage: false));
+        var package = Package(Entry("res.parcels", MetadataSemanticArtifactKind.Resource));
+
+        var report = MetadataCompatibilityAnalyzer.Analyze(
+            package,
+            source,
+            target,
+            [MissingStorageBindingScript(includeRequiredDetails: false)],
+            GeneratedAt);
+
+        report.Status.Should().Be(MetadataCompatibilityStatus.Blocked);
+        report.CoveredErrorCount.Should().Be(0);
+        report.Findings.Should().ContainSingle(finding =>
+            finding.Code == MetadataCompatibilityCode.StorageBindingMissing &&
+            finding.CoverageState == MetadataCompatibilityCoverageState.Uncovered);
+    }
+
+    [UnitTest]
+    public void Analyze_FullStorageContract_CoversMissingBinding()
+    {
+        var source = Snapshot(BuildGraph("dev", 41));
+        var target = Snapshot(BuildGraph("staging", 7, includeStorage: false));
+        var package = Package(Entry("res.parcels", MetadataSemanticArtifactKind.Resource));
+
+        var report = MetadataCompatibilityAnalyzer.Analyze(
+            package,
+            source,
+            target,
+            [MissingStorageBindingScript(includeRequiredDetails: true)],
+            GeneratedAt);
+
+        report.Status.Should().Be(MetadataCompatibilityStatus.Warning);
+        report.UncoveredErrorCount.Should().Be(0);
+        report.CoveredErrorCount.Should().Be(1);
+        report.Findings.Should().ContainSingle(finding =>
+            finding.Code == MetadataCompatibilityCode.StorageBindingMissing &&
+            finding.CoverageState == MetadataCompatibilityCoverageState.CoveredByScript);
+    }
+
+    [UnitTest]
     public void Analyze_ServiceRouteChange_ListsDependentsAndRequiresServiceRevisionRollback()
     {
         var source = Snapshot(BuildGraph("dev", 41, serviceRoute: "/shared/ogc/features"));
@@ -286,6 +402,112 @@ public sealed class MetadataCompatibilityAnalyzerTests
             },
         };
 
+    private static MetadataDataScriptEntry MissingArtifactsScript(bool includeRequiredDetails)
+        => new()
+        {
+            ScriptId = "script.create-artifacts",
+            Kind = "sql",
+            Reversible = true,
+            DeclaredOperations = ["create-artifacts"],
+            BeforeContract = new MetadataDataScriptContract
+            {
+                Resources =
+                [
+                    new MetadataScriptResourceContract
+                    {
+                        SemanticId = "res.parcels",
+                        SemanticKind = MetadataSemanticArtifactKind.Resource,
+                        Exists = false,
+                    },
+                    new MetadataScriptResourceContract
+                    {
+                        SemanticId = "svc.features",
+                        SemanticKind = MetadataSemanticArtifactKind.Service,
+                        Exists = false,
+                    },
+                    new MetadataScriptResourceContract
+                    {
+                        SemanticId = "pub.parcels",
+                        SemanticKind = MetadataSemanticArtifactKind.Publication,
+                        Exists = false,
+                    },
+                ],
+            },
+            AfterContract = new MetadataDataScriptContract
+            {
+                Resources =
+                [
+                    new MetadataScriptResourceContract
+                    {
+                        SemanticId = "res.parcels",
+                        SemanticKind = MetadataSemanticArtifactKind.Resource,
+                        Exists = true,
+                        ResourceType = includeRequiredDetails ? MetadataV2ResourceType.FeatureDataset : null,
+                    },
+                    new MetadataScriptResourceContract
+                    {
+                        SemanticId = "svc.features",
+                        SemanticKind = MetadataSemanticArtifactKind.Service,
+                        Exists = true,
+                        ServiceType = includeRequiredDetails ? MetadataV2ServiceType.OgcApiFeatures : null,
+                        Route = includeRequiredDetails ? "/shared/ogc/features" : null,
+                    },
+                    new MetadataScriptResourceContract
+                    {
+                        SemanticId = "pub.parcels",
+                        SemanticKind = MetadataSemanticArtifactKind.Publication,
+                        Exists = true,
+                        ResourceId = includeRequiredDetails ? "res.parcels" : null,
+                        ServiceId = includeRequiredDetails ? "svc.features" : null,
+                        PublicationType = includeRequiredDetails ? MetadataV2PublicationType.OgcCollection : null,
+                        Path = includeRequiredDetails ? "parcels" : null,
+                        ServiceLocalId = includeRequiredDetails ? "parcels" : null,
+                    },
+                ],
+            },
+        };
+
+    private static MetadataDataScriptEntry MissingStorageBindingScript(bool includeRequiredDetails)
+        => new()
+        {
+            ScriptId = "script.bind-storage",
+            Kind = "sql",
+            Reversible = true,
+            DeclaredOperations = ["bind-storage"],
+            BeforeContract = new MetadataDataScriptContract
+            {
+                Resources =
+                [
+                    new MetadataScriptResourceContract
+                    {
+                        SemanticId = "res.parcels",
+                        SemanticKind = MetadataSemanticArtifactKind.Resource,
+                        Exists = true,
+                    },
+                ],
+            },
+            AfterContract = new MetadataDataScriptContract
+            {
+                Resources =
+                [
+                    new MetadataScriptResourceContract
+                    {
+                        SemanticId = "res.parcels",
+                        SemanticKind = MetadataSemanticArtifactKind.Resource,
+                        Exists = true,
+                        Storage = new MetadataScriptStorageContract
+                        {
+                            StorageBindingId = includeRequiredDetails ? "storage.parcels" : null,
+                            StorageType = includeRequiredDetails ? MetadataV2StorageType.RelationalTable : null,
+                            Capabilities = includeRequiredDetails
+                                ? [MetadataV2StorageBindingCapability.Query]
+                                : Array.Empty<MetadataV2StorageBindingCapability>(),
+                        },
+                    },
+                ],
+            },
+        };
+
     private static MetadataV2GraphSnapshot Snapshot(MetadataV2Graph graph)
         => new(graph, $"etag-{graph.Environment}-{graph.Revision}", GeneratedAt);
 
@@ -299,14 +521,17 @@ public sealed class MetadataCompatibilityAnalyzerTests
         bool includePublication = true,
         string serviceRoute = "/shared/ogc/features",
         bool includeRelationshipDependent = false,
-        bool includeProjectionProfile = false)
+        bool includeProjectionProfile = false,
+        bool includeResource = true,
+        bool includeStorage = true)
     {
         var spatial = JsonSerializer.Deserialize<JsonElement>(
             $$"""{"srid":{{srid}},"geometryType":"Point"}""");
 
-        var resources = new List<MetadataV2Resource>
+        var resources = new List<MetadataV2Resource>();
+        if (includeResource)
         {
-            new()
+            resources.Add(new MetadataV2Resource
             {
                 Metadata = new MetadataV2ObjectMetadata
                 {
@@ -319,8 +544,8 @@ public sealed class MetadataCompatibilityAnalyzerTests
                 PrimaryStorageBindingId = "storage.parcels",
                 SchemaFields = includeField ? [BuildField(identifierRole)] : Array.Empty<MetadataV2Field>(),
                 Spatial = spatial,
-            },
-        };
+            });
+        }
 
         if (includeRelationshipDependent)
         {
@@ -351,17 +576,19 @@ public sealed class MetadataCompatibilityAnalyzerTests
             Revision = revision,
             GeneratedAt = GeneratedAt,
             Resources = resources,
-            StorageBindings =
-            [
-                new MetadataV2StorageBinding
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "storage.parcels", Name = "storage.parcels" },
-                    ResourceId = "res.parcels",
-                    StorageType = MetadataV2StorageType.RelationalTable,
-                    Locator = "shared.parcels",
-                    Capabilities = [MetadataV2StorageBindingCapability.Query],
-                },
-            ],
+            StorageBindings = includeStorage
+                ?
+                [
+                    new MetadataV2StorageBinding
+                    {
+                        Metadata = new MetadataV2ObjectMetadata { Id = "storage.parcels", Name = "storage.parcels" },
+                        ResourceId = "res.parcels",
+                        StorageType = MetadataV2StorageType.RelationalTable,
+                        Locator = "shared.parcels",
+                        Capabilities = [MetadataV2StorageBindingCapability.Query],
+                    },
+                ]
+                : Array.Empty<MetadataV2StorageBinding>(),
             Services = includeService
                 ?
                 [

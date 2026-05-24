@@ -322,6 +322,10 @@ public sealed record MetadataScriptResourceContract
     [JsonPropertyName("resourceId")]
     public string? ResourceId { get; init; }
 
+    /// <summary>Parent service identifier for publication contracts.</summary>
+    [JsonPropertyName("serviceId")]
+    public string? ServiceId { get; init; }
+
     /// <summary>Whether the artifact is expected to exist.</summary>
     [JsonPropertyName("exists")]
     public bool? Exists { get; init; }
@@ -467,6 +471,10 @@ public sealed record MetadataScriptTemporalContract
 /// </summary>
 public sealed record MetadataScriptStorageContract
 {
+    /// <summary>Storage binding semantic identifier expected before or after the script.</summary>
+    [JsonPropertyName("storageBindingId")]
+    public string? StorageBindingId { get; init; }
+
     /// <summary>Storage type.</summary>
     [JsonPropertyName("storageType")]
     public MetadataV2StorageType? StorageType { get; init; }

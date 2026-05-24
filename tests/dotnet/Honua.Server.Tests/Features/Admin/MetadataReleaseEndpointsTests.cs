@@ -370,6 +370,23 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Validation)]
     [Endpoint("POST /api/v1/admin/metadata/prevalidate")]
+    public async Task Prevalidate_WithNullDataScripts_ReturnsBadRequest()
+    {
+        var response = await _client.PostAsync(
+            "/api/v1/admin/metadata/prevalidate",
+            new StringContent(
+                "{\"releasePackageId\":\"33333333-3333-3333-3333-333333333333\",\"targetEnvironment\":\"staging\",\"dataScripts\":null}",
+                Encoding.UTF8,
+                "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var payload = await response.Content.ReadAsStringAsync();
+        payload.Should().Contain("DataScripts must be an array.");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Validation)]
+    [Endpoint("POST /api/v1/admin/metadata/prevalidate")]
     public async Task Prevalidate_WithUnavailableTarget_ReturnsUnknownReport()
     {
         var body = JsonSerializer.Serialize(

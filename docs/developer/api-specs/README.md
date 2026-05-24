@@ -97,6 +97,7 @@ See the [OGC API Coverages Coverage](../../gis/specifications/ogc-api-coverages-
 - Publish and configure layers from database tables
 - Control layer enabling/disabling and protocol settings
 - Manage map styles and layer styling
+- Create Metadata v2 release packages and prevalidate release compatibility against target environments before GitOps promotion
 - Scan GeoServer REST and ArcGIS GeoServices REST FeatureServer/MapServer service roots into deterministic migration inventory artifacts with compatibility rollups
 - Monitor system health and observability
 - Inspect durable background jobs, structured logs, artifacts, control actions, and Operate event correlations
