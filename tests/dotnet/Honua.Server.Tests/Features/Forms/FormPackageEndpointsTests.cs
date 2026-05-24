@@ -238,6 +238,27 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /api/v1/forms/packages/{formId}/submissions")]
+    public async Task SubmitForm_WithNonnumericGeometry_ReturnsRejectedValidationResponse()
+    {
+        var published = await PublishPackageAsync(CreatePackage("Geometry validation"));
+        var submission = CreateSubmission(
+            "bad-geometry-1",
+            "Bad geometry",
+            geometry: Json("""{"x":"west","y":21.3069,"spatialReference":{"wkid":4326}}"""));
+
+        var response = await _fixture.Client.PostAsync(
+            $"/api/v1/forms/packages/{published.FormId}/submissions",
+            JsonContent(submission));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await ReadJsonAsync(response, FormPackageJsonContext.Default.FormSubmissionResponse);
+        body.Status.Should().Be("rejected");
+        body.ValidationIssues.Should().Contain(issue => issue.Code == "geometryCoordinateInvalid");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.AddAttachment)]
     [Endpoint("POST /api/v1/forms/packages/{formId}/submissions")]
     public async Task SubmitForm_WithMultipartAttachment_PersistsFeatureAttachmentAndMinimizedSubmissionRecord()
@@ -308,6 +329,11 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
         body.ValidationIssues.Should().Contain(issue =>
             issue.Code == "attachmentContentTypeNotAllowed" &&
             issue.FieldId == "photo");
+        body.AttachmentOutcomes.Should().ContainSingle(outcome =>
+            outcome.Status == "rejected" &&
+            outcome.FieldId == "photo");
+        var rejectedAttachmentCount = await CountAttachmentOutcomesAsync(body.SubmissionId, "rejected");
+        rejectedAttachmentCount.Should().Be(1);
     }
 
     private async Task EnableEditingCapabilitiesAsync()
@@ -354,6 +380,20 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
         await using var reader = await command.ExecuteReaderAsync();
         (await reader.ReadAsync()).Should().BeTrue();
         return (reader.GetInt64(0), reader.GetString(1));
+    }
+
+    private async Task<long> CountAttachmentOutcomesAsync(Guid submissionId, string status)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM honua.form_submission_attachments
+            WHERE submission_id = @submission_id AND status = @status;
+            """;
+        command.Parameters.AddWithValue("submission_id", submissionId);
+        command.Parameters.AddWithValue("status", status);
+        return (long)(await command.ExecuteScalarAsync() ?? 0L);
     }
 
     private async Task<T> GetJsonAsync<T>(string path, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> jsonTypeInfo)
@@ -487,7 +527,10 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
         string name,
         string operation = FormSubmissionOperations.Create,
         bool includeAttachment = false,
-        long? targetFeatureId = null)
+        long? targetFeatureId = null,
+        JsonElement? geometry = null,
+        string attachmentFilename = "photo.png",
+        string attachmentContentType = "image/png")
         => new()
         {
             IdempotencyKey = idempotencyKey,
@@ -498,7 +541,7 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
             {
                 ["name"] = Json(JsonSerializer.Serialize(name))
             },
-            Geometry = Json("""{"x":-157.8583,"y":21.3069,"spatialReference":{"wkid":4326}}"""),
+            Geometry = geometry ?? Json("""{"x":-157.8583,"y":21.3069,"spatialReference":{"wkid":4326}}"""),
             Attachments = includeAttachment
                 ?
                 [
@@ -507,8 +550,8 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
                         ClientAttachmentId = "photo-1",
                         FieldId = "photo",
                         PartName = "photo-file",
-                        Filename = "photo.png",
-                        ContentType = "image/png"
+                        Filename = attachmentFilename,
+                        ContentType = attachmentContentType
                     }
                 ]
                 : []

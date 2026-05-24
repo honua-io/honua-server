@@ -753,9 +753,7 @@ public sealed class FormPackageValidator
         }
 
         if (!geometry.TryGetProperty("x", out var x) ||
-            !geometry.TryGetProperty("y", out var y) ||
-            x.ValueKind is not (JsonValueKind.Number or JsonValueKind.String) ||
-            y.ValueKind is not (JsonValueKind.Number or JsonValueKind.String))
+            !geometry.TryGetProperty("y", out var y))
         {
             AddError(issues, "geometryPointRequired", "This form API currently accepts point geometry with x and y.", path: "geometry");
             return;
@@ -988,11 +986,22 @@ public sealed class FormPackageValidator
         => layerType switch
         {
             FieldType.String or FieldType.Uuid or FieldType.Date or FieldType.DateTime or FieldType.Time => value.ValueKind == JsonValueKind.String,
-            FieldType.Integer or FieldType.BigInteger or FieldType.Double or FieldType.Float => value.ValueKind == JsonValueKind.Number,
+            FieldType.Integer => value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out _),
+            FieldType.BigInteger => value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out _),
+            FieldType.Double => TryReadFiniteJsonNumber(value, out _),
+            FieldType.Float => value.ValueKind == JsonValueKind.Number && value.TryGetSingle(out var singleValue) && float.IsFinite(singleValue),
             FieldType.Boolean => value.ValueKind is JsonValueKind.True or JsonValueKind.False,
             FieldType.Json => true,
             _ => true
         };
+
+    private static bool TryReadFiniteJsonNumber(JsonElement value, out double result)
+    {
+        result = 0;
+        return value.ValueKind == JsonValueKind.Number &&
+               value.TryGetDouble(out result) &&
+               double.IsFinite(result);
+    }
 
     private static bool TryGetNumericParameter(JsonElement? parameters, string name, out int value)
     {

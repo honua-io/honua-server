@@ -21,18 +21,18 @@ Runtime package, offline-policy, and submission routes also use the current admi
 | Method | Route | Success | Contract |
 |---|---|---:|---|
 | `GET` | `/api/v1/admin/forms/packages` | `200` | Returns `FormPackageSummary[]`; response is `Cache-Control: no-store`. |
-| `POST` | `/api/v1/admin/forms/packages` | `201` | Creates draft version `1` or the next draft for the supplied `formId`; returns `FormPackageVersion` with `ETag` and `Cache-Control: no-store`. |
+| `POST` | `/api/v1/admin/forms/packages` | `201` | Creates draft version `1` or the next draft for the supplied `formId`; returns `FormPackageVersion` with `ETag` and `Cache-Control: no-store`. Draft saves do not run publish validation. |
 | `GET` | `/api/v1/admin/forms/packages/{formId}` | `200` | Returns the current draft, falling back to the current published version; response is `no-store`. |
 | `GET` | `/api/v1/admin/forms/packages/{formId}/versions` | `200` | Returns all `FormPackageVersion` rows for a package family, newest version first, or an empty array when the family has no stored versions; response is `no-store`. |
 | `GET` | `/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}` | `200` | Returns one version with `ETag`; response is `no-store`. |
-| `PUT` | `/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}` | `200` | Updates a draft only. Requires the exact returned `ETag` value in `If-Match`; returns updated `FormPackageVersion` with new `ETag`. |
+| `PUT` | `/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}` | `200` | Updates a draft only. Requires the exact returned `ETag` value in `If-Match`; returns updated `FormPackageVersion` with new `ETag`. Draft updates clear stored validation. |
 | `POST` | `/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/validate` | `200` | Returns `FormPackageValidationResult`; stores validation for drafts. |
 | `POST` | `/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/publish` | `200` | Validates and publishes a draft; returns immutable `FormPackageVersion`. |
 | `POST` | `/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/reopen` | `200` | Creates a new draft from a published version; sets `reopenedFromVersion`. |
 
 Expected failures:
 
-- `400` when the package JSON is invalid or publish validation fails.
+- `400` when the package JSON is invalid or publish validation fails. Invalid JSON uses a problem response; publish validation failure returns `FormPackageValidationResult`.
 - `404` when a package or version cannot be found.
 - `409` when a draft update targets a non-draft, the `ETag` does not match, or a publish target is no longer draft.
 - `428` when `PUT` omits `If-Match`.
@@ -165,6 +165,8 @@ Multipart submissions must include a `submission` JSON part plus file parts refe
 
 The server normalizes missing descriptor `filename`, `contentType`, and `sizeBytes` from the uploaded file when the multipart part exists. Descriptor and file MIME types must satisfy the package allowlist, any per-field allowlist, and the global server allowlist; when a package or field allowlist is empty, the next broader policy supplies the constraint. Accepted files are stored through the FeatureServer attachment store and return per-file outcomes. Descriptors that name missing parts are rejected with attachment validation issues and do not run the feature edit path.
 
+For idempotency, multipart requests hash the original `submission` JSON part. Metadata filled from file parts is used for validation and persistence, but it does not rewrite the replay hash.
+
 ## Submission Response
 
 `FormSubmissionResponse` is returned for accepted, rejected, replayed, and failed submissions:
@@ -217,7 +219,7 @@ Idempotency is scoped by form id, package version, actor/client hash, and `idemp
 
 When two requests race after the initial lookup, only the caller that creates the pending submission row owns the validation/edit/upload path. A caller that loses the idempotency claim re-reads the stored record: if the record is terminal, the stored response is returned as an idempotent replay; if it is still pending, the caller receives `409` and does not apply another edit.
 
-Submission records store minimized request summaries instead of raw private field values. The summary includes operation, submitted field ids, private field ids, attachment count, optional `targetFeatureId`, client id when allowed by privacy policy, and the client submission time when provided. Package and policy hashes are stored on the durable submission row beside the summary. Private values are not copied into the request summary. Attachment policy outcomes are recorded per submitted attachment.
+Submission records store minimized request summaries instead of raw private field values. The summary includes operation, submitted field ids, private field ids, attachment count, optional `targetFeatureId`, client id when allowed by privacy policy, and the client submission time when provided. Field ids listed in `privacyPolicy.privateFieldIds` and fields marked with `"private": true` are treated as private. Package and policy hashes are stored on the durable submission row beside the summary. Private values are not copied into the request summary. Attachment policy outcomes are recorded per submitted attachment.
 
 ## Offline Policy
 
@@ -248,6 +250,8 @@ The offline policy endpoint advertises existing sync surfaces instead of creatin
 ```
 
 When `offlinePolicy.enabled` is `false`, `availableTransports` and `links` are empty. When enabled, `replicaTransportEnabled` adds FeatureServer replica links with rels `create-replica`, `extract-changes`, `synchronize-replica`, and `unregister-replica`. `fieldCollectionTransportEnabled` adds rels `fieldcollection-generation`, `fieldcollection-sync-cursor`, `fieldcollection-ack-cursor`, `fieldcollection-changes`, and `fieldcollection-push-change`. `preferredTransports` is validated on publish, but the response lists enabled transports in stable server order: `feature-server-replica`, then `fieldcollection`.
+
+`offlinePolicy.preferredTransports` is validated and retained in the package document for client preference metadata. The offline-policy response advertises enabled transports in stable server order: `feature-server-replica` first, then `fieldcollection`.
 
 Offline links are absolute and derived from the incoming request scheme, host, and path base. Clients should send `X-Honua-Client-Id` on sync and submission requests for cursor correlation and idempotency scoping.
 

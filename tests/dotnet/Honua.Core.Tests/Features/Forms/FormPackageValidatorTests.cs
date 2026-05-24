@@ -265,6 +265,62 @@ public sealed class FormPackageValidatorTests
     }
 
     [UnitTest]
+    public async Task ValidateSubmission_WithUnparseableNumericField_ReturnsValidationIssue()
+    {
+        var validator = CreateValidator();
+        var package = CreatePackage();
+        package = new FormPackageDocument
+        {
+            Title = package.Title,
+            Target = package.Target,
+            Sections =
+            [
+                new FormSectionDefinition
+                {
+                    SectionId = "main",
+                    Label = "Main",
+                    FieldIds = ["name", "count"]
+                }
+            ],
+            Fields =
+            [
+                CreateNameField(),
+                new FormFieldDefinition
+                {
+                    FieldId = "count",
+                    Label = "Count",
+                    Type = "integer",
+                    TargetField = "count",
+                    Required = true,
+                    SectionId = "main"
+                }
+            ],
+            SubmitPolicy = package.SubmitPolicy,
+            AttachmentPolicy = package.AttachmentPolicy,
+            OfflinePolicy = package.OfflinePolicy
+        };
+        var packageVersion = new FormPackageVersion
+        {
+            FormId = "inspection",
+            Version = 1,
+            Status = FormPackageStatus.Published,
+            Package = package
+        };
+        var request = CreateSubmissionRequest(
+            FormSubmissionOperations.Create,
+            values: new Dictionary<string, JsonElement>
+            {
+                ["name"] = Json("\"Inspection\""),
+                ["count"] = Json("1.5")
+            });
+
+        var result = await validator.ValidateSubmissionAsync(packageVersion, request);
+
+        result.IsValid.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Code == "fieldValueTypeMismatch" && issue.FieldId == "count");
+    }
+
+    [UnitTest]
     public async Task ValidateSubmission_WithPerFieldAttachmentPolicy_EnforcesCountRequiredAndContentType()
     {
         var validator = CreateValidator();
@@ -366,6 +422,7 @@ public sealed class FormPackageValidatorTests
             [
                 new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
                 new FieldDefinition("name", FieldType.String, Length: 255),
+                new FieldDefinition("count", FieldType.Integer),
                 new FieldDefinition("category", FieldType.String, Length: 64),
                 new FieldDefinition("shape", FieldType.Geometry)
             ]);

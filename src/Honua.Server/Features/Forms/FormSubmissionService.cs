@@ -124,17 +124,7 @@ internal sealed class FormSubmissionService
                 context.RequestAborted).ConfigureAwait(false);
             if (existing is not null)
             {
-                if (!string.Equals(existing.RequestHash, requestHash, StringComparison.Ordinal))
-                {
-                    return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status409Conflict, "Idempotency key was already used with a different submission payload.");
-                }
-
-                if (existing.Response is null)
-                {
-                    return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status409Conflict, "Submission with this idempotency key is still pending.");
-                }
-
-                return Results.Json(CloneReplayResponse(existing.Response), FormPackageJsonContext.Default.FormSubmissionResponse);
+                return ResolveIdempotencyReplay(context, existing, requestHash);
             }
         }
 
@@ -171,7 +161,8 @@ internal sealed class FormSubmissionService
 
             if (!validation.IsValid)
             {
-                foreach (var outcome in fileValidation.Outcomes)
+                var rejectedAttachmentOutcomes = BuildRejectedAttachmentOutcomes(request, validation.Issues, fileValidation.Outcomes);
+                foreach (var outcome in rejectedAttachmentOutcomes)
                 {
                     await RecordAttachmentOutcomeAsync(context, submissionId, packageVersion, request, outcome, postClaimToken)
                         .ConfigureAwait(false);
@@ -182,7 +173,13 @@ internal sealed class FormSubmissionService
                     string.Equals(issue.Code, "attachmentsNotAllowed", StringComparison.OrdinalIgnoreCase))
                     ? StatusCodes.Status403Forbidden
                     : StatusCodes.Status400BadRequest;
-                var rejected = BuildRejectedResponse(submissionId, packageVersion, request, validation.Issues, statusCode == StatusCodes.Status403Forbidden);
+                var rejected = BuildRejectedResponse(
+                    submissionId,
+                    packageVersion,
+                    request,
+                    validation.Issues,
+                    statusCode == StatusCodes.Status403Forbidden,
+                    rejectedAttachmentOutcomes);
                 await CompleteSubmissionAsync(submissionId, rejected, "rejected").ConfigureAwait(false);
                 await RecordAuditAsync(context, "forms.submission.create", packageVersion.FormId, AuditOutcome.Failure, $"{{\"version\":{packageVersion.Version},\"issueCount\":{validation.Issues.Length}}}", CancellationToken.None)
                     .ConfigureAwait(false);
@@ -300,6 +297,11 @@ internal sealed class FormSubmissionService
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status409Conflict, "Submission with this idempotency key is still pending.");
         }
 
+        return ResolveIdempotencyReplay(context, existing, requestHash);
+    }
+
+    private static IResult ResolveIdempotencyReplay(HttpContext context, FormSubmissionRecord existing, string requestHash)
+    {
         if (!string.Equals(existing.RequestHash, requestHash, StringComparison.Ordinal))
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status409Conflict, "Idempotency key was already used with a different submission payload.");
@@ -556,10 +558,10 @@ internal sealed class FormSubmissionService
         return fieldType switch
         {
             FieldType.String or FieldType.Uuid or FieldType.Time => value.ValueKind == JsonValueKind.String ? value.GetString() : value.GetRawText(),
-            FieldType.Integer => value.TryGetInt32(out var intValue) ? intValue : value.GetInt64(),
+            FieldType.Integer => value.GetInt32(),
             FieldType.BigInteger => value.GetInt64(),
             FieldType.Double => value.GetDouble(),
-            FieldType.Float => (float)value.GetDouble(),
+            FieldType.Float => value.GetSingle(),
             FieldType.Boolean => value.GetBoolean(),
             FieldType.Date or FieldType.DateTime => value.ValueKind == JsonValueKind.String &&
                 DateTimeOffset.TryParse(value.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var timestamp)
@@ -758,7 +760,8 @@ internal sealed class FormSubmissionService
         FormPackageVersion packageVersion,
         FormSubmissionRequest request,
         FormValidationIssue[] issues,
-        bool retryable)
+        bool retryable,
+        FormSubmissionAttachmentOutcome[]? attachmentOutcomes = null)
         => new()
         {
             SubmissionId = submissionId,
@@ -767,6 +770,7 @@ internal sealed class FormSubmissionService
             FormVersion = packageVersion.Version,
             Operation = request.Operation,
             TargetFeatureId = request.TargetFeatureId,
+            AttachmentOutcomes = attachmentOutcomes ?? [],
             ValidationIssues = issues,
             Retry = new FormSubmissionRetryGuidance
             {
@@ -799,6 +803,54 @@ internal sealed class FormSubmissionService
                 Reason = retryReason
             }
         };
+
+    private static FormSubmissionAttachmentOutcome[] BuildRejectedAttachmentOutcomes(
+        FormSubmissionRequest request,
+        FormValidationIssue[] issues,
+        FormSubmissionAttachmentOutcome[] existingOutcomes)
+    {
+        if (request.Attachments.Length == 0)
+        {
+            return existingOutcomes;
+        }
+
+        var outcomes = existingOutcomes.ToList();
+        foreach (var descriptor in request.Attachments)
+        {
+            if (outcomes.Any(outcome => SameAttachment(outcome, descriptor)))
+            {
+                continue;
+            }
+
+            var issue = issues.FirstOrDefault(issue =>
+                IsAttachmentIssue(issue) &&
+                (string.Equals(issue.FieldId, descriptor.FieldId, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(issue.Path, "attachments", StringComparison.OrdinalIgnoreCase)));
+            if (issue is null)
+            {
+                continue;
+            }
+
+            outcomes.Add(new FormSubmissionAttachmentOutcome
+            {
+                ClientAttachmentId = descriptor.ClientAttachmentId,
+                FieldId = descriptor.FieldId,
+                Status = "rejected",
+                Reason = issue.Message,
+                PrivacyApplied = true
+            });
+        }
+
+        return outcomes.ToArray();
+    }
+
+    private static bool IsAttachmentIssue(FormValidationIssue issue)
+        => issue.Code.StartsWith("attachment", StringComparison.OrdinalIgnoreCase) ||
+           issue.Code.StartsWith("requiredAttachment", StringComparison.OrdinalIgnoreCase);
+
+    private static bool SameAttachment(FormSubmissionAttachmentOutcome outcome, FormSubmissionAttachmentDescriptor descriptor)
+        => string.Equals(outcome.ClientAttachmentId, descriptor.ClientAttachmentId, StringComparison.Ordinal) &&
+           string.Equals(outcome.FieldId, descriptor.FieldId, StringComparison.OrdinalIgnoreCase);
 
     private static FormSubmissionResponse CloneReplayResponse(FormSubmissionResponse response)
         => new()
