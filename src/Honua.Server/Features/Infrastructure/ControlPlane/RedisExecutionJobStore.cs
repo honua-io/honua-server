@@ -184,10 +184,9 @@ internal sealed partial class RedisExecutionJobStore(
         var results = new List<ExecutionJobRecord>(limit + 1);
         var staleMembers = new List<RedisValue>();
         var scoreWindowMax = maxScore;
-        var skipCursorBoundary = cursor.HasValue;
-        var exhausted = false;
+        long scoreWindowSkip = 0;
 
-        while (!exhausted && results.Count <= limit)
+        while (results.Count <= limit)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -197,7 +196,7 @@ internal sealed partial class RedisExecutionJobStore(
                     scoreWindowMax,
                     Exclude.None,
                     Order.Descending,
-                    skip: 0,
+                    skip: scoreWindowSkip,
                     take: QueryBatchSize)
                 .ConfigureAwait(false);
 
@@ -206,30 +205,22 @@ internal sealed partial class RedisExecutionJobStore(
                 break;
             }
 
-            var lastScore = scoreWindowMax;
-            var processed = 0;
+            var lowestScore = (long)entries[^1].Score;
+            var processedAtLowestScore = 0;
             foreach (var entry in entries)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var jobId = entry.Element.ToString();
                 var score = (long)entry.Score;
-                lastScore = score;
-                processed++;
-
-                if (skipCursorBoundary && cursor is { } cursorValue)
+                if (score == lowestScore)
                 {
-                    if (score == cursorValue.CreatedAtUnixMilliseconds)
-                    {
-                        if (string.Equals(jobId, cursorValue.JobId, StringComparison.Ordinal))
-                        {
-                            skipCursorBoundary = false;
-                        }
+                    processedAtLowestScore++;
+                }
 
-                        continue;
-                    }
-
-                    skipCursorBoundary = false;
+                if (cursor is { } cursorValue && IsAtOrBeforeCursor(score, jobId, cursorValue))
+                {
+                    continue;
                 }
 
                 var job = await GetAsync(jobId, cancellationToken).ConfigureAwait(false);
@@ -249,23 +240,25 @@ internal sealed partial class RedisExecutionJobStore(
                 }
             }
 
-            if (results.Count > limit || processed < entries.Length || entries.Length < QueryBatchSize)
-            {
-                exhausted = entries.Length < QueryBatchSize || results.Count > limit;
-            }
-
             if (results.Count > limit)
             {
                 break;
             }
 
-            var nextMax = lastScore - 1;
-            if (nextMax < minScore || nextMax >= scoreWindowMax)
+            if (entries.Length < QueryBatchSize)
             {
                 break;
             }
 
-            scoreWindowMax = nextMax;
+            if (lowestScore == scoreWindowMax)
+            {
+                scoreWindowSkip += processedAtLowestScore;
+            }
+            else
+            {
+                scoreWindowMax = lowestScore;
+                scoreWindowSkip = processedAtLowestScore;
+            }
         }
 
         if (staleMembers.Count > 0)
@@ -561,6 +554,21 @@ internal sealed partial class RedisExecutionJobStore(
         }
 
         return maxScore;
+    }
+
+    private static bool IsAtOrBeforeCursor(long score, string jobId, JobCursor cursor)
+    {
+        if (score > cursor.CreatedAtUnixMilliseconds)
+        {
+            return true;
+        }
+
+        if (score < cursor.CreatedAtUnixMilliseconds)
+        {
+            return false;
+        }
+
+        return string.CompareOrdinal(jobId, cursor.JobId) >= 0;
     }
 
     private static void AddMetadataKey(HashSet<string> keys, string dimension, ExecutionJobRecord job, string parameterKey)

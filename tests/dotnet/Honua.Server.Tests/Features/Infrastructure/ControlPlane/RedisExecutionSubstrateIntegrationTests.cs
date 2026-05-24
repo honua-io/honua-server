@@ -259,6 +259,66 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
     }
 
     [IntegrationTest]
+    public async Task ExecutionJobStore_WithRedis_QueryPaginatesAcrossCreatedAtTies()
+    {
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var createdAt = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        var prefix = $"job-query-tie-{Guid.NewGuid():N}";
+        var targetId = $"{prefix}-000";
+        const int sameMillisecondJobCount = 270;
+
+        for (var index = 0; index < sameMillisecondJobCount; index++)
+        {
+            var operationId = $"{prefix}-{index:D3}";
+            var resourceRef = index == 0 ? "service/tie-late" : "service/tie-other";
+            var template = CreateQueuedJob(operationId);
+            await harness.JobStore.TryCreateAsync(template with
+            {
+                Status = ExecutionJobStatus.Running,
+                CreatedAt = createdAt,
+                UpdatedAt = createdAt,
+                Spec = template.Spec with
+                {
+                    Parameters = new Dictionary<string, string>
+                    {
+                        [ExecutionJobParameterKeys.ResourceRefs] = resourceRef
+                    }
+                }
+            });
+        }
+
+        var firstPage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Statuses = [ExecutionJobStatus.Running],
+            Limit = 200
+        });
+
+        firstPage.Items.Should().HaveCount(200);
+        firstPage.NextCursor.Should().NotBeNullOrWhiteSpace();
+
+        var secondPage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Statuses = [ExecutionJobStatus.Running],
+            Cursor = firstPage.NextCursor,
+            Limit = 200
+        });
+
+        secondPage.Items.Should().HaveCount(sameMillisecondJobCount - 200);
+        secondPage.Items.Should().Contain(job => job.OperationId == targetId);
+        secondPage.NextCursor.Should().BeNull();
+
+        var filteredPage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Statuses = [ExecutionJobStatus.Running],
+            ResourceRef = "service/tie-late",
+            Limit = 1
+        });
+
+        filteredPage.Items.Should().ContainSingle(job => job.OperationId == targetId);
+        filteredPage.NextCursor.Should().BeNull();
+    }
+
+    [IntegrationTest]
     public async Task ExecutionLogStore_WithRedis_AppendsInOrderAndHonoursRetention()
     {
         await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);

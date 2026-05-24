@@ -178,11 +178,12 @@ Each item has:
 | `artifactId` | Stored artifact id or raw reference. |
 | `availability` | `Available`, `Unavailable`, `Expired`, `Redacted`, or `ProviderError`. |
 | `kind`, `label`, `contentType`, `sizeBytes` | Present when artifact metadata is available. |
-| `providerLink` | Returned only for safe `http`, `https`, or relative provider links. |
+| `providerLink` | Returned only for safe absolute `http`/`https` URLs or non-root relative provider links. |
 | `message` | Operator-safe explanation for unavailable, redacted, or provider-error cases. |
 
-Unsafe links are redacted. This includes `data:`, `file:`, absolute local
-paths, traversal segments, and values containing secret-like tokens.
+Unsafe links are redacted. This includes `data:`, `file:`, root-relative
+paths, absolute local paths, traversal segments, and values containing
+secret-like tokens.
 
 ## Actions and controls
 
