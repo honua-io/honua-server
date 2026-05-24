@@ -10,6 +10,7 @@ using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
@@ -21,6 +22,7 @@ using Honua.Server.Features.Protocols.Ogc.Common;
 using Honua.Server.Features.Protocols.Ogc.Api.Features.Models;
 using Honua.Server.Features.Protocols.Ogc.Api.Features.Services;
 using Honua.ServiceDefaults;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Protocols.Ogc.Api.Features;
 
@@ -53,14 +55,24 @@ internal sealed partial class OgcFeaturesCrudHandler(
     {
         try
         {
-            var layerValidation = await LayerValidationHelpers.ValidateCollectionWriteAccessAsync(
-                context, collectionId, cancellationToken);
+            var layerValidation = await LayerValidationHelpers.ValidateCollectionWriteAccessV2Async(
+                context, collectionId, cancellationToken: cancellationToken);
             if (!layerValidation.IsValid)
             {
                 return layerValidation.ErrorResult!;
             }
-            var layer = layerValidation.Layer!;
-            var layerId = layer.Id;
+            var resource = layerValidation.Resource!;
+            var publication = layerValidation.Publication!;
+
+            var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var storageLayerId = publication.LayerIndex
+                ?? snapshot.ResolveStorageLayerId(publication)
+                ?? snapshot.ResolveStorageLayerId(resource);
+            if (storageLayerId is not { } layerId)
+            {
+                return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' has no storage binding.");
+            }
 
             using var activity = HonuaTelemetry.ActivitySource.StartActivity(
                 HonuaTelemetry.Activities.FeatureEdit, ActivityKind.Internal);
@@ -82,12 +94,13 @@ internal sealed partial class OgcFeaturesCrudHandler(
 
             var buildResult = await OgcFeatureMutationHelpers.TryBuildFeatureAsync(
                 context.Request,
-                layer,
+                resource,
                 requestFeature,
                 _crsRegistry,
                 _geometryServices,
                 _mutationValidator,
                 objectId: 0,
+                isUpdate: false,
                 cancellationToken);
             if (!buildResult.IsValid)
             {
@@ -103,7 +116,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
             var editResult = await ExecuteEditAsync(
                 context,
                 layerId,
-                layer,
+                resource,
                 new OgcFeaturesEditRequest
                 {
                     Operation = OgcFeaturesEditOperation.Create,
@@ -125,7 +138,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
             var responseFeature = await OgcFeaturesResponseHelpers.LoadFeatureForResponseAsync(
                 _featureReader,
                 layerId,
-                layer,
+                resource,
                 createResult.ObjectId.Value,
                 inputCrs,
                 cancellationToken).ConfigureAwait(false);
@@ -141,7 +154,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 created.Value.Id,
                 "create",
                 created.Value).ConfigureAwait(false);
-            var featureIdString = OgcFeatureIdentifierResolver.FormatPublicId(responseFeature.Value, layer);
+            var featureIdString = OgcFeatureIdentifierResolver.FormatPublicId(responseFeature.Value, resource);
             var createLinks = OgcFeaturesUtilities.BuildFeatureLinks(
                 context.Request,
                 collectionId,
@@ -152,7 +165,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
             context.Response.Headers.ETag = OgcFeatureEntityTag.Compute(created.Value, _etagService);
             var locationUrl = OgcFeaturesUtilities.BuildFeatureSelfUrl(context.Request, collectionId, featureIdString);
             context.Response.Headers.Location = locationUrl;
-            var response = ToOgcFeature(responseFeature.Value, layer, inputCrs.AxisOrder, createLinks);
+            var response = ToOgcFeature(responseFeature.Value, resource, inputCrs.AxisOrder, createLinks);
 
             HonuaTelemetry.SetSuccess(activity);
             return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson, statusCode: StatusCodes.Status201Created);
@@ -185,14 +198,24 @@ internal sealed partial class OgcFeaturesCrudHandler(
     {
         try
         {
-            var layerValidation = await LayerValidationHelpers.ValidateCollectionWriteAccessAsync(
-                context, collectionId, cancellationToken);
+            var layerValidation = await LayerValidationHelpers.ValidateCollectionWriteAccessV2Async(
+                context, collectionId, cancellationToken: cancellationToken);
             if (!layerValidation.IsValid)
             {
                 return layerValidation.ErrorResult!;
             }
-            var layer = layerValidation.Layer!;
-            var layerId = layer.Id;
+            var resource = layerValidation.Resource!;
+            var publication = layerValidation.Publication!;
+
+            var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var storageLayerId = publication.LayerIndex
+                ?? snapshot.ResolveStorageLayerId(publication)
+                ?? snapshot.ResolveStorageLayerId(resource);
+            if (storageLayerId is not { } layerId)
+            {
+                return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' has no storage binding.");
+            }
 
             using var activity = HonuaTelemetry.ActivitySource.StartActivity(
                 HonuaTelemetry.Activities.FeatureEdit, ActivityKind.Internal);
@@ -203,7 +226,9 @@ internal sealed partial class OgcFeaturesCrudHandler(
             var resolvedFeature = await OgcFeatureIdentifierResolver.ResolveAsync(
                 _featureReader,
                 _queryProcessor,
-                layer,
+                snapshot,
+                publication,
+                resource,
                 featureId,
                 cancellationToken).ConfigureAwait(false);
             if (!resolvedFeature.HasValue)
@@ -216,7 +241,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
             var editResult = await ExecuteEditAsync(
                 context,
                 layerId,
-                layer,
+                resource,
                 new OgcFeaturesEditRequest
                 {
                     Operation = OgcFeaturesEditOperation.Delete,
@@ -255,23 +280,6 @@ internal sealed partial class OgcFeaturesCrudHandler(
 
     private GeoJsonFeature ToOgcFeature(
         Feature feature,
-        LayerDefinition layer,
-        AxisOrder axisOrder,
-        ImmutableArray<Link>? links = null)
-        => OgcGeoJsonFeatureBuilder.Create(
-            feature,
-            layer,
-            axisOrder,
-            _geometryServices,
-            links: links);
-
-    /// <summary>
-    /// Metadata v2 overload of
-    /// <see cref="ToOgcFeature(Feature, LayerDefinition, AxisOrder, ImmutableArray{Link}?)"/>.
-    /// Routes through the V2 <see cref="OgcGeoJsonFeatureBuilder.Create(Feature, MetadataV2Resource, AxisOrder, OgcFeaturesGeometryServices, IReadOnlySet{string}?, Func{long, object?}?, ImmutableArray{Link}?)"/>.
-    /// </summary>
-    private GeoJsonFeature ToOgcFeature(
-        Feature feature,
         MetadataV2Resource resource,
         AxisOrder axisOrder,
         ImmutableArray<Link>? links = null)
@@ -308,8 +316,6 @@ internal sealed partial class OgcFeaturesCrudHandler(
     }
 
     /// <summary>
-    /// Metadata v2 overload of
-    /// <see cref="ExecuteEditAsync(HttpContext, int, LayerDefinition, OgcFeaturesEditRequest, CancellationToken)"/>.
     /// Threads the V2 canonical resource through the edit pipeline:
     /// adapter conversion, edit-processor optimize/validate/to-batch, and
     /// outbox-scope resolution (the storage SRID is read from
@@ -358,53 +364,6 @@ internal sealed partial class OgcFeaturesCrudHandler(
             // V2 storage SRID is read from MetadataV2SpatialExtensions.ReadSrid so the
             // outbox enrichment fallback matches the inline-publish path.
             layerSrid: resource.ReadSrid(),
-            geometryChanged: geometryChanged,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
-        using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
-        return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task<FeatureEditResult> ExecuteEditAsync(
-        HttpContext context,
-        int layerId,
-        LayerDefinition layer,
-        OgcFeaturesEditRequest request,
-        CancellationToken cancellationToken)
-    {
-        var editAdapterResult = await _editParameterAdapter.ConvertAsync(request, layer, cancellationToken);
-        if (!editAdapterResult.IsSuccess || editAdapterResult.EditRequest == null)
-        {
-            throw new InvalidOperationException(editAdapterResult.ErrorMessage ?? "Invalid edit request.");
-        }
-
-        var optimizedEdit = _editProcessor.OptimizeEdit(editAdapterResult.EditRequest.Value, layer);
-        var editValidation = _editProcessor.ValidateEdit(optimizedEdit, layer);
-        if (!editValidation.IsValid)
-        {
-            throw new InvalidOperationException(editValidation.ErrorMessage ?? "Invalid edit request.");
-        }
-
-        var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, layer);
-        // Geometry-change semantics mirror the OGC Features Transaction batch handler:
-        // a row is considered to have changed geometry when the request feature carries
-        // non-null WKB. Delete operations default to false. Without this, an attribute-
-        // only PATCH would over-report as a geometry change because the post-mutation
-        // snapshot still carries the prior WKB.
-        var geometryChanged = request.Operation != OgcFeaturesEditOperation.Delete
-            && request.Feature?.Geometry is { Length: > 0 };
-        // Resolve outbox scope data, then activate it synchronously in this method's
-        // ExecutionContext so the AsyncLocal flows into ApplyEditsAsync and each mutated
-        // row writes its outbox entry inside the same DbTransaction. Activation must be
-        // synchronous (caller-side) because AsyncLocal mutations from an async callee do
-        // not propagate back to the caller.
-        var outboxScopeData = await _mutationEventService.ResolveOutboxScopeAsync(
-            context,
-            layerId,
-            HonuaTelemetry.Protocols.OgcFeatures,
-            serviceProtocol: ServiceProtocols.OgcFeatures,
-            // ToSrid() prefers LatestWkid over Wkid so the outbox enrichment fallback
-            // matches the inline-publish path for layers like Wkid=102100/LatestWkid=3857.
-            layerSrid: layer.SpatialReference.ToSrid(),
             geometryChanged: geometryChanged,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
