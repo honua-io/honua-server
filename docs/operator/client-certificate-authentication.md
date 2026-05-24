@@ -148,6 +148,14 @@ RFC 7807 JSON errors instead of opaque TLS handshake failures.
 Native gRPC mTLS requires HTTPS/HTTP2 to Kestrel or trusted TLS termination in
 front of Honua. Local h2c development ports cannot satisfy mTLS-required modes.
 
+Required native mTLS modes detect gRPC-Web requests by `Content-Type:
+application/grpc-web*` or the `X-Grpc-Web` header and skip the certificate
+check for those requests, while native HTTP/2 gRPC to the same
+`ProtectedGrpcServices` paths is still enforced. Browser Console and gRPC-Web
+users are therefore not required to present a client certificate by this
+feature; native Console and SDK clients can use full HTTPS/HTTP2 and OS
+certificate-store selection.
+
 ### Trusted Proxy Or Ingress
 
 Forwarded certificates are disabled by default. Only enable them when the
@@ -171,6 +179,12 @@ headers before adding its own.
 
 If the forwarded header arrives from an untrusted remote IP, Honua rejects the
 request with `client_certificate_forwarding_untrusted`.
+
+When `ForwardedHeaders__Enabled=true` is set, Honua captures the immediate peer
+IP before `UseForwardedHeaders()` rewrites `HttpContext.Connection.RemoteIpAddress`
+to the original client. The forwarded-certificate trust check then validates
+`TrustedProxyNetworks` against that captured peer IP, so trusted-proxy
+deployments are not falsely rejected as `client_certificate_forwarding_untrusted`.
 
 ### Cloud Load Balancers
 
@@ -282,16 +296,3 @@ internal whitespace) used for certificate matching. Required
 client-certificate modes still apply when the path matches
 `ProtectedAdminPathPrefixes`; narrow those prefixes if native clients must
 fetch issuer hints before presenting a certificate.
-
-Browser Console and gRPC-Web users are not required to present client
-certificates by this feature. Required native mTLS modes detect gRPC-Web
-requests by `Content-Type: application/grpc-web*` or the `X-Grpc-Web` header
-and skip the certificate check for those requests, while native HTTP/2 gRPC
-to the same `ProtectedGrpcServices` paths is still enforced. Native Console
-and SDK clients can use full HTTPS/HTTP2 and OS certificate-store selection.
-
-When `ForwardedHeaders__Enabled=true` is set, Honua captures the immediate
-peer IP before `UseForwardedHeaders()` rewrites `HttpContext.Connection.RemoteIpAddress`
-to the original client. The forwarded-certificate trust check then validates
-`TrustedProxyNetworks` against that captured peer IP, so trusted-proxy
-deployments are not falsely rejected as `client_certificate_forwarding_untrusted`.
