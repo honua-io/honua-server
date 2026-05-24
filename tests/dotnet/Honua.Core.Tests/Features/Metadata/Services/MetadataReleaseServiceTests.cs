@@ -105,6 +105,28 @@ public sealed class MetadataReleaseServiceTests
     }
 
     [UnitTest]
+    public async Task GetEnvironmentBindingsAsync_WithNullRequiredArrays_ThrowsValidationError()
+    {
+        var service = CreateService();
+
+        var nullEnvironments = await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.GetEnvironmentBindingsAsync(new MetadataEnvironmentBindingsRequest
+            {
+                Environments = null!,
+                SemanticIds = ["res.parcels"],
+            }));
+        nullEnvironments.Message.Should().Contain("Environments must be an array.");
+
+        var nullSemanticIds = await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.GetEnvironmentBindingsAsync(new MetadataEnvironmentBindingsRequest
+            {
+                Environments = ["dev"],
+                SemanticIds = null!,
+            }));
+        nullSemanticIds.Message.Should().Contain("SemanticIds must be an array.");
+    }
+
+    [UnitTest]
     public async Task CreateReleasePackageAsync_WithSourceAndTarget_CapturesDesiredAndCurrentRevisions()
     {
         var service = CreateService(
@@ -186,6 +208,48 @@ public sealed class MetadataReleaseServiceTests
 
         package.Entries.Should().ContainSingle()
             .Subject.DesiredContentVersionId.Should().Be("request-content-v2");
+    }
+
+    [UnitTest]
+    public async Task CreateReleasePackageAsync_WithNullRequestArrays_ThrowsValidationError()
+    {
+        var service = CreateService(
+            BuildGraph("dev", 41, MetadataV2ResourceType.FeatureDataset),
+            BuildGraph("staging", 7, MetadataV2ResourceType.FeatureDataset));
+
+        var nullTargets = await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.CreateReleasePackageAsync(
+                new CreateMetadataReleasePackageRequest
+                {
+                    SourceEnvironment = "dev",
+                    TargetEnvironments = null!,
+                    SemanticIds = ["res.parcels"],
+                },
+                "user-1"));
+        nullTargets.Message.Should().Contain("TargetEnvironments must be an array.");
+
+        var nullSemanticIds = await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.CreateReleasePackageAsync(
+                new CreateMetadataReleasePackageRequest
+                {
+                    SourceEnvironment = "dev",
+                    TargetEnvironments = ["staging"],
+                    SemanticIds = null!,
+                },
+                "user-1"));
+        nullSemanticIds.Message.Should().Contain("SemanticIds must be an array.");
+
+        var nullProvenance = await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.CreateReleasePackageAsync(
+                new CreateMetadataReleasePackageRequest
+                {
+                    SourceEnvironment = "dev",
+                    TargetEnvironments = ["staging"],
+                    SemanticIds = ["res.parcels"],
+                    Provenance = null!,
+                },
+                "user-1"));
+        nullProvenance.Message.Should().Contain("Provenance must be an array.");
     }
 
     [UnitTest]

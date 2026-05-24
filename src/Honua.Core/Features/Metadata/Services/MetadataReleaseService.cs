@@ -122,6 +122,7 @@ public sealed class MetadataReleaseService(
             nameof(request.TargetEnvironments),
             MaxBindingEnvironments);
         var semanticIds = NormalizeRequiredList(request.SemanticIds, nameof(request.SemanticIds), MaxPackageEntries);
+        var provenance = NormalizeOptionalList(request.Provenance, nameof(request.Provenance));
 
         using var activity = ActivitySource.StartActivity("honua.metadata.release.package.create", ActivityKind.Internal);
         activity?.SetTag("metadata.source_environment", request.SourceEnvironment);
@@ -169,7 +170,7 @@ public sealed class MetadataReleaseService(
             var desiredContentVersionId = string.IsNullOrWhiteSpace(artifact.ContentVersionId)
                 ? requestedContentVersionId
                 : artifact.ContentVersionId;
-            var desiredProvenance = request.Provenance.Count > 0 ? request.Provenance : artifact.Provenance;
+            var desiredProvenance = provenance.Count > 0 ? provenance : artifact.Provenance;
 
             entries.Add(new MetadataReleaseEntry
             {
@@ -797,10 +798,15 @@ public sealed class MetadataReleaseService(
             : field.SemanticId.Trim();
 
     private static List<string> NormalizeRequiredList(
-        IReadOnlyList<string> values,
+        IReadOnlyList<string>? values,
         string parameterName,
         int maxCount)
     {
+        if (values is null)
+        {
+            throw new ArgumentException($"{parameterName} must be an array.", parameterName);
+        }
+
         if (values.Count == 0)
         {
             throw new ArgumentException($"{parameterName} must contain at least one value.", parameterName);
@@ -828,6 +834,18 @@ public sealed class MetadataReleaseService(
         }
 
         return normalized;
+    }
+
+    private static IReadOnlyList<T> NormalizeOptionalList<T>(
+        IReadOnlyList<T>? values,
+        string parameterName)
+    {
+        if (values is null)
+        {
+            throw new ArgumentException($"{parameterName} must be an array.", parameterName);
+        }
+
+        return values;
     }
 
     private static void ValidateEnvironment(string environment)

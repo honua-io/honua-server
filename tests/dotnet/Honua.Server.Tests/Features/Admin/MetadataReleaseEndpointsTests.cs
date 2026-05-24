@@ -112,6 +112,47 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/metadata/environment-bindings/query")]
+    [Endpoint("POST /api/v1/admin/metadata/release-packages")]
+    public async Task ReleaseRequestEndpoints_WithExplicitNullArrays_ReturnBadRequest()
+    {
+        (string Path, string Body, string ExpectedMessage)[] cases =
+        [
+            (
+                "/api/v1/admin/metadata/environment-bindings/query",
+                "{\"environments\":null,\"semanticIds\":[\"res.parcels\"]}",
+                "Environments must be an array."),
+            (
+                "/api/v1/admin/metadata/environment-bindings/query",
+                "{\"environments\":[\"dev\"],\"semanticIds\":null}",
+                "SemanticIds must be an array."),
+            (
+                "/api/v1/admin/metadata/release-packages",
+                "{\"sourceEnvironment\":\"dev\",\"targetEnvironments\":null,\"semanticIds\":[\"res.parcels\"]}",
+                "TargetEnvironments must be an array."),
+            (
+                "/api/v1/admin/metadata/release-packages",
+                "{\"sourceEnvironment\":\"dev\",\"targetEnvironments\":[\"staging\"],\"semanticIds\":null}",
+                "SemanticIds must be an array."),
+            (
+                "/api/v1/admin/metadata/release-packages",
+                "{\"sourceEnvironment\":\"dev\",\"targetEnvironments\":[\"staging\"],\"semanticIds\":[\"res.parcels\"],\"provenance\":null}",
+                "Provenance must be an array."),
+        ];
+
+        foreach (var (path, body, expectedMessage) in cases)
+        {
+            var response = await _client.PostAsync(
+                path,
+                new StringContent(body, Encoding.UTF8, "application/json"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var payload = await response.Content.ReadAsStringAsync();
+            payload.Should().Contain(expectedMessage);
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/metadata/release-packages")]
     [Endpoint("GET /api/v1/admin/metadata/release-packages/{packageId}")]
     [Endpoint("GET /api/v1/admin/metadata/release-packages/{packageId}/gitops-manifest")]
