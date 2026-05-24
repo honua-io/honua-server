@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Protocols.OData.Models;
@@ -68,10 +69,11 @@ internal sealed partial class ODataAdvancedQueryHandler(
             }
 
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
-            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
                 context,
                 layerId,
                 LayerValidationHelpers.ValidationProtocol.OData,
+                requiredProtocol: ServiceProtocols.OData,
                 cancellationToken: effectiveToken);
             if (!layerValidation.IsValid)
             {
@@ -209,10 +211,11 @@ internal sealed partial class ODataAdvancedQueryHandler(
             }
 
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
-            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
                 context,
                 layerId,
                 LayerValidationHelpers.ValidationProtocol.OData,
+                requiredProtocol: ServiceProtocols.OData,
                 cancellationToken: effectiveToken);
             if (!layerValidation.IsValid)
             {
