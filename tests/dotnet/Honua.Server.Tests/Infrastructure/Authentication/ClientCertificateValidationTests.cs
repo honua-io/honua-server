@@ -249,6 +249,38 @@ public sealed class ClientCertificateValidationTests
     }
 
     [Fact]
+    public async Task ValidateAsync_WithLeafForgedToExposeCustomTrustAnchor_RejectsProfile()
+    {
+        // Operator configures a custom trust anchor with no chain-trust gate beyond the
+        // issuer-hint match. An attacker mints a self-signed leaf that claims the anchor
+        // as its issuer (same DN) but signs with their own key. Without strict chain
+        // verification in the hint check, chain.Build would still populate ChainElements
+        // with the anchor cert and the profile would silently match. The validator must
+        // reject because the leaf is not actually signed by the anchor.
+        using var trustAnchor = CreateCertificate("CN=Honua Prod Root CA", uri: null);
+        using var forgedLeaf = CreateCertificateWithForgedIssuer(
+            "CN=Forged Identity",
+            trustAnchor.Subject,
+            "spiffe://honua/prod/admin");
+        var profile = CreateProfile("prod-native", "prod", "CN=ignored", "spiffe://honua/prod/admin");
+        profile.AcceptedIssuerSubjects = [];
+        profile.CustomTrustAnchorCertificates = [ExportPem(trustAnchor)];
+        profile.RequireChainTrust = false;
+
+        var validator = CreateValidator(new ClientCertificateAuthenticationOptions
+        {
+            Mode = ClientCertificateAuthenticationMode.Optional,
+            EnvironmentId = "prod",
+            TrustProfiles = [profile]
+        });
+
+        var result = await validator.ValidateAsync(forgedLeaf);
+
+        result.Succeeded.Should().BeFalse();
+        result.ErrorCode.Should().Be(ClientCertificateValidationErrorCode.UntrustedIssuer);
+    }
+
+    [Fact]
     public void OptionsValidator_WithTwoProfilesAndDistinctMappings_Succeeds()
     {
         using var prodCertificate = CreateCertificate("CN=Honua Native Prod", uri: "spiffe://honua/prod/admin");
@@ -499,6 +531,41 @@ public sealed class ClientCertificateValidationTests
         return request.CreateSelfSigned(
             notBefore ?? DateTimeOffset.UtcNow.AddDays(-1),
             notAfter ?? DateTimeOffset.UtcNow.AddDays(90));
+    }
+
+    private static X509Certificate2 CreateCertificateWithForgedIssuer(
+        string subject,
+        string forgedIssuerDistinguishedName,
+        string? uri)
+    {
+        using var attackerKey = RSA.Create(2048);
+        var request = new CertificateRequest(
+            subject,
+            attackerKey,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(
+            new OidCollection { new Oid("1.3.6.1.5.5.7.3.2") },
+            critical: false));
+
+        if (!string.IsNullOrWhiteSpace(uri))
+        {
+            var sanBuilder = new SubjectAlternativeNameBuilder();
+            sanBuilder.AddUri(new Uri(uri));
+            request.CertificateExtensions.Add(sanBuilder.Build());
+        }
+
+        // Sign with the attacker's own key while declaring an unrelated issuer DN. The
+        // resulting cert advertises the trusted CA as its issuer but cannot be verified
+        // against that CA's public key.
+        var generator = X509SignatureGenerator.CreateForRSA(attackerKey, RSASignaturePadding.Pkcs1);
+        var serial = Guid.NewGuid().ToByteArray();
+        return request.Create(
+            new X500DistinguishedName(forgedIssuerDistinguishedName),
+            generator,
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddDays(90),
+            serial);
     }
 
     private static X509Certificate2 CreateCertificateWithMalformedSan(string subject)

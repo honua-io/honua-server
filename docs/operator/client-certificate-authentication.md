@@ -99,8 +99,10 @@ and should only be enabled for legacy certificates that cannot carry SANs.
 immediate issuer Distinguished Name. `AcceptedIssuerThumbprints` is matched
 against the SHA-1 thumbprints of issuer/CA certificates in the chain (the leaf
 is never accepted as its own issuer). `CustomTrustAnchorCertificates` profiles
-require the chain to terminate at one of the configured anchor certificates and
-should set `RequireChainTrust` to true so full chain validation runs.
+require the chain to build successfully under custom-root trust mode and
+terminate at one of the configured anchor certificates. Enable
+`RequireChainTrust` when you also want the configured `ChainRevocationMode`
+(`Online`/`Offline`) applied during validation.
 
 Subject-DN matching alone is forgeable: an attacker can mint a self-signed
 certificate with any `Issuer` field they choose. Honua therefore requires that
@@ -110,10 +112,15 @@ verified against the OS trust store (or the profile's
 `CustomTrustAnchorCertificates`). Both the startup options validator and the
 admin upsert endpoint reject `AcceptedIssuerSubjects` without
 `RequireChainTrust=true`; for private CAs that are not in the OS trust store,
-pair it with `CustomTrustAnchorCertificates`. Profiles that rely solely on
-`AcceptedIssuerThumbprints` or `CustomTrustAnchorCertificates` already require
-the chain to expose the matching element/anchor, so they are not subject to
-the subject-DN forgery risk.
+pair it with `CustomTrustAnchorCertificates`. Profiles that rely on
+`AcceptedIssuerThumbprints` or `CustomTrustAnchorCertificates` also perform
+cryptographic chain validation during the issuer-hint check — the presented
+chain must build successfully (signatures verified, intermediates within
+validity, basic constraints honored) before any thumbprint or anchor match is
+accepted. Thumbprint-only profiles therefore implicitly require the issuing CA
+to be in the OS trust store; configure `CustomTrustAnchorCertificates` to
+trust a private CA that is not in the OS store. Enabling `RequireChainTrust`
+adds the revocation check (`ChainRevocationMode`) on top of this baseline.
 
 Custom trust anchors must parse as PEM or base64 DER public certificates.
 Malformed anchors are rejected at startup options binding and at admin

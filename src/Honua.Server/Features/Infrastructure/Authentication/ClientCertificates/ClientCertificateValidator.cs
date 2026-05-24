@@ -233,9 +233,17 @@ internal sealed class ClientCertificateValidator(
         using var chain = new X509Chain();
         try
         {
+            // Strict verification: signature, validity, basic constraints, and name
+            // checks must all pass before we trust any chain element. Without this,
+            // an attacker can mint a leaf whose Issuer DN matches a trusted CA and
+            // attach that CA's certificate to the chain — chain.Build would populate
+            // ChainElements with the trusted CA even though the leaf's signature is
+            // invalid against the CA's public key. Requiring a successful build
+            // closes that forgery vector so the subsequent thumbprint/anchor checks
+            // are anchored in cryptographic verification, not just DN exposure.
             chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
             chain.ChainPolicy.RevocationFlag = X509RevocationFlag.ExcludeRoot;
-            chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllFlags;
+            chain.ChainPolicy.VerificationFlags = X509VerificationFlags.NoFlag;
 
             if (checkCustomAnchors)
             {
@@ -254,7 +262,10 @@ internal sealed class ClientCertificateValidator(
                 }
             }
 
-            _ = chain.Build(certificate);
+            if (!chain.Build(certificate))
+            {
+                return false;
+            }
 
             if (checkCustomAnchors && !ChainTerminatesAtAnchor(chain, anchors))
             {
