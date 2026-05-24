@@ -10,7 +10,6 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
@@ -238,8 +237,8 @@ internal sealed partial class ODataSearchService
             throw new ArgumentException("$apply parameter is required.");
         }
 
-        // Verify layer exists via the V2 graph snapshot.
-        var layerResult = await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
+        // Verify layer exists
+        var layerResult = await _resourceValidator.ValidateLayerAsync(layerId, cancellationToken);
         if (!layerResult.IsValid)
         {
             var message = layerResult.ErrorMessage ?? $"Layer {layerId} not found";
@@ -251,16 +250,16 @@ internal sealed partial class ODataSearchService
             throw new ResourceNotFoundException(message);
         }
 
-        var resource = layerResult.Resource!;
+        var layer = layerResult.Resource!;
         var aggregation = ODataAggregationHandler.ParseApplyExpression(applyExpression);
-        ValidateAggregationFields(aggregation, resource);
+        ValidateAggregationFields(aggregation, layer);
 
         // Use existing aggregation handler for processing
         var handler = new ODataAggregationHandler(_featureReader, _streamingFeatureStore, _queryService);
-        return await handler.ProcessAggregationAsync(layerId, resource, applyExpression, filter, baseUrl, cancellationToken);
+        return await handler.ProcessAggregationAsync(layerId, layer, applyExpression, filter, baseUrl, cancellationToken);
     }
 
-    private static void ValidateAggregationFields(ParsedAggregation aggregation, MetadataV2Resource resource)
+    private static void ValidateAggregationFields(ParsedAggregation aggregation, LayerDefinition layer)
     {
         if (aggregation.Type is AggregationType.Aggregate or AggregationType.GroupBy)
         {
@@ -273,7 +272,7 @@ internal sealed partial class ODataSearchService
                         continue;
                     }
 
-                    if (!FieldExists(resource, aggregate.Field))
+                    if (!FieldExists(layer, aggregate.Field))
                     {
                         throw new ArgumentException($"Unknown field '{aggregate.Field}' in $apply.");
                     }
@@ -284,7 +283,7 @@ internal sealed partial class ODataSearchService
             {
                 foreach (var field in aggregation.GroupByFields.Value)
                 {
-                    if (!FieldExists(resource, field))
+                    if (!FieldExists(layer, field))
                     {
                         throw new ArgumentException($"Unknown field '{field}' in $apply.");
                     }
@@ -293,7 +292,7 @@ internal sealed partial class ODataSearchService
         }
     }
 
-    private static bool FieldExists(MetadataV2Resource resource, string field)
+    private static bool FieldExists(LayerDefinition layer, string field)
     {
         if (field.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) ||
             field.Equals("layerid", StringComparison.OrdinalIgnoreCase) ||
@@ -302,7 +301,7 @@ internal sealed partial class ODataSearchService
             return true;
         }
 
-        return resource.SchemaFields.Any(f => f.Name.Equals(field, StringComparison.OrdinalIgnoreCase));
+        return layer.Fields.Any(f => f.Name.Equals(field, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

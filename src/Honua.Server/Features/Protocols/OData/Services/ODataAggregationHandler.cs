@@ -9,7 +9,6 @@ using System.Text.RegularExpressions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Helpers;
@@ -45,24 +44,22 @@ internal sealed class ODataAggregationHandler
     /// </summary>
     public async Task<ODataAggregationResult> ProcessAggregationAsync(
         int layerId,
-        MetadataV2Resource resource,
+        LayerDefinition layer,
         string applyExpression,
         string? filter,
         string baseUrl,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(resource);
-
         // Parse the $apply expression
         var aggregation = ParseApplyExpression(applyExpression);
 
         // Build the query
         var query = new FeatureQuery();
-        query = ApplyODataFilter(query, filter, resource);
+        query = ApplyODataFilter(query, filter, layer);
 
         if (aggregation.Type == AggregationType.Filter && !string.IsNullOrWhiteSpace(aggregation.FilterExpression))
         {
-            query = ApplyODataFilter(query, aggregation.FilterExpression, resource);
+            query = ApplyODataFilter(query, aggregation.FilterExpression, layer);
         }
 
         object[] aggregatedValues;
@@ -723,14 +720,14 @@ internal sealed class ODataAggregationHandler
         return dict;
     }
 
-    private FeatureQuery ApplyODataFilter(FeatureQuery query, string? filterExpression, MetadataV2Resource resource)
+    private FeatureQuery ApplyODataFilter(FeatureQuery query, string? filterExpression, LayerDefinition layer)
     {
         if (string.IsNullOrWhiteSpace(filterExpression))
         {
             return query;
         }
 
-        var sqlFragment = _queryService.ConvertODataFilterToSqlFragment(filterExpression, resource);
+        var sqlFragment = _queryService.ConvertODataFilterToSqlFragment(filterExpression, layer);
         return MergeFilters(query, sqlFragment);
     }
 
