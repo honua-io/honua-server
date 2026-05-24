@@ -817,6 +817,19 @@ public static class EndpointRegistry
         new("POST", "/v1/spec/cancel"),
         new("GET", "/v1/spec/artifact/{hash}"),
 
+        // Analysis content HTTP surface (#1182).
+        new("POST", "/api/v1/analysis/content/items"),
+        new("GET", "/api/v1/analysis/content/items/{itemId}"),
+        new("GET", "/api/v1/analysis/content/items/{itemId}/versions/latest"),
+        new("GET", "/api/v1/analysis/content/items/{itemId}/versions/{contentVersion}"),
+        new("POST", "/api/v1/analysis/content/items/{itemId}/versions"),
+        new("POST", "/api/v1/analysis/content/items/{itemId}/versions/{contentVersion}/preview"),
+        new("POST", "/api/v1/analysis/content/items/{itemId}/versions/{contentVersion}/runs"),
+        new("POST", "/api/v1/analysis/content/items/{itemId}/versions/{contentVersion}/reruns"),
+        new("GET", "/api/v1/analysis/artifacts/{artifactId}"),
+        new("GET", "/api/v1/analysis/jobs/{jobId}/logs"),
+        new("GET", "/api/v1/analysis/jobs/{jobId}/failure"),
+
         // Analysis report HTTP surface (#801).
         new("GET", "/api/v1/analysis/reports/{jobId}"),
         new("GET", "/api/v1/analysis/reports/{jobId}/render"),

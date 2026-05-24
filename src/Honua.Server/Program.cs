@@ -566,6 +566,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Console.Models.ConsoleJsonContext.Default,
         Honua.Server.Features.Studio.Models.StudioApiJsonContext.Default,
         Honua.Core.Features.Studio.Domain.StudioJsonContext.Default,
+        Honua.Server.Features.AnalysisContent.AnalysisContentApiJsonContext.Default,
         Honua.Server.Features.Admin.Models.AdminApiKeyJsonContext.Default,
         Honua.Server.Features.Admin.Models.SceneDatasetJsonContext.Default,
         Honua.Server.Features.Admin.Models.SceneGenerationJsonContext.Default,
