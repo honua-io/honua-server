@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Security.Cryptography;
@@ -23,6 +24,8 @@ internal sealed class PostgresInvestigationStore : IInvestigationStore
     internal const int MinPageSize = 1;
     internal const int MaxPageSize = 200;
     internal const int DefaultPageSize = 50;
+
+    private static readonly SearchValues<char> _likeMetacharacters = SearchValues.Create("\\%_");
 
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly string _investigationsTable;
@@ -525,7 +528,7 @@ internal sealed class PostgresInvestigationStore : IInvestigationStore
 
     internal static string EscapeLikePattern(string value)
     {
-        if (value.IndexOfAny(new[] { '\\', '%', '_' }) < 0)
+        if (value.AsSpan().IndexOfAny(_likeMetacharacters) < 0)
         {
             return value;
         }
