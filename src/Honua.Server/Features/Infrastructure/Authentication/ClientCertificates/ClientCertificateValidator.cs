@@ -540,48 +540,58 @@ internal sealed class ClientCertificateValidator(
         X509Extension extension,
         ClientCertificateIdentitySet identities)
     {
-        var reader = new AsnReader(extension.RawData, AsnEncodingRules.DER);
-        var sequence = reader.ReadSequence();
-        while (sequence.HasData)
+        // SAN RawData is certificate-controlled. A malformed extension must not surface as a
+        // request-time 500; treat parse failures as "no SAN identities" so the validator falls
+        // through to MissingIdentity / UnmappedIdentity and returns a sanitized failure code.
+        try
         {
-            var tag = sequence.PeekTag();
-            if (tag.TagClass != TagClass.ContextSpecific)
+            var reader = new AsnReader(extension.RawData, AsnEncodingRules.DER);
+            var sequence = reader.ReadSequence();
+            while (sequence.HasData)
             {
+                var tag = sequence.PeekTag();
+                if (tag.TagClass != TagClass.ContextSpecific)
+                {
+                    _ = sequence.ReadEncodedValue();
+                    continue;
+                }
+
+                if (tag.TagValue == 1 && profile.AllowedSanTypes.Contains(ClientCertificateIdentityType.SanEmail))
+                {
+                    identities.Add(
+                        ClientCertificateIdentityType.SanEmail,
+                        sequence.ReadCharacterString(
+                            UniversalTagNumber.IA5String,
+                            new Asn1Tag(TagClass.ContextSpecific, 1)));
+                    continue;
+                }
+
+                if (tag.TagValue == 2 && profile.AllowedSanTypes.Contains(ClientCertificateIdentityType.SanDns))
+                {
+                    identities.Add(
+                        ClientCertificateIdentityType.SanDns,
+                        sequence.ReadCharacterString(
+                            UniversalTagNumber.IA5String,
+                            new Asn1Tag(TagClass.ContextSpecific, 2)));
+                    continue;
+                }
+
+                if (tag.TagValue == 6 && profile.AllowedSanTypes.Contains(ClientCertificateIdentityType.SanUri))
+                {
+                    identities.Add(
+                        ClientCertificateIdentityType.SanUri,
+                        sequence.ReadCharacterString(
+                            UniversalTagNumber.IA5String,
+                            new Asn1Tag(TagClass.ContextSpecific, 6)));
+                    continue;
+                }
+
                 _ = sequence.ReadEncodedValue();
-                continue;
             }
-
-            if (tag.TagValue == 1 && profile.AllowedSanTypes.Contains(ClientCertificateIdentityType.SanEmail))
-            {
-                identities.Add(
-                    ClientCertificateIdentityType.SanEmail,
-                    sequence.ReadCharacterString(
-                        UniversalTagNumber.IA5String,
-                        new Asn1Tag(TagClass.ContextSpecific, 1)));
-                continue;
-            }
-
-            if (tag.TagValue == 2 && profile.AllowedSanTypes.Contains(ClientCertificateIdentityType.SanDns))
-            {
-                identities.Add(
-                    ClientCertificateIdentityType.SanDns,
-                    sequence.ReadCharacterString(
-                        UniversalTagNumber.IA5String,
-                        new Asn1Tag(TagClass.ContextSpecific, 2)));
-                continue;
-            }
-
-            if (tag.TagValue == 6 && profile.AllowedSanTypes.Contains(ClientCertificateIdentityType.SanUri))
-            {
-                identities.Add(
-                    ClientCertificateIdentityType.SanUri,
-                    sequence.ReadCharacterString(
-                        UniversalTagNumber.IA5String,
-                        new Asn1Tag(TagClass.ContextSpecific, 6)));
-                continue;
-            }
-
-            _ = sequence.ReadEncodedValue();
+        }
+        catch (Exception ex) when (ex is AsnContentException or CryptographicException or ArgumentException)
+        {
+            _ = ex;
         }
     }
 

@@ -332,6 +332,26 @@ public sealed class ClientCertificateValidationTests
     }
 
     [Fact]
+    public async Task ValidateAsync_WithMalformedSanExtension_DoesNotThrowAndReturnsSanitizedFailure()
+    {
+        using var certificate = CreateCertificateWithMalformedSan("CN=Honua Native Prod");
+        var validator = CreateValidator(new ClientCertificateAuthenticationOptions
+        {
+            Mode = ClientCertificateAuthenticationMode.Optional,
+            EnvironmentId = "prod",
+            TrustProfiles = [CreateProfile("prod-native", "prod", certificate.Issuer, "spiffe://honua/prod/admin")]
+        });
+
+        var act = async () => await validator.ValidateAsync(certificate);
+
+        var result = await act.Should().NotThrowAsync();
+        result.Subject.Succeeded.Should().BeFalse();
+        result.Subject.ErrorCode.Should().BeOneOf(
+            ClientCertificateValidationErrorCode.MissingIdentity,
+            ClientCertificateValidationErrorCode.UnmappedIdentity);
+    }
+
+    [Fact]
     public void TryParseTrustAnchor_WithMalformedInput_ReturnsFalseInsteadOfThrowing()
     {
         ClientCertificateValidator.TryParseTrustAnchor("not-a-certificate", out var anchor)
@@ -421,6 +441,30 @@ public sealed class ClientCertificateValidationTests
         return request.CreateSelfSigned(
             notBefore ?? DateTimeOffset.UtcNow.AddDays(-1),
             notAfter ?? DateTimeOffset.UtcNow.AddDays(90));
+    }
+
+    private static X509Certificate2 CreateCertificateWithMalformedSan(string subject)
+    {
+        using var key = RSA.Create(2048);
+        var request = new CertificateRequest(
+            subject,
+            key,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(
+            new OidCollection { new Oid("1.3.6.1.5.5.7.3.2") },
+            critical: false));
+
+        // Deliberately broken SAN extension: declares a 1-byte SEQUENCE but provides garbage.
+        // AsnReader will throw AsnContentException; the validator must absorb it.
+        request.CertificateExtensions.Add(new X509Extension(
+            new Oid("2.5.29.17"),
+            new byte[] { 0x30, 0x01, 0xFF },
+            critical: false));
+
+        return request.CreateSelfSigned(
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddDays(90));
     }
 
     private static string ComputeFingerprint(X509Certificate2 certificate)

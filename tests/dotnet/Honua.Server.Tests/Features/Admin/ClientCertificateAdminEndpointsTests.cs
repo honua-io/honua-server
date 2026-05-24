@@ -231,6 +231,126 @@ public sealed class ClientCertificateAdminEndpointsTests : IDisposable
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/security/client-certificates/profiles")]
+    public async Task CreateProfile_WithExplicitNullArrays_ReturnsBadRequestWithoutNullReferenceException()
+    {
+        var profileId = $"profile-{Guid.NewGuid():N}";
+        var payload = new
+        {
+            profileId,
+            environmentId = "prod",
+            displayName = "Null-arrays profile",
+            enabled = true,
+            acceptedIssuerSubjects = (string[]?)null,
+            acceptedIssuerThumbprints = (string[]?)null,
+            customTrustAnchorCertificates = (string[]?)null,
+            allowedSanTypes = (string[]?)null,
+            requireClientAuthenticationEku = true,
+            chainRevocationMode = "NoCheck",
+        };
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/security/client-certificates/profiles",
+            payload,
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("issuer", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/security/client-certificates/profiles/{profileId}/mappings")]
+    public async Task CreateMapping_WithBlankMatchValue_ReturnsBadRequest()
+    {
+        var profileId = await CreateProfileAndReadIdAsync();
+        var request = new UpsertClientCertificatePrincipalMappingRequest
+        {
+            MappingId = $"mapping-{Guid.NewGuid():N}",
+            MatchType = "sanUri",
+            MatchValue = "   ",
+            PrincipalId = "native-prod-admin",
+        };
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/v1/admin/security/client-certificates/profiles/{profileId}/mappings",
+            request,
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("MatchValue", body, StringComparison.Ordinal);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/security/client-certificates/profiles/{profileId}/mappings")]
+    public async Task CreateMapping_WithBlankPrincipalId_ReturnsBadRequest()
+    {
+        var profileId = await CreateProfileAndReadIdAsync();
+        var request = new UpsertClientCertificatePrincipalMappingRequest
+        {
+            MappingId = $"mapping-{Guid.NewGuid():N}",
+            MatchType = "sanUri",
+            MatchValue = "spiffe://honua/prod/admin",
+            PrincipalId = "",
+        };
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/v1/admin/security/client-certificates/profiles/{profileId}/mappings",
+            request,
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("PrincipalId", body, StringComparison.Ordinal);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/security/client-certificates/profiles/{profileId}/mappings")]
+    public async Task CreateMapping_WithInvertedValidityWindow_ReturnsBadRequest()
+    {
+        var profileId = await CreateProfileAndReadIdAsync();
+        var request = new UpsertClientCertificatePrincipalMappingRequest
+        {
+            MappingId = $"mapping-{Guid.NewGuid():N}",
+            MatchType = "sanUri",
+            MatchValue = "spiffe://honua/prod/admin",
+            PrincipalId = "native-prod-admin",
+            NotBefore = DateTimeOffset.UtcNow.AddDays(10),
+            NotAfter = DateTimeOffset.UtcNow.AddDays(1),
+        };
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/v1/admin/security/client-certificates/profiles/{profileId}/mappings",
+            request,
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("NotBefore", body, StringComparison.Ordinal);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/security/client-certificates/validate")]
+    public async Task ValidateCertificate_WithBlankCertificate_ReturnsBadRequest()
+    {
+        var request = new ValidateClientCertificateRequest
+        {
+            Certificate = "   ",
+            Encoding = "pem",
+        };
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/security/client-certificates/validate",
+            request,
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Certificate", body, StringComparison.Ordinal);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/security/client-certificates/profiles")]
     public async Task CreateProfile_WithMalformedCustomTrustAnchor_ReturnsBadRequest()
     {
         var profileId = $"profile-{Guid.NewGuid():N}";

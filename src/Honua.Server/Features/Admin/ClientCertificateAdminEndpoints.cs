@@ -140,6 +140,13 @@ internal static class ClientCertificateAdminEndpoints
             return TypedResults.BadRequest(ApiResponse<object>.Failure("ProfileId and EnvironmentId are required."));
         }
 
+        // Explicit JSON nulls leave the request array properties null; normalize before any
+        // .Any()/length use so the admin surface returns 400 instead of NullReferenceException.
+        var acceptedIssuerSubjects = request.AcceptedIssuerSubjects ?? [];
+        var acceptedIssuerThumbprints = request.AcceptedIssuerThumbprints ?? [];
+        var customTrustAnchorCertificates = request.CustomTrustAnchorCertificates ?? [];
+        var allowedSanTypesInput = request.AllowedSanTypes ?? [];
+
         if (!TryParseRevocationMode(request.ChainRevocationMode, out var revocationMode))
         {
             return TypedResults.BadRequest(ApiResponse<object>.Failure("ChainRevocationMode must be NoCheck, Offline, or Online."));
@@ -152,20 +159,20 @@ internal static class ClientCertificateAdminEndpoints
         }
 
         if (request.Enabled &&
-            !request.AcceptedIssuerSubjects.Any(static value => !string.IsNullOrWhiteSpace(value)) &&
-            !request.AcceptedIssuerThumbprints.Any(static value => !string.IsNullOrWhiteSpace(value)) &&
-            !request.CustomTrustAnchorCertificates.Any(static value => !string.IsNullOrWhiteSpace(value)))
+            !acceptedIssuerSubjects.Any(static value => !string.IsNullOrWhiteSpace(value)) &&
+            !acceptedIssuerThumbprints.Any(static value => !string.IsNullOrWhiteSpace(value)) &&
+            !customTrustAnchorCertificates.Any(static value => !string.IsNullOrWhiteSpace(value)))
         {
             return TypedResults.BadRequest(ApiResponse<object>.Failure(
                 "Enabled profiles require at least one accepted issuer subject, accepted issuer thumbprint, or custom trust anchor certificate."));
         }
 
-        if (!TryParseIdentityTypes(request.AllowedSanTypes, out var allowedSanTypes, out var error))
+        if (!TryParseIdentityTypes(allowedSanTypesInput, out var allowedSanTypes, out var error))
         {
             return TypedResults.BadRequest(ApiResponse<object>.Failure(error));
         }
 
-        if (!TryValidateTrustAnchors(request.CustomTrustAnchorCertificates, out var anchorError))
+        if (!TryValidateTrustAnchors(customTrustAnchorCertificates, out var anchorError))
         {
             return TypedResults.BadRequest(ApiResponse<object>.Failure(anchorError));
         }
@@ -176,9 +183,9 @@ internal static class ClientCertificateAdminEndpoints
             EnvironmentId = request.EnvironmentId,
             DisplayName = request.DisplayName ?? profileId,
             Enabled = request.Enabled,
-            AcceptedIssuerThumbprints = request.AcceptedIssuerThumbprints,
-            AcceptedIssuerSubjects = request.AcceptedIssuerSubjects,
-            CustomTrustAnchorCertificates = request.CustomTrustAnchorCertificates,
+            AcceptedIssuerThumbprints = acceptedIssuerThumbprints,
+            AcceptedIssuerSubjects = acceptedIssuerSubjects,
+            CustomTrustAnchorCertificates = customTrustAnchorCertificates,
             AllowedSanTypes = allowedSanTypes,
             AllowSubjectFallback = request.AllowSubjectFallback,
             RequireClientAuthenticationEku = request.RequireClientAuthenticationEku,
@@ -273,9 +280,31 @@ internal static class ClientCertificateAdminEndpoints
         bool isCreate,
         CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(profileId) || string.IsNullOrWhiteSpace(mappingId))
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure("ProfileId and MappingId are required."));
+        }
+
         if (!TryParseIdentityType(request.MatchType, out var matchType))
         {
             return TypedResults.BadRequest(ApiResponse<object>.Failure("MatchType must be fingerprintSha256, sanUri, sanEmail, sanDns, or subject."));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.MatchValue))
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure("MatchValue is required."));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.PrincipalId))
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure("PrincipalId is required."));
+        }
+
+        if (request.NotBefore.HasValue && request.NotAfter.HasValue &&
+            request.NotBefore.Value > request.NotAfter.Value)
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                "NotBefore must be on or before NotAfter when both are provided."));
         }
 
         var mapping = ClientCertificatePrincipalMapping.FromOptions(new ClientCertificatePrincipalMappingOptions
@@ -285,9 +314,9 @@ internal static class ClientCertificateAdminEndpoints
             MatchValue = request.MatchValue,
             PrincipalId = request.PrincipalId,
             DisplayName = request.DisplayName ?? request.PrincipalId,
-            Roles = request.Roles,
+            Roles = request.Roles ?? [],
             TenantId = request.TenantId,
-            EnvironmentScopes = request.EnvironmentScopes,
+            EnvironmentScopes = request.EnvironmentScopes ?? [],
             Enabled = request.Enabled,
             NotBefore = request.NotBefore,
             NotAfter = request.NotAfter,
@@ -430,6 +459,11 @@ internal static class ClientCertificateAdminEndpoints
         [FromServices] IClientCertificateValidator validator,
         CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(request.Certificate))
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure("Certificate is required."));
+        }
+
         if (!TryParseForwardedEncoding(request.Encoding, out var encoding))
         {
             return TypedResults.BadRequest(ApiResponse<object>.Failure("Encoding must be pem, urlEncodedPem, or base64Der."));
@@ -548,8 +582,14 @@ internal static class ClientCertificateAdminEndpoints
         return true;
     }
 
-    private static bool TryParseIdentityType(string value, out ClientCertificateIdentityType result)
+    private static bool TryParseIdentityType(string? value, out ClientCertificateIdentityType result)
     {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            result = (ClientCertificateIdentityType)(-1);
+            return false;
+        }
+
         result = value.Replace("-", string.Empty, StringComparison.Ordinal)
             .Replace("_", string.Empty, StringComparison.Ordinal)
             .ToUpperInvariant() switch
@@ -602,8 +642,14 @@ internal static class ClientCertificateAdminEndpoints
         return true;
     }
 
-    private static bool TryParseForwardedEncoding(string value, out ForwardedClientCertificateEncoding encoding)
+    private static bool TryParseForwardedEncoding(string? value, out ForwardedClientCertificateEncoding encoding)
     {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            encoding = (ForwardedClientCertificateEncoding)(-1);
+            return false;
+        }
+
         encoding = value.Replace("-", string.Empty, StringComparison.Ordinal)
             .Replace("_", string.Empty, StringComparison.Ordinal)
             .ToUpperInvariant() switch
