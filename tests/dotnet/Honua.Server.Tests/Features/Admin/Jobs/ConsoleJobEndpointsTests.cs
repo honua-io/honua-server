@@ -182,6 +182,35 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/jobs/{jobId}/retry")]
+    public async Task Retry_WhenQueueWriteFails_RestoresTerminalJob()
+    {
+        _jobQueue.ThrowOnRequeue = true;
+
+        var retry = await _client.PostAsync("/api/v1/admin/jobs/job-failed/retry", null);
+
+        retry.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        var failed = await _jobStore.GetAsync("job-failed");
+        failed!.Status.Should().Be(ExecutionJobStatus.Failed);
+        failed.CompletedAt.Should().NotBeNull();
+        failed.ErrorMessage.Should().Be("Geometry validation failed.");
+        failed.CurrentPhase.Should().Be("Failed");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/jobs/{jobId}/cancel")]
+    public async Task Cancel_WhenQueueRemovalFails_ReturnsDurableCancellation()
+    {
+        _jobQueue.ThrowOnRemove = true;
+
+        var cancel = await _client.PostAsync("/api/v1/admin/jobs/job-cancel/cancel", null);
+
+        cancel.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await _jobStore.GetAsync("job-cancel"))!.Status.Should().Be(ExecutionJobStatus.Cancelled);
+        _jobQueue.Removed.Should().Contain("job-cancel");
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/observability/events")]
     public async Task OperateEvents_FilterByCorrelation_ReturnsDurableJobEvent()
     {
@@ -403,6 +432,8 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
     {
         public List<string> Removed { get; } = [];
         public List<string> Requeued { get; } = [];
+        public bool ThrowOnRemove { get; set; }
+        public bool ThrowOnRequeue { get; set; }
 
         public Task EnqueueAsync(string operationId, OperationPriority priority = OperationPriority.Normal, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
@@ -413,12 +444,22 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         public Task RequeueAsync(string operationId, OperationPriority priority = OperationPriority.Normal, TimeSpan? visibleAfter = null, CancellationToken cancellationToken = default)
         {
             Requeued.Add(operationId);
+            if (ThrowOnRequeue)
+            {
+                throw new InvalidOperationException("requeue failed");
+            }
+
             return Task.CompletedTask;
         }
 
         public Task RemoveAsync(string operationId, CancellationToken cancellationToken = default)
         {
             Removed.Add(operationId);
+            if (ThrowOnRemove)
+            {
+                throw new InvalidOperationException("remove failed");
+            }
+
             return Task.CompletedTask;
         }
 

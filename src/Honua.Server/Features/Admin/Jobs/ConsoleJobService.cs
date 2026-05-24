@@ -408,6 +408,16 @@ internal sealed partial class ConsoleJobService(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             JobQueueRetryFailed(logger, job.OperationId, ex);
+            if (await TryRestoreTerminalStateAfterRetryQueueFailureAsync(
+                    jobStore,
+                    job,
+                    retried,
+                    cancellationToken)
+                .ConfigureAwait(false))
+            {
+                await RemoveFromQueueIfPresentAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+            }
+
             throw new ConsoleJobServiceUnavailableException("Job retry could not be queued.");
         }
 
@@ -749,8 +759,61 @@ internal sealed partial class ConsoleJobService(
             return;
         }
 
-        await queue.RemoveAsync(jobId, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await queue.RemoveAsync(jobId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            JobQueueRemovalFailed(logger, jobId, ex);
+        }
     }
+
+    private async Task<bool> TryRestoreTerminalStateAfterRetryQueueFailureAsync(
+        IExecutionJobStore jobStore,
+        ExecutionJobRecord terminalJob,
+        ExecutionJobRecord retryCandidate,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var current = await jobStore.GetAsync(terminalJob.OperationId, cancellationToken).ConfigureAwait(false);
+            if (!IsUnclaimedManualRetryCandidate(current, retryCandidate))
+            {
+                return false;
+            }
+
+            var restored = terminalJob with { Version = current!.Version };
+            if (await jobStore.TrySetAsync(restored, cancellationToken: cancellationToken).ConfigureAwait(false))
+            {
+                return true;
+            }
+
+            var latest = await jobStore.GetAsync(terminalJob.OperationId, cancellationToken).ConfigureAwait(false);
+            JobRetryCompensationConflict(
+                logger,
+                terminalJob.OperationId,
+                latest?.Status.ToString() ?? "missing");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            JobRetryCompensationFailed(logger, terminalJob.OperationId, ex);
+        }
+
+        return false;
+    }
+
+    private static bool IsUnclaimedManualRetryCandidate(ExecutionJobRecord? current, ExecutionJobRecord retryCandidate)
+        => current != null
+            && current.Status == ExecutionJobStatus.Queued
+            && current.AttemptCount == retryCandidate.AttemptCount
+            && current.CompletedAt == null
+            && current.ClaimedBy == null
+            && current.ClaimedAt == null
+            && current.LastHeartbeatAt == null
+            && current.ProviderOperationId == null
+            && current.CancellationRequestedAt == null
+            && string.Equals(current.CurrentPhase, retryCandidate.CurrentPhase, StringComparison.Ordinal);
 
     private static Dictionary<string, string> SelectMetadata(ExecutionJobRecord job)
     {
@@ -892,6 +955,15 @@ internal sealed partial class ConsoleJobService(
 
     [LoggerMessage(117002, LogLevel.Error, "Manual retry queue write failed for job {JobId}")]
     private static partial void JobQueueRetryFailed(ILogger logger, string jobId, Exception exception);
+
+    [LoggerMessage(117003, LogLevel.Warning, "Job queue removal failed for job {JobId}")]
+    private static partial void JobQueueRemovalFailed(ILogger logger, string jobId, Exception exception);
+
+    [LoggerMessage(117004, LogLevel.Warning, "Manual retry compensation conflicted for job {JobId}; latest status={Status}")]
+    private static partial void JobRetryCompensationConflict(ILogger logger, string jobId, string status);
+
+    [LoggerMessage(117005, LogLevel.Warning, "Manual retry compensation failed for job {JobId}")]
+    private static partial void JobRetryCompensationFailed(ILogger logger, string jobId, Exception exception);
 }
 
 internal sealed class ConsoleJobServiceUnavailableException(string message) : Exception(message);
