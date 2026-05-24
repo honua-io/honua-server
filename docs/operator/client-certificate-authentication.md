@@ -100,6 +100,11 @@ is never accepted as its own issuer). `CustomTrustAnchorCertificates` profiles
 require the chain to terminate at one of the configured anchor certificates and
 should set `RequireChainTrust` to true so full chain validation runs.
 
+Custom trust anchors must parse as PEM or base64 DER public certificates.
+Malformed anchors are rejected at startup options binding and at admin
+upsert time (returning `400` for the failing index) so a misconfigured anchor
+cannot surface as a request-time failure.
+
 ## Authentication Composition
 
 A validated certificate becomes a Honua principal with:

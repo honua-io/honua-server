@@ -268,6 +268,91 @@ public sealed class ClientCertificateValidationTests
         result.Succeeded.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task ValidateAsync_WithMalformedCustomTrustAnchor_ReturnsSanitizedFailureWithoutThrowing()
+    {
+        using var certificate = CreateCertificate("CN=Honua Native Prod", uri: "spiffe://honua/prod/admin");
+        var profile = CreateProfile("prod-native", "prod", certificate.Issuer, "spiffe://honua/prod/admin");
+        profile.AcceptedIssuerSubjects = [];
+        profile.CustomTrustAnchorCertificates = ["this-is-not-a-certificate"];
+        profile.RequireChainTrust = true;
+
+        var validator = CreateValidator(new ClientCertificateAuthenticationOptions
+        {
+            Mode = ClientCertificateAuthenticationMode.Optional,
+            EnvironmentId = "prod",
+            TrustProfiles = [profile]
+        });
+
+        var act = async () => await validator.ValidateAsync(certificate);
+
+        var result = await act.Should().NotThrowAsync();
+        result.Subject.Succeeded.Should().BeFalse();
+        result.Subject.ErrorCode.Should().Be(ClientCertificateValidationErrorCode.UntrustedIssuer);
+    }
+
+    [Fact]
+    public void OptionsValidator_WithMalformedCustomTrustAnchor_Fails()
+    {
+        var profile = CreateProfile("prod-native", "prod", "CN=Honua Prod Root CA", "spiffe://honua/prod/admin");
+        profile.AcceptedIssuerSubjects = [];
+        profile.CustomTrustAnchorCertificates = ["not-a-pem-or-base64-cert"];
+
+        var options = new ClientCertificateAuthenticationOptions
+        {
+            Mode = ClientCertificateAuthenticationMode.RequiredForAdmin,
+            EnvironmentId = "prod",
+            TrustProfiles = [profile]
+        };
+
+        var result = new ClientCertificateAuthenticationOptionsValidator().Validate(null, options);
+
+        result.Succeeded.Should().BeFalse();
+        result.FailureMessage.Should().Contain("CustomTrustAnchorCertificates[0]");
+    }
+
+    [Fact]
+    public void OptionsValidator_WithValidCustomTrustAnchor_Succeeds()
+    {
+        using var trustAnchor = CreateCertificate("CN=Honua Prod Root CA", uri: null);
+        var profile = CreateProfile("prod-native", "prod", "CN=Honua Prod Root CA", "spiffe://honua/prod/admin");
+        profile.AcceptedIssuerSubjects = [];
+        profile.CustomTrustAnchorCertificates = [ExportPem(trustAnchor)];
+
+        var options = new ClientCertificateAuthenticationOptions
+        {
+            Mode = ClientCertificateAuthenticationMode.RequiredForAdmin,
+            EnvironmentId = "prod",
+            TrustProfiles = [profile]
+        };
+
+        var result = new ClientCertificateAuthenticationOptionsValidator().Validate(null, options);
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void TryParseTrustAnchor_WithMalformedInput_ReturnsFalseInsteadOfThrowing()
+    {
+        ClientCertificateValidator.TryParseTrustAnchor("not-a-certificate", out var anchor)
+            .Should().BeFalse();
+        anchor.Should().BeNull();
+    }
+
+    [Fact]
+    public void TryParseTrustAnchor_WithValidPem_ReturnsTrueAndAnchor()
+    {
+        using var anchor = CreateCertificate("CN=Honua Trust Anchor", uri: null);
+        var pem = ExportPem(anchor);
+
+        var parsed = ClientCertificateValidator.TryParseTrustAnchor(pem, out var actual);
+
+        parsed.Should().BeTrue();
+        actual.Should().NotBeNull();
+        actual.Thumbprint.Should().Be(anchor.Thumbprint);
+        actual.Dispose();
+    }
+
     private static ClientCertificateTrustProfileOptions CreateProfile(
         string profileId,
         string environmentId,

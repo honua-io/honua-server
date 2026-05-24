@@ -86,7 +86,30 @@ internal sealed class ClientCertificateAuthenticationOptionsValidator
                 failures.Add($"{ClientCertificateAuthenticationOptions.SectionName}:TrustProfiles:{profile.ProfileId} must include at least one accepted issuer subject, accepted issuer thumbprint, or custom trust anchor certificate.");
             }
 
+            ValidateCustomTrustAnchors(profile, failures);
             ValidateMappings(profile, failures);
+        }
+    }
+
+    private static void ValidateCustomTrustAnchors(
+        ClientCertificateTrustProfileOptions profile,
+        List<string> failures)
+    {
+        for (var index = 0; index < profile.CustomTrustAnchorCertificates.Length; index++)
+        {
+            var anchor = profile.CustomTrustAnchorCertificates[index];
+            if (string.IsNullOrWhiteSpace(anchor))
+            {
+                continue;
+            }
+
+            if (!ClientCertificateValidator.TryParseTrustAnchor(anchor, out var parsed))
+            {
+                failures.Add($"{ClientCertificateAuthenticationOptions.SectionName}:TrustProfiles:{profile.ProfileId}:CustomTrustAnchorCertificates[{index}] is not a valid PEM or base64 DER certificate.");
+                continue;
+            }
+
+            parsed.Dispose();
         }
     }
 

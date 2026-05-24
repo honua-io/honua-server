@@ -230,6 +230,35 @@ public sealed class ClientCertificateAdminEndpointsTests : IDisposable
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/security/client-certificates/profiles")]
+    public async Task CreateProfile_WithMalformedCustomTrustAnchor_ReturnsBadRequest()
+    {
+        var profileId = $"profile-{Guid.NewGuid():N}";
+        var request = new UpsertClientCertificateTrustProfileRequest
+        {
+            ProfileId = profileId,
+            EnvironmentId = "prod",
+            DisplayName = "Bad anchor profile",
+            CustomTrustAnchorCertificates = ["not-a-pem-or-base64-cert"],
+            AllowedSanTypes = ["sanUri"],
+            RequireClientAuthenticationEku = true,
+            RequireChainTrust = true,
+            ChainRevocationMode = "NoCheck",
+            ExpirationWarningThresholdDays = 15,
+            RotationGracePeriodDays = 7,
+        };
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/security/client-certificates/profiles",
+            request,
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("CustomTrustAnchorCertificates", body, StringComparison.Ordinal);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/version")]
     public async Task RequiredForAdmin_WithApiKeyButMissingCertificate_ReturnsMachineReadableProblem()
     {

@@ -165,6 +165,11 @@ internal static class ClientCertificateAdminEndpoints
             return TypedResults.BadRequest(ApiResponse<object>.Failure(error));
         }
 
+        if (!TryValidateTrustAnchors(request.CustomTrustAnchorCertificates, out var anchorError))
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(anchorError));
+        }
+
         var profile = ClientCertificateTrustProfile.FromOptions(new ClientCertificateTrustProfileOptions
         {
             ProfileId = profileId,
@@ -573,6 +578,29 @@ internal static class ClientCertificateAdminEndpoints
     private static bool TryParseRevocationMode(string value, out X509RevocationMode mode)
         => Enum.TryParse(value, ignoreCase: true, out mode) &&
            mode is X509RevocationMode.NoCheck or X509RevocationMode.Offline or X509RevocationMode.Online;
+
+    private static bool TryValidateTrustAnchors(string[] anchors, out string error)
+    {
+        for (var index = 0; index < anchors.Length; index++)
+        {
+            var anchor = anchors[index];
+            if (string.IsNullOrWhiteSpace(anchor))
+            {
+                continue;
+            }
+
+            if (!ClientCertificateValidator.TryParseTrustAnchor(anchor, out var parsed))
+            {
+                error = $"CustomTrustAnchorCertificates[{index}] is not a valid PEM or base64 DER certificate.";
+                return false;
+            }
+
+            parsed.Dispose();
+        }
+
+        error = string.Empty;
+        return true;
+    }
 
     private static bool TryParseForwardedEncoding(string value, out ForwardedClientCertificateEncoding encoding)
     {

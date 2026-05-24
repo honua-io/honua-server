@@ -242,7 +242,13 @@ internal sealed class ClientCertificateValidator(
                 chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
                 foreach (var anchorPem in profile.CustomTrustAnchorCertificates)
                 {
-                    var parsed = ParseTrustAnchor(anchorPem);
+                    if (!TryParseTrustAnchor(anchorPem, out var parsed))
+                    {
+                        // A malformed configured anchor never matches; fail this profile
+                        // so the validator can surface a sanitized failure instead of a 500.
+                        return false;
+                    }
+
                     anchors.Add(parsed);
                     chain.ChainPolicy.CustomTrustStore.Add(parsed);
                 }
@@ -346,7 +352,11 @@ internal sealed class ClientCertificateValidator(
                 chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
                 foreach (var anchorPem in profile.CustomTrustAnchorCertificates)
                 {
-                    var parsed = ParseTrustAnchor(anchorPem);
+                    if (!TryParseTrustAnchor(anchorPem, out var parsed))
+                    {
+                        return false;
+                    }
+
                     anchors.Add(parsed);
                     chain.ChainPolicy.CustomTrustStore.Add(parsed);
                 }
@@ -363,15 +373,31 @@ internal sealed class ClientCertificateValidator(
         }
     }
 
-    private static X509Certificate2 ParseTrustAnchor(string configuredCertificate)
+    internal static bool TryParseTrustAnchor(string configuredCertificate, out X509Certificate2 anchor)
     {
-        var value = configuredCertificate.Trim();
-        if (value.Contains("-----BEGIN CERTIFICATE-----", StringComparison.Ordinal))
+        if (string.IsNullOrWhiteSpace(configuredCertificate))
         {
-            return X509Certificate2.CreateFromPem(value);
+            anchor = null!;
+            return false;
         }
 
-        return X509CertificateLoader.LoadCertificate(Convert.FromBase64String(value));
+        var value = configuredCertificate.Trim();
+        try
+        {
+            if (value.Contains("-----BEGIN CERTIFICATE-----", StringComparison.Ordinal))
+            {
+                anchor = X509Certificate2.CreateFromPem(value);
+                return true;
+            }
+
+            anchor = X509CertificateLoader.LoadCertificate(Convert.FromBase64String(value));
+            return true;
+        }
+        catch (Exception ex) when (ex is CryptographicException or FormatException or ArgumentException)
+        {
+            anchor = null!;
+            return false;
+        }
     }
 
     private static ClientCertificateValidationResult TryMapPrincipal(
