@@ -2317,6 +2317,7 @@
             "name": "queue",
             "in": "query",
             "required": false,
+            "description": "Resolved queue/routing lane. Matches honua.job.queue when present, otherwise the job backend.",
             "schema": {
               "type": "string"
             }
@@ -2723,7 +2724,7 @@
           "Jobs"
         ],
         "summary": "Retry Console Job",
-        "description": "Retry a failed or cancelled durable execution job when the retry policy budget and job queue allow it.",
+        "description": "Retry a failed or cancelled durable execution job when the retry policy budget allows it. Local jobs require the job queue; remote jobs require a registered backend that supports retry.",
         "operationId": "retryConsoleJob",
         "parameters": [
           {
@@ -2746,7 +2747,7 @@
           "404": { "$ref": "#/components/responses/NotFound" },
           "409": { "$ref": "#/components/responses/Conflict" },
           "503": {
-            "description": "Job queue is unavailable or the retry queue write failed",
+            "description": "Local job queue is unavailable, a local retry queue write failed, or the remote retry backend is unavailable",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5792,7 +5793,11 @@
         "properties": {
           "jobId": { "type": "string" },
           "kind": { "$ref": "#/components/schemas/ConsoleJobKind" },
-          "queue": { "type": "string", "nullable": true },
+          "queue": {
+            "type": "string",
+            "nullable": true,
+            "description": "Resolved queue/routing lane: honua.job.queue when present, otherwise backend."
+          },
           "backend": { "type": "string" },
           "targetKind": { "type": "string" },
           "workloadName": { "type": "string" },

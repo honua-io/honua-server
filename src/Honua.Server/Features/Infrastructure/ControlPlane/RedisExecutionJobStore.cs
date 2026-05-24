@@ -546,7 +546,7 @@ internal sealed partial class RedisExecutionJobStore(
     private static double ResolveMaxScore(ExecutionJobQuery query, JobCursor? cursor)
     {
         var maxScore = query.CreatedTo.HasValue
-            ? query.CreatedTo.Value.ToUnixTimeMilliseconds() - 1d
+            ? query.CreatedTo.Value.ToUnixTimeMilliseconds()
             : double.PositiveInfinity;
         if (cursor.HasValue)
         {

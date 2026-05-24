@@ -125,7 +125,7 @@ internal sealed partial class ConsoleJobService(
             ChildJobIds = SplitList(GetParameter(job, ExecutionJobParameterKeys.ChildIds)),
             SelectedMetadata = SelectMetadata(job),
             Stages = BuildStages(job),
-            Actions = BuildActions(context, job)
+            Actions = await BuildActionsAsync(context, job, cancellationToken).ConfigureAwait(false)
         };
     }
 
@@ -227,7 +227,7 @@ internal sealed partial class ConsoleJobService(
         {
             JobId = job.OperationId,
             CorrelationId = job.Audit.CorrelationId,
-            Actions = BuildActions(context, job)
+            Actions = await BuildActionsAsync(context, job, cancellationToken).ConfigureAwait(false)
         };
     }
 
@@ -348,8 +348,6 @@ internal sealed partial class ConsoleJobService(
         CancellationToken cancellationToken)
     {
         var jobStore = RequireJobStore();
-        var jobQueue = serviceProvider.GetService<IJobQueue>()
-            ?? throw new ConsoleJobServiceUnavailableException("Job queue is unavailable.");
         var job = await GetAuthorizedJobAsync(context, jobId, cancellationToken).ConfigureAwait(false);
         if (job == null)
         {
@@ -378,6 +376,16 @@ internal sealed partial class ConsoleJobService(
         }
 
         var now = timeProvider.GetUtcNow();
+        var retryDispatch = await ResolveRetryDispatchAsync(
+                job,
+                throwOnCapabilityFailure: true,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!retryDispatch.IsAllowed)
+        {
+            ThrowForRetryDisabledReason(retryDispatch.DisabledReason);
+        }
+
         var retried = job with
         {
             Status = ExecutionJobStatus.Queued,
@@ -390,7 +398,7 @@ internal sealed partial class ConsoleJobService(
             CancellationRequestedAt = null,
             ErrorMessage = null,
             PercentComplete = null,
-            NextRetryAt = null,
+            NextRetryAt = retryDispatch.IsRemote ? now : null,
             Warnings = Array.Empty<string>(),
             ArtifactReferences = Array.Empty<string>(),
             CurrentPhase = "Queued for manual retry"
@@ -401,24 +409,32 @@ internal sealed partial class ConsoleJobService(
             throw new ConsoleJobConflictException("Job retry could not be confirmed because the record changed.");
         }
 
-        try
+        if (retryDispatch.Queue != null)
         {
-            await jobQueue.RequeueAsync(job.OperationId, job.Priority, visibleAfter: null, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            JobQueueRetryFailed(logger, job.OperationId, ex);
-            if (await TryRestoreTerminalStateAfterRetryQueueFailureAsync(
-                    jobStore,
-                    job,
-                    retried,
-                    cancellationToken)
-                .ConfigureAwait(false))
+            try
             {
-                await RemoveFromQueueIfPresentAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+                await retryDispatch.Queue.RequeueAsync(
+                        job.OperationId,
+                        job.Priority,
+                        visibleAfter: null,
+                        cancellationToken)
+                    .ConfigureAwait(false);
             }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                JobQueueRetryFailed(logger, job.OperationId, ex);
+                if (await TryRestoreTerminalStateAfterRetryQueueFailureAsync(
+                        jobStore,
+                        job,
+                        retried,
+                        cancellationToken)
+                    .ConfigureAwait(false))
+                {
+                    await RemoveFromQueueIfPresentAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+                }
 
-            throw new ConsoleJobServiceUnavailableException("Job retry could not be queued.");
+                throw new ConsoleJobServiceUnavailableException("Job retry could not be queued.");
+            }
         }
 
         JobControlAction(logger, "retry", job.OperationId, retried.Status.ToString());
@@ -620,7 +636,10 @@ internal sealed partial class ConsoleJobService(
         };
     }
 
-    private ConsoleJobActionDescriptor[] BuildActions(HttpContext context, ExecutionJobRecord job)
+    private async Task<ConsoleJobActionDescriptor[]> BuildActionsAsync(
+        HttpContext context,
+        ExecutionJobRecord job,
+        CancellationToken cancellationToken)
     {
         var executeDecision = approvalGate.CheckAuthorization(context.User, new()
         {
@@ -660,10 +679,12 @@ internal sealed partial class ConsoleJobService(
 
         if (job.Status is ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled)
         {
-            var retryPolicy = job.RetryPolicy ?? JobRetryPolicy.Default;
-            var queueAvailable = serviceProvider.GetService<IJobQueue>() != null;
-            var retryBudgetAvailable = retryPolicy.ShouldRetry(job.AttemptCount);
-            var allowed = canExecute && queueAvailable && retryBudgetAvailable;
+            var retryDispatch = await ResolveRetryDispatchAsync(
+                    job,
+                    throwOnCapabilityFailure: false,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            var allowed = canExecute && retryDispatch.IsAllowed;
             actions.Add(new ConsoleJobActionDescriptor
             {
                 Name = "retry",
@@ -672,7 +693,7 @@ internal sealed partial class ConsoleJobService(
                 Allowed = allowed,
                 DisabledReason = allowed
                     ? null
-                    : ResolveRetryDisabledReason(canExecute, queueAvailable, retryBudgetAvailable),
+                    : ResolveRetryDisabledReason(canExecute, retryDispatch.DisabledReason),
                 RequiresApproval = retryApproval.IsRequired
             });
         }
@@ -680,20 +701,87 @@ internal sealed partial class ConsoleJobService(
         return actions.ToArray();
     }
 
-    private static string ResolveRetryDisabledReason(bool canExecute, bool queueAvailable, bool retryBudgetAvailable)
+    private async Task<RetryDispatch> ResolveRetryDispatchAsync(
+        ExecutionJobRecord job,
+        bool throwOnCapabilityFailure,
+        CancellationToken cancellationToken)
+    {
+        var retryPolicy = job.RetryPolicy ?? JobRetryPolicy.Default;
+        if (!retryPolicy.ShouldRetry(job.AttemptCount))
+        {
+            return RetryDispatch.Disabled(RetryDisabledReasons.RetryBudgetExhausted);
+        }
+
+        if (IsLocalBackend(job))
+        {
+            var queue = serviceProvider.GetService<IJobQueue>();
+            return queue == null
+                ? RetryDispatch.Disabled(RetryDisabledReasons.JobQueueUnavailable)
+                : RetryDispatch.Local(queue);
+        }
+
+        var backend = serviceProvider
+            .GetServices<IBatchComputeBackend>()
+            .Resolve(job.Spec.Backend, job.Spec.TargetKind);
+        if (backend == null)
+        {
+            return RetryDispatch.Disabled(RetryDisabledReasons.BackendUnavailable);
+        }
+
+        BatchComputeBackendCapabilities capabilities;
+        try
+        {
+            capabilities = await backend.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            JobRetryCapabilityLookupFailed(logger, job.OperationId, ex);
+            if (throwOnCapabilityFailure)
+            {
+                throw new ConsoleJobServiceUnavailableException("Job backend retry capabilities could not be loaded.");
+            }
+
+            return RetryDispatch.Disabled(RetryDisabledReasons.BackendCapabilityUnavailable);
+        }
+
+        return capabilities.SupportsRetry
+            ? RetryDispatch.Remote()
+            : RetryDispatch.Disabled(RetryDisabledReasons.BackendRetryUnsupported);
+    }
+
+    private static string ResolveRetryDisabledReason(bool canExecute, string? retryDisabledReason)
     {
         if (!canExecute)
         {
             return "execute permission required";
         }
 
-        if (!queueAvailable)
+        return retryDisabledReason switch
         {
-            return "job queue unavailable";
-        }
-
-        return retryBudgetAvailable ? "not retryable" : "retry budget exhausted";
+            RetryDisabledReasons.JobQueueUnavailable => "job queue unavailable",
+            RetryDisabledReasons.BackendUnavailable => "job backend unavailable",
+            RetryDisabledReasons.BackendCapabilityUnavailable => "job backend retry capability unavailable",
+            RetryDisabledReasons.BackendRetryUnsupported => "job backend does not support retry",
+            RetryDisabledReasons.RetryBudgetExhausted => "retry budget exhausted",
+            _ => "not retryable"
+        };
     }
+
+    private static void ThrowForRetryDisabledReason(string? retryDisabledReason)
+    {
+        throw retryDisabledReason switch
+        {
+            RetryDisabledReasons.JobQueueUnavailable => new ConsoleJobServiceUnavailableException("Job queue is unavailable."),
+            RetryDisabledReasons.BackendUnavailable => new ConsoleJobServiceUnavailableException("Job backend is unavailable."),
+            RetryDisabledReasons.BackendCapabilityUnavailable => new ConsoleJobServiceUnavailableException("Job backend retry capabilities could not be loaded."),
+            RetryDisabledReasons.BackendRetryUnsupported => new ConsoleJobConflictException("The selected job backend does not support retry."),
+            RetryDisabledReasons.RetryBudgetExhausted => new ConsoleJobConflictException("The retry policy budget is exhausted."),
+            _ => new ConsoleJobConflictException("Job is not retryable.")
+        };
+    }
+
+    private static bool IsLocalBackend(ExecutionJobRecord job)
+        => string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal);
 
     private static ConsoleJobLinks BuildLinks(HttpContext context, ExecutionJobRecord job)
     {
@@ -813,6 +901,7 @@ internal sealed partial class ConsoleJobService(
             && current.LastHeartbeatAt == null
             && current.ProviderOperationId == null
             && current.CancellationRequestedAt == null
+            && current.NextRetryAt == retryCandidate.NextRetryAt
             && string.Equals(current.CurrentPhase, retryCandidate.CurrentPhase, StringComparison.Ordinal);
 
     private static Dictionary<string, string> SelectMetadata(ExecutionJobRecord job)
@@ -962,6 +1051,31 @@ internal sealed partial class ConsoleJobService(
 
     [LoggerMessage(117005, LogLevel.Warning, "Manual retry compensation failed for job {JobId}")]
     private static partial void JobRetryCompensationFailed(ILogger logger, string jobId, Exception exception);
+
+    [LoggerMessage(117006, LogLevel.Warning, "Manual retry capability lookup failed for job {JobId}")]
+    private static partial void JobRetryCapabilityLookupFailed(ILogger logger, string jobId, Exception exception);
+
+    private static class RetryDisabledReasons
+    {
+        public const string JobQueueUnavailable = "job_queue_unavailable";
+        public const string BackendUnavailable = "backend_unavailable";
+        public const string BackendCapabilityUnavailable = "backend_capability_unavailable";
+        public const string BackendRetryUnsupported = "backend_retry_unsupported";
+        public const string RetryBudgetExhausted = "retry_budget_exhausted";
+    }
+
+    private readonly record struct RetryDispatch(
+        bool IsAllowed,
+        string? DisabledReason,
+        IJobQueue? Queue,
+        bool IsRemote)
+    {
+        public static RetryDispatch Local(IJobQueue queue) => new(true, null, queue, false);
+
+        public static RetryDispatch Remote() => new(true, null, null, true);
+
+        public static RetryDispatch Disabled(string reason) => new(false, reason, null, false);
+    }
 }
 
 internal sealed class ConsoleJobServiceUnavailableException(string message) : Exception(message);

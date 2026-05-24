@@ -30,6 +30,8 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
     private readonly InMemoryJobStore _jobStore = new();
     private readonly InMemoryLogStore _logStore = new();
     private readonly RecordingJobQueue _jobQueue = new();
+    private readonly RecordingBatchBackend _remoteBackend = new("remote", supportsRetry: true);
+    private readonly RecordingBatchBackend _remoteNoRetryBackend = new("remote-no-retry", supportsRetry: false);
     private readonly StubArtifactStore _artifactStore = new();
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
@@ -46,6 +48,8 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
                 services.AddSingleton<IExecutionJobStore>(_jobStore);
                 services.AddSingleton<IExecutionLogStore>(_logStore);
                 services.AddSingleton<IJobQueue>(_jobQueue);
+                services.AddSingleton<IBatchComputeBackend>(_remoteBackend);
+                services.AddSingleton<IBatchComputeBackend>(_remoteNoRetryBackend);
                 services.AddSingleton<IArtifactStore>(_artifactStore);
             });
     }
@@ -213,6 +217,60 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/actions")]
+    [Endpoint("POST /api/v1/admin/jobs/{jobId}/retry")]
+    public async Task Retry_RemoteBackend_UsesReconcilerRetryMarkerWithoutLocalQueue()
+    {
+        var actions = await _client.GetAsync("/api/v1/admin/jobs/job-remote-failed/actions");
+        actions.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var actionsDoc = await ReadJsonAsync(actions))
+        {
+            var retryAction = actionsDoc.RootElement.GetProperty("actions")[0];
+            retryAction.GetProperty("name").GetString().Should().Be("retry");
+            retryAction.GetProperty("allowed").GetBoolean().Should().BeTrue();
+        }
+
+        var retry = await _client.PostAsync("/api/v1/admin/jobs/job-remote-failed/retry", null);
+
+        retry.StatusCode.Should().Be(HttpStatusCode.OK);
+        var retried = await _jobStore.GetAsync("job-remote-failed");
+        retried!.Status.Should().Be(ExecutionJobStatus.Queued);
+        retried.AttemptCount.Should().Be(1);
+        retried.NextRetryAt.Should().NotBeNull();
+        retried.NextRetryAt!.Value.Should().BeOnOrBefore(DateTimeOffset.UtcNow.AddSeconds(1));
+        retried.ProviderOperationId.Should().BeNull();
+        retried.CompletedAt.Should().BeNull();
+        retried.ErrorMessage.Should().BeNull();
+        retried.ArtifactReferences.Should().BeEmpty();
+        _jobQueue.Requeued.Should().NotContain("job-remote-failed");
+        _remoteBackend.CapabilityRequests.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/actions")]
+    [Endpoint("POST /api/v1/admin/jobs/{jobId}/retry")]
+    public async Task Retry_RemoteBackendWithoutRetrySupport_ReturnsConflict()
+    {
+        var actions = await _client.GetAsync("/api/v1/admin/jobs/job-remote-no-retry/actions");
+        actions.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var actionsDoc = await ReadJsonAsync(actions))
+        {
+            var retryAction = actionsDoc.RootElement.GetProperty("actions")[0];
+            retryAction.GetProperty("name").GetString().Should().Be("retry");
+            retryAction.GetProperty("allowed").GetBoolean().Should().BeFalse();
+            retryAction.GetProperty("disabledReason").GetString().Should().Be("job backend does not support retry");
+        }
+
+        var retry = await _client.PostAsync("/api/v1/admin/jobs/job-remote-no-retry/retry", null);
+
+        retry.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var failed = await _jobStore.GetAsync("job-remote-no-retry");
+        failed!.Status.Should().Be(ExecutionJobStatus.Failed);
+        failed.ProviderOperationId.Should().Be("remote-provider-no-retry");
+        _jobQueue.Requeued.Should().NotContain("job-remote-no-retry");
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/jobs/{jobId}/cancel")]
     public async Task Cancel_WhenQueueRemovalFails_ReturnsDurableCancellation()
     {
@@ -283,6 +341,27 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
                     [ExecutionJobParameterKeys.GeoprocessingPlanId] = "plan-failed",
                     [ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = "geometry.buffer"
                 })
+            },
+            CreateJob("job-remote-failed", ExecutionJobStatus.Failed, now.AddMinutes(-5), "corr-remote-failed") with
+            {
+                CompletedAt = now.AddMinutes(-3),
+                CurrentPhase = "Failed",
+                ErrorMessage = "Remote provider failed.",
+                AttemptCount = 1,
+                ProviderOperationId = "remote-provider-1",
+                RetryPolicy = new JobRetryPolicy { MaxAttempts = 3 },
+                ArtifactReferences = ["available"],
+                Spec = CreateSpec("remote-failed-workload", backend: "remote")
+            },
+            CreateJob("job-remote-no-retry", ExecutionJobStatus.Failed, now.AddMinutes(-4), "corr-remote-no-retry") with
+            {
+                CompletedAt = now.AddMinutes(-2),
+                CurrentPhase = "Failed",
+                ErrorMessage = "Remote provider failed.",
+                AttemptCount = 1,
+                ProviderOperationId = "remote-provider-no-retry",
+                RetryPolicy = new JobRetryPolicy { MaxAttempts = 3 },
+                Spec = CreateSpec("remote-no-retry-workload", backend: "remote-no-retry")
             },
             CreateJob("job-cancel", ExecutionJobStatus.Queued, now.AddMinutes(-2), "corr-cancel") with
             {
@@ -488,6 +567,56 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
 
         public Task<long> GetQueueDepthAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(0L);
+    }
+
+    private sealed class RecordingBatchBackend(string backendName, bool supportsRetry) : IBatchComputeBackend
+    {
+        public string BackendName => backendName;
+
+        public BatchComputeTargetKind TargetKind => BatchComputeTargetKind.KubernetesJob;
+
+        public int CapabilityRequests { get; private set; }
+
+        public Task<BatchComputeBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
+        {
+            CapabilityRequests++;
+            return Task.FromResult(new BatchComputeBackendCapabilities
+            {
+                SupportsCancellation = true,
+                SupportsProgressPolling = true,
+                SupportsRetry = supportsRetry
+            });
+        }
+
+        public Task<BatchComputeSubmissionResult> StartAsync(
+            ExecutionJobRecord job,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new BatchComputeSubmissionResult
+            {
+                Status = ExecutionJobStatus.Running,
+                ProviderOperationId = "provider-" + job.OperationId,
+                Message = "Started"
+            });
+
+        public Task<BatchComputeObservation> ObserveAsync(
+            ExecutionJobRecord job,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new BatchComputeObservation
+            {
+                Status = job.Status,
+                ProviderOperationId = job.ProviderOperationId,
+                Message = job.CurrentPhase
+            });
+
+        public Task<BatchComputeObservation> CancelAsync(
+            ExecutionJobRecord job,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new BatchComputeObservation
+            {
+                Status = ExecutionJobStatus.Cancelled,
+                ProviderOperationId = job.ProviderOperationId,
+                Message = "Cancelled"
+            });
     }
 
     private sealed class StubArtifactStore : IArtifactStore

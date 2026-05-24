@@ -319,6 +319,38 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
     }
 
     [IntegrationTest]
+    public async Task ExecutionJobStore_WithRedis_CreatedToInsideSameMillisecond_HonoursExclusiveBound()
+    {
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var createdAtMillisecond = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        var includedId = $"job-query-created-to-included-{Guid.NewGuid():N}";
+        var excludedId = $"job-query-created-to-excluded-{Guid.NewGuid():N}";
+
+        await harness.JobStore.TryCreateAsync(CreateQueuedJob(includedId) with
+        {
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = createdAtMillisecond.AddTicks(1_000),
+            UpdatedAt = createdAtMillisecond.AddTicks(1_000)
+        });
+        await harness.JobStore.TryCreateAsync(CreateQueuedJob(excludedId) with
+        {
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = createdAtMillisecond.AddTicks(3_000),
+            UpdatedAt = createdAtMillisecond.AddTicks(3_000)
+        });
+
+        var page = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            CreatedTo = createdAtMillisecond.AddTicks(2_000),
+            Statuses = [ExecutionJobStatus.Running],
+            Limit = 10
+        });
+
+        page.Items.Should().ContainSingle(job => job.OperationId == includedId);
+        page.Items.Should().NotContain(job => job.OperationId == excludedId);
+    }
+
+    [IntegrationTest]
     public async Task ExecutionLogStore_WithRedis_AppendsInOrderAndHonoursRetention()
     {
         await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);

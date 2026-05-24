@@ -90,11 +90,11 @@ Supported query parameters:
 | --- | --- |
 | `status` | Comma-separated and repeatable list. Values: `Queued`, `Provisioning`, `Running`, `Succeeded`, `Failed`, `Cancelled`. Numeric enum tokens are rejected. |
 | `kind` | Single job kind. Values: `Geoprocessing`, `ExtractTransformLoad`, `TileCache`. |
-| `backend` | Exact backend identifier, case-insensitive. |
-| `queue` | Queue/routing lane. Resolved from `honua.job.queue`; falls back to `backend` when the queue parameter is absent. |
+| `backend` | Backend identifier, compared case-insensitively. |
+| `queue` | Resolved queue/routing lane, compared case-insensitively. This matches the displayed `queue` value: `honua.job.queue` when present, otherwise the job `backend`. |
 | `actor` or `requestedBy` | Submitting actor filter. |
-| `correlationId` | Exact correlation id filter. |
-| `traceId` | Exact trace id filter from `honua.trace_id`. |
+| `correlationId` | Correlation id filter. |
+| `traceId` | Trace id filter from `honua.trace_id`. |
 | `definitionId` | Matches `honua.job.definition_id` or `honua.geoprocessing.plan_id`. |
 | `resourceRef` | Matches one value from pipe-delimited `honua.job.resource_refs`. |
 | `environment` | Matches `honua.job.environment`. |
@@ -106,6 +106,10 @@ Supported query parameters:
 | `to` | Exclusive ISO-8601 upper bound for `createdAt`. |
 | `limit` | Defaults to `50`; Redis-backed store clamps to `1..200`. |
 | `cursor` | Opaque cursor returned as `nextCursor`; invalid cursors return `400`. |
+
+String filters are trimmed and compared case-insensitively by the Redis-backed
+store. Clients should not rely on case-sensitive distinctions when filtering
+the Console jobs list.
 
 The list path applies authorization per returned job. A page can therefore
 contain fewer than `limit` items if some records in the underlying page are not
@@ -210,7 +214,7 @@ Action advertisement rules:
 | Action | Advertised when | Additional checks |
 | --- | --- | --- |
 | `cancel` | Job status is `Queued`, `Provisioning`, or `Running`. | Caller needs `OperatorOperation.Execute`; destructive-approval policy can require approval. |
-| `retry` | Job status is `Failed` or `Cancelled`. | Caller needs execute permission, `IJobQueue` must be available, and `JobRetryPolicy` must allow another attempt. |
+| `retry` | Job status is `Failed` or `Cancelled`. | Caller needs execute permission and `JobRetryPolicy` must allow another attempt. Local jobs also require `IJobQueue`; remote jobs require a registered backend that supports retry. |
 
 Use the `actions[]` response, not the presence of `links.cancel` or
 `links.retry`, to decide whether a control should be enabled.
@@ -235,9 +239,21 @@ Conflict and availability behavior:
 | Terminal job cancelled again | `409`, except already-cancelled jobs return `200` with an idempotent message. |
 | Retry requested for a non-failed/non-cancelled job | `409`. |
 | Retry budget exhausted | `409`. |
-| Retry queue unavailable or write fails | `503`; the service attempts to restore the prior terminal job state before returning. |
+| Local retry queue unavailable or write fails | `503`; when a local queue write fails, the service attempts to restore the prior terminal job state before returning. |
+| Remote retry backend unavailable | `503`. |
+| Remote backend does not support retry | `409`. |
 | Backend does not support remote cancellation | `409`. |
 | Approval required | `403 application/problem+json` with `urn:honua:approval-required`. |
+
+Cancellation persists the durable job transition before best-effort queue
+cleanup. If removing a stale queue entry fails after cancellation has been
+persisted, the endpoint still returns the durable cancellation response and
+logs the cleanup failure. Manual retry uses the same job id; if the durable
+record for a local job is moved to `Queued` but `IJobQueue.RequeueAsync` fails
+before the retry is safely enqueued, the service restores the prior terminal
+state when the record is still an unclaimed manual retry candidate. Remote
+manual retry stores a due `nextRetryAt` marker and lets the execution-job
+reconciler start the next provider attempt.
 
 Only `cancel` and `retry` are implemented in this contract. Pause, resume,
 approve, promote, rollback, and rerun-with-parameters require future bounded

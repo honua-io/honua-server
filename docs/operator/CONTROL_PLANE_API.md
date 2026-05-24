@@ -586,10 +586,12 @@ pagination.
 The jobs list accepts filters for `status`, `kind`, `backend`, `queue`,
 `actor`/`requestedBy`, `correlationId`, `traceId`, `definitionId`,
 `resourceRef`, `environment`, `server`, `releaseId`, `changeSetId`, `alertId`,
-`from`, `to`, `limit`, and `cursor`. Responses are plain camelCase JSON DTOs
-with `Cache-Control: no-store`; per-job reads also emit `X-Correlation-Id`
-when present. The full response contract, artifact availability states,
-action rules, retry/cancel conflict behavior, and Operate event deep links are
+`from`, `to`, `limit`, and `cursor`. The `queue` filter matches the same
+resolved value returned in summaries: `honua.job.queue` when present,
+otherwise the job backend. Responses are plain camelCase JSON DTOs with
+`Cache-Control: no-store`; per-job reads also emit `X-Correlation-Id` when
+present. The full response contract, artifact availability states, action
+rules, retry/cancel conflict behavior, and Operate event deep links are
 documented in [Console Job Observability](../admin-api/console-job-observability.md).
 See [Operations - Job Orchestration](operations.md#job-orchestration) for
 lifecycle and tuning details.
