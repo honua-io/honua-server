@@ -13,10 +13,19 @@ Tracked by issue **#1162**. Subsequent tickets (#1163 — persistent store,
 
 ## Surface
 
-All endpoints live under `/api/v{version:apiVersion}/console`, require admin
-authorization, and return the shared admin problem-details payload for any
-4xx/5xx response. Successful responses are wrapped in the standard
+All endpoints live under `/api/v{version:apiVersion}/console` and require admin
+authorization. Successful responses are wrapped in the standard
 `ApiResponse<T>` envelope (`success`, `data`, `message`, `timestamp`).
+
+Error contract (matching the established admin endpoint pattern):
+
+- **Expected client errors (400, 404, 409).** Returned as
+  `ApiResponse<object>` with `success: false` and a human-readable
+  `message`. Examples: invalid `itemType` filter, unknown content id on
+  detail/update/delete, stale `generation` on PUT.
+- **Internal failures (5xx).** Returned as RFC 7807 `ProblemDetails` via
+  `TypedResults.Problem(...)` with a generic title/detail so internal
+  diagnostics never leak across the boundary.
 
 | Method | Route | Purpose |
 | --- | --- | --- |

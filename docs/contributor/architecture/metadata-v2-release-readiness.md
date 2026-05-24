@@ -124,6 +124,33 @@ Release evidence:
   validation warnings, migration blockers, or admin UI limitations.
 - Follow-up issues are linked for deferred Metadata v2 work.
 
+## Console Content and RBAC Baseline (#1162)
+
+Derived from:
+
+- [#1162](https://github.com/honua-io/honua-server/issues/1162)
+- [#1163](https://github.com/honua-io/honua-server/issues/1163) (persistent store follow-on)
+- [#1164](https://github.com/honua-io/honua-server/issues/1164),
+  [#1165](https://github.com/honua-io/honua-server/issues/1165) (release
+  lifecycle follow-ons)
+
+Release evidence:
+
+- The Console content item, session bootstrap, action-check, and provenance
+  endpoints under `/api/v1/console/**` are documented in
+  [Console Content and RBAC (Admin API)](../../admin-api/console-content-and-rbac.md)
+  and listed in `EndpointRegistry.All`.
+- `ConsoleContentItem.itemType` covers `service`, `layer`, `saved-map`,
+  `dashboard`, `report`, `generated-app`, and `open-data`; sidecar shapes per
+  type are tracked through `ConsoleJsonContext` source-generated serializers.
+- Seven Console verbs (`view`, `edit`, `publish`, `share`, `embed`, `operate`,
+  `administer`) map onto the existing policy action set in
+  `IConsoleActionEvaluator`; mappings and visibility rules are test-covered by
+  `ConsoleActionEvaluatorTests`.
+- `IConsoleContentStore` is satisfied at baseline by an in-memory store;
+  persistent backing is tracked under #1163 and is not required to gate this
+  baseline.
+
 ## Review Output
 
 For a Metadata v2 release candidate, capture:

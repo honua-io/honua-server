@@ -41,25 +41,29 @@ internal static class ConsoleContentMapper
 
     public static ConsoleContentItem FromUpdateRequest(string id, UpdateConsoleContentItemRequest request, ConsoleContentItem existing, ClaimsPrincipal principal)
     {
+        // PUT is a full replacement: nullable fields absent from the request clear
+        // the stored value, value-type fields fall back to the same defaults the
+        // create path applies, and collection fields default to empty. Merge
+        // semantics live exclusively on PATCH.
         var updater = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? principal.FindFirstValue("sub");
         return existing with
         {
             Id = id,
             Name = request.Name,
-            Namespace = request.Namespace ?? existing.Namespace,
-            Title = request.Title ?? existing.Title,
-            Description = request.Description ?? existing.Description,
+            Namespace = request.Namespace,
+            Title = request.Title,
+            Description = request.Description,
             ItemType = request.ItemType,
-            Tags = request.Tags ?? existing.Tags,
-            Labels = request.Labels ?? existing.Labels,
-            Lifecycle = request.Lifecycle ?? existing.Lifecycle,
-            OperationalState = request.OperationalState ?? existing.OperationalState,
-            Visibility = request.Visibility ?? existing.Visibility,
-            OwnerId = request.OwnerId ?? existing.OwnerId,
-            TeamScopeId = request.TeamScopeId ?? existing.TeamScopeId,
+            Tags = request.Tags ?? Array.Empty<string>(),
+            Labels = request.Labels ?? new Dictionary<string, string>(),
+            Lifecycle = request.Lifecycle ?? Core.Features.Metadata.Domain.V2.MetadataV2LifecycleStatus.Draft,
+            OperationalState = request.OperationalState ?? Core.Features.Metadata.Domain.V2.MetadataV2OperationalState.Unknown,
+            Visibility = request.Visibility ?? ConsoleVisibility.Personal,
+            OwnerId = request.OwnerId,
+            TeamScopeId = request.TeamScopeId,
             UpdatedById = updater,
-            Provenance = request.Provenance ?? existing.Provenance,
-            TypeMetadata = request.TypeMetadata ?? existing.TypeMetadata,
+            Provenance = request.Provenance ?? Array.Empty<ConsoleProvenanceRef>(),
+            TypeMetadata = request.TypeMetadata,
             Generation = request.Generation,
         };
     }

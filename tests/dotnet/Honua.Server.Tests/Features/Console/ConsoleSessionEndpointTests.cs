@@ -114,11 +114,15 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
     {
         await _client.PostAsJsonAsync("/api/v1/console/content", new CreateConsoleContentItemRequest
         {
-            Name = "list-layer", ItemType = ConsoleContentItemType.Layer, Visibility = ConsoleVisibility.Public,
+            Name = "list-layer",
+            ItemType = ConsoleContentItemType.Layer,
+            Visibility = ConsoleVisibility.Public,
         }, JsonOptions);
         await _client.PostAsJsonAsync("/api/v1/console/content", new CreateConsoleContentItemRequest
         {
-            Name = "list-dashboard", ItemType = ConsoleContentItemType.Dashboard, Visibility = ConsoleVisibility.Organization,
+            Name = "list-dashboard",
+            ItemType = ConsoleContentItemType.Dashboard,
+            Visibility = ConsoleVisibility.Organization,
         }, JsonOptions);
 
         var response = await _client.GetAsync("/api/v1/console/content?itemType=layer&limit=50");
@@ -137,7 +141,9 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
     {
         var createResponse = await _client.PostAsJsonAsync("/api/v1/console/content", new CreateConsoleContentItemRequest
         {
-            Name = "patch-target", ItemType = ConsoleContentItemType.Report, Visibility = ConsoleVisibility.Personal,
+            Name = "patch-target",
+            ItemType = ConsoleContentItemType.Report,
+            Visibility = ConsoleVisibility.Personal,
         }, JsonOptions);
         var created = JsonSerializer.Deserialize<ApiResponse<ConsoleContentItem>>(
             await createResponse.Content.ReadAsStringAsync(), JsonOptions)!;
@@ -169,7 +175,9 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
     {
         var createResponse = await _client.PostAsJsonAsync("/api/v1/console/content", new CreateConsoleContentItemRequest
         {
-            Name = "put-target", ItemType = ConsoleContentItemType.Dashboard, Visibility = ConsoleVisibility.Organization,
+            Name = "put-target",
+            ItemType = ConsoleContentItemType.Dashboard,
+            Visibility = ConsoleVisibility.Organization,
         }, JsonOptions);
         var created = JsonSerializer.Deserialize<ApiResponse<ConsoleContentItem>>(
             await createResponse.Content.ReadAsStringAsync(), JsonOptions)!;
@@ -192,12 +200,75 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("PUT /api/v1/console/content/{id}")]
+    public async Task ReplaceContent_OmittedNullableFields_AreCleared()
+    {
+        var createResponse = await _client.PostAsJsonAsync("/api/v1/console/content", new CreateConsoleContentItemRequest
+        {
+            Name = "put-clear-target",
+            ItemType = ConsoleContentItemType.Dashboard,
+            Title = "Original title",
+            Description = "Original description",
+            Visibility = ConsoleVisibility.Organization,
+            Tags = ["alpha", "beta"],
+        }, JsonOptions);
+        var created = JsonSerializer.Deserialize<ApiResponse<ConsoleContentItem>>(
+            await createResponse.Content.ReadAsStringAsync(), JsonOptions)!;
+
+        var replace = new UpdateConsoleContentItemRequest
+        {
+            Name = "put-clear-target",
+            ItemType = ConsoleContentItemType.Dashboard,
+            // Title, Description, Tags, Visibility intentionally omitted — PUT
+            // must treat them as cleared/defaulted, not preserved.
+            Generation = created.Data!.Generation,
+        };
+
+        var putResponse = await _client.PutAsJsonAsync($"/api/v1/console/content/{created.Data.Id}", replace, JsonOptions);
+        Assert.Equal(HttpStatusCode.OK, putResponse.StatusCode);
+        var replaced = JsonSerializer.Deserialize<ApiResponse<ConsoleContentItem>>(
+            await putResponse.Content.ReadAsStringAsync(), JsonOptions);
+
+        Assert.Null(replaced!.Data!.Title);
+        Assert.Null(replaced.Data.Description);
+        Assert.Empty(replaced.Data.Tags);
+        Assert.Equal(ConsoleVisibility.Personal, replaced.Data.Visibility);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/console/content/{id}")]
+    public async Task ReplaceContent_WithMismatchedGeneration_ReturnsConflict()
+    {
+        var createResponse = await _client.PostAsJsonAsync("/api/v1/console/content", new CreateConsoleContentItemRequest
+        {
+            Name = "put-conflict-target",
+            ItemType = ConsoleContentItemType.Dashboard,
+            Visibility = ConsoleVisibility.Organization,
+        }, JsonOptions);
+        var created = JsonSerializer.Deserialize<ApiResponse<ConsoleContentItem>>(
+            await createResponse.Content.ReadAsStringAsync(), JsonOptions)!;
+
+        var update = new UpdateConsoleContentItemRequest
+        {
+            Name = "put-conflict-target",
+            ItemType = ConsoleContentItemType.Dashboard,
+            Title = "Should not land",
+            Generation = (created.Data!.Generation ?? 1) + 99,
+        };
+
+        var putResponse = await _client.PutAsJsonAsync($"/api/v1/console/content/{created.Data.Id}", update, JsonOptions);
+        Assert.Equal(HttpStatusCode.Conflict, putResponse.StatusCode);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/console/content/search")]
     public async Task SearchContent_FindsByTerm()
     {
         await _client.PostAsJsonAsync("/api/v1/console/content", new CreateConsoleContentItemRequest
         {
-            Name = "search-unique-needle", ItemType = ConsoleContentItemType.Layer, Visibility = ConsoleVisibility.Public,
+            Name = "search-unique-needle",
+            ItemType = ConsoleContentItemType.Layer,
+            Visibility = ConsoleVisibility.Public,
         }, JsonOptions);
 
         var response = await _client.GetAsync("/api/v1/console/content/search?q=needle");
@@ -215,7 +286,8 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
     {
         var createResponse = await _client.PostAsJsonAsync("/api/v1/console/content", new CreateConsoleContentItemRequest
         {
-            Name = "delete-target", ItemType = ConsoleContentItemType.GeneratedApp,
+            Name = "delete-target",
+            ItemType = ConsoleContentItemType.GeneratedApp,
         }, JsonOptions);
         var created = JsonSerializer.Deserialize<ApiResponse<ConsoleContentItem>>(
             await createResponse.Content.ReadAsStringAsync(), JsonOptions)!;
@@ -233,7 +305,9 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
     {
         var createResponse = await _client.PostAsJsonAsync("/api/v1/console/content", new CreateConsoleContentItemRequest
         {
-            Name = "check-target", ItemType = ConsoleContentItemType.Service, Visibility = ConsoleVisibility.Public,
+            Name = "check-target",
+            ItemType = ConsoleContentItemType.Service,
+            Visibility = ConsoleVisibility.Public,
         }, JsonOptions);
         var created = JsonSerializer.Deserialize<ApiResponse<ConsoleContentItem>>(
             await createResponse.Content.ReadAsStringAsync(), JsonOptions)!;
@@ -279,7 +353,8 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
     {
         var catalogResponse = await _client.PostAsJsonAsync("/api/v1/console/content", new CreateConsoleContentItemRequest
         {
-            Name = "prov-catalog", ItemType = ConsoleContentItemType.Layer,
+            Name = "prov-catalog",
+            ItemType = ConsoleContentItemType.Layer,
         }, JsonOptions);
         var catalog = JsonSerializer.Deserialize<ApiResponse<ConsoleContentItem>>(
             await catalogResponse.Content.ReadAsStringAsync(), JsonOptions)!;

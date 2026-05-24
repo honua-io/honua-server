@@ -72,26 +72,36 @@ internal sealed class InMemoryConsoleContentStore : IConsoleContentStore
 
     public Task<ConsoleContentItem?> UpdateAsync(ConsoleContentItem item, CancellationToken cancellationToken = default)
     {
-        if (!_items.TryGetValue(item.Id, out var existing))
-            return Task.FromResult<ConsoleContentItem?>(null);
-
-        if (item.Generation is { } requested && existing.Generation is { } current && requested < current)
+        // Optimistic concurrency: the supplied generation, when present, must
+        // exactly match the stored value. The swap uses TryUpdate so two
+        // concurrent updates reading the same generation cannot both succeed —
+        // the loser observes a mismatched generation on retry and raises the
+        // conflict path.
+        while (true)
         {
-            throw new InvalidOperationException("Stale generation; refresh and retry.");
+            if (!_items.TryGetValue(item.Id, out var existing))
+                return Task.FromResult<ConsoleContentItem?>(null);
+
+            if (item.Generation is { } requested && existing.Generation is { } current && requested != current)
+            {
+                throw new InvalidOperationException("Stale generation; refresh and retry.");
+            }
+
+            var nextGeneration = (existing.Generation ?? 0) + 1;
+            var now = _timeProvider.GetUtcNow();
+            var updated = item with
+            {
+                Id = existing.Id,
+                CreatedAt = existing.CreatedAt,
+                UpdatedAt = now,
+                Generation = nextGeneration,
+                Actions = Array.Empty<ConsoleContentAction>(),
+            };
+            if (_items.TryUpdate(item.Id, updated, existing))
+            {
+                return Task.FromResult<ConsoleContentItem?>(updated);
+            }
         }
-
-        var nextGeneration = (existing.Generation ?? 0) + 1;
-        var now = _timeProvider.GetUtcNow();
-        var updated = item with
-        {
-            Id = existing.Id,
-            CreatedAt = existing.CreatedAt,
-            UpdatedAt = now,
-            Generation = nextGeneration,
-            Actions = Array.Empty<ConsoleContentAction>(),
-        };
-        _items[item.Id] = updated;
-        return Task.FromResult<ConsoleContentItem?>(updated);
     }
 
     public Task<ConsoleContentItem?> PatchAsync(string id, ConsoleContentItemPatch patch, CancellationToken cancellationToken = default)
