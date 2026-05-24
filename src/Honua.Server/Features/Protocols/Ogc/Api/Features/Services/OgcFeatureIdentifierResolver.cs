@@ -225,6 +225,38 @@ internal static class OgcFeatureIdentifierResolver
         => Convert.ToString(GetPublicId(feature, resource), CultureInfo.InvariantCulture)
            ?? feature.Id.ToString(CultureInfo.InvariantCulture);
 
+    /// <summary>
+    /// Metadata v2 overload of
+    /// <see cref="FormatPayloadPublicId(IReadOnlyDictionary{string, object?}, LayerDefinition)"/>.
+    /// Resolves the public id field from the V2 resource's primary id field (falling back
+    /// to <c>id</c> for parity with the v1 logic).
+    /// </summary>
+    public static string? FormatPayloadPublicId(
+        IReadOnlyDictionary<string, object?>? properties,
+        MetadataV2Resource resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+
+        if (properties is null)
+        {
+            return null;
+        }
+
+        var objectIdFieldName = ResolveObjectIdFieldName(resource);
+        if (TryGetAttributeValue(properties, objectIdFieldName, out var configuredId))
+        {
+            return FormatPayloadId(configuredId);
+        }
+
+        if (!objectIdFieldName.Equals("id", StringComparison.OrdinalIgnoreCase) &&
+            TryGetAttributeValue(properties, "id", out var idValue))
+        {
+            return FormatPayloadId(idValue);
+        }
+
+        return null;
+    }
+
     public static MetadataV2Field? ResolveWritablePublicIdField(MetadataV2Resource resource)
     {
         var objectIdFieldName = ResolveObjectIdFieldName(resource);
