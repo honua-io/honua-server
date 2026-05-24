@@ -39,6 +39,22 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
 {
     internal const int MaxPageSize = 200;
     private const int MaxSourceScanPages = 4;
+    private const int DurableJobScanPageSize = 50;
+    private static readonly ExecutionJobStatus[] NoticeExecutionJobStatuses =
+    [
+        ExecutionJobStatus.Succeeded,
+        ExecutionJobStatus.Failed,
+        ExecutionJobStatus.Cancelled
+    ];
+    private static readonly ExecutionJobStatus[] WarningExecutionJobStatuses =
+    [
+        ExecutionJobStatus.Failed,
+        ExecutionJobStatus.Cancelled
+    ];
+    private static readonly ExecutionJobStatus[] ErrorExecutionJobStatuses =
+    [
+        ExecutionJobStatus.Failed
+    ];
 
     private readonly IAlertEventQuery? _alertQuery;
     private readonly IAuditLogReader? _auditReader;
@@ -437,28 +453,57 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             return Array.Empty<OperateEvent>();
         }
 
-        var page = await _jobStore.QueryAsync(
-                new ExecutionJobQuery
-                {
-                    RequestedBy = filter.Actor,
-                    CorrelationId = filter.CorrelationId,
-                    TraceId = filter.TraceId,
-                    ResourceRef = filter.ResourceRef,
-                    ReleaseId = filter.ReleaseId,
-                    ChangeSetId = filter.ChangeSetId,
-                    CreatedFrom = filter.From,
-                    CreatedTo = filter.To,
-                    Limit = pageSize
-                },
-                cancellationToken)
-            .ConfigureAwait(false);
+        var results = new List<OperateEvent>(pageSize);
+        var scanLimit = Math.Min(MaxPageSize, Math.Max(pageSize, DurableJobScanPageSize));
+        var statuses = ToExecutionJobStatuses(filter.MinimumSeverity);
+        string? cursor = null;
+        for (var scanPage = 0; scanPage < MaxSourceScanPages && results.Count < pageSize; scanPage++)
+        {
+            var page = await _jobStore.QueryAsync(
+                    new ExecutionJobQuery
+                    {
+                        Statuses = statuses,
+                        RequestedBy = filter.Actor,
+                        CorrelationId = filter.CorrelationId,
+                        TraceId = filter.TraceId,
+                        ResourceRef = filter.ResourceRef,
+                        ReleaseId = filter.ReleaseId,
+                        ChangeSetId = filter.ChangeSetId,
+                        // Lower time bounds are event-time filters because durable
+                        // job events emit UpdatedAt/CompletedAt, not CreatedAt.
+                        // CreatedTo is still safe: a job cannot emit before creation.
+                        CreatedTo = filter.To,
+                        Cursor = cursor,
+                        Limit = scanLimit
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
 
-        return page.Items
-            .Select(job => (Job: job, Event: MapExecutionJob(job)))
-            .Where(item => MatchesDurableJobFilter(filter, item.Job, item.Event))
-            .Select(item => item.Event)
-            .Take(pageSize)
-            .ToArray();
+            foreach (var job in page.Items)
+            {
+                var value = MapExecutionJob(job);
+                if (!MatchesDurableJobFilter(filter, job, value))
+                {
+                    continue;
+                }
+
+                results.Add(value);
+                if (results.Count == pageSize)
+                {
+                    break;
+                }
+            }
+
+            if (string.IsNullOrEmpty(page.NextCursor) ||
+                string.Equals(page.NextCursor, cursor, StringComparison.Ordinal))
+            {
+                break;
+            }
+
+            cursor = page.NextCursor;
+        }
+
+        return results;
     }
 
     private static bool MatchesFilter(OperateEventFilter filter, OperateEvent value, bool matchResourceRef = true)
@@ -648,6 +693,16 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             OperateEventSeverity.Error => new[] { AuditOutcome.Failure },
             OperateEventSeverity.Critical => Array.Empty<AuditOutcome>(),
             _ => null
+        };
+
+    private static ExecutionJobStatus[] ToExecutionJobStatuses(OperateEventSeverity? minimumSeverity)
+        => minimumSeverity switch
+        {
+            null or OperateEventSeverity.Info => Array.Empty<ExecutionJobStatus>(),
+            OperateEventSeverity.Notice => NoticeExecutionJobStatuses,
+            OperateEventSeverity.Warning => WarningExecutionJobStatuses,
+            OperateEventSeverity.Error => ErrorExecutionJobStatuses,
+            _ => Array.Empty<ExecutionJobStatus>()
         };
 
     private static bool TryParseAlertResourceRef(string resourceRef, out long eventId)

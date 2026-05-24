@@ -467,6 +467,59 @@ public sealed class LocalOperateEventFeedTests
         page.Items[0].ResourceRef.Should().Be("job/durable-resource");
     }
 
+    [UnitTest]
+    public async Task ListAsync_JobSource_DurableFromFilterUsesEventTimestamp()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var jobStore = new FakeExecutionJobStore();
+        jobStore.Add(
+            NewExecutionJob(
+                "created-newer-not-updated",
+                now.AddMinutes(-20),
+                ExecutionJobStatus.Running,
+                createdAt: now.AddMinutes(-21)),
+            NewExecutionJob(
+                "created-older-updated-recently",
+                now,
+                ExecutionJobStatus.Running,
+                createdAt: now.AddHours(-2)));
+
+        var feed = new LocalOperateEventFeed(NullLogger<LocalOperateEventFeed>.Instance, jobStore: jobStore);
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            From = now.AddMinutes(-1),
+            PageSize = 1
+        });
+
+        page.Items.Should().ContainSingle();
+        page.Items[0].OperationId.Should().Be("created-older-updated-recently");
+        jobStore.SeenQueries.Should().OnlyContain(query => query.CreatedFrom == null);
+    }
+
+    [UnitTest]
+    public async Task ListAsync_JobSource_DurableSeverityFilterAppliesBeforeTrimming()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var jobStore = new FakeExecutionJobStore();
+        jobStore.Add(
+            NewExecutionJob("created-newer-running", now, ExecutionJobStatus.Running),
+            NewExecutionJob("created-older-failed", now.AddMinutes(-1), ExecutionJobStatus.Failed));
+
+        var feed = new LocalOperateEventFeed(NullLogger<LocalOperateEventFeed>.Instance, jobStore: jobStore);
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            MinimumSeverity = OperateEventSeverity.Error,
+            PageSize = 1
+        });
+
+        page.Items.Should().ContainSingle();
+        page.Items[0].OperationId.Should().Be("created-older-failed");
+        jobStore.SeenQueries.Should().ContainSingle();
+        jobStore.SeenQueries[0].Statuses.Should().Equal(ExecutionJobStatus.Failed);
+    }
+
     private static AlertEventSummary NewSummary(long id, AlertSeverity severity, DateTimeOffset occurredAt)
         => new()
         {
@@ -499,13 +552,16 @@ public sealed class LocalOperateEventFeedTests
         string operationId,
         DateTimeOffset updatedAt,
         ExecutionJobStatus status,
-        IReadOnlyDictionary<string, string>? parameters = null)
+        IReadOnlyDictionary<string, string>? parameters = null,
+        DateTimeOffset? createdAt = null,
+        DateTimeOffset? completedAt = null)
         => new()
         {
             OperationId = operationId,
             Status = status,
-            CreatedAt = updatedAt.AddMinutes(-1),
+            CreatedAt = createdAt ?? updatedAt.AddMinutes(-1),
             UpdatedAt = updatedAt,
+            CompletedAt = completedAt,
             Audit = new OperationAuditInfo
             {
                 RequestedBy = "alice",
@@ -714,6 +770,7 @@ public sealed class LocalOperateEventFeedTests
     private sealed class FakeExecutionJobStore : IExecutionJobStore
     {
         private readonly Dictionary<string, ExecutionJobRecord> _records = new(StringComparer.Ordinal);
+        public List<ExecutionJobQuery> SeenQueries { get; } = new();
 
         public void Add(params ExecutionJobRecord[] records)
         {
@@ -760,6 +817,8 @@ public sealed class LocalOperateEventFeedTests
 
         public Task<ExecutionJobPage> QueryAsync(ExecutionJobQuery query, CancellationToken cancellationToken = default)
         {
+            SeenQueries.Add(query);
+
             var items = _records.Values
                 .Where(job => query.Statuses.Count == 0 || query.Statuses.Contains(job.Status))
                 .Where(job => !query.Kind.HasValue || job.Spec.Kind == query.Kind.Value)
@@ -774,10 +833,17 @@ public sealed class LocalOperateEventFeedTests
                 .Where(job => !query.CreatedFrom.HasValue || job.CreatedAt >= query.CreatedFrom.Value)
                 .Where(job => !query.CreatedTo.HasValue || job.CreatedAt < query.CreatedTo.Value)
                 .OrderByDescending(job => job.CreatedAt)
-                .Take(query.Limit)
+                .ThenByDescending(job => job.OperationId, StringComparer.Ordinal)
                 .ToArray();
+            var offset = ParseCursor(query.Cursor);
+            var limit = Math.Max(1, query.Limit);
+            var page = items.Skip(offset).Take(limit).ToArray();
+            var nextOffset = offset + page.Length;
+            var nextCursor = nextOffset < items.Length
+                ? nextOffset.ToString(CultureInfo.InvariantCulture)
+                : null;
 
-            return Task.FromResult(new ExecutionJobPage { Items = items });
+            return Task.FromResult(new ExecutionJobPage { Items = page, NextCursor = nextCursor });
         }
 
         public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, CancellationToken cancellationToken = default)

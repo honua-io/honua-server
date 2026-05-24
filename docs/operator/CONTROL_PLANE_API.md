@@ -550,6 +550,13 @@ Focused guidance and a concrete JSON example:
 | `/api/v1/admin/operations/{operationId}/cancel` | POST | Cancel operation |
 | `/api/v1/admin/operations/active` | GET | List active operations |
 | `/api/v1/admin/operations/type/{operationType}` | GET | List operations by type |
+| `/api/v1/admin/jobs` | GET | List durable execution jobs with cursor pagination and queue/status/resource filters |
+| `/api/v1/admin/jobs/{jobId}` | GET | Get durable execution job detail |
+| `/api/v1/admin/jobs/{jobId}/logs` | GET | Page structured execution logs |
+| `/api/v1/admin/jobs/{jobId}/artifacts` | GET | Page artifact references with availability state |
+| `/api/v1/admin/jobs/{jobId}/actions` | GET | List available job control actions |
+| `/api/v1/admin/jobs/{jobId}/cancel` | POST | Cancel a queued, provisioning, or running job |
+| `/api/v1/admin/jobs/{jobId}/retry` | POST | Retry a failed or cancelled job when policy allows |
 
 Supported `operationType` values: `Upload`, `Import`, `Ingest`, `ExternalImport`,
 `TileCache`, `PMTilesArchive`, `PMTilesPublish`, `Export`, `RasterImport`, `Print`,
@@ -570,8 +577,11 @@ through these same operations endpoints using the
 progress from pluggable batch-compute backends into `IUniversalProgressStore`
 so all jobs — local and remote — appear through the operations surface.
 The substrate tracks additional claim, heartbeat, and retry state internally
-through `IExecutionJobStore`; structured execution logs are stored via
-`IExecutionLogStore` and are not yet exposed through a public API endpoint.
+through `IExecutionJobStore`. Console job endpoints expose the same durable
+records for historical query, detail, logs, artifacts, actions, cancellation,
+and retry. Structured execution logs are stored via `IExecutionLogStore` and
+are available through `GET /api/v1/admin/jobs/{jobId}/logs` with cursor
+pagination.
 See [Operations — Job Orchestration](operations.md#job-orchestration) for
 lifecycle and tuning details.
 
