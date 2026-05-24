@@ -26,6 +26,13 @@ Error contract (matching the established admin endpoint pattern):
 - **Internal failures (5xx).** Returned as RFC 7807 `ProblemDetails` via
   `TypedResults.Problem(...)` with a generic title/detail so internal
   diagnostics never leak across the boundary.
+- **Client cancellation.** Endpoints rethrow `OperationCanceledException`
+  rather than mask it as a 500, so a client disconnect or request timeout
+  surfaces as the host's standard cancelled response (no `ApiResponse`
+  envelope, no `ProblemDetails`) instead of being recorded as a server
+  failure. The `/session` endpoint applies the same rule on its inner
+  content-page fetch — a cancellation surfaces, while a non-cancellation
+  failure degrades to an empty content page (`degraded: true`).
 
 | Method | Route | Purpose |
 | --- | --- | --- |
@@ -125,6 +132,15 @@ than overloaded on `PUT`:
   when supplied but does **not** influence audit stamping — a privileged
   caller creating a content item on behalf of another user is still
   recorded as the acting principal in `createdById`/`updatedById`.
+- **Principal identifier resolution.** The acting principal id used for
+  `createdById`/`updatedById` and for `session.user.id` is resolved via
+  `ConsolePrincipal.ResolveActorId` with a fixed fallback chain:
+  `ClaimTypes.NameIdentifier` → `sub` → `api_key_id` → `api_key_name` →
+  `ClaimsIdentity.Name` → `ClaimTypes.Name`. OIDC/JWT principals normally
+  resolve at the first hop; admin API-key principals (which carry only the
+  API-key claims documented on `ApiKeyAuthenticationHandler`) resolve via
+  the `api_key_*` hops, so audit fields and the session user id stay
+  non-empty regardless of which scheme authenticated the request.
 - **Team-scope precondition.** `visibility: "team"` is only valid when a
   non-empty `teamScopeId` is paired with it. `POST` and `PUT` requests that
   supply `visibility: "team"` without a `teamScopeId` are rejected with
@@ -132,7 +148,11 @@ than overloaded on `PUT`:
   contract is restricted to displayable fields), `PATCH` requests that set
   `visibility: "team"` are rejected unless the stored item already carries a
   `teamScopeId` — clients must use `PUT` to establish the team scope before
-  the visibility transition.
+  the visibility transition. The invariant is enforced atomically inside
+  the store's `PATCH` compare-and-swap loop in addition to the endpoint's
+  pre-flight check, so a concurrent `PUT` that clears `teamScopeId` between
+  the pre-check and the swap still yields `400 Bad Request` rather than a
+  stored item with `visibility: "team"` and no scope.
 - **Closed enum sets.** Body enums (`itemType`, `visibility`, `lifecycle`,
   `operationalState`, and each entry of the action-check `actions` array)
   are validated against the documented string set. Requests carrying

@@ -127,6 +127,19 @@ internal sealed class InMemoryConsoleContentStore : IConsoleContentStore
                 UpdatedAt = now,
                 Actions = Array.Empty<ConsoleContentAction>(),
             };
+
+            // Invariant: visibility 'team' requires a non-empty teamScopeId.
+            // PATCH cannot carry teamScopeId (it is intentionally excluded from
+            // ConsoleContentItemPatch), so this check fires when the patch sets
+            // visibility=team and the latest stored snapshot has no team scope —
+            // covering the TOCTOU window where a concurrent PUT cleared the
+            // scope between the endpoint's pre-flight check and the swap here.
+            if (updated.Visibility == ConsoleVisibility.Team && string.IsNullOrWhiteSpace(updated.TeamScopeId))
+            {
+                throw new InvalidOperationException(
+                    "visibility 'team' requires a non-empty teamScopeId; use PUT to set the team scope before patching visibility.");
+            }
+
             if (_items.TryUpdate(id, updated, existing))
             {
                 return Task.FromResult<ConsoleContentItem?>(updated);

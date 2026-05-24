@@ -38,6 +38,14 @@ public interface IConsoleContentStore
 
     /// <summary>
     /// Applies a patch to displayable fields without touching <c>Generation</c>.
+    /// Implementations must enforce the team-scope invariant atomically against
+    /// the latest stored snapshot: if applying the patch would leave the item
+    /// with <c>Visibility == Team</c> and an empty <c>TeamScopeId</c>, the
+    /// implementation must throw <see cref="InvalidOperationException"/> rather
+    /// than commit. The patch contract intentionally excludes
+    /// <c>TeamScopeId</c>, so the only way to enter that state is a TOCTOU race
+    /// against a concurrent PUT that cleared the scope between an endpoint
+    /// pre-check and the swap.
     /// </summary>
     Task<ConsoleContentItem?> PatchAsync(string id, ConsoleContentItemPatch patch, CancellationToken cancellationToken = default);
 

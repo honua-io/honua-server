@@ -331,7 +331,20 @@ internal static class ConsoleContentEndpoints
             }
 
             var patch = ConsoleContentMapper.FromPatchRequest(request, context.User);
-            var updated = await store.PatchAsync(id, patch, context.RequestAborted).ConfigureAwait(false);
+            ConsoleContentItem? updated;
+            try
+            {
+                updated = await store.PatchAsync(id, patch, context.RequestAborted).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException ioe)
+            {
+                // The store enforces the team-scope invariant atomically inside
+                // its CAS loop, so a concurrent PUT that clears teamScopeId
+                // between the pre-flight check and the swap still produces a
+                // contract-friendly 400 instead of a silently-broken stored
+                // state.
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(ioe.Message));
+            }
             if (updated is null)
                 return TypedResults.NotFound(ApiResponse<object>.Failure("Console content item not found."));
 
