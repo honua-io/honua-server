@@ -2639,7 +2639,7 @@
       "get": {
         "tags": ["Security"],
         "summary": "Get Admin Auth Configuration",
-        "description": "Bootstrap endpoint for Admin UI and native clients. It does not require API-key, OIDC, or admin-session auth, but required client-certificate prefix enforcement can still apply. Returns OIDC provider labels plus non-secret client-certificate policy hints such as mode, environment id, required surfaces, supported transports, accepted issuer hints, expiration warning threshold, and forwarded-certificate status.",
+        "description": "Bootstrap endpoint for Admin UI and native clients. It does not require API-key, OIDC, or admin-session auth, but required client-certificate prefix enforcement can still apply. Returns OIDC provider labels plus non-secret client-certificate policy hints such as mode, environment id, required surfaces, supported transports, accepted issuer hints, expiration warning threshold, and forwarded-certificate status. Issuer hints are sourced from the live trust store, so admin-API profile create/update/disable mutations are reflected immediately without a restart.",
         "operationId": "getAdminAuthConfig",
         "security": [],
         "responses": {
@@ -3030,7 +3030,7 @@
       "post": {
         "tags": ["Security"],
         "summary": "Validate Client Certificate",
-        "description": "Validates a supplied public client certificate against configured trust profiles without storing the certificate.",
+        "description": "Validates a supplied public client certificate against configured trust profiles without storing the certificate. A parsed-but-untrusted certificate returns 200 with data.valid=false and a stable data.code; 400 is reserved for missing/blank certificate bodies and unknown encoding values.",
         "operationId": "validateClientCertificate",
         "requestBody": {
           "required": true,
@@ -5638,12 +5638,12 @@
           "acceptedIssuerSubjects": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "Issuer subject hints from enabled profiles for this environment."
+            "description": "Issuer subject hints from enabled profiles for this environment, returned in the canonicalized form (uppercase, no internal whitespace) used for certificate matching."
           },
           "acceptedIssuerThumbprints": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "Issuer thumbprint hints from enabled profiles for this environment."
+            "description": "Issuer thumbprint hints from enabled profiles for this environment, returned in the canonicalized form (uppercase, no internal whitespace) used for certificate matching."
           },
           "expirationWarningThresholdDays": {
             "type": "integer",

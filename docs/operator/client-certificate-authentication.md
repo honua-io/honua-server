@@ -262,6 +262,15 @@ Responses use the standard admin envelope:
 | `DELETE /api/v1/admin/security/client-certificates/profiles/{profileId}/revocations/{revocationId}` | Remove a revocation entry. |
 | `POST /api/v1/admin/security/client-certificates/validate` | Validate a PEM, URL-encoded PEM, or base64 DER public client certificate without storing it. |
 
+Profile upserts return `400` when an enabled profile has no issuer subject,
+issuer thumbprint, or custom trust anchor; when `AcceptedIssuerSubjects` is
+non-empty without `RequireChainTrust=true`; or when a `CustomTrustAnchorCertificates`
+entry does not parse as PEM or base64 DER (the failing index is named).
+Mapping upserts reject blank `MatchValue`/`PrincipalId` and inverted validity
+windows (`NotBefore > NotAfter`) with `400`. The validate probe rejects a
+blank `Certificate` body or unknown `Encoding` with `400`; parsed-but-untrusted
+certificates return `200` with `data.valid=false` and a stable `data.code`.
+
 The `/api/v1/admin/auth/config` bootstrap endpoint is anonymous for normal
 admin auth and exposes only non-secret mTLS hints: mode, environment id,
 required surfaces, supported transports, accepted issuer hints, expiration
