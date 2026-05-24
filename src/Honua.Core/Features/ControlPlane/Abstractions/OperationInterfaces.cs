@@ -153,6 +153,16 @@ public interface IExecutionJobStore : IOperationStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Queries durable execution jobs with cursor pagination.
+    /// </summary>
+    /// <param name="query">Filter and cursor criteria.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A page of execution jobs ordered newest first.</returns>
+    Task<ExecutionJobPage> QueryAsync(
+        ExecutionJobQuery query,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Lists active execution jobs, optionally filtered by job kind.
     /// </summary>
     /// <param name="kind">Optional execution job kind filter.</param>

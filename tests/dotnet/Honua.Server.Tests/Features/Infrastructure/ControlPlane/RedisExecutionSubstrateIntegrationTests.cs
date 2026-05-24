@@ -76,6 +76,123 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
     }
 
     [IntegrationTest]
+    public async Task ExecutionJobStore_WithRedis_QueriesByFiltersAndCursor()
+    {
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var now = DateTimeOffset.UtcNow;
+        var firstId = $"job-query-first-{Guid.NewGuid():N}";
+        var secondId = $"job-query-second-{Guid.NewGuid():N}";
+        var otherId = $"job-query-other-{Guid.NewGuid():N}";
+
+        await harness.JobStore.TryCreateAsync(CreateQueuedJob(firstId) with
+        {
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = now.AddMinutes(-3),
+            UpdatedAt = now.AddMinutes(-2),
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = "alice",
+                CorrelationId = "corr-query"
+            },
+            Spec = CreateQueuedJob(firstId).Spec with
+            {
+                Parameters = new Dictionary<string, string>
+                {
+                    [ExecutionJobParameterKeys.DefinitionId] = "definition-query",
+                    [ExecutionJobParameterKeys.ResourceRefs] = "service/parcels|layer/parcels",
+                    [ExecutionJobParameterKeys.TraceId] = "trace-query",
+                    [ExecutionJobParameterKeys.Environment] = "test"
+                }
+            }
+        });
+        await harness.JobStore.TryCreateAsync(CreateQueuedJob(secondId) with
+        {
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = now.AddMinutes(-1),
+            UpdatedAt = now,
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = "alice",
+                CorrelationId = "corr-query"
+            },
+            Spec = CreateQueuedJob(secondId).Spec with
+            {
+                Parameters = new Dictionary<string, string>
+                {
+                    [ExecutionJobParameterKeys.DefinitionId] = "definition-query",
+                    [ExecutionJobParameterKeys.ResourceRefs] = "service/parcels",
+                    [ExecutionJobParameterKeys.TraceId] = "trace-query",
+                    [ExecutionJobParameterKeys.Environment] = "test"
+                }
+            }
+        });
+        await harness.JobStore.TryCreateAsync(CreateQueuedJob(otherId) with
+        {
+            Status = ExecutionJobStatus.Succeeded,
+            CreatedAt = now.AddMinutes(-2),
+            UpdatedAt = now.AddMinutes(-1),
+            CompletedAt = now,
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = "bob",
+                CorrelationId = "corr-other"
+            }
+        });
+
+        var firstPage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Statuses = [ExecutionJobStatus.Running],
+            RequestedBy = "alice",
+            CorrelationId = "corr-query",
+            TraceId = "trace-query",
+            DefinitionId = "definition-query",
+            ResourceRef = "service/parcels",
+            Environment = "test",
+            Limit = 1
+        });
+
+        firstPage.Items.Should().ContainSingle(job => job.OperationId == secondId);
+        firstPage.NextCursor.Should().NotBeNullOrWhiteSpace();
+
+        var secondPage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Statuses = [ExecutionJobStatus.Running],
+            RequestedBy = "alice",
+            CorrelationId = "corr-query",
+            TraceId = "trace-query",
+            DefinitionId = "definition-query",
+            ResourceRef = "service/parcels",
+            Environment = "test",
+            Cursor = firstPage.NextCursor,
+            Limit = 1
+        });
+
+        secondPage.Items.Should().ContainSingle(job => job.OperationId == firstId);
+        secondPage.NextCursor.Should().BeNull();
+
+        var loaded = await harness.JobStore.GetAsync(secondId);
+        await harness.JobStore.SetAsync(loaded! with
+        {
+            Status = ExecutionJobStatus.Succeeded,
+            CompletedAt = now.AddMinutes(1),
+            UpdatedAt = now.AddMinutes(1)
+        });
+
+        var running = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Statuses = [ExecutionJobStatus.Running],
+            ResourceRef = "service/parcels",
+            Limit = 10
+        });
+
+        running.Items.Should().ContainSingle(job => job.OperationId == firstId);
+        running.Items.Should().NotContain(job => job.OperationId == secondId);
+
+        var invalidCursor = () => harness.JobStore.QueryAsync(new ExecutionJobQuery { Cursor = "not-a-cursor" });
+        await invalidCursor.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [IntegrationTest]
     public async Task ExecutionLogStore_WithRedis_AppendsInOrderAndHonoursRetention()
     {
         await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
@@ -101,6 +218,21 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
         logs.Select(entry => entry.Message).Should().Equal(
             "Started execution.",
             "Completed with warning.");
+
+        var firstPage = await harness.LogStore.QueryAsync(operationId, new ExecutionLogQuery { Limit = 1 });
+        firstPage.Items.Should().ContainSingle(entry => entry.Message == "Started execution.");
+        firstPage.NextCursor.Should().NotBeNullOrWhiteSpace();
+
+        var secondPage = await harness.LogStore.QueryAsync(operationId, new ExecutionLogQuery
+        {
+            Cursor = firstPage.NextCursor,
+            Limit = 1
+        });
+        secondPage.Items.Should().ContainSingle(entry => entry.Message == "Completed with warning.");
+        secondPage.NextCursor.Should().BeNull();
+
+        var invalidCursor = () => harness.LogStore.QueryAsync(operationId, new ExecutionLogQuery { Cursor = "not-a-cursor" });
+        await invalidCursor.Should().ThrowAsync<ArgumentException>();
 
         await harness.LogStore.SetRetentionAsync(operationId, TimeSpan.FromMinutes(2));
 

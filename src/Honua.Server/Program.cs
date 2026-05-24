@@ -23,6 +23,7 @@ using Honua.Core.Features.Security;
 using Honua.Core.Features.Styling;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Admin;
+using Honua.Server.Features.Admin.Jobs;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Features.CloudDemo;
@@ -394,6 +395,8 @@ builder.Services.AddHonuaLicensing(builder.Configuration);
 
 // Register configuration documentation service for self-documenting admin endpoint
 builder.Services.AddScoped<Honua.Server.Features.Admin.Services.ConfigurationDocumentationService>();
+builder.Services.TryAddSingleton(TimeProvider.System);
+builder.Services.TryAddScoped<IConsoleJobService, ConsoleJobService>();
 
 // Register control plane IAM services (in-memory implementations until #496, #498, #355 land)
 builder.Services.AddSingleton<Honua.Core.Features.Identity.Abstractions.IOidcProviderStore,
@@ -931,6 +934,7 @@ app.MapAdminEndpoints();
 app.MapExternalServiceDiscoveryEndpoints();
 app.MapConfigurationDiscoveryEndpoints();
 app.MapAdminObservabilityEndpoints();
+app.MapConsoleJobEndpoints();
 app.MapAdminRealtimeHub();
 
 // Configure layer publishing endpoints

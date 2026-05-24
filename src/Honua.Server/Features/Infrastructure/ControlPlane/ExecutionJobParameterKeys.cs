@@ -15,6 +15,61 @@ internal static class ExecutionJobParameterKeys
     public const string MetadataListSeparator = "|";
 
     /// <summary>
+    /// Stable job definition identifier used by Console and Operate deep links.
+    /// </summary>
+    public const string DefinitionId = "honua.job.definition_id";
+
+    /// <summary>
+    /// Queue or routing lane requested for the job.
+    /// </summary>
+    public const string Queue = "honua.job.queue";
+
+    /// <summary>
+    /// Pipe-delimited resource references related to the job.
+    /// </summary>
+    public const string ResourceRefs = "honua.job.resource_refs";
+
+    /// <summary>
+    /// Parent job identifier when this job is part of a larger workflow.
+    /// </summary>
+    public const string ParentId = "honua.job.parent_id";
+
+    /// <summary>
+    /// Pipe-delimited child job identifiers when this job fans out work.
+    /// </summary>
+    public const string ChildIds = "honua.job.child_ids";
+
+    /// <summary>
+    /// Runtime or deployment environment associated with the job.
+    /// </summary>
+    public const string Environment = "honua.job.environment";
+
+    /// <summary>
+    /// Server or worker instance associated with the job.
+    /// </summary>
+    public const string Server = "honua.job.server";
+
+    /// <summary>
+    /// Release identifier associated with the job.
+    /// </summary>
+    public const string ReleaseId = "honua.job.release_id";
+
+    /// <summary>
+    /// Change-set identifier associated with the job.
+    /// </summary>
+    public const string ChangeSetId = "honua.job.change_set_id";
+
+    /// <summary>
+    /// Alert identifier associated with the job.
+    /// </summary>
+    public const string AlertId = "honua.job.alert_id";
+
+    /// <summary>
+    /// Distributed trace identifier associated with the job.
+    /// </summary>
+    public const string TraceId = "honua.trace_id";
+
+    /// <summary>
     /// Stable analysis plan identifier for geoprocessing execution jobs.
     /// </summary>
     public const string GeoprocessingPlanId = "honua.geoprocessing.plan_id";

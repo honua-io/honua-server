@@ -6,10 +6,13 @@ using System.Globalization;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
+using Honua.Server.Features.Infrastructure.ControlPlane;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Infrastructure.Monitoring;
@@ -40,18 +43,21 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
     private readonly IAlertEventQuery? _alertQuery;
     private readonly IAuditLogReader? _auditReader;
     private readonly IUniversalProgressStore? _progressStore;
+    private readonly IExecutionJobStore? _jobStore;
     private readonly ILogger<LocalOperateEventFeed> _logger;
 
     public LocalOperateEventFeed(
         ILogger<LocalOperateEventFeed> logger,
         IAlertEventQuery? alertQuery = null,
         IAuditLogReader? auditReader = null,
-        IUniversalProgressStore? progressStore = null)
+        IUniversalProgressStore? progressStore = null,
+        IExecutionJobStore? jobStore = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _alertQuery = alertQuery;
         _auditReader = auditReader;
         _progressStore = progressStore;
+        _jobStore = jobStore;
     }
 
     public async Task<OperateEventPage> ListAsync(OperateEventFilter filter, CancellationToken cancellationToken = default)
@@ -74,7 +80,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             ? LoadAuditAsync(filter, pageSize, cancellationToken)
             : Task.FromResult<IReadOnlyList<OperateEvent>>(Array.Empty<OperateEvent>());
 
-        var jobTask = Wanted(OperateEventKind.Job) && _progressStore is not null
+        var jobTask = Wanted(OperateEventKind.Job) && (_progressStore is not null || _jobStore is not null)
             ? LoadJobsAsync(filter, pageSize, cancellationToken)
             : Task.FromResult<IReadOnlyList<OperateEvent>>(Array.Empty<OperateEvent>());
 
@@ -267,9 +273,14 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         int pageSize,
         CancellationToken cancellationToken)
     {
+        if (_jobStore is not null)
+        {
+            return await LoadDurableJobsAsync(filter, pageSize, cancellationToken).ConfigureAwait(false);
+        }
+
         Debug.Assert(_progressStore is not null);
 
-        if (!JobSourceCanMatch(filter))
+        if (!ProgressJobSourceCanMatch(filter))
         {
             return Array.Empty<OperateEvent>();
         }
@@ -344,6 +355,18 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         string operationId,
         CancellationToken cancellationToken)
     {
+        if (_jobStore is not null)
+        {
+            var job = await _jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            if (job is null)
+            {
+                return Array.Empty<OperateEvent>();
+            }
+
+            var durable = MapExecutionJob(job);
+            return MatchesFilter(filter, durable) ? new[] { durable } : Array.Empty<OperateEvent>();
+        }
+
         IOperationProgress? progress;
         try
         {
@@ -367,6 +390,54 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         }
 
         return new[] { value };
+    }
+
+    private async Task<IReadOnlyList<OperateEvent>> LoadDurableJobsAsync(
+        OperateEventFilter filter,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        Debug.Assert(_jobStore is not null);
+
+        if (!DurableJobSourceCanMatch(filter))
+        {
+            return Array.Empty<OperateEvent>();
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.ResourceRef))
+        {
+            if (TryParseJobResourceRef(filter.ResourceRef, out var resourceOperationId))
+            {
+                return await LoadSingleJobAsync(filter, resourceOperationId, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.OperationId))
+        {
+            return await LoadSingleJobAsync(filter, filter.OperationId, cancellationToken).ConfigureAwait(false);
+        }
+
+        var page = await _jobStore.QueryAsync(
+                new ExecutionJobQuery
+                {
+                    RequestedBy = filter.Actor,
+                    CorrelationId = filter.CorrelationId,
+                    TraceId = filter.TraceId,
+                    ResourceRef = filter.ResourceRef,
+                    ReleaseId = filter.ReleaseId,
+                    ChangeSetId = filter.ChangeSetId,
+                    CreatedFrom = filter.From,
+                    CreatedTo = filter.To,
+                    Limit = pageSize
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return page.Items
+            .Select(MapExecutionJob)
+            .Where(item => MatchesFilter(filter, item))
+            .Take(pageSize)
+            .ToArray();
     }
 
     private static bool MatchesFilter(OperateEventFilter filter, OperateEvent value)
@@ -466,7 +537,13 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
            string.IsNullOrWhiteSpace(filter.ReleaseId) &&
            string.IsNullOrWhiteSpace(filter.ChangeSetId);
 
-    private static bool JobSourceCanMatch(OperateEventFilter filter)
+    private static bool DurableJobSourceCanMatch(OperateEventFilter filter)
+        => string.IsNullOrWhiteSpace(filter.ServiceId) &&
+           filter.LayerId is null &&
+           string.IsNullOrWhiteSpace(filter.RequestId) &&
+           filter.MinimumSeverity != OperateEventSeverity.Critical;
+
+    private static bool ProgressJobSourceCanMatch(OperateEventFilter filter)
         => string.IsNullOrWhiteSpace(filter.ServiceId) &&
            filter.LayerId is null &&
            string.IsNullOrWhiteSpace(filter.CorrelationId) &&
@@ -591,6 +668,26 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         };
     }
 
+    private static OperateEvent MapExecutionJob(ExecutionJobRecord job)
+    {
+        return new OperateEvent
+        {
+            EventId = "job:" + job.OperationId,
+            Kind = OperateEventKind.Job,
+            Severity = MapExecutionJobSeverity(job.Status),
+            OccurredAt = job.CompletedAt ?? job.UpdatedAt,
+            Title = $"{job.Spec.Kind} {job.Status}",
+            Summary = job.CurrentPhase,
+            Actor = job.Audit.RequestedBy,
+            CorrelationId = job.Audit.CorrelationId,
+            TraceId = GetParameter(job, ExecutionJobParameterKeys.TraceId),
+            OperationId = job.OperationId,
+            ReleaseId = GetParameter(job, ExecutionJobParameterKeys.ReleaseId),
+            ChangeSetId = GetParameter(job, ExecutionJobParameterKeys.ChangeSetId),
+            ResourceRef = "job/" + job.OperationId
+        };
+    }
+
     private static OperateEventSeverity MapAlertSeverity(AlertSeverity severity) => severity switch
     {
         AlertSeverity.Info => OperateEventSeverity.Info,
@@ -614,6 +711,19 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         OperationStatus.Completed => OperateEventSeverity.Notice,
         _ => OperateEventSeverity.Info
     };
+
+    private static OperateEventSeverity MapExecutionJobSeverity(ExecutionJobStatus status) => status switch
+    {
+        ExecutionJobStatus.Failed => OperateEventSeverity.Error,
+        ExecutionJobStatus.Cancelled => OperateEventSeverity.Warning,
+        ExecutionJobStatus.Succeeded => OperateEventSeverity.Notice,
+        _ => OperateEventSeverity.Info
+    };
+
+    private static string? GetParameter(ExecutionJobRecord job, string key)
+        => job.Spec.Parameters.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
+            ? value
+            : null;
 
     private sealed record AuditResourceFilter(string ResourceType, string? ResourceId);
 }
