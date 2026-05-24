@@ -193,6 +193,51 @@ public sealed class MetadataReleaseServiceTests
     }
 
     [UnitTest]
+    public async Task CreateReleasePackageAsync_WithFieldAndMissingTarget_PersistsSourceFieldIdentity()
+    {
+        var service = CreateService(
+            BuildGraph("dev", 41, MetadataV2ResourceType.FeatureDataset),
+            BuildGraph("staging", 7, MetadataV2ResourceType.FeatureDataset, includeSchemaField: false));
+
+        var package = await service.CreateReleasePackageAsync(
+            new CreateMetadataReleasePackageRequest
+            {
+                SourceEnvironment = "dev",
+                TargetEnvironments = ["staging"],
+                SemanticIds = ["field.parcels.apn"],
+            },
+            "user-1");
+
+        var entry = package.Entries.Should().ContainSingle().Subject;
+        entry.SemanticId.Should().Be("field.parcels.apn");
+        entry.ArtifactKind.Should().Be(MetadataSemanticArtifactKind.Field);
+        entry.SourceField.Should().NotBeNull();
+        entry.SourceField!.SemanticId.Should().Be("field.parcels.apn");
+        entry.SourceField.ParentResourceId.Should().Be("res.parcels");
+        entry.SourceField.FieldName.Should().Be("apn");
+        entry.SourceField.FieldType.Should().Be("string");
+        var targetState = entry.TargetStates.Should().ContainSingle().Subject;
+        targetState.Environment.Should().Be("staging");
+        targetState.CurrentMetadataRevision.Should().Be(7);
+        targetState.BindingState.Should().Be(MetadataEnvironmentBindingState.Missing);
+        targetState.BindingSummary.Should().NotBeNull();
+        targetState.BindingSummary!.Field.Should().BeNull();
+
+        var manifest = await service.GetGitOpsManifestAsync(package.PackageId);
+        var manifestEntry = manifest!.Spec.Entries.Should().ContainSingle().Subject;
+        manifestEntry.SourceField.Should().NotBeNull();
+        manifestEntry.SourceField!.ParentResourceId.Should().Be("res.parcels");
+        manifestEntry.SourceField.FieldName.Should().Be("apn");
+
+        var json = JsonSerializer.Serialize(
+            manifest,
+            MetadataReleaseJsonContext.Default.GitOpsMetadataReleaseManifest);
+        json.Should().Contain("\"sourceField\"");
+        json.Should().Contain("\"parentResourceId\":\"res.parcels\"");
+        json.Should().Contain("\"fieldName\":\"apn\"");
+    }
+
+    [UnitTest]
     public async Task CreateReleasePackageAsync_WithGeneratedTitleKey_CreatesUniquePackageNames()
     {
         var service = CreateService(
@@ -356,7 +401,8 @@ public sealed class MetadataReleaseServiceTests
         string environment,
         long revision,
         MetadataV2ResourceType resourceType,
-        string contentVersionId = "content-v1")
+        string contentVersionId = "content-v1",
+        bool includeSchemaField = true)
     {
         var passwordOption = JsonSerializer.Deserialize<JsonElement>("\"super-secret-password\"");
         return new MetadataV2Graph
@@ -382,15 +428,7 @@ public sealed class MetadataReleaseServiceTests
                     Type = resourceType,
                     StorageBindingIds = ["storage.parcels"],
                     PrimaryStorageBindingId = "storage.parcels",
-                    SchemaFields =
-                    [
-                        new MetadataV2Field
-                        {
-                            SemanticId = "field.parcels.apn",
-                            Name = "apn",
-                            Type = "string",
-                        },
-                    ],
+                    SchemaFields = BuildSchemaFields(includeSchemaField),
                     PolicyIds = ["policy.read-parcels"],
                 },
             ],
@@ -462,6 +500,24 @@ public sealed class MetadataReleaseServiceTests
                 },
             ],
         };
+    }
+
+    private static MetadataV2Field[] BuildSchemaFields(bool includeSchemaField)
+    {
+        if (!includeSchemaField)
+        {
+            return Array.Empty<MetadataV2Field>();
+        }
+
+        return
+        [
+            new MetadataV2Field
+            {
+                SemanticId = "field.parcels.apn",
+                Name = "apn",
+                Type = "string",
+            },
+        ];
     }
 
     private sealed class StaticEnvironmentReader : IMetadataV2EnvironmentSnapshotReader

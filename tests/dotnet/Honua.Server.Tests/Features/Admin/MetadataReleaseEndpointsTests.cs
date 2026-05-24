@@ -41,7 +41,7 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
                 services.AddSingleton<IMetadataV2EnvironmentSnapshotReader>(
                     new StaticEnvironmentReader(
                         BuildGraph("dev", 41),
-                        BuildGraph("staging", 7)));
+                        BuildGraph("staging", 7, includeSchemaField: false)));
                 services.AddSingleton<IMetadataReleasePackageStore, CancellationAwareReleasePackageStore>();
             });
     }
@@ -205,6 +205,48 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/metadata/release-packages")]
+    [Endpoint("GET /api/v1/admin/metadata/release-packages/{packageId}/gitops-manifest")]
+    public async Task ReleasePackageEndpoints_WithFieldAndMissingTarget_ExportsSourceFieldIdentity()
+    {
+        var body = JsonSerializer.Serialize(
+            new CreateMetadataReleasePackageRequest
+            {
+                Title = "Promote parcel APN",
+                SourceEnvironment = "dev",
+                TargetEnvironments = ["staging"],
+                SemanticIds = ["field.parcels.apn"],
+            },
+            MetadataReleaseJsonContext.Default.CreateMetadataReleasePackageRequest);
+
+        var createResponse = await _client.PostAsync(
+            "/api/v1/admin/metadata/release-packages",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var createPayload = await createResponse.Content.ReadAsStringAsync();
+        var created = JsonSerializer.Deserialize(
+            createPayload,
+            MetadataReleaseJsonContext.Default.MetadataReleasePackage);
+        created.Should().NotBeNull();
+        var entry = created!.Entries.Should().ContainSingle().Subject;
+        entry.SourceField.Should().NotBeNull();
+        entry.SourceField!.ParentResourceId.Should().Be("res.parcels");
+        entry.SourceField.FieldName.Should().Be("apn");
+        var targetState = entry.TargetStates.Should().ContainSingle().Subject;
+        targetState.Environment.Should().Be("staging");
+        targetState.BindingState.Should().Be(MetadataEnvironmentBindingState.Missing);
+
+        var manifestResponse = await _client.GetAsync(
+            $"/api/v1/admin/metadata/release-packages/{created.PackageId:D}/gitops-manifest");
+        manifestResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var manifestPayload = await manifestResponse.Content.ReadAsStringAsync();
+        manifestPayload.Should().Contain("\"sourceField\"");
+        manifestPayload.Should().Contain("\"parentResourceId\":\"res.parcels\"");
+        manifestPayload.Should().Contain("\"fieldName\":\"apn\"");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/metadata/release-packages")]
     public async Task CreateReleasePackage_WithRepeatedGeneratedTitleKeys_ReturnsCreatedPackages()
     {
         var body = JsonSerializer.Serialize(
@@ -295,7 +337,7 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
         payload.Should().NotContain("Metadata release package could not be created.");
     }
 
-    private static MetadataV2Graph BuildGraph(string environment, long revision)
+    private static MetadataV2Graph BuildGraph(string environment, long revision, bool includeSchemaField = true)
     {
         var passwordOption = JsonSerializer.Deserialize<JsonElement>("\"super-secret-password\"");
         return new MetadataV2Graph
@@ -320,6 +362,7 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
                     Type = MetadataV2ResourceType.Map,
                     StorageBindingIds = ["storage.parcels"],
                     PrimaryStorageBindingId = "storage.parcels",
+                    SchemaFields = BuildSchemaFields(includeSchemaField),
                 },
             ],
             Connections =
@@ -371,6 +414,24 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
                 },
             ],
         };
+    }
+
+    private static MetadataV2Field[] BuildSchemaFields(bool includeSchemaField)
+    {
+        if (!includeSchemaField)
+        {
+            return Array.Empty<MetadataV2Field>();
+        }
+
+        return
+        [
+            new MetadataV2Field
+            {
+                SemanticId = "field.parcels.apn",
+                Name = "apn",
+                Type = "string",
+            },
+        ];
     }
 
     private sealed class StaticEnvironmentReader : IMetadataV2EnvironmentSnapshotReader

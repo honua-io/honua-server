@@ -72,6 +72,29 @@ public sealed class PostgresMetadataReleaseStoreTests(PostgresFixture fixture)
                             },
                         ],
                     },
+                    new MetadataReleaseEntry
+                    {
+                        SemanticId = "field.parcels.apn",
+                        ArtifactKind = MetadataSemanticArtifactKind.Field,
+                        ResourceType = MetadataV2ResourceType.FeatureDataset,
+                        SourceField = new MetadataBoundFieldSummary
+                        {
+                            SemanticId = "field.parcels.apn",
+                            ParentResourceId = "res.parcels",
+                            FieldName = "apn",
+                            FieldType = "string",
+                        },
+                        DesiredMetadataRevision = 41,
+                        TargetStates =
+                        [
+                            new MetadataReleaseTargetState
+                            {
+                                Environment = "staging",
+                                CurrentMetadataRevision = 7,
+                                BindingState = MetadataEnvironmentBindingState.Missing,
+                            },
+                        ],
+                    },
                 ],
                 CreatedBy = "user-1",
                 CreatedAt = now,
@@ -88,10 +111,14 @@ public sealed class PostgresMetadataReleaseStoreTests(PostgresFixture fixture)
             loaded.SourceRevision.Should().Be(41);
             loaded.SourceEtag.Should().Be("etag-dev-41");
             loaded.TargetEnvironments.Should().Equal("staging");
-            loaded.Entries.Should().ContainSingle(entry =>
+            loaded.Entries.Should().Contain(entry =>
                 entry.SemanticId == "res.parcels" &&
                 entry.DesiredContentVersionId == "content-v1" &&
                 entry.TargetStates.Single().CurrentMetadataRevision == 7);
+            loaded.Entries.Should().ContainSingle(entry =>
+                entry.SemanticId == "field.parcels.apn" &&
+                entry.SourceField!.ParentResourceId == "res.parcels" &&
+                entry.SourceField.FieldName == "apn");
         }
         finally
         {

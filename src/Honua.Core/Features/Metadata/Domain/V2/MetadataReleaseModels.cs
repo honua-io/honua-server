@@ -518,6 +518,10 @@ public sealed record MetadataReleaseEntry
     [JsonPropertyName("resourceType")]
     public MetadataV2ResourceType? ResourceType { get; init; }
 
+    /// <summary>Source field identity when this entry promotes a resource field.</summary>
+    [JsonPropertyName("sourceField")]
+    public MetadataBoundFieldSummary? SourceField { get; init; }
+
     /// <summary>Desired Metadata v2 revision.</summary>
     [JsonPropertyName("desiredMetadataRevision")]
     public required long DesiredMetadataRevision { get; init; }
@@ -663,6 +667,10 @@ public sealed record GitOpsMetadataReleaseEntry
     /// <summary>Resource type when applicable.</summary>
     [JsonPropertyName("resourceType")]
     public MetadataV2ResourceType? ResourceType { get; init; }
+
+    /// <summary>Source field identity when this entry promotes a resource field.</summary>
+    [JsonPropertyName("sourceField")]
+    public MetadataBoundFieldSummary? SourceField { get; init; }
 
     /// <summary>Desired Metadata v2 revision.</summary>
     [JsonPropertyName("desiredMetadataRevision")]

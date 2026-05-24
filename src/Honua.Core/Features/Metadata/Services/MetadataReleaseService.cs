@@ -182,6 +182,7 @@ public sealed class MetadataReleaseService(
                 SemanticId = semanticId,
                 ArtifactKind = artifact.Kind,
                 ResourceType = artifact.Resource?.Type ?? artifact.ParentResource?.Type,
+                SourceField = ToSourceFieldSummary(artifact),
                 DesiredMetadataRevision = request.DesiredRevision ?? sourceSnapshot.Revision,
                 DesiredContentVersionId = desiredContentVersionId,
                 DesiredProvenance = desiredProvenance,
@@ -293,6 +294,7 @@ public sealed class MetadataReleaseService(
                     SemanticId = entry.SemanticId,
                     ArtifactKind = entry.ArtifactKind,
                     ResourceType = entry.ResourceType,
+                    SourceField = entry.SourceField,
                     DesiredMetadataRevision = entry.DesiredMetadataRevision,
                     DesiredContentVersionId = entry.DesiredContentVersionId,
                     DesiredProvenance = entry.DesiredProvenance,
@@ -705,6 +707,11 @@ public sealed class MetadataReleaseService(
             FieldName = field.Name,
             FieldType = field.Type,
         };
+
+    private static MetadataBoundFieldSummary? ToSourceFieldSummary(ResolvedSemanticArtifact artifact)
+        => artifact.Field is not null && artifact.ParentResource is not null
+            ? ToFieldSummary(artifact.ParentResource, artifact.Field)
+            : null;
 
     private static MetadataBoundServiceSummary ToServiceSummary(MetadataV2Service service)
         => new()
