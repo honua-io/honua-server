@@ -103,6 +103,7 @@ internal sealed class ClientCertificateEnforcementMiddleware(
                 validation,
                 "mtls.login.success",
                 AuditOutcome.Success).ConfigureAwait(false);
+            await ClientCertificateExpirationWarning.TryRecordAsync(context, validation, _logger).ConfigureAwait(false);
         }
 
         await _next(context).ConfigureAwait(false);

@@ -238,8 +238,11 @@ details for untrusted certificates: `POST /api/v1/admin/security/client-certific
 returns `200` with `data.valid=false` and a stable `data.code`.
 
 Authentication attempts and trust changes emit audit events using actions such
-as `mtls.login.success`, `mtls.login.failure`, `mtls.profile.create`,
-`mtls.mapping.update`, and `mtls.certificate.revoke`. Audit details include
+as `mtls.login.success`, `mtls.login.failure`, `mtls.certificate.expiration_warning`,
+`mtls.profile.create`, `mtls.mapping.update`, and `mtls.certificate.revoke`.
+Expiration warnings fire from both the admin/HTTP authentication handler and the
+native gRPC enforcement middleware whenever a validated certificate sits at or
+below the profile's `expirationWarningThresholdDays`. Audit details include
 profile id, environment id, result code, certificate fingerprint, issuer hash,
 days until expiry, and mapping id. Raw PEM and private key material are never
 logged.

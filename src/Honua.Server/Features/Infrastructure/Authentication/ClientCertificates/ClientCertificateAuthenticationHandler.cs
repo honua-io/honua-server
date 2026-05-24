@@ -60,7 +60,7 @@ internal sealed class ClientCertificateAuthenticationHandler(
             "mtls.login.success",
             Honua.Core.Features.AuditLog.Abstractions.AuditOutcome.Success).ConfigureAwait(false);
 
-        await MaybeLogAndAuditExpirationWarningAsync(validation).ConfigureAwait(false);
+        await ClientCertificateExpirationWarning.TryRecordAsync(Context, validation, Logger).ConfigureAwait(false);
 
         var ticket = new AuthenticationTicket(
             validation.Principal,
@@ -156,31 +156,4 @@ internal sealed class ClientCertificateAuthenticationHandler(
             Honua.Core.Features.AuditLog.Abstractions.AuditOutcome.Failure).ConfigureAwait(false);
     }
 
-    private async Task MaybeLogAndAuditExpirationWarningAsync(ClientCertificateValidationResult validation)
-    {
-        if (!validation.DaysUntilExpiry.HasValue || string.IsNullOrWhiteSpace(validation.ProfileId))
-        {
-            return;
-        }
-
-        var profile = await Context.RequestServices
-            .GetRequiredService<IClientCertificateTrustStore>()
-            .GetProfileAsync(validation.ProfileId, Context.RequestAborted)
-            .ConfigureAwait(false);
-        if (profile is null || validation.DaysUntilExpiry > profile.ExpirationWarningThresholdDays)
-        {
-            return;
-        }
-
-        ClientCertificateAuthenticationLog.CertificateExpirationWarning(
-            Logger,
-            validation.ProfileId,
-            validation.EnvironmentId,
-            validation.DaysUntilExpiry);
-        await ClientCertificateAudit.RecordAuthenticationAsync(
-            Context,
-            validation,
-            "mtls.certificate.expiration_warning",
-            Honua.Core.Features.AuditLog.Abstractions.AuditOutcome.Success).ConfigureAwait(false);
-    }
 }

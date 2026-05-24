@@ -6,6 +6,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using FluentAssertions;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication.ClientCertificates;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -356,6 +357,114 @@ public sealed class ClientCertificateEnforcementMiddlewareTests
     }
 
     [Fact]
+    public async Task InvokeAsync_RequiredForNative_WithNearExpiryCertificate_EmitsExpirationWarningAudit()
+    {
+        // Native gRPC services do not run RequireAuthorization, so the enforcement
+        // middleware is the only place that observes a successful client-certificate
+        // validation on the protected path. The expiration-warning audit must still
+        // fire from here so operators see rotation warnings for native callers.
+        using var certificate = CreateCertificate();
+        var trustStore = new StubTrustStore(new ClientCertificateTrustProfile
+        {
+            ProfileId = "prod-native",
+            EnvironmentId = "prod",
+            DisplayName = "Prod Native",
+            ExpirationWarningThresholdDays = 30,
+        });
+        var auditLog = new CapturingAuditLog();
+        var services = new ServiceCollection();
+        services.AddSingleton<IClientCertificateTrustStore>(trustStore);
+        services.AddSingleton<IAuditLog>(auditLog);
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services.BuildServiceProvider(),
+        };
+        context.Request.Path = "/geospatial.v1.FeatureService/Query";
+        context.Items[ClientCertificateHttpContextItems.ExtractionResult] =
+            ClientCertificateExtractionResult.Success(certificate, ClientCertificateSource.DirectTls);
+
+        var principal = CreatePrincipal("native-prod-expiring");
+        var validator = new StubValidator(ClientCertificateValidationResult.Success(
+            principal,
+            profileId: "prod-native",
+            mappingId: "prod-expiring",
+            environmentId: "prod",
+            fingerprintSha256: "FINGERPRINT",
+            issuerHash: "HASH",
+            daysUntilExpiry: 5,
+            principalId: "native-prod-expiring"));
+        var nextCalled = false;
+        var middleware = CreateMiddleware(
+            validator,
+            new ClientCertificateAuthenticationOptions
+            {
+                Mode = ClientCertificateAuthenticationMode.RequiredForNative,
+                EnvironmentId = "prod",
+                ProtectedGrpcServices = ["geospatial.v1.FeatureService"],
+            },
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            });
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeTrue();
+        auditLog.Events.Should().ContainSingle(e => e.Action == "mtls.certificate.expiration_warning");
+        context.Items[ClientCertificateHttpContextItems.ExpirationWarningEmitted].Should().Be(true);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_RequiredForNative_WithCertificateBeyondWarningWindow_SkipsExpirationAudit()
+    {
+        using var certificate = CreateCertificate();
+        var trustStore = new StubTrustStore(new ClientCertificateTrustProfile
+        {
+            ProfileId = "prod-native",
+            EnvironmentId = "prod",
+            DisplayName = "Prod Native",
+            ExpirationWarningThresholdDays = 30,
+        });
+        var auditLog = new CapturingAuditLog();
+        var services = new ServiceCollection();
+        services.AddSingleton<IClientCertificateTrustStore>(trustStore);
+        services.AddSingleton<IAuditLog>(auditLog);
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services.BuildServiceProvider(),
+        };
+        context.Request.Path = "/geospatial.v1.FeatureService/Query";
+        context.Items[ClientCertificateHttpContextItems.ExtractionResult] =
+            ClientCertificateExtractionResult.Success(certificate, ClientCertificateSource.DirectTls);
+
+        var principal = CreatePrincipal("native-prod-healthy");
+        var validator = new StubValidator(ClientCertificateValidationResult.Success(
+            principal,
+            profileId: "prod-native",
+            mappingId: "prod-healthy",
+            environmentId: "prod",
+            fingerprintSha256: "FINGERPRINT",
+            issuerHash: "HASH",
+            daysUntilExpiry: 60,
+            principalId: "native-prod-healthy"));
+        var middleware = CreateMiddleware(
+            validator,
+            new ClientCertificateAuthenticationOptions
+            {
+                Mode = ClientCertificateAuthenticationMode.RequiredForNative,
+                EnvironmentId = "prod",
+                ProtectedGrpcServices = ["geospatial.v1.FeatureService"],
+            },
+            _ => Task.CompletedTask);
+
+        await middleware.InvokeAsync(context);
+
+        auditLog.Events.Should().NotContain(e => e.Action == "mtls.certificate.expiration_warning");
+        context.Items.ContainsKey(ClientCertificateHttpContextItems.ExpirationWarningEmitted).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task InvokeAsync_Optional_WithoutCertificate_CallsNextWithoutSettingUser()
     {
         var context = new DefaultHttpContext
@@ -448,6 +557,65 @@ public sealed class ClientCertificateEnforcementMiddlewareTests
             => Task.FromResult(result ?? ClientCertificateValidationResult.Failure(
                 ClientCertificateValidationErrorCode.UntrustedIssuer,
                 "no profile configured"));
+    }
+
+    private sealed class StubTrustStore(ClientCertificateTrustProfile profile) : IClientCertificateTrustStore
+    {
+        public Task<IReadOnlyList<ClientCertificateTrustProfile>> ListProfilesAsync(
+            string? environmentId = null,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<ClientCertificateTrustProfile>>(new[] { profile });
+
+        public Task<ClientCertificateTrustProfile?> GetProfileAsync(
+            string profileId,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<ClientCertificateTrustProfile?>(
+                string.Equals(profile.ProfileId, profileId, StringComparison.Ordinal) ? profile : null);
+
+        public Task<ClientCertificateTrustProfile> UpsertProfileAsync(
+            ClientCertificateTrustProfile profile,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<ClientCertificateTrustProfile?> DisableProfileAsync(
+            string profileId,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<ClientCertificatePrincipalMapping?> UpsertMappingAsync(
+            string profileId,
+            ClientCertificatePrincipalMapping mapping,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<ClientCertificatePrincipalMapping?> DisableMappingAsync(
+            string profileId,
+            string mappingId,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<ClientCertificateRevocationEntry?> AddRevocationAsync(
+            string profileId,
+            ClientCertificateRevocationEntry revocation,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<bool> RemoveRevocationAsync(
+            string profileId,
+            string revocationId,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class CapturingAuditLog : IAuditLog
+    {
+        public List<AuditEvent> Events { get; } = new();
+
+        public Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        {
+            Events.Add(auditEvent);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class TestOptionsMonitor<T>(T value) : IOptionsMonitor<T>
