@@ -247,7 +247,9 @@ admin auth and exposes only non-secret mTLS hints: mode, environment id,
 required surfaces, supported transports, accepted issuer hints, expiration
 warning threshold, and whether forwarded-certificate mode is enabled. Issuer
 hints are sourced from the active trust store, so profiles added or disabled
-via the admin API are reflected immediately without a restart. Required
+via the admin API are reflected immediately without a restart. Subject and
+thumbprint hints are returned in the canonicalized form (uppercase, no
+internal whitespace) used for certificate matching. Required
 client-certificate modes still apply when the path matches
 `ProtectedAdminPathPrefixes`; narrow those prefixes if native clients must
 fetch issuer hints before presenting a certificate.

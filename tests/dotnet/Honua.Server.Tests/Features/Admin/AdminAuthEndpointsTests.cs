@@ -79,6 +79,55 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/auth/config")]
+    public async Task GetAuthConfig_AfterAdminTrustProfileCreate_ReturnsActiveTrustStoreHints()
+    {
+        var mtlsFixture = CreateBaseFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("Authentication:ClientCertificates:Mode", "Optional");
+                builder.UseSetting("Authentication:ClientCertificates:EnvironmentId", "prod");
+            });
+
+        try
+        {
+            await mtlsFixture.InitializeAsync();
+            using var adminClient = mtlsFixture.CreateClient(client =>
+                client.DefaultRequestHeaders.Add("X-API-Key", "test-admin-key"));
+            var anonymousClient = mtlsFixture.CreateClient();
+
+            var createResponse = await adminClient.PostAsJsonAsync(
+                "/api/v1/admin/security/client-certificates/profiles",
+                new UpsertClientCertificateTrustProfileRequest
+                {
+                    ProfileId = "runtime-prod-native",
+                    EnvironmentId = "prod",
+                    DisplayName = "Runtime production operators",
+                    AcceptedIssuerSubjects = ["CN=Runtime Trust Issuer"],
+                    ExpirationWarningThresholdDays = 12
+                });
+
+            createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+            var response = await anonymousClient.GetAsync("/api/v1/admin/auth/config");
+            var content = await response.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthConfigResponse);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            content.Should().NotBeNull();
+            content!.ClientCertificates.Should().NotBeNull();
+            content.ClientCertificates!.Mode.Should().Be("Optional");
+            // Trust profiles canonicalize subjects/thumbprints (uppercase, no spaces) at storage
+            // time so matching is deterministic; the bootstrap hint mirrors the stored form.
+            content.ClientCertificates.AcceptedIssuerSubjects.Should().Contain("CN=RUNTIMETRUSTISSUER");
+            content.ClientCertificates.ExpirationWarningThresholdDays.Should().Be(12);
+        }
+        finally
+        {
+            await mtlsFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/auth/config")]
     public async Task GetAuthConfig_WithAzureAdConfigured_ReturnsSelectionMetadataOnly()
     {
         var oidcFixture = CreateAzureAdFixture();
