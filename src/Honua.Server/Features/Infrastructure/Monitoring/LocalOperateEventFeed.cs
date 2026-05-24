@@ -798,9 +798,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
     };
 
     private static string? GetParameter(ExecutionJobRecord job, string key)
-        => job.Spec.Parameters.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
-            ? value
-            : null;
+        => ExecutionJobMetadata.GetParameter(job, key);
 
     private static string[] GetResourceRefs(ExecutionJobRecord job)
     {

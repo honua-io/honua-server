@@ -393,7 +393,7 @@ internal sealed partial class RedisExecutionJobStore(
         };
 
         AddHashedKey(keys, "backend", job.Spec.Backend);
-        AddMetadataKey(keys, "queue", job, ExecutionJobParameterKeys.Queue);
+        AddHashedKey(keys, "queue", ExecutionJobMetadata.ResolveQueue(job));
         AddHashedKey(keys, "requested-by", job.Audit.RequestedBy);
         AddHashedKey(keys, "correlation", job.Audit.CorrelationId);
         AddMetadataKey(keys, "trace", job, ExecutionJobParameterKeys.TraceId);
@@ -511,7 +511,7 @@ internal sealed partial class RedisExecutionJobStore(
         }
 
         return Matches(query.Backend, job.Spec.Backend)
-            && Matches(query.Queue, GetParameter(job, ExecutionJobParameterKeys.Queue))
+            && Matches(query.Queue, ExecutionJobMetadata.ResolveQueue(job))
             && Matches(query.RequestedBy, job.Audit.RequestedBy)
             && Matches(query.CorrelationId, job.Audit.CorrelationId)
             && Matches(query.TraceId, GetParameter(job, ExecutionJobParameterKeys.TraceId))
@@ -592,9 +592,7 @@ internal sealed partial class RedisExecutionJobStore(
     }
 
     private static string? GetParameter(ExecutionJobRecord job, string key)
-        => job.Spec.Parameters.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
-            ? value
-            : null;
+        => ExecutionJobMetadata.GetParameter(job, key);
 
     private static bool TryDecodeJobCursor(string? cursor, out JobCursor? value, out string error)
     {

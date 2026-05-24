@@ -83,6 +83,7 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
         var firstId = $"job-query-first-{Guid.NewGuid():N}";
         var secondId = $"job-query-second-{Guid.NewGuid():N}";
         var otherId = $"job-query-other-{Guid.NewGuid():N}";
+        var fallbackId = $"job-query-fallback-{Guid.NewGuid():N}";
 
         await harness.JobStore.TryCreateAsync(CreateQueuedJob(firstId) with
         {
@@ -147,6 +148,17 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
                 }
             }
         });
+        await harness.JobStore.TryCreateAsync(CreateQueuedJob(fallbackId) with
+        {
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = now.AddMinutes(-4),
+            UpdatedAt = now.AddMinutes(-3),
+            Spec = CreateQueuedJob(fallbackId).Spec with
+            {
+                Backend = "fallback-queue",
+                Parameters = new Dictionary<string, string>()
+            }
+        });
 
         var firstPage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
         {
@@ -190,6 +202,38 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
         queuePage.Items.Should().Contain(job => job.OperationId == firstId);
         queuePage.Items.Should().Contain(job => job.OperationId == secondId);
         queuePage.Items.Should().NotContain(job => job.OperationId == otherId);
+
+        var fallbackQueuePage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Queue = "fallback-queue",
+            Limit = 10
+        });
+
+        fallbackQueuePage.Items.Should().ContainSingle(job => job.OperationId == fallbackId);
+
+        var fallback = await harness.JobStore.GetAsync(fallbackId);
+        await harness.JobStore.SetAsync(fallback! with
+        {
+            UpdatedAt = now.AddMinutes(2),
+            Spec = fallback!.Spec with
+            {
+                Backend = "fallback-queue-next"
+            }
+        });
+
+        var oldFallbackQueuePage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Queue = "fallback-queue",
+            Limit = 10
+        });
+        oldFallbackQueuePage.Items.Should().NotContain(job => job.OperationId == fallbackId);
+
+        var newFallbackQueuePage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Queue = "fallback-queue-next",
+            Limit = 10
+        });
+        newFallbackQueuePage.Items.Should().ContainSingle(job => job.OperationId == fallbackId);
 
         var loaded = await harness.JobStore.GetAsync(secondId);
         await harness.JobStore.SetAsync(loaded! with

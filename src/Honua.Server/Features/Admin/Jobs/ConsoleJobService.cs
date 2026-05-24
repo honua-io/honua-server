@@ -493,7 +493,7 @@ internal sealed partial class ConsoleJobService(
         {
             JobId = job.OperationId,
             Kind = job.Spec.Kind.ToString(),
-            Queue = GetParameter(job, ExecutionJobParameterKeys.Queue) ?? job.Spec.Backend,
+            Queue = ExecutionJobMetadata.ResolveQueue(job),
             Backend = job.Spec.Backend,
             TargetKind = job.Spec.TargetKind.ToString(),
             WorkloadName = job.Spec.WorkloadName,
@@ -868,9 +868,7 @@ internal sealed partial class ConsoleJobService(
                 .ToArray();
 
     private static string? GetParameter(ExecutionJobRecord job, string key)
-        => job.Spec.Parameters.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
-            ? value
-            : null;
+        => ExecutionJobMetadata.GetParameter(job, key);
 
     private static long? ComputeDurationMs(ExecutionJobRecord job)
     {

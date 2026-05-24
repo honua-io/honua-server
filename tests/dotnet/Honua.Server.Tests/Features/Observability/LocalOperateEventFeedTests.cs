@@ -764,7 +764,7 @@ public sealed class LocalOperateEventFeedTests
                 .Where(job => query.Statuses.Count == 0 || query.Statuses.Contains(job.Status))
                 .Where(job => !query.Kind.HasValue || job.Spec.Kind == query.Kind.Value)
                 .Where(job => string.IsNullOrWhiteSpace(query.Backend) || string.Equals(query.Backend, job.Spec.Backend, StringComparison.OrdinalIgnoreCase))
-                .Where(job => string.IsNullOrWhiteSpace(query.Queue) || MatchesParameter(job, ExecutionJobParameterKeys.Queue, query.Queue))
+                .Where(job => string.IsNullOrWhiteSpace(query.Queue) || string.Equals(query.Queue, ExecutionJobMetadata.ResolveQueue(job), StringComparison.OrdinalIgnoreCase))
                 .Where(job => string.IsNullOrWhiteSpace(query.RequestedBy) || string.Equals(query.RequestedBy, job.Audit.RequestedBy, StringComparison.OrdinalIgnoreCase))
                 .Where(job => string.IsNullOrWhiteSpace(query.CorrelationId) || string.Equals(query.CorrelationId, job.Audit.CorrelationId, StringComparison.Ordinal))
                 .Where(job => string.IsNullOrWhiteSpace(query.TraceId) || MatchesParameter(job, ExecutionJobParameterKeys.TraceId, query.TraceId))

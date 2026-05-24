@@ -93,6 +93,21 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs")]
+    public async Task ListJobs_WithQueueFilter_ReturnsBackendFallbackQueue()
+    {
+        var response = await _client.GetAsync("/api/v1/admin/jobs?queue=fallback-queue&limit=10");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = await ReadJsonAsync(response);
+        var items = doc.RootElement.GetProperty("items");
+        items.GetArrayLength().Should().Be(1);
+        items[0].GetProperty("jobId").GetString().Should().Be("job-backend-queue");
+        items[0].GetProperty("queue").GetString().Should().Be("fallback-queue");
+        items[0].GetProperty("backend").GetString().Should().Be("fallback-queue");
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/jobs/{jobId}")]
     [Endpoint("GET /api/v1/admin/jobs/{jobId}/actions")]
     public async Task GetJobDetail_ForFailedJob_ReturnsFailureMetadataAndRetryAction()
@@ -251,6 +266,11 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
                     [ExecutionJobParameterKeys.Queue] = "standard"
                 })
             },
+            CreateJob("job-backend-queue", ExecutionJobStatus.Running, now.AddMinutes(-7), "corr-backend-queue") with
+            {
+                CurrentPhase = "Running",
+                Spec = CreateSpec("backend-queue-workload", backend: "fallback-queue")
+            },
             CreateJob("job-failed", ExecutionJobStatus.Failed, now.AddMinutes(-6), "corr-failed") with
             {
                 CompletedAt = now.AddMinutes(-4),
@@ -301,12 +321,15 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
             Spec = CreateSpec("default-workload")
         };
 
-    private static ExecutionJobSpec CreateSpec(string workloadName, IReadOnlyDictionary<string, string>? parameters = null)
+    private static ExecutionJobSpec CreateSpec(
+        string workloadName,
+        IReadOnlyDictionary<string, string>? parameters = null,
+        string backend = "local")
         => new()
         {
             Kind = ExecutionJobKind.Geoprocessing,
             TargetKind = BatchComputeTargetKind.KubernetesJob,
-            Backend = "local",
+            Backend = backend,
             WorkloadId = workloadName,
             WorkloadName = workloadName,
             Parameters = parameters ?? new Dictionary<string, string>()
@@ -369,7 +392,7 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
                 .Where(job => query.Statuses.Count == 0 || query.Statuses.Contains(job.Status))
                 .Where(job => !query.Kind.HasValue || job.Spec.Kind == query.Kind.Value)
                 .Where(job => string.IsNullOrWhiteSpace(query.Backend) || string.Equals(query.Backend, job.Spec.Backend, StringComparison.OrdinalIgnoreCase))
-                .Where(job => string.IsNullOrWhiteSpace(query.Queue) || MatchesParameter(job, ExecutionJobParameterKeys.Queue, query.Queue))
+                .Where(job => string.IsNullOrWhiteSpace(query.Queue) || string.Equals(query.Queue, ExecutionJobMetadata.ResolveQueue(job), StringComparison.OrdinalIgnoreCase))
                 .Where(job => string.IsNullOrWhiteSpace(query.RequestedBy) || string.Equals(query.RequestedBy, job.Audit.RequestedBy, StringComparison.OrdinalIgnoreCase))
                 .Where(job => string.IsNullOrWhiteSpace(query.CorrelationId) || string.Equals(query.CorrelationId, job.Audit.CorrelationId, StringComparison.Ordinal))
                 .Where(job => string.IsNullOrWhiteSpace(query.TraceId) || MatchesParameter(job, ExecutionJobParameterKeys.TraceId, query.TraceId))
