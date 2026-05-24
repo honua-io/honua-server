@@ -11,7 +11,10 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.TestKit.Infrastructure;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Validation;
@@ -308,6 +311,8 @@ public sealed class ODataBatchOperationHandlerTests
         var services = new ServiceCollection();
         services.AddSingleton(outputCacheInvalidationService);
         services.AddSingleton(layerCatalog);
+        services.AddSingleton<IMetadataV2GraphProvider>(
+            new TestMetadataV2GraphProvider(new TestMetadataV2GraphBuilder().Build()));
 
         var context = new DefaultHttpContext
         {

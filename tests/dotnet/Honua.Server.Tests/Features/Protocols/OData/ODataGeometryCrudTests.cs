@@ -452,6 +452,25 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         sridFixture.UseSeed(Path.Combine("tests", "seed", "spatial-reference.yaml"));
         await sridFixture.InitializeAsync();
 
+        // V2 ProcessGeometryAsync rejects geometry whose CRS SRID does not match the
+        // resource's Spatial.SpatialReference.Srid; the default test V2 graph
+        // (WebAppFixture.BuildDefaultTestGraph) does not seed Spatial on the
+        // spatial-reference fixture layers. Mirror the v1 SpatialReferenceTestLayerCatalog
+        // (EPSG:3857 / Web Mercator) so the SRID mismatch path under test
+        // (4326 geometry → 3857 layer) fires.
+        var sridSpatial = new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ResourceSpatial
+        {
+            SpatialReference = new Honua.Core.Features.Metadata.Domain.V2.MetadataV2SpatialReference
+            {
+                Srid = SpatialReferenceTestLayerCatalog.LayerSrid,
+                Crs = $"EPSG:{SpatialReferenceTestLayerCatalog.LayerSrid}",
+                IsGeographic = false,
+            },
+        };
+        sridFixture.UpdateV2ResourceMetadata(
+            SpatialReferenceTestLayerCatalog.PointLayerId,
+            spatial: sridSpatial with { GeometryType = Honua.Core.Features.Metadata.Domain.V2.MetadataV2GeometryType.Point });
+
         try
         {
             // Create with WGS84 point - should be rejected without reprojection
