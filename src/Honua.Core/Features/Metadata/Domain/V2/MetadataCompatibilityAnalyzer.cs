@@ -718,7 +718,9 @@ public static class MetadataCompatibilityAnalyzer
                 MetadataCompatibilityCoverageState.Uncovered));
         }
 
-        if (!string.Equals(source.Path, target.Path, StringComparison.Ordinal) ||
+        if (!string.Equals(source.ResourceId, target.ResourceId, StringComparison.Ordinal) ||
+            !string.Equals(source.ServiceId, target.ServiceId, StringComparison.Ordinal) ||
+            !string.Equals(source.Path, target.Path, StringComparison.Ordinal) ||
             !string.Equals(source.ServiceLocalId, target.ServiceLocalId, StringComparison.Ordinal) ||
             source.LayerIndex != target.LayerIndex)
         {
@@ -730,7 +732,7 @@ public static class MetadataCompatibilityAnalyzer
                 MetadataSemanticArtifactKind.Publication,
                 source.ResourceId,
                 source.TitleOverride ?? source.Metadata.Title ?? source.Metadata.Name,
-                "The target publication route, path, layer index, or local id differs from the proposed publication.",
+                "The target publication resource, service, route, path, layer index, or local id differs from the proposed publication.",
                 Value("publicationRoute", FormatPublicationRoute(source), PublicationDetails(source)),
                 Value("publicationRoute", FormatPublicationRoute(target), PublicationDetails(target)),
                 MetadataCompatibilityRequiredAction.UpdatePublication,
@@ -1500,11 +1502,12 @@ public static class MetadataCompatibilityAnalyzer
     {
         if (findings.Any(static finding =>
             finding.Code == MetadataCompatibilityCode.StateUnavailable ||
-            finding.Code == MetadataCompatibilityCode.ScriptBeforeContractMismatch))
+            finding.Code == MetadataCompatibilityCode.ScriptBeforeContractMismatch ||
+            finding.CoverageState == MetadataCompatibilityCoverageState.Unknown))
         {
             return Rollback(
                 MetadataRollbackReadinessClassification.Manual,
-                "Rollback readiness cannot be determined while state or script applicability is unknown.",
+                "Rollback readiness cannot be determined while state, metadata coverage, or script applicability is unknown.",
                 requiresManualAction: true);
         }
 
@@ -1836,6 +1839,10 @@ public static class MetadataCompatibilityAnalyzer
 
     private static string FormatPublicationRoute(MetadataV2Publication publication)
         => string.Concat(
+            publication.ResourceId,
+            "|",
+            publication.ServiceId,
+            "|",
             publication.Path ?? string.Empty,
             "|",
             publication.ServiceLocalId ?? string.Empty,

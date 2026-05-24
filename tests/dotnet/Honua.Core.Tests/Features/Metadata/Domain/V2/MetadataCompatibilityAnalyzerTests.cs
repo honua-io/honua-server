@@ -295,6 +295,57 @@ public sealed class MetadataCompatibilityAnalyzerTests
     }
 
     [UnitTest]
+    public void Analyze_PublicationIdentityChange_ReturnsWarningAndServiceRevisionRollback()
+    {
+        var source = Snapshot(BuildGraph("dev", 41));
+        var target = Snapshot(BuildGraph(
+            "staging",
+            7,
+            publicationResourceId: "res.archive",
+            publicationServiceId: "svc.archive"));
+        var package = Package(Entry("pub.parcels", MetadataSemanticArtifactKind.Publication));
+
+        var report = MetadataCompatibilityAnalyzer.Analyze(
+            package,
+            source,
+            target,
+            Array.Empty<MetadataDataScriptEntry>(),
+            GeneratedAt);
+
+        report.Status.Should().Be(MetadataCompatibilityStatus.Warning);
+        report.Findings.Should().ContainSingle(finding =>
+            finding.Code == MetadataCompatibilityCode.PublicationRouteChanged &&
+            finding.Expected.Details["resourceId"] == "res.parcels" &&
+            finding.Expected.Details["serviceId"] == "svc.features" &&
+            finding.Actual.Details["resourceId"] == "res.archive" &&
+            finding.Actual.Details["serviceId"] == "svc.archive");
+        report.RollbackReadiness.Classification.Should().Be(MetadataRollbackReadinessClassification.ServiceRevision);
+    }
+
+    [UnitTest]
+    public void Analyze_TargetSpatialMetadataUnavailable_ReturnsUnknownManualRollback()
+    {
+        var source = Snapshot(BuildGraph("dev", 41));
+        var target = Snapshot(BuildGraph("staging", 7, includeSpatial: false));
+        var package = Package(Entry("res.parcels", MetadataSemanticArtifactKind.Resource));
+
+        var report = MetadataCompatibilityAnalyzer.Analyze(
+            package,
+            source,
+            target,
+            Array.Empty<MetadataDataScriptEntry>(),
+            GeneratedAt);
+
+        report.Status.Should().Be(MetadataCompatibilityStatus.Unknown);
+        report.CanCreatePullRequest.Should().BeFalse();
+        report.Findings.Should().Contain(finding =>
+            finding.Code == MetadataCompatibilityCode.SpatialCrsMismatch &&
+            finding.CoverageState == MetadataCompatibilityCoverageState.Unknown);
+        report.RollbackReadiness.Classification.Should().Be(MetadataRollbackReadinessClassification.Manual);
+        report.RollbackReadiness.RequiresManualAction.Should().BeTrue();
+    }
+
+    [UnitTest]
     public void CreateUnavailableReport_ReturnsUnknownManualReport()
     {
         var report = MetadataCompatibilityAnalyzer.CreateUnavailableReport(
@@ -523,7 +574,10 @@ public sealed class MetadataCompatibilityAnalyzerTests
         bool includeRelationshipDependent = false,
         bool includeProjectionProfile = false,
         bool includeResource = true,
-        bool includeStorage = true)
+        bool includeStorage = true,
+        bool includeSpatial = true,
+        string publicationResourceId = "res.parcels",
+        string publicationServiceId = "svc.features")
     {
         var spatial = JsonSerializer.Deserialize<JsonElement>(
             $$"""{"srid":{{srid}},"geometryType":"Point"}""");
@@ -543,7 +597,7 @@ public sealed class MetadataCompatibilityAnalyzerTests
                 StorageBindingIds = ["storage.parcels"],
                 PrimaryStorageBindingId = "storage.parcels",
                 SchemaFields = includeField ? [BuildField(identifierRole)] : Array.Empty<MetadataV2Field>(),
-                Spatial = spatial,
+                Spatial = includeSpatial ? spatial : null,
             });
         }
 
@@ -607,8 +661,8 @@ public sealed class MetadataCompatibilityAnalyzerTests
                     new MetadataV2Publication
                     {
                         Metadata = new MetadataV2ObjectMetadata { Id = "pub.parcels", Name = "parcels" },
-                        ResourceId = "res.parcels",
-                        ServiceId = "svc.features",
+                        ResourceId = publicationResourceId,
+                        ServiceId = publicationServiceId,
                         StorageBindingId = "storage.parcels",
                         PublicationType = MetadataV2PublicationType.OgcCollection,
                         Path = "parcels",

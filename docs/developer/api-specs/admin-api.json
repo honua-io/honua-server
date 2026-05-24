@@ -8734,7 +8734,7 @@
           },
           "dataScripts": {
             "type": "array",
-            "description": "Optional declared data script contracts. Prevalidation analyzes these declarations but never executes scripts.",
+            "description": "Optional declared data script contracts. Omit for no scripts; explicit null is rejected. Prevalidation analyzes these declarations but never executes scripts.",
             "items": { "$ref": "#/components/schemas/MetadataDataScriptEntry" }
           }
         }
@@ -8918,9 +8918,13 @@
           "targetEnvironment": { "type": "string" },
           "reversible": { "type": "boolean" },
           "beforeContract": { "$ref": "#/components/schemas/MetadataDataScriptContract" },
-          "afterContract": { "$ref": "#/components/schemas/MetadataDataScriptContract" },
+          "afterContract": {
+            "description": "Declared post-script state. Missing-artifact coverage requires expected discriminator/detail fields, not only exists=true.",
+            "allOf": [{ "$ref": "#/components/schemas/MetadataDataScriptContract" }]
+          },
           "declaredOperations": {
             "type": "array",
+            "description": "Optional operation labels. Omit for no labels; explicit null is rejected.",
             "items": { "type": "string" }
           },
           "notes": { "type": "string" }
@@ -8931,12 +8935,14 @@
         "properties": {
           "resources": {
             "type": "array",
+            "description": "Semantic artifact contracts. Omit for an empty contract; explicit null is rejected.",
             "items": { "$ref": "#/components/schemas/MetadataScriptResourceContract" }
           }
         }
       },
       "MetadataScriptResourceContract": {
         "type": "object",
+        "description": "Semantic artifact contract used by data-script before/after coverage. For missing artifacts, exists=true alone is not sufficient; include expected resourceType, serviceType/route/protocols, publication identity/details, or storage binding details as applicable.",
         "required": ["semanticId"],
         "properties": {
           "semanticId": { "type": "string" },

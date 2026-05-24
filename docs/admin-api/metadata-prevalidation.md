@@ -24,7 +24,7 @@ Provide exactly one package source:
 Required fields:
 
 - `targetEnvironment`: target environment name.
-- `dataScripts`: optional declared script contracts. Send an array when present; `null` is rejected.
+- `dataScripts`: optional declared script contracts. Omit for no scripts; when present it must be an array. Explicit `null` is rejected.
 
 Request validation:
 
@@ -32,7 +32,7 @@ Request validation:
 - Exactly one of `releasePackageId` or `releasePackage` is required.
 - `targetEnvironment` is trimmed and must not be blank.
 - Up to 100 data scripts may be supplied.
-- Each script needs a non-blank `scriptId`, `declaredOperations` as an array, and optional `beforeContract` / `afterContract` objects whose `resources` and `fields` members are arrays.
+- Each script needs a non-blank `scriptId`. `declaredOperations`, contract `resources`, and contract `fields` may be omitted and are treated as empty arrays; when present, they must be arrays and explicit `null` is rejected.
 - A single script may declare up to 1000 contract fields.
 
 ## Response
@@ -81,7 +81,12 @@ Stable finding codes use the `metadata.compat.*` namespace. Current codes cover 
 
 Data scripts may cover findings only when the `beforeContract` matches the current target state and `afterContract` satisfies the missing requirement. If a script's before-contract does not match the target state, the original finding remains uncovered and the report includes `metadata.compat.script.before_contract_mismatch`.
 
-For missing artifacts, `exists: true` alone is not sufficient coverage. The `afterContract` must also declare the expected discriminator and details: `resourceType` for resources, `serviceType` and `route` for services, `publicationType` plus `resourceId`, `serviceId`, path/local id details for publications, and `storage.storageBindingId`, `storage.storageType`, and required storage capabilities for storage bindings.
+For missing artifacts, `exists: true` alone is not sufficient coverage. The `afterContract` must also declare the expected discriminator and details:
+
+- Resources: `resourceType`.
+- Services: `serviceType`, `route`, and any required `capabilities` matching expected enabled protocols.
+- Publications: `publicationType`, `resourceId`, `serviceId`, `path`, `serviceLocalId`, `layerIndex`, and required `supportedFormats` / `capabilities`.
+- Storage bindings: `storage.storageBindingId`, `storage.storageType`, and required storage `storage.capabilities`.
 
 ## Rollback Readiness
 

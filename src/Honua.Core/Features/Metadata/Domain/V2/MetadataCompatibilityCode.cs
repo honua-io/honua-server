@@ -74,7 +74,7 @@ public static class MetadataCompatibilityCode
     /// <summary>Publication type differs between source and target.</summary>
     public const string PublicationTypeMismatch = "metadata.compat.publication.type_mismatch";
 
-    /// <summary>Publication route, path, layer index, or local id changed.</summary>
+    /// <summary>Publication resource, service, route, path, layer index, or local id changed.</summary>
     public const string PublicationRouteChanged = "metadata.compat.publication.route_changed";
 
     /// <summary>Required publication format is absent from target.</summary>
