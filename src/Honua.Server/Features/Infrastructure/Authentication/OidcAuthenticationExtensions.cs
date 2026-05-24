@@ -13,6 +13,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using StackExchange.Redis;
+using Honua.Server.Features.Infrastructure.Authentication.ClientCertificates;
 
 namespace Honua.Server.Features.Infrastructure.Authentication;
 
@@ -159,6 +160,17 @@ public static class OidcAuthenticationExtensions
                     return AdminSessionScheme;
                 }
 
+                var clientCertificateOptions = context.RequestServices
+                    .GetService<IOptions<ClientCertificateAuthenticationOptions>>()?
+                    .Value;
+                if (clientCertificateOptions?.Mode != ClientCertificateAuthenticationMode.Disabled &&
+                    (context.Connection.ClientCertificate is not null ||
+                     (clientCertificateOptions?.ForwardedCertificate.Enabled == true &&
+                      context.Request.Headers.ContainsKey(clientCertificateOptions.ForwardedCertificate.HeaderName))))
+                {
+                    return ClientCertificateAuthenticationDefaults.AuthenticationScheme;
+                }
+
                 // Fall back to API key authentication
                 return AuthenticationExtensions.ApiKeyScheme;
             };
@@ -214,7 +226,8 @@ public static class OidcAuthenticationExtensions
     {
         var schemes = new List<string>
         {
-            CompositeScheme
+            CompositeScheme,
+            ClientCertificateAuthenticationDefaults.AuthenticationScheme
         };
 
         if (oidcOptions.AzureAd?.IsValid == true)

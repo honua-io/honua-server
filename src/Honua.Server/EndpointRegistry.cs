@@ -121,6 +121,21 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/connections/encryption/validate"),
         new("POST", "/api/v1/admin/connections/encryption/rotate-key"),
 
+        // v1 admin client-certificate trust profile endpoints (#1171)
+        new("GET", "/api/v1/admin/security/client-certificates/profiles"),
+        new("POST", "/api/v1/admin/security/client-certificates/profiles"),
+        new("GET", "/api/v1/admin/security/client-certificates/profiles/{profileId}"),
+        new("PUT", "/api/v1/admin/security/client-certificates/profiles/{profileId}"),
+        new("DELETE", "/api/v1/admin/security/client-certificates/profiles/{profileId}"),
+        new("GET", "/api/v1/admin/security/client-certificates/profiles/{profileId}/mappings"),
+        new("POST", "/api/v1/admin/security/client-certificates/profiles/{profileId}/mappings"),
+        new("PUT", "/api/v1/admin/security/client-certificates/profiles/{profileId}/mappings/{mappingId}"),
+        new("DELETE", "/api/v1/admin/security/client-certificates/profiles/{profileId}/mappings/{mappingId}"),
+        new("GET", "/api/v1/admin/security/client-certificates/profiles/{profileId}/revocations"),
+        new("POST", "/api/v1/admin/security/client-certificates/profiles/{profileId}/revocations"),
+        new("DELETE", "/api/v1/admin/security/client-certificates/profiles/{profileId}/revocations/{revocationId}"),
+        new("POST", "/api/v1/admin/security/client-certificates/validate"),
+
         // v1 admin license management endpoints (#511)
         new("GET", "/api/v1/admin/license"),
         new("POST", "/api/v1/admin/license"),

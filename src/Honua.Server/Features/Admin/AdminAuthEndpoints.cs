@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Authentication.ClientCertificates;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.RateLimiting;
@@ -76,6 +77,7 @@ internal static class AdminAuthEndpoints
 
     private static Microsoft.AspNetCore.Http.HttpResults.Ok<AdminAuthConfigResponse> HandleGetAuthConfig(
         [FromServices] IOptions<OidcAuthenticationOptions> oidcOptions,
+        [FromServices] IOptions<ClientCertificateAuthenticationOptions> clientCertificateOptions,
         [FromServices] ILogger<AdminAuthEndpointsLog> logger)
     {
         var providers = oidcOptions.Value.Enabled
@@ -93,10 +95,47 @@ internal static class AdminAuthEndpoints
         var response = new AdminAuthConfigResponse
         {
             OidcEnabled = oidcOptions.Value.Enabled && providers.Count > 0,
-            Providers = providers
+            Providers = providers,
+            ClientCertificates = BuildClientCertificateInfo(clientCertificateOptions.Value)
         };
 
         return TypedResults.Ok(response);
+    }
+
+    private static AdminAuthClientCertificateInfo BuildClientCertificateInfo(
+        ClientCertificateAuthenticationOptions options)
+    {
+        var enabledProfiles = options.TrustProfiles
+            .Where(static profile => profile.Enabled)
+            .Where(profile => string.Equals(profile.EnvironmentId, options.EnvironmentId, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var mode = options.Mode.ToString();
+        return new AdminAuthClientCertificateInfo
+        {
+            Mode = mode,
+            EnvironmentId = options.EnvironmentId,
+            RequiredForAdmin = options.Mode is ClientCertificateAuthenticationMode.RequiredForAdmin
+                or ClientCertificateAuthenticationMode.RequiredForEnvironment,
+            RequiredForNative = options.Mode is ClientCertificateAuthenticationMode.RequiredForNative
+                or ClientCertificateAuthenticationMode.RequiredForEnvironment,
+            SupportedTransports = options.Mode == ClientCertificateAuthenticationMode.Disabled
+                ? []
+                : ["https", "grpc-https"],
+            AcceptedIssuerSubjects = enabledProfiles
+                .SelectMany(static profile => profile.AcceptedIssuerSubjects)
+                .Where(static value => !string.IsNullOrWhiteSpace(value))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
+            AcceptedIssuerThumbprints = enabledProfiles
+                .SelectMany(static profile => profile.AcceptedIssuerThumbprints)
+                .Where(static value => !string.IsNullOrWhiteSpace(value))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
+            ExpirationWarningThresholdDays = enabledProfiles.Length == 0
+                ? null
+                : enabledProfiles.Min(static profile => profile.ExpirationWarningThresholdDays),
+            ForwardedCertificateEnabled = options.ForwardedCertificate.Enabled,
+        };
     }
 
     private static async Task<Microsoft.AspNetCore.Http.HttpResults.Ok<AdminAuthSessionResponse>> HandleGetSession(

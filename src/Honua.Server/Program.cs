@@ -36,6 +36,7 @@ using Honua.Server.Features.FileStorage;
 using Honua.Server.Features.HealthCheck;
 using Honua.Server.Features.Import;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Authentication.ClientCertificates;
 using Honua.Server.Features.Infrastructure.AuditLog;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Configuration;
@@ -70,6 +71,7 @@ using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Enrichers.Span;
 using StackExchange.Redis;
+using Microsoft.AspNetCore.Server.Kestrel.Https;
 
 // CLEAN ARCHITECTURE COMPOSITION ROOT
 // This is the application layer that wires dependencies:
@@ -107,6 +109,18 @@ if (serveStacOpsDemo && !builder.Environment.IsDevelopment())
 
 // Load optional security configuration without overriding environment-specific settings.
 StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, builder.Environment);
+var clientCertificateMode = builder.Configuration.GetValue<ClientCertificateAuthenticationMode>(
+    "Authentication:ClientCertificates:Mode");
+if (clientCertificateMode != ClientCertificateAuthenticationMode.Disabled)
+{
+    builder.WebHost.ConfigureKestrel(options =>
+    {
+        options.ConfigureHttpsDefaults(httpsOptions =>
+        {
+            httpsOptions.ClientCertificateMode = ClientCertificateMode.AllowCertificate;
+        });
+    });
+}
 builder.Services.AddDataProtection();
 
 // Enable Aspire integrations only when Aspire configuration is present.
@@ -552,6 +566,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.TableDiscoveryJsonContext.Default,
         Honua.Server.Features.Admin.Models.ExternalServiceDiscoveryJsonContext.Default,
         Honua.Server.Features.Admin.Models.AdminAuthJsonContext.Default,
+        Honua.Server.Features.Admin.Models.ClientCertificateJsonContext.Default,
         Honua.Server.Features.Admin.Models.ConfigurationJsonContext.Default,
         Honua.Server.Features.Admin.Models.LicenseAdminJsonContext.Default,
         Honua.Server.Features.Infrastructure.Licensing.LicenseFileJsonContext.Default,
@@ -565,6 +580,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.CloudDemo.CloudDemoJsonContext.Default,
         Honua.Server.Features.HealthCheck.HealthJsonContext.Default,
         Honua.Server.Features.Infrastructure.Models.ProblemJsonContext.Default,
+        Honua.Server.Features.Infrastructure.Authentication.ClientCertificates.ClientCertificateInfrastructureJsonContext.Default,
         Honua.Server.Features.Infrastructure.Middleware.LimitsEnforcementJsonContext.Default,
         Honua.Server.Features.Infrastructure.Security.CspViolationJsonContext.Default,
         Honua.Server.Features.Protocols.GeoServices.GeometryService.Models.GeometryServiceJsonContext.Default,
@@ -834,6 +850,10 @@ app.UseHonuaCors(app.Environment);
 // Validate query, form, and selected header inputs before authentication and endpoint execution.
 app.UseInputValidation();
 
+// Validate optional/required client certificates before the regular auth stack so
+// required mTLS surfaces can return machine-readable errors instead of TLS handshakes.
+app.UseHonuaClientCertificateAuthentication();
+
 // Add authentication and authorization middleware early to short-circuit unauthorized requests
 app.UseApiKeyAuthentication();
 
@@ -921,6 +941,7 @@ app.MapComplianceAdminEndpoints();
 
 // Configure secure connection management endpoints
 app.MapSecureConnectionEndpoints();
+app.MapClientCertificateAdminEndpoints();
 
 // Configure control plane IAM endpoints (#511)
 app.MapLicenseEndpoints();
@@ -1168,4 +1189,3 @@ async Task RunPostGisPreflightCheckAsync()
 
     Honua.Server.Features.Infrastructure.Logging.Log.PostGisPreflightCheckFailedDevelopment(app.Logger, errorMessage);
 }
-
