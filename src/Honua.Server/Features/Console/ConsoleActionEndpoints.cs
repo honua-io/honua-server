@@ -153,6 +153,12 @@ internal static class ConsoleActionEndpoints
                 Results = results,
             }));
         }
+        catch (OperationCanceledException)
+        {
+            // Request cancellation should surface as a cancelled response, not a
+            // server error — match the session-endpoint pattern.
+            throw;
+        }
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "actions.check", ex);

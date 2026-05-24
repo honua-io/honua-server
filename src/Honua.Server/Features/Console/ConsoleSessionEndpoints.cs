@@ -101,7 +101,10 @@ internal static class ConsoleSessionEndpoints
 
     private static ConsoleUserProfile BuildUserProfile(ClaimsPrincipal principal)
     {
-        var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? principal.FindFirstValue("sub") ?? string.Empty;
+        // Use the shared resolver so admin API-key principals (no
+        // NameIdentifier/sub claim) report a non-empty user id instead of
+        // an empty string.
+        var userId = ConsolePrincipal.ResolveActorId(principal) ?? string.Empty;
         var name = principal.Identity?.Name ?? principal.FindFirstValue("name");
         var email = principal.FindFirstValue(ClaimTypes.Email) ?? principal.FindFirstValue("email");
         var avatarUrl = principal.FindFirstValue("picture") ?? principal.FindFirstValue("avatar_url");

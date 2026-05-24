@@ -121,6 +121,13 @@ internal static class ConsoleContentEndpoints
                 NextCursor = result.NextCursor,
             }));
         }
+        catch (OperationCanceledException)
+        {
+            // Request cancellation is a client-driven outcome (timeout / disconnect),
+            // not a server failure. Let the host turn it into a cancelled response
+            // instead of masking it as a 500.
+            throw;
+        }
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "content.list", ex);
@@ -159,6 +166,10 @@ internal static class ConsoleContentEndpoints
             var withActions = await ConsoleContentMapper.WithComputedActionsAsync(item, evaluator, context.User, context.RequestAborted).ConfigureAwait(false);
             return TypedResults.Ok(ApiResponse<ConsoleContentItem>.CreateSuccess(withActions));
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "content.get", ex);
@@ -193,6 +204,10 @@ internal static class ConsoleContentEndpoints
         catch (InvalidOperationException ioe)
         {
             return TypedResults.BadRequest(ApiResponse<object>.Failure(ioe.Message));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -245,6 +260,10 @@ internal static class ConsoleContentEndpoints
             ConsoleEndpointsLog.ContentItemUpdated(logger, updated.Id, updated.Generation);
             return TypedResults.Ok(ApiResponse<ConsoleContentItem>.CreateSuccess(withActions));
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "content.update", ex);
@@ -279,6 +298,10 @@ internal static class ConsoleContentEndpoints
             ConsoleEndpointsLog.ContentItemUpdated(logger, updated.Id, updated.Generation);
             return TypedResults.Ok(ApiResponse<ConsoleContentItem>.CreateSuccess(withActions));
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             ConsoleEndpointsLog.EndpointFailed(logger, "content.patch", ex);
@@ -303,6 +326,10 @@ internal static class ConsoleContentEndpoints
 
             ConsoleEndpointsLog.ContentItemDeleted(logger, id);
             return TypedResults.Ok(ApiResponse<object>.SuccessWithMessage("Console content item deleted."));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -336,6 +363,10 @@ internal static class ConsoleContentEndpoints
                 Chain = chainWithActions,
                 MaxDepth = maxDepth,
             }));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {

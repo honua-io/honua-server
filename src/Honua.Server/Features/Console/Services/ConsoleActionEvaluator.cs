@@ -263,9 +263,10 @@ internal sealed class ConsoleActionEvaluator(
             return AuthorizationProfile.Anonymous;
         }
 
-        var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
-                     ?? principal.FindFirstValue("sub")
-                     ?? string.Empty;
+        // Use the shared resolver so admin API-key principals (no
+        // NameIdentifier/sub claim) get a non-empty profile.UserId for owner
+        // comparisons and capability lookups.
+        var userId = ConsolePrincipal.ResolveActorId(principal) ?? string.Empty;
 
         var roleClaimType = rbacOptions.Value.EffectiveRoleClaimType;
         var checkStandardRoleClaim = !string.Equals(roleClaimType, ClaimTypes.Role, StringComparison.OrdinalIgnoreCase);

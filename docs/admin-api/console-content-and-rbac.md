@@ -106,7 +106,11 @@ than overloaded on `PUT`:
   only want to change a subset of fields must use `PATCH`.
 - **`PATCH` merges.** Only `title`, `description`, `tags`, `labels`, and
   `visibility` are patchable. Other fields require `PUT`. `PATCH` does not
-  increment `generation`.
+  increment `generation`. The in-memory baseline store applies the patch
+  through a `TryUpdate` compare-and-swap loop, so a `PATCH` racing a
+  concurrent `PUT` cannot silently revert the `PUT`'s generation or
+  `PUT`-only fields — the patch re-reads the latest snapshot before
+  committing.
 - **Optimistic concurrency on `PUT`** compares the supplied `generation`
   against the stored value with **exact-match** semantics. A request whose
   `generation` is older *or* newer than the stored value is rejected with
@@ -117,7 +121,10 @@ than overloaded on `PUT`:
   and retry. Omit `generation` to bypass the check (last-write-wins).
 - **Identity and audit fields** (`id`, `createdAt`, `createdById`) are stamped
   by the server and ignored if sent on update; `updatedAt` and `updatedById`
-  are stamped from the request principal.
+  are stamped from the request principal. On create, `ownerId` is honoured
+  when supplied but does **not** influence audit stamping — a privileged
+  caller creating a content item on behalf of another user is still
+  recorded as the acting principal in `createdById`/`updatedById`.
 
 ## RBAC verbs
 
@@ -145,6 +152,27 @@ entirely (they receive the full capability set).
 Capabilities returned through `/session.capabilities` (e.g. `metadata.read`,
 `catalog.publish`, `admin.rbac.write`) are the wire identifiers Console
 surfaces use to gate UI affordances.
+
+## Action-check response shape
+
+`POST /api/v1/console/actions/check` evaluates the supplied verbs against a
+batch of `itemId` and/or `routeKey` targets. Each result mirrors the target
+identifier and partitions the requested verb set into `allowed`/`denied`:
+
+- **Item targets** — `allowed` contains the subset of the requested verbs the
+  caller may perform on the item (computed by `IConsoleActionEvaluator` using
+  the same rules as the `actions` field on content responses). `denied`
+  contains the remaining requested verbs. Unknown ids return
+  `notFound: true` with empty `allowed`/`denied`.
+- **Route targets** — route entitlements model navigation access, not item
+  verbs. When the route is allowed for the caller **and** the request asked
+  for `view`, the response surfaces `allowed: ["view"]`; otherwise `allowed`
+  is empty. All other requested verbs land in `denied` because routes do not
+  carry the non-`view` item verbs.
+
+When the request omits an `actions` list the server evaluates the full
+seven-verb set; clients should pass an explicit `actions` filter when only a
+subset is interesting to keep the response compact.
 
 ## Provenance
 

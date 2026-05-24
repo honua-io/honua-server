@@ -19,7 +19,10 @@ internal static class ConsoleContentMapper
         // OwnerId is who owns the content; CreatedById/UpdatedById record the
         // acting principal. When a privileged caller creates on behalf of
         // someone else, audit must still point at the actor, not the owner.
-        var actor = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? principal.FindFirstValue("sub");
+        // Use the shared resolver so admin API-key principals (which carry
+        // ClaimTypes.Name/api_key_id rather than NameIdentifier) still stamp
+        // a non-empty actor onto audit fields.
+        var actor = ConsolePrincipal.ResolveActorId(principal);
         var owner = request.OwnerId ?? actor;
         return new ConsoleContentItem
         {
@@ -49,7 +52,7 @@ internal static class ConsoleContentMapper
         // the stored value, value-type fields fall back to the same defaults the
         // create path applies, and collection fields default to empty. Merge
         // semantics live exclusively on PATCH.
-        var updater = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? principal.FindFirstValue("sub");
+        var updater = ConsolePrincipal.ResolveActorId(principal);
         return existing with
         {
             Id = id,
@@ -81,7 +84,7 @@ internal static class ConsoleContentMapper
             Tags = request.Tags,
             Labels = request.Labels,
             Visibility = request.Visibility,
-            UpdatedById = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? principal.FindFirstValue("sub"),
+            UpdatedById = ConsolePrincipal.ResolveActorId(principal),
         };
     }
 

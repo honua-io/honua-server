@@ -68,6 +68,11 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
         Assert.True(envelope.Success);
         Assert.NotNull(envelope.Data);
         Assert.NotNull(envelope.Data!.User);
+        // Admin API-key principals have no NameIdentifier/sub claim, so the
+        // session bootstrap must still derive a non-empty user.id from
+        // ClaimTypes.Name (or api_key_id/api_key_name when present). An empty
+        // id breaks Console shell identity rendering and audit correlation.
+        Assert.False(string.IsNullOrWhiteSpace(envelope.Data.User.Id));
         Assert.NotNull(envelope.Data.Content);
         Assert.NotEmpty(envelope.Data.NavigationEntitlements);
         Assert.Contains("admin.rbac.write", envelope.Data.Capabilities);
@@ -106,6 +111,10 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
         Assert.Equal(created.Data.Id, fetched!.Data!.Id);
         Assert.Equal(ConsoleContentItemType.SavedMap, fetched.Data.ItemType);
         Assert.NotEmpty(fetched.Data.Actions);
+        // Audit actor must be stamped from the authenticated principal even
+        // for admin API-key requests, which carry no NameIdentifier/sub claim.
+        Assert.False(string.IsNullOrWhiteSpace(fetched.Data.CreatedById));
+        Assert.False(string.IsNullOrWhiteSpace(fetched.Data.UpdatedById));
     }
 
     [IntegrationTest]
