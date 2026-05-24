@@ -8,7 +8,6 @@ using System.Text;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
-using Honua.Postgres.Features.Alerts;
 using Honua.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
@@ -119,8 +118,8 @@ internal sealed class PostgresInvestigationStore : IInvestigationStore
 
         if (!string.IsNullOrWhiteSpace(filter.TitleContains))
         {
-            sql.Append(" AND i.title ILIKE @title_contains");
-            command.Parameters.AddWithValue("title_contains", NpgsqlDbType.Text, "%" + filter.TitleContains + "%");
+            sql.Append(@" AND i.title ILIKE @title_contains ESCAPE '\'");
+            command.Parameters.AddWithValue("title_contains", NpgsqlDbType.Text, "%" + EscapeLikePattern(filter.TitleContains) + "%");
         }
 
         if (cursor is not null)
@@ -522,6 +521,27 @@ internal sealed class PostgresInvestigationStore : IInvestigationStore
         }
 
         return Math.Min(MaxPageSize, Math.Max(MinPageSize, requested));
+    }
+
+    internal static string EscapeLikePattern(string value)
+    {
+        if (value.IndexOfAny(new[] { '\\', '%', '_' }) < 0)
+        {
+            return value;
+        }
+
+        var sb = new StringBuilder(value.Length + 4);
+        foreach (var ch in value)
+        {
+            if (ch is '\\' or '%' or '_')
+            {
+                sb.Append('\\');
+            }
+
+            sb.Append(ch);
+        }
+
+        return sb.ToString();
     }
 
     internal static string GenerateInvestigationId()

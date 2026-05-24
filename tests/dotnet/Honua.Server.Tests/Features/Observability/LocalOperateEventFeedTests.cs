@@ -200,10 +200,17 @@ public sealed class LocalOperateEventFeedTests
     private static AlertEventSummary NewSummary(long id, AlertSeverity severity, DateTimeOffset occurredAt)
         => new()
         {
-            EventId = id, RuleId = 1, ServiceId = "svc", LayerId = 1, ObjectId = 1,
-            TriggerType = AlertTriggerType.Enter, Severity = severity,
-            OccurredAt = occurredAt, IncidentStatus = AlertIncidentStatus.Started,
-            IncidentDurationMs = 0, LifecycleStatus = AlertLifecycleStatus.Open
+            EventId = id,
+            RuleId = 1,
+            ServiceId = "svc",
+            LayerId = 1,
+            ObjectId = 1,
+            TriggerType = AlertTriggerType.Enter,
+            Severity = severity,
+            OccurredAt = occurredAt,
+            IncidentStatus = AlertIncidentStatus.Started,
+            IncidentDurationMs = 0,
+            LifecycleStatus = AlertLifecycleStatus.Open
         };
 
     private sealed class FakeAlertQuery : IAlertEventQuery

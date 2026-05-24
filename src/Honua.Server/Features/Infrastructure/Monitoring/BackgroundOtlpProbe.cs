@@ -197,6 +197,18 @@ internal sealed class BackgroundOtlpProbe : BackgroundService
             };
         }
 
+        // Treat 5xx responses as unreachable — the endpoint is responding but
+        // upstream is broken, so Console must not see this as Healthy.
+        if ((int)response.StatusCode >= 500)
+        {
+            return new OtlpProbeSnapshot
+            {
+                State = OtlpProbeState.Unreachable,
+                ProbedAt = probedAt,
+                LastError = $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}"
+            };
+        }
+
         return new OtlpProbeSnapshot { State = OtlpProbeState.Healthy, ProbedAt = probedAt };
     }
 

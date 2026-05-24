@@ -5,7 +5,6 @@ using System.Globalization;
 using System.Text;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.Alerts;
 using Honua.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;

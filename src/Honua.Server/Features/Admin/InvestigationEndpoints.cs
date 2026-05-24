@@ -417,7 +417,7 @@ internal static class InvestigationEndpoints
             Action = action,
             Outcome = AuditOutcome.Success,
             CorrelationId = context.TraceIdentifier,
-            Details = details ?? string.Empty
+            Details = details
         };
 
         return auditLog.RecordAsync(evt, cancellationToken);
