@@ -293,7 +293,7 @@
         },
         {
           "proofClass": "scenario-depth",
-          "proofMechanism": "Redis execution substrate and Operate event feed tests verify cursor query indexes, queue/backend fallback filtering, structured log pagination, artifact/log persistence, retry/cancel durability, and durable job event projection",
+          "proofMechanism": "Redis execution substrate and Operate event feed tests verify cursor query indexes, queue/backend fallback filtering, structured log pagination, artifact/log persistence, retry/cancel durability across local queue and remote retry paths, and durable job event projection",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/ControlPlane/RedisExecutionSubstrateIntegrationTests.cs",

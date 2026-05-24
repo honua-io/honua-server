@@ -596,6 +596,11 @@ documented in [Console Job Observability](../admin-api/console-job-observability
 See [Operations - Job Orchestration](operations.md#job-orchestration) for
 lifecycle and tuning details.
 
+Manual retry reuses the same durable job id. Local jobs are requeued through
+`IJobQueue`; remote jobs require a registered backend with retry support and set
+`nextRetryAt` for the execution-job reconciler instead of writing to the local
+queue.
+
 Workflow runs produced by the declarative orchestration layer surface through
 the same endpoints using the `Orchestration` operation type. The progress
 payload is a `WorkflowProgress` record keyed by the workflow run identifier

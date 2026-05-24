@@ -150,6 +150,7 @@ wire contract.
 | 117003 | Warning | Queue removal failed after cancellation; durable cancellation still returns when persisted |
 | 117004 | Warning | Manual retry compensation conflicted with a newer job state |
 | 117005 | Warning | Manual retry compensation failed while handling a queue write failure |
+| 117006 | Warning | Manual retry backend capability lookup failed; the action is disabled or retry returns `503` |
 
 **Recommended alerts:**
 

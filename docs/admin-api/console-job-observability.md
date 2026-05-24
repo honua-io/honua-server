@@ -218,6 +218,11 @@ Action advertisement rules:
 
 Use the `actions[]` response, not the presence of `links.cancel` or
 `links.retry`, to decide whether a control should be enabled.
+Retry action descriptors can be present with `allowed = false`; clients should
+surface `disabledReason` when present. Current values are `execute permission
+required`, `job queue unavailable`, `job backend unavailable`, `job backend
+retry capability unavailable`, `job backend does not support retry`, `retry
+budget exhausted`, and `not retryable`.
 
 Control endpoints accept no request body and return:
 
@@ -240,7 +245,7 @@ Conflict and availability behavior:
 | Retry requested for a non-failed/non-cancelled job | `409`. |
 | Retry budget exhausted | `409`. |
 | Local retry queue unavailable or write fails | `503`; when a local queue write fails, the service attempts to restore the prior terminal job state before returning. |
-| Remote retry backend unavailable | `503`. |
+| Remote retry backend unavailable or capability lookup fails | `503`. |
 | Remote backend does not support retry | `409`. |
 | Backend does not support remote cancellation | `409`. |
 | Approval required | `403 application/problem+json` with `urn:honua:approval-required`. |
