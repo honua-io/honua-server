@@ -611,12 +611,131 @@ for run lifecycle, scheduler semantics, and tuning details.
 |----------|--------|---------|
 | `/api/v1/admin/alerts/zones` | GET | List alert zones |
 | `/api/v1/admin/alerts/zones` | POST | Create alert zone |
+| `/api/v1/admin/alerts/zones/{zoneId}` | GET | Read alert zone |
 | `/api/v1/admin/alerts/zones/{zoneId}` | PUT | Update alert zone |
 | `/api/v1/admin/alerts/zones/{zoneId}` | DELETE | Delete alert zone |
 | `/api/v1/admin/alerts/rules` | GET | List alert rules |
 | `/api/v1/admin/alerts/rules` | POST | Create alert rule |
+| `/api/v1/admin/alerts/rules/test` | POST | Validate a draft alert rule and delivery-channel bindings without persisting it |
+| `/api/v1/admin/alerts/rules/{ruleId}` | GET | Read alert rule |
 | `/api/v1/admin/alerts/rules/{ruleId}` | PUT | Update alert rule |
+| `/api/v1/admin/alerts/rules/{ruleId}/enabled` | PUT | Enable or disable alert rule |
+| `/api/v1/admin/alerts/rules/{ruleId}/health` | GET | Inspect rule evaluation state, active incidents, recent triggers, delivery failures, and dead-letter state |
 | `/api/v1/admin/alerts/rules/{ruleId}` | DELETE | Delete alert rule |
+
+Alert management endpoints are admin-only and return the standard
+`ApiResponse<T>` envelope. Successful create, update, enable/disable, test,
+health, and delete operations currently return HTTP `200`. Persisted
+create/update/enable validation failures return `400`; the draft test endpoint
+returns `200` with validation details for invalid drafts. Missing rule/zone
+identifiers return `404`, and unauthenticated or non-admin callers return
+`401`/`403`.
+
+Zone list requests accept `?serviceId=`. Zone create/update payloads use
+camel-case JSON:
+
+```json
+{
+  "serviceId": "harbor-ops",
+  "zoneName": "Honolulu Harbor",
+  "wkt": "POLYGON((-157.88 21.29,-157.88 21.31,-157.85 21.31,-157.85 21.29,-157.88 21.29))",
+  "srid": 4326,
+  "metadata": { "owner": "operations" },
+  "isActive": true
+}
+```
+
+`wkt` is optional for placeholder zones; when supplied it must be `Polygon` or
+`MultiPolygon` WKT. `srid` defaults to `4326`. Polygon inputs are normalized to
+`MULTIPOLYGON` WKT in responses. Zone responses include `zoneId`, `serviceId`,
+`zoneName`, `wkt`, `srid`, `metadata`, and `isActive`.
+
+Rule list requests accept `?serviceId=&layerId=`. Rule create/update payloads
+use this contract:
+
+```json
+{
+  "serviceId": "harbor-ops",
+  "layerId": 1,
+  "zoneId": 12,
+  "ruleName": "Harbor Entry",
+  "triggerType": "enter",
+  "conditionsJson": "{}",
+  "cooldownSeconds": 60,
+  "severity": "warning",
+  "editionRequired": "pro",
+  "channels": ["webhook"],
+  "isActive": true
+}
+```
+
+`triggerType` accepts `enter`, `exit`, `dwell`, or `threshold`; `severity`
+accepts `info`, `warning`, or `critical`; `editionRequired` accepts `pro` or
+`enterprise`; `cooldownSeconds` must be zero or greater. Persisted geofence
+triggers (`enter`, `exit`, `dwell`) require `zoneId`. `zoneId` is only valid for
+those geofence triggers; threshold rules must omit it. `dwell` conditions must
+be a JSON object with positive `dwellSeconds`. `threshold` conditions must be a
+JSON object with non-empty `field`, an `operator` of `>`, `>=`, `<`, `<=`, `==`,
+or `!=`, and a numeric `value`.
+
+Delivery channel names are canonical snake-case tokens: `webhook`,
+`websocket`, `email`, `digest`, `aws_sns`, `azure_eventgrid`, `slack`,
+`microsoft_teams`, `aws_sqs`, and `azure_eventhub`. Some compatibility aliases
+parse on write (`teams`, `awssns`, `awssqs`, `azureeventgrid`,
+`azureeventhub`), but responses always use canonical names. `channels` may be
+omitted or empty for rules that should not dispatch to external sinks. Pro
+alerting allows `enter`/`exit` rules and `webhook`; Enterprise allows all
+implemented trigger types and channels when the channel is configured.
+
+`POST /api/v1/admin/alerts/rules/test` validates a draft without persisting it:
+
+```json
+{
+  "rule": {
+    "serviceId": "harbor-ops",
+    "layerId": 1,
+    "ruleName": "Draft Threshold",
+    "triggerType": "threshold",
+    "conditionsJson": "{\"field\":\"speedKmh\",\"operator\":\">\",\"value\":30}",
+    "cooldownSeconds": 30,
+    "severity": "warning",
+    "editionRequired": "enterprise",
+    "channels": ["webhook"],
+    "isActive": true
+  },
+  "zone": null
+}
+```
+
+The test endpoint always uses the success envelope for draft validation results;
+invalid drafts return `200` with `data.isValid=false`, `errors`, `warnings`,
+per-channel `deliveryChannels`, and `evaluatedAt`. Delivery validation and rule
+health statuses are `configured`, `unconfigured`, `disabled`, and
+`unauthorized`; rule health can additionally report `rate_limited` or `failing`
+for channels with recent delivery errors. Delivery channel `lastError` values are
+sanitized summaries, such as `Delivery rate limited.` or `Delivery failed.`;
+raw provider exception text is not returned. The optional draft `zone` is only
+accepted for `enter`, `exit`, and `dwell` rules, must use the same `serviceId`
+as the rule, and is used for geometry validation without persistence. If both a
+draft `zone` and `zoneId` are supplied on a geofence draft, validation uses the
+draft zone geometry and returns a warning.
+
+`GET /api/v1/admin/alerts/rules/{ruleId}/health` returns the rule state snapshot:
+`lastEvaluatedAt`, `lastTriggeredAt`, `activeIncidentCount`,
+`recentTriggerCount`, `coolingDownFeatureCount`, `nextCooldownExpiresAt`,
+`deliveryFailureCount`, `deadLetterCount`, `linkedEventIds`,
+`deliveryChannels`, and up to 10 `recentTriggers`. Recent trigger summaries use
+`resourceRef` values of the form `alert/{eventId}` so Console Operate can link
+to the normalized alert event. `activeIncidentCount` is derived from the current
+evaluator state, not from historical alert events: `enter` and `dwell` rules
+count state rows where the feature is currently inside the zone, `threshold`
+rules count state rows where the threshold is currently breached, and `exit`
+transition events do not keep an active incident open after the feature has
+left. `recentTriggerCount` counts alert events from the previous 24 hours.
+Alert zone/rule changes write config-change audit events with actions
+`alert_zone.create`, `alert_zone.update`,
+`alert_zone.delete`, `alert_rule.create`, `alert_rule.update`,
+`alert_rule.enable`, `alert_rule.disable`, and `alert_rule.delete`.
 
 ### **License Endpoints**
 

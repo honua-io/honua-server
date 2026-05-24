@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Honua Server Management API",
-    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints for configuration, import scanning, connections, layers, styles, observability, runtime licensing, deploy control, and native client-certificate trust management. For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
+    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints for configuration, import scanning, connections, layers, styles, observability, realtime alert management, runtime licensing, deploy control, and native client-certificate trust management. For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
     "version": "1.0.0",
     "contact": {
       "name": "Honua Server",
@@ -65,6 +65,10 @@
       "description": "System monitoring and telemetry"
     },
     {
+      "name": "Alerts",
+      "description": "Console Operate geofence zones, alert rules, draft validation, and delivery health"
+    },
+    {
       "name": "Metadata Resources",
       "description": "Metadata resource CRUD operations"
     },
@@ -94,6 +98,588 @@
     }
   ],
   "paths": {
+    "/alerts/zones": {
+      "get": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "List Alert Zones",
+        "description": "List geofence alert zones, optionally filtered by owning service.",
+        "operationId": "listAlertZones",
+        "parameters": [
+          {
+            "name": "serviceId",
+            "in": "query",
+            "required": false,
+            "description": "Filter zones by owning service identifier.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert zone list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAlertZoneResponseArray"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "Create Alert Zone",
+        "description": "Create a geofence alert zone. Polygon WKT is normalized to MultiPolygon WKT in the response.",
+        "operationId": "createAlertZone",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertZoneRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Alert zone created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAlertZoneResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/alerts/zones/{zoneId}": {
+      "get": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "Get Alert Zone",
+        "description": "Read a geofence alert zone by identifier.",
+        "operationId": "getAlertZone",
+        "parameters": [
+          {
+            "name": "zoneId",
+            "in": "path",
+            "required": true,
+            "description": "Alert zone identifier.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert zone",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAlertZoneResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "Update Alert Zone",
+        "description": "Replace a geofence alert zone by identifier.",
+        "operationId": "updateAlertZone",
+        "parameters": [
+          {
+            "name": "zoneId",
+            "in": "path",
+            "required": true,
+            "description": "Alert zone identifier.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertZoneRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Alert zone updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAlertZoneResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "Delete Alert Zone",
+        "description": "Delete a geofence alert zone by identifier.",
+        "operationId": "deleteAlertZone",
+        "parameters": [
+          {
+            "name": "zoneId",
+            "in": "path",
+            "required": true,
+            "description": "Alert zone identifier.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert zone deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseObject"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/alerts/rules": {
+      "get": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "List Alert Rules",
+        "description": "List alert rules, optionally filtered by service and layer.",
+        "operationId": "listAlertRules",
+        "parameters": [
+          {
+            "name": "serviceId",
+            "in": "query",
+            "required": false,
+            "description": "Filter rules by service identifier.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "layerId",
+            "in": "query",
+            "required": false,
+            "description": "Filter rules by layer identifier.",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert rule list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAlertRuleResponseArray"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "Create Alert Rule",
+        "description": "Create a realtime alert rule after validating trigger, conditions, geofence zone reference, edition, and delivery channels. Persisted enter/exit/dwell rules require zoneId; threshold rules must omit zoneId.",
+        "operationId": "createAlertRule",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertRuleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Alert rule created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAlertRuleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/alerts/rules/test": {
+      "post": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "Test Alert Rule",
+        "description": "Validate a draft alert rule and optional geofence draft zone without persisting either resource. Invalid drafts return 200 with data.isValid=false and validation details. Draft zones are only accepted for enter, exit, and dwell rules.",
+        "operationId": "testAlertRule",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertRuleTestRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Draft validation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAlertRuleTestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/alerts/rules/{ruleId}": {
+      "get": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "Get Alert Rule",
+        "description": "Read an alert rule by identifier.",
+        "operationId": "getAlertRule",
+        "parameters": [
+          {
+            "name": "ruleId",
+            "in": "path",
+            "required": true,
+            "description": "Alert rule identifier.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert rule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAlertRuleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "Update Alert Rule",
+        "description": "Replace an alert rule by identifier after validating trigger, conditions, geofence zone reference, edition, and delivery channels. Persisted enter/exit/dwell rules require zoneId; threshold rules must omit zoneId.",
+        "operationId": "updateAlertRule",
+        "parameters": [
+          {
+            "name": "ruleId",
+            "in": "path",
+            "required": true,
+            "description": "Alert rule identifier.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertRuleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Alert rule updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAlertRuleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "Delete Alert Rule",
+        "description": "Delete an alert rule by identifier.",
+        "operationId": "deleteAlertRule",
+        "parameters": [
+          {
+            "name": "ruleId",
+            "in": "path",
+            "required": true,
+            "description": "Alert rule identifier.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert rule deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseObject"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/alerts/rules/{ruleId}/enabled": {
+      "put": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "Set Alert Rule Enabled State",
+        "description": "Enable or disable an alert rule. Enabling validates the existing rule and can return 400 when the rule is no longer valid.",
+        "operationId": "setAlertRuleEnabled",
+        "parameters": [
+          {
+            "name": "ruleId",
+            "in": "path",
+            "required": true,
+            "description": "Alert rule identifier.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertRuleEnabledRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Alert rule enabled state updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAlertRuleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/alerts/rules/{ruleId}/health": {
+      "get": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "Get Alert Rule Health",
+        "description": "Inspect evaluator state, active incidents, recent triggers, delivery failures, dead-letter state, and channel health for an alert rule. Active incidents are derived from current evaluator state, not historical alert-event rows.",
+        "operationId": "getAlertRuleHealth",
+        "parameters": [
+          {
+            "name": "ruleId",
+            "in": "path",
+            "required": true,
+            "description": "Alert rule identifier.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert rule health",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAlertRuleHealthResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/config": {
       "get": {
         "tags": [
@@ -3244,6 +3830,709 @@
           "version": {
             "type": "string",
             "description": "Server version"
+          }
+        }
+      },
+      "AlertZoneRequest": {
+        "type": "object",
+        "required": [
+          "serviceId",
+          "zoneName"
+        ],
+        "properties": {
+          "serviceId": {
+            "type": "string",
+            "description": "Service identifier that owns the zone."
+          },
+          "zoneName": {
+            "type": "string",
+            "description": "Human-readable zone name."
+          },
+          "wkt": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional Polygon or MultiPolygon WKT. Polygon inputs are normalized to MultiPolygon WKT in responses."
+          },
+          "srid": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "default": 4326,
+            "description": "Spatial reference identifier for the supplied WKT. Defaults to EPSG:4326."
+          },
+          "metadata": {
+            "type": "object",
+            "nullable": true,
+            "description": "Optional UI and operations metadata.",
+            "additionalProperties": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "isActive": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether the zone is active for rule evaluation."
+          }
+        }
+      },
+      "AlertZoneResponse": {
+        "type": "object",
+        "required": [
+          "zoneId",
+          "serviceId",
+          "zoneName",
+          "metadata",
+          "isActive"
+        ],
+        "properties": {
+          "zoneId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Persistent zone identifier."
+          },
+          "serviceId": {
+            "type": "string",
+            "description": "Service identifier that owns the zone."
+          },
+          "zoneName": {
+            "type": "string",
+            "description": "Human-readable zone name."
+          },
+          "wkt": {
+            "type": "string",
+            "nullable": true,
+            "description": "Zone geometry as WKT, normalized to MultiPolygon when geometry is present."
+          },
+          "srid": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "description": "Spatial reference identifier for the zone geometry."
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "Whether the zone is active for rule evaluation."
+          }
+        }
+      },
+      "AlertRuleRequest": {
+        "type": "object",
+        "required": [
+          "serviceId",
+          "layerId",
+          "ruleName",
+          "triggerType"
+        ],
+        "properties": {
+          "serviceId": {
+            "type": "string",
+            "description": "Service identifier targeted by the rule."
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1,
+            "description": "Layer identifier targeted by the rule."
+          },
+          "zoneId": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Required for persisted enter, exit, and dwell rules. Must be omitted for threshold rules."
+          },
+          "ruleName": {
+            "type": "string",
+            "description": "Human-readable rule name."
+          },
+          "triggerType": {
+            "type": "string",
+            "enum": [
+              "enter",
+              "exit",
+              "dwell",
+              "threshold"
+            ],
+            "description": "Trigger type evaluated by the alert worker."
+          },
+          "conditionsJson": {
+            "type": "string",
+            "default": "{}",
+            "description": "Rule conditions serialized as a JSON object string. Dwell requires positive dwellSeconds; threshold requires field, operator, and numeric value."
+          },
+          "cooldownSeconds": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "default": 0,
+            "description": "Cooldown in seconds between alerts for the same feature."
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ],
+            "default": "warning"
+          },
+          "editionRequired": {
+            "type": "string",
+            "enum": [
+              "pro",
+              "enterprise"
+            ],
+            "default": "pro"
+          },
+          "channels": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "webhook",
+                "websocket",
+                "email",
+                "digest",
+                "aws_sns",
+                "azure_eventgrid",
+                "slack",
+                "microsoft_teams",
+                "aws_sqs",
+                "azure_eventhub"
+              ]
+            },
+            "description": "Delivery channel names. May be omitted or empty when no external dispatch sink should be used. Responses always use canonical snake-case names."
+          },
+          "isActive": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether the rule is active for evaluation."
+          }
+        }
+      },
+      "AlertRuleResponse": {
+        "type": "object",
+        "required": [
+          "ruleId",
+          "serviceId",
+          "layerId",
+          "ruleName",
+          "triggerType",
+          "conditionsJson",
+          "cooldownSeconds",
+          "severity",
+          "editionRequired",
+          "channels",
+          "isActive"
+        ],
+        "properties": {
+          "ruleId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Persistent rule identifier."
+          },
+          "serviceId": {
+            "type": "string"
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "zoneId": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "ruleName": {
+            "type": "string"
+          },
+          "triggerType": {
+            "type": "string",
+            "enum": [
+              "enter",
+              "exit",
+              "dwell",
+              "threshold"
+            ]
+          },
+          "conditionsJson": {
+            "type": "string",
+            "description": "Rule conditions serialized as a JSON object string."
+          },
+          "cooldownSeconds": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ]
+          },
+          "editionRequired": {
+            "type": "string",
+            "enum": [
+              "pro",
+              "enterprise"
+            ]
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AlertRuleEnabledRequest": {
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Requested enabled state."
+          }
+        }
+      },
+      "AlertRuleTestRequest": {
+        "type": "object",
+        "required": [
+          "rule"
+        ],
+        "properties": {
+          "rule": {
+            "$ref": "#/components/schemas/AlertRuleRequest"
+          },
+          "zone": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AlertZoneRequest"
+              }
+            ],
+            "nullable": true,
+            "description": "Optional draft zone used to validate enter, exit, and dwell geofence rules without persisting the zone. The draft zone serviceId must match the rule serviceId; if both zone and zoneId are supplied, validation uses the draft zone geometry and returns a warning."
+          }
+        }
+      },
+      "AlertRuleTestResponse": {
+        "type": "object",
+        "required": [
+          "isValid",
+          "errors",
+          "warnings",
+          "deliveryChannels",
+          "evaluatedAt"
+        ],
+        "properties": {
+          "isValid": {
+            "type": "boolean",
+            "description": "Whether the draft can be persisted safely."
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "deliveryChannels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlertChannelValidationResponse"
+            }
+          },
+          "evaluatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AlertChannelValidationResponse": {
+        "type": "object",
+        "required": [
+          "channel",
+          "status",
+          "isAllowed",
+          "isConfigured",
+          "message"
+        ],
+        "properties": {
+          "channel": {
+            "type": "string",
+            "description": "Canonical channel name."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "configured",
+              "unconfigured",
+              "disabled",
+              "unauthorized"
+            ]
+          },
+          "isAllowed": {
+            "type": "boolean",
+            "description": "Whether the current edition allows the channel."
+          },
+          "isConfigured": {
+            "type": "boolean",
+            "description": "Whether server configuration can deliver the channel."
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "AlertRuleHealthResponse": {
+        "type": "object",
+        "required": [
+          "ruleId",
+          "activeIncidentCount",
+          "recentTriggerCount",
+          "coolingDownFeatureCount",
+          "deliveryFailureCount",
+          "deadLetterCount",
+          "linkedEventIds",
+          "deliveryChannels",
+          "recentTriggers"
+        ],
+        "properties": {
+          "ruleId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "lastEvaluatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Most recent evaluator state update for this rule, when available."
+          },
+          "lastTriggeredAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Most recent alert event emitted for this rule, when available."
+          },
+          "activeIncidentCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "description": "Count of current evaluator state rows that represent active incidents. Enter and dwell rules count features currently inside the zone; threshold rules count currently breached threshold state; exit transition events do not keep an active incident open after the feature has left."
+          },
+          "recentTriggerCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "description": "Count of alert events for this rule in the previous 24 hours."
+          },
+          "coolingDownFeatureCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "description": "Count of evaluator state rows currently inside their cooldown window."
+          },
+          "nextCooldownExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Latest cooldown expiry across currently cooling down feature states."
+          },
+          "deliveryFailureCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "description": "Count of retryable delivery failures for this rule."
+          },
+          "deadLetterCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "description": "Count of dead-lettered delivery rows for this rule."
+          },
+          "linkedEventIds": {
+            "type": "array",
+            "description": "Newest-first recent event identifiers linked to this rule, capped by the server at 10 entries.",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "deliveryChannels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlertRuleDeliveryHealthResponse"
+            }
+          },
+          "recentTriggers": {
+            "type": "array",
+            "description": "Newest-first recent trigger summaries, capped by the server at 10 entries.",
+            "items": {
+              "$ref": "#/components/schemas/AlertRuleRecentTriggerResponse"
+            }
+          }
+        }
+      },
+      "AlertRuleDeliveryHealthResponse": {
+        "type": "object",
+        "required": [
+          "channel",
+          "status",
+          "pendingCount",
+          "processingCount",
+          "deliveredCount",
+          "failedCount",
+          "deadLetterCount"
+        ],
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "configured",
+              "unconfigured",
+              "disabled",
+              "unauthorized",
+              "rate_limited",
+              "failing"
+            ],
+            "description": "Channel health status. Policy and configuration states take precedence; rate_limited and failing reflect recent delivery errors."
+          },
+          "pendingCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "processingCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "deliveredCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "failedCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "deadLetterCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "lastAttemptAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastDeliveredAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastError": {
+            "type": "string",
+            "nullable": true,
+            "description": "Most recent sanitized delivery error summary. Raw provider error text is not returned."
+          }
+        }
+      },
+      "AlertRuleRecentTriggerResponse": {
+        "type": "object",
+        "required": [
+          "eventId",
+          "triggerType",
+          "severity",
+          "occurredAt",
+          "incidentStatus",
+          "lifecycleStatus",
+          "resourceRef"
+        ],
+        "properties": {
+          "eventId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "triggerType": {
+            "type": "string",
+            "enum": [
+              "enter",
+              "exit",
+              "dwell",
+              "threshold"
+            ]
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ]
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "incidentStatus": {
+            "type": "string",
+            "enum": [
+              "started",
+              "ongoing",
+              "ended"
+            ]
+          },
+          "lifecycleStatus": {
+            "type": "string",
+            "enum": [
+              "open",
+              "acknowledged",
+              "suppressed",
+              "resolved"
+            ]
+          },
+          "resourceRef": {
+            "type": "string",
+            "description": "Operate event resource reference, formatted as alert/{eventId}."
+          }
+        }
+      },
+      "ApiResponseAlertZoneResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AlertZoneResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseAlertZoneResponseArray": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlertZoneResponse"
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseAlertRuleResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AlertRuleResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseAlertRuleResponseArray": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlertRuleResponse"
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseAlertRuleTestResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AlertRuleTestResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseAlertRuleHealthResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AlertRuleHealthResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },

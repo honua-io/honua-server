@@ -1,6 +1,6 @@
 # Feature Streaming
 
-Honua exposes Pro-tier feature-change streams for SDKs and applications that need live insert, update, and delete events. Streams are volume reducers for client workflows; SDK-local geofence definitions and geofence evaluation remain client-side responsibilities.
+Honua exposes Pro-tier feature-change streams for SDKs and applications that need live insert, update, and delete events. Streams are volume reducers for client workflows; SDK-local geofence definitions and geofence evaluation remain client-side responsibilities on this streaming API. Server-side Console Operate geofence zones and alert rules are managed separately through the admin alert endpoints documented in the [Control Plane API](CONTROL_PLANE_API.md#alert-management-endpoints).
 
 ## Endpoints
 
