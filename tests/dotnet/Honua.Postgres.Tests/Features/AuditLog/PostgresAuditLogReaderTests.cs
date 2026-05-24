@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Postgres.Features.AuditLog;
+using Honua.Postgres.Features.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -85,6 +86,34 @@ public sealed class PostgresAuditLogReaderTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task ListAsync_WithOutOfRangeCursor_DoesNotThrowAndIgnoresCursor()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAuditLogReaderTests));
+        try
+        {
+            await EnsureAuditLogTableAsync(schema);
+            var sink = new PostgresAuditLog(new TestConnectionProvider(fixture.DataSource, schema),
+                NullLogger<PostgresAuditLog>.Instance, schemaName: schema);
+            await sink.RecordAsync(BuildEvent(new DateTimeOffset(2026, 5, 20, 8, 0, 0, TimeSpan.Zero), "corr"));
+
+            var reader = new PostgresAuditLogReader(new TestConnectionProvider(fixture.DataSource, schema), schema);
+
+            var page = await reader.ListAsync(new AuditLogFilter
+            {
+                PageSize = 10,
+                Cursor = BuildOutOfRangeCursor("1")
+            });
+
+            page.Items.Should().HaveCount(1);
+            page.NextCursor.Should().BeNull();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task ListAsync_FiltersByActorAndAction()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAuditLogReaderTests));
@@ -113,6 +142,9 @@ public sealed class PostgresAuditLogReaderTests(PostgresFixture fixture)
             await fixture.DropSchemaAsync(schema);
         }
     }
+
+    private static string BuildOutOfRangeCursor(string suffix)
+        => Base64Url.Encode("9223372036854775807:" + suffix);
 
     private static AuditEvent BuildEvent(DateTimeOffset timestamp, string correlation,
         string actor = "operator", string action = "test.action")

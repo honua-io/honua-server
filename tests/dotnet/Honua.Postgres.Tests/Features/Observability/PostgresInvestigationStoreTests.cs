@@ -6,6 +6,7 @@ using System.Data.Common;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Observability.Domain;
+using Honua.Postgres.Features.Infrastructure;
 using Honua.Postgres.Features.Observability;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -152,6 +153,34 @@ public sealed class PostgresInvestigationStoreTests(PostgresFixture fixture)
             await fixture.DropSchemaAsync(schema);
         }
     }
+
+    [IntegrationTest]
+    public async Task ListAsync_WithOutOfRangeCursor_DoesNotThrowAndIgnoresCursor()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresInvestigationStoreTests));
+        try
+        {
+            await EnsureSchemaAsync(schema);
+            var store = new PostgresInvestigationStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            await store.CreateAsync("cursor incident", "alice", null, DateTimeOffset.UtcNow);
+
+            var page = await store.ListAsync(new InvestigationFilter
+            {
+                PageSize = 10,
+                Cursor = BuildOutOfRangeCursor("inv_invalid")
+            });
+
+            page.Items.Should().HaveCount(1);
+            page.NextCursor.Should().BeNull();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    private static string BuildOutOfRangeCursor(string suffix)
+        => Base64Url.Encode("9223372036854775807:" + suffix);
 
     private async Task EnsureSchemaAsync(string schema)
     {

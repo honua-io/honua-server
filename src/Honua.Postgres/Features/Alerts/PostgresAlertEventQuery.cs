@@ -264,35 +264,18 @@ internal sealed record AlertEventCursor(DateTimeOffset OccurredAt, long EventId)
 {
     public static string Encode(DateTimeOffset occurredAt, long eventId)
     {
-        var raw = $"{occurredAt.UtcTicks}:{eventId}";
-        return Base64Url.Encode(raw);
+        return PostgresCursorCodec.Encode(occurredAt, eventId.ToString(CultureInfo.InvariantCulture));
     }
 
     public static AlertEventCursor? TryDecode(string? cursor)
     {
-        if (string.IsNullOrWhiteSpace(cursor))
+        if (!PostgresCursorCodec.TryDecodeTimestampAndSuffix(cursor, out var occurredAt, out var suffix) ||
+            !long.TryParse(suffix, NumberStyles.Integer, CultureInfo.InvariantCulture, out var eventId))
         {
             return null;
         }
 
-        if (!Base64Url.TryDecode(cursor, out var decoded))
-        {
-            return null;
-        }
-
-        var separator = decoded.IndexOf(':');
-        if (separator <= 0 || separator == decoded.Length - 1)
-        {
-            return null;
-        }
-
-        if (!long.TryParse(decoded.AsSpan(0, separator), NumberStyles.Integer, CultureInfo.InvariantCulture, out var ticks)
-            || !long.TryParse(decoded.AsSpan(separator + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out var eventId))
-        {
-            return null;
-        }
-
-        return new AlertEventCursor(new DateTimeOffset(ticks, TimeSpan.Zero), eventId);
+        return new AlertEventCursor(occurredAt, eventId);
     }
 }
 

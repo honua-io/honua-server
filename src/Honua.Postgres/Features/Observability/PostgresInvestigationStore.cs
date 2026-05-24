@@ -3,7 +3,6 @@
 
 using System.Buffers;
 using System.Collections.Immutable;
-using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -576,33 +575,13 @@ internal static class InvestigationStatusConversions
 internal sealed record InvestigationCursor(DateTimeOffset UpdatedAt, string InvestigationId)
 {
     public static string Encode(DateTimeOffset updatedAt, string investigationId)
-        => Base64Url.Encode($"{updatedAt.UtcTicks}:{investigationId}");
+        => PostgresCursorCodec.Encode(updatedAt, investigationId);
 
     public static InvestigationCursor? TryDecode(string? cursor)
     {
-        if (string.IsNullOrWhiteSpace(cursor))
-        {
-            return null;
-        }
-
-        if (!Base64Url.TryDecode(cursor, out var decoded))
-        {
-            return null;
-        }
-
-        var separator = decoded.IndexOf(':');
-        if (separator <= 0 || separator == decoded.Length - 1)
-        {
-            return null;
-        }
-
-        if (!long.TryParse(decoded.AsSpan(0, separator), NumberStyles.Integer, CultureInfo.InvariantCulture, out var ticks))
-        {
-            return null;
-        }
-
-        var id = decoded[(separator + 1)..];
-        return new InvestigationCursor(new DateTimeOffset(ticks, TimeSpan.Zero), id);
+        return PostgresCursorCodec.TryDecodeTimestampAndSuffix(cursor, out var updatedAt, out var id)
+            ? new InvestigationCursor(updatedAt, id)
+            : null;
     }
 }
 

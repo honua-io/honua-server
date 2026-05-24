@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Postgres.Features.Alerts;
+using Honua.Postgres.Features.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Npgsql;
@@ -90,6 +91,33 @@ public sealed class PostgresAlertEventQueryTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task ListAsync_WithOutOfRangeCursor_DoesNotThrowAndIgnoresCursor()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAlertEventQueryTests));
+        try
+        {
+            await EnsureSchemaAsync(schema);
+            await InsertEventAsync(schema, ruleId: 1, severity: "info",
+                occurredAt: new DateTimeOffset(2026, 5, 20, 10, 0, 0, TimeSpan.Zero));
+
+            var query = new PostgresAlertEventQuery(new TestConnectionProvider(fixture.DataSource, schema), schema);
+
+            var page = await query.ListAsync(new AlertEventFilter
+            {
+                PageSize = 10,
+                Cursor = BuildOutOfRangeCursor("1")
+            });
+
+            page.Items.Should().HaveCount(1);
+            page.NextCursor.Should().BeNull();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task ListAsync_FiltersByServiceAndSeverity()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAlertEventQueryTests));
@@ -147,6 +175,96 @@ public sealed class PostgresAlertEventQueryTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task ResolveThenAcknowledge_ClearsResolvedState()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAlertEventQueryTests));
+        try
+        {
+            await EnsureSchemaAsync(schema);
+            var (eventId, _) = await InsertEventAsync(schema, ruleId: 1, severity: "warning",
+                occurredAt: DateTimeOffset.UtcNow);
+
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var lifecycle = new PostgresAlertLifecycleStore(provider, schema);
+            var query = new PostgresAlertEventQuery(provider, schema);
+
+            await lifecycle.ResolveAsync(eventId, "resolver", "done", DateTimeOffset.UtcNow);
+            var row = await lifecycle.AcknowledgeAsync(eventId, "ack-user", "checking", DateTimeOffset.UtcNow);
+            var summary = await query.GetAsync(eventId);
+
+            row.Should().NotBeNull();
+            row!.Status.Should().Be(AlertLifecycleStatus.Acknowledged);
+            row.AcknowledgedBy.Should().Be("ack-user");
+            row.ResolvedAt.Should().BeNull();
+            row.ResolvedBy.Should().BeNull();
+            summary.Should().NotBeNull();
+            summary!.LifecycleStatus.Should().Be(AlertLifecycleStatus.Acknowledged);
+            summary.ResolvedAt.Should().BeNull();
+            summary.ResolvedBy.Should().BeNull();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task SuppressThenResolve_ClearsSuppressionState()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAlertEventQueryTests));
+        try
+        {
+            await EnsureSchemaAsync(schema);
+            var (eventId, _) = await InsertEventAsync(schema, ruleId: 1, severity: "warning",
+                occurredAt: DateTimeOffset.UtcNow);
+
+            var lifecycle = new PostgresAlertLifecycleStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+
+            await lifecycle.SuppressAsync(eventId, "suppressor", DateTimeOffset.UtcNow.AddHours(1), "quiet",
+                DateTimeOffset.UtcNow);
+            var row = await lifecycle.ResolveAsync(eventId, "resolver", "fixed", DateTimeOffset.UtcNow);
+
+            row.Should().NotBeNull();
+            row!.Status.Should().Be(AlertLifecycleStatus.Resolved);
+            row.ResolvedBy.Should().Be("resolver");
+            row.SuppressedUntil.Should().BeNull();
+            row.SuppressedBy.Should().BeNull();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task AcknowledgeThenSuppress_ClearsAcknowledgementState()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAlertEventQueryTests));
+        try
+        {
+            await EnsureSchemaAsync(schema);
+            var (eventId, _) = await InsertEventAsync(schema, ruleId: 1, severity: "warning",
+                occurredAt: DateTimeOffset.UtcNow);
+
+            var lifecycle = new PostgresAlertLifecycleStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+
+            await lifecycle.AcknowledgeAsync(eventId, "ack-user", "checking", DateTimeOffset.UtcNow);
+            var row = await lifecycle.SuppressAsync(eventId, "suppressor", DateTimeOffset.UtcNow.AddHours(1), "quiet",
+                DateTimeOffset.UtcNow);
+
+            row.Should().NotBeNull();
+            row!.Status.Should().Be(AlertLifecycleStatus.Suppressed);
+            row.SuppressedBy.Should().Be("suppressor");
+            row.AcknowledgedAt.Should().BeNull();
+            row.AcknowledgedBy.Should().BeNull();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task AcknowledgeAsync_ReturnsNull_WhenEventDoesNotExist()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAlertEventQueryTests));
@@ -165,6 +283,9 @@ public sealed class PostgresAlertEventQueryTests(PostgresFixture fixture)
             await fixture.DropSchemaAsync(schema);
         }
     }
+
+    private static string BuildOutOfRangeCursor(string suffix)
+        => Base64Url.Encode("9223372036854775807:" + suffix);
 
     private async Task<(long EventId, long RuleId)> InsertEventAsync(
         string schema,

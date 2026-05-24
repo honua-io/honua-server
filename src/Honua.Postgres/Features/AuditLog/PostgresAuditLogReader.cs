@@ -220,34 +220,17 @@ internal sealed record AuditLogCursor(DateTimeOffset Timestamp, long AuditId)
 {
     public static string Encode(DateTimeOffset timestamp, long auditId)
     {
-        var raw = $"{timestamp.UtcTicks}:{auditId}";
-        return Base64Url.Encode(raw);
+        return PostgresCursorCodec.Encode(timestamp, auditId.ToString(CultureInfo.InvariantCulture));
     }
 
     public static AuditLogCursor? TryDecode(string? cursor)
     {
-        if (string.IsNullOrWhiteSpace(cursor))
+        if (!PostgresCursorCodec.TryDecodeTimestampAndSuffix(cursor, out var timestamp, out var suffix) ||
+            !long.TryParse(suffix, NumberStyles.Integer, CultureInfo.InvariantCulture, out var auditId))
         {
             return null;
         }
 
-        if (!Base64Url.TryDecode(cursor, out var decoded))
-        {
-            return null;
-        }
-
-        var separator = decoded.IndexOf(':');
-        if (separator <= 0 || separator == decoded.Length - 1)
-        {
-            return null;
-        }
-
-        if (!long.TryParse(decoded.AsSpan(0, separator), NumberStyles.Integer, CultureInfo.InvariantCulture, out var ticks)
-            || !long.TryParse(decoded.AsSpan(separator + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out var auditId))
-        {
-            return null;
-        }
-
-        return new AuditLogCursor(new DateTimeOffset(ticks, TimeSpan.Zero), auditId);
+        return new AuditLogCursor(timestamp, auditId);
     }
 }

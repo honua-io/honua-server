@@ -76,6 +76,10 @@ internal sealed class PostgresAlertLifecycleStore : IAlertLifecycleStore
                 lifecycle_status = EXCLUDED.lifecycle_status,
                 acknowledged_at  = EXCLUDED.acknowledged_at,
                 acknowledged_by  = EXCLUDED.acknowledged_by,
+                suppressed_until = NULL,
+                suppressed_by    = NULL,
+                resolved_at      = NULL,
+                resolved_by      = NULL,
                 note             = EXCLUDED.note,
                 updated_at       = EXCLUDED.updated_at
             RETURNING lifecycle_status, acknowledged_at, acknowledged_by,
@@ -111,8 +115,12 @@ internal sealed class PostgresAlertLifecycleStore : IAlertLifecycleStore
             WHERE EXISTS (SELECT 1 FROM {_eventsTable} WHERE event_id = @event_id)
             ON CONFLICT (event_id) DO UPDATE SET
                 lifecycle_status = EXCLUDED.lifecycle_status,
+                acknowledged_at  = NULL,
+                acknowledged_by  = NULL,
                 suppressed_until = EXCLUDED.suppressed_until,
                 suppressed_by    = EXCLUDED.suppressed_by,
+                resolved_at      = NULL,
+                resolved_by      = NULL,
                 note             = EXCLUDED.note,
                 updated_at       = EXCLUDED.updated_at
             RETURNING lifecycle_status, acknowledged_at, acknowledged_by,
@@ -148,6 +156,10 @@ internal sealed class PostgresAlertLifecycleStore : IAlertLifecycleStore
             WHERE EXISTS (SELECT 1 FROM {_eventsTable} WHERE event_id = @event_id)
             ON CONFLICT (event_id) DO UPDATE SET
                 lifecycle_status = EXCLUDED.lifecycle_status,
+                acknowledged_at  = NULL,
+                acknowledged_by  = NULL,
+                suppressed_until = NULL,
+                suppressed_by    = NULL,
                 resolved_at      = EXCLUDED.resolved_at,
                 resolved_by      = EXCLUDED.resolved_by,
                 note             = EXCLUDED.note,
