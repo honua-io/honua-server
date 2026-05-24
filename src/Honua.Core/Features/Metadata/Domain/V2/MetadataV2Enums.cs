@@ -57,7 +57,49 @@ public enum MetadataV2ResourceType
     /// An external resource represented in the metadata graph.
     /// </summary>
     [JsonStringEnumMemberName("external-resource")]
-    ExternalResource
+    ExternalResource,
+
+    /// <summary>
+    /// A saved map composition or map document.
+    /// </summary>
+    [JsonStringEnumMemberName("map")]
+    Map,
+
+    /// <summary>
+    /// A dashboard composed from one or more data sources.
+    /// </summary>
+    [JsonStringEnumMemberName("dashboard")]
+    Dashboard,
+
+    /// <summary>
+    /// A field-collection or data-entry form.
+    /// </summary>
+    [JsonStringEnumMemberName("form")]
+    Form,
+
+    /// <summary>
+    /// A generated or configured application surface.
+    /// </summary>
+    [JsonStringEnumMemberName("app")]
+    App,
+
+    /// <summary>
+    /// A workflow definition.
+    /// </summary>
+    [JsonStringEnumMemberName("workflow")]
+    Workflow,
+
+    /// <summary>
+    /// A geoprocessing service definition.
+    /// </summary>
+    [JsonStringEnumMemberName("geoprocessing-service")]
+    GeoprocessingService,
+
+    /// <summary>
+    /// An ETL pipeline definition.
+    /// </summary>
+    [JsonStringEnumMemberName("etl-pipeline")]
+    EtlPipeline
 }
 
 /// <summary>

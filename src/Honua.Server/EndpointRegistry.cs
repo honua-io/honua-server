@@ -96,6 +96,11 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/version"),
         new("GET", "/api/v1/admin/capabilities"),
         // v1 manifest endpoints removed in #1035 cutover (V2 admin UX is tracked under epic #1046).
+        new("GET", "/api/v1/admin/metadata/environments/{environment}/inventory"),
+        new("POST", "/api/v1/admin/metadata/environment-bindings/query"),
+        new("POST", "/api/v1/admin/metadata/release-packages"),
+        new("GET", "/api/v1/admin/metadata/release-packages/{packageId}"),
+        new("GET", "/api/v1/admin/metadata/release-packages/{packageId}/gitops-manifest"),
         new("GET", "/api/v1/admin/deploy/preflight"),
         new("POST", "/api/v1/admin/deploy/plan"),
         new("POST", "/api/v1/admin/deploy/operations"),
