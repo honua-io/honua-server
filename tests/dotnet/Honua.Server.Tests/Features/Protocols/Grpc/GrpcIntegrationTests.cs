@@ -85,8 +85,11 @@ public sealed class GrpcIntegrationTests : IAsyncLifetime
         {
             ServiceId = WebAppFixture.TestServiceId,
             LayerId = WebAppFixture.TestLayerId,
-            Where = "1=1"
+            Where = "1=1",
+            ReturnGeometry = true,
+            ResultRecordCount = 1
         };
+        request.OutFields.Add("*");
 
         var call = _client!.QueryFeaturesStream(request, _headers);
         var pages = new List<Proto.FeaturePage>();
