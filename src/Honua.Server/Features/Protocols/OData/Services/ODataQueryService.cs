@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
@@ -158,6 +159,40 @@ internal sealed partial class ODataQueryService
         }
 
         var translationResult = _filterExpressionService.Translate(FilterLanguage.OData, odataFilter, layer);
+        if (!translationResult.IsSuccess)
+        {
+            throw new ArgumentException(translationResult.ErrorMessage ?? "Invalid OData filter.");
+        }
+
+        return translationResult.SqlFilter;
+    }
+
+    /// <summary>
+    /// Metadata v2 overload of <see cref="ConvertODataFilterToSqlFragment(string?, LayerDefinition)"/>.
+    /// Parses the OData filter, then routes through the V2 <see cref="IFilterExpressionService.Translate(FilterExpression?, MetadataV2Resource)"/>
+    /// path so SQL translation honours the resource's <see cref="MetadataV2Resource.SchemaFields"/>
+    /// (typed field set) instead of the v1 layer's attribute fields.
+    /// </summary>
+    public SqlFragment? ConvertODataFilterToSqlFragment(string? odataFilter, MetadataV2Resource resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        if (string.IsNullOrWhiteSpace(odataFilter))
+        {
+            return null;
+        }
+
+        var parseResult = _filterExpressionService.Parse(FilterLanguage.OData, odataFilter);
+        if (!parseResult.IsSuccess)
+        {
+            throw new ArgumentException(parseResult.ErrorMessage ?? "Invalid OData filter.");
+        }
+
+        if (parseResult.Expression is null)
+        {
+            return null;
+        }
+
+        var translationResult = _filterExpressionService.Translate(parseResult.Expression, resource);
         if (!translationResult.IsSuccess)
         {
             throw new ArgumentException(translationResult.ErrorMessage ?? "Invalid OData filter.");
