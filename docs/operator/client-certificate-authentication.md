@@ -93,6 +93,13 @@ keys are never configured or stored by Honua Server.
 Prefer SAN URI or SAN email mappings. Subject fallback is disabled by default
 and should only be enabled for legacy certificates that cannot carry SANs.
 
+`AcceptedIssuerSubjects` is matched against the presented certificate's
+immediate issuer Distinguished Name. `AcceptedIssuerThumbprints` is matched
+against the SHA-1 thumbprints of issuer/CA certificates in the chain (the leaf
+is never accepted as its own issuer). `CustomTrustAnchorCertificates` profiles
+require the chain to terminate at one of the configured anchor certificates and
+should set `RequireChainTrust` to true so full chain validation runs.
+
 ## Authentication Composition
 
 A validated certificate becomes a Honua principal with:
@@ -238,7 +245,9 @@ Responses use the standard admin envelope:
 The `/api/v1/admin/auth/config` bootstrap endpoint is anonymous for normal
 admin auth and exposes only non-secret mTLS hints: mode, environment id,
 required surfaces, supported transports, accepted issuer hints, expiration
-warning threshold, and whether forwarded-certificate mode is enabled. Required
+warning threshold, and whether forwarded-certificate mode is enabled. Issuer
+hints are sourced from the active trust store, so profiles added or disabled
+via the admin API are reflected immediately without a restart. Required
 client-certificate modes still apply when the path matches
 `ProtectedAdminPathPrefixes`; narrow those prefixes if native clients must
 fetch issuer hints before presenting a certificate.

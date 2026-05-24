@@ -75,10 +75,12 @@ internal static class AdminAuthEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
     }
 
-    private static Microsoft.AspNetCore.Http.HttpResults.Ok<AdminAuthConfigResponse> HandleGetAuthConfig(
+    private static async Task<Microsoft.AspNetCore.Http.HttpResults.Ok<AdminAuthConfigResponse>> HandleGetAuthConfig(
         [FromServices] IOptions<OidcAuthenticationOptions> oidcOptions,
         [FromServices] IOptions<ClientCertificateAuthenticationOptions> clientCertificateOptions,
-        [FromServices] ILogger<AdminAuthEndpointsLog> logger)
+        [FromServices] IClientCertificateTrustStore clientCertificateTrustStore,
+        [FromServices] ILogger<AdminAuthEndpointsLog> logger,
+        CancellationToken cancellationToken)
     {
         var providers = oidcOptions.Value.Enabled
             ? OidcProviderCatalog.GetProviders(oidcOptions.Value)
@@ -96,18 +98,27 @@ internal static class AdminAuthEndpoints
         {
             OidcEnabled = oidcOptions.Value.Enabled && providers.Count > 0,
             Providers = providers,
-            ClientCertificates = BuildClientCertificateInfo(clientCertificateOptions.Value)
+            ClientCertificates = await BuildClientCertificateInfoAsync(
+                clientCertificateOptions.Value,
+                clientCertificateTrustStore,
+                cancellationToken).ConfigureAwait(false)
         };
 
         return TypedResults.Ok(response);
     }
 
-    private static AdminAuthClientCertificateInfo BuildClientCertificateInfo(
-        ClientCertificateAuthenticationOptions options)
+    private static async Task<AdminAuthClientCertificateInfo> BuildClientCertificateInfoAsync(
+        ClientCertificateAuthenticationOptions options,
+        IClientCertificateTrustStore trustStore,
+        CancellationToken cancellationToken)
     {
-        var enabledProfiles = options.TrustProfiles
+        // Pull from the live trust store so admin-API mutations (profile create/update/disable)
+        // are reflected in the bootstrap hints. Configuration-only profiles are seeded into
+        // the store at startup, so the store is the single source of truth for the active set.
+        var profiles = await trustStore.ListProfilesAsync(options.EnvironmentId, cancellationToken)
+            .ConfigureAwait(false);
+        var enabledProfiles = profiles
             .Where(static profile => profile.Enabled)
-            .Where(profile => string.Equals(profile.EnvironmentId, options.EnvironmentId, StringComparison.OrdinalIgnoreCase))
             .ToArray();
         var mode = options.Mode.ToString();
         return new AdminAuthClientCertificateInfo

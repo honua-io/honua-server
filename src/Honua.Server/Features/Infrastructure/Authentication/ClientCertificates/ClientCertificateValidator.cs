@@ -193,21 +193,110 @@ internal sealed class ClientCertificateValidator(
 
     private static bool IssuerMatches(ClientCertificateTrustProfile profile, X509Certificate2 certificate)
     {
-        if (profile.AcceptedIssuerSubjects.Count == 0 && profile.AcceptedIssuerThumbprints.Count == 0)
+        var hasSubjects = profile.AcceptedIssuerSubjects.Count > 0;
+        var hasThumbprints = profile.AcceptedIssuerThumbprints.Count > 0;
+        var hasCustomAnchors = profile.CustomTrustAnchorCertificates.Count > 0;
+
+        if (!hasSubjects && !hasThumbprints && !hasCustomAnchors)
         {
-            return true;
+            // Options validators on both startup binding and the admin API require profiles
+            // to declare at least one of these. Refuse to match a misconfigured profile
+            // rather than fall through to "trust any issuer".
+            return false;
         }
 
-        var issuer = ClientCertificateNormalization.NormalizeThumbprintOrName(certificate.Issuer);
-        if (profile.AcceptedIssuerSubjects.Any(subject =>
-            string.Equals(subject, issuer, StringComparison.OrdinalIgnoreCase)))
+        if (hasSubjects)
         {
-            return true;
+            var issuer = ClientCertificateNormalization.NormalizeThumbprintOrName(certificate.Issuer);
+            if (profile.AcceptedIssuerSubjects.Any(subject =>
+                string.Equals(subject, issuer, StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
         }
 
-        var thumbprint = ClientCertificateNormalization.NormalizeThumbprintOrName(certificate.Thumbprint);
-        return profile.AcceptedIssuerThumbprints.Any(candidate =>
-            string.Equals(candidate, thumbprint, StringComparison.OrdinalIgnoreCase));
+        if (hasThumbprints || hasCustomAnchors)
+        {
+            return ChainMatchesIssuerHints(profile, certificate, hasThumbprints, hasCustomAnchors);
+        }
+
+        return false;
+    }
+
+    private static bool ChainMatchesIssuerHints(
+        ClientCertificateTrustProfile profile,
+        X509Certificate2 certificate,
+        bool checkThumbprints,
+        bool checkCustomAnchors)
+    {
+        var anchors = new List<X509Certificate2>();
+        using var chain = new X509Chain();
+        try
+        {
+            chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+            chain.ChainPolicy.RevocationFlag = X509RevocationFlag.ExcludeRoot;
+            chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllFlags;
+
+            if (checkCustomAnchors)
+            {
+                chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+                foreach (var anchorPem in profile.CustomTrustAnchorCertificates)
+                {
+                    var parsed = ParseTrustAnchor(anchorPem);
+                    anchors.Add(parsed);
+                    chain.ChainPolicy.CustomTrustStore.Add(parsed);
+                }
+            }
+
+            _ = chain.Build(certificate);
+
+            if (checkCustomAnchors && !ChainTerminatesAtAnchor(chain, anchors))
+            {
+                return false;
+            }
+
+            if (checkThumbprints && AnyIssuerThumbprintMatches(chain, profile.AcceptedIssuerThumbprints))
+            {
+                return true;
+            }
+
+            return checkCustomAnchors && !checkThumbprints;
+        }
+        finally
+        {
+            foreach (var anchor in anchors)
+            {
+                anchor.Dispose();
+            }
+        }
+    }
+
+    private static bool ChainTerminatesAtAnchor(X509Chain chain, IReadOnlyList<X509Certificate2> anchors)
+    {
+        if (chain.ChainElements.Count == 0)
+        {
+            return false;
+        }
+
+        var root = chain.ChainElements[^1].Certificate;
+        return anchors.Any(anchor =>
+            string.Equals(anchor.Thumbprint, root.Thumbprint, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool AnyIssuerThumbprintMatches(X509Chain chain, IReadOnlyList<string> acceptedIssuerThumbprints)
+    {
+        for (var index = 1; index < chain.ChainElements.Count; index++)
+        {
+            var thumbprint = ClientCertificateNormalization.NormalizeThumbprintOrName(
+                chain.ChainElements[index].Certificate.Thumbprint);
+            if (acceptedIssuerThumbprints.Any(candidate =>
+                string.Equals(candidate, thumbprint, StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool HasClientAuthenticationEku(X509Certificate2 certificate)
@@ -244,22 +333,34 @@ internal sealed class ClientCertificateValidator(
 
     private static bool ValidateChain(ClientCertificateTrustProfile profile, X509Certificate2 certificate)
     {
+        var anchors = new List<X509Certificate2>();
         using var chain = new X509Chain();
-        chain.ChainPolicy.RevocationMode = profile.ChainRevocationMode;
-        chain.ChainPolicy.RevocationFlag = X509RevocationFlag.ExcludeRoot;
-        chain.ChainPolicy.VerificationFlags = X509VerificationFlags.NoFlag;
-
-        if (profile.CustomTrustAnchorCertificates.Count > 0)
+        try
         {
-            chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
-            foreach (var anchor in profile.CustomTrustAnchorCertificates)
+            chain.ChainPolicy.RevocationMode = profile.ChainRevocationMode;
+            chain.ChainPolicy.RevocationFlag = X509RevocationFlag.ExcludeRoot;
+            chain.ChainPolicy.VerificationFlags = X509VerificationFlags.NoFlag;
+
+            if (profile.CustomTrustAnchorCertificates.Count > 0)
             {
-                using var parsed = ParseTrustAnchor(anchor);
-                chain.ChainPolicy.CustomTrustStore.Add(parsed);
+                chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+                foreach (var anchorPem in profile.CustomTrustAnchorCertificates)
+                {
+                    var parsed = ParseTrustAnchor(anchorPem);
+                    anchors.Add(parsed);
+                    chain.ChainPolicy.CustomTrustStore.Add(parsed);
+                }
+            }
+
+            return chain.Build(certificate);
+        }
+        finally
+        {
+            foreach (var anchor in anchors)
+            {
+                anchor.Dispose();
             }
         }
-
-        return chain.Build(certificate);
     }
 
     private static X509Certificate2 ParseTrustAnchor(string configuredCertificate)

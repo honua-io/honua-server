@@ -226,6 +226,29 @@ public sealed class ClientCertificateValidationTests
     }
 
     [Fact]
+    public async Task ValidateAsync_WithCustomAnchorOnlyProfileAndUnrelatedCertificate_DoesNotMatchProfile()
+    {
+        using var unrelatedCertificate = CreateCertificate("CN=Honua Native Prod", uri: "spiffe://honua/prod/admin");
+        using var trustAnchor = CreateCertificate("CN=Honua Prod Root CA", uri: null);
+        var profile = CreateProfile("prod-native", "prod", "CN=Honua Prod Root CA", "spiffe://honua/prod/admin");
+        profile.AcceptedIssuerSubjects = [];
+        profile.CustomTrustAnchorCertificates = [ExportPem(trustAnchor)];
+        profile.RequireChainTrust = true;
+
+        var validator = CreateValidator(new ClientCertificateAuthenticationOptions
+        {
+            Mode = ClientCertificateAuthenticationMode.Optional,
+            EnvironmentId = "prod",
+            TrustProfiles = [profile]
+        });
+
+        var result = await validator.ValidateAsync(unrelatedCertificate);
+
+        result.Succeeded.Should().BeFalse();
+        result.ErrorCode.Should().Be(ClientCertificateValidationErrorCode.UntrustedIssuer);
+    }
+
+    [Fact]
     public void OptionsValidator_WithTwoProfilesAndDistinctMappings_Succeeds()
     {
         using var prodCertificate = CreateCertificate("CN=Honua Native Prod", uri: "spiffe://honua/prod/admin");
@@ -317,6 +340,9 @@ public sealed class ClientCertificateValidationTests
 
     private static string ComputeFingerprint(X509Certificate2 certificate)
         => Convert.ToHexString(SHA256.HashData(certificate.RawData));
+
+    private static string ExportPem(X509Certificate2 certificate)
+        => new string(PemEncoding.Write("CERTIFICATE", certificate.RawData));
 
     private sealed class TestOptionsMonitor<T>(T value) : IOptionsMonitor<T>
     {
