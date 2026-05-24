@@ -128,14 +128,20 @@ internal static class ConsoleActionEndpoints
                 }
                 else if (!string.IsNullOrWhiteSpace(target.RouteKey))
                 {
-                    var allowed = entitlementsByRoute.TryGetValue(target.RouteKey, out var entitlement) && entitlement.Allowed
+                    // Route entitlements model navigation access; map an "allowed"
+                    // entitlement onto View, but only surface it when the caller
+                    // asked for View. Other requested verbs are reported as
+                    // denied because routes do not carry item verbs.
+                    var routeAllowed = entitlementsByRoute.TryGetValue(target.RouteKey, out var entitlement)
+                        && entitlement.Allowed
+                        && actions.Contains(ConsoleContentAction.View)
                         ? new[] { ConsoleContentAction.View }
                         : Array.Empty<ConsoleContentAction>();
-                    var denied = ComputeDenied(actions, allowed);
+                    var denied = ComputeDenied(actions, routeAllowed);
                     results.Add(new ConsoleActionCheckResult
                     {
                         RouteKey = target.RouteKey,
-                        Allowed = allowed,
+                        Allowed = routeAllowed,
                         Denied = denied,
                     });
                 }

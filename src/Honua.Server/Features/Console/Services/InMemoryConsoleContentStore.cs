@@ -106,23 +106,32 @@ internal sealed class InMemoryConsoleContentStore : IConsoleContentStore
 
     public Task<ConsoleContentItem?> PatchAsync(string id, ConsoleContentItemPatch patch, CancellationToken cancellationToken = default)
     {
-        if (!_items.TryGetValue(id, out var existing))
-            return Task.FromResult<ConsoleContentItem?>(null);
-
-        var now = _timeProvider.GetUtcNow();
-        var updated = existing with
+        // Compare-and-swap loop: a plain read-modify-write here could clobber a
+        // concurrent PUT (reverting Generation and any PUT-only fields). Each
+        // iteration re-reads the latest snapshot, re-applies the patch on top,
+        // and only commits via TryUpdate so the loser refreshes.
+        while (true)
         {
-            Title = patch.Title ?? existing.Title,
-            Description = patch.Description ?? existing.Description,
-            Tags = patch.Tags ?? existing.Tags,
-            Labels = patch.Labels ?? existing.Labels,
-            Visibility = patch.Visibility ?? existing.Visibility,
-            UpdatedById = patch.UpdatedById ?? existing.UpdatedById,
-            UpdatedAt = now,
-            Actions = Array.Empty<ConsoleContentAction>(),
-        };
-        _items[id] = updated;
-        return Task.FromResult<ConsoleContentItem?>(updated);
+            if (!_items.TryGetValue(id, out var existing))
+                return Task.FromResult<ConsoleContentItem?>(null);
+
+            var now = _timeProvider.GetUtcNow();
+            var updated = existing with
+            {
+                Title = patch.Title ?? existing.Title,
+                Description = patch.Description ?? existing.Description,
+                Tags = patch.Tags ?? existing.Tags,
+                Labels = patch.Labels ?? existing.Labels,
+                Visibility = patch.Visibility ?? existing.Visibility,
+                UpdatedById = patch.UpdatedById ?? existing.UpdatedById,
+                UpdatedAt = now,
+                Actions = Array.Empty<ConsoleContentAction>(),
+            };
+            if (_items.TryUpdate(id, updated, existing))
+            {
+                return Task.FromResult<ConsoleContentItem?>(updated);
+            }
+        }
     }
 
     public Task<bool> DeleteAsync(string id, CancellationToken cancellationToken = default)

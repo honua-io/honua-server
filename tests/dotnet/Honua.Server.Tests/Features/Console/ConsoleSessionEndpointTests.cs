@@ -348,6 +348,33 @@ public class ConsoleSessionEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/console/actions/check")]
+    public async Task CheckActions_RouteTarget_ReturnsOnlyRequestedVerbs()
+    {
+        // Requesting only [Administer] on a route must NOT inject View into
+        // Allowed even when the principal is entitled to the route — routes
+        // do not carry item verbs.
+        var checkRequest = new ConsoleActionCheckRequest
+        {
+            Targets = new[]
+            {
+                new ConsoleActionCheckTarget { RouteKey = "admin" },
+            },
+            Actions = new[] { ConsoleContentAction.Administer },
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/console/actions/check", checkRequest, JsonOptions);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var payload = JsonSerializer.Deserialize<ApiResponse<ConsoleActionCheckResponse>>(
+            await response.Content.ReadAsStringAsync(), JsonOptions);
+
+        var routeResult = payload!.Data!.Results.Single(r => r.RouteKey == "admin");
+        Assert.DoesNotContain(ConsoleContentAction.View, routeResult.Allowed);
+        Assert.Empty(routeResult.Allowed);
+        Assert.Contains(ConsoleContentAction.Administer, routeResult.Denied);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/console/content/{id}/provenance")]
     public async Task GetProvenance_ReturnsChain()
     {

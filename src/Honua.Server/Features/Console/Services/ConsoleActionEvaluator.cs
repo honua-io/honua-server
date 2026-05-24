@@ -131,6 +131,9 @@ internal sealed class ConsoleActionEvaluator(
         };
     }
 
+    // Visibility is a terminal gate for non-admins: a principal that cannot see
+    // an item cannot view, edit, share, embed, or operate on it either. Admin
+    // bypass is handled at the top of IsItemActionAllowed.
     private static bool CanView(ConsoleContentItem item, AuthorizationProfile profile)
     {
         if (item.Visibility == ConsoleVisibility.Public)
@@ -142,13 +145,13 @@ internal sealed class ConsoleActionEvaluator(
         if (IsOwner(item, profile))
             return true;
 
-        if (item.Visibility == ConsoleVisibility.Team && IsInTeamScope(item, profile))
-            return true;
-
-        if (item.Visibility == ConsoleVisibility.Organization && profile.IsAuthenticated)
-            return true;
-
-        return HasCapability(profile, "metadata.read");
+        return item.Visibility switch
+        {
+            ConsoleVisibility.Organization => true,
+            ConsoleVisibility.Team => IsInTeamScope(item, profile),
+            ConsoleVisibility.Personal => false,
+            _ => false,
+        };
     }
 
     private static bool CanEdit(ConsoleContentItem item, AuthorizationProfile profile)
@@ -159,7 +162,7 @@ internal sealed class ConsoleActionEvaluator(
         if (IsOwner(item, profile))
             return true;
 
-        return HasCapability(profile, "metadata.write");
+        return CanView(item, profile) && HasCapability(profile, "metadata.write");
     }
 
     private static bool CanShare(ConsoleContentItem item, AuthorizationProfile profile)
@@ -170,17 +173,11 @@ internal sealed class ConsoleActionEvaluator(
         if (IsOwner(item, profile))
             return true;
 
-        return HasCapability(profile, "metadata.write");
+        return CanView(item, profile) && HasCapability(profile, "metadata.write");
     }
 
     private static bool CanEmbed(ConsoleContentItem item, AuthorizationProfile profile)
     {
-        if (item.Visibility is ConsoleVisibility.Public or ConsoleVisibility.Organization)
-            return CanView(item, profile);
-
-        if (!profile.IsAuthenticated)
-            return false;
-
         return CanView(item, profile);
     }
 
@@ -189,6 +186,9 @@ internal sealed class ConsoleActionEvaluator(
         if (!profile.IsAuthenticated)
             return item.Visibility == ConsoleVisibility.Public && HasCapability(profile, "features.query");
 
+        if (!CanView(item, profile))
+            return false;
+
         return item.ItemType switch
         {
             ConsoleContentItemType.Service or ConsoleContentItemType.Layer
@@ -196,7 +196,7 @@ internal sealed class ConsoleActionEvaluator(
                 or ConsoleContentItemType.OpenData
                 => HasCapability(profile, "features.query") || HasCapability(profile, "raster.render"),
             ConsoleContentItemType.Report => HasCapability(profile, "reports.run") || HasCapability(profile, "metadata.read"),
-            ConsoleContentItemType.GeneratedApp => CanView(item, profile),
+            ConsoleContentItemType.GeneratedApp => true,
             _ => false,
         };
     }

@@ -193,4 +193,116 @@ public class ConsoleActionEvaluatorTests
         Assert.DoesNotContain("metadata.write", capabilities);
         Assert.DoesNotContain("admin.rbac.write", capabilities);
     }
+
+    private static ClaimsPrincipal EditorPrincipal(string userId = "editor-user", string? teamScope = null)
+    {
+        var identity = new ClaimsIdentity(authenticationType: "Test");
+        identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, userId));
+        identity.AddClaim(new Claim(ClaimTypes.Role, "editor"));
+        if (!string.IsNullOrEmpty(teamScope))
+        {
+            identity.AddClaim(new Claim(new RbacOptions().WorkspaceScopeClaimType, teamScope));
+        }
+        return new ClaimsPrincipal(identity);
+    }
+
+    private sealed class EditorRoleStore : IRoleStore
+    {
+        public Task<IReadOnlyList<RoleDefinition>> ListRolesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<RoleDefinition>>(Array.Empty<RoleDefinition>());
+
+        public Task<RoleDefinition?> GetRoleAsync(Guid roleId, CancellationToken cancellationToken = default)
+            => Task.FromResult<RoleDefinition?>(null);
+
+        public Task<RoleDefinition> CreateRoleAsync(RoleDefinition role, CancellationToken cancellationToken = default)
+            => Task.FromResult(role);
+
+        public Task<RoleDefinition?> UpdateRoleAsync(RoleDefinition role, CancellationToken cancellationToken = default)
+            => Task.FromResult<RoleDefinition?>(role);
+
+        public Task<bool> DeleteRoleAsync(Guid roleId, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
+        public Task<IReadOnlyList<PermissionGrant>> GetPermissionsAsync(Guid roleId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<PermissionGrant>>(Array.Empty<PermissionGrant>());
+
+        public Task<IReadOnlyList<PermissionGrant>> SetPermissionsAsync(Guid roleId, IReadOnlyList<PermissionGrant> permissions, CancellationToken cancellationToken = default)
+            => Task.FromResult(permissions);
+
+        public Task<EffectivePermissions> GetEffectivePermissionsAsync(string userId, IReadOnlyList<string> roles, CancellationToken cancellationToken = default)
+        {
+            IReadOnlyList<PermissionGrant> grants = roles.Contains("editor", StringComparer.OrdinalIgnoreCase)
+                ? new[] { new PermissionGrant { Service = "*", Layer = "*", Operation = "write" } }
+                : Array.Empty<PermissionGrant>();
+            return Task.FromResult(new EffectivePermissions
+            {
+                UserId = userId,
+                Roles = roles,
+                Permissions = grants,
+                ResolvedAt = DateTimeOffset.UnixEpoch,
+            });
+        }
+    }
+
+    [UnitTest]
+    public async Task Editor_OnOthersPersonalItem_HasNoActions()
+    {
+        var evaluator = BuildEvaluator(new EditorRoleStore());
+        var item = Sample(visibility: ConsoleVisibility.Personal, owner: "other-user");
+
+        var actions = await evaluator.EvaluateItemActionsAsync(EditorPrincipal(), item, Array.Empty<ConsoleContentAction>(), CancellationToken.None);
+
+        Assert.DoesNotContain(ConsoleContentAction.View, actions);
+        Assert.DoesNotContain(ConsoleContentAction.Edit, actions);
+        Assert.DoesNotContain(ConsoleContentAction.Share, actions);
+        Assert.DoesNotContain(ConsoleContentAction.Embed, actions);
+        Assert.DoesNotContain(ConsoleContentAction.Operate, actions);
+    }
+
+    [UnitTest]
+    public async Task Editor_OnOutOfScopeTeamItem_HasNoVisibilityGatedActions()
+    {
+        var evaluator = BuildEvaluator(new EditorRoleStore());
+        var item = Sample(visibility: ConsoleVisibility.Team, owner: "other-user") with { TeamScopeId = "team-a" };
+
+        var actions = await evaluator.EvaluateItemActionsAsync(
+            EditorPrincipal(userId: "editor-user", teamScope: "team-b"), item, Array.Empty<ConsoleContentAction>(), CancellationToken.None);
+
+        Assert.DoesNotContain(ConsoleContentAction.View, actions);
+        Assert.DoesNotContain(ConsoleContentAction.Edit, actions);
+        Assert.DoesNotContain(ConsoleContentAction.Share, actions);
+        Assert.DoesNotContain(ConsoleContentAction.Embed, actions);
+        Assert.DoesNotContain(ConsoleContentAction.Operate, actions);
+    }
+
+    [UnitTest]
+    public async Task Editor_InTeamScope_OnTeamItem_CanViewEditShare()
+    {
+        var evaluator = BuildEvaluator(new EditorRoleStore());
+        var item = Sample(visibility: ConsoleVisibility.Team, owner: "other-user") with { TeamScopeId = "team-a" };
+
+        var actions = await evaluator.EvaluateItemActionsAsync(
+            EditorPrincipal(userId: "editor-user", teamScope: "team-a"), item, Array.Empty<ConsoleContentAction>(), CancellationToken.None);
+
+        Assert.Contains(ConsoleContentAction.View, actions);
+        Assert.Contains(ConsoleContentAction.Edit, actions);
+        Assert.Contains(ConsoleContentAction.Share, actions);
+        Assert.Contains(ConsoleContentAction.Embed, actions);
+    }
+
+    [UnitTest]
+    public async Task Viewer_OnOthersPersonalItem_HasNoView()
+    {
+        // Viewer principal has metadata.read; this test guards the
+        // CanView fallthrough fix — metadata.read alone must not bypass
+        // Personal owner-only visibility.
+        var evaluator = BuildEvaluator();
+        var item = Sample(visibility: ConsoleVisibility.Personal, owner: "other-user");
+
+        var actions = await evaluator.EvaluateItemActionsAsync(ViewerPrincipal(), item, Array.Empty<ConsoleContentAction>(), CancellationToken.None);
+
+        Assert.DoesNotContain(ConsoleContentAction.View, actions);
+        Assert.DoesNotContain(ConsoleContentAction.Embed, actions);
+        Assert.DoesNotContain(ConsoleContentAction.Operate, actions);
+    }
 }

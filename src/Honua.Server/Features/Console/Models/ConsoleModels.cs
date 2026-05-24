@@ -144,8 +144,10 @@ public sealed class UpdateConsoleContentItemRequest
     public JsonElement? TypeMetadata { get; init; }
 
     /// <summary>
-    /// Expected generation. The server rejects the update when this trails the
-    /// stored value.
+    /// Expected generation for optimistic concurrency. When supplied, the
+    /// server rejects the update unless it exactly matches the stored value;
+    /// both older and newer generations produce <c>409 Conflict</c>. Omit to
+    /// bypass the check (last-write-wins).
     /// </summary>
     [JsonPropertyName("generation")]
     public long? Generation { get; init; }

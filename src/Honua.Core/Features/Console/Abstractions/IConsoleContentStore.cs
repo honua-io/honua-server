@@ -29,8 +29,10 @@ public interface IConsoleContentStore
     Task<ConsoleContentItem> CreateAsync(ConsoleContentItem item, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Replaces an item. Implementations should reject updates whose
-    /// <c>Generation</c> trails the stored value.
+    /// Replaces an item. When <c>item.Generation</c> is supplied, implementations
+    /// must reject the update unless it exactly matches the stored generation
+    /// (older <em>and</em> newer values are both rejected). A null generation
+    /// bypasses the check (last-write-wins).
     /// </summary>
     Task<ConsoleContentItem?> UpdateAsync(ConsoleContentItem item, CancellationToken cancellationToken = default);
 

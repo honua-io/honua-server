@@ -16,7 +16,11 @@ internal static class ConsoleContentMapper
 {
     public static ConsoleContentItem FromCreateRequest(CreateConsoleContentItemRequest request, ClaimsPrincipal principal)
     {
-        var owner = request.OwnerId ?? principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? principal.FindFirstValue("sub");
+        // OwnerId is who owns the content; CreatedById/UpdatedById record the
+        // acting principal. When a privileged caller creates on behalf of
+        // someone else, audit must still point at the actor, not the owner.
+        var actor = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? principal.FindFirstValue("sub");
+        var owner = request.OwnerId ?? actor;
         return new ConsoleContentItem
         {
             Id = string.Empty,
@@ -32,8 +36,8 @@ internal static class ConsoleContentMapper
             Visibility = request.Visibility ?? ConsoleVisibility.Personal,
             OwnerId = owner,
             TeamScopeId = request.TeamScopeId,
-            CreatedById = owner,
-            UpdatedById = owner,
+            CreatedById = actor,
+            UpdatedById = actor,
             Provenance = request.Provenance ?? Array.Empty<ConsoleProvenanceRef>(),
             TypeMetadata = request.TypeMetadata,
         };

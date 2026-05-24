@@ -93,26 +93,58 @@ table below.
 `actions` is always **server-computed** for the requesting principal and never
 stored. Clients should not send it on create/update; the server overwrites it.
 
+## Update semantics
+
+`PUT /content/{id}` and `PATCH /content/{id}` are intentionally split rather
+than overloaded on `PUT`:
+
+- **`PUT` is a full replacement.** Any nullable field omitted from the request
+  body is cleared on the stored item; value-type fields fall back to the same
+  defaults the create path applies (`lifecycle = draft`,
+  `operationalState = unknown`, `visibility = personal`); collection fields
+  (`tags`, `labels`, `provenance`) default to empty when omitted. Clients that
+  only want to change a subset of fields must use `PATCH`.
+- **`PATCH` merges.** Only `title`, `description`, `tags`, `labels`, and
+  `visibility` are patchable. Other fields require `PUT`. `PATCH` does not
+  increment `generation`.
+- **Optimistic concurrency on `PUT`** compares the supplied `generation`
+  against the stored value with **exact-match** semantics. A request whose
+  `generation` is older *or* newer than the stored value is rejected with
+  `409 Conflict` (`ApiResponse<object>`, `success: false`, message
+  `"Stale generation; refresh and retry."`). The in-memory baseline store
+  swaps via `ConcurrentDictionary.TryUpdate`, so two concurrent writers
+  reading the same generation cannot both succeed — the loser must refresh
+  and retry. Omit `generation` to bypass the check (last-write-wins).
+- **Identity and audit fields** (`id`, `createdAt`, `createdById`) are stamped
+  by the server and ignored if sent on update; `updatedAt` and `updatedById`
+  are stamped from the request principal.
+
 ## RBAC verbs
 
 Seven Console verbs map onto the existing `IRoleStore` permission-grant set
 through `IConsoleActionEvaluator`. Mapping is documented inline on the
 evaluator and exercised by `ConsoleActionEvaluatorTests`:
 
-| Console verb | Policy action(s) used |
-| --- | --- |
-| `view` | `metadata.read` + item visibility check |
-| `edit` | `metadata.write` (and `features.edit` where applicable) |
-| `publish` | `catalog.publish` |
-| `share` | `metadata.write` against sharing metadata |
-| `embed` | `metadata.read` + visibility check (item must be `public` or `organization` for anonymous principals) |
-| `operate` | service-specific (`features.query`, `raster.render`, `reports.run`) |
-| `administer` | `admin.rbac.write` |
+| Console verb | Visibility precondition | Policy action(s) used |
+| --- | --- | --- |
+| `view` | terminal | `personal` = owner only; `team` = team-scope members only; `organization` = any authenticated principal; `public` = anyone |
+| `edit` | yes | `metadata.write` (and `features.edit` where applicable); owner always passes |
+| `publish` | n/a (catalog-wide) | `catalog.publish` |
+| `share` | yes | `metadata.write` against sharing metadata; owner always passes |
+| `embed` | yes | inherits `view` (anonymous principals are limited to `public` items) |
+| `operate` | yes | service-specific (`features.query`, `raster.render`, `reports.run`); anonymous principals may operate `public` items with `features.query` |
+| `administer` | n/a (catalog-wide) | `admin.rbac.write` |
+
+**Visibility is a terminal gate for non-admins.** A principal that cannot
+view an item per the visibility rule above cannot `edit`, `share`, `embed`,
+or `operate` on it either — capabilities like `metadata.write` or
+`features.query` do not override the visibility check. Owners always pass
+the visibility gate for items they own. Admin principals bypass the gate
+entirely (they receive the full capability set).
 
 Capabilities returned through `/session.capabilities` (e.g. `metadata.read`,
 `catalog.publish`, `admin.rbac.write`) are the wire identifiers Console
-surfaces use to gate UI affordances. Admin principals receive the full
-capability set.
+surfaces use to gate UI affordances.
 
 ## Provenance
 
