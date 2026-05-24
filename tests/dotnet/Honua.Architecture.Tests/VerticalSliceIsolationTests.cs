@@ -23,6 +23,7 @@ public sealed class VerticalSliceIsolationTests
         "Alerts",
         "CloudDemo",
         "Collaboration",
+        "Console",
         "Geocoding",
         "Geoprocessing",
         "Grounding",

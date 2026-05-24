@@ -167,6 +167,18 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/roles/{id}/permissions"),
         new("PUT", "/api/v1/admin/roles/{id}/permissions"),
 
+        // v1 console metadata v2 content + RBAC baseline (#1162)
+        new("GET", "/api/v1/console/session"),
+        new("GET", "/api/v1/console/content"),
+        new("POST", "/api/v1/console/content"),
+        new("GET", "/api/v1/console/content/search"),
+        new("GET", "/api/v1/console/content/{id}"),
+        new("PUT", "/api/v1/console/content/{id}"),
+        new("PATCH", "/api/v1/console/content/{id}"),
+        new("DELETE", "/api/v1/console/content/{id}"),
+        new("GET", "/api/v1/console/content/{id}/provenance"),
+        new("POST", "/api/v1/console/actions/check"),
+
         // v1 admin metadata resource CRUD endpoints removed in #1035 cutover.
         // (Layer-style/fields/filter/validation endpoints below still serve v1 layer ids.)
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/style"),
