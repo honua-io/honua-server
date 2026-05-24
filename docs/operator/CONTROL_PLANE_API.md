@@ -611,11 +611,16 @@ for run lifecycle, scheduler semantics, and tuning details.
 |----------|--------|---------|
 | `/api/v1/admin/alerts/zones` | GET | List alert zones |
 | `/api/v1/admin/alerts/zones` | POST | Create alert zone |
+| `/api/v1/admin/alerts/zones/{zoneId}` | GET | Read alert zone |
 | `/api/v1/admin/alerts/zones/{zoneId}` | PUT | Update alert zone |
 | `/api/v1/admin/alerts/zones/{zoneId}` | DELETE | Delete alert zone |
 | `/api/v1/admin/alerts/rules` | GET | List alert rules |
 | `/api/v1/admin/alerts/rules` | POST | Create alert rule |
+| `/api/v1/admin/alerts/rules/test` | POST | Validate a draft alert rule and delivery-channel bindings without persisting it |
+| `/api/v1/admin/alerts/rules/{ruleId}` | GET | Read alert rule |
 | `/api/v1/admin/alerts/rules/{ruleId}` | PUT | Update alert rule |
+| `/api/v1/admin/alerts/rules/{ruleId}/enabled` | PUT | Enable or disable alert rule |
+| `/api/v1/admin/alerts/rules/{ruleId}/health` | GET | Inspect rule evaluation state, active incidents, recent triggers, delivery failures, and dead-letter state |
 | `/api/v1/admin/alerts/rules/{ruleId}` | DELETE | Delete alert rule |
 
 ### **License Endpoints**

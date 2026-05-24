@@ -213,12 +213,17 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/metadata/layers/{layerId}/suggest-style"),
         // v1 gitops watch endpoints removed in #1035 cutover.
         new("GET", "/api/v1/admin/alerts/zones"),
+        new("GET", "/api/v1/admin/alerts/zones/{zoneId}"),
         new("POST", "/api/v1/admin/alerts/zones"),
         new("PUT", "/api/v1/admin/alerts/zones/{zoneId}"),
         new("DELETE", "/api/v1/admin/alerts/zones/{zoneId}"),
         new("GET", "/api/v1/admin/alerts/rules"),
+        new("GET", "/api/v1/admin/alerts/rules/{ruleId}"),
         new("POST", "/api/v1/admin/alerts/rules"),
+        new("POST", "/api/v1/admin/alerts/rules/test"),
         new("PUT", "/api/v1/admin/alerts/rules/{ruleId}"),
+        new("PUT", "/api/v1/admin/alerts/rules/{ruleId}/enabled"),
+        new("GET", "/api/v1/admin/alerts/rules/{ruleId}/health"),
         new("DELETE", "/api/v1/admin/alerts/rules/{ruleId}"),
 
         // v1 admin import endpoints (primary)

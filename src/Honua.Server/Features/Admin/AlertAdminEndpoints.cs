@@ -2,8 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
+using System.Text.Json;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -22,6 +25,13 @@ internal static class AlertAdminEndpoints
     private static readonly WKBReader _wkbReader = new();
     private static readonly WKTWriter _wktWriter = new();
     private static readonly WKBWriter _wkbWriter = new();
+    private const int RecentTriggerLimit = 10;
+    private const string ChannelStatusConfigured = "configured";
+    private const string ChannelStatusUnconfigured = "unconfigured";
+    private const string ChannelStatusDisabled = "disabled";
+    private const string ChannelStatusUnauthorized = "unauthorized";
+    private const string ChannelStatusRateLimited = "rate_limited";
+    private const string ChannelStatusFailing = "failing";
 
     public static void MapAlertAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -33,6 +43,10 @@ internal static class AlertAdminEndpoints
 
         group.MapGet("/zones", HandleListZones)
             .WithDisplayName("List Alert Zones")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
+        group.MapGet("/zones/{zoneId:long}", HandleGetZone)
+            .WithDisplayName("Get Alert Zone")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapPost("/zones", HandleCreateZone)
@@ -51,13 +65,29 @@ internal static class AlertAdminEndpoints
             .WithDisplayName("List Alert Rules")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
+        group.MapGet("/rules/{ruleId:long}", HandleGetRule)
+            .WithDisplayName("Get Alert Rule")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
         group.MapPost("/rules", HandleCreateRule)
             .WithDisplayName("Create Alert Rule")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+
+        group.MapPost("/rules/test", HandleTestRule)
+            .WithDisplayName("Test Alert Rule")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
         group.MapPut("/rules/{ruleId:long}", HandleUpdateRule)
             .WithDisplayName("Update Alert Rule")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+
+        group.MapPut("/rules/{ruleId:long}/enabled", HandleSetRuleEnabled)
+            .WithDisplayName("Set Alert Rule Enabled")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+
+        group.MapGet("/rules/{ruleId:long}/health", HandleGetRuleHealth)
+            .WithDisplayName("Get Alert Rule Health")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
         group.MapDelete("/rules/{ruleId:long}", HandleDeleteRule)
             .WithDisplayName("Delete Alert Rule")
@@ -74,10 +104,26 @@ internal static class AlertAdminEndpoints
         return Results.Json(ApiResponse<AlertZoneResponse[]>.CreateSuccess(payload), AlertAdminJsonContext.Default.ApiResponseAlertZoneResponseArray);
     }
 
+    private static async Task<IResult> HandleGetZone(
+        long zoneId,
+        [FromServices] IAlertAdminStore store,
+        CancellationToken cancellationToken)
+    {
+        var zone = await store.GetZoneAsync(zoneId, cancellationToken).ConfigureAwait(false);
+        if (zone is null)
+        {
+            return NotFound($"Zone '{zoneId}' not found.");
+        }
+
+        return Results.Json(ApiResponse<AlertZoneResponse>.CreateSuccess(MapZoneResponse(zone)), AlertAdminJsonContext.Default.ApiResponseAlertZoneResponse);
+    }
+
     private static async Task<IResult> HandleCreateZone(
         AlertZoneRequest request,
         [FromServices] IAlertAdminStore store,
         [FromServices] IGeometryService geometryService,
+        [FromServices] IAuditLog auditLog,
+        HttpContext context,
         CancellationToken cancellationToken)
     {
         if (!TryCreateZoneDefinition(0, request, geometryService, out var zone, out var error))
@@ -86,6 +132,8 @@ internal static class AlertAdminEndpoints
         }
 
         var created = await store.CreateZoneAsync(zone, cancellationToken).ConfigureAwait(false);
+        await RecordZoneAuditAsync(auditLog, context, created, "alert_zone.create", created.IsActive, cancellationToken).ConfigureAwait(false);
+
         return Results.Json(ApiResponse<AlertZoneResponse>.CreateSuccess(MapZoneResponse(created)), AlertAdminJsonContext.Default.ApiResponseAlertZoneResponse);
     }
 
@@ -94,6 +142,8 @@ internal static class AlertAdminEndpoints
         AlertZoneRequest request,
         [FromServices] IAlertAdminStore store,
         [FromServices] IGeometryService geometryService,
+        [FromServices] IAuditLog auditLog,
+        HttpContext context,
         CancellationToken cancellationToken)
     {
         if (!TryCreateZoneDefinition(zoneId, request, geometryService, out var zone, out var error))
@@ -107,12 +157,16 @@ internal static class AlertAdminEndpoints
             return NotFound($"Zone '{zoneId}' not found.");
         }
 
+        await RecordZoneAuditAsync(auditLog, context, updated, "alert_zone.update", updated.IsActive, cancellationToken).ConfigureAwait(false);
+
         return Results.Json(ApiResponse<AlertZoneResponse>.CreateSuccess(MapZoneResponse(updated)), AlertAdminJsonContext.Default.ApiResponseAlertZoneResponse);
     }
 
     private static async Task<IResult> HandleDeleteZone(
         long zoneId,
         [FromServices] IAlertAdminStore store,
+        [FromServices] IAuditLog auditLog,
+        HttpContext context,
         CancellationToken cancellationToken)
     {
         var deleted = await store.DeleteZoneAsync(zoneId, cancellationToken).ConfigureAwait(false);
@@ -120,6 +174,15 @@ internal static class AlertAdminEndpoints
         {
             return NotFound($"Zone '{zoneId}' not found.");
         }
+
+        await RecordAuditAsync(
+            auditLog,
+            context,
+            resourceType: "alert_zone",
+            resourceId: zoneId.ToString(CultureInfo.InvariantCulture),
+            action: "alert_zone.delete",
+            new AlertAdminAuditDetails { ZoneId = zoneId },
+            cancellationToken).ConfigureAwait(false);
 
         return Results.Json(ApiResponse<object>.SuccessWithMessage("Zone deleted."), AlertAdminJsonContext.Default.ApiResponseObject);
     }
@@ -135,10 +198,26 @@ internal static class AlertAdminEndpoints
         return Results.Json(ApiResponse<AlertRuleResponse[]>.CreateSuccess(payload), AlertAdminJsonContext.Default.ApiResponseAlertRuleResponseArray);
     }
 
+    private static async Task<IResult> HandleGetRule(
+        long ruleId,
+        [FromServices] IAlertAdminStore store,
+        CancellationToken cancellationToken)
+    {
+        var rule = await store.GetRuleAsync(ruleId, cancellationToken).ConfigureAwait(false);
+        if (rule is null)
+        {
+            return NotFound($"Rule '{ruleId}' not found.");
+        }
+
+        return Results.Json(ApiResponse<AlertRuleResponse>.CreateSuccess(MapRuleResponse(rule)), AlertAdminJsonContext.Default.ApiResponseAlertRuleResponse);
+    }
+
     private static async Task<IResult> HandleCreateRule(
         AlertRuleRequest request,
         [FromServices] IAlertAdminStore store,
         [FromServices] IAlertEditionPolicy editionPolicy,
+        [FromServices] IAuditLog auditLog,
+        HttpContext context,
         CancellationToken cancellationToken)
     {
         if (!TryCreateRuleDefinition(0, request, out var rule, out var error))
@@ -146,13 +225,63 @@ internal static class AlertAdminEndpoints
             return BadRequest(error);
         }
 
-        if (!ValidateRuleExecution(editionPolicy, rule, out error))
+        var validation = await ValidateRuleDraftAsync(
+            rule,
+            draftZone: null,
+            store,
+            geometryService: null,
+            editionPolicy,
+            cancellationToken).ConfigureAwait(false);
+        if (!validation.IsValid)
         {
-            return BadRequest(error);
+            return BadRequest(validation.Errors[0]);
         }
 
         var created = await store.CreateRuleAsync(rule, cancellationToken).ConfigureAwait(false);
+        await RecordRuleAuditAsync(auditLog, context, created, "alert_rule.create", created.IsActive, cancellationToken).ConfigureAwait(false);
+
         return Results.Json(ApiResponse<AlertRuleResponse>.CreateSuccess(MapRuleResponse(created)), AlertAdminJsonContext.Default.ApiResponseAlertRuleResponse);
+    }
+
+    private static async Task<IResult> HandleTestRule(
+        AlertRuleTestRequest request,
+        [FromServices] IAlertAdminStore store,
+        [FromServices] IGeometryService geometryService,
+        [FromServices] IAlertEditionPolicy editionPolicy,
+        CancellationToken cancellationToken)
+    {
+        if (!TryCreateRuleDefinition(0, request.Rule, out var rule, out var error))
+        {
+            var failed = new AlertRuleTestResponse
+            {
+                IsValid = false,
+                Errors = [error],
+                Warnings = [],
+                DeliveryChannels = [],
+                EvaluatedAt = DateTimeOffset.UtcNow
+            };
+
+            return Results.Json(ApiResponse<AlertRuleTestResponse>.CreateSuccess(failed), AlertAdminJsonContext.Default.ApiResponseAlertRuleTestResponse);
+        }
+
+        var validation = await ValidateRuleDraftAsync(
+            rule,
+            request.Zone,
+            store,
+            geometryService,
+            editionPolicy,
+            cancellationToken).ConfigureAwait(false);
+
+        var response = new AlertRuleTestResponse
+        {
+            IsValid = validation.IsValid,
+            Errors = validation.Errors,
+            Warnings = validation.Warnings,
+            DeliveryChannels = validation.DeliveryChannels,
+            EvaluatedAt = DateTimeOffset.UtcNow
+        };
+
+        return Results.Json(ApiResponse<AlertRuleTestResponse>.CreateSuccess(response), AlertAdminJsonContext.Default.ApiResponseAlertRuleTestResponse);
     }
 
     private static async Task<IResult> HandleUpdateRule(
@@ -160,6 +289,8 @@ internal static class AlertAdminEndpoints
         AlertRuleRequest request,
         [FromServices] IAlertAdminStore store,
         [FromServices] IAlertEditionPolicy editionPolicy,
+        [FromServices] IAuditLog auditLog,
+        HttpContext context,
         CancellationToken cancellationToken)
     {
         if (!TryCreateRuleDefinition(ruleId, request, out var rule, out var error))
@@ -167,9 +298,16 @@ internal static class AlertAdminEndpoints
             return BadRequest(error);
         }
 
-        if (!ValidateRuleExecution(editionPolicy, rule, out error))
+        var validation = await ValidateRuleDraftAsync(
+            rule,
+            draftZone: null,
+            store,
+            geometryService: null,
+            editionPolicy,
+            cancellationToken).ConfigureAwait(false);
+        if (!validation.IsValid)
         {
-            return BadRequest(error);
+            return BadRequest(validation.Errors[0]);
         }
 
         var updated = await store.UpdateRuleAsync(rule, cancellationToken).ConfigureAwait(false);
@@ -178,19 +316,108 @@ internal static class AlertAdminEndpoints
             return NotFound($"Rule '{ruleId}' not found.");
         }
 
+        await RecordRuleAuditAsync(auditLog, context, updated, "alert_rule.update", updated.IsActive, cancellationToken).ConfigureAwait(false);
+
         return Results.Json(ApiResponse<AlertRuleResponse>.CreateSuccess(MapRuleResponse(updated)), AlertAdminJsonContext.Default.ApiResponseAlertRuleResponse);
+    }
+
+    private static async Task<IResult> HandleSetRuleEnabled(
+        long ruleId,
+        AlertRuleEnabledRequest request,
+        [FromServices] IAlertAdminStore store,
+        [FromServices] IAlertEditionPolicy editionPolicy,
+        [FromServices] IAuditLog auditLog,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        var existing = await store.GetRuleAsync(ruleId, cancellationToken).ConfigureAwait(false);
+        if (existing is null)
+        {
+            return NotFound($"Rule '{ruleId}' not found.");
+        }
+
+        var requested = existing with { IsActive = request.Enabled };
+        if (request.Enabled)
+        {
+            var validation = await ValidateRuleDraftAsync(
+                requested,
+                draftZone: null,
+                store,
+                geometryService: null,
+                editionPolicy,
+                cancellationToken).ConfigureAwait(false);
+            if (!validation.IsValid)
+            {
+                return BadRequest(validation.Errors[0]);
+            }
+        }
+
+        var updated = await store.UpdateRuleAsync(requested, cancellationToken).ConfigureAwait(false);
+        if (updated is null)
+        {
+            return NotFound($"Rule '{ruleId}' not found.");
+        }
+
+        await RecordRuleAuditAsync(
+            auditLog,
+            context,
+            updated,
+            request.Enabled ? "alert_rule.enable" : "alert_rule.disable",
+            request.Enabled,
+            cancellationToken).ConfigureAwait(false);
+
+        return Results.Json(ApiResponse<AlertRuleResponse>.CreateSuccess(MapRuleResponse(updated)), AlertAdminJsonContext.Default.ApiResponseAlertRuleResponse);
+    }
+
+    private static async Task<IResult> HandleGetRuleHealth(
+        long ruleId,
+        [FromServices] IAlertAdminStore store,
+        [FromServices] IAlertEventQuery eventQuery,
+        CancellationToken cancellationToken)
+    {
+        var rule = await store.GetRuleAsync(ruleId, cancellationToken).ConfigureAwait(false);
+        if (rule is null)
+        {
+            return NotFound($"Rule '{ruleId}' not found.");
+        }
+
+        var health = await store.GetRuleHealthAsync(ruleId, RecentTriggerLimit, cancellationToken).ConfigureAwait(false);
+        if (health is null)
+        {
+            return NotFound($"Rule '{ruleId}' not found.");
+        }
+
+        var triggers = await eventQuery.ListAsync(new AlertEventFilter
+        {
+            RuleId = ruleId,
+            PageSize = RecentTriggerLimit
+        }, cancellationToken).ConfigureAwait(false);
+
+        return Results.Json(
+            ApiResponse<AlertRuleHealthResponse>.CreateSuccess(MapRuleHealthResponse(rule, health, triggers.Items)),
+            AlertAdminJsonContext.Default.ApiResponseAlertRuleHealthResponse);
     }
 
     private static async Task<IResult> HandleDeleteRule(
         long ruleId,
         [FromServices] IAlertAdminStore store,
+        [FromServices] IAuditLog auditLog,
+        HttpContext context,
         CancellationToken cancellationToken)
     {
+        var existing = await store.GetRuleAsync(ruleId, cancellationToken).ConfigureAwait(false);
+        if (existing is null)
+        {
+            return NotFound($"Rule '{ruleId}' not found.");
+        }
+
         var deleted = await store.DeleteRuleAsync(ruleId, cancellationToken).ConfigureAwait(false);
         if (!deleted)
         {
             return NotFound($"Rule '{ruleId}' not found.");
         }
+
+        await RecordRuleAuditAsync(auditLog, context, existing, "alert_rule.delete", existing.IsActive, cancellationToken).ConfigureAwait(false);
 
         return Results.Json(ApiResponse<object>.SuccessWithMessage("Rule deleted."), AlertAdminJsonContext.Default.ApiResponseObject);
     }
@@ -281,6 +508,18 @@ internal static class AlertAdminEndpoints
             return false;
         }
 
+        if (request.CooldownSeconds < 0)
+        {
+            error = "CooldownSeconds must be zero or greater.";
+            return false;
+        }
+
+        var conditionsJson = string.IsNullOrWhiteSpace(request.ConditionsJson) ? "{}" : request.ConditionsJson;
+        if (!TryValidateConditions(triggerType, conditionsJson, out error))
+        {
+            return false;
+        }
+
         rule = new AlertRuleDefinition
         {
             RuleId = ruleId,
@@ -289,8 +528,8 @@ internal static class AlertAdminEndpoints
             ZoneId = request.ZoneId,
             RuleName = request.RuleName.Trim(),
             TriggerType = triggerType,
-            ConditionsJson = string.IsNullOrWhiteSpace(request.ConditionsJson) ? "{}" : request.ConditionsJson,
-            CooldownSeconds = Math.Max(0, request.CooldownSeconds),
+            ConditionsJson = conditionsJson,
+            CooldownSeconds = request.CooldownSeconds,
             Severity = severity,
             EditionRequired = edition,
             Channels = channels,
@@ -301,31 +540,277 @@ internal static class AlertAdminEndpoints
         return true;
     }
 
-    private static bool ValidateRuleExecution(IAlertEditionPolicy editionPolicy, AlertRuleDefinition rule, out string error)
+    private static async Task<RuleValidationResult> ValidateRuleDraftAsync(
+        AlertRuleDefinition rule,
+        AlertZoneRequest? draftZone,
+        IAlertAdminStore store,
+        IGeometryService? geometryService,
+        IAlertEditionPolicy editionPolicy,
+        CancellationToken cancellationToken)
     {
+        var errors = new List<string>();
+        var warnings = new List<string>();
+
         if (!editionPolicy.IsRuleAllowed(rule))
         {
-            error = "The configured edition does not allow this rule trigger or tier requirement.";
+            errors.Add("The configured edition does not allow this rule trigger or tier requirement.");
+        }
+
+        var channelValidation = BuildChannelValidation(rule, editionPolicy);
+        foreach (var channel in channelValidation)
+        {
+            if (channel.Status is ChannelStatusUnauthorized or ChannelStatusUnconfigured)
+            {
+                errors.Add(channel.Message);
+            }
+
+            if (channel.Status == ChannelStatusDisabled)
+            {
+                warnings.Add(channel.Message);
+            }
+        }
+
+        await ValidateZoneReferenceAsync(rule, draftZone, store, geometryService, errors, warnings, cancellationToken)
+            .ConfigureAwait(false);
+
+        return new RuleValidationResult(
+            errors.Count == 0,
+            errors.ToArray(),
+            warnings.ToArray(),
+            channelValidation);
+    }
+
+    private static async Task ValidateZoneReferenceAsync(
+        AlertRuleDefinition rule,
+        AlertZoneRequest? draftZone,
+        IAlertAdminStore store,
+        IGeometryService? geometryService,
+        List<string> errors,
+        List<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        if (draftZone is not null)
+        {
+            if (geometryService is null)
+            {
+                errors.Add("A geometry service is required to validate a draft zone.");
+                return;
+            }
+
+            if (!TryCreateZoneDefinition(0, draftZone, geometryService, out var zone, out var error))
+            {
+                errors.Add(error);
+                return;
+            }
+
+            if (!string.Equals(zone.ServiceId, rule.ServiceId, StringComparison.Ordinal))
+            {
+                errors.Add("Draft zone ServiceId must match the alert rule ServiceId.");
+            }
+
+            if (!zone.IsActive)
+            {
+                warnings.Add("Draft zone is inactive; the rule will not evaluate spatial transitions until the zone is active.");
+            }
+
+            if (rule.ZoneId.HasValue)
+            {
+                warnings.Add("Both ZoneId and a draft zone were provided; validation used the draft zone geometry.");
+            }
+
+            return;
+        }
+
+        if (!RequiresZone(rule.TriggerType))
+        {
+            return;
+        }
+
+        if (!rule.ZoneId.HasValue)
+        {
+            errors.Add("ZoneId is required for enter, exit, and dwell alert rules.");
+            return;
+        }
+
+        var existingZone = await store.GetZoneAsync(rule.ZoneId.Value, cancellationToken).ConfigureAwait(false);
+        if (existingZone is null)
+        {
+            errors.Add($"Zone '{rule.ZoneId.Value.ToString(CultureInfo.InvariantCulture)}' was not found.");
+            return;
+        }
+
+        if (!string.Equals(existingZone.ServiceId, rule.ServiceId, StringComparison.Ordinal))
+        {
+            errors.Add("Zone ServiceId must match the alert rule ServiceId.");
+        }
+
+        if (!existingZone.IsActive)
+        {
+            warnings.Add("The referenced zone is inactive; the rule will not evaluate spatial transitions until the zone is active.");
+        }
+    }
+
+    private static bool RequiresZone(AlertTriggerType triggerType)
+    {
+        return triggerType is AlertTriggerType.Enter or AlertTriggerType.Exit or AlertTriggerType.Dwell;
+    }
+
+    private static AlertChannelValidationResponse[] BuildChannelValidation(
+        AlertRuleDefinition rule,
+        IAlertEditionPolicy editionPolicy)
+    {
+        if (rule.Channels.IsDefaultOrEmpty)
+        {
+            return [];
+        }
+
+        var results = new List<AlertChannelValidationResponse>(rule.Channels.Length);
+        foreach (var channel in rule.Channels)
+        {
+            var isAllowed = editionPolicy.IsChannelAllowed(channel);
+            var isConfigured = isAllowed && editionPolicy.IsChannelConfigured(channel);
+            string status;
+            string message;
+
+            if (!isAllowed)
+            {
+                status = ChannelStatusUnauthorized;
+                message = $"The configured edition does not allow the '{channel.ToExternalName()}' delivery channel.";
+            }
+            else if (!isConfigured)
+            {
+                status = ChannelStatusUnconfigured;
+                message = $"The server is not configured to deliver the '{channel.ToExternalName()}' channel.";
+            }
+            else if (!rule.IsActive)
+            {
+                status = ChannelStatusDisabled;
+                message = $"The '{channel.ToExternalName()}' channel is configured but the rule is disabled.";
+            }
+            else
+            {
+                status = ChannelStatusConfigured;
+                message = $"The '{channel.ToExternalName()}' channel is available.";
+            }
+
+            results.Add(new AlertChannelValidationResponse
+            {
+                Channel = channel.ToExternalName(),
+                Status = status,
+                IsAllowed = isAllowed,
+                IsConfigured = isConfigured,
+                Message = message
+            });
+        }
+
+        return results.ToArray();
+    }
+
+    private static bool TryValidateConditions(AlertTriggerType triggerType, string conditionsJson, out string error)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(conditionsJson);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                error = "ConditionsJson must be a JSON object.";
+                return false;
+            }
+
+            if (triggerType == AlertTriggerType.Dwell &&
+                !TryGetPositiveInt(root, "dwellSeconds", out _))
+            {
+                error = "Dwell rules require a positive dwellSeconds condition.";
+                return false;
+            }
+
+            if (triggerType == AlertTriggerType.Threshold &&
+                !TryValidateThresholdConditions(root, out error))
+            {
+                return false;
+            }
+
+            error = string.Empty;
+            return true;
+        }
+        catch (JsonException)
+        {
+            error = "ConditionsJson must be valid JSON.";
+            return false;
+        }
+    }
+
+    private static bool TryValidateThresholdConditions(JsonElement root, out string error)
+    {
+        if (!root.TryGetProperty("field", out var fieldProperty) ||
+            fieldProperty.ValueKind != JsonValueKind.String ||
+            string.IsNullOrWhiteSpace(fieldProperty.GetString()))
+        {
+            error = "Threshold rules require a non-empty field condition.";
             return false;
         }
 
-        foreach (var channel in rule.Channels)
+        if (!root.TryGetProperty("operator", out var operatorProperty) ||
+            operatorProperty.ValueKind != JsonValueKind.String ||
+            !IsSupportedThresholdOperator(operatorProperty.GetString()))
         {
-            if (!editionPolicy.IsChannelAllowed(channel))
-            {
-                error = $"The configured edition does not allow the '{channel}' delivery channel.";
-                return false;
-            }
+            error = "Threshold rules require operator to be one of: >, >=, <, <=, ==, !=.";
+            return false;
+        }
 
-            if (!editionPolicy.IsChannelConfigured(channel))
-            {
-                error = $"The server is not configured to deliver the '{channel}' channel.";
-                return false;
-            }
+        if (!root.TryGetProperty("value", out var valueProperty) ||
+            !TryReadDouble(valueProperty, out _))
+        {
+            error = "Threshold rules require a numeric value condition.";
+            return false;
         }
 
         error = string.Empty;
         return true;
+    }
+
+    private static bool TryGetPositiveInt(JsonElement root, string propertyName, out int value)
+    {
+        value = 0;
+        if (!root.TryGetProperty(propertyName, out var property))
+        {
+            return false;
+        }
+
+        if (property.ValueKind == JsonValueKind.Number && property.TryGetInt32(out value))
+        {
+            return value > 0;
+        }
+
+        if (property.ValueKind == JsonValueKind.String &&
+            int.TryParse(property.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value))
+        {
+            return value > 0;
+        }
+
+        return false;
+    }
+
+    private static bool TryReadDouble(JsonElement value, out double parsed)
+    {
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out parsed))
+        {
+            return true;
+        }
+
+        if (value.ValueKind == JsonValueKind.String)
+        {
+            return double.TryParse(value.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out parsed);
+        }
+
+        parsed = 0;
+        return false;
+    }
+
+    private static bool IsSupportedThresholdOperator(string? value)
+    {
+        return value is ">" or ">=" or "<" or "<=" or "==" or "!=";
     }
 
     private static AlertZoneResponse MapZoneResponse(AlertZoneDefinition zone)
@@ -359,6 +844,108 @@ internal static class AlertAdminEndpoints
             Channels = rule.Channels.Select(static channel => channel.ToExternalName()).ToArray(),
             IsActive = rule.IsActive
         };
+    }
+
+    private static AlertRuleHealthResponse MapRuleHealthResponse(
+        AlertRuleDefinition rule,
+        AlertRuleHealthSnapshot health,
+        IReadOnlyList<AlertEventSummary> recentTriggers)
+    {
+        return new AlertRuleHealthResponse
+        {
+            RuleId = health.RuleId,
+            LastEvaluatedAt = health.LastEvaluatedAt,
+            LastTriggeredAt = health.LastTriggeredAt,
+            ActiveIncidentCount = health.ActiveIncidentCount,
+            RecentTriggerCount = health.RecentTriggerCount,
+            CoolingDownFeatureCount = health.CoolingDownFeatureCount,
+            NextCooldownExpiresAt = health.NextCooldownExpiresAt,
+            DeliveryFailureCount = health.DeliveryFailureCount,
+            DeadLetterCount = health.DeadLetterCount,
+            LinkedEventIds = health.LinkedEventIds.ToArray(),
+            DeliveryChannels = MapDeliveryHealth(rule, health.DeliveryChannels),
+            RecentTriggers = recentTriggers.Select(MapRecentTrigger).ToArray()
+        };
+    }
+
+    private static AlertRuleDeliveryHealthResponse[] MapDeliveryHealth(
+        AlertRuleDefinition rule,
+        ImmutableArray<AlertRuleDeliveryHealth> deliveryHealth)
+    {
+        var byChannel = deliveryHealth.ToDictionary(static health => health.ChannelType);
+        var channels = rule.Channels.IsDefaultOrEmpty
+            ? deliveryHealth.Select(static health => health.ChannelType).ToArray()
+            : rule.Channels.Concat(deliveryHealth.Select(static health => health.ChannelType)).Distinct().ToArray();
+
+        return channels
+            .Select(channel => byChannel.TryGetValue(channel, out var health)
+                ? MapDeliveryHealth(rule, health)
+                : MapDeliveryHealth(rule, new AlertRuleDeliveryHealth
+                {
+                    ChannelType = channel,
+                    PendingCount = 0,
+                    ProcessingCount = 0,
+                    DeliveredCount = 0,
+                    FailedCount = 0,
+                    DeadLetterCount = 0
+                }))
+            .ToArray();
+    }
+
+    private static AlertRuleDeliveryHealthResponse MapDeliveryHealth(
+        AlertRuleDefinition rule,
+        AlertRuleDeliveryHealth health)
+    {
+        return new AlertRuleDeliveryHealthResponse
+        {
+            Channel = health.ChannelType.ToExternalName(),
+            Status = ResolveDeliveryHealthStatus(rule, health),
+            PendingCount = health.PendingCount,
+            ProcessingCount = health.ProcessingCount,
+            DeliveredCount = health.DeliveredCount,
+            FailedCount = health.FailedCount,
+            DeadLetterCount = health.DeadLetterCount,
+            LastAttemptAt = health.LastAttemptAt,
+            LastDeliveredAt = health.LastDeliveredAt,
+            LastError = health.LastError
+        };
+    }
+
+    private static AlertRuleRecentTriggerResponse MapRecentTrigger(AlertEventSummary summary)
+    {
+        return new AlertRuleRecentTriggerResponse
+        {
+            EventId = summary.EventId,
+            TriggerType = summary.TriggerType.ToString().ToLowerInvariant(),
+            Severity = summary.Severity.ToString().ToLowerInvariant(),
+            OccurredAt = summary.OccurredAt,
+            IncidentStatus = summary.IncidentStatus.ToString().ToLowerInvariant(),
+            LifecycleStatus = summary.LifecycleStatus.ToString().ToLowerInvariant(),
+            ResourceRef = "alert/" + summary.EventId.ToString(CultureInfo.InvariantCulture)
+        };
+    }
+
+    private static string ResolveDeliveryHealthStatus(AlertRuleDefinition rule, AlertRuleDeliveryHealth health)
+    {
+        if (!rule.IsActive)
+        {
+            return ChannelStatusDisabled;
+        }
+
+        if (health.DeadLetterCount > 0 || health.FailedCount > 0)
+        {
+            return IsRateLimitError(health.LastError) ? ChannelStatusRateLimited : ChannelStatusFailing;
+        }
+
+        return ChannelStatusConfigured;
+    }
+
+    private static bool IsRateLimitError(string? value)
+    {
+        return value is not null &&
+               (value.Contains("429", StringComparison.OrdinalIgnoreCase) ||
+                value.Contains("too many requests", StringComparison.OrdinalIgnoreCase) ||
+                value.Contains("rate limit", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool TryParseWkt(
@@ -441,17 +1028,26 @@ internal static class AlertAdminEndpoints
 
     private static bool TryParseTriggerType(string value, out AlertTriggerType triggerType)
     {
-        return Enum.TryParse(value, true, out triggerType);
+        triggerType = default;
+        return !int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _) &&
+               Enum.TryParse(value, true, out triggerType) &&
+               Enum.IsDefined(triggerType);
     }
 
     private static bool TryParseSeverity(string value, out AlertSeverity severity)
     {
-        return Enum.TryParse(value, true, out severity);
+        severity = default;
+        return !int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _) &&
+               Enum.TryParse(value, true, out severity) &&
+               Enum.IsDefined(severity);
     }
 
     private static bool TryParseEdition(string value, out AlertEdition edition)
     {
-        return Enum.TryParse(value, true, out edition);
+        edition = default;
+        return !int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _) &&
+               Enum.TryParse(value, true, out edition) &&
+               Enum.IsDefined(edition);
     }
 
     private static bool TryParseChannels(
@@ -489,6 +1085,88 @@ internal static class AlertAdminEndpoints
         return true;
     }
 
+    private static Task RecordZoneAuditAsync(
+        IAuditLog auditLog,
+        HttpContext context,
+        AlertZoneDefinition zone,
+        string action,
+        bool enabled,
+        CancellationToken cancellationToken)
+    {
+        return RecordAuditAsync(
+            auditLog,
+            context,
+            resourceType: "alert_zone",
+            resourceId: zone.ZoneId.ToString(CultureInfo.InvariantCulture),
+            action,
+            new AlertAdminAuditDetails
+            {
+                ServiceId = zone.ServiceId,
+                ZoneId = zone.ZoneId,
+                Enabled = enabled
+            },
+            cancellationToken);
+    }
+
+    private static Task RecordRuleAuditAsync(
+        IAuditLog auditLog,
+        HttpContext context,
+        AlertRuleDefinition rule,
+        string action,
+        bool enabled,
+        CancellationToken cancellationToken)
+    {
+        return RecordAuditAsync(
+            auditLog,
+            context,
+            resourceType: "alert_rule",
+            resourceId: rule.RuleId.ToString(CultureInfo.InvariantCulture),
+            action,
+            new AlertAdminAuditDetails
+            {
+                ServiceId = rule.ServiceId,
+                LayerId = rule.LayerId,
+                RuleId = rule.RuleId,
+                ZoneId = rule.ZoneId,
+                Enabled = enabled
+            },
+            cancellationToken);
+    }
+
+    private static Task RecordAuditAsync(
+        IAuditLog auditLog,
+        HttpContext context,
+        string resourceType,
+        string? resourceId,
+        string action,
+        AlertAdminAuditDetails details,
+        CancellationToken cancellationToken)
+    {
+        var actor = ResolveActor(context);
+        var auditEvent = new AuditEvent
+        {
+            Timestamp = DateTimeOffset.UtcNow,
+            EventType = AuditEventType.ConfigChange,
+            Actor = actor,
+            ActorType = string.Equals(actor, AuditEvent.AnonymousActor, StringComparison.Ordinal)
+                ? AuditActorType.Anonymous
+                : AuditActorType.UserId,
+            ResourceType = resourceType,
+            ResourceId = resourceId,
+            Action = action,
+            Outcome = AuditOutcome.Success,
+            CorrelationId = context.TraceIdentifier,
+            Details = JsonSerializer.Serialize(details, AlertAdminJsonContext.Default.AlertAdminAuditDetails)
+        };
+
+        return auditLog.RecordAsync(auditEvent, cancellationToken);
+    }
+
+    private static string ResolveActor(HttpContext context)
+    {
+        return context.User?.Identity?.Name ?? AuditEvent.AnonymousActor;
+    }
+
     private static IResult BadRequest(string message)
     {
         return Results.Json(
@@ -504,4 +1182,10 @@ internal static class AlertAdminEndpoints
             AlertAdminJsonContext.Default.ApiResponseObject,
             statusCode: StatusCodes.Status404NotFound);
     }
+
+    private sealed record RuleValidationResult(
+        bool IsValid,
+        string[] Errors,
+        string[] Warnings,
+        AlertChannelValidationResponse[] DeliveryChannels);
 }

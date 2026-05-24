@@ -172,6 +172,30 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
         return rules;
     }
 
+    public async Task<AlertRuleDefinition?> GetRuleAsync(
+        long ruleId,
+        CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            SELECT rule_id, service_id, layer_id, zone_id, rule_name, trigger_type,
+                   conditions, cooldown_seconds, severity, edition_required, channels, is_active
+            FROM honua.alert_rules
+            WHERE rule_id = @rule_id
+            """;
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("rule_id", NpgsqlDbType.Bigint, ruleId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        return AlertStoreConversions.MapRule(reader);
+    }
+
     public async Task<AlertRuleDefinition> CreateRuleAsync(
         AlertRuleDefinition rule,
         CancellationToken cancellationToken = default)
@@ -248,6 +272,178 @@ internal sealed class PostgresAlertAdminStore : IAlertAdminStore
 
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) > 0;
     }
+
+    public async Task<AlertRuleHealthSnapshot?> GetRuleHealthAsync(
+        long ruleId,
+        int recentTriggerLimit,
+        CancellationToken cancellationToken = default)
+    {
+        var rule = await GetRuleAsync(ruleId, cancellationToken).ConfigureAwait(false);
+        if (rule is null)
+        {
+            return null;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var clampedRecentTriggerLimit = Math.Clamp(recentTriggerLimit, 1, 50);
+
+        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        var state = await GetRuleStateHealthAsync(connection, rule, now, cancellationToken).ConfigureAwait(false);
+        var events = await GetRuleEventHealthAsync(connection, ruleId, clampedRecentTriggerLimit, cancellationToken).ConfigureAwait(false);
+        var delivery = await GetRuleDeliveryHealthAsync(connection, ruleId, cancellationToken).ConfigureAwait(false);
+
+        return new AlertRuleHealthSnapshot
+        {
+            RuleId = ruleId,
+            LastEvaluatedAt = state.LastEvaluatedAt,
+            LastTriggeredAt = events.LastTriggeredAt,
+            ActiveIncidentCount = events.ActiveIncidentCount,
+            RecentTriggerCount = events.RecentTriggerCount,
+            CoolingDownFeatureCount = state.CoolingDownFeatureCount,
+            NextCooldownExpiresAt = state.NextCooldownExpiresAt,
+            DeliveryFailureCount = delivery.Sum(static channel => channel.FailedCount),
+            DeadLetterCount = delivery.Sum(static channel => channel.DeadLetterCount),
+            LinkedEventIds = events.LinkedEventIds,
+            DeliveryChannels = delivery
+        };
+    }
+
+    private static async Task<RuleStateHealth> GetRuleStateHealthAsync(
+        NpgsqlConnection connection,
+        AlertRuleDefinition rule,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT MAX(last_evaluated_at),
+                   COUNT(*) FILTER (
+                       WHERE @cooldown_seconds > 0
+                         AND last_alert_at IS NOT NULL
+                         AND @now < last_alert_at + make_interval(secs => @cooldown_seconds)
+                   )::int,
+                   MAX(last_alert_at + make_interval(secs => @cooldown_seconds)) FILTER (
+                       WHERE @cooldown_seconds > 0
+                         AND last_alert_at IS NOT NULL
+                         AND @now < last_alert_at + make_interval(secs => @cooldown_seconds)
+                   )
+            FROM honua.alert_state
+            WHERE rule_id = @rule_id
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("rule_id", NpgsqlDbType.Bigint, rule.RuleId);
+        command.Parameters.AddWithValue("cooldown_seconds", NpgsqlDbType.Integer, rule.CooldownSeconds);
+        command.Parameters.AddWithValue("now", NpgsqlDbType.TimestampTz, now);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        _ = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+        return new RuleStateHealth(
+            reader.IsDBNull(0) ? null : reader.GetFieldValue<DateTimeOffset>(0),
+            reader.IsDBNull(1) ? 0 : reader.GetInt32(1),
+            reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2));
+    }
+
+    private static async Task<RuleEventHealth> GetRuleEventHealthAsync(
+        NpgsqlConnection connection,
+        long ruleId,
+        int recentTriggerLimit,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT
+                (SELECT MAX(occurred_at)
+                 FROM honua.alert_events
+                 WHERE rule_id = @rule_id) AS last_triggered_at,
+                (SELECT COUNT(*)::int
+                 FROM honua.alert_events e
+                 LEFT JOIN honua.alert_event_lifecycle l ON l.event_id = e.event_id
+                 WHERE e.rule_id = @rule_id
+                   AND e.incident_status IN (1, 2)
+                   AND COALESCE(l.lifecycle_status, 0) <> 3) AS active_incident_count,
+                (SELECT COUNT(*)::int
+                 FROM honua.alert_events
+                 WHERE rule_id = @rule_id
+                   AND occurred_at >= now() - interval '24 hours') AS recent_trigger_count,
+                ARRAY(
+                    SELECT event_id
+                    FROM honua.alert_events
+                    WHERE rule_id = @rule_id
+                    ORDER BY occurred_at DESC, event_id DESC
+                    LIMIT @recent_trigger_limit
+                ) AS linked_event_ids
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("rule_id", NpgsqlDbType.Bigint, ruleId);
+        command.Parameters.AddWithValue("recent_trigger_limit", NpgsqlDbType.Integer, recentTriggerLimit);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        _ = await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+        var eventIds = reader.GetFieldValue<long[]>(3);
+        return new RuleEventHealth(
+            reader.IsDBNull(0) ? null : reader.GetFieldValue<DateTimeOffset>(0),
+            reader.GetInt32(1),
+            reader.GetInt32(2),
+            ImmutableArray.CreateRange(eventIds));
+    }
+
+    private static async Task<ImmutableArray<AlertRuleDeliveryHealth>> GetRuleDeliveryHealthAsync(
+        NpgsqlConnection connection,
+        long ruleId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT d.channel_type,
+                   COUNT(*) FILTER (WHERE d.status = 0)::int AS pending_count,
+                   COUNT(*) FILTER (WHERE d.status = 1)::int AS processing_count,
+                   COUNT(*) FILTER (WHERE d.status = 2)::int AS delivered_count,
+                   COUNT(*) FILTER (WHERE d.status = 3)::int AS failed_count,
+                   COUNT(*) FILTER (WHERE d.status = 4)::int AS dead_letter_count,
+                   MAX(d.last_attempt_at) AS last_attempt_at,
+                   MAX(d.delivered_at) AS last_delivered_at,
+                   (ARRAY_AGG(d.last_error ORDER BY d.updated_at DESC) FILTER (WHERE d.last_error IS NOT NULL))[1] AS last_error
+            FROM honua.alert_dispatch d
+            INNER JOIN honua.alert_events e ON e.event_id = d.event_id
+            WHERE e.rule_id = @rule_id
+            GROUP BY d.channel_type
+            ORDER BY d.channel_type
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("rule_id", NpgsqlDbType.Bigint, ruleId);
+
+        var results = ImmutableArray.CreateBuilder<AlertRuleDeliveryHealth>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            results.Add(new AlertRuleDeliveryHealth
+            {
+                ChannelType = AlertStoreConversions.ToChannelType(reader.GetInt16(0)),
+                PendingCount = reader.GetInt32(1),
+                ProcessingCount = reader.GetInt32(2),
+                DeliveredCount = reader.GetInt32(3),
+                FailedCount = reader.GetInt32(4),
+                DeadLetterCount = reader.GetInt32(5),
+                LastAttemptAt = reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
+                LastDeliveredAt = reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
+                LastError = reader.IsDBNull(8) ? null : reader.GetString(8)
+            });
+        }
+
+        return results.ToImmutable();
+    }
+
+    private sealed record RuleStateHealth(
+        DateTimeOffset? LastEvaluatedAt,
+        int CoolingDownFeatureCount,
+        DateTimeOffset? NextCooldownExpiresAt);
+
+    private sealed record RuleEventHealth(
+        DateTimeOffset? LastTriggeredAt,
+        int ActiveIncidentCount,
+        int RecentTriggerCount,
+        ImmutableArray<long> LinkedEventIds);
 
     private static NpgsqlCommand BuildZoneWriteCommand(string sql, NpgsqlConnection connection, AlertZoneDefinition zone)
     {

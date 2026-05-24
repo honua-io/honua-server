@@ -3,13 +3,19 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Collections.Immutable;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -46,6 +52,7 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/alerts/zones/{zoneId}")]
     [Endpoint("POST /api/v1/admin/alerts/zones")]
     [Endpoint("PUT /api/v1/admin/alerts/zones/{zoneId}")]
     [Endpoint("DELETE /api/v1/admin/alerts/zones/{zoneId}")]
@@ -72,6 +79,14 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
         var zoneId = createdZone.GetProperty("zoneId").GetInt64();
         zoneId.Should().BeGreaterThan(0);
         createdZone.GetProperty("wkt").GetString().Should().Contain("MULTIPOLYGON");
+
+        var getResponse = await _client.GetAsync($"/api/v1/admin/alerts/zones/{zoneId}");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using (var getDocument = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync()))
+        {
+            getDocument.RootElement.GetProperty("data").GetProperty("zoneId").GetInt64().Should().Be(zoneId);
+        }
 
         var updatePayload = new
         {
@@ -114,17 +129,20 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/alerts/rules/{ruleId}")]
     [Endpoint("POST /api/v1/admin/alerts/rules")]
     [Endpoint("PUT /api/v1/admin/alerts/rules/{ruleId}")]
+    [Endpoint("PUT /api/v1/admin/alerts/rules/{ruleId}/enabled")]
     [Endpoint("DELETE /api/v1/admin/alerts/rules/{ruleId}")]
     public async Task RuleCrud_CreateUpdateDelete_CompletesLifecycle()
     {
         var serviceId = $"rules-{Guid.NewGuid():N}";
+        var zoneId = await CreateZoneAsync(serviceId);
         var createPayload = new
         {
             serviceId,
             layerId = 1,
-            zoneId = (long?)null,
+            zoneId = (long?)zoneId,
             ruleName = "Harbor Entry",
             triggerType = "enter",
             conditionsJson = "{\"speedKmh\": 30}",
@@ -144,11 +162,19 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
         var ruleId = createdRule.GetProperty("ruleId").GetInt64();
         ruleId.Should().BeGreaterThan(0);
 
+        var getResponse = await _client.GetAsync($"/api/v1/admin/alerts/rules/{ruleId}");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using (var getDocument = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync()))
+        {
+            getDocument.RootElement.GetProperty("data").GetProperty("ruleId").GetInt64().Should().Be(ruleId);
+        }
+
         var updatePayload = new
         {
             serviceId,
             layerId = 1,
-            zoneId = (long?)null,
+            zoneId = (long?)zoneId,
             ruleName = "Harbor Exit",
             triggerType = "exit",
             conditionsJson = "{\"speedKmh\": 20}",
@@ -168,6 +194,14 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
         updatedRule.GetProperty("ruleName").GetString().Should().Be("Harbor Exit");
         updatedRule.GetProperty("triggerType").GetString().Should().Be("exit");
         updatedRule.GetProperty("isActive").GetBoolean().Should().BeFalse();
+
+        var enableResponse = await _client.PutAsJsonAsync($"/api/v1/admin/alerts/rules/{ruleId}/enabled", new { enabled = true });
+        enableResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using (var enableDocument = JsonDocument.Parse(await enableResponse.Content.ReadAsStringAsync()))
+        {
+            enableDocument.RootElement.GetProperty("data").GetProperty("isActive").GetBoolean().Should().BeTrue();
+        }
 
         var deleteResponse = await _client.DeleteAsync($"/api/v1/admin/alerts/rules/{ruleId}");
         deleteResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -272,8 +306,8 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
             serviceId = $"rules-{Guid.NewGuid():N}",
             layerId = 1,
             ruleName = "Ghost Rule",
-            triggerType = "enter",
-            conditionsJson = "{}",
+            triggerType = "threshold",
+            conditionsJson = "{\"field\":\"speedKmh\",\"operator\":\">\",\"value\":30}",
             cooldownSeconds = 60,
             severity = "warning",
             editionRequired = "pro",
@@ -295,12 +329,299 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/alerts/rules/test")]
+    public async Task TestRule_WithDraftZoneAndDisabledRule_ReturnsValidationStatesWithoutPersisting()
+    {
+        var serviceId = $"rule-test-{Guid.NewGuid():N}";
+        var payload = new
+        {
+            rule = new
+            {
+                serviceId,
+                layerId = 1,
+                zoneId = (long?)null,
+                ruleName = "Draft Entry",
+                triggerType = "enter",
+                conditionsJson = "{}",
+                cooldownSeconds = 30,
+                severity = "warning",
+                editionRequired = "pro",
+                channels = new[] { "webhook" },
+                isActive = false
+            },
+            zone = new
+            {
+                serviceId,
+                zoneName = "Draft Zone",
+                wkt = "POLYGON((-157.88 21.29,-157.88 21.31,-157.85 21.31,-157.85 21.29,-157.88 21.29))",
+                srid = 4326,
+                isActive = true
+            }
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/alerts/rules/test", payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        data.GetProperty("isValid").GetBoolean().Should().BeTrue();
+        data.GetProperty("deliveryChannels")[0].GetProperty("status").GetString().Should().Be("disabled");
+
+        var listResponse = await _client.GetAsync($"/api/v1/admin/alerts/rules?serviceId={serviceId}&layerId=1");
+        using var listDocument = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
+        listDocument.RootElement.GetProperty("data").GetArrayLength().Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/alerts/rules/test")]
+    public async Task TestRule_WithInvalidThresholdExpression_ReturnsValidationError()
+    {
+        var payload = new
+        {
+            rule = new
+            {
+                serviceId = $"rule-test-{Guid.NewGuid():N}",
+                layerId = 1,
+                zoneId = (long?)null,
+                ruleName = "Draft Threshold",
+                triggerType = "threshold",
+                conditionsJson = "{\"field\":\"speedKmh\",\"operator\":\"between\",\"value\":30}",
+                cooldownSeconds = 30,
+                severity = "warning",
+                editionRequired = "pro",
+                channels = Array.Empty<string>(),
+                isActive = true
+            }
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/alerts/rules/test", payload);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        data.GetProperty("isValid").GetBoolean().Should().BeFalse();
+        data.GetProperty("errors")[0].GetString().Should().Contain("operator");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/alerts/rules/test")]
+    public async Task TestRule_WithUnauthorizedChannel_ReturnsChannelState()
+    {
+        var fixture = CreateFixture(
+            allowedChannels: [],
+            configuredChannels: [AlertChannelType.Webhook]);
+
+        try
+        {
+            await fixture.InitializeAsync();
+            using var client = fixture.CreateAdminClient();
+
+            var payload = new
+            {
+                rule = new
+                {
+                    serviceId = $"rule-test-{Guid.NewGuid():N}",
+                    layerId = 1,
+                    zoneId = (long?)null,
+                    ruleName = "Draft Threshold",
+                    triggerType = "threshold",
+                    conditionsJson = "{\"field\":\"speedKmh\",\"operator\":\">\",\"value\":30}",
+                    cooldownSeconds = 30,
+                    severity = "warning",
+                    editionRequired = "pro",
+                    channels = new[] { "webhook" },
+                    isActive = true
+                }
+            };
+
+            var response = await client.PostAsJsonAsync("/api/v1/admin/alerts/rules/test", payload);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var data = document.RootElement.GetProperty("data");
+            data.GetProperty("isValid").GetBoolean().Should().BeFalse();
+            data.GetProperty("deliveryChannels")[0].GetProperty("status").GetString().Should().Be("unauthorized");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/alerts/rules")]
+    public async Task CreateRule_RecordsAuditEvidence()
+    {
+        var audit = new CapturingAuditLog();
+        var store = new StubAlertAdminStore();
+        var fixture = CreateStubbedFixture(store, audit, new StubAlertEventQuery());
+
+        try
+        {
+            await fixture.InitializeAsync();
+            using var client = fixture.CreateAdminClient();
+
+            var payload = new
+            {
+                serviceId = $"audit-{Guid.NewGuid():N}",
+                layerId = 1,
+                ruleName = "Audit Threshold",
+                triggerType = "threshold",
+                conditionsJson = "{\"field\":\"speedKmh\",\"operator\":\">\",\"value\":30}",
+                cooldownSeconds = 30,
+                severity = "warning",
+                editionRequired = "pro",
+                channels = Array.Empty<string>(),
+                isActive = true
+            };
+
+            var response = await client.PostAsJsonAsync("/api/v1/admin/alerts/rules", payload);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            audit.Recorded.Should().ContainSingle();
+            audit.Recorded[0].Action.Should().Be("alert_rule.create");
+            audit.Recorded[0].ResourceType.Should().Be("alert_rule");
+            audit.Recorded[0].CorrelationId.Should().NotBeNullOrWhiteSpace();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/alerts/rules/{ruleId}/health")]
+    public async Task GetRuleHealth_WithRateLimitedDelivery_ReturnsChannelState()
+    {
+        var store = new StubAlertAdminStore();
+        store.Rules[42] = new AlertRuleDefinition
+        {
+            RuleId = 42,
+            ServiceId = "svc",
+            LayerId = 1,
+            RuleName = "Webhook Rule",
+            TriggerType = AlertTriggerType.Threshold,
+            ConditionsJson = "{\"field\":\"speedKmh\",\"operator\":\">\",\"value\":30}",
+            CooldownSeconds = 30,
+            Severity = AlertSeverity.Warning,
+            EditionRequired = AlertEdition.Pro,
+            Channels = ImmutableArray.Create(AlertChannelType.Webhook),
+            IsActive = true
+        };
+        store.Health = new AlertRuleHealthSnapshot
+        {
+            RuleId = 42,
+            ActiveIncidentCount = 1,
+            RecentTriggerCount = 1,
+            CoolingDownFeatureCount = 0,
+            DeliveryFailureCount = 1,
+            DeadLetterCount = 0,
+            LinkedEventIds = ImmutableArray.Create(101L),
+            DeliveryChannels = ImmutableArray.Create(new AlertRuleDeliveryHealth
+            {
+                ChannelType = AlertChannelType.Webhook,
+                PendingCount = 0,
+                ProcessingCount = 0,
+                DeliveredCount = 0,
+                FailedCount = 1,
+                DeadLetterCount = 0,
+                LastError = "Webhook responded with 429."
+            })
+        };
+
+        var query = new StubAlertEventQuery
+        {
+            Page = new AlertEventPage
+            {
+                Items = new[]
+                {
+                    new AlertEventSummary
+                    {
+                        EventId = 101,
+                        RuleId = 42,
+                        ServiceId = "svc",
+                        LayerId = 1,
+                        ObjectId = 5,
+                        TriggerType = AlertTriggerType.Threshold,
+                        Severity = AlertSeverity.Warning,
+                        OccurredAt = DateTimeOffset.UtcNow,
+                        IncidentStatus = AlertIncidentStatus.Started,
+                        IncidentDurationMs = 0,
+                        LifecycleStatus = AlertLifecycleStatus.Open
+                    }
+                }
+            }
+        };
+
+        var fixture = CreateStubbedFixture(store, new CapturingAuditLog(), query);
+
+        try
+        {
+            await fixture.InitializeAsync();
+            using var client = fixture.CreateAdminClient();
+
+            var response = await client.GetAsync("/api/v1/admin/alerts/rules/42/health");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var data = document.RootElement.GetProperty("data");
+            data.GetProperty("activeIncidentCount").GetInt32().Should().Be(1);
+            data.GetProperty("deliveryChannels")[0].GetProperty("status").GetString().Should().Be("rate_limited");
+            data.GetProperty("recentTriggers")[0].GetProperty("resourceRef").GetString().Should().Be("alert/101");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private async Task<long> CreateZoneAsync(string serviceId)
+    {
+        var payload = new
+        {
+            serviceId,
+            zoneName = "Test Zone",
+            wkt = "POLYGON((-157.88 21.29,-157.88 21.31,-157.85 21.31,-157.85 21.29,-157.88 21.29))",
+            srid = 4326,
+            isActive = true
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/alerts/zones", payload);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return document.RootElement.GetProperty("data").GetProperty("zoneId").GetInt64();
+    }
+
     private static WebAppFixture CreateFixture(
         IReadOnlyCollection<AlertChannelType> allowedChannels,
         IReadOnlyCollection<AlertChannelType> configuredChannels)
     {
         return new WebAppFixture().ReplaceService<IAlertEditionPolicy>(
             new TestAlertEditionPolicy(allowedChannels, configuredChannels));
+    }
+
+    private static WebAppFixture CreateStubbedFixture(
+        IAlertAdminStore store,
+        IAuditLog auditLog,
+        IAlertEventQuery eventQuery)
+    {
+        return new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IDatabaseMigrationRunner>();
+                services.AddSingleton<IDatabaseMigrationRunner>(new NoopMigrationRunner());
+
+                services.RemoveAll<IAlertAdminStore>();
+                services.RemoveAll<IAuditLog>();
+                services.RemoveAll<IAlertEventQuery>();
+                services.AddSingleton(store);
+                services.AddSingleton(auditLog);
+                services.AddSingleton(eventQuery);
+            })
+            .ReplaceService<IAlertEditionPolicy>(
+                new TestAlertEditionPolicy([AlertChannelType.Webhook], [AlertChannelType.Webhook]));
     }
 
     private sealed class TestAlertEditionPolicy : IAlertEditionPolicy
@@ -321,5 +642,102 @@ public sealed class AlertAdminEndpointsTests : IAsyncLifetime
         public bool IsChannelAllowed(AlertChannelType channelType) => _allowedChannels.Contains(channelType);
 
         public bool IsChannelConfigured(AlertChannelType channelType) => _configuredChannels.Contains(channelType);
+    }
+
+    private sealed class StubAlertAdminStore : IAlertAdminStore
+    {
+        private long _nextRuleId = 100;
+
+        public Dictionary<long, AlertRuleDefinition> Rules { get; } = new();
+
+        public AlertRuleHealthSnapshot? Health { get; set; }
+
+        public Task<IReadOnlyList<AlertZoneDefinition>> ListZonesAsync(string? serviceId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<AlertZoneDefinition>>(Array.Empty<AlertZoneDefinition>());
+
+        public Task<AlertZoneDefinition?> GetZoneAsync(long zoneId, CancellationToken cancellationToken = default)
+            => Task.FromResult<AlertZoneDefinition?>(null);
+
+        public Task<AlertZoneDefinition> CreateZoneAsync(AlertZoneDefinition zone, CancellationToken cancellationToken = default)
+            => Task.FromResult(zone with { ZoneId = zone.ZoneId == 0 ? 1 : zone.ZoneId });
+
+        public Task<AlertZoneDefinition?> UpdateZoneAsync(AlertZoneDefinition zone, CancellationToken cancellationToken = default)
+            => Task.FromResult<AlertZoneDefinition?>(zone);
+
+        public Task<bool> DeleteZoneAsync(long zoneId, CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task<IReadOnlyList<AlertRuleDefinition>> ListRulesAsync(string? serviceId, int? layerId, CancellationToken cancellationToken = default)
+        {
+            var results = Rules.Values
+                .Where(rule => string.IsNullOrWhiteSpace(serviceId) || string.Equals(rule.ServiceId, serviceId, StringComparison.Ordinal))
+                .Where(rule => !layerId.HasValue || rule.LayerId == layerId.Value)
+                .ToArray();
+
+            return Task.FromResult<IReadOnlyList<AlertRuleDefinition>>(results);
+        }
+
+        public Task<AlertRuleDefinition?> GetRuleAsync(long ruleId, CancellationToken cancellationToken = default)
+        {
+            Rules.TryGetValue(ruleId, out var rule);
+            return Task.FromResult(rule);
+        }
+
+        public Task<AlertRuleDefinition> CreateRuleAsync(AlertRuleDefinition rule, CancellationToken cancellationToken = default)
+        {
+            var created = rule with { RuleId = _nextRuleId++ };
+            Rules[created.RuleId] = created;
+            return Task.FromResult(created);
+        }
+
+        public Task<AlertRuleDefinition?> UpdateRuleAsync(AlertRuleDefinition rule, CancellationToken cancellationToken = default)
+        {
+            if (!Rules.ContainsKey(rule.RuleId))
+            {
+                return Task.FromResult<AlertRuleDefinition?>(null);
+            }
+
+            Rules[rule.RuleId] = rule;
+            return Task.FromResult<AlertRuleDefinition?>(rule);
+        }
+
+        public Task<bool> DeleteRuleAsync(long ruleId, CancellationToken cancellationToken = default)
+            => Task.FromResult(Rules.Remove(ruleId));
+
+        public Task<AlertRuleHealthSnapshot?> GetRuleHealthAsync(long ruleId, int recentTriggerLimit, CancellationToken cancellationToken = default)
+            => Task.FromResult(Health);
+    }
+
+    private sealed class StubAlertEventQuery : IAlertEventQuery
+    {
+        public AlertEventPage Page { get; set; } = new() { Items = Array.Empty<AlertEventSummary>() };
+
+        public Task<AlertEventPage> ListAsync(AlertEventFilter filter, CancellationToken cancellationToken = default)
+            => Task.FromResult(Page);
+
+        public Task<AlertEventSummary?> GetAsync(long eventId, CancellationToken cancellationToken = default)
+            => Task.FromResult<AlertEventSummary?>(Page.Items.FirstOrDefault(item => item.EventId == eventId));
+    }
+
+    private sealed class CapturingAuditLog : IAuditLog
+    {
+        public List<AuditEvent> Recorded { get; } = new();
+
+        public Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        {
+            Recorded.Add(auditEvent);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class NoopMigrationRunner : IDatabaseMigrationRunner
+    {
+        public Task<DatabaseMigrationPlan> PlanMigrationsAsync(string connectionString,
+            System.Reflection.Assembly migrationsAssembly, CancellationToken cancellationToken = default)
+            => Task.FromResult(DatabaseMigrationPlan.Succeeded());
+
+        public Task<DatabaseMigrationResult> RunMigrationsAsync(string connectionString,
+            System.Reflection.Assembly migrationsAssembly, CancellationToken cancellationToken = default)
+            => Task.FromResult(DatabaseMigrationResult.Succeeded());
     }
 }

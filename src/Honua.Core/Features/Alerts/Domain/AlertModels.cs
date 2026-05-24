@@ -305,6 +305,118 @@ public sealed record AlertRuleDefinition
 }
 
 /// <summary>
+/// Delivery health summary for a single channel on an alert rule.
+/// </summary>
+public sealed record AlertRuleDeliveryHealth
+{
+    /// <summary>
+    /// Delivery channel represented by this summary.
+    /// </summary>
+    public required AlertChannelType ChannelType { get; init; }
+
+    /// <summary>
+    /// Number of pending dispatch outbox rows for this channel.
+    /// </summary>
+    public required int PendingCount { get; init; }
+
+    /// <summary>
+    /// Number of currently processing dispatch outbox rows for this channel.
+    /// </summary>
+    public required int ProcessingCount { get; init; }
+
+    /// <summary>
+    /// Number of successfully delivered dispatch rows for this channel.
+    /// </summary>
+    public required int DeliveredCount { get; init; }
+
+    /// <summary>
+    /// Number of retryable failed dispatch rows for this channel.
+    /// </summary>
+    public required int FailedCount { get; init; }
+
+    /// <summary>
+    /// Number of dead-lettered dispatch rows for this channel.
+    /// </summary>
+    public required int DeadLetterCount { get; init; }
+
+    /// <summary>
+    /// Most recent delivery attempt time for this channel, when known.
+    /// </summary>
+    public DateTimeOffset? LastAttemptAt { get; init; }
+
+    /// <summary>
+    /// Most recent successful delivery time for this channel, when known.
+    /// </summary>
+    public DateTimeOffset? LastDeliveredAt { get; init; }
+
+    /// <summary>
+    /// Most recent sanitized delivery error for this channel, when present.
+    /// </summary>
+    public string? LastError { get; init; }
+}
+
+/// <summary>
+/// Operational health summary for an alert rule.
+/// </summary>
+public sealed record AlertRuleHealthSnapshot
+{
+    /// <summary>
+    /// Rule identifier.
+    /// </summary>
+    public required long RuleId { get; init; }
+
+    /// <summary>
+    /// Most recent evaluator state update for this rule, when available.
+    /// </summary>
+    public DateTimeOffset? LastEvaluatedAt { get; init; }
+
+    /// <summary>
+    /// Most recent alert event emitted for this rule, when available.
+    /// </summary>
+    public DateTimeOffset? LastTriggeredAt { get; init; }
+
+    /// <summary>
+    /// Count of open or acknowledged started/ongoing incidents for this rule.
+    /// </summary>
+    public required int ActiveIncidentCount { get; init; }
+
+    /// <summary>
+    /// Count of recent trigger events in the health window.
+    /// </summary>
+    public required int RecentTriggerCount { get; init; }
+
+    /// <summary>
+    /// Count of evaluator state rows currently inside their cooldown window.
+    /// </summary>
+    public required int CoolingDownFeatureCount { get; init; }
+
+    /// <summary>
+    /// Latest cooldown expiry across currently cooling down features.
+    /// </summary>
+    public DateTimeOffset? NextCooldownExpiresAt { get; init; }
+
+    /// <summary>
+    /// Count of retryable delivery failures for this rule.
+    /// </summary>
+    public required int DeliveryFailureCount { get; init; }
+
+    /// <summary>
+    /// Count of dead-lettered delivery rows for this rule.
+    /// </summary>
+    public required int DeadLetterCount { get; init; }
+
+    /// <summary>
+    /// Recent event identifiers linked to this rule, newest first.
+    /// </summary>
+    public ImmutableArray<long> LinkedEventIds { get; init; } = ImmutableArray<long>.Empty;
+
+    /// <summary>
+    /// Per-channel delivery health summaries.
+    /// </summary>
+    public ImmutableArray<AlertRuleDeliveryHealth> DeliveryChannels { get; init; } = ImmutableArray<AlertRuleDeliveryHealth>.Empty;
+}
+
+/// <summary>
 /// Durable feature change input consumed by alert evaluation.
 /// </summary>
 public readonly record struct AlertChange
