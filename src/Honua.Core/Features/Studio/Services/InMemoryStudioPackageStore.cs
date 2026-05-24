@@ -73,6 +73,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                 throw new InvalidOperationException("Stale draft generation; refresh and retry.");
             }
 
+            EnsurePackageKeyAvailable(draft);
             var updated = draft with { Generation = existing.Generation + 1 };
             _drafts[draft.DraftId] = updated;
             _items[draft.ItemId] = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.CreatedBy, draft.CreatedAt) with

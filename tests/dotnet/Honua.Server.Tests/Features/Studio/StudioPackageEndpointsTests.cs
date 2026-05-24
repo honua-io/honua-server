@@ -207,6 +207,71 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         rollback.Pointers.PublishedVersionId.Should().Be(version.VersionId);
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/package-families")]
+    public async Task StudioPackageLifecycleEndpoints_WithoutAdmin_ReturnsUnauthorized()
+    {
+        using var unauthenticatedClient = _fixture.CreateClient();
+
+        var response = await unauthenticatedClient.GetAsync("/api/v1/studio/package-families");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/studio/package-drafts/{draftId}")]
+    public async Task UpdateDraft_WithStaleGeneration_ReturnsConflictProblem()
+    {
+        var createResponse = await PostAsync(
+            "/api/v1/studio/package-drafts",
+            new CreateStudioPackageDraftRequest
+            {
+                PackageKey = "stale-generation-query",
+                WorkspaceId = "studio",
+                Envelope = BuildEnvelope("1=1"),
+            },
+            StudioApiJsonContext.Default.CreateStudioPackageDraftRequest);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var draft = await ReadAsync<StudioPackageDraft>(
+            createResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+
+        var updateResponse = await PutAsync(
+            $"/api/v1/studio/package-drafts/{draft.DraftId:D}",
+            new UpdateStudioPackageDraftRequest
+            {
+                PackageKey = draft.PackageKey,
+                WorkspaceId = draft.WorkspaceId,
+                OwnerId = draft.OwnerId,
+                Envelope = BuildEnvelope("POPULATION > 1000"),
+                Generation = draft.Generation,
+            },
+            StudioApiJsonContext.Default.UpdateStudioPackageDraftRequest);
+        updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var updated = await ReadAsync<StudioPackageDraft>(
+            updateResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+        updated.Generation.Should().Be(draft.Generation + 1);
+
+        var staleUpdateResponse = await PutAsync(
+            $"/api/v1/studio/package-drafts/{draft.DraftId:D}",
+            new UpdateStudioPackageDraftRequest
+            {
+                PackageKey = draft.PackageKey,
+                WorkspaceId = draft.WorkspaceId,
+                OwnerId = draft.OwnerId,
+                Envelope = BuildEnvelope("POPULATION > 5000"),
+                Generation = draft.Generation,
+            },
+            StudioApiJsonContext.Default.UpdateStudioPackageDraftRequest);
+
+        staleUpdateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var problem = JsonSerializer.Deserialize<JsonElement>(await staleUpdateResponse.Content.ReadAsStringAsync());
+        problem.GetProperty("type").GetString().Should().Be("https://honua.io/problems/studio");
+        problem.GetProperty("status").GetInt32().Should().Be((int)HttpStatusCode.Conflict);
+        problem.GetProperty("detail").GetString().Should().Be("Stale draft generation; refresh and retry.");
+    }
+
     private async Task<HttpResponseMessage> PostAsync<T>(string path, T body, JsonTypeInfo<T> typeInfo)
         => await _client.PostAsync(path, JsonContent(body, typeInfo));
 

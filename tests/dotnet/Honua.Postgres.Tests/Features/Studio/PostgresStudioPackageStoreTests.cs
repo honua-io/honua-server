@@ -90,6 +90,71 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task PackageStore_UpdateDraftWithDuplicatePackageKey_RejectsConflict()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresStudioPackageStore(provider, schema);
+            var first = await store.CreateDraftAsync(BuildDraft("1=1", "parcels-query"));
+            var second = await store.CreateDraftAsync(BuildDraft("1=1", "buildings-query"));
+
+            var conflict = second with
+            {
+                PackageKey = first.PackageKey,
+                Generation = second.Generation,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            };
+
+            var act = async () => await store.UpdateDraftAsync(conflict);
+
+            await act.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("Studio package key conflicts with an existing content item.");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task PackageStore_ConcurrentVersionCreates_SerializesVersionNumbers()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresStudioPackageStore(provider, schema);
+            var draft = await store.CreateDraftAsync(BuildDraft("1=1", "concurrent-query"));
+            var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var saves = Enumerable.Range(0, 4)
+                .Select(async index =>
+                {
+                    await start.Task.ConfigureAwait(false);
+                    return await store.CreateVersionAsync(draft, $"save {index}", "tester").ConfigureAwait(false);
+                })
+                .ToArray();
+
+            start.SetResult();
+            var versions = await Task.WhenAll(saves);
+
+            versions.Select(static version => version.VersionNumber)
+                .Order()
+                .Should()
+                .Equal(1, 2, 3, 4);
+            var storedVersions = await store.ListVersionsAsync(draft.ItemId);
+            storedVersions.Should().HaveCount(4);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     private async Task EnsureStudioTablesAsync(string schema)
     {
         var root = FindRepoRoot();
@@ -112,14 +177,14 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
         return Convert.ToInt32(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
     }
 
-    private static StudioPackageDraft BuildDraft(string where)
+    private static StudioPackageDraft BuildDraft(string where, string packageKey = "parcels-query")
     {
         var now = DateTimeOffset.UtcNow;
         return new StudioPackageDraft
         {
             DraftId = Guid.NewGuid(),
             ItemId = Guid.NewGuid(),
-            PackageKey = "parcels-query",
+            PackageKey = packageKey,
             WorkspaceId = "studio",
             OwnerId = "tester",
             Family = StudioPackageFamily.Query,

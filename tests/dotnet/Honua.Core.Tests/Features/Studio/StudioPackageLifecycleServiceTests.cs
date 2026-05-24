@@ -101,6 +101,80 @@ public sealed class StudioPackageLifecycleServiceTests
     }
 
     [UnitTest]
+    public async Task UpdateDraft_WithConflictingPackageKey_ThrowsConflict()
+    {
+        var service = BuildServiceProvider().GetRequiredService<IStudioPackageLifecycleService>();
+        var first = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "parcels-query",
+            WorkspaceId = "studio",
+            Envelope = BuildEnvelope("1=1", "content.parcels"),
+            ActorId = "tester",
+        });
+        var second = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "buildings-query",
+            WorkspaceId = "studio",
+            Envelope = BuildEnvelope("1=1", "content.buildings"),
+            ActorId = "tester",
+        });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.UpdateDraftAsync(
+            second.DraftId,
+            new UpdateStudioPackageDraftCommand
+            {
+                PackageKey = first.PackageKey,
+                WorkspaceId = second.WorkspaceId,
+                OwnerId = second.OwnerId,
+                Envelope = BuildEnvelope("1=1", "content.buildings"),
+                Generation = second.Generation,
+                ActorId = "tester",
+            }));
+
+        Assert.Equal("Studio package key conflicts with an existing content item.", exception.Message);
+    }
+
+    [UnitTest]
+    public async Task UpdateDraft_WithStaleGeneration_ThrowsConflict()
+    {
+        var service = BuildServiceProvider().GetRequiredService<IStudioPackageLifecycleService>();
+        var draft = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "parcels-query",
+            WorkspaceId = "studio",
+            Envelope = BuildEnvelope("1=1", "content.parcels"),
+            ActorId = "tester",
+        });
+
+        var updated = await service.UpdateDraftAsync(
+            draft.DraftId,
+            new UpdateStudioPackageDraftCommand
+            {
+                PackageKey = draft.PackageKey,
+                WorkspaceId = draft.WorkspaceId,
+                OwnerId = draft.OwnerId,
+                Envelope = BuildEnvelope("POPULATION > 1000", "content.parcels"),
+                Generation = draft.Generation,
+                ActorId = "tester",
+            });
+        Assert.NotNull(updated);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.UpdateDraftAsync(
+            draft.DraftId,
+            new UpdateStudioPackageDraftCommand
+            {
+                PackageKey = draft.PackageKey,
+                WorkspaceId = draft.WorkspaceId,
+                OwnerId = draft.OwnerId,
+                Envelope = BuildEnvelope("POPULATION > 5000", "content.parcels"),
+                Generation = draft.Generation,
+                ActorId = "tester",
+            }));
+
+        Assert.Equal("Stale draft generation; refresh and retry.", exception.Message);
+    }
+
+    [UnitTest]
     public void PackageFamilyCapabilities_AdvertisesAllFamiliesAndLifecycleOperations()
     {
         var service = BuildServiceProvider().GetRequiredService<IStudioPackageLifecycleService>();

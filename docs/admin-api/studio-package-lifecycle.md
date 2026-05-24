@@ -8,8 +8,12 @@ in UI-local or protocol-specific shapes.
 
 All endpoints live under `/api/v{version:apiVersion}/studio`, require admin
 authorization in the MVP, and use source-generated JSON contracts from
-`StudioApiJsonContext` / `StudioJsonContext`. Successful responses are wrapped
-in the standard `ApiResponse<T>` envelope:
+`StudioApiJsonContext` / `StudioJsonContext`. This is a sibling control-plane
+surface to `/api/v1/admin`; it is not included in the bundled
+`/api/v1/admin/openapi.json` snapshot. Until a dedicated Studio OpenAPI snapshot
+is published, this document and the source-generated JSON contexts are the
+contract reference. Successful responses are wrapped in the standard
+`ApiResponse<T>` envelope:
 
 ```json
 {
@@ -20,10 +24,12 @@ in the standard `ApiResponse<T>` envelope:
 }
 ```
 
-Expected client errors (`400`, `404`, `409`) and internal failures (`500`) use
-RFC 7807 problem details with type `https://honua.io/problems/studio`. Draft,
-validation, preview, publish, and rollback operations are not
-response-cacheable.
+Handler-generated client errors (`400`, `404`, `409`) and caught internal
+failures (`500`) use RFC 7807 problem details with type
+`https://honua.io/problems/studio`. Draft, validation, preview, publish, and
+rollback operations are not response-cacheable. A successful draft delete returns
+`ApiResponse<object>` with message `Studio package draft deleted.` and no data
+payload.
 
 ## Endpoints
 
@@ -83,8 +89,19 @@ families currently receive envelope-level validation and advertise
 Supported family strings are `query`, `analysis`, `map`, `dashboard`,
 `report`, `form`, `app`, `workflow`, `gp`, and `etl`. Every registered family
 advertises schema version `1.0`, `maxPackageBytes: 1048576`, preview support,
-publish support, and the full lifecycle operation set in
-`GET /package-families`.
+publish support, and this package-family operation list in
+`GET /package-families`: `draft.create`, `draft.read`, `draft.update`,
+`validate`, `preview-plan`, `content-version.create`, `content-version.read`,
+`content-version.compare`, `publish-request.create`, `reopen`, and `rollback`.
+`DELETE /package-drafts/{draftId}` is available for cleanup, but draft delete is
+not advertised as a per-family capability operation.
+
+In Postgres-backed deployments, `durable` is `true`; `map` and `app` advertise
+`supportLevel: "supported"` because family-specific validators are active, while
+the other families advertise `supportLevel: "limited"` with envelope validation.
+In-memory fallback deployments advertise `durable: false`,
+`persistenceMode: "in-memory"`, and a limitation noting that lifecycle data is
+not durable across server restarts.
 
 ## Request Semantics
 

@@ -285,6 +285,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 createdAt,
                 cancellationToken).ConfigureAwait(false);
 
+            await LockItemAsync(connection, transaction, draft.ItemId, cancellationToken).ConfigureAwait(false);
             var versionNumber = await NextVersionNumberAsync(connection, transaction, draft.ItemId, cancellationToken).ConfigureAwait(false);
             var insertSql = $"""
                 INSERT INTO {_versionsTable}
@@ -588,6 +589,21 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         command.Parameters.AddWithValue("@created_at", createdAt);
         command.Parameters.AddWithValue("@updated_at", updatedAt);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task LockItemAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid itemId,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"SELECT 1 FROM {_itemsTable} WHERE item_id = @item_id FOR UPDATE";
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@item_id", itemId);
+        if (await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is null)
+        {
+            throw new KeyNotFoundException("Studio content item was not found.");
+        }
     }
 
     private async Task UpdatePointersAsync(
