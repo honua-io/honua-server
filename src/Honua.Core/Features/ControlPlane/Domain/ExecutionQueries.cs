@@ -25,6 +25,11 @@ public sealed record ExecutionJobQuery
     public string? Backend { get; init; }
 
     /// <summary>
+    /// Optional logical job queue or routing lane filter.
+    /// </summary>
+    public string? Queue { get; init; }
+
+    /// <summary>
     /// Optional submitting actor filter.
     /// </summary>
     public string? RequestedBy { get; init; }

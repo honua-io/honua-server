@@ -393,6 +393,7 @@ internal sealed partial class RedisExecutionJobStore(
         };
 
         AddHashedKey(keys, "backend", job.Spec.Backend);
+        AddMetadataKey(keys, "queue", job, ExecutionJobParameterKeys.Queue);
         AddHashedKey(keys, "requested-by", job.Audit.RequestedBy);
         AddHashedKey(keys, "correlation", job.Audit.CorrelationId);
         AddMetadataKey(keys, "trace", job, ExecutionJobParameterKeys.TraceId);
@@ -427,6 +428,11 @@ internal sealed partial class RedisExecutionJobStore(
         if (!string.IsNullOrWhiteSpace(query.Backend))
         {
             return GetHashedIndexKey("backend", query.Backend);
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Queue))
+        {
+            return GetHashedIndexKey("queue", query.Queue);
         }
 
         if (!string.IsNullOrWhiteSpace(query.RequestedBy))
@@ -505,6 +511,7 @@ internal sealed partial class RedisExecutionJobStore(
         }
 
         return Matches(query.Backend, job.Spec.Backend)
+            && Matches(query.Queue, GetParameter(job, ExecutionJobParameterKeys.Queue))
             && Matches(query.RequestedBy, job.Audit.RequestedBy)
             && Matches(query.CorrelationId, job.Audit.CorrelationId)
             && Matches(query.TraceId, GetParameter(job, ExecutionJobParameterKeys.TraceId))

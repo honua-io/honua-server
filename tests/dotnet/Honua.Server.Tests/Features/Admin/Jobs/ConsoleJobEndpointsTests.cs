@@ -63,7 +63,7 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/jobs")]
     public async Task ListJobs_WithFiltersAndCursor_ReturnsConsoleSummaries()
     {
-        var response = await _client.GetAsync("/api/v1/admin/jobs?status=Running&limit=1");
+        var response = await _client.GetAsync("/api/v1/admin/jobs?status=Running&queue=critical&limit=1");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.CacheControl!.NoStore.Should().BeTrue();
@@ -76,6 +76,20 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         items[0].GetProperty("queue").GetString().Should().Be("critical");
         items[0].GetProperty("resourceRefs")[0].GetString().Should().Be("service/parcels");
         items[0].GetProperty("latestEvent").GetProperty("type").GetString().Should().Be("job.running");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs")]
+    public async Task ListJobs_WithQueueFilter_ReturnsMatchingQueue()
+    {
+        var response = await _client.GetAsync("/api/v1/admin/jobs?queue=standard&limit=10");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = await ReadJsonAsync(response);
+        var items = doc.RootElement.GetProperty("items");
+        items.GetArrayLength().Should().Be(1);
+        items[0].GetProperty("jobId").GetString().Should().Be("job-running-standard");
+        items[0].GetProperty("queue").GetString().Should().Be("standard");
     }
 
     [IntegrationTest]
@@ -200,6 +214,14 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
                 CompletedAt = now.AddMinutes(-5),
                 CurrentPhase = "Completed"
             },
+            CreateJob("job-running-standard", ExecutionJobStatus.Running, now.AddMinutes(-1), "corr-running-standard") with
+            {
+                CurrentPhase = "Running",
+                Spec = CreateSpec("standard-workload", new Dictionary<string, string>
+                {
+                    [ExecutionJobParameterKeys.Queue] = "standard"
+                })
+            },
             CreateJob("job-failed", ExecutionJobStatus.Failed, now.AddMinutes(-6), "corr-failed") with
             {
                 CompletedAt = now.AddMinutes(-4),
@@ -318,6 +340,7 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
                 .Where(job => query.Statuses.Count == 0 || query.Statuses.Contains(job.Status))
                 .Where(job => !query.Kind.HasValue || job.Spec.Kind == query.Kind.Value)
                 .Where(job => string.IsNullOrWhiteSpace(query.Backend) || string.Equals(query.Backend, job.Spec.Backend, StringComparison.OrdinalIgnoreCase))
+                .Where(job => string.IsNullOrWhiteSpace(query.Queue) || MatchesParameter(job, ExecutionJobParameterKeys.Queue, query.Queue))
                 .Where(job => string.IsNullOrWhiteSpace(query.RequestedBy) || string.Equals(query.RequestedBy, job.Audit.RequestedBy, StringComparison.OrdinalIgnoreCase))
                 .Where(job => string.IsNullOrWhiteSpace(query.CorrelationId) || string.Equals(query.CorrelationId, job.Audit.CorrelationId, StringComparison.Ordinal))
                 .Where(job => string.IsNullOrWhiteSpace(query.TraceId) || MatchesParameter(job, ExecutionJobParameterKeys.TraceId, query.TraceId))

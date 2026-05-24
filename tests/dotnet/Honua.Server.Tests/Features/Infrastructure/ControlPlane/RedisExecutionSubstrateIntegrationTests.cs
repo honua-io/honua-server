@@ -99,6 +99,7 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
                 Parameters = new Dictionary<string, string>
                 {
                     [ExecutionJobParameterKeys.DefinitionId] = "definition-query",
+                    [ExecutionJobParameterKeys.Queue] = "critical",
                     [ExecutionJobParameterKeys.ResourceRefs] = "service/parcels|layer/parcels",
                     [ExecutionJobParameterKeys.TraceId] = "trace-query",
                     [ExecutionJobParameterKeys.Environment] = "test"
@@ -120,6 +121,7 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
                 Parameters = new Dictionary<string, string>
                 {
                     [ExecutionJobParameterKeys.DefinitionId] = "definition-query",
+                    [ExecutionJobParameterKeys.Queue] = "critical",
                     [ExecutionJobParameterKeys.ResourceRefs] = "service/parcels",
                     [ExecutionJobParameterKeys.TraceId] = "trace-query",
                     [ExecutionJobParameterKeys.Environment] = "test"
@@ -136,6 +138,13 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
             {
                 RequestedBy = "bob",
                 CorrelationId = "corr-other"
+            },
+            Spec = CreateQueuedJob(otherId).Spec with
+            {
+                Parameters = new Dictionary<string, string>
+                {
+                    [ExecutionJobParameterKeys.Queue] = "standard"
+                }
             }
         });
 
@@ -146,6 +155,7 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
             CorrelationId = "corr-query",
             TraceId = "trace-query",
             DefinitionId = "definition-query",
+            Queue = "critical",
             ResourceRef = "service/parcels",
             Environment = "test",
             Limit = 1
@@ -161,6 +171,7 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
             CorrelationId = "corr-query",
             TraceId = "trace-query",
             DefinitionId = "definition-query",
+            Queue = "critical",
             ResourceRef = "service/parcels",
             Environment = "test",
             Cursor = firstPage.NextCursor,
@@ -169,6 +180,16 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
 
         secondPage.Items.Should().ContainSingle(job => job.OperationId == firstId);
         secondPage.NextCursor.Should().BeNull();
+
+        var queuePage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Queue = "critical",
+            Limit = 10
+        });
+
+        queuePage.Items.Should().Contain(job => job.OperationId == firstId);
+        queuePage.Items.Should().Contain(job => job.OperationId == secondId);
+        queuePage.Items.Should().NotContain(job => job.OperationId == otherId);
 
         var loaded = await harness.JobStore.GetAsync(secondId);
         await harness.JobStore.SetAsync(loaded! with
@@ -181,6 +202,7 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
         var running = await harness.JobStore.QueryAsync(new ExecutionJobQuery
         {
             Statuses = [ExecutionJobStatus.Running],
+            Queue = "critical",
             ResourceRef = "service/parcels",
             Limit = 10
         });

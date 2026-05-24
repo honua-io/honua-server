@@ -329,6 +329,7 @@ internal static class ConsoleJobEndpoints
             Statuses = statuses ?? Array.Empty<ExecutionJobStatus>(),
             Kind = kind,
             Backend = QueryFilterParsers.GetString(query, "backend"),
+            Queue = QueryFilterParsers.GetString(query, "queue"),
             RequestedBy = QueryFilterParsers.GetString(query, "actor")
                 ?? QueryFilterParsers.GetString(query, "requestedBy"),
             CorrelationId = QueryFilterParsers.GetString(query, "correlationId"),

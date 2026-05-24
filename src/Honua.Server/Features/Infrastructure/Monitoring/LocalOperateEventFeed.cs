@@ -120,7 +120,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             ObservabilityFeedLog.JobSourceFailed(_logger, ex);
         }
 
-        collected.RemoveAll(item => !MatchesFilter(filter, item));
+        collected.RemoveAll(item => !MatchesFilter(filter, item, matchResourceRef: false));
 
         collected.Sort(static (left, right) => right.OccurredAt.CompareTo(left.OccurredAt));
         var trimmed = collected.Take(pageSize).ToArray();
@@ -273,11 +273,47 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         int pageSize,
         CancellationToken cancellationToken)
     {
-        if (_jobStore is not null)
+        if (TryGetDirectJobLookup(filter, out var operationId))
         {
-            return await LoadDurableJobsAsync(filter, pageSize, cancellationToken).ConfigureAwait(false);
+            return await LoadSingleJobAsync(filter, operationId, cancellationToken).ConfigureAwait(false);
         }
 
+        var results = new List<OperateEvent>(pageSize * 2);
+        var seenOperationIds = new HashSet<string>(StringComparer.Ordinal);
+        var seenEventIds = new HashSet<string>(StringComparer.Ordinal);
+
+        if (_jobStore is not null)
+        {
+            AddUniqueJobEvents(
+                results,
+                await LoadDurableJobsAsync(filter, pageSize, cancellationToken).ConfigureAwait(false),
+                seenOperationIds,
+                seenEventIds);
+        }
+
+        if (_progressStore is not null)
+        {
+            AddUniqueJobEvents(
+                results,
+                await LoadProgressJobsAsync(filter, pageSize, cancellationToken).ConfigureAwait(false),
+                seenOperationIds,
+                seenEventIds);
+        }
+
+        results.Sort(static (left, right) => right.OccurredAt.CompareTo(left.OccurredAt));
+        if (results.Count <= pageSize)
+        {
+            return results;
+        }
+
+        return results.GetRange(0, pageSize);
+    }
+
+    private async Task<IReadOnlyList<OperateEvent>> LoadProgressJobsAsync(
+        OperateEventFilter filter,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
         Debug.Assert(_progressStore is not null);
 
         if (!ProgressJobSourceCanMatch(filter))
@@ -287,20 +323,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
 
         if (!string.IsNullOrWhiteSpace(filter.ResourceRef))
         {
-            if (!TryParseJobResourceRef(filter.ResourceRef, out var resourceOperationId))
-            {
-                return Array.Empty<OperateEvent>();
-            }
-
-            return await LoadSingleJobAsync(filter, resourceOperationId, cancellationToken).ConfigureAwait(false);
-        }
-
-        // Fast path: a specific OperationId was requested. The active-IDs list
-        // is unordered (ConcurrentDictionary.Keys / Redis SMEMBERS) and may
-        // not even contain the id if the operation finished — fetch it directly.
-        if (!string.IsNullOrWhiteSpace(filter.OperationId))
-        {
-            return await LoadSingleJobAsync(filter, filter.OperationId, cancellationToken).ConfigureAwait(false);
+            return Array.Empty<OperateEvent>();
         }
 
         var ids = await _progressStore!.GetActiveOperationIdsAsync(operationType: null, cancellationToken).ConfigureAwait(false);
@@ -358,14 +381,24 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         if (_jobStore is not null)
         {
             var job = await _jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-            if (job is null)
+            if (job is not null)
             {
-                return Array.Empty<OperateEvent>();
+                var durable = MapExecutionJob(job);
+                return MatchesDurableJobFilter(filter, job, durable) ? new[] { durable } : Array.Empty<OperateEvent>();
             }
-
-            var durable = MapExecutionJob(job);
-            return MatchesFilter(filter, durable) ? new[] { durable } : Array.Empty<OperateEvent>();
         }
+
+        return _progressStore is null
+            ? Array.Empty<OperateEvent>()
+            : await LoadSingleProgressJobAsync(filter, operationId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<IReadOnlyList<OperateEvent>> LoadSingleProgressJobAsync(
+        OperateEventFilter filter,
+        string operationId,
+        CancellationToken cancellationToken)
+    {
+        Debug.Assert(_progressStore is not null);
 
         IOperationProgress? progress;
         try
@@ -404,19 +437,6 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             return Array.Empty<OperateEvent>();
         }
 
-        if (!string.IsNullOrWhiteSpace(filter.ResourceRef))
-        {
-            if (TryParseJobResourceRef(filter.ResourceRef, out var resourceOperationId))
-            {
-                return await LoadSingleJobAsync(filter, resourceOperationId, cancellationToken).ConfigureAwait(false);
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(filter.OperationId))
-        {
-            return await LoadSingleJobAsync(filter, filter.OperationId, cancellationToken).ConfigureAwait(false);
-        }
-
         var page = await _jobStore.QueryAsync(
                 new ExecutionJobQuery
                 {
@@ -434,13 +454,14 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             .ConfigureAwait(false);
 
         return page.Items
-            .Select(MapExecutionJob)
-            .Where(item => MatchesFilter(filter, item))
+            .Select(job => (Job: job, Event: MapExecutionJob(job)))
+            .Where(item => MatchesDurableJobFilter(filter, item.Job, item.Event))
+            .Select(item => item.Event)
             .Take(pageSize)
             .ToArray();
     }
 
-    private static bool MatchesFilter(OperateEventFilter filter, OperateEvent value)
+    private static bool MatchesFilter(OperateEventFilter filter, OperateEvent value, bool matchResourceRef = true)
     {
         if (filter.From is { } fromBound && value.OccurredAt < fromBound)
         {
@@ -510,13 +531,69 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
             return false;
         }
 
-        if (!string.IsNullOrWhiteSpace(filter.ResourceRef) &&
+        if (matchResourceRef &&
+            !string.IsNullOrWhiteSpace(filter.ResourceRef) &&
             !string.Equals(value.ResourceRef, filter.ResourceRef, StringComparison.Ordinal))
         {
             return false;
         }
 
         return true;
+    }
+
+    private static bool MatchesDurableJobFilter(
+        OperateEventFilter filter,
+        ExecutionJobRecord job,
+        OperateEvent value)
+    {
+        if (!MatchesFilter(filter, value, matchResourceRef: false))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(filter.ResourceRef) ||
+            string.Equals(value.ResourceRef, filter.ResourceRef, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return GetResourceRefs(job).Contains(filter.ResourceRef, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static bool TryGetDirectJobLookup(OperateEventFilter filter, out string operationId)
+    {
+        if (!string.IsNullOrWhiteSpace(filter.ResourceRef) &&
+            TryParseJobResourceRef(filter.ResourceRef, out operationId))
+        {
+            return true;
+        }
+
+        operationId = filter.OperationId ?? string.Empty;
+        return !string.IsNullOrWhiteSpace(operationId);
+    }
+
+    private static void AddUniqueJobEvents(
+        List<OperateEvent> target,
+        IReadOnlyList<OperateEvent> source,
+        HashSet<string> seenOperationIds,
+        HashSet<string> seenEventIds)
+    {
+        foreach (var item in source)
+        {
+            if (!string.IsNullOrWhiteSpace(item.OperationId))
+            {
+                if (!seenOperationIds.Add(item.OperationId))
+                {
+                    continue;
+                }
+            }
+            else if (!seenEventIds.Add(item.EventId))
+            {
+                continue;
+            }
+
+            target.Add(item);
+        }
     }
 
     private static bool AlertSourceCanMatch(OperateEventFilter filter)
@@ -724,6 +801,21 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         => job.Spec.Parameters.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
             ? value
             : null;
+
+    private static string[] GetResourceRefs(ExecutionJobRecord job)
+    {
+        var raw = GetParameter(job, ExecutionJobParameterKeys.ResourceRefs);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return Array.Empty<string>();
+        }
+
+        return raw.Split(
+                ExecutionJobParameterKeys.MetadataListSeparator,
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
 
     private sealed record AuditResourceFilter(string ResourceType, string? ResourceId);
 }

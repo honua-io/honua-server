@@ -10,6 +10,7 @@ internal sealed record ConsoleJobQueryRequest
     public IReadOnlyList<ExecutionJobStatus> Statuses { get; init; } = Array.Empty<ExecutionJobStatus>();
     public ExecutionJobKind? Kind { get; init; }
     public string? Backend { get; init; }
+    public string? Queue { get; init; }
     public string? RequestedBy { get; init; }
     public string? CorrelationId { get; init; }
     public string? TraceId { get; init; }

@@ -456,6 +456,7 @@ internal sealed partial class ConsoleJobService(
             Statuses = request.Statuses,
             Kind = request.Kind,
             Backend = request.Backend,
+            Queue = request.Queue,
             RequestedBy = request.RequestedBy,
             CorrelationId = request.CorrelationId,
             TraceId = request.TraceId,
