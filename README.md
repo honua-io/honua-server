@@ -115,6 +115,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 | Elevation Query / Profile API | `/elevation/{datasetId}/value`, `/elevation/{datasetId}/profile` | Field workflows, route planning, utility inspection, no-code dashboards |
 | MapLibre Styles | `/api/styles/{layerId}.json` | MapLibre |
 | Admin API | `/api/v1/admin` | Standalone Admin UI, automation scripts |
+| Studio Package Lifecycle | `/api/v1/studio` | Honua Console, SDKs, generated apps |
 | STAC Ops Demo | `/samples/stac-ops` or `/samples/stac-ops/` | Browser *(Development/Test or `HONUA_SERVE_STAC_DEMO=true`; custom images also need demo assets)* |
 | OpenAPI (OGC Features) | `/openapi.json` | Any HTTP client |
 | OpenAPI (OGC Tiles) | `/ogc/tiles/openapi.json` | Any HTTP client |

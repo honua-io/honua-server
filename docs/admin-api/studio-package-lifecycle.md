@@ -7,29 +7,42 @@ should use this API instead of storing package drafts or published package JSON
 in UI-local or protocol-specific shapes.
 
 All endpoints live under `/api/v{version:apiVersion}/studio`, require admin
-authorization in the MVP, and return successful payloads in `ApiResponse<T>`.
-Client errors use RFC 7807 problem details with type
-`https://honua.io/problems/studio`. Draft, validation, preview, publish, and
-rollback operations are not response-cacheable.
+authorization in the MVP, and use source-generated JSON contracts from
+`StudioApiJsonContext` / `StudioJsonContext`. Successful responses are wrapped
+in the standard `ApiResponse<T>` envelope:
+
+```json
+{
+  "success": true,
+  "data": {},
+  "message": null,
+  "timestamp": "2026-05-24T00:00:00Z"
+}
+```
+
+Expected client errors (`400`, `404`, `409`) and internal failures (`500`) use
+RFC 7807 problem details with type `https://honua.io/problems/studio`. Draft,
+validation, preview, publish, and rollback operations are not
+response-cacheable.
 
 ## Endpoints
 
-| Method | Route | Purpose |
-| --- | --- | --- |
-| `GET` | `/package-families` | Discover every package family, schema version, format, support level, supported operations, validation depth, limitations, and max package size. |
-| `POST` | `/package-drafts` | Create a mutable package draft. |
-| `GET` | `/package-drafts/{draftId}` | Retrieve a mutable draft. |
-| `PUT` | `/package-drafts/{draftId}` | Replace a mutable draft with optimistic `generation` checking. |
-| `DELETE` | `/package-drafts/{draftId}` | Delete a draft. |
-| `POST` | `/package-drafts/{draftId}/validate` | Re-run validation and persist the validation summary on the draft. |
-| `POST` | `/package-drafts/{draftId}/preview-plan` | Return a stable preview plan. GP, ETL, and workflow packages advertise job-backed previews. |
-| `POST` | `/package-drafts/{draftId}/content-versions` | Save a draft as an immutable content version and move the item current pointer. |
-| `GET` | `/content-items/{itemId}/versions` | List immutable versions for a Studio content item. |
-| `GET` | `/content-items/{itemId}/versions/{versionId}` | Retrieve one immutable version. |
-| `POST` | `/content-items/{itemId}/version-comparisons` | Compare two immutable versions by content hash, dependencies, validation, and provenance. |
-| `POST` | `/content-items/{itemId}/versions/{versionId}/publish-requests` | Persist a publication request and move the published pointer when validation permits. |
-| `POST` | `/content-items/{itemId}/versions/{versionId}/reopen` | Copy an immutable version into a new mutable draft with `baseVersionId`. |
-| `POST` | `/content-items/{itemId}/rollback-requests` | Persist a rollback request and move the current, published, or both pointers to an earlier immutable version. |
+| Method | Route | Success | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/package-families` | `200 ApiResponse<StudioPackageFamilyCapabilities>` | Discover every package family, schema version, format, support level, supported operations, validation depth, limitations, and max package size. |
+| `POST` | `/package-drafts` | `201 ApiResponse<StudioPackageDraft>` | Create a mutable package draft. |
+| `GET` | `/package-drafts/{draftId}` | `200 ApiResponse<StudioPackageDraft>` | Retrieve a mutable draft. |
+| `PUT` | `/package-drafts/{draftId}` | `200 ApiResponse<StudioPackageDraft>` | Replace a mutable draft with optional optimistic `generation` checking. |
+| `DELETE` | `/package-drafts/{draftId}` | `200 ApiResponse<object>` | Delete a draft. |
+| `POST` | `/package-drafts/{draftId}/validate` | `200 ApiResponse<StudioValidationSummary>` | Re-run validation and persist the validation summary on the draft. |
+| `POST` | `/package-drafts/{draftId}/preview-plan` | `200 ApiResponse<StudioPreviewPlan>` | Return a stable preview plan. GP, ETL, and workflow packages advertise job-backed previews. |
+| `POST` | `/package-drafts/{draftId}/content-versions` | `201 ApiResponse<StudioContentVersion>` | Save a draft as an immutable content version and move the item current pointer. |
+| `GET` | `/content-items/{itemId}/versions` | `200 ApiResponse<StudioContentVersionListResponse>` | List immutable versions for a Studio content item ordered by `versionNumber`. |
+| `GET` | `/content-items/{itemId}/versions/{versionId}` | `200 ApiResponse<StudioContentVersion>` | Retrieve one immutable version. |
+| `POST` | `/content-items/{itemId}/version-comparisons` | `200 ApiResponse<StudioVersionComparison>` | Compare two immutable versions by content hash, dependencies, validation, and provenance. |
+| `POST` | `/content-items/{itemId}/versions/{versionId}/publish-requests` | `201 ApiResponse<StudioPublicationRequest>` | Persist a publication request and move the published pointer when validation permits. |
+| `POST` | `/content-items/{itemId}/versions/{versionId}/reopen` | `201 ApiResponse<StudioPackageDraft>` | Copy an immutable version into a new mutable draft with `baseVersionId`. |
+| `POST` | `/content-items/{itemId}/rollback-requests` | `201 ApiResponse<StudioRollbackRequest>` | Persist a rollback request and move the current, published, or both pointers to an earlier immutable version. |
 
 ## Package Envelope
 
@@ -67,6 +80,70 @@ Every family uses `StudioPackageEnvelope`:
 families currently receive envelope-level validation and advertise
 `validationDepth: "envelope"` until deeper validators land.
 
+Supported family strings are `query`, `analysis`, `map`, `dashboard`,
+`report`, `form`, `app`, `workflow`, `gp`, and `etl`. Every registered family
+advertises schema version `1.0`, `maxPackageBytes: 1048576`, preview support,
+publish support, and the full lifecycle operation set in
+`GET /package-families`.
+
+## Request Semantics
+
+Draft create and update requests carry `packageKey`, optional `workspaceId`,
+optional `ownerId`, and the `envelope`. `packageKey` is trimmed, limited to 200
+characters, and may contain only letters, numbers, dash, underscore, or dot.
+`workspaceId` and `ownerId` are also trimmed and empty strings are stored as
+`null`. Omit `itemId` on draft create to let the server allocate a new Studio
+content item.
+
+Drafts are mutable and carry a server-managed `generation`. `PUT
+/package-drafts/{draftId}` increments `generation` on success. Clients that
+need optimistic concurrency should send the last-seen `generation`; a stale
+generation returns `409 Conflict`. Omitting `generation` updates from the
+current draft generation loaded by the server, so clients that need strict
+lost-update protection should include the last-seen value.
+
+Saving a draft as a content version revalidates the draft, captures the
+validated envelope, stamps a monotonic `versionNumber`, computes a SHA-256
+`contentHash`, copies dependencies and provenance into sidecars, and advances
+the content item's current pointer. The immutable version can be read, compared
+or reopened, but is never edited in place.
+
+`POST /content-items/{itemId}/versions/{versionId}/publish-requests` uses the
+request `intent` when supplied and otherwise falls back to the version
+envelope's `publicationIntent`. Versions whose captured validation status is
+`invalid` still produce a durable publication request, but the request status
+is `rejected` and the published pointer is not moved. Valid and warning
+versions are accepted and move the published pointer.
+
+`POST /content-items/{itemId}/rollback-requests` accepts `pointer` values
+`current`, `published`, and `both` and returns the resulting
+`StudioContentItemPointers` in the rollback response. Undefined numeric enum
+values are rejected before the store is called.
+
+## Validation And Preview
+
+Create, update, validate, preview, and save-as-version paths all run the shared
+`IStudioPackageValidator`. Validation produces:
+
+- `status`: `not-validated`, `valid`, `warning`, or `invalid`.
+- `diagnostics`: machine-readable `code`, `severity`, `path`, and `message`.
+- `unsupportedCapabilities`: deployment-limited capabilities clients should
+  render as disabled states.
+- `generatedAt`: the timestamp for the validation pass.
+
+Baseline validation checks the registered family, schema version, serialized
+package size, object-shaped `body`, unique binding keys, positive SRIDs,
+supported CRS identifiers (`EPSG:*`, OGC CRS URIs, or OGC CRS URNs), dependency
+identity uniqueness, required provenance fields, and publication visibility.
+Map packages also validate `honua_map_package.v1` format and initial-view
+bbox/CRS; app packages validate `honua_app_package.v1`.
+
+Preview plans are planning-only responses. `gp`, `etl`, and `workflow` drafts
+return `requiresJob: true`, `synchronous: false`, and steps
+`["validate-envelope", "plan-background-preview-job"]`; all other families
+return `requiresJob: false`, `synchronous: true`, and steps
+`["validate-envelope", "prepare-inline-preview"]`.
+
 ## Persistence And Immutability
 
 Postgres deployments use these tables:
@@ -81,6 +158,13 @@ Postgres deployments use these tables:
 Providers without the Postgres durable store fall back to an in-memory store for
 tests/local development and advertise that limitation through
 `GET /package-families`.
+
+The package lifecycle service emits OpenTelemetry activities under
+`Honua.Studio.PackageLifecycle` with stable tags such as `studio.item.id`,
+`studio.draft.id`, `studio.version.id`, `studio.family`,
+`studio.validation.status`, and `studio.publish.status`. Endpoint logging uses
+source-generated `StudioEndpointsLog` messages for draft, version,
+publication, rollback, and capability operations.
 
 ## SDK Projection Requirements
 

@@ -12,7 +12,8 @@ This map summarizes source-backed runtime capabilities in `honua-server`.
 
 ## Control Plane
 
-- Admin APIs for auth, capabilities, version, connections, service settings, layer publishing, Metadata v2 environment inventory, release packages, compatibility prevalidation, styles, SLD import/export, style suggestions, imports, deployment control, observability, geofence zones and alert rules, cache, rate limits, license, identity/OIDC, users, roles, geocoding, tile operations, and scene datasets.
+- Admin APIs for auth, capabilities, version, connections, service settings, layer publishing, Metadata v2 environment inventory, release packages, compatibility prevalidation, metadata resources, styles, SLD import/export, style suggestions, imports, manifests, GitOps watch/drift/approval, deployment control, observability, geofence zones and alert rules, cache, rate limits, license, identity/OIDC, users, roles, geocoding, tile operations, and scene datasets.
+- Console/Studio APIs for server-owned content metadata, action checks, mutable Studio package drafts, immutable content versions, validation, preview plans, publication requests, reopen, comparison, and rollback for query, analysis, map, dashboard, report, form, app, workflow, GP, and ETL packages.
 - Spec workspace endpoints for validate, plan, apply, cancel, artifacts, and grounding helpers.
 - Runtime licensing loads offline Ed25519-signed JSON envelopes, publishes active edition/entitlement status through admin and health surfaces, and gates paid features by entitlement key with HTTP 402 or gRPC `FAILED_PRECONDITION`.
 - Configuration discovery, production monitoring, performance metrics, query-cache stats, health endpoints, OpenTelemetry, structured logs, Redis/in-memory caching, and output caching.
