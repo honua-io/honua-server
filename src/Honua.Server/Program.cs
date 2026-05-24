@@ -578,6 +578,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Collaboration.Sessions.CollaborationSessionJsonContext.Default,
         Honua.Server.Features.Collaboration.FeatureLocks.FeatureLockJsonContext.Default,
         Honua.Core.Features.Authorization.Domain.OperatorAuthorizationJsonContext.Default,
+        Honua.Server.Features.Admin.ObservabilityJsonContext.Default,
+        Honua.Server.Features.Admin.InvestigationJsonContext.Default,
         Honua.Server.Features.Protocols.Ogc.Api.Processes.OgcProcessesJsonContext.Default);
 });
 
@@ -907,6 +909,12 @@ app.MapAdminSldStyleEndpoints();
 
 // Configure admin alerting zone/rule endpoints
 app.MapAlertAdminEndpoints();
+
+// Configure Console Operate observability endpoints (#1168)
+app.MapObservabilityAlertEndpoints();
+app.MapObservabilityAuditEndpoints();
+app.MapObservabilityEventEndpoints();
+app.MapInvestigationEndpoints();
 
 // Configure platform admin endpoints (license, identity, cache, geocoding, features)
 app.MapLicenseAdminEndpoints();
