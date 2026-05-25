@@ -61,6 +61,21 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
                     $"Schema version must be '{descriptor.CurrentSchemaVersion}'."));
             }
 
+            if (string.IsNullOrWhiteSpace(envelope.Format))
+            {
+                diagnostics.Add(Error(
+                    "studio.format.required",
+                    "/format",
+                    $"format must be '{descriptor.Format}'."));
+            }
+            else if (!string.Equals(envelope.Format, descriptor.Format, StringComparison.Ordinal))
+            {
+                diagnostics.Add(Error(
+                    "studio.format.unsupported",
+                    "/format",
+                    $"format must be '{descriptor.Format}'."));
+            }
+
             var serialized = JsonSerializer.SerializeToUtf8Bytes(envelope, StudioJsonContext.Default.StudioPackageEnvelope);
             if (serialized.Length > descriptor.MaxPackageBytes)
             {
@@ -97,6 +112,19 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
             Status = status,
             Diagnostics = diagnostics,
             UnsupportedCapabilities = unsupportedCapabilities,
+            GeneratedAt = _timeProvider.GetUtcNow(),
+        };
+    }
+
+    /// <inheritdoc />
+    public StudioValidationSummary ValidatePublicationIntent(StudioPublicationIntent? intent)
+    {
+        var diagnostics = new List<StudioValidationDiagnostic>();
+        ValidatePublicationIntent(intent, diagnostics, "/publicationIntent");
+        return new StudioValidationSummary
+        {
+            Status = ResolveStatus(diagnostics),
+            Diagnostics = diagnostics,
             GeneratedAt = _timeProvider.GetUtcNow(),
         };
     }
@@ -200,7 +228,10 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
         }
     }
 
-    private static void ValidatePublicationIntent(StudioPublicationIntent? intent, List<StudioValidationDiagnostic> diagnostics)
+    private static void ValidatePublicationIntent(
+        StudioPublicationIntent? intent,
+        List<StudioValidationDiagnostic> diagnostics,
+        string pathPrefix = "/publicationIntent")
     {
         if (intent is null)
         {
@@ -209,7 +240,7 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
 
         if (!string.IsNullOrWhiteSpace(intent.Route) && intent.Route[0] != '/')
         {
-            diagnostics.Add(Error("studio.publication.route.invalid", "/publicationIntent/route", "route must start with '/'."));
+            diagnostics.Add(Error("studio.publication.route.invalid", $"{pathPrefix}/route", "route must start with '/'."));
         }
 
         if (!string.IsNullOrWhiteSpace(intent.Visibility))
@@ -219,7 +250,7 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
             {
                 diagnostics.Add(Error(
                     "studio.publication.visibility.invalid",
-                    "/publicationIntent/visibility",
+                    $"{pathPrefix}/visibility",
                     "visibility must be personal, team, organization, or public."));
             }
         }

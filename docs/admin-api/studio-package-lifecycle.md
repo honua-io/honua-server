@@ -13,13 +13,13 @@ surface to `/api/v1/admin`; it is not included in the bundled
 `/api/v1/admin/openapi.json` snapshot. Until a dedicated Studio OpenAPI snapshot
 is published, this document and the source-generated JSON contexts are the
 contract reference. Successful responses are wrapped in the standard
-`ApiResponse<T>` envelope:
+`ApiResponse<T>` envelope. The Studio source-generated JSON context omits
+properties whose values are `null`:
 
 ```json
 {
   "success": true,
   "data": {},
-  "message": null,
   "timestamp": "2026-05-24T00:00:00Z"
 }
 ```
@@ -81,6 +81,9 @@ Every family uses `StudioPackageEnvelope`:
 }
 ```
 
+`schemaVersion` and `format` must match the descriptor returned by
+`GET /package-families` for the selected family.
+
 `map` and `app` bodies are validated against the existing
 `honua_map_package.v1` and `honua_app_package.v1` package models. Other
 families currently receive envelope-level validation and advertise
@@ -109,8 +112,11 @@ Draft create and update requests carry `packageKey`, optional `workspaceId`,
 optional `ownerId`, and the `envelope`. `packageKey` is trimmed, limited to 200
 characters, and may contain only letters, numbers, dash, underscore, or dot.
 `workspaceId` and `ownerId` are also trimmed and empty strings are stored as
-`null`. Omit `itemId` on draft create to let the server allocate a new Studio
-content item.
+`null`. Omit `ownerId` on draft create to use the authenticated actor id; omit
+it on draft update to preserve the existing owner. Omit `itemId` on draft
+create to let the server allocate a new Studio content item. Both durable and
+in-memory stores enforce `(workspaceId, family, packageKey)` uniqueness across
+content items.
 
 Drafts are mutable and carry a server-managed `generation`. `PUT
 /package-drafts/{draftId}` increments `generation` on success. Clients that
@@ -124,6 +130,11 @@ validated envelope, stamps a monotonic `versionNumber`, computes a SHA-256
 `contentHash`, copies dependencies and provenance into sidecars, and advances
 the content item's current pointer. The immutable version can be read, compared
 or reopened, but is never edited in place.
+
+Routes that include both `{itemId}` and `{versionId}` treat the pair as an
+ownership boundary. A version that exists under a different content item is
+handled as not found, and publish, reopen, compare, and rollback operations do
+not persist side effects for cross-item version ids.
 
 `POST /content-items/{itemId}/versions/{versionId}/publish-requests` uses the
 request `intent` when supplied and otherwise falls back to the version
@@ -148,12 +159,13 @@ Create, update, validate, preview, and save-as-version paths all run the shared
   render as disabled states.
 - `generatedAt`: the timestamp for the validation pass.
 
-Baseline validation checks the registered family, schema version, serialized
-package size, object-shaped `body`, unique binding keys, positive SRIDs,
-supported CRS identifiers (`EPSG:*`, OGC CRS URIs, or OGC CRS URNs), dependency
-identity uniqueness, required provenance fields, and publication visibility.
-Map packages also validate `honua_map_package.v1` format and initial-view
-bbox/CRS; app packages validate `honua_app_package.v1`.
+Baseline validation checks the registered family, schema version, package
+format, serialized package size, object-shaped `body`, unique binding keys,
+positive SRIDs, supported CRS identifiers (`EPSG:*`, OGC CRS URIs, or OGC CRS
+URNs), dependency identity uniqueness, required provenance fields, and
+publication visibility. Map packages also validate `honua_map_package.v1` body
+format and initial-view bbox/CRS; app packages validate
+`honua_app_package.v1`.
 
 Preview plans are planning-only responses. `gp`, `etl`, and `workflow` drafts
 return `requiresJob: true`, `synchronous: false`, and steps

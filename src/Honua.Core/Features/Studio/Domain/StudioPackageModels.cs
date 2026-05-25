@@ -19,7 +19,7 @@ public sealed record StudioPackageEnvelope
     [JsonPropertyName("schemaVersion")]
     public required string SchemaVersion { get; init; }
 
-    /// <summary>Optional family-specific package format.</summary>
+    /// <summary>Family-specific package format advertised by package-family capabilities.</summary>
     [JsonPropertyName("format")]
     public string? Format { get; init; }
 

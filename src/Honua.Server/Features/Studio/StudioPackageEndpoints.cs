@@ -461,6 +461,10 @@ internal static class StudioPackageEndpoints
                 StudioApiJsonContext.Default.ApiResponseStudioPublicationRequest,
                 statusCode: StatusCodes.Status201Created);
         }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(context, ex.Message);
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             StudioEndpointsLog.EndpointFailed(logger, "publish-request.create", ex);

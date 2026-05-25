@@ -83,6 +83,37 @@ public sealed class StudioPackageLifecycleServiceTests
     }
 
     [UnitTest]
+    public async Task CreatePublicationRequest_WithInvalidIntentOverride_ThrowsWithoutPublishingPointer()
+    {
+        var provider = BuildServiceProvider();
+        var service = provider.GetRequiredService<IStudioPackageLifecycleService>();
+        var store = provider.GetRequiredService<IStudioPackageStore>();
+        var draft = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "parcels-query",
+            WorkspaceId = "studio",
+            Envelope = BuildEnvelope("1=1", "content.parcels"),
+            ActorId = "tester",
+        });
+        var version = await service.SaveDraftAsVersionAsync(draft.DraftId, "first save", "tester");
+        Assert.NotNull(version);
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() => service.CreatePublicationRequestAsync(
+            version!.ItemId,
+            version.VersionId,
+            new StudioPublicationIntent { Route = "relative", Visibility = "world" },
+            warningAcknowledgement: null,
+            actorId: "tester"));
+
+        Assert.Contains("Publication intent is invalid", exception.Message);
+        Assert.Contains("route must start with '/'", exception.Message);
+        Assert.Contains("visibility must be personal, team, organization, or public", exception.Message);
+        var pointers = await store.GetPointersAsync(version!.ItemId);
+        Assert.NotNull(pointers);
+        Assert.Null(pointers!.PublishedVersionId);
+    }
+
+    [UnitTest]
     public void Validate_WithDuplicateBindingsAndInvalidCrs_ReturnsInvalidDiagnostics()
     {
         var provider = BuildServiceProvider();
@@ -101,6 +132,21 @@ public sealed class StudioPackageLifecycleServiceTests
         Assert.Equal(StudioPackageValidationStatus.Invalid, validation.Status);
         Assert.Contains(validation.Diagnostics, d => d.Code == "studio.binding.key.duplicate");
         Assert.Contains(validation.Diagnostics, d => d.Code == "studio.binding.crs.invalid");
+    }
+
+    [UnitTest]
+    public void Validate_WithMissingOrMismatchedFormat_ReturnsInvalidDiagnostics()
+    {
+        var provider = BuildServiceProvider();
+        var validator = provider.GetRequiredService<IStudioPackageValidator>();
+
+        var missing = validator.Validate(BuildEnvelope("1=1", "content.parcels") with { Format = null });
+        var mismatched = validator.Validate(BuildEnvelope("1=1", "content.parcels") with { Format = "wrong" });
+
+        Assert.Equal(StudioPackageValidationStatus.Invalid, missing.Status);
+        Assert.Contains(missing.Diagnostics, d => d.Code == "studio.format.required");
+        Assert.Equal(StudioPackageValidationStatus.Invalid, mismatched.Status);
+        Assert.Contains(mismatched.Diagnostics, d => d.Code == "studio.format.unsupported");
     }
 
     [UnitTest]

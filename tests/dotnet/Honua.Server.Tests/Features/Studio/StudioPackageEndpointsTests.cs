@@ -272,6 +272,49 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         problem.GetProperty("detail").GetString().Should().Be("Stale draft generation; refresh and retry.");
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests")]
+    public async Task CreatePublishRequest_WithInvalidIntentOverride_ReturnsBadRequestProblem()
+    {
+        var createResponse = await PostAsync(
+            "/api/v1/studio/package-drafts",
+            new CreateStudioPackageDraftRequest
+            {
+                PackageKey = "invalid-publication-intent-query",
+                WorkspaceId = "studio",
+                Envelope = BuildEnvelope("1=1"),
+            },
+            StudioApiJsonContext.Default.CreateStudioPackageDraftRequest);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var draft = await ReadAsync<StudioPackageDraft>(
+            createResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+
+        var saveResponse = await PostAsync(
+            $"/api/v1/studio/package-drafts/{draft.DraftId:D}/content-versions",
+            new SaveStudioContentVersionRequest { ChangeNote = "first save" },
+            StudioApiJsonContext.Default.SaveStudioContentVersionRequest);
+        saveResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var version = await ReadAsync<StudioContentVersion>(
+            saveResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioContentVersion);
+
+        var publishResponse = await PostAsync(
+            $"/api/v1/studio/content-items/{version.ItemId:D}/versions/{version.VersionId:D}/publish-requests",
+            new CreateStudioPublicationRequest
+            {
+                Intent = new StudioPublicationIntent { Route = "relative", Visibility = "world" },
+            },
+            StudioApiJsonContext.Default.CreateStudioPublicationRequest);
+
+        publishResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var problem = JsonSerializer.Deserialize<JsonElement>(await publishResponse.Content.ReadAsStringAsync());
+        problem.GetProperty("type").GetString().Should().Be("https://honua.io/problems/studio");
+        problem.GetProperty("status").GetInt32().Should().Be((int)HttpStatusCode.BadRequest);
+        problem.GetProperty("detail").GetString().Should().Contain("Publication intent is invalid");
+        problem.GetProperty("detail").GetString().Should().Contain("route must start with '/'");
+    }
+
     private async Task<HttpResponseMessage> PostAsync<T>(string path, T body, JsonTypeInfo<T> typeInfo)
         => await _client.PostAsync(path, JsonContent(body, typeInfo));
 

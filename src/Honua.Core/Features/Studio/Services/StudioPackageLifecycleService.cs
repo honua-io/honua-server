@@ -324,6 +324,15 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             return null;
         }
 
+        if (intent is not null)
+        {
+            var intentValidation = _validator.ValidatePublicationIntent(intent);
+            if (intentValidation.Status == StudioPackageValidationStatus.Invalid)
+            {
+                throw new ArgumentException(FormatValidationFailure("Publication intent is invalid", intentValidation.Diagnostics));
+            }
+        }
+
         var status = version.Validation.Status == StudioPackageValidationStatus.Invalid
             ? StudioPublicationRequestStatus.Rejected
             : StudioPublicationRequestStatus.Accepted;
@@ -449,6 +458,18 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
 
     private static string? NormalizeOptional(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string FormatValidationFailure(
+        string prefix,
+        IReadOnlyList<StudioValidationDiagnostic> diagnostics)
+    {
+        if (diagnostics.Count == 0)
+        {
+            return prefix + ".";
+        }
+
+        return prefix + ": " + string.Join("; ", diagnostics.Select(static diagnostic => diagnostic.Message));
+    }
 
     private static bool JsonEqualDependencies(
         IReadOnlyList<StudioPackageDependency> left,

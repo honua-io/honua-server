@@ -69,6 +69,9 @@ public interface IStudioPackageValidator
 {
     /// <summary>Validates the supplied envelope.</summary>
     StudioValidationSummary Validate(StudioPackageEnvelope envelope);
+
+    /// <summary>Validates a publication intent override.</summary>
+    StudioValidationSummary ValidatePublicationIntent(StudioPublicationIntent? intent);
 }
 
 /// <summary>

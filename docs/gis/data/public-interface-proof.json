@@ -336,7 +336,7 @@
         },
         {
           "proofClass": "scenario-depth",
-          "proofMechanism": "Focused service, Postgres store, and endpoint tests assert mutable drafts, immutable content versions, stale generation rejection, validation errors, publication request persistence, reopen, rollback pointer transitions, and comparison behavior",
+          "proofMechanism": "Focused service, Postgres store, and endpoint tests assert mutable drafts, immutable content versions, stale generation rejection, format and validation errors, item/version ownership checks, publication request persistence, publication intent override rejection, reopen, rollback pointer transitions, comparison behavior, and lifecycle activity coverage for read/delete/list/get store work",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Core.Tests/Features/Studio/StudioPackageLifecycleServiceTests.cs",
