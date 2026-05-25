@@ -118,6 +118,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 | Admin API | `/api/v1/admin` | Standalone Admin UI, automation scripts |
 | Studio Package Lifecycle | `/api/v1/studio` | Honua Console, SDKs, generated apps |
 | Form Package API | `/api/v1/admin/forms/packages`, `/api/v1/forms/packages` | Console Form Builder, field clients, mobile/offline SDKs |
+| Content Publication Registry | `/api/v1/console/publications`, `/api/v1/published` | Honua Console, SDKs, generated maps/dashboards/reports/apps |
 | STAC Ops Demo | `/samples/stac-ops` or `/samples/stac-ops/` | Browser *(Development/Test or `HONUA_SERVE_STAC_DEMO=true`; custom images also need demo assets)* |
 | OpenAPI (OGC Features) | `/openapi.json` | Any HTTP client |
 | OpenAPI (OGC Tiles) | `/ogc/tiles/openapi.json` | Any HTTP client |

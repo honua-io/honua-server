@@ -9,7 +9,12 @@ the `Honua.Server.Features.Console` vertical slice and source-generated through
 `ConsoleJsonContext` so AOT publish stays clean.
 
 Tracked by issue **#1162**. Subsequent tickets (#1163 — persistent store,
-#1164/#1165 — release lifecycle) build on this surface.
+#1164/#1165 — release lifecycle) build on this surface. Published
+map/dashboard/report/generated-app route state is documented separately in the
+[Content Publication Registry API](content-publication-registry.md) (#1183);
+Console content items may link to those publications through sidecars and
+provenance, but the publication route pointer and share/embed/public-link policy
+are owned by that registry.
 
 ## Surface
 
@@ -46,6 +51,11 @@ Error contract (matching the established admin endpoint pattern):
 | `DELETE` | `/content/{id}` | Delete the item. |
 | `GET` | `/content/{id}/provenance?depth=` | Resolve the transitive provenance chain anchored on the item (`depth` defaults to 5; values are clamped to `[1, 5]`). |
 | `POST` | `/actions/check` | Bulk evaluate Console verbs over a set of item ids and/or route keys. |
+
+Publication management endpoints under `/api/v1/console/publications/**` share
+the Console control-plane namespace but do not use the `ApiResponse<T>` envelope;
+see [Content Publication Registry API](content-publication-registry.md) for the
+publication response contract.
 
 ## Content item shape
 
