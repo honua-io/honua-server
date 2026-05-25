@@ -118,6 +118,35 @@ public sealed class FormSubmissionServiceTests
     }
 
     [UnitTest]
+    public async Task SubmitAsync_WhenJsonHasNullValueAndAttachmentCollections_ReturnsControlledRejection()
+    {
+        using var requestServices = CreateRequestServices();
+        var store = new FakeFormPackageStore();
+        var writer = new FakeFeatureWriter();
+        var service = CreateService(store, writer);
+        var context = CreateJsonContext(
+            """
+            {
+              "idempotencyKey": "null-collections-1",
+              "operation": "create",
+              "clientId": "field-client-1",
+              "values": null,
+              "geometry": { "x": -157.8583, "y": 21.3069, "spatialReference": { "wkid": 4326 } },
+              "attachments": null
+            }
+            """,
+            requestServices);
+
+        var result = await service.SubmitAsync(context, store.PackageVersion.FormId);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var body = ReadResponseBody(context);
+        body.Status.Should().Be("rejected");
+        writer.ApplyEditsCalls.Should().Be(0);
+    }
+
+    [UnitTest]
     public async Task SubmitAsync_WithDuplicateMultipartPartName_ReturnsRejectedValidationResponse()
     {
         using var requestServices = CreateRequestServices();
@@ -356,8 +385,16 @@ public sealed class FormSubmissionServiceTests
         FormSubmissionRequest request,
         IServiceProvider requestServices,
         CancellationToken requestAborted = default)
+        => CreateJsonContext(
+            JsonSerializer.Serialize(request, FormPackageJsonContext.Default.FormSubmissionRequest),
+            requestServices,
+            requestAborted);
+
+    private static DefaultHttpContext CreateJsonContext(
+        string payload,
+        IServiceProvider requestServices,
+        CancellationToken requestAborted = default)
     {
-        var payload = JsonSerializer.Serialize(request, FormPackageJsonContext.Default.FormSubmissionRequest);
         var context = new DefaultHttpContext
         {
             RequestServices = requestServices,

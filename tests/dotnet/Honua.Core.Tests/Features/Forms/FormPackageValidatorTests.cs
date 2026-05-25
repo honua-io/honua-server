@@ -28,6 +28,63 @@ public sealed class FormPackageValidatorTests
     }
 
     [UnitTest]
+    public async Task ValidateForPublish_WithExplicitNullCollections_ReturnsIssuesWithoutThrowing()
+    {
+        var validator = CreateValidator();
+        var package = JsonSerializer.Deserialize(
+            """
+            {
+              "schemaVersion": "honua.form-package.v1",
+              "title": "Inspection Form",
+              "target": { "serviceId": "test", "layerId": 0 },
+              "sections": null,
+              "fields": null,
+              "submitPolicy": { "allowedOperations": null },
+              "attachmentPolicy": null,
+              "privacyPolicy": null,
+              "offlinePolicy": null
+            }
+            """,
+            FormPackageJsonContext.Default.FormPackageDocument)!;
+
+        var result = await validator.ValidateForPublishAsync(package);
+
+        result.IsValid.Should().BeFalse();
+        result.Issues.Select(static issue => issue.Code).Should().Contain(["fieldsRequired", "submitPolicyOperationRequired"]);
+    }
+
+    [UnitTest]
+    public async Task ValidateForPublish_WithMissingDomainChoiceCode_ReturnsDomainChoiceCodeRequired()
+    {
+        var validator = CreateValidator();
+        var package = JsonSerializer.Deserialize(
+            """
+            {
+              "schemaVersion": "honua.form-package.v1",
+              "title": "Inspection Form",
+              "target": { "serviceId": "test", "layerId": 0 },
+              "sections": [ { "sectionId": "main", "label": "Main", "fieldIds": ["category"] } ],
+              "fields": [
+                {
+                  "fieldId": "category",
+                  "label": "Category",
+                  "type": "choice",
+                  "targetField": "category",
+                  "sectionId": "main",
+                  "domain": { "type": "codedValue", "choices": [ { "label": "Missing code" } ] }
+                }
+              ],
+              "submitPolicy": { "allowedOperations": ["create"] }
+            }
+            """,
+            FormPackageJsonContext.Default.FormPackageDocument)!;
+
+        var result = await validator.ValidateForPublishAsync(package);
+
+        result.Issues.Select(static issue => issue.Code).Should().Contain("domainChoiceCodeRequired");
+    }
+
+    [UnitTest]
     public async Task ValidateForPublish_WithSchemaAndPolicyDrift_ReturnsExpectedIssueCodes()
     {
         var validator = CreateValidator(serviceCapabilities: ["Query", "Extract"]);

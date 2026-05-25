@@ -299,6 +299,11 @@ public sealed class FormPackageValidator
                 AddError(issues, "domainChoicesRequired", "codedValue domain requires choices.", field.FieldId);
             }
 
+            if (field.Domain.Choices.Any(static choice => choice.Code.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null))
+            {
+                AddError(issues, "domainChoiceCodeRequired", "codedValue domain choice requires a code.", field.FieldId);
+            }
+
             var duplicateCodes = field.Domain.Choices
                 .GroupBy(static choice => NormalizeJson(choice.Code), StringComparer.Ordinal)
                 .Where(static group => group.Count() > 1);
@@ -1069,14 +1074,20 @@ public sealed class FormPackageValidator
         => srid is 102100 or 102113 or 900913 or 3785 ? 3857 : srid;
 
     private static string JsonElementToString(JsonElement element)
-        => element.ValueKind == JsonValueKind.String
-            ? element.GetString() ?? string.Empty
-            : element.GetRawText();
+        => element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString() ?? string.Empty,
+            JsonValueKind.Undefined or JsonValueKind.Null => string.Empty,
+            _ => element.GetRawText()
+        };
 
     private static string NormalizeJson(JsonElement element)
-        => element.ValueKind == JsonValueKind.String
-            ? element.GetString() ?? string.Empty
-            : element.GetRawText();
+        => element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString() ?? string.Empty,
+            JsonValueKind.Undefined or JsonValueKind.Null => string.Empty,
+            _ => element.GetRawText()
+        };
 
     private static FormPackageValidationResult CreateResult(List<FormValidationIssue> issues)
         => new()

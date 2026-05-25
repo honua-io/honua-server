@@ -92,7 +92,7 @@ Publish validation checks the package document against the target feature servic
 - Target service/layer existence, target field existence, writable target fields, compatible field types, and required state for non-null target fields.
 - Submit operations against target capabilities (`Create`, `Update`, `Delete`).
 - Coded-value and range domains, validation rule limits, supported conditional visibility operators (`equals`, `notEquals`, `gt`, `gte`, `lt`, `lte`, `isEmpty`, `isNotEmpty`, `in`), and visibility cycles.
-- Attachment enablement, package-level limits, allowed MIME types, per-field attachment `required`/`maxCount`/MIME policy, attachment field references, and unsupported server-side attachment transform flags. Exact MIME values and subtype wildcards such as `image/*` are supported. Package and field allowlists are checked against global server attachment limits; field allowlists must be at least as restrictive as the package allowlist. EXIF stripping, face blur, and redaction must be performed before submission in this release.
+- Attachment enablement, package-level limits, allowed MIME types, per-field attachment `required`/`maxCount`/MIME policy (one policy entry per attachment field, with `maxCount` between 1 and the package limit), attachment field references, and unsupported server-side attachment transform flags. Exact MIME values and subtype wildcards such as `image/*` are supported. Package and field allowlists are checked against global server attachment limits; field allowlists must be at least as restrictive as the package allowlist. EXIF stripping, face blur, and redaction must be performed before submission in this release.
 - Privacy private-field references, supported privacy transformations (`none`, `auditOnly`, `minimizeAudit`), and retention bounds.
 - Offline transport selection when `offlinePolicy.enabled` is `true`. `feature-server-replica` and `fieldcollection` are the supported transport identifiers. At least one transport flag must be enabled. `conflictReviewMode` accepts `defer` or `lastWriteWins`; other values produce a warning because full conflict review is deferred.
 
@@ -144,7 +144,7 @@ Runtime validation checks:
 - Package status, allowed operation, and `targetFeatureId` for update/delete.
 - Required values, read-only fields, JSON value types, domain membership, and target field compatibility.
 - Point geometry shape, finite coordinates, and SRID. Geometry uses GeoServices-style `{ "x": number, "y": number, "spatialReference": { "wkid": number } }`; `x` and `y` may be finite JSON numbers or numeric strings. When supplied, `spatialReference.latestWkid` is preferred over `wkid`, and common Web Mercator aliases (`102100`, `102113`, `900913`, `3785`) normalize to `3857` before matching the target layer SRID.
-- Required attachment fields for create/update submissions, package and per-field attachment counts, package/field/global MIME type allowlists, file part presence, unique multipart part names, file size, filename/content security, and global attachment limits. Delete submissions do not require attachment fields and cannot include attachment descriptors.
+- Required attachment fields for create/update submissions (a field counts as required when its field `required` flag or its per-field attachment policy `required` is set), package and per-field attachment counts, package/field/global MIME type allowlists, file part presence, unique multipart part names, file size, filename/content security, and global attachment limits. Delete submissions do not require attachment fields and cannot include attachment descriptors.
 
 Accepted submissions are translated into the shared edit pipeline (`IEditProcessor` and `IFeatureWriter`). Non-attachment field values are mapped from form `fieldId` to target layer `targetField`. Attachment upload runs only after a successful create/update edit produces or resolves a target feature id. Failed edits and delete operations do not persist attachments.
 
@@ -223,13 +223,13 @@ HTTP and response status behavior:
 - `403` with `status: "rejected"` when package policy denies the operation or attachments.
 - `404` when the published package or target service/layer cannot be found.
 - `409` when an idempotency key is reused with a different payload or the prior submission is still pending.
-- `500` with `status: "failed"` and retry guidance when the server cannot complete the submission.
+- `500` with `status: "failed"` and retry guidance when the server cannot complete the submission, including when post-claim processing exceeds the server-owned time budget.
 
-`retry` is omitted from accepted responses and included on rejected/failed responses when clients need retry guidance. Validation rejections use `retryable: false`; package-policy denials and server failures use `retryable: true` with a sanitized reason and optional `retryAfterSeconds`.
+`retry` is omitted from accepted responses and included on rejected/failed responses when clients need retry guidance. Validation rejections use `retryable: false`; package-policy denials and server failures use `retryable: true` with a sanitized reason and optional `retryAfterSeconds`. A `200` response with `status: "failed"` from an unsuccessful feature edit also carries `retryable: true` guidance, and attachments are not uploaded in that case.
 
 The submissions route does not use a form-specific response cache. Clients should treat POST responses as non-cacheable and use idempotency keys for replay; `idempotentReplay: true` responses come from the durable submission record, not from HTTP caching.
 
-Attachment outcomes use `accepted`, `rejected`, or `failed`. A feature edit can be accepted while one or more attachment outcomes are rejected or failed after the target feature id is resolved. Rejection and failure reasons are sanitized. Each outcome is persisted with the submission id and audited as a form attachment policy event.
+Attachment outcomes use `accepted`, `rejected`, or `failed`. A feature edit can be accepted while one or more attachment outcomes are rejected or failed after the target feature id is resolved. A submission rejected during validation (`400`/`403`) also returns `attachmentOutcomes` with `status: "rejected"` for the attachments tied to attachment validation issues, recorded before any edit runs. Rejection and failure reasons are sanitized. Each outcome is persisted with the submission id and audited as a form attachment policy event.
 
 ## Idempotency And Privacy
 
@@ -279,5 +279,5 @@ Offline links are absolute and derived from the incoming request scheme, host, a
 - Structured source-generated logs use event ids in the `1184xx` range for package lifecycle, offline-policy reads, submissions, and attachment outcomes.
 - Package lifecycle actions, submission outcomes, and attachment policy outcomes are written to the shared audit log with `resourceType: "form_package"`.
 - Published runtime package reads use short private caching. Admin package reads/writes and offline-policy responses use `no-store` to avoid stale authoring or sync policy state. Submission POST responses are replayed from durable idempotency records rather than a response cache.
-- Submission completion persists terminal responses with a server-owned timeout token after the idempotency claim, so a client disconnect after edit execution does not cancel the durable response used for later idempotent replay.
+- After the idempotency claim is won, submission validation, the feature edit, and attachment upload run under a server-owned processing budget; exceeding it terminates the submission as `failed` (`retryable: true`, HTTP `500`). Terminal responses are then persisted with a separate server-owned timeout token, so a client disconnect after edit execution does not cancel the durable response used for later idempotent replay.
 - No new form-specific offline conflict review API is introduced in this slice. Full disconnected conflict review remains outside this ticket.

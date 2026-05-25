@@ -63,27 +63,27 @@ public sealed class FormPackageDocument
 
     /// <summary>Ordered sections or groups in the form.</summary>
     [JsonPropertyName("sections")]
-    public FormSectionDefinition[] Sections { get; init; } = [];
+    public FormSectionDefinition[] Sections { get; init => field = value ?? []; } = [];
 
     /// <summary>Field definitions, including target-field bindings.</summary>
     [JsonPropertyName("fields")]
-    public FormFieldDefinition[] Fields { get; init; } = [];
+    public FormFieldDefinition[] Fields { get; init => field = value ?? []; } = [];
 
     /// <summary>Runtime edit policy for accepted submissions.</summary>
     [JsonPropertyName("submitPolicy")]
-    public FormSubmitPolicy SubmitPolicy { get; init; } = new();
+    public FormSubmitPolicy SubmitPolicy { get; init => field = value ?? new(); } = new();
 
     /// <summary>Package-level and per-field attachment policy.</summary>
     [JsonPropertyName("attachmentPolicy")]
-    public FormAttachmentPolicy AttachmentPolicy { get; init; } = new();
+    public FormAttachmentPolicy AttachmentPolicy { get; init => field = value ?? new(); } = new();
 
     /// <summary>Privacy policy applied while validating, storing, and auditing submissions.</summary>
     [JsonPropertyName("privacyPolicy")]
-    public FormPrivacyPolicy PrivacyPolicy { get; init; } = new();
+    public FormPrivacyPolicy PrivacyPolicy { get; init => field = value ?? new(); } = new();
 
     /// <summary>Offline and sync policy advertised to field clients.</summary>
     [JsonPropertyName("offlinePolicy")]
-    public FormOfflinePolicy OfflinePolicy { get; init; } = new();
+    public FormOfflinePolicy OfflinePolicy { get; init => field = value ?? new(); } = new();
 
     /// <summary>Optional provenance describing how the package was authored.</summary>
     [JsonPropertyName("provenance")]
@@ -127,7 +127,7 @@ public sealed class FormSectionDefinition
 
     /// <summary>Field ids included in this section.</summary>
     [JsonPropertyName("fieldIds")]
-    public string[] FieldIds { get; init; } = [];
+    public string[] FieldIds { get; init => field = value ?? []; } = [];
 }
 
 /// <summary>
@@ -181,7 +181,7 @@ public sealed class FormFieldDefinition
 
     /// <summary>Declarative validation rules applied by the server.</summary>
     [JsonPropertyName("validation")]
-    public FormValidationRule[] Validation { get; init; } = [];
+    public FormValidationRule[] Validation { get; init => field = value ?? []; } = [];
 
     /// <summary>Conditional visibility policy for this field.</summary>
     [JsonPropertyName("visibility")]
@@ -199,7 +199,7 @@ public sealed class FormFieldDomainDefinition
 
     /// <summary>Allowed coded-value choices.</summary>
     [JsonPropertyName("choices")]
-    public FormDomainChoice[] Choices { get; init; } = [];
+    public FormDomainChoice[] Choices { get; init => field = value ?? []; } = [];
 
     /// <summary>Inclusive minimum for range domains.</summary>
     [JsonPropertyName("min")]
@@ -271,7 +271,7 @@ public sealed class FormSubmitPolicy
 {
     /// <summary>Allowed edit operations. Defaults to create-only.</summary>
     [JsonPropertyName("allowedOperations")]
-    public string[] AllowedOperations { get; init; } = [FormSubmissionOperations.Create];
+    public string[] AllowedOperations { get; init => field = value ?? []; } = [FormSubmissionOperations.Create];
 
     /// <summary>Whether create/update submissions must include geometry when the target layer has geometry.</summary>
     [JsonPropertyName("requiresGeometry")]
@@ -309,11 +309,11 @@ public sealed class FormAttachmentPolicy
 
     /// <summary>Allowed MIME types. Wildcards such as image/* are supported.</summary>
     [JsonPropertyName("allowedContentTypes")]
-    public string[] AllowedContentTypes { get; init; } = [];
+    public string[] AllowedContentTypes { get; init => field = value ?? []; } = [];
 
     /// <summary>Per-field attachment policy overrides.</summary>
     [JsonPropertyName("fields")]
-    public FormFieldAttachmentPolicy[] Fields { get; init; } = [];
+    public FormFieldAttachmentPolicy[] Fields { get; init => field = value ?? []; } = [];
 
     /// <summary>Whether EXIF stripping is required before persistence.</summary>
     [JsonPropertyName("requireExifStripping")]
@@ -343,7 +343,7 @@ public sealed class FormFieldAttachmentPolicy
 
     /// <summary>Allowed MIME types for this field.</summary>
     [JsonPropertyName("allowedContentTypes")]
-    public string[] AllowedContentTypes { get; init; } = [];
+    public string[] AllowedContentTypes { get; init => field = value ?? []; } = [];
 
     /// <summary>Whether this attachment field is required.</summary>
     [JsonPropertyName("required")]
@@ -357,11 +357,11 @@ public sealed class FormPrivacyPolicy
 {
     /// <summary>Field ids whose values should not be copied into audit details.</summary>
     [JsonPropertyName("privateFieldIds")]
-    public string[] PrivateFieldIds { get; init; } = [];
+    public string[] PrivateFieldIds { get; init => field = value ?? []; } = [];
 
     /// <summary>Required transforms such as none or auditOnly.</summary>
     [JsonPropertyName("requiredTransformations")]
-    public string[] RequiredTransformations { get; init; } = [];
+    public string[] RequiredTransformations { get; init => field = value ?? []; } = [];
 
     /// <summary>Whether server records should capture the actor identifier.</summary>
     [JsonPropertyName("captureActor")]
@@ -387,7 +387,7 @@ public sealed class FormOfflinePolicy
 
     /// <summary>Preferred transport identifiers in priority order.</summary>
     [JsonPropertyName("preferredTransports")]
-    public string[] PreferredTransports { get; init; } = ["feature-server-replica", "fieldcollection"];
+    public string[] PreferredTransports { get; init => field = value ?? []; } = ["feature-server-replica", "fieldcollection"];
 
     /// <summary>Whether existing GeoServices FeatureServer replica endpoints should be advertised.</summary>
     [JsonPropertyName("replicaTransportEnabled")]
@@ -579,7 +579,7 @@ public sealed class FormSubmissionRequest
 
     /// <summary>Submitted field values keyed by form field id.</summary>
     [JsonPropertyName("values")]
-    public Dictionary<string, JsonElement> Values { get; init; } = new(StringComparer.Ordinal);
+    public Dictionary<string, JsonElement> Values { get; init => field = value ?? new(StringComparer.Ordinal); } = new(StringComparer.Ordinal);
 
     /// <summary>Submitted geometry encoded as GeoServices-style JSON.</summary>
     [JsonPropertyName("geometry")]
@@ -587,7 +587,7 @@ public sealed class FormSubmissionRequest
 
     /// <summary>Attachment descriptors. Multipart submissions provide file content by part name.</summary>
     [JsonPropertyName("attachments")]
-    public FormSubmissionAttachmentDescriptor[] Attachments { get; init; } = [];
+    public FormSubmissionAttachmentDescriptor[] Attachments { get; init => field = value ?? []; } = [];
 }
 
 /// <summary>
