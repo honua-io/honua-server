@@ -20,6 +20,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.AnalysisContent;
 
@@ -277,6 +278,20 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.NotFound, failureResponse.StatusCode);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.JobStatus)]
+    [Endpoint("GET /api/v1/analysis/jobs/{jobId}/logs")]
+    public async Task JobLogs_WhenLogStoreUnavailable_ReturnsServiceUnavailable()
+    {
+        // The job resolves, but the Redis-backed log store is down. The documented contract is a
+        // retryable 503 for an unavailable log store, not a generic 500.
+        _logs.FailWithStoreOutage = true;
+
+        var response = await _client.GetAsync("/api/v1/analysis/jobs/failed-job/logs?limit=1");
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+    }
+
     private static async Task<T?> ReadJsonAsync<T>(HttpResponseMessage response, HttpStatusCode expectedStatus)
     {
         var body = await response.Content.ReadAsStringAsync();
@@ -424,6 +439,9 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
 
         public int TailReadCount { get; private set; }
 
+        // When set, TailAsync simulates a Redis-backed log store outage.
+        public bool FailWithStoreOutage { get; set; }
+
         public void SeedFailureLogs()
         {
             _entries["failed-job"] =
@@ -483,6 +501,11 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
             CancellationToken cancellationToken = default)
         {
             TailReadCount++;
+            if (FailWithStoreOutage)
+            {
+                throw new RedisConnectionException(ConnectionFailureType.SocketFailure, "redis unavailable");
+            }
+
             var entries = _entries.TryGetValue(operationId, out var found) ? found : [];
             var bounded = entries.TakeLast(Math.Max(1, limit)).ToArray();
             return Task.FromResult(new ExecutionLogTail

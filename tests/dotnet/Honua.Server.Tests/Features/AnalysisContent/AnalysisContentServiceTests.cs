@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AnalysisContent.Domain;
 using Honua.Core.Features.Catalog.Abstractions;
@@ -18,6 +19,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
+using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.AnalysisContent;
 
@@ -123,6 +125,101 @@ public sealed class AnalysisContentServiceTests
 
         await logStore.DidNotReceive()
             .TailAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.JobStatus)]
+    public async Task GetJobLogsAsync_WhenLogStoreUnavailable_ThrowsStoreUnavailable()
+    {
+        // A Redis-backed log store outage must surface as the documented retryable 503
+        // (AnalysisContentStoreUnavailableException), not a generic 500.
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        jobService.GetJobAsync("job-logs", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(CreateFailedJob("job-logs", "validation failed"));
+        var logStore = Substitute.For<IExecutionLogStore>();
+        logStore.TailAsync("job-logs", Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Throws(new RedisConnectionException(ConnectionFailureType.SocketFailure, "redis unavailable"));
+        var sut = CreateService(jobService: jobService, logStores: [logStore]);
+
+        await Assert.ThrowsAsync<AnalysisContentStoreUnavailableException>(
+            () => sut.GetJobLogsAsync("job-logs", 50, Principal(), CancellationToken.None));
+    }
+
+    [UnitTest]
+    [Operation(Operations.JobStatus)]
+    public async Task GetJobLogsAsync_WhenJobStoreUnavailable_ThrowsStoreUnavailable()
+    {
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        jobService.GetJobAsync("job-logs", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Throws(new ServiceUnavailableException("job store unavailable"));
+        var logStore = Substitute.For<IExecutionLogStore>();
+        var sut = CreateService(jobService: jobService, logStores: [logStore]);
+
+        await Assert.ThrowsAsync<AnalysisContentStoreUnavailableException>(
+            () => sut.GetJobLogsAsync("job-logs", 50, Principal(), CancellationToken.None));
+
+        // The job resolve failed, so the log store must not be read.
+        await logStore.DidNotReceive()
+            .TailAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.JobStatus)]
+    public async Task GetJobFailureAsync_WhenJobStoreUnavailable_ThrowsStoreUnavailable()
+    {
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        jobService.GetJobAsync("job-failure", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Throws(new RedisConnectionException(ConnectionFailureType.SocketFailure, "redis unavailable"));
+        var sut = CreateService(jobService: jobService);
+
+        await Assert.ThrowsAsync<AnalysisContentStoreUnavailableException>(
+            () => sut.GetJobFailureAsync("job-failure", Principal(), CancellationToken.None));
+    }
+
+    [UnitTest]
+    [Operation(Operations.JobStatus)]
+    public async Task GetJobLogsAsync_WithSecretBearingMetadataKey_DropsEntireEntry()
+    {
+        // The value is opaque (no secret marker), so value-only inspection cannot catch it; the
+        // sensitive key name must drop the entry while non-sensitive keys are preserved.
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        jobService.GetJobAsync("job-logs", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(CreateFailedJob("job-logs", "validation failed"));
+        var logStore = Substitute.For<IExecutionLogStore>();
+        logStore.TailAsync("job-logs", Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ExecutionLogTail
+            {
+                Items =
+                [
+                    new ExecutionLogEntry
+                    {
+                        Timestamp = DateTimeOffset.UtcNow,
+                        Level = ExecutionLogLevel.Error,
+                        Message = "request rejected",
+                        Metadata = new Dictionary<string, string>
+                        {
+                            ["token"] = "abc123xyz",
+                            ["apiKey"] = "opaque-value",
+                            ["region"] = "us-west-2"
+                        }
+                    }
+                ],
+                TotalCount = 1
+            });
+        var sut = CreateService(jobService: jobService, logStores: [logStore]);
+
+        var logs = await sut.GetJobLogsAsync("job-logs", 50, Principal(), CancellationToken.None);
+
+        var entry = Assert.Single(logs.Entries);
+        Assert.NotNull(entry.Metadata);
+        Assert.False(entry.Metadata!.ContainsKey("token"));
+        Assert.False(entry.Metadata.ContainsKey("apiKey"));
+        Assert.DoesNotContain(
+            "abc123xyz",
+            string.Join("|", entry.Metadata.Values),
+            StringComparison.OrdinalIgnoreCase);
+        // Non-sensitive metadata still passes through.
+        Assert.Equal("us-west-2", entry.Metadata["region"]);
     }
 
     [UnitTest]

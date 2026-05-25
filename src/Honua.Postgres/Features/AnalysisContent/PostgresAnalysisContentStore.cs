@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.AnalysisContent;
 using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AnalysisContent.Domain;
@@ -299,6 +300,16 @@ internal sealed class PostgresAnalysisContentStore : IAnalysisContentStore
         try
         {
             return await operation().ConfigureAwait(false);
+        }
+        catch (ServiceUnavailableException ex)
+        {
+            // The shared connection provider classifies connect failures and broken circuits as
+            // ServiceUnavailableException before any raw NpgsqlException reaches this layer, so a
+            // real outage opens via OpenConnectionAsync and must be caught here too; otherwise it
+            // escapes as a generic 500 instead of the documented retryable 503.
+            throw new AnalysisContentStoreUnavailableException(
+                "The analysis content store is currently unavailable.",
+                ex);
         }
         catch (NpgsqlException ex) when (IsStoreUnavailable(ex))
         {

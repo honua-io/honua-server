@@ -41,7 +41,7 @@ Status code conventions:
 | `400` | Invalid request payload, invalid limit, mismatched content kind, bad filter plan, or invalid canonical query. |
 | `401` / `403` | Admin authorization or geoprocessing authorization failed. |
 | `404` | Item, version, layer, job, or artifact was not found. |
-| `409` | The requested job has not failed, or a geoprocessing precondition failed. |
+| `409` | A concurrent version conflict could not be resolved, the requested job has not failed, or a geoprocessing precondition failed. |
 | `503` | The backing content, job, or log store is unavailable. |
 | `500` | Unexpected failures are returned as a generic problem without internal details. |
 
@@ -132,9 +132,9 @@ hash.
 { "limit": 10 }
 ```
 
-The preview limit defaults to the saved query's `previewLimit`, then to `25`.
-Values above `200` are clamped to `200`; values less than or equal to zero
-return `400`.
+The request `limit` is used first, then the saved query's `previewLimit`, then a
+default of `25`. Values above `200` are clamped to `200`; values less than or
+equal to zero return `400`.
 
 Preview execution uses the canonical query path: the saved `filterPlan` is
 compiled against the target layer, projected into `UnifiedQuery`, validated and
@@ -342,8 +342,10 @@ line-normalized, capped to 512 characters, and replaced with a generic failure
 message when they look like stack traces, provider internals, connection
 strings, or secret-bearing text (secret, token, credential, api key, or bearer
 values) — including secret-bearing values stored under otherwise innocuous
-metadata keys. Metadata keys containing password, secret, or connection are
-omitted; remaining metadata is capped to 20 entries.
+metadata keys. Metadata entries whose key name implies a secret (password, pwd,
+secret, connection, token, credential, api key, apikey, api_key, bearer, or
+private key) are dropped entirely, so an opaque value under a sensitive key name
+cannot leak; remaining metadata is capped to 20 entries.
 
 `GET /api/v1/analysis/jobs/{jobId}/failure` is only valid for failed or
 cancelled jobs. Failed jobs return a safe classification:

@@ -7,6 +7,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.AnalysisContent;
 using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AnalysisContent.Domain;
@@ -19,6 +20,7 @@ using Honua.Core.Features.NlQuery.Services;
 using Honua.Core.Features.Query;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Geoprocessing;
+using StackExchange.Redis;
 
 namespace Honua.Server.Features.AnalysisContent;
 
@@ -435,7 +437,8 @@ internal sealed partial class AnalysisContentService(
                 // Resolve the job through the job service first so unknown ids return not-found
                 // (instead of 200 with empty logs) and the same job-read authorization enforced by
                 // the failure endpoint is applied before any log content is returned.
-                _ = await geoprocessingJobService.GetJobAsync(jobId, principal, cancellationToken)
+                _ = await TranslateDiagnosticStoreFailuresAsync(
+                    () => geoprocessingJobService.GetJobAsync(jobId, principal, cancellationToken))
                     .ConfigureAwait(false);
 
                 if (_logStore is null)
@@ -449,7 +452,9 @@ internal sealed partial class AnalysisContentService(
                     };
                 }
 
-                var tail = await _logStore.TailAsync(jobId, resolvedLimit, cancellationToken).ConfigureAwait(false);
+                var tail = await TranslateDiagnosticStoreFailuresAsync(
+                    () => _logStore.TailAsync(jobId, resolvedLimit, cancellationToken))
+                    .ConfigureAwait(false);
                 var bounded = tail.Items
                     .Select(entry => new AnalysisJobLogEntry
                     {
@@ -479,7 +484,9 @@ internal sealed partial class AnalysisContentService(
             async activity =>
             {
                 activity?.SetTag(Honua.ServiceDefaults.HonuaTelemetry.Tags.JobId, jobId);
-                var job = await geoprocessingJobService.GetJobAsync(jobId, principal, cancellationToken).ConfigureAwait(false);
+                var job = await TranslateDiagnosticStoreFailuresAsync(
+                    () => geoprocessingJobService.GetJobAsync(jobId, principal, cancellationToken))
+                    .ConfigureAwait(false);
 
                 AnalysisJobFailure failure = job.Status switch
                 {
@@ -505,6 +512,33 @@ internal sealed partial class AnalysisContentService(
                 activity?.SetTag("honua.analysis_content.failure_classification", failure.Classification.ToString());
                 return failure;
             }).ConfigureAwait(false);
+
+    /// <summary>
+    /// Runs a job/log diagnostic read and maps backing job- or log-store outages to
+    /// <see cref="AnalysisContentStoreUnavailableException"/> so an unavailable Redis-backed store
+    /// surfaces as the documented retryable 503 instead of a generic 500. Job-read authorization
+    /// and not-found results are raised by the read itself and pass through unchanged, as does
+    /// cancellation.
+    /// </summary>
+    private static async Task<T> TranslateDiagnosticStoreFailuresAsync<T>(Func<Task<T>> read)
+    {
+        try
+        {
+            return await read().ConfigureAwait(false);
+        }
+        catch (ServiceUnavailableException ex)
+        {
+            throw new AnalysisContentStoreUnavailableException(
+                "The analysis job or log store is currently unavailable.",
+                ex);
+        }
+        catch (RedisException ex)
+        {
+            throw new AnalysisContentStoreUnavailableException(
+                "The analysis job or log store is currently unavailable.",
+                ex);
+        }
+    }
 
     private async Task<AnalysisContentItem> GetRequiredItemAsync(
         string itemId,
@@ -880,11 +914,41 @@ internal sealed partial class AnalysisContentService(
         }
 
         return metadata
-            .Where(pair => !pair.Key.Contains("password", StringComparison.OrdinalIgnoreCase)
-                           && !pair.Key.Contains("secret", StringComparison.OrdinalIgnoreCase)
-                           && !pair.Key.Contains("connection", StringComparison.OrdinalIgnoreCase))
+            .Where(pair => !IsSensitiveMetadataKey(pair.Key))
             .Take(20)
             .ToDictionary(pair => pair.Key, pair => SanitizeDiagnostic(pair.Value), StringComparer.Ordinal);
+    }
+
+    // Metadata key fragments that imply a secret value. Value-only inspection (SanitizeDiagnostic)
+    // cannot distinguish an opaque secret such as {"token":"abc123"} from ordinary data, so any
+    // entry whose key name matches is dropped wholesale. Mirrors the secret-key check used by the
+    // sibling console job viewer while preserving the original password/secret/connection coverage.
+    private static readonly string[] SensitiveMetadataKeyMarkers =
+    [
+        "password",
+        "pwd",
+        "secret",
+        "connection",
+        "token",
+        "credential",
+        "api key",
+        "apikey",
+        "api_key",
+        "bearer",
+        "private key"
+    ];
+
+    private static bool IsSensitiveMetadataKey(string key)
+    {
+        foreach (var marker in SensitiveMetadataKeyMarkers)
+        {
+            if (key.Contains(marker, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string CreateItemId() => $"analysis-content-{Guid.NewGuid():N}";
