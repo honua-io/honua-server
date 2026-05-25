@@ -78,7 +78,7 @@ Publish validation checks the package document against the target feature servic
 - Coded-value and range domains, validation rule limits, supported conditional visibility operators (`equals`, `notEquals`, `gt`, `gte`, `lt`, `lte`, `isEmpty`, `isNotEmpty`, `in`), and visibility cycles.
 - Attachment enablement, package-level limits, allowed MIME types, per-field attachment `required`/`maxCount`/MIME policy, attachment field references, and unsupported server-side attachment transform flags. Exact MIME values and subtype wildcards such as `image/*` are supported. Package and field allowlists are checked against global server attachment limits; field allowlists must be at least as restrictive as the package allowlist. EXIF stripping, face blur, and redaction must be performed before submission in this release.
 - Privacy private-field references, supported privacy transformations (`none`, `auditOnly`, `minimizeAudit`), and retention bounds.
-- Offline transport selection. `feature-server-replica` and `fieldcollection` are the supported transport identifiers. `conflictReviewMode` accepts `defer` or `lastWriteWins`; other values produce a warning because full conflict review is deferred.
+- Offline transport selection when `offlinePolicy.enabled` is `true`. `feature-server-replica` and `fieldcollection` are the supported transport identifiers. At least one transport flag must be enabled. `conflictReviewMode` accepts `defer` or `lastWriteWins`; other values produce a warning because full conflict review is deferred.
 
 Validation responses use:
 
@@ -163,9 +163,9 @@ Multipart submissions must include a `submission` JSON part plus file parts refe
 }
 ```
 
-The server normalizes missing descriptor `filename`, `contentType`, and `sizeBytes` from the uploaded file when the multipart part exists. Descriptor and file MIME types must satisfy the package allowlist, any per-field allowlist, and the global server allowlist; when a package or field allowlist is empty, the next broader policy supplies the constraint. Accepted files are stored through the FeatureServer attachment store and return per-file outcomes. Descriptors that name missing parts are rejected with attachment validation issues and do not run the feature edit path.
+The server normalizes missing descriptor `filename`, `contentType`, and `sizeBytes` from the uploaded file when the multipart part exists. Descriptor and file MIME types must satisfy the package allowlist, any per-field allowlist, and the global server allowlist; when a package or field allowlist is empty, the next broader policy supplies the constraint. Accepted files are stored through the FeatureServer attachment store and return per-file outcomes. The optional descriptor `sha256` is retained with submitted attachment metadata when supplied, but this slice does not perform checksum enforcement. Descriptors that name missing parts are rejected with attachment validation issues and do not run the feature edit path.
 
-For idempotency, multipart requests hash the original `submission` JSON part. Metadata filled from file parts is used for validation and persistence, but it does not rewrite the replay hash.
+For idempotency, multipart requests hash the original `submission` JSON part. Metadata filled from file parts is used for validation and persistence, but it does not rewrite the replay hash or require clients to echo file-derived descriptor values.
 
 ## Submission Response
 
@@ -211,6 +211,8 @@ HTTP and response status behavior:
 
 `retry` is omitted from accepted responses and included on rejected/failed responses when clients need retry guidance. Validation rejections use `retryable: false`; package-policy denials and server failures use `retryable: true` with a sanitized reason and optional `retryAfterSeconds`.
 
+The submissions route does not use a form-specific response cache. Clients should treat POST responses as non-cacheable and use idempotency keys for replay; `idempotentReplay: true` responses come from the durable submission record, not from HTTP caching.
+
 Attachment outcomes use `accepted`, `rejected`, or `failed`. A feature edit can be accepted while one or more attachment outcomes are rejected or failed after the target feature id is resolved. Rejection and failure reasons are sanitized. Each outcome is persisted with the submission id and audited as a form attachment policy event.
 
 ## Idempotency And Privacy
@@ -249,9 +251,9 @@ The offline policy endpoint advertises existing sync surfaces instead of creatin
 }
 ```
 
-When `offlinePolicy.enabled` is `false`, `availableTransports` and `links` are empty. When enabled, `replicaTransportEnabled` adds FeatureServer replica links with rels `create-replica`, `extract-changes`, `synchronize-replica`, and `unregister-replica`. `fieldCollectionTransportEnabled` adds rels `fieldcollection-generation`, `fieldcollection-sync-cursor`, `fieldcollection-ack-cursor`, `fieldcollection-changes`, and `fieldcollection-push-change`. `preferredTransports` is validated on publish, but the response lists enabled transports in stable server order: `feature-server-replica`, then `fieldcollection`.
+When `offlinePolicy.enabled` is `false`, `availableTransports` and `links` are empty while target metadata and `requiredHeaders` remain present. When enabled, `replicaTransportEnabled` adds FeatureServer replica links with rels `create-replica`, `extract-changes`, `synchronize-replica`, and `unregister-replica`. `fieldCollectionTransportEnabled` adds rels `fieldcollection-generation`, `fieldcollection-sync-cursor`, `fieldcollection-ack-cursor`, `fieldcollection-changes`, and `fieldcollection-push-change`.
 
-`offlinePolicy.preferredTransports` is validated and retained in the package document for client preference metadata. The offline-policy response advertises enabled transports in stable server order: `feature-server-replica` first, then `fieldcollection`.
+`offlinePolicy.preferredTransports` is validated when offline use is enabled and retained in the package document for client preference metadata. The offline-policy response advertises enabled transports in stable server order: `feature-server-replica` first, then `fieldcollection`.
 
 Offline links are absolute and derived from the incoming request scheme, host, and path base. Clients should send `X-Honua-Client-Id` on sync and submission requests for cursor correlation and idempotency scoping.
 
@@ -260,6 +262,6 @@ Offline links are absolute and derived from the incoming request scheme, host, a
 - Forms emit OpenTelemetry activities for package listing, draft creation, offline-policy reads, and submissions with `honua.protocol=forms` and operation tags.
 - Structured source-generated logs use event ids in the `1184xx` range for package lifecycle, offline-policy reads, submissions, and attachment outcomes.
 - Package lifecycle actions, submission outcomes, and attachment policy outcomes are written to the shared audit log with `resourceType: "form_package"`.
-- Published runtime package reads use short private caching. Admin reads, offline-policy responses, and mutation responses use `no-store` to avoid stale authoring or sync policy state.
+- Published runtime package reads use short private caching. Admin package reads/writes and offline-policy responses use `no-store` to avoid stale authoring or sync policy state. Submission POST responses are replayed from durable idempotency records rather than a response cache.
 - Submission completion persists terminal responses with a server-owned timeout token after the idempotency claim, so a client disconnect after edit execution does not cancel the durable response used for later idempotent replay.
 - No new form-specific offline conflict review API is introduced in this slice. Full disconnected conflict review remains outside this ticket.

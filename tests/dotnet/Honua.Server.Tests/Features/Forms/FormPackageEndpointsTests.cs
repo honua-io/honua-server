@@ -154,7 +154,7 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation(Operations.Create)]
+    [Operation(Operations.TestInfrastructure)]
     public async Task StoreSubmissionClaim_WithDuplicateIdempotencyKey_ReportsOnlyFirstOwner()
     {
         var published = await PublishPackageAsync(CreatePackage("Store idempotency claim"));
