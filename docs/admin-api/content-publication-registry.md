@@ -189,6 +189,9 @@ Policy fields:
 - `share.allowSharing`: whether sharing is allowed.
 - `share.allowAnonymous`: whether anonymous route reads are allowed without
   making the route globally `public`.
+- `share.allowedScopes`: optional org/team scopes the artifact may be shared
+  with. Stored sharing metadata; it is not evaluated on the public read path in
+  this slice.
 - `embed.allowEmbedding`: whether `?embed=true` route reads are allowed.
 - `embed.allowedOrigins`: optional allowlist compared against the `Origin`
   header, falling back to `Referer` origin when `Origin` is absent.
