@@ -41,6 +41,13 @@ internal static class GeoEtlServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IPipelineSourceConnector, CsvSourceConnector>());
 
+        // Managed layer-scope GP input source (inline GeoJSON FeatureCollection).
+        // Catalog-layer / query-result reference kinds are resolved by a storage
+        // provider implementation when present; the inline source always runs on
+        // the lean serving image with no native or database dependency.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<ILayerFeatureSource, InlineGeoJsonLayerFeatureSource>());
+
         // Phase 1 managed transforms.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IPipelineTransform, ReprojectTransform>());
