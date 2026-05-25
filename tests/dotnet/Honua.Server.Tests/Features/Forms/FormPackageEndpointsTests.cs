@@ -277,6 +277,39 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
         requestSummary.Should().NotContain("Private attachment value");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.AddAttachment)]
+    [Endpoint("POST /api/v1/forms/packages/{formId}/submissions")]
+    public async Task SubmitForm_WithMultipartAttachmentRejectedByFieldPolicy_ReturnsRejectedResponse()
+    {
+        var published = await PublishPackageAsync(CreatePackage(
+            "Attachment field policy",
+            includeAttachment: true,
+            attachmentAllowedContentTypes: ["image/*"],
+            fieldAttachmentAllowedContentTypes: ["image/png"]));
+        var submission = CreateSubmission("attachment-field-policy-1", "Field policy", includeAttachment: true);
+        using var form = new MultipartFormDataContent();
+        form.Add(new StringContent(
+            JsonSerializer.Serialize(submission, FormPackageJsonContext.Default.FormSubmissionRequest),
+            Encoding.UTF8,
+            "application/json"), "submission");
+
+        var file = new ByteArrayContent(Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="));
+        file.Headers.ContentType = MediaTypeHeaderValue.Parse("image/jpeg");
+        form.Add(file, "photo-file", "photo.jpg");
+
+        var response = await _fixture.Client.PostAsync(
+            $"/api/v1/forms/packages/{published.FormId}/submissions",
+            form);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await ReadJsonAsync(response, FormPackageJsonContext.Default.FormSubmissionResponse);
+        body.Status.Should().Be("rejected");
+        body.ValidationIssues.Should().Contain(issue =>
+            issue.Code == "attachmentContentTypeNotAllowed" &&
+            issue.FieldId == "photo");
+    }
+
     private async Task EnableEditingCapabilitiesAsync()
     {
         await _fixture.Postgres.ExecuteAsync("""
@@ -356,7 +389,11 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
     private static StringContent JsonContent(string json)
         => new(json, Encoding.UTF8, "application/json");
 
-    private static FormPackageDocument CreatePackage(string title, bool includeAttachment = false)
+    private static FormPackageDocument CreatePackage(
+        string title,
+        bool includeAttachment = false,
+        string[]? attachmentAllowedContentTypes = null,
+        string[]? fieldAttachmentAllowedContentTypes = null)
         => new()
         {
             Title = title,
@@ -401,7 +438,7 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
                     MaxAttachmentsPerSubmission = 2,
                     MaxAttachmentBytes = 1_000_000,
                     MaxTotalBytes = 2_000_000,
-                    AllowedContentTypes = ["image/png"],
+                    AllowedContentTypes = attachmentAllowedContentTypes ?? ["image/png"],
                     Fields =
                     [
                         new FormFieldAttachmentPolicy
@@ -409,7 +446,7 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
                             FieldId = "photo",
                             MaxCount = 1,
                             Required = true,
-                            AllowedContentTypes = ["image/png"]
+                            AllowedContentTypes = fieldAttachmentAllowedContentTypes ?? ["image/png"]
                         }
                     ]
                 }

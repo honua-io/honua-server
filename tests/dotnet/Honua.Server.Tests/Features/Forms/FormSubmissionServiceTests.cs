@@ -43,7 +43,7 @@ public sealed class FormSubmissionServiceTests
             OnApplyEdits = requestAbort.Cancel
         };
         var service = CreateService(store, writer);
-        var context = CreateContext(CreateSubmission("client-cancel-1"), requestAbort.Token, requestServices);
+        var context = CreateContext(CreateSubmission("client-cancel-1", "Create"), requestServices, requestAbort.Token);
 
         var result = await service.SubmitAsync(context, store.PackageVersion.FormId);
         await result.ExecuteAsync(context);
@@ -53,6 +53,7 @@ public sealed class FormSubmissionServiceTests
         store.CompleteTokenWasCanceled.Should().BeFalse();
         store.CompletedResponse.Should().NotBeNull();
         store.CompletedResponse!.Status.Should().Be("accepted");
+        store.CompletedResponse.TargetFeatureId.Should().Be(101);
         writer.ApplyEditsCalls.Should().Be(1);
     }
 
@@ -66,7 +67,7 @@ public sealed class FormSubmissionServiceTests
         };
         var writer = new FakeFeatureWriter();
         var service = CreateService(store, writer);
-        var context = CreateContext(CreateSubmission("claim-lost-1"), CancellationToken.None, requestServices);
+        var context = CreateContext(CreateSubmission("claim-lost-1"), requestServices);
 
         var result = await service.SubmitAsync(context, store.PackageVersion.FormId);
         await result.ExecuteAsync(context);
@@ -106,8 +107,8 @@ public sealed class FormSubmissionServiceTests
 
     private static DefaultHttpContext CreateContext(
         FormSubmissionRequest request,
-        CancellationToken requestAborted,
-        IServiceProvider requestServices)
+        IServiceProvider requestServices,
+        CancellationToken requestAborted = default)
     {
         var payload = JsonSerializer.Serialize(request, FormPackageJsonContext.Default.FormSubmissionRequest);
         var context = new DefaultHttpContext
@@ -142,11 +143,13 @@ public sealed class FormSubmissionServiceTests
             }
         };
 
-    private static FormSubmissionRequest CreateSubmission(string idempotencyKey)
+    private static FormSubmissionRequest CreateSubmission(
+        string idempotencyKey,
+        string operation = FormSubmissionOperations.Create)
         => new()
         {
             IdempotencyKey = idempotencyKey,
-            Operation = FormSubmissionOperations.Create,
+            Operation = operation,
             ClientId = "field-client-1",
             Values = new Dictionary<string, JsonElement>
             {

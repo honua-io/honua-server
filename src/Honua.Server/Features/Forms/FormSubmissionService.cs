@@ -431,6 +431,7 @@ internal sealed class FormSubmissionService
         var outcomes = new List<FormSubmissionAttachmentOutcome>();
         var byPartName = files.ToDictionary(static file => file.Name, StringComparer.Ordinal);
         var policy = packageVersion.Package.AttachmentPolicy;
+        var fieldPolicies = BuildAttachmentFieldPolicies(policy);
         var maxSize = Math.Min(policy.MaxAttachmentBytes ?? _attachmentLimits.MaxAttachmentSize, _attachmentLimits.MaxAttachmentSize);
 
         foreach (var descriptor in request.Attachments)
@@ -442,8 +443,8 @@ internal sealed class FormSubmissionService
                 continue;
             }
 
-            if (!ContentTypeAllowed(policy.AllowedContentTypes, file.ContentType) &&
-                !ContentTypeAllowed(SplitAllowedMimeTypes(_attachmentLimits.AllowedMimeTypes), file.ContentType))
+            fieldPolicies.TryGetValue(descriptor.FieldId ?? string.Empty, out var fieldPolicy);
+            if (!AttachmentContentTypeAllowed(policy, fieldPolicy, file.ContentType))
             {
                 AddAttachmentIssue(issues, outcomes, descriptor, "attachmentContentTypeNotAllowed", $"Attachment content type '{file.ContentType}' is not allowed.");
                 continue;
@@ -582,20 +583,33 @@ internal sealed class FormSubmissionService
             return null;
         }
 
+        if (!TryReadFiniteDouble(x, out var longitude) || !TryReadFiniteDouble(y, out var latitude))
+        {
+            return null;
+        }
+
         var point = new GeometryFactory(new PrecisionModel(), layer.SpatialReference.Wkid)
-            .CreatePoint(new Coordinate(ReadDouble(x), ReadDouble(y)));
+            .CreatePoint(new Coordinate(longitude, latitude));
         point.SRID = layer.SpatialReference.Wkid;
         return new WKBWriter(ByteOrder.LittleEndian, handleSRID: true).Write(point);
     }
 
-    private static double ReadDouble(JsonElement value)
-        => value.ValueKind == JsonValueKind.String
-            ? double.Parse(value.GetString() ?? "0", CultureInfo.InvariantCulture)
-            : value.GetDouble();
+    private static bool TryReadFiniteDouble(JsonElement value, out double result)
+    {
+        result = 0;
+        if (value.ValueKind == JsonValueKind.Number)
+        {
+            return value.TryGetDouble(out result) && double.IsFinite(result);
+        }
+
+        return value.ValueKind == JsonValueKind.String &&
+            double.TryParse(value.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out result) &&
+            double.IsFinite(result);
+    }
 
     private static long? ResolveTargetFeatureId(FormSubmissionRequest request, FeatureEditResult editResult)
     {
-        if (request.Operation == FormSubmissionOperations.Create)
+        if (OperationEquals(request.Operation, FormSubmissionOperations.Create))
         {
             if (!editResult.CreatedIds.IsDefaultOrEmpty)
             {
@@ -805,6 +819,35 @@ internal sealed class FormSubmissionService
     private static bool IsAttachmentField(FormFieldDefinition field)
         => string.Equals(field.Type, "attachment", StringComparison.OrdinalIgnoreCase) ||
            string.Equals(field.Type, "media", StringComparison.OrdinalIgnoreCase);
+
+    private bool AttachmentContentTypeAllowed(
+        FormAttachmentPolicy policy,
+        FormFieldAttachmentPolicy? fieldPolicy,
+        string contentType)
+    {
+        if (fieldPolicy?.AllowedContentTypes.Length > 0 &&
+            !ContentTypeAllowed(fieldPolicy.AllowedContentTypes, contentType))
+        {
+            return false;
+        }
+
+        if (policy.AllowedContentTypes.Length > 0 &&
+            !ContentTypeAllowed(policy.AllowedContentTypes, contentType))
+        {
+            return false;
+        }
+
+        return ContentTypeAllowed(SplitAllowedMimeTypes(_attachmentLimits.AllowedMimeTypes), contentType);
+    }
+
+    private static Dictionary<string, FormFieldAttachmentPolicy> BuildAttachmentFieldPolicies(FormAttachmentPolicy policy)
+        => policy.Fields
+            .Where(static fieldPolicy => !string.IsNullOrWhiteSpace(fieldPolicy.FieldId))
+            .GroupBy(static fieldPolicy => fieldPolicy.FieldId!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(static group => group.Key, static group => group.First(), StringComparer.OrdinalIgnoreCase);
+
+    private static bool OperationEquals(string operation, string expected)
+        => string.Equals(operation, expected, StringComparison.OrdinalIgnoreCase);
 
     private static bool ContentTypeAllowed(IEnumerable<string> allowedContentTypes, string contentType)
     {

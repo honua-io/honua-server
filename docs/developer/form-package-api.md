@@ -23,7 +23,7 @@ Runtime package, offline-policy, and submission routes also use the current admi
 | `GET` | `/api/v1/admin/forms/packages` | `200` | Returns `FormPackageSummary[]`; response is `Cache-Control: no-store`. |
 | `POST` | `/api/v1/admin/forms/packages` | `201` | Creates draft version `1` or the next draft for the supplied `formId`; returns `FormPackageVersion` with `ETag` and `Cache-Control: no-store`. |
 | `GET` | `/api/v1/admin/forms/packages/{formId}` | `200` | Returns the current draft, falling back to the current published version; response is `no-store`. |
-| `GET` | `/api/v1/admin/forms/packages/{formId}/versions` | `200` | Returns all `FormPackageVersion` rows for a package family, newest version first; response is `no-store`. |
+| `GET` | `/api/v1/admin/forms/packages/{formId}/versions` | `200` | Returns all `FormPackageVersion` rows for a package family, newest version first, or an empty array when the family has no stored versions; response is `no-store`. |
 | `GET` | `/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}` | `200` | Returns one version with `ETag`; response is `no-store`. |
 | `PUT` | `/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}` | `200` | Updates a draft only. Requires the exact returned `ETag` value in `If-Match`; returns updated `FormPackageVersion` with new `ETag`. |
 | `POST` | `/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/validate` | `200` | Returns `FormPackageValidationResult`; stores validation for drafts. |
@@ -76,7 +76,7 @@ Publish validation checks the package document against the target feature servic
 - Target service/layer existence, target field existence, writable target fields, compatible field types, and required state for non-null target fields.
 - Submit operations against target capabilities (`Create`, `Update`, `Delete`).
 - Coded-value and range domains, validation rule limits, supported conditional visibility operators (`equals`, `notEquals`, `gt`, `gte`, `lt`, `lte`, `isEmpty`, `isNotEmpty`, `in`), and visibility cycles.
-- Attachment enablement, package-level limits, allowed MIME types, attachment field references, and unsupported server-side attachment transform flags. Exact MIME values and subtype wildcards such as `image/*` are supported. Package allowlists are checked against global server attachment limits; EXIF stripping, face blur, and redaction must be performed before submission in this release.
+- Attachment enablement, package-level limits, allowed MIME types, per-field attachment `required`/`maxCount`/MIME policy, attachment field references, and unsupported server-side attachment transform flags. Exact MIME values and subtype wildcards such as `image/*` are supported. Package and field allowlists are checked against global server attachment limits; field allowlists must be at least as restrictive as the package allowlist. EXIF stripping, face blur, and redaction must be performed before submission in this release.
 - Privacy private-field references, supported privacy transformations (`none`, `auditOnly`, `minimizeAudit`), and retention bounds.
 - Offline transport selection. `feature-server-replica` and `fieldcollection` are the supported transport identifiers. `conflictReviewMode` accepts `defer` or `lastWriteWins`; other values produce a warning because full conflict review is deferred.
 
@@ -99,7 +99,7 @@ Validation responses use:
 
 ## Submissions
 
-Submissions are accepted only for published packages. The request body may be `application/json` or `multipart/form-data`.
+Submissions are accepted only for published packages. The request body may be `application/json` or `multipart/form-data`. Malformed bodies, unsupported content types, route authorization failures, and target data-editor authorization failures use the shared problem/auth response path before a `FormSubmissionResponse` can be created.
 
 JSON submission example:
 
@@ -128,7 +128,7 @@ Runtime validation checks:
 - Package status, allowed operation, and `targetFeatureId` for update/delete.
 - Required values, read-only fields, JSON value types, domain membership, and target field compatibility.
 - Point geometry shape and SRID. Geometry uses GeoServices-style `{ "x": number, "y": number, "spatialReference": { "wkid": number } }`; `x` and `y` may be JSON numbers or numeric strings, and `wkid` must match the target layer SRID when supplied.
-- Required attachment fields, attachment counts, package/global MIME type allowlists, file part presence, file size, filename/content security, and global attachment limits.
+- Required attachment fields, package and per-field attachment counts, package/field/global MIME type allowlists, file part presence, file size, filename/content security, and global attachment limits.
 
 Accepted submissions are translated into the shared edit pipeline (`IEditProcessor` and `IFeatureWriter`). Non-attachment field values are mapped from form `fieldId` to target layer `targetField`. Attachment upload runs only after the feature edit produces or resolves a target feature id.
 
@@ -163,7 +163,7 @@ Multipart submissions must include a `submission` JSON part plus file parts refe
 }
 ```
 
-The server normalizes missing descriptor `filename`, `contentType`, and `sizeBytes` from the uploaded file when the multipart part exists. Descriptor and file MIME types are accepted when they match the package allowlist or the global server allowlist; publish validation prevents package allowlists from exceeding global server limits. Accepted files are stored through the FeatureServer attachment store and return per-file outcomes.
+The server normalizes missing descriptor `filename`, `contentType`, and `sizeBytes` from the uploaded file when the multipart part exists. Descriptor and file MIME types must satisfy the package allowlist, any per-field allowlist, and the global server allowlist; when a package or field allowlist is empty, the next broader policy supplies the constraint. Accepted files are stored through the FeatureServer attachment store and return per-file outcomes.
 
 ## Submission Response
 
@@ -200,18 +200,20 @@ The server normalizes missing descriptor `filename`, `contentType`, and `sizeByt
 HTTP and response status behavior:
 
 - `200` with `status: "accepted"` when the edit path completed. If the feature edit reports errors, the response may be `200` with `status: "failed"` and a sanitized `editOutcome.error`.
-- `200` with `idempotentReplay: true` when an idempotency replay matches the stored request body.
+- `200` with `idempotentReplay: true` when an idempotency replay matches the stored request body. The replay body is the stored terminal response and may carry `status: "accepted"`, `"rejected"`, or `"failed"`.
 - `400` with `status: "rejected"` for correctable validation failures.
 - `403` with `status: "rejected"` when package policy denies the operation or attachments.
 - `404` when the published package or target service/layer cannot be found.
 - `409` when an idempotency key is reused with a different payload or the prior submission is still pending.
 - `500` with `status: "failed"` and retry guidance when the server cannot complete the submission.
 
-Attachment outcomes use `accepted`, `rejected`, or `failed`. Rejection and failure reasons are sanitized. Each outcome is persisted with the submission id and audited as a form attachment policy event.
+Attachment outcomes use `accepted`, `rejected`, or `failed`. A feature edit can be accepted while one or more attachment outcomes are rejected or failed after the target feature id is resolved. Rejection and failure reasons are sanitized. Each outcome is persisted with the submission id and audited as a form attachment policy event.
 
 ## Idempotency And Privacy
 
 Idempotency is scoped by form id, package version, actor/client hash, and `idempotencyKey`. The server stores a hash of the original JSON request body. For multipart requests, that hash is based on the `submission` JSON part, before file-derived descriptor normalization. An exact replay returns the stored terminal response with `idempotentReplay: true`; a changed payload with the same key returns `409`.
+
+When two requests race after the initial lookup, only the caller that creates the pending submission row owns the validation/edit/upload path. A caller that loses the idempotency claim re-reads the stored record: if the record is terminal, the stored response is returned as an idempotent replay; if it is still pending, the caller receives `409` and does not apply another edit.
 
 Submission records store minimized request summaries instead of raw private field values. The summary includes operation, submitted field ids, private field ids, attachment count, optional `targetFeatureId`, client id when allowed by privacy policy, and the client submission time when provided. Package and policy hashes are stored on the durable submission row beside the summary. Private values are not copied into the request summary. Attachment policy outcomes are recorded per submitted attachment.
 
@@ -253,4 +255,5 @@ Offline links are absolute and derived from the incoming request scheme, host, a
 - Structured source-generated logs use event ids in the `1184xx` range for package lifecycle, offline-policy reads, submissions, and attachment outcomes.
 - Package lifecycle actions, submission outcomes, and attachment policy outcomes are written to the shared audit log with `resourceType: "form_package"`.
 - Published runtime package reads use short private caching. Admin reads, offline-policy responses, and mutation responses use `no-store` to avoid stale authoring or sync policy state.
+- Submission completion persists terminal responses with a server-owned timeout token after the idempotency claim, so a client disconnect after edit execution does not cancel the durable response used for later idempotent replay.
 - No new form-specific offline conflict review API is introduced in this slice. Full disconnected conflict review remains outside this ticket.

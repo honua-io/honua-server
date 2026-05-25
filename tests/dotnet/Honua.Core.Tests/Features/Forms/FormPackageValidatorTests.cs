@@ -210,6 +210,129 @@ public sealed class FormPackageValidatorTests
             "requiredAttachmentMissing");
     }
 
+    [UnitTest]
+    public async Task ValidateSubmission_WithMixedCaseOperations_UsesCaseInsensitiveOperationBranches()
+    {
+        var validator = CreateValidator();
+        var packageVersion = new FormPackageVersion
+        {
+            FormId = "inspection",
+            Version = 1,
+            Status = FormPackageStatus.Published,
+            Package = CreatePackage(allowedOperations:
+            [
+                FormSubmissionOperations.Create,
+                FormSubmissionOperations.Update,
+                FormSubmissionOperations.Delete
+            ])
+        };
+        var update = CreateSubmissionRequest("Update");
+        var delete = CreateSubmissionRequest(
+            "Delete",
+            values: new Dictionary<string, JsonElement>(),
+            includeGeometry: false);
+
+        var updateResult = await validator.ValidateSubmissionAsync(packageVersion, update);
+        var deleteResult = await validator.ValidateSubmissionAsync(packageVersion, delete);
+
+        updateResult.Issues.Select(static issue => issue.Code).Should().Contain("targetFeatureIdRequired");
+        deleteResult.Issues.Select(static issue => issue.Code).Should().Contain("targetFeatureIdRequired");
+        deleteResult.Issues.Select(static issue => issue.Code).Should().NotContain([
+            "requiredFieldMissing",
+            "geometryRequired"
+        ]);
+    }
+
+    [UnitTest]
+    public async Task ValidateSubmission_WithNonNumericPointCoordinate_ReturnsValidationIssue()
+    {
+        var validator = CreateValidator();
+        var packageVersion = new FormPackageVersion
+        {
+            FormId = "inspection",
+            Version = 1,
+            Status = FormPackageStatus.Published,
+            Package = CreatePackage()
+        };
+        var request = CreateSubmissionRequest(
+            FormSubmissionOperations.Create,
+            geometry: Json("""{"x":"abc","y":"21.3069","spatialReference":{"wkid":4326}}"""));
+
+        var result = await validator.ValidateSubmissionAsync(packageVersion, request);
+
+        result.IsValid.Should().BeFalse();
+        result.Issues.Select(static issue => issue.Code).Should().Contain("geometryCoordinateInvalid");
+    }
+
+    [UnitTest]
+    public async Task ValidateSubmission_WithPerFieldAttachmentPolicy_EnforcesCountRequiredAndContentType()
+    {
+        var validator = CreateValidator();
+        var packageVersion = new FormPackageVersion
+        {
+            FormId = "inspection",
+            Version = 1,
+            Status = FormPackageStatus.Published,
+            Package = CreatePackage(
+                includeAttachment: true,
+                attachmentFieldRequired: false,
+                fieldAttachmentRequired: true,
+                attachmentAllowedContentTypes: ["image/*"],
+                fieldAttachmentAllowedContentTypes: ["image/png"],
+                fieldAttachmentMaxCount: 1)
+        };
+        var missing = CreateSubmissionRequest(FormSubmissionOperations.Create);
+        var invalid = CreateSubmissionRequest(
+            FormSubmissionOperations.Create,
+            attachments:
+            [
+                new FormSubmissionAttachmentDescriptor
+                {
+                    ClientAttachmentId = "photo-1",
+                    FieldId = "photo",
+                    PartName = "photo-1",
+                    ContentType = "image/jpeg",
+                    SizeBytes = 100
+                },
+                new FormSubmissionAttachmentDescriptor
+                {
+                    ClientAttachmentId = "photo-2",
+                    FieldId = "photo",
+                    PartName = "photo-2",
+                    ContentType = "image/png",
+                    SizeBytes = 100
+                }
+            ]);
+
+        var missingResult = await validator.ValidateSubmissionAsync(packageVersion, missing);
+        var invalidResult = await validator.ValidateSubmissionAsync(packageVersion, invalid);
+
+        missingResult.Issues.Select(static issue => issue.Code).Should().Contain("requiredAttachmentMissing");
+        invalidResult.Issues.Select(static issue => issue.Code).Should().Contain([
+            "attachmentFieldCountExceeded",
+            "attachmentContentTypeNotAllowed"
+        ]);
+    }
+
+    [UnitTest]
+    public async Task ValidateForPublish_WithInvalidFieldAttachmentPolicy_ReturnsExpectedIssueCodes()
+    {
+        var validator = CreateValidator();
+        var package = CreatePackage(
+            includeAttachment: true,
+            attachmentAllowedContentTypes: ["image/*"],
+            fieldAttachmentAllowedContentTypes: ["application/pdf"],
+            fieldAttachmentMaxCount: 3);
+
+        var result = await validator.ValidateForPublishAsync(package);
+
+        result.IsValid.Should().BeFalse();
+        result.Issues.Select(static issue => issue.Code).Should().Contain([
+            "attachmentFieldCountLimitInvalid",
+            "attachmentFieldContentTypeNotAllowed"
+        ]);
+    }
+
     private static FormPackageValidator CreateValidator(string[]? serviceCapabilities = null)
     {
         var layer = CreateLayer();
@@ -247,7 +370,14 @@ public sealed class FormPackageValidatorTests
                 new FieldDefinition("shape", FieldType.Geometry)
             ]);
 
-    private static FormPackageDocument CreatePackage(bool includeAttachment = false)
+    private static FormPackageDocument CreatePackage(
+        bool includeAttachment = false,
+        string[]? allowedOperations = null,
+        string[]? attachmentAllowedContentTypes = null,
+        string[]? fieldAttachmentAllowedContentTypes = null,
+        int? fieldAttachmentMaxCount = 1,
+        bool attachmentFieldRequired = true,
+        bool fieldAttachmentRequired = true)
         => new()
         {
             Title = "Inspection Form",
@@ -274,14 +404,14 @@ public sealed class FormPackageValidatorTests
                         FieldId = "photo",
                         Label = "Photo",
                         Type = "attachment",
-                        Required = true,
+                        Required = attachmentFieldRequired,
                         SectionId = "main"
                     }
                 ]
                 : [CreateNameField()],
             SubmitPolicy = new FormSubmitPolicy
             {
-                AllowedOperations = [FormSubmissionOperations.Create],
+                AllowedOperations = allowedOperations ?? [FormSubmissionOperations.Create],
                 AllowAttachments = includeAttachment
             },
             AttachmentPolicy = includeAttachment
@@ -291,15 +421,15 @@ public sealed class FormPackageValidatorTests
                     MaxAttachmentsPerSubmission = 2,
                     MaxAttachmentBytes = 1_000_000,
                     MaxTotalBytes = 2_000_000,
-                    AllowedContentTypes = ["image/png"],
+                    AllowedContentTypes = attachmentAllowedContentTypes ?? ["image/png"],
                     Fields =
                     [
                         new FormFieldAttachmentPolicy
                         {
                             FieldId = "photo",
-                            Required = true,
-                            MaxCount = 1,
-                            AllowedContentTypes = ["image/png"]
+                            Required = fieldAttachmentRequired,
+                            MaxCount = fieldAttachmentMaxCount,
+                            AllowedContentTypes = fieldAttachmentAllowedContentTypes ?? ["image/png"]
                         }
                     ]
                 }
@@ -320,6 +450,27 @@ public sealed class FormPackageValidatorTests
             TargetField = "name",
             Required = true,
             SectionId = "main"
+        };
+
+    private static FormSubmissionRequest CreateSubmissionRequest(
+        string operation,
+        long? targetFeatureId = null,
+        Dictionary<string, JsonElement>? values = null,
+        JsonElement? geometry = null,
+        bool includeGeometry = true,
+        FormSubmissionAttachmentDescriptor[]? attachments = null)
+        => new()
+        {
+            Operation = operation,
+            TargetFeatureId = targetFeatureId,
+            Values = values ?? new Dictionary<string, JsonElement>
+            {
+                ["name"] = Json("\"Inspection\"")
+            },
+            Geometry = includeGeometry
+                ? geometry ?? Json("""{"x":-157.8583,"y":21.3069,"spatialReference":{"wkid":4326}}""")
+                : null,
+            Attachments = attachments ?? []
         };
 
     private static JsonElement Json(string json)

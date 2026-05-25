@@ -165,7 +165,7 @@ See the [OGC API Coverages Coverage](../../gis/specifications/ogc-api-coverages-
 
 > **Note**: The Forms contract covers versioned package drafts, validation,
 > immutable publish, reopened drafts, published-package readback, offline-policy
-> discovery, and JSON or multipart submissions with attachment outcomes. The
+> discovery, and idempotent JSON or multipart submissions with attachment outcomes. The
 > response and usage contract is documented in
 > [Form Package API](../form-package-api.md). Offline-policy responses point to
 > the existing FeatureServer replica and FieldCollection mobile sync routes

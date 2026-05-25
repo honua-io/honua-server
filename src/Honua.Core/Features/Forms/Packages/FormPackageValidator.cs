@@ -495,11 +495,39 @@ public sealed class FormPackageValidator
             .Where(static field => !string.IsNullOrWhiteSpace(field.FieldId))
             .Select(static field => field.FieldId!)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var duplicatePolicy in package.AttachmentPolicy.Fields
+            .Where(static policy => !string.IsNullOrWhiteSpace(policy.FieldId))
+            .GroupBy(static policy => policy.FieldId!, StringComparer.OrdinalIgnoreCase)
+            .Where(static group => group.Count() > 1))
+        {
+            AddError(issues, "attachmentPolicyFieldDuplicate", $"Attachment policy references field '{duplicatePolicy.Key}' more than once.", duplicatePolicy.Key);
+        }
+
         foreach (var fieldPolicy in package.AttachmentPolicy.Fields)
         {
             if (string.IsNullOrWhiteSpace(fieldPolicy.FieldId) || !attachmentFieldIds.Contains(fieldPolicy.FieldId))
             {
                 AddError(issues, "attachmentPolicyFieldNotFound", $"Attachment policy references unknown attachment field '{fieldPolicy.FieldId}'.", fieldPolicy.FieldId);
+            }
+
+            if (fieldPolicy.MaxCount is int fieldMaxCount &&
+                (fieldMaxCount <= 0 || fieldMaxCount > maxCount))
+            {
+                AddError(issues, "attachmentFieldCountLimitInvalid", $"Attachment field max count must be between 1 and {maxCount}.", fieldPolicy.FieldId);
+            }
+
+            foreach (var contentType in fieldPolicy.AllowedContentTypes)
+            {
+                if (!MimeIsAllowedByServer(contentType))
+                {
+                    AddError(issues, "attachmentContentTypeNotAllowed", $"Attachment content type '{contentType}' is not allowed by server limits.", fieldPolicy.FieldId);
+                }
+
+                if (package.AttachmentPolicy.AllowedContentTypes.Length > 0 &&
+                    !ContentTypeAllowed(package.AttachmentPolicy.AllowedContentTypes, contentType))
+                {
+                    AddError(issues, "attachmentFieldContentTypeNotAllowed", $"Attachment field content type '{contentType}' is not allowed by the package attachment policy.", fieldPolicy.FieldId);
+                }
             }
         }
     }
@@ -580,7 +608,9 @@ public sealed class FormPackageValidator
             AddError(issues, "operationNotAllowed", $"Operation '{request.Operation}' is not allowed by the published package.", path: "operation");
         }
 
-        if (request.Operation is FormSubmissionOperations.Update or FormSubmissionOperations.Delete && request.TargetFeatureId is null)
+        if ((OperationEquals(request.Operation, FormSubmissionOperations.Update) ||
+             OperationEquals(request.Operation, FormSubmissionOperations.Delete)) &&
+            request.TargetFeatureId is null)
         {
             AddError(issues, "targetFeatureIdRequired", "targetFeatureId is required for update and delete submissions.", path: "targetFeatureId");
         }
@@ -594,7 +624,7 @@ public sealed class FormPackageValidator
 
         if (package.SubmitPolicy.RequiresGeometry &&
             layer.GeometryType != GeometryType.None &&
-            request.Operation != FormSubmissionOperations.Delete &&
+            !OperationEquals(request.Operation, FormSubmissionOperations.Delete) &&
             request.Geometry is null)
         {
             AddError(issues, "geometryRequired", "geometry is required for this package and layer.", path: "geometry");
@@ -620,7 +650,7 @@ public sealed class FormPackageValidator
             }
         }
 
-        if (request.Operation == FormSubmissionOperations.Delete)
+        if (OperationEquals(request.Operation, FormSubmissionOperations.Delete))
         {
             return;
         }
@@ -710,7 +740,7 @@ public sealed class FormPackageValidator
         List<FormValidationIssue> issues)
     {
         _ = package;
-        if (request.Geometry is null || request.Operation == FormSubmissionOperations.Delete)
+        if (request.Geometry is null || OperationEquals(request.Operation, FormSubmissionOperations.Delete))
         {
             return;
         }
@@ -731,6 +761,12 @@ public sealed class FormPackageValidator
             return;
         }
 
+        if (!TryReadFiniteDouble(x, out _) || !TryReadFiniteDouble(y, out _))
+        {
+            AddError(issues, "geometryCoordinateInvalid", "geometry x and y must be finite numbers or numeric strings.", path: "geometry");
+            return;
+        }
+
         var submittedSrid = ResolveGeometrySrid(geometry);
         if (submittedSrid is int srid && srid != layer.SpatialReference.Wkid)
         {
@@ -744,8 +780,17 @@ public sealed class FormPackageValidator
         LayerDefinition layer,
         List<FormValidationIssue> issues)
     {
-        var requiredAttachmentFields = package.Fields
-            .Where(static field => IsAttachmentField(field) && field.Required && !string.IsNullOrWhiteSpace(field.FieldId))
+        var attachmentFields = package.Fields
+            .Where(IsAttachmentField)
+            .Where(static field => !string.IsNullOrWhiteSpace(field.FieldId))
+            .ToArray();
+        var attachmentFieldIds = attachmentFields
+            .Select(static field => field.FieldId!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var fieldPolicies = BuildAttachmentFieldPolicies(package.AttachmentPolicy);
+        var requiredAttachmentFields = attachmentFields
+            .Where(field => field.Required ||
+                (fieldPolicies.TryGetValue(field.FieldId!, out var fieldPolicy) && fieldPolicy.Required))
             .Select(static field => field.FieldId!)
             .ToArray();
 
@@ -777,17 +822,28 @@ public sealed class FormPackageValidator
         }
 
         long totalSize = 0;
-        var attachmentFieldIds = package.Fields
-            .Where(IsAttachmentField)
-            .Where(static field => !string.IsNullOrWhiteSpace(field.FieldId))
-            .Select(static field => field.FieldId!)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var group in request.Attachments
+            .Where(static attachment => !string.IsNullOrWhiteSpace(attachment.FieldId))
+            .GroupBy(static attachment => attachment.FieldId!, StringComparer.OrdinalIgnoreCase))
+        {
+            if (fieldPolicies.TryGetValue(group.Key, out var fieldPolicy) &&
+                fieldPolicy.MaxCount is int maxFieldCount &&
+                group.Count() > maxFieldCount)
+            {
+                AddError(issues, "attachmentFieldCountExceeded", $"Attachment field '{group.Key}' includes {group.Count()} attachments; maximum is {maxFieldCount}.", group.Key);
+            }
+        }
 
         foreach (var attachment in request.Attachments)
         {
+            FormFieldAttachmentPolicy? fieldPolicy = null;
             if (string.IsNullOrWhiteSpace(attachment.FieldId) || !attachmentFieldIds.Contains(attachment.FieldId))
             {
                 AddError(issues, "attachmentFieldNotFound", $"Attachment field '{attachment.FieldId}' is not defined as an attachment field.", attachment.FieldId);
+            }
+            else
+            {
+                fieldPolicies.TryGetValue(attachment.FieldId, out fieldPolicy);
             }
 
             if (string.IsNullOrWhiteSpace(attachment.PartName))
@@ -806,8 +862,7 @@ public sealed class FormPackageValidator
             }
 
             if (!string.IsNullOrWhiteSpace(attachment.ContentType) &&
-                !ContentTypeAllowed(package.AttachmentPolicy.AllowedContentTypes, attachment.ContentType) &&
-                !MimeIsAllowedByServer(attachment.ContentType))
+                !AttachmentContentTypeAllowed(package.AttachmentPolicy, fieldPolicy, attachment.ContentType))
             {
                 AddError(issues, "attachmentContentTypeNotAllowed", $"Attachment content type '{attachment.ContentType}' is not allowed.", attachment.FieldId);
             }
@@ -830,6 +885,32 @@ public sealed class FormPackageValidator
 
     private bool MimeIsAllowedByServer(string contentType)
         => ContentTypeAllowed(SplitAllowedMimeTypes(_attachmentLimits.AllowedMimeTypes), contentType);
+
+    private bool AttachmentContentTypeAllowed(
+        FormAttachmentPolicy policy,
+        FormFieldAttachmentPolicy? fieldPolicy,
+        string contentType)
+    {
+        if (fieldPolicy?.AllowedContentTypes.Length > 0 &&
+            !ContentTypeAllowed(fieldPolicy.AllowedContentTypes, contentType))
+        {
+            return false;
+        }
+
+        if (policy.AllowedContentTypes.Length > 0 &&
+            !ContentTypeAllowed(policy.AllowedContentTypes, contentType))
+        {
+            return false;
+        }
+
+        return MimeIsAllowedByServer(contentType);
+    }
+
+    private static Dictionary<string, FormFieldAttachmentPolicy> BuildAttachmentFieldPolicies(FormAttachmentPolicy policy)
+        => policy.Fields
+            .Where(static fieldPolicy => !string.IsNullOrWhiteSpace(fieldPolicy.FieldId))
+            .GroupBy(static fieldPolicy => fieldPolicy.FieldId!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(static group => group.Key, static group => group.First(), StringComparer.OrdinalIgnoreCase);
 
     private static bool ContentTypeAllowed(IEnumerable<string> allowedContentTypes, string contentType)
     {
@@ -868,6 +949,9 @@ public sealed class FormPackageValidator
         => string.Equals(operation, FormSubmissionOperations.Create, StringComparison.OrdinalIgnoreCase) ||
            string.Equals(operation, FormSubmissionOperations.Update, StringComparison.OrdinalIgnoreCase) ||
            string.Equals(operation, FormSubmissionOperations.Delete, StringComparison.OrdinalIgnoreCase);
+
+    private static bool OperationEquals(string operation, string expected)
+        => string.Equals(operation, expected, StringComparison.OrdinalIgnoreCase);
 
     private static bool ServiceSupportsOperation(ServiceDefinition service, string operation)
         => service.Capabilities.Contains(ToServiceCapability(operation), StringComparer.OrdinalIgnoreCase);
@@ -924,6 +1008,19 @@ public sealed class FormPackageValidator
         }
 
         return property.ValueKind == JsonValueKind.Number && property.TryGetInt32(out value);
+    }
+
+    private static bool TryReadFiniteDouble(JsonElement value, out double result)
+    {
+        result = 0;
+        if (value.ValueKind == JsonValueKind.Number)
+        {
+            return value.TryGetDouble(out result) && double.IsFinite(result);
+        }
+
+        return value.ValueKind == JsonValueKind.String &&
+            double.TryParse(value.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out result) &&
+            double.IsFinite(result);
     }
 
     private static int? ResolveGeometrySrid(JsonElement geometry)
