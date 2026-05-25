@@ -742,6 +742,69 @@ the constraints child-ticket implementers should treat as decided.
    only for that role. Large-scale or complex GML schemas remain in
    Phase 2 / Child Ticket F where GDAL/OGR is available.
 
+## Layer-scope geoprocessing reuses this machinery
+
+A geoprocessing (GP) process over a layer **is** a single-transform ETL
+pipeline, so the GP layer-execution path reuses the parts described above
+rather than reinventing them. This closes the historical honesty gap where
+the GP catalog advertised ~45 processes but only the ~12 single-geometry
+`geometry.*` executors actually ran: those executors operate on a single
+base64-WKB geometry (one geometry in, one out) and cannot run the real
+feature-class / layer workloads ArcPy tools expect.
+
+- **Input layer reference.** A GP invocation accepts a `LayerFeatureReference`
+  that is one of: an inline GeoJSON `FeatureCollection`, a catalog layer id,
+  or a stored query result (`ILayerFeatureSource`). The managed
+  `InlineGeoJsonLayerFeatureSource` wraps the existing `StreamingGeoJsonReader`
+  and runs on the lean serving image with no native/DB dependency; the
+  catalog-layer and query-result kinds are a storage-provider seam mirroring
+  `IFeatureSinkWriter` on the write side.
+- **Per-feature operators.** `GeometryOperationTransform` (an
+  `IPipelineTransform`) lifts the single-geometry NetTopologySuite operators
+  (`buffer`, `simplify`, `convex-hull`, `centroid`, `make-valid`,
+  `difference`) so they apply across a streamed feature collection, carrying
+  attributes through. Reproject and clip already exist as their own transforms
+  and are reused directly.
+- **Output layer / artifact.** The `LayerGeometryJobExecutor` emits a GeoJSON
+  `FeatureCollection` artifact; persistence to a durable Honua layer reuses
+  `HonuaLayerSinkConnector` (the `StreamingFileImportService` insert path),
+  not a new insert path.
+- **Catalog == executable (vector).** `GeoprocessingExecutionRoutingClassifier`
+  is the authoritative routing source. `CatalogExecutableConformanceTests`
+  FAILS if a managed-vector process is advertised but has no executor, or if a
+  routed-to-native process leaks into the managed dispatcher. As of this stream
+  16 vector processes execute (12 single-geometry primitives + 4 layer-scope:
+  `generalization.simplify-layer`, `conversion.feature-project`,
+  `geometry.make-valid`, `geometry.difference`).
+
+### Deferred to the GDAL heavyweight worker (integration tasks)
+
+- **Raster / surface families.** `raster.*`, `surface.*`, and raster-output
+  `conversion.*` processes require GDAL and run on the dedicated native worker
+  (`feat/gdal-heavy-worker`), never in the lean serving image. They are
+  classified `RoutedToNativeWorker` and are honestly **not** executable in this
+  baseline. **Integration task (done when `feat/gdal-heavy-worker` merges):**
+  register the GP raster jobs as `native` runtime-profile jobs and wire them to
+  the GDAL worker queue.
+- **Claim-fence for the GP dispatcher.** There is a known latent issue that the
+  lean `GeoprocessingDispatchJobExecutor` has `AcceptedRuntimeProfiles = null`
+  and could therefore claim `native` jobs intended for the GDAL worker. That
+  `AcceptedRuntimeProfiles` concept lives on `feat/gdal-heavy-worker`, **not**
+  this branch (which was cut from trunk-era job interfaces), and this branch's
+  vector executors register **managed** jobs only — so the fence is not needed
+  here and is intentionally not added. **Integration task (done when
+  `feat/gdal-heavy-worker` merges with this branch and GP raster jobs are
+  registered as `native`):** set
+  `GeoprocessingDispatchJobExecutor.AcceptedRuntimeProfiles` to the managed
+  profile so it cannot claim native jobs.
+- **Group-aware vector aggregation.** `analytics.*` (cluster, spatial-join,
+  buffer-aggregate, density), `generalization.dissolve`, destructive
+  `data-management.*`, and scalar `conversion.geometry-format` are vector-data
+  processes whose group-by / spatial-join / mutation semantics exceed a
+  per-feature transform. They are classified `NotYetExecutable` — inventoried
+  for migration review, not advertised as runnable — and are a follow-on, not a
+  GDAL-worker concern.
+
 ## References
 
 - `honua-io/honua-server#361` — this epic.

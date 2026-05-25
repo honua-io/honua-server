@@ -28,7 +28,20 @@ namespace Honua.Server.Features.Geoprocessing.Execution;
 /// and <c>geometry.snap</c> (vertex conditioning to a reference
 /// geometry). This dispatcher routes between them and emits a single,
 /// consistent "unsupported process id" error for everything outside the
-/// current supported set.
+/// current supported set. The layer-scope <see cref="LayerGeometryJobExecutor"/>
+/// is composed in for the feature-collection vector processes
+/// (generalization.simplify-layer, conversion.feature-project) and the
+/// previously catalog-only single-geometry ops (geometry.make-valid,
+/// geometry.difference).
+///
+/// CLAIM-FENCE INTEGRATION NOTE (deferred to feat/gdal-heavy-worker): all
+/// executors composed here register MANAGED jobs only, so this dispatcher has no
+/// AcceptedRuntimeProfiles filter (that concept lives on feat/gdal-heavy-worker,
+/// not this trunk-era branch). When feat/gdal-heavy-worker merges with this
+/// branch and GP raster jobs are registered as "native", set
+/// AcceptedRuntimeProfiles to the managed profile here so this dispatcher cannot
+/// claim native jobs meant for the GDAL worker. See docs/contributor/geoetl-roadmap.md
+/// § "Deferred to the GDAL heavyweight worker".
 /// </summary>
 internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
 {
