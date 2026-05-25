@@ -14,7 +14,9 @@ Tracked by issue **#1182**. The implementation lives in
 All routes live under `/api/v1/analysis/...` and require admin authorization.
 Responses are plain camelCase JSON DTOs, not the older `ApiResponse<T>`
 envelope. Null fields are omitted. Expected errors use the shared admin
-`application/problem+json` shape.
+`application/problem+json` shape. Admin authorization is enforced before the
+analysis-content handlers run; run, rerun, and failure requests can also return
+geoprocessing authorization problems from the canonical job service.
 
 | Method | Route | Purpose |
 | --- | --- | --- |
@@ -37,7 +39,7 @@ Status code conventions:
 | `201` | Content item or version was created. |
 | `200` | Read, preview, run, rerun, artifact, log, or failure request succeeded. |
 | `400` | Invalid request payload, invalid limit, mismatched content kind, bad filter plan, or invalid canonical query. |
-| `401` / `403` | Geoprocessing authorization failed. |
+| `401` / `403` | Admin authorization or geoprocessing authorization failed. |
 | `404` | Item, version, layer, job, or artifact was not found. |
 | `409` | The requested job has not failed, or a geoprocessing precondition failed. |
 | `503` | The backing content, job, or log store is unavailable. |
@@ -110,6 +112,12 @@ version:
 omitted, it defaults to the latest version id. `createdFromJobId` and
 `createdFromArtifactIds` are provenance fields for versions derived from prior
 results.
+
+The public slice reopens content by known `itemId` plus either `latest` or an
+explicit version number; it does not expose a list route yet. `contentHash` is
+computed from the saved `savedQuery` or `analysisPackage` payload only, so
+provenance-only fields such as `basedOnVersionId` do not change the payload
+hash.
 
 ## Saved Query Preview
 
@@ -229,6 +237,11 @@ the job id, current job status, and submitted version:
 }
 ```
 
+Runtime `parameters` are submitted as job provenance metadata and do not mutate
+the stored analysis package version. To make parameter changes durable, use
+`/reruns` with `parameterOverrides`, which creates a new immutable version
+before submitting the job.
+
 `POST /reruns` accepts `idempotencyKey`, `rerunOfJobId`,
 `rerunOfResultPackageId`, and `parameterOverrides`. When overrides are present,
 the server creates a new immutable version with the merged package parameters,
@@ -281,11 +294,14 @@ record and a binding clients can place into downstream packages:
 }
 ```
 
-Completed geoprocessing jobs that carry the same `analysis.content.*` metadata
-persist retained result-artifact records during terminal callback handling. The
-binding fields are intentionally stable so downstream maps, dashboards,
-reports, apps, and workflows can reference `artifactId` plus the source
-content version instead of duplicating preview or job state.
+Completed geoprocessing jobs that carry `analysis.content.item_id`,
+`analysis.content.version`, and `analysis.content.version_id` persist retained
+result-artifact records during terminal callback handling. These records store
+metadata, provenance, and the artifact URI produced by the job result package;
+they do not copy artifact bytes into the analysis-content tables. The binding
+fields are intentionally stable so downstream maps, dashboards, reports, apps,
+and workflows can reference `artifactId` plus the source content version
+instead of duplicating preview or job state.
 
 ## Job Diagnostics
 

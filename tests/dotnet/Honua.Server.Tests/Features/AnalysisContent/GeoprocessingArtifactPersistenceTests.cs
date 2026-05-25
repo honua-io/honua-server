@@ -20,7 +20,7 @@ namespace Honua.Server.Tests.Features.AnalysisContent;
 [Protocol(TestProtocols.Admin)]
 public sealed class GeoprocessingArtifactPersistenceTests
 {
-    [IntegrationTest]
+    [UnitTest]
     [Operation(Operations.ProcessExecution)]
     public async Task TerminalCallback_WithAnalysisContentMetadata_PersistsDurableArtifactRecord()
     {

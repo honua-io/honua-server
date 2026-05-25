@@ -85,10 +85,8 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
             }
         };
 
-        var created = await PostAndReadAsync<AnalysisContentItemResponse>(
-            "/api/v1/analysis/content/items",
-            create,
-            HttpStatusCode.Created);
+        var createResponse = await _client.PostAsJsonAsync("/api/v1/analysis/content/items", create, JsonOptions);
+        var created = await ReadJsonAsync<AnalysisContentItemResponse>(createResponse, HttpStatusCode.Created);
 
         Assert.NotNull(created);
         Assert.Equal(1, created!.Version.Version);
@@ -103,32 +101,38 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
             }
         };
 
-        var second = await PostAndReadAsync<AnalysisContentVersionResponse>(
+        var secondResponse = await _client.PostAsJsonAsync(
             $"/api/v1/analysis/content/items/{created.Item.ItemId}/versions",
             createVersion,
-            HttpStatusCode.Created);
+            JsonOptions);
+        var second = await ReadJsonAsync<AnalysisContentVersionResponse>(secondResponse, HttpStatusCode.Created);
 
         Assert.NotNull(second);
         Assert.Equal(2, second!.Version.Version);
         Assert.NotEqual(created.Version.ContentHash, second.Version.ContentHash);
         Assert.Equal(created.Version.VersionId, second.Version.BasedOnVersionId);
 
-        var latest = await ReadAsync<AnalysisContentVersionResponse>(
+        var latestResponse = await _client.GetAsync(
             $"/api/v1/analysis/content/items/{created.Item.ItemId}/versions/latest");
+        var latest = await ReadJsonAsync<AnalysisContentVersionResponse>(latestResponse, HttpStatusCode.OK);
         Assert.Equal(2, latest!.Version.Version);
 
-        var explicitVersion = await ReadAsync<AnalysisContentVersionResponse>(
+        var explicitVersionResponse = await _client.GetAsync(
             $"/api/v1/analysis/content/items/{created.Item.ItemId}/versions/1");
+        var explicitVersion = await ReadJsonAsync<AnalysisContentVersionResponse>(
+            explicitVersionResponse,
+            HttpStatusCode.OK);
         Assert.Equal(created.Version.VersionId, explicitVersion!.Version.VersionId);
 
-        var item = await ReadAsync<AnalysisContentItemResponse>(
-            $"/api/v1/analysis/content/items/{created.Item.ItemId}");
+        var itemResponse = await _client.GetAsync($"/api/v1/analysis/content/items/{created.Item.ItemId}");
+        var item = await ReadJsonAsync<AnalysisContentItemResponse>(itemResponse, HttpStatusCode.OK);
         Assert.Equal(2, item!.Item.CurrentVersion);
 
-        var preview = await PostAndReadAsync<SavedQueryPreviewResult>(
+        var previewResponse = await _client.PostAsJsonAsync(
             $"/api/v1/analysis/content/items/{created.Item.ItemId}/versions/2/preview",
             new PreviewSavedQueryRequest { Limit = 1 },
-            HttpStatusCode.OK);
+            JsonOptions);
+        var preview = await ReadJsonAsync<SavedQueryPreviewResult>(previewResponse, HttpStatusCode.OK);
 
         Assert.NotNull(preview);
         Assert.Equal(created.Item.ItemId, preview!.Binding.SourceItemId);
@@ -137,8 +141,11 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
         Assert.NotEmpty(preview.PreviewArtifactId);
         Assert.True(preview.Features.Count <= 1);
 
-        var artifact = await ReadAsync<AnalysisArtifactResponse>(
-            $"/api/v1/analysis/artifacts/{preview.PreviewArtifactId}");
+        var artifactResponse = await _client.GetAsync($"/api/v1/analysis/artifacts/{preview.PreviewArtifactId}");
+        Assert.Equal(HttpStatusCode.OK, artifactResponse.StatusCode);
+        var artifact = JsonSerializer.Deserialize<AnalysisArtifactResponse>(
+            await artifactResponse.Content.ReadAsStringAsync(),
+            JsonOptions);
         Assert.Equal(preview.PreviewArtifactId, artifact!.Artifact.ArtifactId);
         Assert.Equal(created.Item.ItemId, artifact.Binding.SourceItemId);
         Assert.Equal("dataSource", artifact.Binding.Role);
@@ -171,19 +178,18 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
             }
         };
 
-        var created = await PostAndReadAsync<AnalysisContentItemResponse>(
-            "/api/v1/analysis/content/items",
-            create,
-            HttpStatusCode.Created);
+        var createResponse = await _client.PostAsJsonAsync("/api/v1/analysis/content/items", create, JsonOptions);
+        var created = await ReadJsonAsync<AnalysisContentItemResponse>(createResponse, HttpStatusCode.Created);
 
-        var run = await PostAndReadAsync<AnalysisContentJobResponse>(
+        var runResponse = await _client.PostAsJsonAsync(
             $"/api/v1/analysis/content/items/{created!.Item.ItemId}/versions/1/runs",
             new RunAnalysisContentVersionRequest
             {
                 IdempotencyKey = "run-1",
                 Parameters = new Dictionary<string, string> { ["format"] = "geojson" }
             },
-            HttpStatusCode.OK);
+            JsonOptions);
+        var run = await ReadJsonAsync<AnalysisContentJobResponse>(runResponse, HttpStatusCode.OK);
 
         Assert.Equal(ExecutionJobStatus.Queued, run!.Status);
         var submitted = _jobs.SubmittedJobs.Single(job => job.OperationId == run.JobId);
@@ -192,7 +198,7 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
         Assert.Equal("10", submitted.Spec.Parameters["analysis.content.parameter.distance"]);
         Assert.Equal("geojson", submitted.Spec.Parameters["analysis.content.runtime_parameter.format"]);
 
-        var rerun = await PostAndReadAsync<AnalysisContentJobResponse>(
+        var rerunResponse = await _client.PostAsJsonAsync(
             $"/api/v1/analysis/content/items/{created.Item.ItemId}/versions/1/reruns",
             new RerunAnalysisContentVersionRequest
             {
@@ -201,7 +207,8 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
                 RerunOfResultPackageId = $"{run.JobId}:v0",
                 ParameterOverrides = new Dictionary<string, string> { ["distance"] = "20" }
             },
-            HttpStatusCode.OK);
+            JsonOptions);
+        var rerun = await ReadJsonAsync<AnalysisContentJobResponse>(rerunResponse, HttpStatusCode.OK);
 
         Assert.Equal(2, rerun!.Version.Version);
         var rerunJob = _jobs.SubmittedJobs.Single(job => job.OperationId == rerun.JobId);
@@ -216,13 +223,15 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/analysis/jobs/{jobId}/failure")]
     public async Task FailedJobDiagnostics_ReturnSafeClassificationAndBoundedLogs()
     {
-        var failure = await ReadAsync<AnalysisJobFailure>("/api/v1/analysis/jobs/failed-job/failure");
+        var failureResponse = await _client.GetAsync("/api/v1/analysis/jobs/failed-job/failure");
+        var failure = await ReadJsonAsync<AnalysisJobFailure>(failureResponse, HttpStatusCode.OK);
 
         Assert.Equal(AnalysisJobFailureClassification.ValidationFailed, failure!.Classification);
         Assert.True(failure.IsTerminal);
         Assert.DoesNotContain("password", failure.Message, StringComparison.OrdinalIgnoreCase);
 
-        var logs = await ReadAsync<AnalysisJobLogs>("/api/v1/analysis/jobs/failed-job/logs?limit=1");
+        var logsResponse = await _client.GetAsync("/api/v1/analysis/jobs/failed-job/logs?limit=1");
+        var logs = await ReadJsonAsync<AnalysisJobLogs>(logsResponse, HttpStatusCode.OK);
 
         Assert.Equal(2, logs!.TotalCount);
         Assert.True(logs.Truncated);
@@ -230,16 +239,8 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
         Assert.DoesNotContain("password", JsonSerializer.Serialize(logs, JsonOptions), StringComparison.OrdinalIgnoreCase);
     }
 
-    private async Task<T?> ReadAsync<T>(string path)
+    private static async Task<T?> ReadJsonAsync<T>(HttpResponseMessage response, HttpStatusCode expectedStatus)
     {
-        var response = await _client.GetAsync(path);
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        return JsonSerializer.Deserialize<T>(await response.Content.ReadAsStringAsync(), JsonOptions);
-    }
-
-    private async Task<T?> PostAndReadAsync<T>(string path, object payload, HttpStatusCode expectedStatus)
-    {
-        var response = await _client.PostAsJsonAsync(path, payload, JsonOptions);
         var body = await response.Content.ReadAsStringAsync();
         Assert.True(
             response.StatusCode == expectedStatus,

@@ -19,6 +19,7 @@ public sealed class VerticalSliceIsolationTests
     private static readonly string[] _featureNames =
     {
         "Admin",
+        "AnalysisContent",
         "AiBuilder",
         "Alerts",
         "CloudDemo",
@@ -59,6 +60,7 @@ public sealed class VerticalSliceIsolationTests
         {
             ["Mcp"] = new[] { "Geoprocessing", "Grounding", "Reporting" },
             ["Grounding"] = new[] { "Geoprocessing" },
+            ["AnalysisContent"] = new[] { "Geoprocessing" },
             ["NlQuery"] = new[] { "AiBuilder" },
             ["Reporting"] = new[] { "Geoprocessing" }
         };

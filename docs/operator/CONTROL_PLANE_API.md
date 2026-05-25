@@ -1107,7 +1107,9 @@ authorization. They persist saved-query and analysis-package content items as
 immutable versions, preview saved queries through the canonical feature-query
 pipeline, submit and rerun analysis packages through the canonical
 geoprocessing runtime, and expose stable artifact bindings for downstream maps,
-dashboards, reports, apps, and workflows.
+dashboards, reports, apps, and workflows. Responses are plain camelCase JSON
+DTOs with shared admin `application/problem+json` errors, not the older admin
+envelope shape.
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
@@ -1127,9 +1129,12 @@ Saved-query previews default to 25 features and clamp at 200. The preview path
 compiles any saved `filterPlan`, validates the canonical query against the
 target layer, and records a one-hour `preview` artifact. Analysis package run
 requests stamp the submitted job with `analysis.content.*` metadata for source
-item id, version, version id, source SRID, source units, parameters, and rerun
-links. Failed-job diagnostics redact stack traces, provider internals,
-connection strings, password/secret metadata, and long diagnostic values.
+item id, version, version id, source SRID, source units, package parameters,
+runtime parameters, and rerun links. Terminal geoprocessing jobs with analysis
+content source metadata persist retained artifact metadata and URIs; artifact
+bytes remain in the backing artifact store. Failed-job diagnostics redact stack
+traces, provider internals, connection strings, password/secret metadata, and
+long diagnostic values.
 
 Full request/response examples and storage notes are documented in
 [Analysis Content](../admin-api/analysis-content.md).
