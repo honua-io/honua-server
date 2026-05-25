@@ -244,10 +244,12 @@ before submitting the job.
 
 `POST /reruns` accepts `idempotencyKey`, `rerunOfJobId`,
 `rerunOfResultPackageId`, and `parameterOverrides`. When overrides are present,
-the server creates a new immutable version with the merged package parameters,
-links it to the source version, and submits that new version. Without
-overrides, the requested version is resubmitted. Rerun provenance is stamped
-onto job metadata with `analysis.content.rerun_of_job_id` and
+each override must match an existing executable plan step input. The server
+updates matching step inputs and merged package parameters in the new immutable
+version, links it to the source version, and submits that new version. Unknown
+override keys are rejected with `400`. Without overrides, the requested version
+is resubmitted. Rerun provenance is stamped onto job metadata with
+`analysis.content.rerun_of_job_id` and
 `analysis.content.rerun_of_result_package_id` when supplied.
 
 ## Artifacts And Bindings

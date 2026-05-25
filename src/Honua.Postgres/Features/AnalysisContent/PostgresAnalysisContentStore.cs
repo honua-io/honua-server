@@ -52,7 +52,9 @@ internal sealed class PostgresAnalysisContentStore : IAnalysisContentStore
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            throw new InvalidOperationException("Analysis content item conflicts with an existing record.", ex);
+            throw new AnalysisContentStoreConflictException(
+                "Analysis content item conflicts with an existing record.",
+                ex);
         }
     }
 
@@ -107,7 +109,9 @@ internal sealed class PostgresAnalysisContentStore : IAnalysisContentStore
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            throw new InvalidOperationException("Analysis content version conflicts with an existing record.", ex);
+            throw new AnalysisContentStoreConflictException(
+                "Analysis content version conflicts with an existing record.",
+                ex);
         }
     }
 

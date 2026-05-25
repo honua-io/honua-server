@@ -72,6 +72,46 @@ internal sealed partial class RedisExecutionLogStore(
         return entries;
     }
 
+    public async Task<ExecutionLogTail> TailAsync(
+        string operationId,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var boundedLimit = Math.Clamp(limit, MinQueryLimit, MaxQueryLimit);
+        var key = GetLogKey(operationId);
+        var length = await _database.ListLengthAsync(key).ConfigureAwait(false);
+        if (length <= 0)
+        {
+            return new ExecutionLogTail { Items = [], TotalCount = 0 };
+        }
+
+        var start = Math.Max(0, length - boundedLimit);
+        var values = await _database.ListRangeAsync(key, start, -1).ConfigureAwait(false);
+        var entries = new List<ExecutionLogEntry>(values.Length);
+
+        foreach (var value in values)
+        {
+            if (!value.HasValue)
+            {
+                continue;
+            }
+
+            var entry = JsonSerializer.Deserialize(value.ToString(), ControlPlaneJsonContext.Default.ExecutionLogEntry);
+            if (entry != null)
+            {
+                entries.Add(entry);
+            }
+        }
+
+        return new ExecutionLogTail
+        {
+            Items = entries,
+            TotalCount = checked((int)Math.Min(length, int.MaxValue))
+        };
+    }
+
     public async Task<ExecutionLogPage> QueryAsync(
         string operationId,
         ExecutionLogQuery query,

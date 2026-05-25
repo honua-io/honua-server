@@ -27,7 +27,7 @@ internal sealed class InMemoryAnalysisContentStore : IAnalysisContentStore
         {
             if (_items.ContainsKey(item.ItemId))
             {
-                throw new InvalidOperationException("Analysis content item already exists.");
+                throw new AnalysisContentStoreConflictException("Analysis content item already exists.");
             }
 
             _items[item.ItemId] = item;
@@ -70,7 +70,7 @@ internal sealed class InMemoryAnalysisContentStore : IAnalysisContentStore
 
             if (versions.ContainsKey(version.Version))
             {
-                throw new InvalidOperationException("Analysis content version already exists.");
+                throw new AnalysisContentStoreConflictException("Analysis content version already exists.");
             }
 
             versions[version.Version] = version;

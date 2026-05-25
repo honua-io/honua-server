@@ -14,6 +14,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Server.Features.AnalysisContent;
 using Honua.Server.Features.Geoprocessing;
+using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -215,6 +216,19 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
         Assert.Equal("2", rerunJob.Spec.Parameters[AnalysisContentMetadataKeys.Version]);
         Assert.Equal(run.JobId, rerunJob.Spec.Parameters[AnalysisContentMetadataKeys.RerunOfJobId]);
         Assert.Equal("20", rerunJob.Spec.Parameters["analysis.content.parameter.distance"]);
+        Assert.Equal("20", rerunJob.Spec.Parameters[$"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.distance"]);
+
+        var rejectedRerunResponse = await _client.PostAsJsonAsync(
+            $"/api/v1/analysis/content/items/{created.Item.ItemId}/versions/1/reruns",
+            new RerunAnalysisContentVersionRequest
+            {
+                IdempotencyKey = "rerun-invalid",
+                ParameterOverrides = new Dictionary<string, string> { ["notAPlanInput"] = "20" }
+            },
+            JsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, rejectedRerunResponse.StatusCode);
+        Assert.DoesNotContain(_jobs.SubmittedJobs, job => job.OperationId == "rerun-invalid");
     }
 
     [IntegrationTest]
@@ -237,6 +251,8 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
         Assert.True(logs.Truncated);
         Assert.Single(logs.Entries);
         Assert.DoesNotContain("password", JsonSerializer.Serialize(logs, JsonOptions), StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, _logs.TailReadCount);
+        Assert.Equal(0, _logs.GetLogsReadCount);
     }
 
     private static async Task<T?> ReadJsonAsync<T>(HttpResponseMessage response, HttpStatusCode expectedStatus)
@@ -303,10 +319,27 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
             IReadOnlyDictionary<string, string>? protocolMetadata = null,
             CancellationToken cancellationToken = default)
         {
+            var parameters = protocolMetadata is null
+                ? new Dictionary<string, string>(StringComparer.Ordinal)
+                : new Dictionary<string, string>(protocolMetadata, StringComparer.Ordinal);
+            for (var stepIndex = 0; stepIndex < plan.Steps.Count; stepIndex++)
+            {
+                var step = plan.Steps[stepIndex];
+                if (step.Kind != AnalysisPlanStepKind.Geoprocess)
+                {
+                    continue;
+                }
+
+                foreach (var input in step.Inputs)
+                {
+                    parameters[$"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}{stepIndex}.{input.Key}"] = input.Value;
+                }
+            }
+
             var job = CreateJob(
                 idempotencyKey ?? $"analysis-job-{++_sequence}",
                 ExecutionJobStatus.Queued,
-                protocolMetadata ?? new Dictionary<string, string>());
+                parameters);
             SubmittedJobs.Add(job);
             _jobs[job.OperationId] = job;
             return Task.FromResult(job);
@@ -363,6 +396,10 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
     {
         private readonly Dictionary<string, List<ExecutionLogEntry>> _entries = new(StringComparer.Ordinal);
 
+        public int GetLogsReadCount { get; private set; }
+
+        public int TailReadCount { get; private set; }
+
         public void SeedFailureLogs()
         {
             _entries["failed-job"] =
@@ -407,8 +444,26 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
         public Task<IReadOnlyList<ExecutionLogEntry>> GetLogsAsync(
             string operationId,
             CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<ExecutionLogEntry>>(
+        {
+            GetLogsReadCount++;
+            return Task.FromResult<IReadOnlyList<ExecutionLogEntry>>(
                 _entries.TryGetValue(operationId, out var entries) ? entries : []);
+        }
+
+        public Task<ExecutionLogTail> TailAsync(
+            string operationId,
+            int limit,
+            CancellationToken cancellationToken = default)
+        {
+            TailReadCount++;
+            var entries = _entries.TryGetValue(operationId, out var found) ? found : [];
+            var bounded = entries.TakeLast(Math.Max(1, limit)).ToArray();
+            return Task.FromResult(new ExecutionLogTail
+            {
+                Items = bounded,
+                TotalCount = entries.Count
+            });
+        }
 
         public Task<ExecutionLogPage> QueryAsync(
             string operationId,

@@ -147,3 +147,19 @@ public sealed record ExecutionLogPage
     /// </summary>
     public string? NextCursor { get; init; }
 }
+
+/// <summary>
+/// Most recent structured execution log entries plus the total stream length.
+/// </summary>
+public sealed record ExecutionLogTail
+{
+    /// <summary>
+    /// Tail log entries returned in append order.
+    /// </summary>
+    public required IReadOnlyList<ExecutionLogEntry> Items { get; init; }
+
+    /// <summary>
+    /// Total number of entries in the backing log stream.
+    /// </summary>
+    public required int TotalCount { get; init; }
+}

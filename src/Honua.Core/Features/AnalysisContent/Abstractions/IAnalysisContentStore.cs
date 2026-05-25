@@ -6,6 +6,32 @@ using Honua.Core.Features.AnalysisContent.Domain;
 namespace Honua.Core.Features.AnalysisContent.Abstractions;
 
 /// <summary>
+/// Raised when a durable analysis content write conflicts with an existing item,
+/// version, or artifact record.
+/// </summary>
+public sealed class AnalysisContentStoreConflictException : Exception
+{
+    /// <summary>
+    /// Initializes a new instance of the <see cref="AnalysisContentStoreConflictException"/> class.
+    /// </summary>
+    /// <param name="message">Safe conflict message.</param>
+    public AnalysisContentStoreConflictException(string message)
+        : base(message)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="AnalysisContentStoreConflictException"/> class.
+    /// </summary>
+    /// <param name="message">Safe conflict message.</param>
+    /// <param name="innerException">Underlying provider exception.</param>
+    public AnalysisContentStoreConflictException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}
+
+/// <summary>
 /// Durable store for saved-query and analysis-package content items, immutable versions,
 /// and job result artifact metadata.
 /// </summary>
