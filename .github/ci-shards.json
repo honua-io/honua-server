@@ -35,8 +35,8 @@
       "shard_name": "Core",
       "artifact_suffix": "core",
       "log_name": "server-tests-core",
-      "timeout_minutes": 30,
-      "test_timeout_minutes": 20,
+      "timeout_minutes": 35,
+      "test_timeout_minutes": 25,
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
@@ -86,6 +86,23 @@
         "tests/dotnet/Honua.Server.Tests/Infrastructure/",
         "tests/dotnet/Honua.Server.Tests/Features/Admin/",
         "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/"
+      ]
+    },
+    {
+      "name": "Workflow Packages",
+      "shard_name": "Workflow Packages",
+      "artifact_suffix": "workflow-packages",
+      "log_name": "server-tests-workflow-packages",
+      "timeout_minutes": 30,
+      "test_timeout_minutes": 20,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.WorkflowPackages",
+      "paths": [
+        "src/Honua.Core/Features/WorkflowPackages/",
+        "src/Honua.Server/Features/WorkflowPackages/",
+        "tests/dotnet/Honua.Server.Tests/Features/WorkflowPackages/"
       ]
     },
     {
