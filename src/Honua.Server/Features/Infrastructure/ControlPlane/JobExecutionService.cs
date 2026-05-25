@@ -29,6 +29,36 @@ internal sealed partial class JobExecutionService(
     private readonly HashSet<ExecutionJobKind> _acceptedKinds =
         new(executors.Select(e => e.Kind));
 
+    // Aggregated runtime-profile claim filter (ADR-0038 GeoETL Child Ticket F).
+    // Null when every registered executor is profile-agnostic (AcceptedRuntimeProfiles
+    // == null) so the worker preserves the pre-profile behaviour and claims any
+    // matching-kind job. When at least one executor declares accepted profiles, the
+    // union of all declared profiles is passed to the queue claim filter. A worker
+    // that mixes a profile-agnostic executor with a profiled one would therefore claim
+    // both profiled and profile-agnostic jobs of those kinds; the lean and native
+    // worker hosts are composed so their executor sets do not mix profiles.
+    private readonly IReadOnlySet<string>? _acceptedRuntimeProfiles = BuildAcceptedProfiles(executors);
+
+    private static HashSet<string>? BuildAcceptedProfiles(IEnumerable<IJobExecutor> executors)
+    {
+        HashSet<string>? profiles = null;
+        foreach (var executor in executors)
+        {
+            if (executor.AcceptedRuntimeProfiles is not { Count: > 0 } declared)
+            {
+                continue;
+            }
+
+            profiles ??= new HashSet<string>(StringComparer.Ordinal);
+            foreach (var profile in declared)
+            {
+                profiles.Add(profile);
+            }
+        }
+
+        return profiles;
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var workerId = GenerateWorkerId();
@@ -57,7 +87,7 @@ internal sealed partial class JobExecutionService(
             try
             {
                 claimedId = await jobQueue.TryClaimAsync(
-                    workerId, _acceptedKinds, stoppingToken).ConfigureAwait(false);
+                    workerId, _acceptedKinds, _acceptedRuntimeProfiles, stoppingToken).ConfigureAwait(false);
 
                 if (claimedId != null)
                 {

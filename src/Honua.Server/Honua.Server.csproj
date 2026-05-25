@@ -20,6 +20,15 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Server.Tests" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+    <!--
+      The heavyweight GDAL worker host (docker/worker-gdal) reuses the durable
+      job-execution loop (JobExecutionService / JobReconciliationService /
+      RedisJobQueue) rather than forking a parallel runtime. This friend-assembly
+      declaration is compile-time only and adds NO package or runtime dependency
+      to the lean serving image. GDAL itself is never referenced here — it lives
+      only in the worker image's base layer. See ADR-0038.
+    -->
+    <InternalsVisibleTo Include="Honua.Worker.Gdal" />
   </ItemGroup>
 
   <ItemGroup>

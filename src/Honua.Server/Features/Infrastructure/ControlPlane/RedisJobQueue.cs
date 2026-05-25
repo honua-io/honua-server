@@ -87,6 +87,7 @@ internal sealed partial class RedisJobQueue(
     public async Task<string?> TryClaimAsync(
         string workerId,
         IReadOnlySet<ExecutionJobKind>? acceptedKinds = null,
+        IReadOnlySet<string>? acceptedRuntimeProfiles = null,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -150,6 +151,20 @@ internal sealed partial class RedisJobQueue(
                 }
 
                 if (acceptedKinds != null && !acceptedKinds.Contains(job.Spec.Kind))
+                {
+                    totalSkipped++;
+                    continue;
+                }
+
+                // Runtime-profile claim filter (ADR-0038 GeoETL Child Ticket F).
+                // A profile-agnostic job (RuntimeProfile == null) is claimable by
+                // any worker; a profiled job is only claimable by a worker whose
+                // accepted-profile set contains it. A null filter (the worker
+                // declared no profile constraint) preserves the pre-profile
+                // behaviour and claims regardless of the job's profile.
+                if (acceptedRuntimeProfiles != null
+                    && job.Spec.RuntimeProfile is { } profile
+                    && !acceptedRuntimeProfiles.Contains(profile))
                 {
                     totalSkipped++;
                     continue;

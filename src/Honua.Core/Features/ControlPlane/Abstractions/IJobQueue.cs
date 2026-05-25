@@ -37,11 +37,22 @@ public interface IJobQueue
     /// Optional filter for job kinds this worker can execute.
     /// Null accepts all kinds.
     /// </param>
+    /// <param name="acceptedRuntimeProfiles">
+    /// Optional filter for runtime profiles this worker can execute (ADR-0038
+    /// GeoETL Child Ticket F). When <c>null</c> the worker claims a matching-kind
+    /// job regardless of its <see cref="ExecutionJobSpec.RuntimeProfile"/>,
+    /// preserving the pre-profile behaviour. When non-null, a job is only claimable
+    /// when its <c>RuntimeProfile</c> is <c>null</c> (profile-agnostic) or is
+    /// contained in this set. This is the load-bearing guard that keeps the lean
+    /// managed-profile worker from ever claiming a native-profile (GDAL) job and
+    /// vice versa.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The claimed job identifier, or null if the queue is empty.</returns>
     Task<string?> TryClaimAsync(
         string workerId,
         IReadOnlySet<ExecutionJobKind>? acceptedKinds = null,
+        IReadOnlySet<string>? acceptedRuntimeProfiles = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

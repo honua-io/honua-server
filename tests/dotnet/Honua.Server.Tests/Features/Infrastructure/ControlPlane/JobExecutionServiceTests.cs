@@ -386,7 +386,7 @@ public sealed class JobExecutionServiceTests
             .Returns(provisioning);
 
         var jobQueue = Substitute.For<IJobQueue>();
-        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<CancellationToken>())
+        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<IReadOnlySet<string>?>(), Arg.Any<CancellationToken>())
             .Returns(provisioning.OperationId, (string?)null);
 
         var executorWarnings = new List<string> { "Projection mismatch", "CRS fallback used" };
@@ -440,7 +440,7 @@ public sealed class JobExecutionServiceTests
             .Returns(provisioning);
 
         var jobQueue = Substitute.For<IJobQueue>();
-        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<CancellationToken>())
+        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<IReadOnlySet<string>?>(), Arg.Any<CancellationToken>())
             .Returns(provisioning.OperationId, (string?)null);
 
         var executor = Substitute.For<IJobExecutor>();
@@ -490,7 +490,7 @@ public sealed class JobExecutionServiceTests
             .Returns(provisioning);
 
         var jobQueue = Substitute.For<IJobQueue>();
-        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<CancellationToken>())
+        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<IReadOnlySet<string>?>(), Arg.Any<CancellationToken>())
             .Returns(provisioning.OperationId, (string?)null);
 
         var executor = Substitute.For<IJobExecutor>();
@@ -1309,6 +1309,7 @@ public sealed class JobExecutionServiceTests
         await jobQueue.DidNotReceive().TryClaimAsync(
             Arg.Any<string>(),
             Arg.Any<IReadOnlySet<ExecutionJobKind>>(),
+            Arg.Any<IReadOnlySet<string>?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -1327,7 +1328,7 @@ public sealed class JobExecutionServiceTests
         var stoppingCts = new CancellationTokenSource();
 
         var jobQueue = Substitute.For<IJobQueue>();
-        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<CancellationToken>())
+        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<IReadOnlySet<string>?>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
                 capturedWorkerId = callInfo.ArgAt<string>(0);
@@ -1555,7 +1556,7 @@ public sealed class JobExecutionServiceTests
             .Returns(provisioning);
 
         var jobQueue = Substitute.For<IJobQueue>();
-        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<CancellationToken>())
+        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<IReadOnlySet<string>?>(), Arg.Any<CancellationToken>())
             .Returns(provisioning.OperationId, (string?)null);
 
         var executor = Substitute.For<IJobExecutor>();
@@ -1597,7 +1598,7 @@ public sealed class JobExecutionServiceTests
             .Returns(provisioning);
 
         var jobQueue = Substitute.For<IJobQueue>();
-        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<CancellationToken>())
+        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<IReadOnlySet<string>?>(), Arg.Any<CancellationToken>())
             .Returns(provisioning.OperationId, (string?)null);
 
         var executor = Substitute.For<IJobExecutor>();

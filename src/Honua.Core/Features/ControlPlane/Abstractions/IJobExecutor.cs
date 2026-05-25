@@ -18,6 +18,25 @@ public interface IJobExecutor
     ExecutionJobKind Kind { get; }
 
     /// <summary>
+    /// Optional set of runtime profiles this executor is willing to run. When
+    /// <c>null</c> (the default) the executor accepts a job of its <see cref="Kind"/>
+    /// regardless of the job's <see cref="ExecutionJobSpec.RuntimeProfile"/>, preserving
+    /// the pre-profile claim behaviour for every existing executor.
+    /// </summary>
+    /// <remarks>
+    /// This is the worker-side half of the ADR-0038 runtime-profile claim filter
+    /// (GeoETL Child Ticket F). The lean serving image registers managed-profile
+    /// executors; the heavyweight GDAL worker image registers native-profile
+    /// executors. The worker-side job execution host aggregates the accepted profiles
+    /// of its registered executors and passes them to
+    /// <see cref="IJobQueue.TryClaimAsync"/> so a worker only claims jobs whose
+    /// <see cref="ExecutionJobSpec.RuntimeProfile"/> it can actually run. A job whose
+    /// <c>RuntimeProfile</c> is <c>null</c> remains claimable by any worker so that
+    /// non-ETL kinds and pre-profile jobs are unaffected.
+    /// </remarks>
+    IReadOnlySet<string>? AcceptedRuntimeProfiles => null;
+
+    /// <summary>
     /// Executes the job. The implementation should report progress, append structured
     /// logs, and publish artifact references through <paramref name="context"/>.
     /// </summary>
