@@ -21,6 +21,14 @@ public sealed class DatabaseFixtureAdapter : IDatabaseFixture
 
     public NpgsqlDataSource DataSource => _postgresFixture.DataSource;
 
+    /// <summary>
+    /// The full connection string (including credentials) for the test database. Exposed
+    /// for tests that need to hand a raw connection string to code under test — for
+    /// example the GeoETL external PostGIS sink, which connects with its own
+    /// caller-supplied connection string rather than the shared data source.
+    /// </summary>
+    public string ConnectionString => _postgresFixture.ConnectionString;
+
     public async Task InitializeAsync()
     {
         await _postgresFixture.InitializeAsync();

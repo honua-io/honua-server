@@ -328,6 +328,14 @@ internal static class ServiceCollectionExtensions
             Core.Features.GeoETL.Abstractions.IPipelineSourceConnector,
             Features.GeoETL.Services.Connectors.GeoPackageSourceConnector>());
 
+        // GeoETL external PostGIS sink — writes to a customer-supplied PostGIS connection
+        // that is NOT the Honua catalog (distinct from the HonuaLayerSinkConnector that
+        // writes via honua.create_import_table). Managed Npgsql + WKB, no GDAL. Stateless,
+        // so an enumerable singleton collected by the component factory.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<
+            Core.Features.GeoETL.Abstractions.IPipelineSinkConnector,
+            Features.GeoETL.Services.Connectors.ExternalPostgisSinkConnector>());
+
         // GeoETL durable definition / execution stores (#361 Child Ticket A). Registered
         // here so they precede the in-memory baseline stores that AddGeoEtl falls back to
         // via TryAdd when no PostgreSQL provider is wired. Persists definitions and
