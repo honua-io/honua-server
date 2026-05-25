@@ -83,6 +83,39 @@ public sealed class StudioPackageLifecycleServiceTests
     }
 
     [UnitTest]
+    public async Task SaveDraftAsVersion_WithOnlyValidationTimestampChange_KeepsContentHashStable()
+    {
+        var timeProvider = new MutableTimeProvider(new DateTimeOffset(2026, 5, 25, 12, 0, 0, TimeSpan.Zero));
+        var service = BuildServiceProvider(timeProvider: timeProvider).GetRequiredService<IStudioPackageLifecycleService>();
+        var draft = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "parcels-query",
+            WorkspaceId = "studio",
+            Envelope = BuildEnvelope("1=1", "content.parcels"),
+            ActorId = "tester",
+        });
+
+        timeProvider.Advance(TimeSpan.FromMinutes(5));
+        var first = await service.SaveDraftAsVersionAsync(draft.DraftId, "first save", "tester");
+        Assert.NotNull(first);
+
+        timeProvider.Advance(TimeSpan.FromMinutes(5));
+        var second = await service.SaveDraftAsVersionAsync(draft.DraftId, "second save", "tester");
+        Assert.NotNull(second);
+
+        Assert.NotEqual(first!.Validation.GeneratedAt, second!.Validation.GeneratedAt);
+        Assert.Equal(first.ContentHash, second.ContentHash);
+
+        var comparison = await service.CompareVersionsAsync(draft.ItemId, first.VersionId, second.VersionId);
+
+        Assert.NotNull(comparison);
+        Assert.True(comparison!.ContentEqual);
+        Assert.True(comparison.ValidationEqual);
+        Assert.DoesNotContain("content", comparison.Changes);
+        Assert.DoesNotContain("validation", comparison.Changes);
+    }
+
+    [UnitTest]
     public async Task CreatePublicationRequest_WithInvalidIntentOverride_ThrowsWithoutPublishingPointer()
     {
         var provider = BuildServiceProvider();
@@ -342,9 +375,16 @@ public sealed class StudioPackageLifecycleServiceTests
             () => service.GetVersionAsync(itemId, versionId));
     }
 
-    private static ServiceProvider BuildServiceProvider(IStudioPackageStore? store = null)
+    private static ServiceProvider BuildServiceProvider(
+        IStudioPackageStore? store = null,
+        TimeProvider? timeProvider = null)
     {
         var services = new ServiceCollection();
+        if (timeProvider is not null)
+        {
+            services.AddSingleton(timeProvider);
+        }
+
         if (store is not null)
         {
             services.AddSingleton(store);
@@ -427,6 +467,20 @@ public sealed class StudioPackageLifecycleServiceTests
             PublicationIntent = new StudioPublicationIntent { Route = "/studio/parcels", Visibility = "organization" },
             Body = body.RootElement.Clone(),
         };
+    }
+
+    private sealed class MutableTimeProvider : TimeProvider
+    {
+        private DateTimeOffset _utcNow;
+
+        public MutableTimeProvider(DateTimeOffset utcNow)
+            => _utcNow = utcNow;
+
+        public override DateTimeOffset GetUtcNow()
+            => _utcNow;
+
+        public void Advance(TimeSpan value)
+            => _utcNow = _utcNow.Add(value);
     }
 
     private sealed class BlockingStudioPackageStore : IStudioPackageStore

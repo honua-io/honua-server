@@ -277,7 +277,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         var provenanceJson = JsonSerializer.Serialize(
             draft.Envelope.Provenance.ToArray(),
             StudioJsonContext.Default.StudioProvenanceRefArray);
-        var contentHash = StudioPackageHash.ComputeJson(envelopeJson);
+        var contentHash = StudioPackageHash.Compute(draft.Envelope);
         var versionId = Guid.NewGuid();
 
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);

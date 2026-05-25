@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Studio.Domain;
 
@@ -14,23 +13,17 @@ namespace Honua.Core.Features.Studio.Services;
 public static class StudioPackageHash
 {
     /// <summary>
-    /// Computes a lower-case hex SHA-256 hash for a package envelope.
+    /// Computes a lower-case hex SHA-256 hash for a package envelope, excluding volatile validation timestamps.
     /// </summary>
     public static string Compute(StudioPackageEnvelope envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(envelope, StudioJsonContext.Default.StudioPackageEnvelope);
+        var stableEnvelope = envelope with
+        {
+            Validation = envelope.Validation with { GeneratedAt = null },
+        };
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(stableEnvelope, StudioJsonContext.Default.StudioPackageEnvelope);
         var hash = SHA256.HashData(bytes);
-        return Convert.ToHexString(hash).ToLowerInvariant();
-    }
-
-    /// <summary>
-    /// Computes a lower-case hex SHA-256 hash for a UTF-8 JSON string.
-    /// </summary>
-    public static string ComputeJson(string json)
-    {
-        ArgumentNullException.ThrowIfNull(json);
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(json));
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 }

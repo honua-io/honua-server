@@ -113,23 +113,31 @@ optional `ownerId`, and the `envelope`. `packageKey` is trimmed, limited to 200
 characters, and may contain only letters, numbers, dash, underscore, or dot.
 `workspaceId` and `ownerId` are also trimmed and empty strings are stored as
 `null`. Omit `ownerId` on draft create to use the authenticated actor id; omit
-it on draft update to preserve the existing owner. Omit `itemId` on draft
-create to let the server allocate a new Studio content item. Both durable and
-in-memory stores enforce `(workspaceId, family, packageKey)` uniqueness across
-content items.
+it on draft update to preserve the existing owner. `workspaceId` uses replace
+semantics on update: omit it or send an empty string to clear the stored
+workspace. Omit `itemId` on draft create to let the server allocate a new
+Studio content item. Both durable and in-memory stores enforce `(workspaceId,
+family, packageKey)` uniqueness across content items.
 
 Drafts are mutable and carry a server-managed `generation`. `PUT
 /package-drafts/{draftId}` increments `generation` on success. Clients that
 need optimistic concurrency should send the last-seen `generation`; a stale
 generation returns `409 Conflict`. Omitting `generation` updates from the
 current draft generation loaded by the server, so clients that need strict
-lost-update protection should include the last-seen value.
+lost-update protection should include the last-seen value. `validate`,
+`preview-plan`, and save-as-version calls persist the latest validation summary
+back onto the draft and therefore also advance the draft generation. A client
+that calls one of those operations and then performs a strict `PUT` should
+reload the draft first.
 
 Saving a draft as a content version revalidates the draft, captures the
 validated envelope, stamps a monotonic `versionNumber`, computes a SHA-256
-`contentHash`, copies dependencies and provenance into sidecars, and advances
-the content item's current pointer. The immutable version can be read, compared
-or reopened, but is never edited in place.
+`contentHash` that excludes volatile validation timestamps, copies dependencies
+and provenance into sidecars, and advances the content item's current pointer.
+The immutable version can be read, compared or reopened, but is never edited in
+place. Listing versions returns `200` with the requested `itemId` and an empty
+`versions` array when no versions exist for that item; retrieving an individual
+missing or cross-item version returns `404`.
 
 Routes that include both `{itemId}` and `{versionId}` treat the pair as an
 ownership boundary. A version that exists under a different content item is
@@ -138,10 +146,14 @@ not persist side effects for cross-item version ids.
 
 `POST /content-items/{itemId}/versions/{versionId}/publish-requests` uses the
 request `intent` when supplied and otherwise falls back to the version
-envelope's `publicationIntent`. Versions whose captured validation status is
-`invalid` still produce a durable publication request, but the request status
-is `rejected` and the published pointer is not moved. Valid and warning
-versions are accepted and move the published pointer.
+envelope's `publicationIntent`. Invalid intent overrides fail with `400` before
+a publication request is persisted. Versions whose captured validation status
+is `invalid` still produce a durable publication request, but the request
+status is `rejected` and the published pointer is not moved. Valid and warning
+versions are accepted and move the published pointer; warning acknowledgement is
+optional audit text in the MVP. The `pending` publication status is reserved
+for later asynchronous publication execution and is not emitted by the API
+service today.
 
 `POST /content-items/{itemId}/rollback-requests` accepts `pointer` values
 `current`, `published`, and `both` and returns the resulting
@@ -167,7 +179,8 @@ publication visibility. Map packages also validate `honua_map_package.v1` body
 format and initial-view bbox/CRS; app packages validate
 `honua_app_package.v1`.
 
-Preview plans are planning-only responses. `gp`, `etl`, and `workflow` drafts
+Preview plans are planning-only responses for preview execution, but they still
+persist the validation summary on the draft. `gp`, `etl`, and `workflow` drafts
 return `requiresJob: true`, `synchronous: false`, and steps
 `["validate-envelope", "plan-background-preview-job"]`; all other families
 return `requiresJob: false`, `synchronous: true`, and steps

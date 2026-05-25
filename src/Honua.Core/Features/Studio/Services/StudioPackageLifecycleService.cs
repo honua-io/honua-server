@@ -489,8 +489,8 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
 
     private static bool JsonEqualValidation(StudioValidationSummary left, StudioValidationSummary right)
         => string.Equals(
-            JsonSerializer.Serialize(left, StudioJsonContext.Default.StudioValidationSummary),
-            JsonSerializer.Serialize(right, StudioJsonContext.Default.StudioValidationSummary),
+            JsonSerializer.Serialize(left with { GeneratedAt = null }, StudioJsonContext.Default.StudioValidationSummary),
+            JsonSerializer.Serialize(right with { GeneratedAt = null }, StudioJsonContext.Default.StudioValidationSummary),
             StringComparison.Ordinal);
 
     private static bool JsonMultisetEqual<T>(

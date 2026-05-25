@@ -378,7 +378,7 @@ public sealed record StudioContentVersion
     [JsonPropertyName("versionNumber")]
     public required int VersionNumber { get; init; }
 
-    /// <summary>SHA-256 hash of the immutable package envelope.</summary>
+    /// <summary>SHA-256 hash of the immutable package envelope with volatile validation timestamps excluded.</summary>
     [JsonPropertyName("contentHash")]
     public required string ContentHash { get; init; }
 
@@ -492,7 +492,7 @@ public sealed record StudioVersionComparison
     [JsonPropertyName("rightVersionId")]
     public required Guid RightVersionId { get; init; }
 
-    /// <summary>True when the version envelope hashes match.</summary>
+    /// <summary>True when the version content hashes match.</summary>
     [JsonPropertyName("contentEqual")]
     public required bool ContentEqual { get; init; }
 
