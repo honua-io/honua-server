@@ -468,6 +468,31 @@ internal static class ObservabilityServiceCollectionExtensions
                 policy.Tag("stac-metadata", "metadata");
             });
 
+            // Public open-data page/catalog caching. These are short-lived and
+            // invalidated by admin page or STAC publication mutations.
+            options.AddPolicy("OpenDataList", policy =>
+            {
+                policy.Expire(ttl.OpenDataList);
+                policy.SetVaryByQuery("cursor", "limit");
+                policy.SetVaryByHeader("Accept");
+                policy.Tag("open-data", "metadata");
+            });
+
+            options.AddPolicy("OpenDataItem", policy =>
+            {
+                policy.Expire(ttl.OpenDataItem);
+                policy.SetVaryByRouteValue("itemId");
+                policy.SetVaryByHeader("Accept");
+                policy.Tag("open-data", "metadata");
+            });
+
+            options.AddPolicy("OpenDataCatalog", policy =>
+            {
+                policy.Expire(ttl.OpenDataCatalog);
+                policy.SetVaryByHeader("Accept");
+                policy.Tag("open-data", "metadata");
+            });
+
             // Note: No default base policy - endpoints must explicitly opt into caching for security
         });
 

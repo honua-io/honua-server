@@ -29,6 +29,8 @@ using Honua.Server.Features.Protocols.GeoServices.MapServer;
 using Honua.Server.Features.Protocols.GeoServices.NAServer;
 using Honua.Server.Features.Protocols.Mcp;
 using Honua.Server.Features.NlQuery;
+using Honua.Server.Features.OpenData;
+using Honua.Server.Features.Protocols.OpenData;
 using Honua.Server.Features.Protocols.OData;
 using Honua.Server.Features.Protocols.Ogc.Api.Coverages;
 using Honua.Server.Features.Protocols.Ogc.Api.Features;
@@ -91,6 +93,7 @@ internal static class FeatureRegistrationExtensions
         services.AddAlerts(configuration);
         services.AddNlQuery(configuration);
         services.AddStac();
+        services.AddOpenDataPublication();
         services.AddStaticMap();
         services.AddTerrain();
         services.AddScene(configuration);
@@ -164,6 +167,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapODataEndpoints();
         endpoints.MapGeometryServiceEndpoints();
         endpoints.MapStacEndpoints();
+        endpoints.MapOpenDataEndpoints();
         endpoints.MapStaticMapEndpoints();
         endpoints.MapNAServerEndpoints();
         endpoints.MapPrintingToolsEndpoints();

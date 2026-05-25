@@ -574,6 +574,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.UserManagementJsonContext.Default,
         Honua.Server.Features.Admin.Models.RoleJsonContext.Default,
         Honua.Server.Features.Console.Models.ConsoleJsonContext.Default,
+        Honua.Server.Features.OpenData.Models.OpenDataJsonContext.Default,
         Honua.Server.Features.Studio.Models.StudioApiJsonContext.Default,
         Honua.Core.Features.Studio.Domain.StudioJsonContext.Default,
         Honua.Server.Features.AnalysisContent.AnalysisContentApiJsonContext.Default,
@@ -961,6 +962,8 @@ app.MapAdminRealtimeHub();
 
 // Configure layer publishing endpoints
 app.MapLayerPublishingEndpoints();
+app.MapOpenDataAdminEndpoints();
+app.MapStacPublicationAdminEndpoints();
 
 // Configure service settings endpoints (protocol toggles + MapServer config)
 app.MapServiceSettingsEndpoints();

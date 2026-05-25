@@ -121,6 +121,21 @@ internal sealed partial class OutputCacheInvalidationService
     }
 
     /// <summary>
+    /// Evicts public open-data page, list, and DCAT catalog responses after
+    /// Console publication state changes.
+    /// </summary>
+    public Task InvalidateOpenDataAsync(string? itemId, CancellationToken cancellationToken)
+    {
+        var tags = new List<string> { "open-data", "metadata" };
+        if (!string.IsNullOrWhiteSpace(itemId))
+        {
+            tags.Add($"open-data:{itemId.Trim().ToLowerInvariant()}");
+        }
+
+        return EvictTagsAsync(tags, cancellationToken);
+    }
+
+    /// <summary>
     /// Evicts hosted scene serving entries from the output cache after a
     /// scene-registry mutation (register/update/deactivate). Removes the
     /// per-scene tag plus the broader <c>scene</c> tag so anonymous cached

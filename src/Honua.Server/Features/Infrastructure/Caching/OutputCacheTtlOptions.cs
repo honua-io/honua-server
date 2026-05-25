@@ -211,4 +211,19 @@ public sealed class OutputCacheTtlOptions
     /// STAC single collection cache duration. Default: 10 minutes.
     /// </summary>
     public TimeSpan StacCollection { get; set; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// Public open-data list cache duration. Default: 1 minute.
+    /// </summary>
+    public TimeSpan OpenDataList { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// Public open-data item cache duration. Default: 1 minute.
+    /// </summary>
+    public TimeSpan OpenDataItem { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// Public open-data DCAT catalog cache duration. Default: 1 minute.
+    /// </summary>
+    public TimeSpan OpenDataCatalog { get; set; } = TimeSpan.FromMinutes(1);
 }
