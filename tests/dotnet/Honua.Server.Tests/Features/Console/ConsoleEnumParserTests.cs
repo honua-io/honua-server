@@ -67,6 +67,43 @@ public class ConsoleEnumParserTests
     }
 
     [UnitTest]
+    public void IsDefined_ConsoleShareAccessTier_AcceptsAllDeclaredMembers()
+    {
+        Assert.True(ConsoleEnumParser.IsDefined(ConsoleShareAccessTier.Private));
+        Assert.True(ConsoleEnumParser.IsDefined(ConsoleShareAccessTier.Organization));
+        Assert.True(ConsoleEnumParser.IsDefined(ConsoleShareAccessTier.PublicLink));
+        Assert.True(ConsoleEnumParser.IsDefined(ConsoleShareAccessTier.PublicIndexed));
+    }
+
+    [UnitTest]
+    public void IsDefined_ConsoleShareAccessTier_RejectsOutOfRange()
+    {
+        Assert.False(ConsoleEnumParser.IsDefined((ConsoleShareAccessTier)999));
+    }
+
+    [UnitTest]
+    public void TryParse_ConsoleShareAccessTier_AcceptsKebabCaseNames()
+    {
+        Assert.True(ConsoleEnumParser.TryParse("public-link", out ConsoleShareAccessTier publicLink));
+        Assert.Equal(ConsoleShareAccessTier.PublicLink, publicLink);
+        Assert.True(ConsoleEnumParser.TryParse("public-indexed", out ConsoleShareAccessTier publicIndexed));
+        Assert.Equal(ConsoleShareAccessTier.PublicIndexed, publicIndexed);
+    }
+
+    [UnitTest]
+    public void IsDefined_ConsoleEmbedAudience_AcceptsAllDeclaredMembers()
+    {
+        Assert.True(ConsoleEnumParser.IsDefined(ConsoleEmbedAudience.Map));
+        Assert.True(ConsoleEnumParser.IsDefined(ConsoleEmbedAudience.Content));
+    }
+
+    [UnitTest]
+    public void IsDefined_ConsoleEmbedAudience_RejectsOutOfRange()
+    {
+        Assert.False(ConsoleEnumParser.IsDefined((ConsoleEmbedAudience)999));
+    }
+
+    [UnitTest]
     public void IsDefined_MetadataV2LifecycleStatus_AcceptsAllDeclaredMembers()
     {
         Assert.True(ConsoleEnumParser.IsDefined(MetadataV2LifecycleStatus.Draft));
