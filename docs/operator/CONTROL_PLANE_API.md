@@ -53,6 +53,7 @@ The Honua Admin UI is intended to operate as a UI on top of this control-plane A
 |-- deploy/                   # Deploy preflight, plan, operations, submit, rollback
 |-- import/                   # Import workflows
 |-- operations/               # Long-running operations
+|-- replicas/                 # Named disconnected replicas and conflict review
 |-- performance/database/     # Query cache statistics
 |-- observability/            # Recent errors and telemetry status
 |-- alerts/                   # Alert zones and rules
@@ -540,6 +541,13 @@ The public `GET /api/styles/{layerId}.json` endpoint accepts an optional `?theme
 | `/api/v1/admin/metadata/layers/{layerId}/style/import-sld` | POST | Convert an SLD/SE 1.0 or 1.1 XML document to MapLibre style JSON and store it (admin only, Community edition; 1 MiB body cap). See [SLD Migration Reference](sld-migration.md). |
 | `/api/v1/admin/metadata/layers/{layerId}/style/export-sld` | GET | Export the stored MapLibre style as an `application/xml` SLD 1.0 document. Diagnostic count surfaces in the `X-Sld-Diagnostic-Count` response header. |
 | `/api/styles/{layerId}.json` | GET | Public MapLibre style fetch with optional `?theme=default\|dark\|colorblind-safe\|print` deterministic transform; output cache varies per theme. |
+
+Disconnected replica inventory and conflict review live under
+`/api/v1/admin/replicas/**`. They are admin-only, gated by the
+`replica.conflict-review` entitlement, and individual replica/conflict reads or
+resolutions require service data editor access for the replica's service. See
+[Disconnected Replica Conflict Review](../admin-api/disconnected-replica-conflicts.md)
+for the response contract.
 
 Metadata v2 release prevalidation accepts either `releasePackageId` or an inline
 `releasePackage`, plus a `targetEnvironment` and optional declared

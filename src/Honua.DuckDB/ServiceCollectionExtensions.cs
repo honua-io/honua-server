@@ -5,6 +5,7 @@ using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.DuckDB.Features.Catalog;
@@ -107,6 +108,7 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IFeatureReader>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
         services.AddScoped<IFeatureWriter>(_ => new ReadOnlyFeatureWriter());
         services.AddScoped<IReplicaRepository>(_ => new ReadOnlyReplicaRepository());
+        services.AddScoped<IReplicaConflictStore>(_ => new ReadOnlyReplicaConflictStore());
         services.AddScoped<IChangeTracker>(_ => new ReadOnlyChangeTracker());
         services.AddScoped<IGeoJsonFeatureStore>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
         services.AddScoped<IStreamingFeatureStore>(sp => sp.GetRequiredService<DuckDBFeatureStore>());

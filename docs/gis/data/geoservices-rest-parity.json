@@ -165,7 +165,7 @@
             "honuaEndpoints": [
               "POST /rest/services/{serviceId}/FeatureServer/createReplica"
             ],
-            "notes": "Registers offline replica state in distributed cache when available, otherwise in memory."
+            "notes": "Creates a named offline replica, persists replica state to Postgres with write-through distributed caching, and records operator metadata from the authenticated owner plus request User-Agent as deviceClient when present."
           },
           {
             "name": "Extract Changes",
@@ -176,7 +176,7 @@
             "honuaEndpoints": [
               "POST /rest/services/{serviceId}/FeatureServer/extractChanges"
             ],
-            "notes": "First sync returns full adds; later syncs do not provide database-grade incremental change tracking."
+            "notes": "Returns adds, updates, and deletes since the replica's last synchronization generation; LastSyncGeneration == 0 keeps the backward-compatible initial extract behavior that reports all accessible features as adds."
           },
           {
             "name": "Synchronize Replica",
@@ -187,7 +187,7 @@
             "honuaEndpoints": [
               "POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica"
             ],
-            "notes": "Supports download, upload, and bidirectional sync directions."
+            "notes": "Supports download, upload, and bidirectional sync directions. Upload conflicts are durable: non-conflicting edits still apply via applyEdits, while colliding edits produce conflictCount, conflictIds, and syncOpId on the successful sync response."
           },
           {
             "name": "Unregister Replica",

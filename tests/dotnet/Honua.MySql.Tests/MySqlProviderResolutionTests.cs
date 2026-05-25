@@ -136,6 +136,19 @@ public class MySqlProviderResolutionTests
     }
 
     [Fact]
+    public async Task AddMySqlServices_ReadOnlyReplicaConflictStore_ReturnsEmpty()
+    {
+        using var provider = BuildMySqlServiceProvider();
+        using var scope = provider.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IReplicaConflictStore>();
+
+        Assert.IsType<ReadOnlyReplicaConflictStore>(store);
+        var counts = await store.CountPendingByReplicaAsync(["anything"]);
+        Assert.Empty(counts);
+        Assert.Null(await store.TryClaimResolutionAsync(Guid.NewGuid()));
+    }
+
+    [Fact]
     public void AddMySqlServices_RegistersMySqlDatabaseHealthChecker()
     {
         // ReadinessCheckService requires IDatabaseHealthChecker; without this registration

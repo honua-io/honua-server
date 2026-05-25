@@ -130,6 +130,7 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 - Monitor system health and observability
 - Render Console GP/ETL workflow palettes and manage workflow package versions through the sibling `/api/v1/console/workflow-*` surface
 - Inspect durable background jobs, structured logs, artifacts, control actions, and Operate event correlations
+- Review named disconnected replicas and durable sync conflicts under `/api/v1/admin/replicas/**`
 - Validate packages and request read-only preview plans before publish or execute decisions
 - Access recent errors and telemetry status
 - Inspect deploy preflight and upgrade-readiness state per Honua instance
@@ -238,6 +239,7 @@ Control-plane SDK governance and contract diff checks:
 - [**Geospatial Data APIs**](../../gis/STANDARDS_APIS.md) - Protocol overview and selection guide
 - [**Server Management API**](../../operator/CONTROL_PLANE_API.md) - Admin API guide and key workflows
 - [**Console Job Observability**](../../admin-api/console-job-observability.md) - Durable job viewer contract for Console and admin integrations
+- [**Disconnected Replica Conflict Review**](../../admin-api/disconnected-replica-conflicts.md) - Named replica and durable sync-conflict review contract
 - [**Analysis Content**](../../admin-api/analysis-content.md) - Saved-query and analysis-package versions, preview artifacts, runs/reruns, artifact bindings, and safe failed-job diagnostics
 - [**Control Plane Versioning Policy**](../CONTROL_PLANE_VERSIONING_POLICY.md) - Breaking-change and deprecation lifecycle
 - [**Control Plane Migration Guide**](../CONTROL_PLANE_MIGRATION_GUIDE.md) - SDK quickstart and upgrade steps

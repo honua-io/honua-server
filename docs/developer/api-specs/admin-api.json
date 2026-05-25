@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Honua Server Management API",
-    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints for configuration, import scanning, connections, layers, styles, observability, realtime alert management, durable job viewing, package validation and preview planning, runtime licensing, deploy control, and native client-certificate trust management. For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
+    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints for configuration, import scanning, connections, layers, styles, observability, realtime alert management, durable job viewing, disconnected replica conflict review, package validation and preview planning, runtime licensing, deploy control, and native client-certificate trust management. For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
     "version": "1.0.0",
     "contact": {
       "name": "Honua Server",
@@ -71,6 +71,10 @@
     {
       "name": "Jobs",
       "description": "Console durable job observability, logs, artifacts, and controls"
+    },
+    {
+      "name": "Replicas",
+      "description": "Named disconnected replica inventory and durable sync conflict review"
     },
     {
       "name": "Metadata Resources",
@@ -2763,6 +2767,258 @@
         }
       }
     },
+    "/replicas": {
+      "get": {
+        "tags": [
+          "Replicas"
+        ],
+        "summary": "List Disconnected Replicas",
+        "description": "List named disconnected replicas across services. Requires admin authentication and the replica.conflict-review entitlement.",
+        "operationId": "listAdminReplicas",
+        "parameters": [
+          {
+            "name": "serviceId",
+            "in": "query",
+            "required": false,
+            "description": "Filter replicas by owning service identifier.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Filter replicas by lifecycle status.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "stale",
+                "expired",
+                "unregistered"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Requested page size. Defaults to 50 and is clamped to 200.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "afterReplicaId",
+            "in": "query",
+            "required": false,
+            "description": "Keyset cursor. Pass the last replicaId from the previous page.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Replica summaries ordered newest-first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ReplicaAdminSummary"
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/PaymentRequired" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/replicas/{replicaId}": {
+      "get": {
+        "tags": [
+          "Replicas"
+        ],
+        "summary": "Get Disconnected Replica",
+        "description": "Get named replica metadata, layer filters, generation cursor, and pending conflict count. Requires service data editor access for the replica's service.",
+        "operationId": "getAdminReplica",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ReplicaId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Replica detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplicaAdminDetail"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/PaymentRequired" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/replicas/{replicaId}/conflicts": {
+      "get": {
+        "tags": [
+          "Replicas"
+        ],
+        "summary": "List Replica Conflicts",
+        "description": "List durable sync conflicts for a replica. Defaults to pending conflicts only and requires service data editor access for the replica's service.",
+        "operationId": "listReplicaConflicts",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ReplicaId"
+          },
+          {
+            "name": "pending",
+            "in": "query",
+            "required": false,
+            "description": "When true, return only unresolved conflicts. Defaults to true.",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Requested page size. Defaults to 50 and is clamped to 200.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "afterId",
+            "in": "query",
+            "required": false,
+            "description": "Conflict keyset cursor. Pass the last conflictId from the previous page.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conflict summaries ordered newest-first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConflictSummary"
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/PaymentRequired" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/replicas/{replicaId}/conflicts/{conflictId}": {
+      "get": {
+        "tags": [
+          "Replicas"
+        ],
+        "summary": "Get Replica Conflict",
+        "description": "Get a durable sync conflict with client, server, and optional base feature states plus field and geometry change metadata.",
+        "operationId": "getReplicaConflict",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ReplicaId"
+          },
+          {
+            "$ref": "#/components/parameters/ReplicaConflictId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conflict detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictDetail"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/PaymentRequired" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/replicas/{replicaId}/conflicts/{conflictId}/resolve": {
+      "post": {
+        "tags": [
+          "Replicas"
+        ],
+        "summary": "Resolve Replica Conflict",
+        "description": "Apply a resolution to a pending sync conflict. accept_client and merge_fields commit a new server feature state through the canonical edit pipeline for attribute and geometry conflicts; update-delete, delete-update, delete-delete, and duplicate-insert conflicts currently return 400 for those feature-payload resolutions. Other resolutions record the decision without changing the feature.",
+        "operationId": "resolveReplicaConflict",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ReplicaId"
+          },
+          {
+            "$ref": "#/components/parameters/ReplicaConflictId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveConflictRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Conflict resolution recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolveConflictResponse"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/PaymentRequired" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
     "/license": {
       "get": {
         "tags": ["License"],
@@ -4573,6 +4829,25 @@
         "schema": {
           "type": "string"
         }
+      },
+      "ReplicaId": {
+        "name": "replicaId",
+        "in": "path",
+        "required": true,
+        "description": "Disconnected replica identifier.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "ReplicaConflictId": {
+        "name": "conflictId",
+        "in": "path",
+        "required": true,
+        "description": "Durable sync conflict identifier.",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
       }
     },
     "responses": {
@@ -4600,6 +4875,16 @@
         "description": "Forbidden - admin access required",
         "content": {
           "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "PaymentRequired": {
+        "description": "Payment Required - active license does not include the required entitlement",
+        "content": {
+          "application/problem+json": {
             "schema": {
               "$ref": "#/components/schemas/ErrorResponse"
             }
@@ -5619,6 +5904,248 @@
             "description": "Creator identity"
           }
         }
+      },
+      "ReplicaAdminSummary": {
+        "type": "object",
+        "required": [
+          "replicaId",
+          "replicaName",
+          "serviceId",
+          "syncModel",
+          "syncDirection",
+          "status",
+          "createdAt",
+          "lastSyncTime",
+          "lastSyncGeneration",
+          "pendingConflicts"
+        ],
+        "properties": {
+          "replicaId": { "type": "string" },
+          "replicaName": { "type": "string" },
+          "serviceId": { "type": "string" },
+          "owner": { "type": "string", "nullable": true },
+          "deviceClient": { "type": "string", "nullable": true },
+          "syncModel": { "type": "string", "example": "perReplica" },
+          "syncDirection": {
+            "type": "string",
+            "enum": [
+              "upload",
+              "download",
+              "bidirectional"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "stale",
+              "expired",
+              "unregistered"
+            ]
+          },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "lastSyncTime": { "type": "string", "format": "date-time" },
+          "lastSyncGeneration": { "type": "integer", "format": "int64" },
+          "pendingConflicts": { "type": "integer", "format": "int32" }
+        }
+      },
+      "ReplicaAdminDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ReplicaAdminSummary"
+          },
+          {
+            "type": "object",
+            "required": [
+              "layerIds"
+            ],
+            "properties": {
+              "layerIds": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "format": "int32"
+                }
+              },
+              "replicaGeometryJson": {
+                "type": "string",
+                "nullable": true,
+                "description": "Optional raw GeoJSON spatial filter stored with the replica."
+              },
+              "branchVersionId": {
+                "type": "string",
+                "nullable": true,
+                "description": "Optional branch-version reference reserved for named versioned editing interop."
+              }
+            }
+          }
+        ]
+      },
+      "ConflictSummary": {
+        "type": "object",
+        "required": [
+          "conflictId",
+          "syncOpId",
+          "layerId",
+          "objectId",
+          "conflictType",
+          "baseGeneration",
+          "createdAt"
+        ],
+        "properties": {
+          "conflictId": { "type": "string", "format": "uuid" },
+          "syncOpId": { "type": "string", "format": "uuid" },
+          "layerId": { "type": "integer", "format": "int32" },
+          "objectId": { "type": "integer", "format": "int64" },
+          "conflictType": {
+            "type": "string",
+            "enum": [
+              "attribute",
+              "geometry",
+              "update-delete",
+              "delete-update",
+              "delete-delete",
+              "duplicate-insert"
+            ]
+          },
+          "resolution": {
+            "$ref": "#/components/schemas/ReplicaConflictResolution"
+          },
+          "baseGeneration": { "type": "integer", "format": "int64" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ConflictDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ConflictSummary"
+          },
+          {
+            "type": "object",
+            "required": [
+              "replicaId",
+              "serviceId",
+              "clientFeature",
+              "serverFeature",
+              "fieldChanges",
+              "geometryChange",
+              "updatedAt",
+              "temporalHistoryHref"
+            ],
+            "properties": {
+              "replicaId": { "type": "string" },
+              "serviceId": { "type": "string" },
+              "clientFeature": { "$ref": "#/components/schemas/ReplicaFeatureJson" },
+              "serverFeature": { "$ref": "#/components/schemas/ReplicaFeatureJson" },
+              "baseFeature": { "$ref": "#/components/schemas/ReplicaFeatureJson" },
+              "fieldChanges": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/FieldChange"
+                }
+              },
+              "geometryChange": {
+                "$ref": "#/components/schemas/GeometryChangeMetadata"
+              },
+              "resolvedBy": { "type": "string", "nullable": true },
+              "resolvedAt": { "type": "string", "format": "date-time", "nullable": true },
+              "resolutionFeature": { "$ref": "#/components/schemas/ReplicaFeatureJson" },
+              "updatedAt": { "type": "string", "format": "date-time" },
+              "temporalHistoryHref": { "type": "string" }
+            }
+          }
+        ]
+      },
+      "FieldChange": {
+        "type": "object",
+        "required": [
+          "fieldName",
+          "clientChanged",
+          "serverChanged",
+          "clientDiffersFromServer"
+        ],
+        "properties": {
+          "fieldName": { "type": "string" },
+          "baseValue": { "$ref": "#/components/schemas/ReplicaJsonValue" },
+          "clientValue": { "$ref": "#/components/schemas/ReplicaJsonValue" },
+          "serverValue": { "$ref": "#/components/schemas/ReplicaJsonValue" },
+          "clientChanged": { "type": "boolean" },
+          "serverChanged": { "type": "boolean" },
+          "clientDiffersFromServer": { "type": "boolean" }
+        }
+      },
+      "GeometryChangeMetadata": {
+        "type": "object",
+        "required": [
+          "baseHasGeometry",
+          "clientHasGeometry",
+          "serverHasGeometry",
+          "clientChanged",
+          "serverChanged",
+          "clientDiffersFromServer"
+        ],
+        "properties": {
+          "baseHasGeometry": { "type": "boolean" },
+          "clientHasGeometry": { "type": "boolean" },
+          "serverHasGeometry": { "type": "boolean" },
+          "clientChanged": { "type": "boolean" },
+          "serverChanged": { "type": "boolean" },
+          "clientDiffersFromServer": { "type": "boolean" }
+        }
+      },
+      "ResolveConflictRequest": {
+        "type": "object",
+        "required": [
+          "resolution"
+        ],
+        "properties": {
+          "resolution": {
+            "$ref": "#/components/schemas/ReplicaConflictResolution"
+          },
+          "mergedPayloadJson": {
+            "type": "string",
+            "nullable": true,
+            "description": "GeoServices feature JSON encoded as a string. Required when resolution is merge_fields."
+          }
+        }
+      },
+      "ResolveConflictResponse": {
+        "type": "object",
+        "required": [
+          "conflictId",
+          "resolution"
+        ],
+        "properties": {
+          "conflictId": { "type": "string", "format": "uuid" },
+          "resolution": { "$ref": "#/components/schemas/ReplicaConflictResolution" }
+        }
+      },
+      "ReplicaConflictResolution": {
+        "type": "string",
+        "enum": [
+          "accept_client",
+          "keep_server",
+          "merge_fields",
+          "reject_client",
+          "defer"
+        ]
+      },
+      "ReplicaFeatureJson": {
+        "type": "object",
+        "nullable": true,
+        "additionalProperties": true,
+        "description": "GeoServices feature JSON object. May be null when the feature state is absent."
+      },
+      "ReplicaJsonValue": {
+        "nullable": true,
+        "oneOf": [
+          { "type": "object", "additionalProperties": true },
+          { "type": "array", "items": {} },
+          { "type": "string" },
+          { "type": "number" },
+          { "type": "integer" },
+          { "type": "boolean" }
+        ]
       },
       "ConsoleJobKind": {
         "type": "string",

@@ -5,6 +5,7 @@ using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
@@ -99,6 +100,7 @@ internal static class ServiceCollectionExtensions
         // write-shaped surfaces are no-op or NotSupportedException stubs.
         services.AddScoped<IFeatureWriter>(_ => new ReadOnlyMySqlFeatureWriter());
         services.AddScoped<IReplicaRepository>(_ => new ReadOnlyMySqlReplicaRepository());
+        services.AddScoped<IReplicaConflictStore>(_ => new ReadOnlyReplicaConflictStore());
         services.AddScoped<IChangeTracker>(_ => new ReadOnlyMySqlChangeTracker());
         services.AddScoped<ITileProvider>(_ => new ReadOnlyMySqlTileProvider());
         services.AddScoped<IGmlFeatureStore>(_ => new ReadOnlyMySqlGmlFeatureStore());

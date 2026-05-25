@@ -152,6 +152,46 @@ internal sealed class PostgresReplicaConflictStore : IReplicaConflictStore
         return MapConflict(reader);
     }
 
+    public async Task<IReplicaConflictResolutionClaim?> TryClaimResolutionAsync(
+        Guid conflictId,
+        CancellationToken cancellationToken = default)
+    {
+        const string sql = $"""
+            SELECT {SelectColumns}
+            FROM honua.replica_conflicts
+            WHERE conflict_id = $1 AND resolution IS NULL
+            FOR UPDATE
+            """;
+
+        var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await using var command = new NpgsqlCommand(sql, connection)
+            {
+                Transaction = transaction
+            };
+            command.Parameters.AddWithValue(NpgsqlDbType.Uuid, conflictId);
+
+            var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                await reader.DisposeAsync().ConfigureAwait(false);
+                await RollbackAndDisposeAsync(connection, transaction).ConfigureAwait(false);
+                return null;
+            }
+
+            var conflict = MapConflict(reader);
+            await reader.DisposeAsync().ConfigureAwait(false);
+            return new PostgresReplicaConflictResolutionClaim(connection, transaction, conflict);
+        }
+        catch
+        {
+            await RollbackAndDisposeAsync(connection, transaction).ConfigureAwait(false);
+            throw;
+        }
+    }
+
     public async Task<bool> ResolveAsync(
         Guid conflictId,
         ReplicaConflictResolution resolution,
@@ -179,6 +219,129 @@ internal sealed class PostgresReplicaConflictStore : IReplicaConflictStore
 
         var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         return rowsAffected > 0;
+    }
+
+    private static async Task RollbackAndDisposeAsync(NpgsqlConnection connection, NpgsqlTransaction transaction)
+    {
+        try
+        {
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException)
+        {
+            // Transaction may already be completed by the provider.
+        }
+
+        await transaction.DisposeAsync().ConfigureAwait(false);
+        await connection.DisposeAsync().ConfigureAwait(false);
+    }
+
+    private sealed class PostgresReplicaConflictResolutionClaim : IReplicaConflictResolutionClaim
+    {
+        private NpgsqlConnection? _connection;
+        private NpgsqlTransaction? _transaction;
+        private bool _finished;
+
+        public PostgresReplicaConflictResolutionClaim(
+            NpgsqlConnection connection,
+            NpgsqlTransaction transaction,
+            ReplicaConflict conflict)
+        {
+            _connection = connection;
+            _transaction = transaction;
+            Conflict = conflict;
+        }
+
+        public ReplicaConflict Conflict { get; }
+
+        public async Task<bool> CompleteAsync(
+            ReplicaConflictResolution resolution,
+            string resolvedBy,
+            string? resolutionPayloadJson,
+            CancellationToken cancellationToken = default)
+        {
+            if (_finished || _connection is null || _transaction is null)
+            {
+                return false;
+            }
+
+            const string sql = """
+                UPDATE honua.replica_conflicts
+                SET resolution = $2,
+                    resolved_by = $3,
+                    resolved_at = now(),
+                    resolution_payload_json = $4,
+                    updated_at = now()
+                WHERE conflict_id = $1 AND resolution IS NULL
+                """;
+
+            await using var command = new NpgsqlCommand(sql, _connection)
+            {
+                Transaction = _transaction
+            };
+            command.Parameters.AddWithValue(NpgsqlDbType.Uuid, Conflict.ConflictId);
+            command.Parameters.AddWithValue(NpgsqlDbType.Smallint, (short)resolution);
+            command.Parameters.AddWithValue(NpgsqlDbType.Text, resolvedBy);
+            AddNullableText(command, resolutionPayloadJson);
+
+            var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            if (rowsAffected == 0)
+            {
+                await RollbackAndDisposeAsync().ConfigureAwait(false);
+                return false;
+            }
+
+            await _transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            _finished = true;
+            await DisposeConnectionAsync().ConfigureAwait(false);
+            return true;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (!_finished && _transaction is not null)
+            {
+                await RollbackAndDisposeAsync().ConfigureAwait(false);
+                return;
+            }
+
+            await DisposeConnectionAsync().ConfigureAwait(false);
+        }
+
+        private async Task RollbackAndDisposeAsync()
+        {
+            if (_connection is null || _transaction is null)
+            {
+                return;
+            }
+
+            try
+            {
+                await _transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException)
+            {
+                // Transaction may already be completed by the provider.
+            }
+
+            _finished = true;
+            await DisposeConnectionAsync().ConfigureAwait(false);
+        }
+
+        private async Task DisposeConnectionAsync()
+        {
+            if (_transaction is not null)
+            {
+                await _transaction.DisposeAsync().ConfigureAwait(false);
+                _transaction = null;
+            }
+
+            if (_connection is not null)
+            {
+                await _connection.DisposeAsync().ConfigureAwait(false);
+                _connection = null;
+            }
+        }
     }
 
     private static ReplicaConflict MapConflict(NpgsqlDataReader reader) => new()

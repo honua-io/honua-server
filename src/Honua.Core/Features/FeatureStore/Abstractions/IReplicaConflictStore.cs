@@ -54,6 +54,18 @@ public interface IReplicaConflictStore
     Task<ReplicaConflict?> GetAsync(Guid conflictId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Claims a pending conflict for resolution and holds provider-level ownership until the
+    /// returned claim is completed or disposed. Returns <see langword="null"/> when the conflict
+    /// does not exist or has already reached a terminal resolution.
+    /// </summary>
+    /// <param name="conflictId">Conflict identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A resolution claim for the pending conflict, or <see langword="null"/>.</returns>
+    Task<IReplicaConflictResolutionClaim?> TryClaimResolutionAsync(
+        Guid conflictId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Records a resolution decision against a pending conflict. Idempotent: returns
     /// <see langword="false"/> when the conflict does not exist or was already resolved.
     /// </summary>
@@ -65,6 +77,32 @@ public interface IReplicaConflictStore
     /// <returns><see langword="true"/> when a pending conflict was updated.</returns>
     Task<bool> ResolveAsync(
         Guid conflictId,
+        ReplicaConflictResolution resolution,
+        string resolvedBy,
+        string? resolutionPayloadJson,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Provider-owned lease for completing a pending disconnected-replica conflict resolution.
+/// Disposing without completing abandons the claim and leaves the conflict pending.
+/// </summary>
+public interface IReplicaConflictResolutionClaim : IAsyncDisposable
+{
+    /// <summary>
+    /// Conflict row captured while the pending resolution claim is held.
+    /// </summary>
+    ReplicaConflict Conflict { get; }
+
+    /// <summary>
+    /// Completes the claimed conflict with a terminal resolution decision.
+    /// </summary>
+    /// <param name="resolution">The applied resolution.</param>
+    /// <param name="resolvedBy">Principal recording the resolution.</param>
+    /// <param name="resolutionPayloadJson">Optional merged feature payload for merge-field resolutions.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns><see langword="true"/> when the pending conflict was completed.</returns>
+    Task<bool> CompleteAsync(
         ReplicaConflictResolution resolution,
         string resolvedBy,
         string? resolutionPayloadJson,

@@ -276,6 +276,22 @@ internal static partial class ReplicaConflictsEndpoints
             return BadRequest(context, "mergedPayloadJson is required when resolution is merge_fields.");
         }
 
+        await using var resolutionClaim = await conflictStore.TryClaimResolutionAsync(
+            conflictId, context.RequestAborted).ConfigureAwait(false);
+        if (resolutionClaim is null)
+        {
+            // Lost a race with a concurrent resolution before taking ownership.
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context, StatusCodes.Status409Conflict, "Conflict has already been resolved.");
+        }
+
+        current = resolutionClaim.Conflict;
+        if (IsFeaturePayloadResolution(resolution) && !CanApplyFeaturePayloadResolution(current.ConflictType))
+        {
+            return BadRequest(context,
+                $"{ResolutionToString(resolution)} is not supported for {ConflictTypeToString(current.ConflictType)} conflicts in this release. Choose keep_server, reject_client, or defer.");
+        }
+
         // Commit a new server state for resolutions that adopt a client/merged feature.
         var payloadToApply = resolution switch
         {
@@ -295,11 +311,11 @@ internal static partial class ReplicaConflictsEndpoints
 
         var resolvedBy = ResolveActor(context);
         var resolutionPayloadJson = resolution == ReplicaConflictResolution.MergeFields ? request.MergedPayloadJson : null;
-        var resolved = await conflictStore.ResolveAsync(
-            conflictId, resolution, resolvedBy, resolutionPayloadJson, context.RequestAborted).ConfigureAwait(false);
+        var completionToken = payloadToApply is not null ? CancellationToken.None : context.RequestAborted;
+        var resolved = await resolutionClaim.CompleteAsync(
+            resolution, resolvedBy, resolutionPayloadJson, completionToken).ConfigureAwait(false);
         if (!resolved)
         {
-            // Lost a race with a concurrent resolution.
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context, StatusCodes.Status409Conflict, "Conflict has already been resolved.");
         }
@@ -382,6 +398,12 @@ internal static partial class ReplicaConflictsEndpoints
 
     private static bool HasFailedResult(EditResult[]? results)
         => results is not null && Array.Exists(results, static result => !result.Success);
+
+    private static bool IsFeaturePayloadResolution(ReplicaConflictResolution resolution)
+        => resolution is ReplicaConflictResolution.AcceptClient or ReplicaConflictResolution.MergeFields;
+
+    private static bool CanApplyFeaturePayloadResolution(ReplicaConflictType conflictType)
+        => conflictType is ReplicaConflictType.Attribute or ReplicaConflictType.Geometry;
 
     private static ConflictDetail ToConflictDetail(ReplicaConflict conflict)
     {

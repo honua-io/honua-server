@@ -621,6 +621,20 @@ internal static partial class FeatureServerEndpoints
 
             if (features is { Length: > 0 })
             {
+                var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>();
+                var uploadLimitValidation = FeatureQueryValidationService.ValidateEditLimits(
+                    new ApplyEditsRequest { Adds = features },
+                    limitsOptions.Value.Edits);
+                if (!uploadLimitValidation.IsValid)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        uploadLimitValidation.ErrorMessage ?? "Too many edits in synchronizeReplica upload",
+                        string.IsNullOrWhiteSpace(uploadLimitValidation.ErrorDetail)
+                            ? null
+                            : [uploadLimitValidation.ErrorDetail]);
+                }
+
                 // The simplified upload format applies edits to the first replica layer.
                 var targetLayer = replicaLayers[0];
                 var targetLayerId = targetLayer.Id;
@@ -658,8 +672,6 @@ internal static partial class FeatureServerEndpoints
                 if (clean.Count > 0)
                 {
                     var editsHandler = context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
-                    var limitsOptions = context.RequestServices
-                        .GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>();
 
                     var editRequest = new ApplyEditsRequest { Adds = clean.ToArray(), RollbackOnFailure = false };
                     var editResult = await editsHandler.HandleApplyEditsAsync(

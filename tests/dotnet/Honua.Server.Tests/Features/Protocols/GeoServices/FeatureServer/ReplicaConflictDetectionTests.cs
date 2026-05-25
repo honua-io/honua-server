@@ -10,6 +10,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -112,7 +113,58 @@ public sealed class ReplicaConflictDetectionTests : IAsyncLifetime
         conflicts.Should().BeEmpty();
     }
 
-    private async Task<string> CreateReplicaAsync()
+    [IntegrationTest]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task SynchronizeReplica_ConflictedUploadExceedingEditLimit_ReturnsBadRequest()
+    {
+        var limitedFixture = new WebAppFixture().ConfigureWebHost(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, configBuilder) =>
+            {
+                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Limits:Edits:MaxFeaturesPerEdit"] = "1",
+                    ["Limits:Edits:MaxEditsPerTransaction"] = "1",
+                });
+            });
+        });
+
+        await limitedFixture.InitializeAsync();
+        try
+        {
+            var replicaId = await CreateReplicaAsync(limitedFixture);
+            var firstObjectId = await AddServerFeatureAsync(limitedFixture, "server-side-state-1");
+            var secondObjectId = await AddServerFeatureAsync(limitedFixture, "server-side-state-2");
+            var edits = JsonSerializer.Serialize(new object[]
+            {
+                new
+                {
+                    attributes = new Dictionary<string, object?> { ["objectid"] = firstObjectId, ["name"] = "client-edit-1" },
+                    geometry = Point(-101.5, 41.2),
+                },
+                new
+                {
+                    attributes = new Dictionary<string, object?> { ["objectid"] = secondObjectId, ["name"] = "client-edit-2" },
+                    geometry = Point(-102.0, 42.0),
+                },
+            });
+
+            var syncResponse = await SynchronizeAsync(limitedFixture, replicaId, edits);
+            syncResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+            var body = await syncResponse.Content.ReadAsStringAsync();
+            body.Should().Contain("Too many features in a single edit operation");
+        }
+        finally
+        {
+            await limitedFixture.DisposeAsync();
+        }
+    }
+
+    private Task<string> CreateReplicaAsync()
+        => CreateReplicaAsync(_fixture);
+
+    private static async Task<string> CreateReplicaAsync(WebAppFixture fixture)
     {
         var payload = JsonSerializer.Serialize(new
         {
@@ -122,7 +174,7 @@ public sealed class ReplicaConflictDetectionTests : IAsyncLifetime
             f = "json",
         });
 
-        var response = await _fixture.Client.PostAsync(
+        var response = await fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
             new StringContent(payload, Encoding.UTF8, "application/json"));
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -131,7 +183,10 @@ public sealed class ReplicaConflictDetectionTests : IAsyncLifetime
         return document.RootElement.GetProperty("replicaID").GetString()!;
     }
 
-    private async Task<long> AddServerFeatureAsync(string name)
+    private Task<long> AddServerFeatureAsync(string name)
+        => AddServerFeatureAsync(_fixture, name);
+
+    private static async Task<long> AddServerFeatureAsync(WebAppFixture fixture, string name)
     {
         var edits = new
         {
@@ -147,7 +202,7 @@ public sealed class ReplicaConflictDetectionTests : IAsyncLifetime
             f = "json",
         };
 
-        var response = await _fixture.Client.PostAsync(
+        var response = await fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/applyEdits",
             new StringContent(JsonSerializer.Serialize(edits), Encoding.UTF8, "application/json"));
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -160,6 +215,9 @@ public sealed class ReplicaConflictDetectionTests : IAsyncLifetime
     }
 
     private Task<HttpResponseMessage> SynchronizeAsync(string replicaId, string editsJson)
+        => SynchronizeAsync(_fixture, replicaId, editsJson);
+
+    private static Task<HttpResponseMessage> SynchronizeAsync(WebAppFixture fixture, string replicaId, string editsJson)
     {
         var payload = JsonSerializer.Serialize(new
         {
@@ -169,7 +227,7 @@ public sealed class ReplicaConflictDetectionTests : IAsyncLifetime
             f = "json",
         });
 
-        return _fixture.Client.PostAsync(
+        return fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
             new StringContent(payload, Encoding.UTF8, "application/json"));
     }

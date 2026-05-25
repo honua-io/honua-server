@@ -160,6 +160,68 @@ public sealed class ReplicaConflictsEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/replicas/{replicaId}/conflicts/{conflictId}/resolve")]
+    public async Task ResolveConflict_AcceptClient_CommitsClientFeatureStateAndTerminalResolution()
+    {
+        var replicaId = await SeedReplicaAsync();
+        var objectId = await AddServerFeatureAsync("server-before-resolution");
+        var conflictId = await SeedConflictAsync(replicaId, objectId);
+
+        var resolve = await _fixture.Client.PostAsJsonAsync(
+            $"/api/v1/admin/replicas/{replicaId}/conflicts/{conflictId}/resolve",
+            new { resolution = "accept_client" });
+        resolve.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var featureName = await GetFeatureNameAsync(objectId);
+        featureName.Should().Be("client-edit");
+
+        var store = _fixture.GetService<IReplicaConflictStore>();
+        var resolved = await store.GetAsync(conflictId);
+        resolved.Should().NotBeNull();
+        resolved!.Value.Resolution.Should().Be(ReplicaConflictResolution.AcceptClient);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/replicas/{replicaId}/conflicts/{conflictId}/resolve")]
+    public async Task ResolveConflict_MergeFieldsWithInvalidPayload_LeavesConflictPending()
+    {
+        var replicaId = await SeedReplicaAsync();
+        var conflictId = await SeedConflictAsync(replicaId, objectId: 57);
+
+        var resolve = await _fixture.Client.PostAsJsonAsync(
+            $"/api/v1/admin/replicas/{replicaId}/conflicts/{conflictId}/resolve",
+            new { resolution = "merge_fields", mergedPayloadJson = "{not-json" });
+        resolve.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var store = _fixture.GetService<IReplicaConflictStore>();
+        var conflict = await store.GetAsync(conflictId);
+        conflict.Should().NotBeNull();
+        conflict!.Value.Resolution.Should().BeNull(
+            "an abandoned resolution claim must not move the conflict to a terminal state");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/replicas/{replicaId}/conflicts/{conflictId}/resolve")]
+    public async Task ResolveConflict_UpdateDeleteAcceptClient_Returns400WithoutResolving()
+    {
+        var replicaId = await SeedReplicaAsync();
+        var conflictId = await SeedConflictAsync(
+            replicaId,
+            objectId: 58,
+            conflictType: ReplicaConflictType.UpdateDelete);
+
+        var resolve = await _fixture.Client.PostAsJsonAsync(
+            $"/api/v1/admin/replicas/{replicaId}/conflicts/{conflictId}/resolve",
+            new { resolution = "accept_client" });
+        resolve.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var store = _fixture.GetService<IReplicaConflictStore>();
+        var conflict = await store.GetAsync(conflictId);
+        conflict.Should().NotBeNull();
+        conflict!.Value.Resolution.Should().BeNull();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/replicas/{replicaId}/conflicts/{conflictId}/resolve")]
     public async Task ResolveConflict_InvalidResolution_Returns400()
     {
         var replicaId = await SeedReplicaAsync();
@@ -211,7 +273,10 @@ public sealed class ReplicaConflictsEndpointsTests : IAsyncLifetime
         return replicaId;
     }
 
-    private async Task<Guid> SeedConflictAsync(string replicaId, long objectId)
+    private async Task<Guid> SeedConflictAsync(
+        string replicaId,
+        long objectId,
+        ReplicaConflictType conflictType = ReplicaConflictType.Attribute)
     {
         var conflictId = Guid.NewGuid();
         var now = DateTimeOffset.UtcNow;
@@ -224,13 +289,56 @@ public sealed class ReplicaConflictsEndpointsTests : IAsyncLifetime
             ServiceId = "test",
             LayerId = 0,
             ObjectId = objectId,
-            ConflictType = ReplicaConflictType.Attribute,
+            ConflictType = conflictType,
             BaseGeneration = 5,
             ClientPayloadJson = $"{{\"attributes\":{{\"objectid\":{objectId},\"name\":\"client-edit\"}},\"geometry\":{{\"x\":-100,\"y\":40}}}}",
-            ServerPayloadJson = $"{{\"attributes\":{{\"objectid\":{objectId},\"name\":\"server-state\"}},\"geometry\":{{\"x\":-101,\"y\":41}}}}",
+            ServerPayloadJson = conflictType == ReplicaConflictType.UpdateDelete
+                ? "null"
+                : $"{{\"attributes\":{{\"objectid\":{objectId},\"name\":\"server-state\"}},\"geometry\":{{\"x\":-101,\"y\":41}}}}",
             CreatedAt = now,
             UpdatedAt = now,
         });
         return conflictId;
     }
+
+    private async Task<long> AddServerFeatureAsync(string name)
+    {
+        var response = await _fixture.Client.PostAsJsonAsync(
+            "/rest/services/test/FeatureServer/0/applyEdits",
+            new
+            {
+                adds = new[]
+                {
+                    new
+                    {
+                        attributes = new Dictionary<string, object?> { ["name"] = name },
+                        geometry = Point(-100.0, 40.0),
+                    },
+                },
+                rollbackOnFailure = true,
+                f = "json",
+            });
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var addResults = document.RootElement.GetProperty("addResults");
+        addResults.GetArrayLength().Should().BeGreaterThanOrEqualTo(1);
+        addResults[0].GetProperty("success").GetBoolean().Should().BeTrue();
+        return addResults[0].GetProperty("objectId").GetInt64();
+    }
+
+    private async Task<string?> GetFeatureNameAsync(long objectId)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/test/FeatureServer/0/query?objectIds={objectId}&outFields=*&returnGeometry=false&f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var features = document.RootElement.GetProperty("features");
+        features.GetArrayLength().Should().Be(1);
+        return features[0].GetProperty("attributes").GetProperty("name").GetString();
+    }
+
+    private static object Point(double x, double y)
+        => new { x, y, spatialReference = new { wkid = 4326 } };
 }
