@@ -38,6 +38,8 @@ internal static class GeoEtlServiceCollectionExtensions
         // Phase 1 managed source connectors.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IPipelineSourceConnector, GeoJsonSourceConnector>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IPipelineSourceConnector, CsvSourceConnector>());
 
         // Phase 1 managed transforms.
         services.TryAddEnumerable(
