@@ -119,6 +119,16 @@ internal static class GeoprocessingServiceCollectionExtensions
         services.TryAddSingleton<GeometryDissolveJobExecutor>();
         services.TryAddSingleton<GeometrySimplifyJobExecutor>();
         services.TryAddSingleton<GeometrySnapJobExecutor>();
+        // Layer-scope (feature-collection) executor: takes an input layer
+        // reference (inline GeoJSON FeatureCollection or catalog layer id),
+        // streams its features, applies the geometry operation across the
+        // collection via the reused GeoETL transforms, and emits an output
+        // layer/artifact. Executes the catalog's layer-level vector families
+        // (generalization.simplify-layer, conversion.feature-project) plus the
+        // previously catalog-only single-geometry ops (geometry.make-valid,
+        // geometry.difference). Depends on the GeoETL ILayerFeatureSource set
+        // registered by AddGeoEtl.
+        services.TryAddSingleton<LayerGeometryJobExecutor>();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IJobExecutor, GeoprocessingDispatchJobExecutor>());
 

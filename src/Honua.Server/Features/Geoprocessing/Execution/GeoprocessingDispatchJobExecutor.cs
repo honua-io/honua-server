@@ -48,6 +48,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         GeometryDissolveJobExecutor dissolve,
         GeometrySimplifyJobExecutor simplify,
         GeometrySnapJobExecutor snap,
+        LayerGeometryJobExecutor layerGeometry,
         ILogger<GeoprocessingDispatchJobExecutor> logger)
     {
         ArgumentNullException.ThrowIfNull(buffer);
@@ -62,9 +63,10 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         ArgumentNullException.ThrowIfNull(dissolve);
         ArgumentNullException.ThrowIfNull(simplify);
         ArgumentNullException.ThrowIfNull(snap);
+        ArgumentNullException.ThrowIfNull(layerGeometry);
         ArgumentNullException.ThrowIfNull(logger);
 
-        _handlers = new Dictionary<string, IJobExecutor>(StringComparer.Ordinal)
+        var handlers = new Dictionary<string, IJobExecutor>(StringComparer.Ordinal)
         {
             [GeometryBufferJobExecutor.HandledProcessId] = buffer,
             [GeometryClipJobExecutor.HandledProcessId] = clip,
@@ -78,7 +80,18 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             [GeometryDissolveJobExecutor.HandledProcessId] = dissolve,
             [GeometrySimplifyJobExecutor.HandledProcessId] = simplify,
             [GeometrySnapJobExecutor.HandledProcessId] = snap,
-        }.ToFrozenDictionary(StringComparer.Ordinal);
+        };
+
+        // Layer-scope (feature-collection) executor handles several process ids;
+        // route each one to the same instance so the catalog's layer-level vector
+        // families (simplify-layer, feature-project) and the previously
+        // catalog-only single-geometry ops (make-valid, difference) execute.
+        foreach (var layerProcessId in LayerGeometryJobExecutor.HandledProcessIds)
+        {
+            handlers[layerProcessId] = layerGeometry;
+        }
+
+        _handlers = handlers.ToFrozenDictionary(StringComparer.Ordinal);
 
         _logger = logger;
     }

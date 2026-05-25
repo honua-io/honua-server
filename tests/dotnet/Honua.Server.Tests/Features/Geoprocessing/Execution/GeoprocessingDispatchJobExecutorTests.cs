@@ -33,15 +33,15 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         var context = Substitute.For<IJobExecutionContext>();
         context.OperationId.Returns("op-unknown");
 
-        // geometry.difference is still catalog-only after slice 5 — pick it
-        // for the unknown-id smoke so the assertion stays meaningful as the
-        // slice adds geometry.simplify / geometry.dissolve / geometry.snap.
-        var record = CreateJobRecord("geometry.difference");
+        // geometry.difference and geometry.make-valid now execute at layer scope
+        // (LayerGeometryJobExecutor), so pick a raster id that is routed to the
+        // native GDAL worker and never handled by the managed dispatcher.
+        var record = CreateJobRecord("raster.clip");
 
         var result = await dispatcher.ExecuteAsync(record, context, CancellationToken.None);
 
         result.Status.Should().Be(ExecutionJobStatus.Failed);
-        result.ErrorMessage.Should().Contain("geometry.difference");
+        result.ErrorMessage.Should().Contain("raster.clip");
         result.ErrorMessage.Should().Contain("geometry.buffer");
         result.ErrorMessage.Should().Contain("geometry.clip");
         result.ErrorMessage.Should().Contain("geometry.intersect");
@@ -71,8 +71,9 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         result.ErrorMessage.Should().Contain("<none>");
     }
 
-    private static readonly string[] SliceFiveProcessIds =
+    private static readonly string[] SupportedProcessIds =
     {
+        // Single-geometry (primitive) vector executors.
         "geometry.buffer",
         "geometry.clip",
         "geometry.intersect",
@@ -85,13 +86,18 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         "geometry.dissolve",
         "geometry.simplify",
         "geometry.snap",
+        // Layer-scope (feature-collection) executors.
+        "generalization.simplify-layer",
+        "conversion.feature-project",
+        "geometry.make-valid",
+        "geometry.difference",
     };
 
     [UnitTest]
-    public void SupportedProcessIds_ListsSliceFiveExecutors()
+    public void SupportedProcessIds_ListsPrimitiveAndLayerScopeExecutors()
     {
         var dispatcher = CreateDispatcher();
-        dispatcher.SupportedProcessIds.Should().BeEquivalentTo(SliceFiveProcessIds);
+        dispatcher.SupportedProcessIds.Should().BeEquivalentTo(SupportedProcessIds);
     }
 
     [UnitTest]
@@ -124,6 +130,10 @@ public sealed class GeoprocessingDispatchJobExecutorTests
             new GeometryDissolveJobExecutor(monitor, NullLogger<GeometryDissolveJobExecutor>.Instance),
             new GeometrySimplifyJobExecutor(monitor, NullLogger<GeometrySimplifyJobExecutor>.Instance),
             new GeometrySnapJobExecutor(monitor, NullLogger<GeometrySnapJobExecutor>.Instance),
+            new LayerGeometryJobExecutor(
+                [new Honua.Core.Features.GeoETL.Services.Connectors.InlineGeoJsonLayerFeatureSource()],
+                monitor,
+                NullLogger<LayerGeometryJobExecutor>.Instance),
             NullLogger<GeoprocessingDispatchJobExecutor>.Instance);
     }
 
