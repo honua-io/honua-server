@@ -24,6 +24,7 @@ using Honua.Core.Features.Styling;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Jobs;
+using Honua.Server.Features.Admin.OperateFixtures;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Features.CloudDemo;
@@ -440,6 +441,7 @@ builder.Services.AddValidationServices();
 
 // Register feature services (FeatureServer, OGC, OData, Observability)
 builder.Services.AddServerFeatures(builder.Configuration);
+builder.Services.AddOperateObservabilityFixtures(builder.Configuration, builder.Environment);
 builder.Services.AddAdminRealtime();
 if (!isTestEnvironment)
 {
@@ -973,6 +975,7 @@ app.MapObservabilityAlertEndpoints();
 app.MapObservabilityAuditEndpoints();
 app.MapObservabilityEventEndpoints();
 app.MapInvestigationEndpoints();
+app.MapOperateObservabilityFixtureEndpoints();
 
 // Configure platform admin endpoints (license, identity, cache, geocoding, features)
 app.MapLicenseAdminEndpoints();

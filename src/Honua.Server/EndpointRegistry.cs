@@ -441,6 +441,7 @@ public static class EndpointRegistry
         new("DELETE", "/api/v1/admin/investigations/{investigationId}/pins/{pinId}"),
         new("POST", "/api/v1/admin/investigations/{investigationId}/links"),
         new("DELETE", "/api/v1/admin/investigations/{investigationId}/links/{linkId}"),
+        new("POST", "/api/v1/admin/dev/fixtures/operate-observability/{profile}"),
 
         new("GET", "/api/v1/admin/performance/database/query-cache/statistics"),
         new("GET", "/api/v1/admin/performance/enhanced/database/query-performance"),

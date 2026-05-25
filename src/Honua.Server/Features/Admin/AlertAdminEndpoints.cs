@@ -12,7 +12,6 @@ using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
-using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
 namespace Honua.Server.Features.Admin;
@@ -24,7 +23,6 @@ internal static class AlertAdminEndpoints
 {
     private static readonly WKBReader _wkbReader = new();
     private static readonly WKTWriter _wktWriter = new();
-    private static readonly WKBWriter _wkbWriter = new();
     private const int RecentTriggerLimit = 10;
     private const string ChannelStatusConfigured = "configured";
     private const string ChannelStatusUnconfigured = "unconfigured";
@@ -973,55 +971,7 @@ internal static class AlertAdminEndpoints
         IGeometryService geometryService,
         out byte[]? wkb,
         out string error)
-    {
-        if (string.IsNullOrWhiteSpace(wkt))
-        {
-            wkb = null;
-            error = string.Empty;
-            return true;
-        }
-
-        try
-        {
-            wkb = geometryService.ConvertWktToWkb(wkt, srid);
-            if (wkb is null)
-            {
-                error = "Invalid WKT geometry.";
-                return false;
-            }
-
-            Geometry geometry = _wkbReader.Read(wkb);
-            geometry.SRID = srid;
-
-            if (geometry is Polygon polygon)
-            {
-                geometry = new MultiPolygon(new[] { polygon }) { SRID = srid };
-            }
-
-            if (geometry is not MultiPolygon)
-            {
-                wkb = null;
-                error = "Zone geometry must be Polygon or MultiPolygon.";
-                return false;
-            }
-
-            wkb = _wkbWriter.Write(geometry);
-            error = string.Empty;
-            return true;
-        }
-        catch (ArgumentException ex)
-        {
-            wkb = null;
-            error = ex.Message;
-            return false;
-        }
-        catch (ParseException)
-        {
-            wkb = null;
-            error = "Invalid WKT geometry.";
-            return false;
-        }
-    }
+        => AlertZoneGeometryParser.TryParseWkt(wkt, srid, geometryService, out wkb, out error);
 
     private static string? ToWkt(byte[]? wkb)
     {
