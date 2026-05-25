@@ -23,10 +23,12 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Tests.Features.Forms;
 
@@ -78,7 +80,109 @@ public sealed class FormSubmissionServiceTests
         store.GetSubmissionByIdempotencyCalls.Should().Be(2);
     }
 
-    private static FormSubmissionService CreateService(FakeFormPackageStore store, FakeFeatureWriter writer)
+    [UnitTest]
+    public async Task SubmitAsync_WhenFeatureEditFails_DoesNotUploadAttachments()
+    {
+        using var requestServices = CreateRequestServices();
+        var store = new FakeFormPackageStore(
+            includeAttachment: true,
+            allowedOperations: [FormSubmissionOperations.Update],
+            attachmentFieldRequired: false);
+        var writer = new FakeFeatureWriter
+        {
+            Result = FeatureEditResult.Rollback(updateResults: ImmutableArray.Create(EditOperationResult.Failure("conflict", objectId: 101)))
+        };
+        var attachmentStore = new RecordingAttachmentStore();
+        var service = CreateService(store, writer, attachmentStore);
+        var context = CreateMultipartContext(
+            CreateSubmission(
+                "edit-fail-attachment-1",
+                FormSubmissionOperations.Update,
+                includeAttachment: true,
+                targetFeatureId: 101),
+            requestServices,
+            CreateFormFile());
+
+        var result = await service.SubmitAsync(context, store.PackageVersion.FormId);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        var body = ReadResponseBody(context);
+        body.Status.Should().Be("failed");
+        body.TargetFeatureId.Should().Be(101);
+        body.AttachmentOutcomes.Should().BeEmpty();
+        body.Retry.Should().NotBeNull();
+        attachmentStore.ListCalls.Should().Be(0);
+        attachmentStore.UploadCalls.Should().Be(0);
+        store.CompletedResponse!.Status.Should().Be("failed");
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_WithDuplicateMultipartPartName_ReturnsRejectedValidationResponse()
+    {
+        using var requestServices = CreateRequestServices();
+        var store = new FakeFormPackageStore(
+            includeAttachment: true,
+            allowedOperations: [FormSubmissionOperations.Create],
+            attachmentFieldRequired: false);
+        var writer = new FakeFeatureWriter();
+        var attachmentStore = new RecordingAttachmentStore();
+        var service = CreateService(store, writer, attachmentStore);
+        var context = CreateMultipartContext(
+            CreateSubmission("duplicate-part-1", includeAttachment: true),
+            requestServices,
+            CreateFormFile(fileName: "first.png"),
+            CreateFormFile(fileName: "second.png"));
+
+        var result = await service.SubmitAsync(context, store.PackageVersion.FormId);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var body = ReadResponseBody(context);
+        body.Status.Should().Be("rejected");
+        body.ValidationIssues.Should().Contain(issue => issue.Code == "attachmentPartNameDuplicate");
+        body.AttachmentOutcomes.Should().ContainSingle(outcome =>
+            outcome.Status == "rejected" &&
+            outcome.FieldId == "photo");
+        writer.ApplyEditsCalls.Should().Be(0);
+        attachmentStore.UploadCalls.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_WithDeleteAttachmentDescriptor_ReturnsRejectedWithoutEditing()
+    {
+        using var requestServices = CreateRequestServices();
+        var store = new FakeFormPackageStore(
+            includeAttachment: true,
+            allowedOperations: [FormSubmissionOperations.Delete],
+            attachmentFieldRequired: true);
+        var writer = new FakeFeatureWriter();
+        var attachmentStore = new RecordingAttachmentStore();
+        var service = CreateService(store, writer, attachmentStore);
+        var context = CreateMultipartContext(
+            CreateSubmission(
+                "delete-attachment-1",
+                FormSubmissionOperations.Delete,
+                includeAttachment: true,
+                targetFeatureId: 101),
+            requestServices,
+            CreateFormFile());
+
+        var result = await service.SubmitAsync(context, store.PackageVersion.FormId);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var body = ReadResponseBody(context);
+        body.Status.Should().Be("rejected");
+        body.ValidationIssues.Should().Contain(issue => issue.Code == "attachmentsNotAllowedForDelete");
+        writer.ApplyEditsCalls.Should().Be(0);
+        attachmentStore.UploadCalls.Should().Be(0);
+    }
+
+    private static FormSubmissionService CreateService(
+        FakeFormPackageStore store,
+        FakeFeatureWriter writer,
+        IAttachmentStore? attachmentStore = null)
     {
         var catalog = new StaticLayerCatalog(store.Service);
         return new FormSubmissionService(
@@ -87,7 +191,7 @@ public sealed class FormSubmissionServiceTests
             catalog,
             new PassThroughEditProcessor(),
             writer,
-            new EmptyAttachmentStore(),
+            attachmentStore ?? new RecordingAttachmentStore(),
             Options.Create(CreateLimitsOptions()),
             Options.Create(new FileUploadSecurityOptions()),
             NullAuditLog.Instance,
@@ -131,6 +235,65 @@ public sealed class FormSubmissionServiceTests
         return context;
     }
 
+    private static DefaultHttpContext CreateMultipartContext(
+        FormSubmissionRequest request,
+        IServiceProvider requestServices,
+        params IFormFile[] files)
+    {
+        var context = new DefaultHttpContext
+        {
+            RequestServices = requestServices,
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, "field-user"),
+                new Claim("roles", "data-editor")
+            ], "test")),
+            Response =
+            {
+                Body = new MemoryStream()
+            }
+        };
+        context.Request.Method = HttpMethods.Post;
+        context.Request.ContentType = "multipart/form-data; boundary=test-boundary";
+        var formFiles = new FormFileCollection();
+        foreach (var file in files)
+        {
+            formFiles.Add(file);
+        }
+
+        var form = new FormCollection(
+            new Dictionary<string, StringValues>(StringComparer.Ordinal)
+            {
+                ["submission"] = JsonSerializer.Serialize(request, FormPackageJsonContext.Default.FormSubmissionRequest)
+            },
+            formFiles);
+        context.Features.Set<IFormFeature>(new FormFeature(form));
+        return context;
+    }
+
+    private static FormSubmissionResponse ReadResponseBody(DefaultHttpContext context)
+    {
+        context.Response.Body.Position = 0;
+        return JsonSerializer.Deserialize(
+            context.Response.Body,
+            FormPackageJsonContext.Default.FormSubmissionResponse)!;
+    }
+
+    private static FormFile CreateFormFile(
+        string partName = "photo-file",
+        string fileName = "photo.png",
+        string contentType = "image/png")
+    {
+        var bytes = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=");
+        var stream = new MemoryStream(bytes);
+        var file = new FormFile(stream, 0, stream.Length, partName, fileName)
+        {
+            Headers = new HeaderDictionary()
+        };
+        file.ContentType = contentType;
+        return file;
+    }
+
     private static LimitsOptions CreateLimitsOptions()
         => new()
         {
@@ -145,20 +308,40 @@ public sealed class FormSubmissionServiceTests
 
     private static FormSubmissionRequest CreateSubmission(
         string idempotencyKey,
-        string operation = FormSubmissionOperations.Create)
+        string operation = FormSubmissionOperations.Create,
+        bool includeAttachment = false,
+        long? targetFeatureId = null)
         => new()
         {
             IdempotencyKey = idempotencyKey,
             Operation = operation,
+            TargetFeatureId = targetFeatureId,
             ClientId = "field-client-1",
             Values = new Dictionary<string, JsonElement>
             {
                 ["name"] = Json(JsonSerializer.Serialize("Inspection"))
             },
-            Geometry = Json("""{"x":-157.8583,"y":21.3069,"spatialReference":{"wkid":4326}}""")
+            Geometry = Json("""{"x":-157.8583,"y":21.3069,"spatialReference":{"wkid":4326}}"""),
+            Attachments = includeAttachment
+                ?
+                [
+                    new FormSubmissionAttachmentDescriptor
+                    {
+                        ClientAttachmentId = "photo-1",
+                        FieldId = "photo",
+                        PartName = "photo-file",
+                        Filename = "photo.png",
+                        ContentType = "image/png"
+                    }
+                ]
+                : []
         };
 
-    private static FormPackageVersion CreatePackageVersion(ServiceDefinition service)
+    private static FormPackageVersion CreatePackageVersion(
+        ServiceDefinition service,
+        bool includeAttachment = false,
+        string[]? allowedOperations = null,
+        bool attachmentFieldRequired = false)
         => new()
         {
             FormId = "inspection",
@@ -181,11 +364,32 @@ public sealed class FormSubmissionServiceTests
                     {
                         SectionId = "main",
                         Label = "Main",
-                        FieldIds = ["name"]
+                        FieldIds = includeAttachment ? ["name", "photo"] : ["name"]
                     }
                 ],
-                Fields =
-                [
+                Fields = includeAttachment
+                    ?
+                    [
+                    new FormFieldDefinition
+                    {
+                        FieldId = "name",
+                        Label = "Name",
+                        Type = "text",
+                        TargetField = "name",
+                        Required = true,
+                        SectionId = "main"
+                    },
+                    new FormFieldDefinition
+                    {
+                        FieldId = "photo",
+                        Label = "Photo",
+                        Type = "attachment",
+                        Required = attachmentFieldRequired,
+                        SectionId = "main"
+                    }
+                    ]
+                    :
+                    [
                     new FormFieldDefinition
                     {
                         FieldId = "name",
@@ -195,13 +399,33 @@ public sealed class FormSubmissionServiceTests
                         Required = true,
                         SectionId = "main"
                     }
-                ],
+                    ],
                 SubmitPolicy = new FormSubmitPolicy
                 {
-                    AllowedOperations = [FormSubmissionOperations.Create],
+                    AllowedOperations = allowedOperations ?? [FormSubmissionOperations.Create],
                     RequiresGeometry = true,
-                    AllowAttachments = false
-                }
+                    AllowAttachments = includeAttachment
+                },
+                AttachmentPolicy = includeAttachment
+                    ? new FormAttachmentPolicy
+                    {
+                        Enabled = true,
+                        MaxAttachmentsPerSubmission = 2,
+                        MaxAttachmentBytes = 1_000_000,
+                        MaxTotalBytes = 2_000_000,
+                        AllowedContentTypes = ["image/png"],
+                        Fields =
+                        [
+                            new FormFieldAttachmentPolicy
+                            {
+                                FieldId = "photo",
+                                Required = attachmentFieldRequired,
+                                MaxCount = 1,
+                                AllowedContentTypes = ["image/png"]
+                            }
+                        ]
+                    }
+                    : new FormAttachmentPolicy()
             }
         };
 
@@ -231,10 +455,13 @@ public sealed class FormSubmissionServiceTests
 
     private sealed class FakeFormPackageStore : IFormPackageStore
     {
-        public FakeFormPackageStore()
+        public FakeFormPackageStore(
+            bool includeAttachment = false,
+            string[]? allowedOperations = null,
+            bool attachmentFieldRequired = false)
         {
             Service = CreateServiceDefinition();
-            PackageVersion = CreatePackageVersion(Service);
+            PackageVersion = CreatePackageVersion(Service, includeAttachment, allowedOperations, attachmentFieldRequired);
         }
 
         public ServiceDefinition Service { get; }
@@ -428,6 +655,8 @@ public sealed class FormSubmissionServiceTests
 
         public Action? OnApplyEdits { get; init; }
 
+        public FeatureEditResult Result { get; init; } = FeatureEditResult.Success(1, 0, 0, ImmutableArray.Create(101L));
+
         public Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
@@ -444,17 +673,24 @@ public sealed class FormSubmissionServiceTests
         {
             ApplyEditsCalls++;
             OnApplyEdits?.Invoke();
-            return Task.FromResult(FeatureEditResult.Success(1, 0, 0, ImmutableArray.Create(101L)));
+            return Task.FromResult(Result);
         }
     }
 
-    private sealed class EmptyAttachmentStore : IAttachmentStore
+    private sealed class RecordingAttachmentStore : IAttachmentStore
     {
+        public int ListCalls { get; private set; }
+
+        public int UploadCalls { get; private set; }
+
         public Task<Attachment?> GetAsync(int layerId, long featureId, long attachmentId, CancellationToken cancellationToken = default)
             => Task.FromResult<Attachment?>(null);
 
         public Task<Attachment[]> ListAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
-            => Task.FromResult(Array.Empty<Attachment>());
+        {
+            ListCalls++;
+            return Task.FromResult(Array.Empty<Attachment>());
+        }
 
         public Task<Attachment> CreateAsync(int layerId, long featureId, Attachment attachment, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
@@ -484,7 +720,19 @@ public sealed class FormSubmissionServiceTests
             Stream content,
             string? keywords = null,
             CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
+        {
+            UploadCalls++;
+            return Task.FromResult(Attachment.Create(
+                UploadCalls,
+                featureId,
+                layerId,
+                filename,
+                contentType,
+                content.Length,
+                DateTime.UtcNow,
+                $"memory/{UploadCalls}",
+                keywords));
+        }
 
         public Task<AttachmentContent?> DownloadAsync(int layerId, long featureId, long attachmentId, CancellationToken cancellationToken = default)
             => Task.FromResult<AttachmentContent?>(null);

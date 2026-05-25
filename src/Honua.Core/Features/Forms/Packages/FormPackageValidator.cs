@@ -778,6 +778,16 @@ public sealed class FormPackageValidator
         LayerDefinition layer,
         List<FormValidationIssue> issues)
     {
+        if (OperationEquals(request.Operation, FormSubmissionOperations.Delete))
+        {
+            if (request.Attachments.Length > 0)
+            {
+                AddError(issues, "attachmentsNotAllowedForDelete", "Delete submissions cannot include attachment descriptors.", path: "attachments");
+            }
+
+            return;
+        }
+
         var attachmentFields = package.Fields
             .Where(IsAttachmentField)
             .Where(static field => !string.IsNullOrWhiteSpace(field.FieldId))

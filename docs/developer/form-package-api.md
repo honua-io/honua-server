@@ -128,9 +128,9 @@ Runtime validation checks:
 - Package status, allowed operation, and `targetFeatureId` for update/delete.
 - Required values, read-only fields, JSON value types, domain membership, and target field compatibility.
 - Point geometry shape, finite coordinates, and SRID. Geometry uses GeoServices-style `{ "x": number, "y": number, "spatialReference": { "wkid": number } }`; `x` and `y` may be finite JSON numbers or numeric strings, and `spatialReference.wkid` or `spatialReference.latestWkid` must match the target layer SRID when supplied.
-- Required attachment fields, package and per-field attachment counts, package/field/global MIME type allowlists, file part presence, file size, filename/content security, and global attachment limits.
+- Required attachment fields for create/update submissions, package and per-field attachment counts, package/field/global MIME type allowlists, file part presence, unique multipart part names, file size, filename/content security, and global attachment limits. Delete submissions do not require attachment fields and cannot include attachment descriptors.
 
-Accepted submissions are translated into the shared edit pipeline (`IEditProcessor` and `IFeatureWriter`). Non-attachment field values are mapped from form `fieldId` to target layer `targetField`. Attachment upload runs only after the feature edit produces or resolves a target feature id.
+Accepted submissions are translated into the shared edit pipeline (`IEditProcessor` and `IFeatureWriter`). Non-attachment field values are mapped from form `fieldId` to target layer `targetField`. Attachment upload runs only after a successful create/update edit produces or resolves a target feature id. Failed edits and delete operations do not persist attachments.
 
 ## Multipart Attachments
 
@@ -163,7 +163,7 @@ Multipart submissions must include a `submission` JSON part plus file parts refe
 }
 ```
 
-The server normalizes missing descriptor `filename`, `contentType`, and `sizeBytes` from the uploaded file when the multipart part exists. Descriptor and file MIME types must satisfy the package allowlist, any per-field allowlist, and the global server allowlist; when a package or field allowlist is empty, the next broader policy supplies the constraint. Accepted files are stored through the FeatureServer attachment store and return per-file outcomes. The optional descriptor `sha256` is retained with submitted attachment metadata when supplied, but this slice does not perform checksum enforcement. Descriptors that name missing parts are rejected with attachment validation issues and do not run the feature edit path.
+The server normalizes missing descriptor `filename`, `contentType`, and `sizeBytes` from the uploaded file when the multipart part exists and the part name is unique. Descriptor and file MIME types must satisfy the package allowlist, any per-field allowlist, and the global server allowlist; when a package or field allowlist is empty, the next broader policy supplies the constraint. Accepted files are stored through the FeatureServer attachment store and return per-file outcomes. The optional descriptor `sha256` is retained with submitted attachment metadata when supplied, but this slice does not perform checksum enforcement. Descriptors that name missing or duplicate parts are rejected with attachment validation issues and do not run the feature edit path.
 
 For idempotency, multipart requests hash the original `submission` JSON part. Metadata filled from file parts is used for validation and persistence, but it does not rewrite the replay hash or require clients to echo file-derived descriptor values.
 

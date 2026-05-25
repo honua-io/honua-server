@@ -209,8 +209,10 @@ internal sealed class FormSubmissionService
             var batch = _editProcessor.ToFeatureEditBatch(optimized, layer);
             var editResult = await _featureWriter.ApplyEditsAsync(layer.Id, batch, postClaimToken).ConfigureAwait(false);
             var targetFeatureId = ResolveTargetFeatureId(request, editResult);
-            var attachmentOutcomes = await UploadAttachmentsAsync(context, packageVersion, request, parseResult.Files, layer, targetFeatureId, submissionId, postClaimToken)
-                .ConfigureAwait(false);
+            var attachmentOutcomes = ShouldUploadAttachments(request, editResult)
+                ? await UploadAttachmentsAsync(context, packageVersion, request, parseResult.Files, layer, targetFeatureId, submissionId, postClaimToken)
+                    .ConfigureAwait(false)
+                : [];
             var response = new FormSubmissionResponse
             {
                 SubmissionId = submissionId,
@@ -227,13 +229,28 @@ internal sealed class FormSubmissionService
                     Deleted = editResult.DeletedCount,
                     Error = editResult.HasErrors ? "One or more feature edits failed." : null
                 },
-                AttachmentOutcomes = attachmentOutcomes
+                AttachmentOutcomes = attachmentOutcomes,
+                Retry = editResult.IsSuccess
+                    ? null
+                    : new FormSubmissionRetryGuidance
+                    {
+                        Retryable = true,
+                        Reason = "Feature edit did not complete successfully; attachments were not uploaded."
+                    }
             };
 
             await CompleteSubmissionAsync(submissionId, response, response.Status).ConfigureAwait(false);
-            await RecordAuditAsync(context, "forms.submission.create", packageVersion.FormId, AuditOutcome.Success, $"{{\"version\":{packageVersion.Version},\"operation\":\"{request.Operation}\"}}", CancellationToken.None)
+            await RecordAuditAsync(context, "forms.submission.create", packageVersion.FormId, editResult.IsSuccess ? AuditOutcome.Success : AuditOutcome.Failure, $"{{\"version\":{packageVersion.Version},\"operation\":\"{request.Operation}\"}}", CancellationToken.None)
                 .ConfigureAwait(false);
-            FormSubmissionLog.SubmissionAccepted(_logger, packageVersion.FormId, packageVersion.Version, submissionId, request.Operation, attachmentOutcomes.Length);
+            if (editResult.IsSuccess)
+            {
+                FormSubmissionLog.SubmissionAccepted(_logger, packageVersion.FormId, packageVersion.Version, submissionId, request.Operation, attachmentOutcomes.Length);
+            }
+            else
+            {
+                FormSubmissionLog.SubmissionEditFailed(_logger, packageVersion.FormId, packageVersion.Version, submissionId, request.Operation);
+            }
+
             return Results.Json(response, FormPackageJsonContext.Default.FormSubmissionResponse);
         }
         catch (OperationCanceledException ex)
@@ -390,13 +407,15 @@ internal sealed class FormSubmissionService
             return request;
         }
 
-        var byPartName = files.ToDictionary(static file => file.Name, StringComparer.Ordinal);
+        var (byPartName, duplicatePartNames) = BuildFilePartLookup(files);
         var normalized = new FormSubmissionAttachmentDescriptor[request.Attachments.Length];
         for (var i = 0; i < request.Attachments.Length; i++)
         {
             var descriptor = request.Attachments[i];
-            if (!string.IsNullOrWhiteSpace(descriptor.PartName) &&
-                byPartName.TryGetValue(descriptor.PartName, out var file))
+            var partName = descriptor.PartName;
+            if (!string.IsNullOrWhiteSpace(partName) &&
+                !duplicatePartNames.Contains(partName) &&
+                byPartName.TryGetValue(partName, out var file))
             {
                 normalized[i] = new FormSubmissionAttachmentDescriptor
                 {
@@ -431,15 +450,27 @@ internal sealed class FormSubmissionService
 
         var issues = new List<FormValidationIssue>();
         var outcomes = new List<FormSubmissionAttachmentOutcome>();
-        var byPartName = files.ToDictionary(static file => file.Name, StringComparer.Ordinal);
+        var (byPartName, duplicatePartNames) = BuildFilePartLookup(files);
         var policy = packageVersion.Package.AttachmentPolicy;
         var fieldPolicies = BuildAttachmentFieldPolicies(policy);
         var maxSize = Math.Min(policy.MaxAttachmentBytes ?? _attachmentLimits.MaxAttachmentSize, _attachmentLimits.MaxAttachmentSize);
 
         foreach (var descriptor in request.Attachments)
         {
-            if (string.IsNullOrWhiteSpace(descriptor.PartName) ||
-                !byPartName.TryGetValue(descriptor.PartName, out var file))
+            var partName = descriptor.PartName;
+            if (string.IsNullOrWhiteSpace(partName))
+            {
+                AddAttachmentIssue(issues, outcomes, descriptor, "attachmentPartMissing", "Attachment multipart part was not provided.");
+                continue;
+            }
+
+            if (duplicatePartNames.Contains(partName))
+            {
+                AddAttachmentIssue(issues, outcomes, descriptor, "attachmentPartNameDuplicate", $"Attachment multipart part name '{partName}' appears more than once.");
+                continue;
+            }
+
+            if (!byPartName.TryGetValue(partName, out var file))
             {
                 AddAttachmentIssue(issues, outcomes, descriptor, "attachmentPartMissing", "Attachment multipart part was not provided.");
                 continue;
@@ -627,6 +658,11 @@ internal sealed class FormSubmissionService
         return request.TargetFeatureId;
     }
 
+    private static bool ShouldUploadAttachments(FormSubmissionRequest request, FeatureEditResult editResult)
+        => editResult.IsSuccess &&
+           request.Attachments.Length > 0 &&
+           !OperationEquals(request.Operation, FormSubmissionOperations.Delete);
+
     private async Task<FormSubmissionAttachmentOutcome[]> UploadAttachmentsAsync(
         HttpContext context,
         FormPackageVersion packageVersion,
@@ -643,7 +679,7 @@ internal sealed class FormSubmissionService
         }
 
         var outcomes = new List<FormSubmissionAttachmentOutcome>(request.Attachments.Length);
-        var byPartName = files.ToDictionary(static file => file.Name, StringComparer.Ordinal);
+        var (byPartName, duplicatePartNames) = BuildFilePartLookup(files);
         if (targetFeatureId is null)
         {
             foreach (var descriptor in request.Attachments)
@@ -669,8 +705,10 @@ internal sealed class FormSubmissionService
 
         foreach (var descriptor in request.Attachments)
         {
-            if (string.IsNullOrWhiteSpace(descriptor.PartName) ||
-                !byPartName.TryGetValue(descriptor.PartName, out var file))
+            var partName = descriptor.PartName;
+            if (string.IsNullOrWhiteSpace(partName) ||
+                duplicatePartNames.Contains(partName) ||
+                !byPartName.TryGetValue(partName, out var file))
             {
                 outcomes.Add(await AddAttachmentOutcomeAsync(context, submissionId, packageVersion, request, descriptor, "rejected", null, "Attachment multipart part was not provided.", cancellationToken)
                     .ConfigureAwait(false));
@@ -872,6 +910,27 @@ internal sealed class FormSubmissionService
         => string.Equals(field.Type, "attachment", StringComparison.OrdinalIgnoreCase) ||
            string.Equals(field.Type, "media", StringComparison.OrdinalIgnoreCase);
 
+    private static (Dictionary<string, IFormFile> ByPartName, HashSet<string> DuplicatePartNames) BuildFilePartLookup(
+        IFormFileCollection files)
+    {
+        var byPartName = new Dictionary<string, IFormFile>(StringComparer.Ordinal);
+        var duplicatePartNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var file in files)
+        {
+            if (string.IsNullOrWhiteSpace(file.Name))
+            {
+                continue;
+            }
+
+            if (!byPartName.TryAdd(file.Name, file))
+            {
+                duplicatePartNames.Add(file.Name);
+            }
+        }
+
+        return (byPartName, duplicatePartNames);
+    }
+
     private bool AttachmentContentTypeAllowed(
         FormAttachmentPolicy policy,
         FormFieldAttachmentPolicy? fieldPolicy,
@@ -981,4 +1040,7 @@ internal static partial class FormSubmissionLog
 
     [LoggerMessage(EventId = 118443, Level = LogLevel.Information, Message = "Recorded attachment policy outcome for form submission {SubmissionId}; form={FormId}, version={Version}, field={FieldId}, status={Status}.")]
     public static partial void AttachmentPolicyRecorded(ILogger logger, string formId, int version, Guid submissionId, string fieldId, string status);
+
+    [LoggerMessage(EventId = 118444, Level = LogLevel.Warning, Message = "Form submission {SubmissionId} for {FormId} version {Version} failed during edit application; operation={Operation}.")]
+    public static partial void SubmissionEditFailed(ILogger logger, string formId, int version, Guid submissionId, string operation);
 }

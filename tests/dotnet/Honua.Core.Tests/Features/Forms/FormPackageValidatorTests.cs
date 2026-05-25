@@ -371,6 +371,72 @@ public sealed class FormPackageValidatorTests
     }
 
     [UnitTest]
+    public async Task ValidateSubmission_DeleteWithRequiredAttachmentField_DoesNotRequireAttachment()
+    {
+        var validator = CreateValidator();
+        var packageVersion = new FormPackageVersion
+        {
+            FormId = "inspection",
+            Version = 1,
+            Status = FormPackageStatus.Published,
+            Package = CreatePackage(
+                includeAttachment: true,
+                allowedOperations: [FormSubmissionOperations.Delete],
+                attachmentFieldRequired: true,
+                fieldAttachmentRequired: true)
+        };
+        var request = CreateSubmissionRequest(
+            FormSubmissionOperations.Delete,
+            targetFeatureId: 101,
+            values: new Dictionary<string, JsonElement>(),
+            includeGeometry: false);
+
+        var result = await validator.ValidateSubmissionAsync(packageVersion, request);
+
+        result.IsValid.Should().BeTrue();
+        result.Issues.Select(static issue => issue.Code).Should().NotContain("requiredAttachmentMissing");
+    }
+
+    [UnitTest]
+    public async Task ValidateSubmission_DeleteWithAttachmentDescriptor_ReturnsAttachmentPolicyIssue()
+    {
+        var validator = CreateValidator();
+        var packageVersion = new FormPackageVersion
+        {
+            FormId = "inspection",
+            Version = 1,
+            Status = FormPackageStatus.Published,
+            Package = CreatePackage(
+                includeAttachment: true,
+                allowedOperations: [FormSubmissionOperations.Delete],
+                attachmentFieldRequired: false,
+                fieldAttachmentRequired: false)
+        };
+        var request = CreateSubmissionRequest(
+            FormSubmissionOperations.Delete,
+            targetFeatureId: 101,
+            values: new Dictionary<string, JsonElement>(),
+            includeGeometry: false,
+            attachments:
+            [
+                new FormSubmissionAttachmentDescriptor
+                {
+                    ClientAttachmentId = "photo-1",
+                    FieldId = "photo",
+                    PartName = "photo-1",
+                    ContentType = "image/png",
+                    SizeBytes = 100
+                }
+            ]);
+
+        var result = await validator.ValidateSubmissionAsync(packageVersion, request);
+
+        result.IsValid.Should().BeFalse();
+        result.Issues.Select(static issue => issue.Code).Should().Contain("attachmentsNotAllowedForDelete");
+        result.Issues.Select(static issue => issue.Code).Should().NotContain("requiredAttachmentMissing");
+    }
+
+    [UnitTest]
     public async Task ValidateForPublish_WithInvalidFieldAttachmentPolicy_ReturnsExpectedIssueCodes()
     {
         var validator = CreateValidator();
