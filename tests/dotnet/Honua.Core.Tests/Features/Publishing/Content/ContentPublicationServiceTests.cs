@@ -66,6 +66,24 @@ public sealed class ContentPublicationServiceTests
     }
 
     [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task Publish_WithUndefinedPolicyVisibility_ThrowsValidation()
+    {
+        var (service, _) = CreateService();
+        var request = new PublishContentRequest
+        {
+            Kind = ContentPublicationKind.Map,
+            RouteSlug = "map",
+            Policy = new ContentPublicationPolicy { Visibility = (ContentPublicationVisibility)999 },
+        };
+
+        var act = () => service.PublishAsync(request, Actor, null);
+
+        await act.Should().ThrowAsync<ContentPublicationValidationException>()
+            .WithMessage("*visibility*");
+    }
+
+    [UnitTest]
     [Operation(Operations.Update)]
     public async Task Republish_AllocatesNextRevision_MovesPointer_AndKeepsOldVersionImmutable()
     {
@@ -191,6 +209,22 @@ public sealed class ContentPublicationServiceTests
 
     [UnitTest]
     [Operation(Operations.Update)]
+    public async Task UpdatePolicy_WithUndefinedVisibility_ThrowsValidation()
+    {
+        var (service, _) = CreateService();
+        var published = await service.PublishAsync(new PublishContentRequest { Kind = ContentPublicationKind.Map, RouteSlug = "map" }, Actor, null);
+
+        var act = () => service.UpdatePolicyAsync(published.Route.PublicationId, new UpdatePublicationPolicyRequest
+        {
+            Visibility = (ContentPublicationVisibility)999,
+        }, Actor, null);
+
+        await act.Should().ThrowAsync<ContentPublicationValidationException>()
+            .WithMessage("*visibility*");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Update)]
     public async Task UpdatePolicy_RevokePublicLink_MarksRevoked()
     {
         var (service, _) = CreateService();
@@ -223,6 +257,24 @@ public sealed class ContentPublicationServiceTests
 
         var act = () => service.PublishAsync(request, Actor, null);
         (await act.Should().ThrowAsync<ContentPublicationDependencyException>()).Which.StatusCode.Should().Be(409);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task Publish_WithUndefinedDependencyKind_ThrowsValidation()
+    {
+        var (service, _) = CreateService();
+        var request = new PublishContentRequest
+        {
+            Kind = ContentPublicationKind.Map,
+            RouteSlug = "map",
+            Dependencies = [new ContentPublicationDependencyRef { Kind = (ContentPublicationDependencyKind)999, RefId = "dep" }],
+        };
+
+        var act = () => service.PublishAsync(request, Actor, null);
+
+        await act.Should().ThrowAsync<ContentPublicationValidationException>()
+            .WithMessage("*dependency.kind*");
     }
 
     [UnitTest]

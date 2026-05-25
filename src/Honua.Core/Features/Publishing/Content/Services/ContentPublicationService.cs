@@ -324,6 +324,11 @@ public sealed class ContentPublicationService : IContentPublicationService
         var embed = request.Embed ?? current.Embed;
         var service = request.Service ?? current.Service;
         var visibility = request.Visibility ?? current.Visibility;
+        if (request.Visibility.HasValue)
+        {
+            ValidateVisibility(request.Visibility.Value);
+        }
+
         var access = request.Access ?? current.Access;
 
         // Public-link mutations operate on a copy of the existing link list.
@@ -444,7 +449,7 @@ public sealed class ContentPublicationService : IContentPublicationService
 
     private static void ValidateKind(ContentPublicationKind kind)
     {
-        if (!Enum.IsDefined(kind))
+        if (!IsDefinedKind(kind))
         {
             throw new ContentPublicationValidationException("kind is not a defined content publication kind.");
         }
@@ -452,9 +457,24 @@ public sealed class ContentPublicationService : IContentPublicationService
 
     private static void ValidatePolicyShape(ContentPublicationPolicy? policy)
     {
-        if (policy?.Embed is { } embed)
+        if (policy is null)
+        {
+            return;
+        }
+
+        ValidateVisibility(policy.Visibility);
+
+        if (policy.Embed is { } embed)
         {
             ValidateEmbedPolicy(embed);
+        }
+    }
+
+    private static void ValidateVisibility(ContentPublicationVisibility visibility)
+    {
+        if (!IsDefinedVisibility(visibility))
+        {
+            throw new ContentPublicationValidationException("visibility is not a defined content publication visibility scope.");
         }
     }
 
@@ -527,6 +547,8 @@ public sealed class ContentPublicationService : IContentPublicationService
         MetadataV2GraphSnapshot? snapshot = null;
         foreach (var dependency in dependencies)
         {
+            ValidateDependencyKind(dependency.Kind);
+
             if (string.IsNullOrWhiteSpace(dependency.RefId))
             {
                 throw new ContentPublicationValidationException("Each dependency must carry a non-empty refId.");
@@ -577,6 +599,14 @@ public sealed class ContentPublicationService : IContentPublicationService
         }
     }
 
+    private static void ValidateDependencyKind(ContentPublicationDependencyKind kind)
+    {
+        if (!IsDefinedDependencyKind(kind))
+        {
+            throw new ContentPublicationValidationException("dependency.kind is not a defined content publication dependency kind.");
+        }
+    }
+
     private static bool GraphContains(MetadataV2GraphSnapshot snapshot, ContentPublicationDependencyKind kind, string refId)
         => kind switch
         {
@@ -585,6 +615,30 @@ public sealed class ContentPublicationService : IContentPublicationService
             ContentPublicationDependencyKind.Publication => snapshot.Index.PublicationsById.ContainsKey(refId),
             _ => true,
         };
+
+    private static bool IsDefinedKind(ContentPublicationKind kind)
+        => kind is ContentPublicationKind.Map
+            or ContentPublicationKind.Dashboard
+            or ContentPublicationKind.Report
+            or ContentPublicationKind.GeneratedApp;
+
+    private static bool IsDefinedVisibility(ContentPublicationVisibility visibility)
+        => visibility is ContentPublicationVisibility.Private
+            or ContentPublicationVisibility.Organization
+            or ContentPublicationVisibility.Team
+            or ContentPublicationVisibility.Public;
+
+    private static bool IsDefinedDependencyKind(ContentPublicationDependencyKind kind)
+        => kind is ContentPublicationDependencyKind.Service
+            or ContentPublicationDependencyKind.Resource
+            or ContentPublicationDependencyKind.Publication
+            or ContentPublicationDependencyKind.PublishedService
+            or ContentPublicationDependencyKind.Deployment
+            or ContentPublicationDependencyKind.MapPackage
+            or ContentPublicationDependencyKind.AppPackage
+            or ContentPublicationDependencyKind.ResultPackage
+            or ContentPublicationDependencyKind.Report
+            or ContentPublicationDependencyKind.ProvenanceItem;
 
     private static ContentPublicationEvent BuildEvent(
         string publicationId,

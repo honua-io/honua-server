@@ -96,6 +96,28 @@ public sealed class ContentPublicationEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/console/publications")]
+    public async Task Publish_WithNumericUndefinedPolicyVisibility_ReturnsBadRequest()
+    {
+        const string body = """
+            {
+              "kind": "map",
+              "routeSlug": "Bad Visibility",
+              "policy": {
+                "visibility": 999
+              }
+            }
+            """;
+
+        var response = await _client.PostAsync("/api/v1/console/publications", JsonContent(body));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var payload = await response.Content.ReadAsStringAsync();
+        payload.Should().Contain("visibility");
+        AssertNoSensitiveLeak(payload);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/console/publications/{publicationId}")]
     public async Task Get_WithMalformedPublicationId_ReturnsBadRequestWithoutLeakingInternals()
     {
@@ -179,6 +201,22 @@ public sealed class ContentPublicationEndpointsTests : IAsyncLifetime
         var link = result.Route.Policy.PublicLink.Links.Should().ContainSingle().Subject;
         link.TokenHash.Should().NotBeNullOrEmpty();
         link.TokenHash.Should().NotContain("raw-secret-token");
+    }
+
+    [IntegrationTest]
+    [Endpoint("PATCH /api/v1/console/publications/{publicationId}/policy")]
+    public async Task UpdatePolicy_WithNumericUndefinedVisibility_ReturnsBadRequest()
+    {
+        var detail = await PublishAsync("Patch Bad Visibility", ContentPublicationKind.Map);
+
+        var response = await _client.PatchAsync(
+            $"/api/v1/console/publications/{detail.Route.PublicationId}/policy",
+            JsonContent("""{ "visibility": 999 }"""));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var payload = await response.Content.ReadAsStringAsync();
+        payload.Should().Contain("visibility");
+        AssertNoSensitiveLeak(payload);
     }
 
     private async Task<ContentPublicationDetail> PublishAsync(string slug, ContentPublicationKind kind, string? payload = null)
