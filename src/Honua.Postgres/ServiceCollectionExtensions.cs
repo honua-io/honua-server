@@ -314,6 +314,20 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<Core.Features.GeoETL.Abstractions.IFeatureSinkWriter,
             Features.GeoETL.Services.PostgresFeatureSinkWriter>();
 
+        // GeoETL managed file source connectors that depend on this project's managed
+        // readers (NetTopologySuite.IO.Esri for shapefiles, Microsoft.Data.Sqlite +
+        // NetTopologySuite.IO.GeoPackage for GeoPackage). They live here — not in
+        // Honua.Core alongside the GeoJSON/CSV connectors — because those managed reader
+        // packages are referenced by Honua.Postgres. Both are GDAL-free Phase 1 managed
+        // connectors. Stateless, so registered as enumerable singletons; the component
+        // factory collects them together with the Core connectors.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<
+            Core.Features.GeoETL.Abstractions.IPipelineSourceConnector,
+            Features.GeoETL.Services.Connectors.ShapefileSourceConnector>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<
+            Core.Features.GeoETL.Abstractions.IPipelineSourceConnector,
+            Features.GeoETL.Services.Connectors.GeoPackageSourceConnector>());
+
         // GeoETL durable definition / execution stores (#361 Child Ticket A). Registered
         // here so they precede the in-memory baseline stores that AddGeoEtl falls back to
         // via TryAdd when no PostgreSQL provider is wired. Persists definitions and
