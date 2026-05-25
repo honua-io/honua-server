@@ -10245,7 +10245,6 @@
       },
       "PackageReviewRequest": {
         "type": "object",
-        "required": ["packageFamily"],
         "properties": {
           "contractVersion": {
             "type": "string",

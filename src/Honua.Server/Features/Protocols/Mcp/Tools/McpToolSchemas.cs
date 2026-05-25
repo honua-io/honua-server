@@ -70,7 +70,6 @@ internal static class McpToolSchemas
     private const string PackageReviewArgumentSchemaJson = """
         {
           "type": "object",
-          "required": ["packageFamily"],
           "properties": {
             "contractVersion": {
               "type": "string",
@@ -78,7 +77,7 @@ internal static class McpToolSchemas
             },
             "packageFamily": {
               "type": "string",
-              "enum": ["query", "analysis_plan", "map_package", "dashboard_report", "form", "app_package", "workflow", "gp", "etl"]
+              "description": "Supported values are query, analysis_plan, map_package, dashboard_report, form, app_package, workflow, gp, and etl. Missing or unknown values are returned as canonical missing_package_family or unsupported_package_family findings rather than rejected by the schema."
             },
             "packageId": { "type": "string" },
             "requestedAction": { "type": "string" },
@@ -111,7 +110,12 @@ internal static class McpToolSchemas
     public static readonly JsonElement PlanAnalysisArgumentSchema = Parse(PlanAnalysisArgumentSchemaJson);
 
     /// <summary>
-    /// Schema for the package-review tools.
+    /// Schema for the package-review tools. The schema intentionally does not
+    /// mark <c>packageFamily</c> as required or enum-limit it: the service
+    /// reviews missing and unknown families and reports them as structured
+    /// <c>missing_package_family</c>/<c>unsupported_package_family</c> findings,
+    /// so a stricter published schema would let schema-driven clients block the
+    /// very inputs these tools are meant to inspect.
     /// </summary>
     public static readonly JsonElement PackageReviewArgumentSchema = Parse(PackageReviewArgumentSchemaJson);
 

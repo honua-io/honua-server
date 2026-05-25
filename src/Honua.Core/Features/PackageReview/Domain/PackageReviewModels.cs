@@ -41,9 +41,11 @@ public sealed class PackageReviewRequest
     public JsonElement? PackagePayload { get; init; }
 
     /// <summary>
-    /// Shared validation requirements used by all package families.
+    /// Shared validation requirements used by all package families. An explicit
+    /// <c>null</c> in the payload is normalized to an empty requirement set so
+    /// the service returns deterministic findings instead of failing.
     /// </summary>
-    public PackageReviewRequirements Requirements { get; init; } = new();
+    public PackageReviewRequirements Requirements { get; init => field = value ?? new(); } = new();
 
     /// <summary>
     /// Caller-supplied estimate from an upstream planner, when available.
@@ -61,9 +63,11 @@ public sealed class PackageReviewRequest
     public bool IncludePassFindings { get; init; }
 
     /// <summary>
-    /// Safe caller-visible resource references associated with the review.
+    /// Safe caller-visible resource references associated with the review. An
+    /// explicit <c>null</c> in the payload is normalized to an empty map so the
+    /// service returns deterministic findings instead of failing.
     /// </summary>
-    public IReadOnlyDictionary<string, string> ResourceRefs { get; init; } =
+    public IReadOnlyDictionary<string, string> ResourceRefs { get; init => field = value ?? new Dictionary<string, string>(StringComparer.Ordinal); } =
         new Dictionary<string, string>(StringComparer.Ordinal);
 
     /// <summary>

@@ -252,6 +252,27 @@ public sealed class McpTaxonomyAlignmentTests
             .GetProperty("minItems").GetInt32().Should().Be(1);
     }
 
+    [UnitTest]
+    public void PackageReviewSchema_DoesNotRequireOrEnumLimitPackageFamily_SoServiceReportsRequestShapeFindings()
+    {
+        // The package-review service intentionally reviews missing and unknown
+        // families and returns canonical missing_package_family /
+        // unsupported_package_family findings. Marking packageFamily required or
+        // enum-limiting it in the published schema would let strict JSON-schema
+        // clients block the very inputs the tools are meant to inspect.
+        var schema = McpToolSchemas.PackageReviewArgumentSchema;
+
+        if (schema.TryGetProperty("required", out var required))
+        {
+            required.EnumerateArray()
+                .Select(e => e.GetString())
+                .Should().NotContain("packageFamily");
+        }
+
+        schema.GetProperty("properties").GetProperty("packageFamily")
+            .TryGetProperty("enum", out _).Should().BeFalse();
+    }
+
     private static string[] ExtractEnumValues(JsonElement root, params string[] path)
     {
         var current = root;

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Features.PackageReview;
 using Honua.Core.Features.PackageReview.Abstractions;
 using Honua.Core.Features.PackageReview.Domain;
@@ -301,6 +302,28 @@ public sealed class PackageReviewServiceTests
         response.Status.Should().Be(PackageReviewStatus.Warning);
         response.Estimate.Should().BeSameAs(estimate);
         response.Findings.Should().ContainSingle(f => f.Code == "expensive_preview_estimate");
+    }
+
+    [Fact]
+    public async Task ReviewAsync_WithExplicitlyNullRequirementsAndResourceRefs_ReturnsDeterministicResponse()
+    {
+        // Loosely typed clients can send "requirements": null and
+        // "resourceRefs": null. The request model normalizes both to empty so
+        // the service returns a deterministic review instead of an internal
+        // error.
+        var request = JsonSerializer.Deserialize(
+            """{ "packageFamily": "query", "requirements": null, "resourceRefs": null }""",
+            PackageReviewCoreJsonContext.Default.PackageReviewRequest)!;
+
+        request.Requirements.Should().NotBeNull();
+        request.ResourceRefs.Should().NotBeNull();
+
+        var service = CreateService();
+        var response = await service.ReviewAsync(request, CreateContext());
+
+        response.Status.Should().Be(PackageReviewStatus.Ready);
+        response.PackageFamily.Should().Be(PackageReviewFamilies.Query);
+        response.ReviewId.Should().NotBeNullOrEmpty();
     }
 
     private static IPackageReviewService CreateService()
