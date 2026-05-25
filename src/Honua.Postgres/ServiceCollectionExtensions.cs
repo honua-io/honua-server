@@ -189,6 +189,13 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
+        // Register Postgres-backed content publication registry (#1183). Durable storage
+        // wins over the in-memory default registered by AddContentPublishingServices.
+        services.AddScoped<Honua.Core.Features.Publishing.Content.Abstractions.IContentPublicationStore>(serviceProvider =>
+            new Features.Publishing.PostgresContentPublicationStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+
         // Register layer style catalog for MapLibre/GeoServices styling
         services.AddScoped<ILayerStyleCatalog>(serviceProvider =>
             new PostgresLayerStyleCatalog(
