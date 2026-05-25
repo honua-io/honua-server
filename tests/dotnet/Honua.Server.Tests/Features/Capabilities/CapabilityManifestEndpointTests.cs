@@ -34,8 +34,12 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
 
     public CapabilityManifestEndpointTests()
     {
-        _fixture = new WebAppFixture()
-            .WithTestLicense(HonuaEdition.Pro)
+        _fixture = CreateManifestFixture();
+    }
+
+    private static WebAppFixture CreateManifestFixture(string[]? entitlements = null)
+        => new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Pro, entitlements: entitlements)
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IMetadataV2EnvironmentSnapshotReader>();
@@ -53,12 +57,17 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
                     {
                         ["MultiTenancy:DefaultTenantId"] = "tenant-manifest",
                         ["Limits:MaxUploadSizeBytes"] = "123456",
+                        ["Limits:Analytics:MaxDbscanEpsMeters"] = "12345.5",
+                        ["Limits:Analytics:MaxKMeansK"] = "45",
+                        ["Limits:Analytics:MaxBufferDistanceMeters"] = "23456.5",
+                        ["Limits:Analytics:MinDensityCellSizeMeters"] = "12.5",
+                        ["Limits:Analytics:MaxDensityCellSizeMeters"] = "34567.5",
+                        ["Limits:Analytics:MaxDWithinDistanceMeters"] = "45678.5",
                         ["FeatureStreaming:MaxConcurrentSessions"] = "12",
                         ["Grpc:StreamBatchSize"] = "42"
                     });
                 });
             });
-    }
 
     public async Task InitializeAsync()
     {
@@ -146,6 +155,47 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             .Should().Be(12);
         root.GetProperty("limits").GetProperty("streaming").GetProperty("grpcStreamBatchSize").GetInt32()
             .Should().Be(42);
+
+        var analysis = root.GetProperty("limits").GetProperty("analysis");
+        analysis.GetProperty("maxDbscanEpsMeters").GetDouble().Should().Be(12345.5);
+        analysis.GetProperty("maxKMeansK").GetInt32().Should().Be(45);
+        analysis.GetProperty("maxBufferDistanceMeters").GetDouble().Should().Be(23456.5);
+        analysis.GetProperty("minDensityCellSizeMeters").GetDouble().Should().Be(12.5);
+        analysis.GetProperty("maxDensityCellSizeMeters").GetDouble().Should().Be(34567.5);
+        analysis.GetProperty("maxDWithinDistanceMeters").GetDouble().Should().Be(45678.5);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_WithPartialSpatialAnalysisEntitlements_MarksAnalysisUnavailable()
+    {
+        var fixture = CreateManifestFixture(entitlements: ["analytics.spatial-join"]);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var document = await ReadDocumentAsync(response);
+            var analysis = GetCapability(document.RootElement, "analysis.spatial");
+            analysis.GetProperty("available").GetBoolean().Should().BeFalse();
+            analysis.GetProperty("reasonCode").GetString().Should().Be("entitlement-inactive");
+            analysis.TryGetProperty("entitlementKey", out _).Should().BeFalse();
+            analysis.GetProperty("entitlementKeys").EnumerateArray()
+                .Select(item => item.GetString())
+                .Should().Equal(
+                    "analytics.clustering",
+                    "analytics.spatial-join",
+                    "analytics.buffer-aggregate",
+                    "analytics.density");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]

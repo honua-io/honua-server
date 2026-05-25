@@ -117,6 +117,8 @@ internal sealed record CapabilityManifestCapability
 
     public string? EntitlementKey { get; init; }
 
+    public string[]? EntitlementKeys { get; init; }
+
     public string? MinimumEdition { get; init; }
 
     public string? MessageKey { get; init; }
@@ -197,6 +199,24 @@ internal sealed record CapabilityManifestQueryLimits
 
 internal sealed record CapabilityManifestAnalysisLimits
 {
+    public required int MaxInputFeatures { get; init; }
+
+    public required int MaxClusters { get; init; }
+
+    public required double MaxDbscanEpsMeters { get; init; }
+
+    public required int MaxKMeansK { get; init; }
+
+    public required double MaxBufferDistanceMeters { get; init; }
+
+    public required double MinDensityCellSizeMeters { get; init; }
+
+    public required double MaxDensityCellSizeMeters { get; init; }
+
+    public required int MaxDensityCells { get; init; }
+
+    public required double MaxDWithinDistanceMeters { get; init; }
+
     public required int MaxH3CellsPerQuery { get; init; }
 
     public required int MaxSpatialOperations { get; init; }

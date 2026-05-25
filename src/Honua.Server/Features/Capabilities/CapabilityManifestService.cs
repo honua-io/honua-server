@@ -66,6 +66,14 @@ internal sealed class CapabilityManifestService(
     private const string AuthorizationNotice =
         "Manifest availability is informational only; operation endpoints remain the source of truth for authorization, tenant, environment, license, and resource checks.";
 
+    private static readonly string[] SpatialAnalyticsEntitlementKeys =
+    [
+        "analytics.clustering",
+        "analytics.spatial-join",
+        "analytics.buffer-aggregate",
+        "analytics.density"
+    ];
+
     public async Task<CapabilityManifestDocument> GetManifestAsync(
         CapabilityManifestRequest request,
         CancellationToken cancellationToken = default)
@@ -310,7 +318,12 @@ internal sealed class CapabilityManifestService(
 
             Capability("preview.file-import", "preview", context, entitlementKey: "import.file", policyCapability: "metadata.write"),
             Capability("query.features", "query", context),
-            Capability("analysis.spatial", "analysis", context, entitlementKey: "analytics.spatial-join", policyCapability: "features.query"),
+            Capability(
+                "analysis.spatial",
+                "analysis",
+                context,
+                entitlementKeys: SpatialAnalyticsEntitlementKeys,
+                policyCapability: "features.query"),
             Capability("publication.metadata-release", "publication", context, policyCapability: "catalog.publish", requiresEnvironment: true),
             Capability("upload.file", "upload", context, entitlementKey: "import.file", policyCapability: "metadata.write"),
             Capability("edit.features", "edit", context, policyCapability: "features.edit")
@@ -324,6 +337,7 @@ internal sealed class CapabilityManifestService(
         bool supported = true,
         bool configured = true,
         string? entitlementKey = null,
+        string[]? entitlementKeys = null,
         string? policyCapability = null,
         bool requiresAuthentication = false,
         bool requiresEnvironment = false,
@@ -331,7 +345,8 @@ internal sealed class CapabilityManifestService(
     {
         var available = true;
         string? reasonCode = null;
-        string? minimumEdition = null;
+        var requiredEntitlementKeys = ResolveRequiredEntitlementKeys(entitlementKey, entitlementKeys);
+        var minimumEdition = ResolveMinimumEdition(requiredEntitlementKeys);
 
         if (!supported)
         {
@@ -364,21 +379,18 @@ internal sealed class CapabilityManifestService(
             reasonCode = CapabilityReasonCodes.InsufficientPolicy;
         }
 
-        if (available && entitlementKey is not null)
+        if (available && requiredEntitlementKeys.Length > 0)
         {
-            var decision = entitlementService.CheckEntitlement(entitlementKey);
-            minimumEdition = decision.RequiredEdition?.ToString();
-            if (!decision.IsActive)
+            foreach (var requiredEntitlementKey in requiredEntitlementKeys)
             {
-                available = false;
-                reasonCode = ResolveEntitlementReasonCode(context.LicenseSnapshot, decision);
+                var decision = entitlementService.CheckEntitlement(requiredEntitlementKey);
+                if (!decision.IsActive)
+                {
+                    available = false;
+                    reasonCode = ResolveEntitlementReasonCode(context.LicenseSnapshot, decision);
+                    break;
+                }
             }
-        }
-        else if (entitlementKey is not null)
-        {
-            var feature = FeatureCatalog.All.FirstOrDefault(item =>
-                string.Equals(item.Key, entitlementKey, StringComparison.OrdinalIgnoreCase));
-            minimumEdition = feature?.MinimumEdition.ToString();
         }
 
         if (available && policyCapability is not null && !HasPolicyCapability(context, policyCapability))
@@ -395,6 +407,7 @@ internal sealed class CapabilityManifestService(
             Available = available,
             ReasonCode = available ? null : reasonCode,
             EntitlementKey = entitlementKey,
+            EntitlementKeys = entitlementKeys is { Length: > 0 } ? entitlementKeys : null,
             MinimumEdition = minimumEdition,
             MessageKey = available
                 ? $"capabilities.{id}.available"
@@ -454,6 +467,7 @@ internal sealed class CapabilityManifestService(
         var uploads = fileUploadOptions.Value;
         var uploadSecurity = fileUploadSecurityOptions.Value;
         var grpc = grpcOptions.Value;
+        var analyticsLimits = limits.Analytics;
 
         return new CapabilityManifestLimits
         {
@@ -476,6 +490,15 @@ internal sealed class CapabilityManifestService(
             },
             Analysis = new CapabilityManifestAnalysisLimits
             {
+                MaxInputFeatures = analyticsLimits.MaxInputFeatures,
+                MaxClusters = analyticsLimits.MaxClusters,
+                MaxDbscanEpsMeters = analyticsLimits.MaxDbscanEpsMeters,
+                MaxKMeansK = analyticsLimits.MaxKMeansK,
+                MaxBufferDistanceMeters = analyticsLimits.MaxBufferDistanceMeters,
+                MinDensityCellSizeMeters = analyticsLimits.MinDensityCellSizeMeters,
+                MaxDensityCellSizeMeters = analyticsLimits.MaxDensityCellSizeMeters,
+                MaxDensityCells = analyticsLimits.MaxDensityCells,
+                MaxDWithinDistanceMeters = analyticsLimits.MaxDWithinDistanceMeters,
                 MaxH3CellsPerQuery = limits.Query.MaxH3CellsPerQuery,
                 MaxSpatialOperations = limits.Query.MaxSpatialOperations,
                 MaxJoins = limits.Query.MaxJoins
@@ -676,6 +699,37 @@ internal sealed class CapabilityManifestService(
         }
 
         return context.CallerCapabilities.Contains(capability);
+    }
+
+    private static string[] ResolveRequiredEntitlementKeys(string? entitlementKey, string[]? entitlementKeys)
+    {
+        if (entitlementKeys is { Length: > 0 })
+        {
+            return entitlementKeys;
+        }
+
+        return entitlementKey is null ? [] : [entitlementKey];
+    }
+
+    private static string? ResolveMinimumEdition(string[] entitlementKeys)
+    {
+        HonuaEdition? minimumEdition = null;
+        foreach (var entitlementKey in entitlementKeys)
+        {
+            var feature = FeatureCatalog.All.FirstOrDefault(item =>
+                string.Equals(item.Key, entitlementKey, StringComparison.OrdinalIgnoreCase));
+            if (feature is null)
+            {
+                continue;
+            }
+
+            if (!minimumEdition.HasValue || feature.MinimumEdition > minimumEdition.Value)
+            {
+                minimumEdition = feature.MinimumEdition;
+            }
+        }
+
+        return minimumEdition?.ToString();
     }
 
     private static string ResolveEntitlementReasonCode(

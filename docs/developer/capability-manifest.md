@@ -35,7 +35,7 @@ The response has `schemaVersion=honua.capability_manifest.v1` and includes:
 | `server` | Server/API/metadata schema version and deployment environment. |
 | `environment` | Requested environment state, current revision, and availability reason when unavailable. |
 | `packages` | Supported metadata, release, GitOps, map, app, storage, and publication package families. |
-| `capabilities` | Flat capability records with `id`, `category`, `supported`, `available`, `reasonCode`, entitlement key, minimum edition, and UI message key. |
+| `capabilities` | Flat capability records with `id`, `category`, `supported`, `available`, `reasonCode`, entitlement key(s), minimum edition, and UI message key. |
 | `transports` | REST, GeoServices, OGC HTTP, OData, STAC, tiles, gRPC, gRPC-Web, native gRPC, MCP, QGIS, and mTLS transport availability. |
 | `limits` | Runtime limits for previews, query, analysis, publication, jobs, uploads, streaming, edits, geometry, and attachments. |
 | `policies` | License/entitlement state, caller capability strings, and the non-authorizing manifest notice. |
@@ -145,13 +145,16 @@ Each capability record uses:
 | `supported` | Whether this server build has the backing implementation registered. |
 | `available` | Whether the capability is usable for this request after configuration, environment, workspace, authentication, license, entitlement, and policy checks. |
 | `reasonCode` | Present only when unavailable. Use this for deterministic control state. |
-| `entitlementKey` | Present for edition-gated capabilities. |
+| `entitlementKey` | Present for edition-gated capabilities with a single runtime entitlement gate. |
+| `entitlementKeys` | Present for aggregate capabilities that require multiple runtime entitlements. |
 | `minimumEdition` | Present when an entitlement has a known minimum edition. |
 | `messageKey` | Stable UI copy key. Available capabilities use `capabilities.{id}.available`; unavailable capabilities use `capabilities.{id}.{reasonCode}`. |
 
 Transport ids under `transports.items` are `rest-http`, `geoservices-rest`, `ogc-http`, `odata`, `stac`, `tiles`, `grpc`, `grpc-web`, `native-grpc`, `mcp`, `qgis`, and `mtls`. Transport message keys use the `transports.{id}.*` prefix. The top-level `transports.mtlsMode` value is one of `disabled`, `optional`, `required-for-native`, `required-for-admin`, or `required-for-environment`.
 
 Package families under `packages.families` are `metadata-v2-graph`, `metadata-release-package`, `gitops-metadata-release-manifest`, `map-package`, and `app-package`. `packages.storageFamilies` and `packages.publicationFamilies` are generated from the Metadata v2 enum values so clients can render storage/publication choices without duplicating server-side lists.
+
+`analysis.spatial` is an aggregate spatial analytics capability. It requires `features.query` policy and all four endpoint entitlements: `analytics.clustering`, `analytics.spatial-join`, `analytics.buffer-aggregate`, and `analytics.density`. If any required analytics entitlement is inactive, the aggregate capability is unavailable and the individual entitlement states remain visible under `policies.entitlements`.
 
 Reason codes are stable client-facing strings:
 
@@ -174,3 +177,22 @@ Clients should treat `supported=false` as a reason to hide or explain controls t
 SDKs should expose the raw manifest plus helper lookups by `capabilities[].id` and `transports.items[].id`. Console can use `messageKey` for copy selection and `reasonCode` for deterministic control state. MCP, QGIS, and native hosts should read the same document rather than maintaining separate feature matrices.
 
 The manifest is generated per request. Do not persist it as an authorization cache; refresh it when tenant, workspace, environment, user, license, or server configuration changes.
+
+## Analysis Limits
+
+The `limits.analysis` block mirrors the spatial analytics endpoint validators. Meter-based fields are expressed in meters after any endpoint-specific unit conversion:
+
+| Field | Meaning |
+|---|---|
+| `maxInputFeatures` | Maximum input feature count processed by analytics queries. |
+| `maxClusters` | Maximum cluster count returned by clustering queries. |
+| `maxDbscanEpsMeters` | Maximum DBSCAN epsilon distance. |
+| `maxKMeansK` | Maximum K-Means partition count. |
+| `maxBufferDistanceMeters` | Maximum buffer distance after unit conversion. |
+| `minDensityCellSizeMeters` | Minimum density cell size. |
+| `maxDensityCellSizeMeters` | Maximum density cell size. |
+| `maxDensityCells` | Maximum density cell count returned by density queries. |
+| `maxDWithinDistanceMeters` | Maximum spatial-join `dwithin` distance. |
+| `maxH3CellsPerQuery` | Maximum H3 cells per query for H3-enabled query surfaces. |
+| `maxSpatialOperations` | Maximum spatial operations allowed in query filters. |
+| `maxJoins` | Maximum joins allowed by the shared query limit policy. |
