@@ -217,6 +217,17 @@ public static class EndpointRegistry
         new("GET", "/api/v1/console/workflow-publications"),
         new("POST", "/api/v1/console/workflow-publications/{publicationId}/runs"),
 
+        // v1 Console open-data publication endpoints (#1214)
+        new("GET", "/api/v1/admin/open-data/{itemId}/eligibility"),
+        new("GET", "/api/v1/admin/open-data/{itemId}"),
+        new("PUT", "/api/v1/admin/open-data/{itemId}"),
+        new("GET", "/api/v1/admin/open-data/dcat/status"),
+        new("POST", "/api/v1/admin/open-data/dcat/validate"),
+        new("POST", "/api/v1/admin/stac/publications"),
+        new("GET", "/api/v1/admin/stac/publications/{collectionId}"),
+        new("PUT", "/api/v1/admin/stac/publications/{collectionId}"),
+        new("DELETE", "/api/v1/admin/stac/publications/{collectionId}"),
+
         // v1 Studio package lifecycle endpoints (#1180)
         new("GET", "/api/v1/studio/package-families"),
         new("POST", "/api/v1/studio/package-drafts"),
@@ -857,6 +868,11 @@ public static class EndpointRegistry
         new("GET", "/stac/collections/{collectionId}/items/{itemId}"),
         new("GET", "/stac/search"),
         new("POST", "/stac/search"),
+
+        // Open-data/DCAT publication endpoints (#1214)
+        new("GET", "/open-data"),
+        new("GET", "/open-data/{itemId}"),
+        new("GET", "/open-data/catalog.json"),
 
         // Hosted samples
         new("GET", "/samples/stac-ops"),

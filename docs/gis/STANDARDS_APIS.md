@@ -9,6 +9,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page highlights t
 | **ArcGIS Pro/Desktop** | FeatureServer / MapServer | `/rest/services/{id}/FeatureServer` or `/rest/services/{id}/MapServer` | Esri compatibility (data + maps) |
 | **QGIS/OpenLayers** | OGC API Features | `/ogc/features` | Open standards |
 | **STAC browsers/catalog tooling** | STAC API | `/stac` | Catalog discovery, item search, extension-aware metadata |
+| **Open-data portals/DCAT tooling** | Open Data / DCAT | `/open-data`, `/open-data/catalog.json` | Public page projection and DCAT-US 3.0-style data.json export |
 | **QGIS/GeoServer clients (legacy OGC)** | WMS 1.1.1/1.3, WFS 1.0/1.1/2.0, WMTS 1.0 | `.../MapServer/WMS`, `/wfs`, or `.../MapServer/WMTS` | Legacy OGC raster map and feature services |
 | **Server-rendered maps (OGC)** | OGC API Maps | `/ogc/maps` | Standards-based rendered map images |
 | **Power BI/Excel** | OData v4 | `/odata` | BI integration |
@@ -157,6 +158,44 @@ The validator uses collection `0` from `tests/seed/client-compat-v1.sql` and the
 - STAC browser and catalog interoperability
 - Extension-awareness review for EO, Projection, and View metadata
 - Cross-checking STAC discovery output against OGC API Features item access
+
+---
+
+## **Open Data / DCAT**
+
+**Best for**: Public open-data pages, DCAT/data.json catalog export, and Console
+Share publication workflows
+
+**Endpoint structure:**
+```
+/open-data
+|-- /
+|-- /{itemId}
+|-- /catalog.json
+```
+
+**Output formats:**
+- Public pages and lists: `json`
+- Catalog export: DCAT/data.json-compatible `json`
+- Item projection includes a Schema.org Dataset JSON-LD preview under
+  `schemaOrg`
+
+**Contract notes:**
+- Anonymous item reads return an empty `404 Not Found` for missing, private,
+  unpublished, ineligible, and validation-blocked items so the public surface
+  does not reveal private item existence.
+- Public visibility requires the Console page to be published, the source item
+  to be public, eligibility to pass, and DCAT validation to have no blocking
+  issues.
+- Console operators manage page metadata, DCAT validation preview, and STAC
+  publication status through the admin endpoints documented in
+  [Console open-data publication API](../contributor/open-data-publication-api.md).
+
+**Typical use cases:**
+- Publishing curated open-data landing pages
+- Feeding DCAT/data.json harvesters
+- Previewing Schema.org Dataset metadata for public pages
+- Coordinating Console STAC collection publish/update/unpublish controls
 
 ---
 

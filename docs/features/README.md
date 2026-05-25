@@ -5,7 +5,7 @@ This map summarizes source-backed runtime capabilities in `honua-server`.
 ## Data Plane
 
 - GeoServices-style FeatureServer query, applyEdits, attachments, related records, MapServer export/identify/legend/find/query, ImageServer raster routes, Geometry Service operations, and NAServer-style routing hooks.
-- OGC API Features, Tiles, Maps, Coverages, Processes, WFS 2.0, WMS 1.3, WMTS 1.0, WCS 2.0.1, OData v4, STAC catalog/search/items, COG registration, vector tiles, Terrain-RGB tiles, and elevation value/profile APIs.
+- OGC API Features, Tiles, Maps, Coverages, Processes, WFS 2.0, WMS 1.3, WMTS 1.0, WCS 2.0.1, OData v4, STAC catalog/search/items, open-data page/DCAT catalog reads, COG registration, vector tiles, Terrain-RGB tiles, and elevation value/profile APIs.
 - Output formats and negotiation for JSON, GeoJSON, PBF, FlatGeobuf, GeoParquet, GeoArrow, and native GeoBuf when supported by the feature store.
 - Server-owned field form packages with versioned drafts, immutable published versions, offline policy discovery, and idempotent published-package submissions through the shared edit and attachment pipelines.
 - File import for GeoJSON, Shapefile, GeoPackage, GPX, KML, WKT, FlatGeobuf, File Geodatabase zips, GeoParquet, and raster import; ArcGIS GeoServices REST layer import and migration inventory; GeoServer REST migration inventory, dry-run validation, and bounded PostGIS-backed catalog apply; and cross-server consume probes.
@@ -15,7 +15,7 @@ This map summarizes source-backed runtime capabilities in `honua-server`.
 
 - Public capability manifest at `/api/v1/capabilities/manifest` for Console, MCP, QGIS plugins, native hosts, and SDK clients to discover package family support, temporal/sync/realtime/jobs/GitOps/transport/mTLS states, runtime limits, policy hints, license/entitlement decisions, environment/workspace availability, and related capability links without probing individual endpoints.
 - Admin APIs for auth, capabilities, version, connections, service settings, layer publishing, Metadata v2 environment inventory, release packages, compatibility prevalidation, metadata resources, styles, SLD import/export, style suggestions, imports, manifests, GitOps watch/drift/approval, deployment control, observability, geofence zones and alert rules, form package authoring/publishing, cache, rate limits, license, identity/OIDC, users, roles, geocoding, tile operations, and scene datasets.
-- Console/Studio APIs for server-owned content metadata, action checks, workflow node registry data, mutable workflow and Studio package drafts, immutable content versions, validation, dry-run and preview plans, publication requests, runs, provenance, reopen, comparison, and rollback for query, analysis, map, dashboard, report, form, app, workflow, GP, and ETL packages.
+- Console/Studio APIs for server-owned content metadata, action checks, open-data/DCAT/STAC publication controls, workflow node registry data, mutable workflow and Studio package drafts, immutable content versions, validation, dry-run and preview plans, publication requests, runs, provenance, reopen, comparison, and rollback for query, analysis, map, dashboard, report, form, app, workflow, GP, and ETL packages.
 - Share admin APIs for scheduled export definitions, append-mostly export run history with nullable Operate `jobRunId` links, destination support badges, and aggregate/per-item Share traffic summaries and time series.
 - Analysis content APIs for saving query/package content versions, previewing saved queries, submitting/rerunning analysis packages, resolving artifact bindings, and exposing safe failed-job diagnostics.
 - Package validation and read-only preview planning for generated plans, publish candidates, workflows, ETL candidates, app packages, and map packages through one shared response contract for admin HTTP, MCP, SDK, CI, and generated-app clients.
@@ -35,6 +35,7 @@ This map summarizes source-backed runtime capabilities in `honua-server`.
 - Terrain/elevation/vector tiles: `src/Honua.Server/Features/Protocols/Terrain/`, `Elevation/`, `Tiles/`
 - Admin/control plane: `src/Honua.Server/Features/Admin/`
 - Capability manifest: `src/Honua.Server/Features/Capabilities/`
+- Open-data publication: `src/Honua.Server/Features/OpenData/`, `src/Honua.Server/Features/Protocols/OpenData/`
 - Console workflow packages: `src/Honua.Server/Features/WorkflowPackages/`
 - Import/migration: `src/Honua.Server/Features/Import/`
 - Forms package/submission contracts: `src/Honua.Core/Features/Forms/Packages/`, `src/Honua.Server/Features/Forms/`, `src/Honua.Postgres/Features/Forms/`

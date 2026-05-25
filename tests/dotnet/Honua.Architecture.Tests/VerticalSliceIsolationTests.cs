@@ -31,6 +31,7 @@ public sealed class VerticalSliceIsolationTests
         "Geoprocessing",
         "Grounding",
         "Orchestration",
+        "OpenData",
         "PackageReview",
         "Protocols",
         "Mobile", // Parent container for mobile sub-feature slices (e.g. FieldCollection sync)

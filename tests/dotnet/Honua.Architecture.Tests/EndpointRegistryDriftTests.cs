@@ -86,6 +86,7 @@ public sealed class EndpointRegistryDriftTests
         "/v1/",
         "/mcp",
         "/wfs",
+        "/open-data",
         "/openapi.json",
     };
 

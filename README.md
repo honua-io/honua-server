@@ -8,7 +8,7 @@
 [![PostGIS](https://img.shields.io/badge/PostGIS-3.5-brightgreen.svg)](https://postgis.net/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue.svg)](https://hub.docker.com/r/honuaio/honua-server)
 
-**Cloud-native geospatial feature server.** Publish, query, edit, and render spatial data through industry-standard protocols — GeoServices REST (catalog + FeatureServer + MapServer + ImageServer + Geometry Service + GPServer), classic OGC WMS/WFS/WCS/WMTS, STAC API, OGC API (Features, Maps, Tiles, Processes), OData v4, vector tiles, and Terrain-RGB elevation tiles — backed by PostGIS, with an embedded DuckDB provider for read-only analytical and reference workloads, a read-only SQL Server provider for `geometry`/`geography` tables, and a read/query-only MySQL/MariaDB provider for serving spatial data already in MySQL 8.0.11+ or MariaDB 10.6+ tables.
+**Cloud-native geospatial feature server.** Publish, query, edit, and render spatial data through industry-standard protocols — GeoServices REST (catalog + FeatureServer + MapServer + ImageServer + Geometry Service + GPServer), classic OGC WMS/WFS/WCS/WMTS, STAC API, DCAT/open-data publication, OGC API (Features, Maps, Tiles, Processes), OData v4, vector tiles, and Terrain-RGB elevation tiles — backed by PostGIS, with an embedded DuckDB provider for read-only analytical and reference workloads, a read-only SQL Server provider for `geometry`/`geography` tables, and a read/query-only MySQL/MariaDB provider for serving spatial data already in MySQL 8.0.11+ or MariaDB 10.6+ tables.
 
 ## Documentation
 
@@ -36,7 +36,7 @@ Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io
 
 ## Why Honua
 
-- **Multi-protocol** — one server speaks GeoServices REST (catalog, FeatureServer, MapServer, ImageServer, Geometry Service, GPServer), classic OGC WMS/WFS/WCS/WMTS compatibility, STAC API, OGC API Features/Maps/Tiles/Processes, OData v4, MVT, and Terrain-RGB. Connect ArcGIS Pro, QGIS, MapLibre, STAC tooling, Power BI, and Excel to the same data.
+- **Multi-protocol** — one server speaks GeoServices REST (catalog, FeatureServer, MapServer, ImageServer, Geometry Service, GPServer), classic OGC WMS/WFS/WCS/WMTS compatibility, STAC API, DCAT/open-data publication, OGC API Features/Maps/Tiles/Processes, OData v4, MVT, and Terrain-RGB. Connect ArcGIS Pro, QGIS, MapLibre, STAC tooling, open-data catalogs, Power BI, and Excel to the same data.
 - **Cloud-native** — container-first, auto-scaling, OpenTelemetry observability, and IaC templates for Kubernetes, ECS, Lambda, Azure Container Apps, and Azure Functions.
 - **No GDAL dependency** — import GeoJSON, Shapefile (zip), GeoPackage, GPX, KML, WKT, FlatGeobuf (`.fgb`), File Geodatabase (`.gdb.zip`), and GeoParquet (`.parquet`, `.geoparquet`) directly. Import from live Esri REST services or public object URLs for migration.
 - **Enterprise data access** — OData v4 with spatial functions (`geo.distance`, `geo.intersects`), `$search`, `$apply`, and `$batch` puts your spatial data in Excel, Power BI, Tableau, and any OData client.
@@ -104,6 +104,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 | GeoServices REST GPServer | `/rest/services/{id}/GPServer` | ArcGIS Pro, Esri geoprocessing SDKs (async submit, job status, cancel; synchronous execute pending) |
 | MCP Operator JSON-RPC | `/mcp` | AI agents, operator automation, MCP clients |
 | STAC API | `/stac`, `/stac/collections`, `/stac/search` | STAC browsers, catalog/search tooling |
+| Open Data / DCAT | `/open-data`, `/open-data/catalog.json` | Public open-data pages, DCAT/data.json catalogs, Console share workflows |
 | OGC API Features | `/ogc/features` | QGIS, OpenLayers, MapLibre, any OGC client |
 | OGC API Maps | `/ogc/maps` | OGC map clients, custom web apps |
 | OGC API Tiles | `/ogc/tiles` | QGIS, OpenLayers, MapLibre |
@@ -153,6 +154,8 @@ The source-backed feature map is maintained in [docs/features/README.md](docs/fe
 **Workflow orchestration** — Declarative multi-step DAG workflows compose canonical analysis plans into chained, scheduled, and dependency-aware runs. Steps wire upstream artifacts to downstream inputs, support per-step retry policies and failure propagation, and execute over the durable job orchestration substrate. A cron scheduler fires time-triggered workflows with replica-safe deduplication. Requires Redis.
 
 **Catalog discovery** — STAC catalog, collections, items, and item-search with extension-aware metadata, collection license defaults, cross-protocol links to OGC API Features, and conditional GET support on catalog metadata routes.
+
+**Open-data publication** — Console-managed open-data page metadata, anonymous `/open-data` reads, DCAT/data.json catalog export, Schema.org Dataset previews, and STAC publication controls are documented in [Console open-data publication API](docs/contributor/open-data-publication-api.md).
 
 **Vector tiles** — PostGIS-native `ST_AsMVT` generation with TileJSON metadata and auto-generated MapLibre styles.
 

@@ -27,6 +27,7 @@ This section is for people **building or extending** Honua (core contributors, a
 
 - [Code Model Optimization](CODE_MODEL_OPTIMIZATION.md) — shared model classes across protocols
 - [Adaptive Sampling](ADAPTIVE_SAMPLING.md) — dynamic trace sampling
+- [Console Open-Data Publication API](open-data-publication-api.md) — ticket #1214 contract for Console-managed open-data page state, DCAT/data.json export, Schema.org preview, and STAC publication controls
 
 ## Testing
 

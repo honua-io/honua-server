@@ -5,6 +5,7 @@
   "parentEpic": "honua-io/honua-server#954",
   "relatedIssues": [
     "honua-io/honua-server#952",
+    "honua-io/honua-server#1214",
     "honua-io/honua-server#1035",
     "honua-io/honua-server#1040",
     "honua-io/honua-server#1043",
@@ -43,6 +44,18 @@
       "sdkParityGate": "SDK Records clients wait for honua-io/honua-server#952 to finalize route, query, pagination, auth, error, and raw-payload behavior."
     },
     {
+      "surface": "open-data-dcat",
+      "primaryEntryIds": [
+        "open-data-dcat-catalog"
+      ],
+      "catalogRole": "Public open-data page, DCAT/data.json catalog, and Schema.org Dataset preview surface for Console-published items.",
+      "sourceOfTruth": "Console open-data page records and Console content items are projected into anonymous public page/catalog read models.",
+      "projectionTargets": [
+        "dcat-3"
+      ],
+      "sdkParityGate": "SDK open-data clients must preserve non-leaking anonymous 404 behavior, cursor paging, documented validation exceptions, and raw DCAT catalog payload access."
+    },
+    {
       "surface": "honua-admin-catalog",
       "primaryEntryIds": [
         "admin-sdk-capabilities",
@@ -52,12 +65,14 @@
         "admin-metadata-manifests",
         "admin-manifest-lifecycle",
         "admin-style-metadata",
-        "admin-scene-dataset-registry"
+        "admin-scene-dataset-registry",
+        "admin-open-data-publication-controls"
       ],
-      "catalogRole": "Operator control-plane discovery, Metadata v2 authoring, manifest workflows, source descriptors, and SDK compatibility handshakes.",
-      "sourceOfTruth": "Admin metadata resources and catalog tables remain the control-plane source; protocol and public catalog surfaces are projections or read models.",
+      "catalogRole": "Operator control-plane discovery, Metadata v2 authoring, manifest workflows, source descriptors, Console publication state, and SDK compatibility handshakes.",
+      "sourceOfTruth": "Admin metadata resources, catalog tables, and server-owned Console publication records remain the control-plane source; protocol and public catalog surfaces are projections or read models.",
       "projectionTargets": [
         "ogc-records",
+        "dcat-3",
         "stac-collection",
         "stac-item",
         "geoservices-rest",
@@ -172,6 +187,34 @@
       "responseKind": "GeoServices-compatible JSON service directory.",
       "paginationFiltering": "No paging. Supports f=json or f=pjson.",
       "testExpectation": "GeoServices catalog endpoint tests and SDK service-list tests verify visible service filtering and FeatureServer/MapServer/ImageServer entries."
+    },
+    {
+      "id": "open-data-dcat-catalog",
+      "title": "Open-data page and DCAT catalog publication",
+      "status": "implemented",
+      "category": "public-catalog-read",
+      "capabilities": [
+        "open-data-page-list",
+        "open-data-page-detail",
+        "dcat-catalog-export",
+        "schema-org-dataset-preview",
+        "anonymous-denial"
+      ],
+      "endpointPatterns": [
+        "GET /open-data",
+        "GET /open-data/{itemId}",
+        "GET /open-data/catalog.json"
+      ],
+      "audience": "Anonymous users, open-data harvesters, Console public page previews, and first-party SDK public catalog clients.",
+      "authPosture": "Anonymous route filtered by Console item visibility, open-data page state, eligibility, and DCAT blocking validation.",
+      "sdkTargets": {
+        "dotnet": "Open-data catalog/page client for Console Share and DCAT harvest workflows",
+        "javascript": "Open-data browser helpers for public page, list, and raw DCAT catalog reads",
+        "python": "Open-data catalog client for page/list/detail and DCAT catalog reads"
+      },
+      "responseKind": "Public page/list JSON and DCAT/data.json-compatible catalog JSON. Public item responses include a Schema.org Dataset preview under schemaOrg.",
+      "paginationFiltering": "List supports cursor and limit; limit defaults to 25 and is capped at 200. Item reads return an empty 404 for missing, private, unpublished, ineligible, and validation-blocked items.",
+      "testExpectation": "Open-data endpoint tests cover allowed reads, non-leaking denied reads, catalog output, documented validation exceptions, and list paging behavior when SDK parity tests land."
     },
     {
       "id": "admin-sdk-capabilities",
@@ -419,6 +462,40 @@
       "responseKind": "Admin scene dataset summary/detail/resolve JSON.",
       "paginationFiltering": "List supports includeInactive. No paging in the current contract.",
       "testExpectation": "Scene dataset registry tests cover list/detail/resolve and SDKs document unsupported rows if a language does not expose admin scene registry methods."
+    },
+    {
+      "id": "admin-open-data-publication-controls",
+      "title": "Admin open-data, DCAT, and STAC publication controls",
+      "status": "implemented",
+      "category": "admin-control-plane-metadata-read",
+      "capabilities": [
+        "open-data-eligibility",
+        "open-data-page-read",
+        "open-data-page-write",
+        "dcat-validation",
+        "stac-publication-state"
+      ],
+      "endpointPatterns": [
+        "GET /api/v1/admin/open-data/{itemId}/eligibility",
+        "GET /api/v1/admin/open-data/{itemId}",
+        "PUT /api/v1/admin/open-data/{itemId}",
+        "GET /api/v1/admin/open-data/dcat/status",
+        "POST /api/v1/admin/open-data/dcat/validate",
+        "POST /api/v1/admin/stac/publications",
+        "GET /api/v1/admin/stac/publications/{collectionId}",
+        "PUT /api/v1/admin/stac/publications/{collectionId}",
+        "DELETE /api/v1/admin/stac/publications/{collectionId}"
+      ],
+      "audience": "Console Share, admin SDKs, and operator automation managing server-owned open-data page state, DCAT validation, and STAC publication controls.",
+      "authPosture": "Admin authorization required.",
+      "sdkTargets": {
+        "dotnet": "Admin Console Share client for eligibility, page state, DCAT validation, and STAC publication status",
+        "javascript": "Console Share admin client helpers for open-data/DCAT/STAC publication workflows",
+        "python": "Admin open-data publication client where Console automation needs parity"
+      },
+      "responseKind": "Admin ApiResponse envelopes for reads/writes, 201 Created plus Location on STAC publish, and 204 No Content on STAC unpublish.",
+      "paginationFiltering": "No admin paging in the current contract. Eligibility and validation responses preserve all blocking reasons and documented validation exceptions.",
+      "testExpectation": "Open-data publication tests cover eligibility reasons, merge update/readback, denied public reads, DCAT validation/status, and STAC publish/update/unpublish readback."
     },
     {
       "id": "geoservices-featureserver-metadata",

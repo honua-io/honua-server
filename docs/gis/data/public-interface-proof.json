@@ -2797,6 +2797,50 @@
       ]
     },
     {
+      "surfaceId": "open-data-dcat",
+      "displayName": "Open Data / DCAT publication",
+      "surfaceKind": "http-route-family",
+      "protocol": "Open Data / DCAT",
+      "canonicalIdentifier": "/open-data + /open-data/catalog.json",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/open-data"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage, deployed-route drift checks, and OpenDataPublicationEndpointTests integration tests assert anonymous page reads, non-leaking denied reads, catalog export, and validation behavior.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/OpenData/OpenDataPublicationEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1214",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Console open-data publication documentation defines the public page/list contract, DCAT/data.json projection, Schema.org preview, eligibility rules, cache invalidation, and STAC publication control semantics.",
+          "executionLane": "repo-docs",
+          "evidenceLocations": [
+            "docs/contributor/open-data-publication-api.md",
+            "docs/developer/metadata-catalog-endpoints.v1.json",
+            "docs/developer/metadata-catalog-parity-matrix.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1214",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "stac-api",
       "displayName": "STAC API and hosted sample",
       "surfaceKind": "http-route-family",
