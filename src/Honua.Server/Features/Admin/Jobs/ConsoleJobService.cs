@@ -39,7 +39,11 @@ internal sealed partial class ConsoleJobService(
         ExecutionJobParameterKeys.TraceId,
         ExecutionJobParameterKeys.GeoprocessingPlanId,
         ExecutionJobParameterKeys.GeoprocessingProcessDefinitions,
-        ExecutionJobParameterKeys.GeoprocessingOutputArtifactKinds
+        ExecutionJobParameterKeys.GeoprocessingOutputArtifactKinds,
+        ExecutionJobParameterKeys.ShareExportId,
+        ExecutionJobParameterKeys.ShareRunId,
+        ExecutionJobParameterKeys.ShareDestinationType,
+        ExecutionJobParameterKeys.ShareFormat
     ];
 
     public async Task<ConsoleJobListResponse> ListAsync(

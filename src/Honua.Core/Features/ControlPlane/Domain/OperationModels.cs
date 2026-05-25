@@ -93,7 +93,12 @@ public enum ExecutionJobKind
     /// <summary>
     /// Tile cache generation or refresh workload.
     /// </summary>
-    TileCache
+    TileCache,
+
+    /// <summary>
+    /// Scheduled Share export workload.
+    /// </summary>
+    ShareExport
 }
 
 /// <summary>

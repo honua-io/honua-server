@@ -29,6 +29,7 @@ using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Mobile.FieldCollection.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Share.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Queries.Filters;
@@ -57,6 +58,7 @@ using Honua.Postgres.Features.Mobile.FieldCollection;
 using Honua.Postgres.Features.Observability;
 using Honua.Postgres.Features.Raster;
 using Honua.Postgres.Features.Security;
+using Honua.Postgres.Features.Share;
 using Honua.Postgres.Features.Studio;
 using Honua.Postgres.Queries.Filters;
 using Microsoft.Extensions.Configuration;
@@ -127,6 +129,14 @@ internal static class ServiceCollectionExtensions
         // Console Operate read APIs (#1168)
         services.AddScoped<IAuditLogReader, PostgresAuditLogReader>();
         services.AddScoped<IInvestigationStore, PostgresInvestigationStore>();
+        services.AddScoped<IShareExportStore>(serviceProvider =>
+            new PostgresShareExportStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+        services.AddScoped<IShareTrafficStore>(serviceProvider =>
+            new PostgresShareTrafficStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
 
         // Register database performance metrics provider
         services.AddScoped<IDatabasePerformanceMetricsProvider, PostgresDatabasePerformanceMetricsProvider>();

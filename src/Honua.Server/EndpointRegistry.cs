@@ -404,6 +404,22 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/jobs/{jobId}/cancel"),
         new("POST", "/api/v1/admin/jobs/{jobId}/retry"),
 
+        // Console Share export jobs and traffic endpoints (#1216)
+        new("GET", "/api/v1/admin/share/exports"),
+        new("POST", "/api/v1/admin/share/exports"),
+        new("GET", "/api/v1/admin/share/exports/{exportId}"),
+        new("PUT", "/api/v1/admin/share/exports/{exportId}"),
+        new("DELETE", "/api/v1/admin/share/exports/{exportId}"),
+        new("POST", "/api/v1/admin/share/exports/{exportId}/trigger"),
+        new("POST", "/api/v1/admin/share/exports/{exportId}/pause"),
+        new("POST", "/api/v1/admin/share/exports/{exportId}/resume"),
+        new("GET", "/api/v1/admin/share/exports/{exportId}/runs"),
+        new("GET", "/api/v1/admin/share/exports/{exportId}/runs/{runId}"),
+        new("GET", "/api/v1/admin/share/traffic"),
+        new("GET", "/api/v1/admin/share/traffic/series"),
+        new("GET", "/api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic"),
+        new("GET", "/api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic/series"),
+
         // Mobile runtime auth and diagnostics endpoints (#924)
         new("POST", "/api/mobile/exceptions"),
 
