@@ -22,6 +22,7 @@ public sealed class VerticalSliceIsolationTests
         "AnalysisContent",
         "AiBuilder",
         "Alerts",
+        "Capabilities",
         "CloudDemo",
         "Collaboration",
         "Console",
@@ -59,6 +60,7 @@ public sealed class VerticalSliceIsolationTests
     private static readonly Dictionary<string, IReadOnlyCollection<string>> _allowedCrossFeatureRefs =
         new(StringComparer.Ordinal)
         {
+            ["Capabilities"] = new[] { "Import", "Streaming" },
             ["Mcp"] = new[] { "Geoprocessing", "Grounding", "Reporting" },
             ["Grounding"] = new[] { "Geoprocessing" },
             ["AnalysisContent"] = new[] { "Geoprocessing" },
