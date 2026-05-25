@@ -36,6 +36,7 @@ This map summarizes source-backed runtime capabilities in `honua-server`.
 - Admin/control plane: `src/Honua.Server/Features/Admin/`
 - Capability manifest: `src/Honua.Server/Features/Capabilities/`
 - Console workflow packages: `src/Honua.Server/Features/WorkflowPackages/`
+- Content publication registry: `src/Honua.Core/Features/Publishing/Content/`, `src/Honua.Server/Features/Console/Publications/`, `src/Honua.Postgres/Features/Publishing/`
 - Import/migration: `src/Honua.Server/Features/Import/`
 - Forms package/submission contracts: `src/Honua.Core/Features/Forms/Packages/`, `src/Honua.Server/Features/Forms/`, `src/Honua.Postgres/Features/Forms/`
 - Monitoring and health: `src/Honua.Server/Features/Infrastructure/Monitoring/`, `src/Honua.Server/Features/HealthCheck/`

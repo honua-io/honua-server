@@ -23,7 +23,10 @@ JSON contracts are source-generated through `ContentPublicationJsonContext`.
 Successful publication responses are returned as the DTO itself, not wrapped in
 `ApiResponse<T>`. Management endpoint errors use RFC 7807 problem details with
 type `https://honua.io/problems/admin`; public-route errors use the shared
-standard error formatter.
+standard error formatter. This route family is not part of the bundled
+`/api/v1/admin/openapi.json` snapshot; this document and the source-generated
+JSON context are the contract reference until a dedicated Console/Studio OpenAPI
+bundle is published.
 
 ## Endpoints
 
@@ -117,9 +120,10 @@ hierarchical paths with `/` separators; each segment contains only `a-z`,
 usable, the title is normalized; if neither value produces a slug, the server
 allocates `pub-{id}`. A claimed slug cannot be reused and returns `409 Conflict`.
 
-`defaultViewBbox.crs` must be declared. The default CRS is `EPSG:4326` lon/lat;
-Web Mercator is never assumed. For WGS 84/CRS84 boxes, longitude must stay in
-`[-180, 180]` and latitude in `[-90, 90]`.
+`defaultViewBbox` is optional. When a box is supplied, `crs` must be non-empty;
+if the JSON omits it, the contract default is `EPSG:4326` lon/lat. Web Mercator
+is never assumed. For WGS 84/CRS84 boxes, longitude must stay in `[-180, 180]`
+and latitude in `[-90, 90]`.
 
 ## Response Model
 
@@ -162,9 +166,11 @@ contains the mutable route pointer plus immutable versions. Abbreviated example:
 }
 ```
 
-Version rows are append-only. Republish creates a new version and moves the
-route pointer. Rollback moves the route pointer to an existing version and sets
-`rollbackTargetVersionId`; it does not mutate or delete the version history.
+Version rows are append-only. Republish creates a new version, keeps the
+publication `kind` and route slug, snapshots the current route policy onto the
+new version, and moves the route pointer. Rollback moves the route pointer to an
+existing version and sets `rollbackTargetVersionId`; it does not mutate or
+delete the version history.
 
 `republish`, `rollback`, and `policy` update requests accept `expectedEtag`.
 When supplied, the value must exactly match the current route `etag` or the
@@ -195,6 +201,12 @@ Policy fields:
 - `publicLink.links`: issued public link ids, token hashes, expiry, and
   revocation state.
 
+`PATCH /policy` applies top-level policy deltas. Omitted fields keep their
+current values; supplied nested `share`, `embed`, `service`, or `access` objects
+replace that nested policy object. The response contains the updated route state
+and one-time public-link creation fields only; it does not return the version
+list.
+
 Creating a public link is done through
 `PATCH /api/v1/console/publications/{publicationId}/policy`:
 
@@ -211,8 +223,10 @@ Creating a public link is done through
 
 The response returns `createdPublicLinkId` and `createdPublicLinkToken` exactly
 once. Raw public-link tokens are never persisted or returned again; the route
-policy stores only a SHA-256 token hash. Revoking a link uses
-`revokePublicLinkId` on the same policy endpoint.
+policy stores only a SHA-256 token hash. Creating a link implicitly sets
+`publicLink.enabled` to `true`; `publicLinkEnabled: false` disables public-link
+reads without deleting existing link records. Revoking a link uses
+`revokePublicLinkId` on the same policy endpoint and marks that link revoked.
 
 ## Public Route Reads
 
@@ -261,6 +275,14 @@ Query parameters:
 Only `active` lifecycle routes resolve. Suspended, archived, unknown, or
 malformed slugs are treated as not found for public reads.
 
+Anonymous reads are allowed when the route visibility is `public`, when
+`share.allowAnonymous` is true, or when a valid public link authorizes the read.
+Private, organization, and team routes otherwise use the shared access-policy
+evaluator; unauthenticated reads return the shared unauthorized/forbidden
+response instead of a publication DTO. `embed=true` additionally enforces embed
+policy and returns `403` when embedding is disabled or the request origin does
+not match the configured allowlist.
+
 ## Persistence, Audit, Telemetry, And Caching
 
 Postgres deployments store:
@@ -284,8 +306,9 @@ Public route reads use the `ContentPublishedRoute` output-cache policy. The
 policy varies by route slug, `version`, `expand`, and `Accept`, and it only
 caches anonymous reads with no `link`, `token`, or `embed` query parameter.
 Cached responses are tagged with `content-publication` and
-`content-route:{slug}`. Republish, rollback, and policy changes invalidate the
-published-route cache before returning the updated route state.
+`content-route:{slug}`. Republish, rollback, and policy changes evict the global
+publication tag plus the route-specific tag before returning the updated route
+state.
 
 ## Follow-ons
 

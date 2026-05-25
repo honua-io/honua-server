@@ -79,6 +79,7 @@
 - [Operate Observability Fixtures (Admin API)](admin-api/operate-observability-fixtures.md)
 - [Metadata Prevalidation Admin API](admin-api/metadata-prevalidation.md)
 - [Studio Package Lifecycle API](admin-api/studio-package-lifecycle.md)
+- [Content Publication Registry API](admin-api/content-publication-registry.md)
 - [Analysis Content (Admin API)](admin-api/analysis-content.md)
 - [Scene Dataset Registry (Admin API)](admin-api/scene-dataset-registry.md)
 - [Form Package API](developer/form-package-api.md)
