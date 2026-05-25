@@ -47,19 +47,26 @@ internal static class OperateObservabilityFixtureServiceCollectionExtensions
 
         var hasJobStore = services.Any(descriptor => descriptor.ServiceType == typeof(IExecutionJobStore));
         var hasLogStore = services.Any(descriptor => descriptor.ServiceType == typeof(IExecutionLogStore));
+
+        // Scoped so the store shares the request/seed scope's IDatabaseConnectionProvider
+        // (and its ISchemaContext search-path). A singleton would capture the scoped
+        // connection provider and would also seed jobs/logs into a different schema than
+        // the seeder's direct alert/investigation writes. The fixture replaces these stores
+        // only when Redis-backed implementations are absent, and their non-fixture consumers
+        // (ConsoleJobService) resolve them per scope, so scoped lifetime is safe here.
         if (!hasJobStore || !hasLogStore)
         {
-            services.TryAddSingleton<PostgresOperateFixtureExecutionStore>();
+            services.TryAddScoped<PostgresOperateFixtureExecutionStore>();
         }
 
         if (!hasJobStore)
         {
-            services.AddSingleton<IExecutionJobStore>(sp => sp.GetRequiredService<PostgresOperateFixtureExecutionStore>());
+            services.AddScoped<IExecutionJobStore>(sp => sp.GetRequiredService<PostgresOperateFixtureExecutionStore>());
         }
 
         if (!hasLogStore)
         {
-            services.AddSingleton<IExecutionLogStore>(sp => sp.GetRequiredService<PostgresOperateFixtureExecutionStore>());
+            services.AddScoped<IExecutionLogStore>(sp => sp.GetRequiredService<PostgresOperateFixtureExecutionStore>());
         }
 
         if (options.SeedOnStartup)
