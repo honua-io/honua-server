@@ -417,7 +417,7 @@ internal sealed class PostgresFormPackageStore : IFormPackageStore
         };
     }
 
-    public async Task CreateSubmissionAsync(
+    public async Task<bool> CreateSubmissionAsync(
         Guid submissionId,
         string? idempotencyKey,
         string actorHash,
@@ -464,7 +464,8 @@ internal sealed class PostgresFormPackageStore : IFormPackageStore
         command.Parameters.AddWithValue("request_hash", NpgsqlDbType.Text, requestHash);
         command.Parameters.AddWithValue("request_summary", NpgsqlDbType.Jsonb, BuildRequestSummaryJson(request, packageVersion.Package));
 
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        var affectedRows = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return affectedRows == 1;
     }
 
     public async Task CompleteSubmissionAsync(
@@ -484,6 +485,7 @@ internal sealed class PostgresFormPackageStore : IFormPackageStore
                 target_feature_id = COALESCE(@target_feature_id, target_feature_id),
                 completed_at = now()
             WHERE submission_id = @submission_id
+              AND completed_at IS NULL
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);

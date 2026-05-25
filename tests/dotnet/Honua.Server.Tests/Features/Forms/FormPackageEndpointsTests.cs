@@ -9,6 +9,7 @@ using FluentAssertions;
 using Honua.Core.Features.Forms.Packages;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
 namespace Honua.Server.Tests.Features.Forms;
@@ -150,6 +151,68 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
             $"/api/v1/forms/packages/{published.FormId}/submissions",
             JsonContent(changedPayload));
         changed.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    public async Task StoreSubmissionClaim_WithDuplicateIdempotencyKey_ReportsOnlyFirstOwner()
+    {
+        var published = await PublishPackageAsync(CreatePackage("Store idempotency claim"));
+        var submission = CreateSubmission("store-claim-1", "Store claim");
+
+        using var scope = _fixture.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IFormPackageStore>();
+
+        var submissionId = Guid.NewGuid();
+        var firstClaimed = await store.CreateSubmissionAsync(
+            submissionId,
+            submission.IdempotencyKey,
+            "actor-hash",
+            "request-hash",
+            published,
+            submission,
+            "pending");
+        var secondClaimed = await store.CreateSubmissionAsync(
+            Guid.NewGuid(),
+            submission.IdempotencyKey,
+            "actor-hash",
+            "request-hash",
+            published,
+            submission,
+            "pending");
+
+        firstClaimed.Should().BeTrue();
+        secondClaimed.Should().BeFalse();
+
+        var accepted = new FormSubmissionResponse
+        {
+            SubmissionId = submissionId,
+            Status = "accepted",
+            FormId = published.FormId,
+            FormVersion = published.Version,
+            Operation = FormSubmissionOperations.Create,
+            TargetFeatureId = 42
+        };
+        var failed = new FormSubmissionResponse
+        {
+            SubmissionId = submissionId,
+            Status = "failed",
+            FormId = published.FormId,
+            FormVersion = published.Version,
+            Operation = FormSubmissionOperations.Create
+        };
+        await store.CompleteSubmissionAsync(submissionId, accepted, "accepted");
+        await store.CompleteSubmissionAsync(submissionId, failed, "failed");
+
+        var persisted = await store.GetSubmissionByIdempotencyAsync(
+            published.FormId,
+            published.Version,
+            "actor-hash",
+            submission.IdempotencyKey!);
+        persisted.Should().NotBeNull();
+        persisted!.Status.Should().Be("accepted");
+        persisted.Response.Should().NotBeNull();
+        persisted.Response!.Status.Should().Be("accepted");
     }
 
     [IntegrationTest]

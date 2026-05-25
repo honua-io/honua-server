@@ -1,41 +1,112 @@
 # Form Package API
 
-Honua Server owns form packages as versioned operational assets. Builders create editable drafts under the admin API, publish immutable versions after validation, and field clients submit against the current published runtime package.
+Honua Server owns form packages as versioned operational assets. Builders create editable drafts, validate them against target layer policy, publish immutable runtime versions, and reopen a published version by creating a new draft. Field clients submit against published packages only.
 
-## Lifecycle
+The implementation lives in the Forms vertical slice:
 
-Admin routes require admin authorization:
+- Core contracts and validation: `src/Honua.Core/Features/Forms/Packages/`
+- Server routes and runtime behavior: `src/Honua.Server/Features/Forms/`
+- Postgres persistence: `src/Honua.Postgres/Features/Forms/`
 
-- `POST /api/v1/admin/forms/packages` creates a draft package.
-- `GET /api/v1/admin/forms/packages` lists package families.
-- `GET /api/v1/admin/forms/packages/{formId}` reads the current draft, or the current published version if no draft exists.
-- `GET /api/v1/admin/forms/packages/{formId}/versions` lists all versions.
-- `GET /api/v1/admin/forms/packages/{formId}/versions/{packageVersion}` reads one version.
-- `PUT /api/v1/admin/forms/packages/{formId}/versions/{packageVersion}` updates a draft and requires `If-Match`.
-- `POST /api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/validate` validates schema and policy.
-- `POST /api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/publish` validates and publishes an immutable version.
-- `POST /api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/reopen` creates a new draft from a published version.
+Forms routes are registered when an `IFormPackageStore` is available. The Postgres provider registers the store and persists package versions, submission idempotency records, and per-attachment policy outcomes.
 
-Published runtime routes are protected by the current server auth/RBAC policy:
+## Authorization
 
-- `GET /api/v1/forms/packages/{formId}` reads the current published package.
-- `GET /api/v1/forms/packages/{formId}/versions/{packageVersion}` reads a published version.
-- `GET /api/v1/forms/packages/{formId}/offline-policy` returns sync transport policy and links.
-- `POST /api/v1/forms/packages/{formId}/submissions` submits JSON or multipart form data.
+Admin authoring routes require admin authorization.
+
+Runtime package, offline-policy, and submission routes also use the current admin authorization gate in this slice. Submissions then perform target service/layer data-editor authorization before applying edits, so callers must have both route access and edit permission on the target layer.
+
+## Admin Lifecycle
+
+| Method | Route | Success | Contract |
+|---|---|---:|---|
+| `GET` | `/api/v1/admin/forms/packages` | `200` | Returns `FormPackageSummary[]`; response is `Cache-Control: no-store`. |
+| `POST` | `/api/v1/admin/forms/packages` | `201` | Creates draft version `1` or the next draft for the supplied `formId`; returns `FormPackageVersion` with `ETag` and `Cache-Control: no-store`. |
+| `GET` | `/api/v1/admin/forms/packages/{formId}` | `200` | Returns the current draft, falling back to the current published version; response is `no-store`. |
+| `GET` | `/api/v1/admin/forms/packages/{formId}/versions` | `200` | Returns all `FormPackageVersion` rows for a package family, newest version first; response is `no-store`. |
+| `GET` | `/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}` | `200` | Returns one version with `ETag`; response is `no-store`. |
+| `PUT` | `/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}` | `200` | Updates a draft only. Requires the exact returned `ETag` value in `If-Match`; returns updated `FormPackageVersion` with new `ETag`. |
+| `POST` | `/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/validate` | `200` | Returns `FormPackageValidationResult`; stores validation for drafts. |
+| `POST` | `/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/publish` | `200` | Validates and publishes a draft; returns immutable `FormPackageVersion`. |
+| `POST` | `/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/reopen` | `200` | Creates a new draft from a published version; sets `reopenedFromVersion`. |
+
+Expected failures:
+
+- `400` when the package JSON is invalid or publish validation fails.
+- `404` when a package or version cannot be found.
+- `409` when a draft update targets a non-draft, the `ETag` does not match, or a publish target is no longer draft.
+- `428` when `PUT` omits `If-Match`.
+
+Create and update draft routes persist the supplied package JSON without running publish validation. Draft updates clear the stored validation result; callers should run `validate` again before publishing. Published versions are immutable at the persistence layer. Reopen creates a new draft version with a fresh `ETag` instead of mutating the published document.
+
+## Runtime Routes
+
+| Method | Route | Success | Contract |
+|---|---|---:|---|
+| `GET` | `/api/v1/forms/packages/{formId}` | `200` | Returns the current published `FormPackageVersion`; `Cache-Control: private, max-age=60, must-revalidate`. |
+| `GET` | `/api/v1/forms/packages/{formId}/versions/{packageVersion}` | `200` | Returns a published version only; same private cache policy. |
+| `GET` | `/api/v1/forms/packages/{formId}/offline-policy` | `200` | Returns `FormOfflinePolicyResponse`; always `Cache-Control: no-store`. |
+| `POST` | `/api/v1/forms/packages/{formId}/submissions` | `200` | Submits JSON or multipart field data against a published version; returns `FormSubmissionResponse`. |
+
+Runtime reads return `404` for missing packages and for versions that exist but are not published.
+
+## Package Document
+
+The package document schema version is `honua.form-package.v1`. Important top-level fields:
+
+| Field | Notes |
+|---|---|
+| `formId` | Optional on create. The server generates a stable `form-{32-hex-guid}` id when omitted. |
+| `target.serviceId`, `target.layerId` | Target feature service and layer for validation and submissions. |
+| `sections[]` | Ordered field groupings. Section references are validated. |
+| `fields[]` | Form controls keyed by `fieldId`; non-attachment fields bind to `targetField`. |
+| `submitPolicy` | Allowed edit operations, geometry requirement, attachment allowance, and optional max offline age. |
+| `attachmentPolicy` | Package attachment limits, package content types, per-field attachment policy metadata, and privacy transform requirements. |
+| `privacyPolicy` | Private field ids, supported transformations, actor/device capture hints, and retention hint. |
+| `offlinePolicy` | Whether offline use is enabled and which existing sync transports may be advertised. |
+| `provenance`, `metadata` | Optional non-secret authoring metadata. |
+
+`FormPackageVersion` responses include `formId`, `version`, `status`, `package`, optional `validation`, `contentHash`, `policyHash`, `etag`, creation/publish metadata, and `reopenedFromVersion` when applicable.
 
 ## Validation
 
-Publish validation checks the package document against the target feature service and layer. It validates field ids, section references, target field existence and compatible types, required state against non-null target fields, coded-value and range domains, validation rule limits, conditional visibility dependencies and cycles, allowed submit operations, attachment policy limits and MIME types, privacy transformations, and offline transport choices.
+Publish validation checks the package document against the target feature service and layer. It validates:
 
-Submissions are accepted only for published versions. Runtime validation checks the package operation policy, required values, read-only fields, value types, domain membership, point geometry and SRID, required attachments, attachment counts, content types, and file upload security.
+- Schema version, title, field ids, duplicate ids, section references, and section field references.
+- Target service/layer existence, target field existence, writable target fields, compatible field types, and required state for non-null target fields.
+- Submit operations against target capabilities (`Create`, `Update`, `Delete`).
+- Coded-value and range domains, validation rule limits, supported conditional visibility operators (`equals`, `notEquals`, `gt`, `gte`, `lt`, `lte`, `isEmpty`, `isNotEmpty`, `in`), and visibility cycles.
+- Attachment enablement, package-level limits, allowed MIME types, attachment field references, and unsupported server-side attachment transform flags. Exact MIME values and subtype wildcards such as `image/*` are supported. Package allowlists are checked against global server attachment limits; EXIF stripping, face blur, and redaction must be performed before submission in this release.
+- Privacy private-field references, supported privacy transformations (`none`, `auditOnly`, `minimizeAudit`), and retention bounds.
+- Offline transport selection. `feature-server-replica` and `fieldcollection` are the supported transport identifiers. `conflictReviewMode` accepts `defer` or `lastWriteWins`; other values produce a warning because full conflict review is deferred.
 
-## Submission Shape
+Validation responses use:
+
+```json
+{
+  "isValid": false,
+  "issues": [
+    {
+      "code": "targetFieldNotFound",
+      "severity": "error",
+      "fieldId": "name",
+      "path": "fields",
+      "message": "Target field 'missing' was not found on layer 'Inspections'."
+    }
+  ]
+}
+```
+
+## Submissions
+
+Submissions are accepted only for published packages. The request body may be `application/json` or `multipart/form-data`.
 
 JSON submission example:
 
 ```json
 {
   "idempotencyKey": "device-42-0001",
+  "formVersion": 1,
   "operation": "create",
   "clientId": "device-42",
   "values": {
@@ -45,14 +116,141 @@ JSON submission example:
     "x": -157.8583,
     "y": 21.3069,
     "spatialReference": { "wkid": 4326 }
+  },
+  "attachments": []
+}
+```
+
+`formVersion` is optional. When omitted, the current published version is used. If `clientId` is omitted, the server uses `X-Honua-Client-Id` when present.
+
+Runtime validation checks:
+
+- Package status, allowed operation, and `targetFeatureId` for update/delete.
+- Required values, read-only fields, JSON value types, domain membership, and target field compatibility.
+- Point geometry shape and SRID. Geometry uses GeoServices-style `{ "x": number, "y": number, "spatialReference": { "wkid": number } }`; `x` and `y` may be JSON numbers or numeric strings, and `wkid` must match the target layer SRID when supplied.
+- Required attachment fields, attachment counts, package/global MIME type allowlists, file part presence, file size, filename/content security, and global attachment limits.
+
+Accepted submissions are translated into the shared edit pipeline (`IEditProcessor` and `IFeatureWriter`). Non-attachment field values are mapped from form `fieldId` to target layer `targetField`. Attachment upload runs only after the feature edit produces or resolves a target feature id.
+
+## Multipart Attachments
+
+Multipart submissions must include a `submission` JSON part plus file parts referenced by each attachment descriptor `partName`.
+
+```json
+{
+  "idempotencyKey": "device-42-photo-0001",
+  "operation": "create",
+  "clientId": "device-42",
+  "values": {
+    "name": "Inspection with photo"
+  },
+  "geometry": {
+    "x": -157.8583,
+    "y": 21.3069,
+    "spatialReference": { "wkid": 4326 }
+  },
+  "attachments": [
+    {
+      "clientAttachmentId": "photo-1",
+      "fieldId": "photo",
+      "partName": "photo-file",
+      "filename": "photo.png",
+      "contentType": "image/png",
+      "sizeBytes": 12042,
+      "sha256": "optional-client-checksum"
+    }
+  ]
+}
+```
+
+The server normalizes missing descriptor `filename`, `contentType`, and `sizeBytes` from the uploaded file when the multipart part exists. Descriptor and file MIME types are accepted when they match the package allowlist or the global server allowlist; publish validation prevents package allowlists from exceeding global server limits. Accepted files are stored through the FeatureServer attachment store and return per-file outcomes.
+
+## Submission Response
+
+`FormSubmissionResponse` is returned for accepted, rejected, replayed, and failed submissions:
+
+```json
+{
+  "submissionId": "3ad9b4cf-3ed2-4b0b-bf64-705f5ebdf9de",
+  "status": "accepted",
+  "formId": "inspection-form",
+  "formVersion": 1,
+  "operation": "create",
+  "targetFeatureId": 123,
+  "editOutcome": {
+    "succeeded": true,
+    "created": 1,
+    "updated": 0,
+    "deleted": 0
+  },
+  "attachmentOutcomes": [
+    {
+      "clientAttachmentId": "photo-1",
+      "fieldId": "photo",
+      "status": "accepted",
+      "attachmentId": 456,
+      "privacyApplied": true
+    }
+  ],
+  "validationIssues": [],
+  "idempotentReplay": false
+}
+```
+
+HTTP and response status behavior:
+
+- `200` with `status: "accepted"` when the edit path completed. If the feature edit reports errors, the response may be `200` with `status: "failed"` and a sanitized `editOutcome.error`.
+- `200` with `idempotentReplay: true` when an idempotency replay matches the stored request body.
+- `400` with `status: "rejected"` for correctable validation failures.
+- `403` with `status: "rejected"` when package policy denies the operation or attachments.
+- `404` when the published package or target service/layer cannot be found.
+- `409` when an idempotency key is reused with a different payload or the prior submission is still pending.
+- `500` with `status: "failed"` and retry guidance when the server cannot complete the submission.
+
+Attachment outcomes use `accepted`, `rejected`, or `failed`. Rejection and failure reasons are sanitized. Each outcome is persisted with the submission id and audited as a form attachment policy event.
+
+## Idempotency And Privacy
+
+Idempotency is scoped by form id, package version, actor/client hash, and `idempotencyKey`. The server stores a hash of the original JSON request body. For multipart requests, that hash is based on the `submission` JSON part, before file-derived descriptor normalization. An exact replay returns the stored terminal response with `idempotentReplay: true`; a changed payload with the same key returns `409`.
+
+Submission records store minimized request summaries instead of raw private field values. The summary includes operation, submitted field ids, private field ids, attachment count, optional `targetFeatureId`, client id when allowed by privacy policy, and the client submission time when provided. Package and policy hashes are stored on the durable submission row beside the summary. Private values are not copied into the request summary. Attachment policy outcomes are recorded per submitted attachment.
+
+## Offline Policy
+
+The offline policy endpoint advertises existing sync surfaces instead of creating a form-only sync protocol. The response shape is:
+
+```json
+{
+  "formId": "inspection-form",
+  "formVersion": 1,
+  "enabled": true,
+  "serviceId": "test",
+  "layerId": 0,
+  "availableTransports": [
+    "feature-server-replica",
+    "fieldcollection"
+  ],
+  "links": [
+    {
+      "rel": "create-replica",
+      "href": "https://example.com/rest/services/test/FeatureServer/createReplica",
+      "method": "POST"
+    }
+  ],
+  "requiredHeaders": {
+    "X-Honua-Client-Id": "Stable client or device identifier for cursor/idempotency coordination."
   }
 }
 ```
 
-Multipart submissions use a `submission` JSON part plus file parts named by each attachment descriptor `partName`. Idempotency is scoped by form id, version, actor/client hash, and `idempotencyKey`; an exact replay returns the stored response with `idempotentReplay: true`, while a changed payload with the same key returns `409`.
+When `offlinePolicy.enabled` is `false`, `availableTransports` and `links` are empty. When enabled, `replicaTransportEnabled` adds FeatureServer replica links with rels `create-replica`, `extract-changes`, `synchronize-replica`, and `unregister-replica`. `fieldCollectionTransportEnabled` adds rels `fieldcollection-generation`, `fieldcollection-sync-cursor`, `fieldcollection-ack-cursor`, `fieldcollection-changes`, and `fieldcollection-push-change`. `preferredTransports` is validated on publish, but the response lists enabled transports in stable server order: `feature-server-replica`, then `fieldcollection`.
 
-Submission records store minimized request summaries, not raw private field values. Attachment policy outcomes are recorded per submitted attachment and persisted with the submission id.
+Offline links are absolute and derived from the incoming request scheme, host, and path base. Clients should send `X-Honua-Client-Id` on sync and submission requests for cursor correlation and idempotency scoping.
 
-## Offline Policy
+## Operational Notes
 
-The offline policy response advertises existing sync surfaces instead of creating a separate form-only sync protocol. When enabled, it can include FeatureServer replica links (`create-replica`, `extract-changes`, `synchronize-replica`, `unregister-replica`) and FieldCollection links (`fieldcollection-generation`, cursor, pull, and push routes). Field clients should send `X-Honua-Client-Id` for sync correlation.
+- Forms emit OpenTelemetry activities for package listing, draft creation, offline-policy reads, and submissions with `honua.protocol=forms` and operation tags.
+- Structured source-generated logs use event ids in the `1184xx` range for package lifecycle, offline-policy reads, submissions, and attachment outcomes.
+- Package lifecycle actions, submission outcomes, and attachment policy outcomes are written to the shared audit log with `resourceType: "form_package"`.
+- Published runtime package reads use short private caching. Admin reads, offline-policy responses, and mutation responses use `no-store` to avoid stale authoring or sync policy state.
+- No new form-specific offline conflict review API is introduced in this slice. Full disconnected conflict review remains outside this ticket.

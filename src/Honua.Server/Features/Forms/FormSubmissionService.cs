@@ -29,6 +29,8 @@ namespace Honua.Server.Features.Forms;
 internal sealed class FormSubmissionService
 {
     private const string ClientIdHeader = "X-Honua-Client-Id";
+    private static readonly TimeSpan _postClaimWorkTimeout = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan _terminalPersistenceTimeout = TimeSpan.FromSeconds(30);
     private readonly IFormPackageStore _store;
     private readonly FormPackageValidator _validator;
     private readonly ILayerCatalog _catalog;
@@ -105,7 +107,7 @@ internal sealed class FormSubmissionService
             context.RequestAborted).ConfigureAwait(false);
         if (authorizationFailure is not null)
         {
-            await RecordAuditAsync(context, "forms.submission.create", packageVersion.FormId, AuditOutcome.Denied, $"{{\"version\":{packageVersion.Version}}}")
+            await RecordAuditAsync(context, "forms.submission.create", packageVersion.FormId, AuditOutcome.Denied, $"{{\"version\":{packageVersion.Version}}}", context.RequestAborted)
                 .ConfigureAwait(false);
             return authorizationFailure;
         }
@@ -137,7 +139,10 @@ internal sealed class FormSubmissionService
         }
 
         var submissionId = Guid.NewGuid();
-        await _store.CreateSubmissionAsync(
+        using var postClaimCts = new CancellationTokenSource(_postClaimWorkTimeout);
+        var postClaimToken = postClaimCts.Token;
+
+        var claimed = await _store.CreateSubmissionAsync(
             submissionId,
             request.IdempotencyKey,
             actorHash,
@@ -145,35 +150,45 @@ internal sealed class FormSubmissionService
             packageVersion,
             request,
             "pending",
-            context.RequestAborted).ConfigureAwait(false);
-
-        var validation = await _validator.ValidateSubmissionAsync(packageVersion, request, context.RequestAborted)
-            .ConfigureAwait(false);
-        var fileValidation = await ValidateAttachmentFilesAsync(request, parseResult.Files, packageVersion, context.RequestAborted)
-            .ConfigureAwait(false);
-        validation = MergeValidation(validation, fileValidation.Issues);
-
-        if (!validation.IsValid)
+            postClaimToken).ConfigureAwait(false);
+        if (!claimed)
         {
-            foreach (var outcome in fileValidation.Outcomes)
-            {
-                await RecordAttachmentOutcomeAsync(context, submissionId, packageVersion, request, outcome).ConfigureAwait(false);
-            }
-
-            var statusCode = validation.Issues.Any(static issue =>
-                string.Equals(issue.Code, "operationNotAllowed", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(issue.Code, "attachmentsNotAllowed", StringComparison.OrdinalIgnoreCase))
-                ? StatusCodes.Status403Forbidden
-                : StatusCodes.Status400BadRequest;
-            var rejected = BuildRejectedResponse(submissionId, packageVersion, request, validation.Issues, statusCode == StatusCodes.Status403Forbidden);
-            await _store.CompleteSubmissionAsync(submissionId, rejected, "rejected", context.RequestAborted).ConfigureAwait(false);
-            await RecordAuditAsync(context, "forms.submission.create", packageVersion.FormId, AuditOutcome.Failure, $"{{\"version\":{packageVersion.Version},\"issueCount\":{validation.Issues.Length}}}")
-                .ConfigureAwait(false);
-            return Results.Json(rejected, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: statusCode);
+            return await ResolveClaimConflictAsync(
+                context,
+                packageVersion,
+                actorHash,
+                request.IdempotencyKey,
+                requestHash).ConfigureAwait(false);
         }
 
         try
         {
+            var validation = await _validator.ValidateSubmissionAsync(packageVersion, request, postClaimToken)
+                .ConfigureAwait(false);
+            var fileValidation = await ValidateAttachmentFilesAsync(request, parseResult.Files, packageVersion, postClaimToken)
+                .ConfigureAwait(false);
+            validation = MergeValidation(validation, fileValidation.Issues);
+
+            if (!validation.IsValid)
+            {
+                foreach (var outcome in fileValidation.Outcomes)
+                {
+                    await RecordAttachmentOutcomeAsync(context, submissionId, packageVersion, request, outcome, postClaimToken)
+                        .ConfigureAwait(false);
+                }
+
+                var statusCode = validation.Issues.Any(static issue =>
+                    string.Equals(issue.Code, "operationNotAllowed", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(issue.Code, "attachmentsNotAllowed", StringComparison.OrdinalIgnoreCase))
+                    ? StatusCodes.Status403Forbidden
+                    : StatusCodes.Status400BadRequest;
+                var rejected = BuildRejectedResponse(submissionId, packageVersion, request, validation.Issues, statusCode == StatusCodes.Status403Forbidden);
+                await CompleteSubmissionAsync(submissionId, rejected, "rejected").ConfigureAwait(false);
+                await RecordAuditAsync(context, "forms.submission.create", packageVersion.FormId, AuditOutcome.Failure, $"{{\"version\":{packageVersion.Version},\"issueCount\":{validation.Issues.Length}}}", CancellationToken.None)
+                    .ConfigureAwait(false);
+                return Results.Json(rejected, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: statusCode);
+            }
+
             var editRequest = BuildEditRequest(packageVersion.Package, request, layer);
             var editValidation = _editProcessor.ValidateEdit(editRequest, layer);
             if (!editValidation.IsValid)
@@ -189,15 +204,15 @@ internal sealed class FormSubmissionService
                         Message = "Submission did not satisfy target edit validation."
                     }],
                     retryable: false);
-                await _store.CompleteSubmissionAsync(submissionId, rejected, "rejected", context.RequestAborted).ConfigureAwait(false);
+                await CompleteSubmissionAsync(submissionId, rejected, "rejected").ConfigureAwait(false);
                 return Results.Json(rejected, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: StatusCodes.Status400BadRequest);
             }
 
             var optimized = _editProcessor.OptimizeEdit(editRequest, layer);
             var batch = _editProcessor.ToFeatureEditBatch(optimized, layer);
-            var editResult = await _featureWriter.ApplyEditsAsync(layer.Id, batch, context.RequestAborted).ConfigureAwait(false);
+            var editResult = await _featureWriter.ApplyEditsAsync(layer.Id, batch, postClaimToken).ConfigureAwait(false);
             var targetFeatureId = ResolveTargetFeatureId(request, editResult);
-            var attachmentOutcomes = await UploadAttachmentsAsync(context, packageVersion, request, parseResult.Files, layer, targetFeatureId, submissionId)
+            var attachmentOutcomes = await UploadAttachmentsAsync(context, packageVersion, request, parseResult.Files, layer, targetFeatureId, submissionId, postClaimToken)
                 .ConfigureAwait(false);
             var response = new FormSubmissionResponse
             {
@@ -218,40 +233,27 @@ internal sealed class FormSubmissionService
                 AttachmentOutcomes = attachmentOutcomes
             };
 
-            await _store.CompleteSubmissionAsync(submissionId, response, response.Status, context.RequestAborted).ConfigureAwait(false);
-            await RecordAuditAsync(context, "forms.submission.create", packageVersion.FormId, AuditOutcome.Success, $"{{\"version\":{packageVersion.Version},\"operation\":\"{request.Operation}\"}}")
+            await CompleteSubmissionAsync(submissionId, response, response.Status).ConfigureAwait(false);
+            await RecordAuditAsync(context, "forms.submission.create", packageVersion.FormId, AuditOutcome.Success, $"{{\"version\":{packageVersion.Version},\"operation\":\"{request.Operation}\"}}", CancellationToken.None)
                 .ConfigureAwait(false);
             FormSubmissionLog.SubmissionAccepted(_logger, packageVersion.FormId, packageVersion.Version, submissionId, request.Operation, attachmentOutcomes.Length);
             return Results.Json(response, FormPackageJsonContext.Default.FormSubmissionResponse);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
         {
-            throw;
+            FormSubmissionLog.SubmissionFailed(_logger, ex, packageVersion.FormId, packageVersion.Version, submissionId);
+            var response = BuildFailedResponse(submissionId, packageVersion, request, "The server could not complete the submission before the post-claim timeout.");
+            await CompleteSubmissionAsync(submissionId, response, "failed").ConfigureAwait(false);
+            await RecordAuditAsync(context, "forms.submission.create", packageVersion.FormId, AuditOutcome.Failure, $"{{\"version\":{packageVersion.Version},\"timeout\":true}}", CancellationToken.None)
+                .ConfigureAwait(false);
+            return Results.Json(response, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: StatusCodes.Status500InternalServerError);
         }
         catch (Exception ex)
         {
             FormSubmissionLog.SubmissionFailed(_logger, ex, packageVersion.FormId, packageVersion.Version, submissionId);
-            var response = new FormSubmissionResponse
-            {
-                SubmissionId = submissionId,
-                Status = "failed",
-                FormId = packageVersion.FormId,
-                FormVersion = packageVersion.Version,
-                Operation = request.Operation,
-                TargetFeatureId = request.TargetFeatureId,
-                EditOutcome = new FormEditOutcome
-                {
-                    Succeeded = false,
-                    Error = "Submission could not be applied."
-                },
-                Retry = new FormSubmissionRetryGuidance
-                {
-                    Retryable = true,
-                    Reason = "The server could not complete the submission."
-                }
-            };
-            await _store.CompleteSubmissionAsync(submissionId, response, "failed", context.RequestAborted).ConfigureAwait(false);
-            await RecordAuditAsync(context, "forms.submission.create", packageVersion.FormId, AuditOutcome.Failure, $"{{\"version\":{packageVersion.Version}}}")
+            var response = BuildFailedResponse(submissionId, packageVersion, request, "The server could not complete the submission.");
+            await CompleteSubmissionAsync(submissionId, response, "failed").ConfigureAwait(false);
+            await RecordAuditAsync(context, "forms.submission.create", packageVersion.FormId, AuditOutcome.Failure, $"{{\"version\":{packageVersion.Version}}}", CancellationToken.None)
                 .ConfigureAwait(false);
             return Results.Json(response, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: StatusCodes.Status500InternalServerError);
         }
@@ -273,6 +275,48 @@ internal sealed class FormSubmissionService
 
         return await _store.GetCurrentVersionAsync(formId, FormPackageStatus.Published, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    private async Task<IResult> ResolveClaimConflictAsync(
+        HttpContext context,
+        FormPackageVersion packageVersion,
+        string actorHash,
+        string? idempotencyKey,
+        string requestHash)
+    {
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status409Conflict, "Submission could not be claimed.");
+        }
+
+        var existing = await _store.GetSubmissionByIdempotencyAsync(
+            packageVersion.FormId,
+            packageVersion.Version,
+            actorHash,
+            idempotencyKey,
+            context.RequestAborted).ConfigureAwait(false);
+        if (existing is null)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status409Conflict, "Submission with this idempotency key is still pending.");
+        }
+
+        if (!string.Equals(existing.RequestHash, requestHash, StringComparison.Ordinal))
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status409Conflict, "Idempotency key was already used with a different submission payload.");
+        }
+
+        if (existing.Response is null)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status409Conflict, "Submission with this idempotency key is still pending.");
+        }
+
+        return Results.Json(CloneReplayResponse(existing.Response), FormPackageJsonContext.Default.FormSubmissionResponse);
+    }
+
+    private async Task CompleteSubmissionAsync(Guid submissionId, FormSubmissionResponse response, string status)
+    {
+        using var completionCts = new CancellationTokenSource(_terminalPersistenceTimeout);
+        await _store.CompleteSubmissionAsync(submissionId, response, status, completionCts.Token).ConfigureAwait(false);
     }
 
     private static async Task<SubmissionParseResult> ReadSubmissionAsync(HttpContext context)
@@ -574,7 +618,8 @@ internal sealed class FormSubmissionService
         IFormFileCollection files,
         LayerDefinition layer,
         long? targetFeatureId,
-        Guid submissionId)
+        Guid submissionId,
+        CancellationToken cancellationToken)
     {
         if (request.Attachments.Length == 0)
         {
@@ -587,19 +632,19 @@ internal sealed class FormSubmissionService
         {
             foreach (var descriptor in request.Attachments)
             {
-                outcomes.Add(await AddAttachmentOutcomeAsync(context, submissionId, packageVersion, request, descriptor, "failed", null, "Target feature id was not available.")
+                outcomes.Add(await AddAttachmentOutcomeAsync(context, submissionId, packageVersion, request, descriptor, "failed", null, "Target feature id was not available.", cancellationToken)
                     .ConfigureAwait(false));
             }
 
             return outcomes.ToArray();
         }
 
-        var existing = await _attachmentStore.ListAsync(layer.Id, targetFeatureId.Value, context.RequestAborted).ConfigureAwait(false);
+        var existing = await _attachmentStore.ListAsync(layer.Id, targetFeatureId.Value, cancellationToken).ConfigureAwait(false);
         if (existing.Length + request.Attachments.Length > _attachmentLimits.MaxAttachmentsPerFeature)
         {
             foreach (var descriptor in request.Attachments)
             {
-                outcomes.Add(await AddAttachmentOutcomeAsync(context, submissionId, packageVersion, request, descriptor, "rejected", null, "Feature attachment count limit would be exceeded.")
+                outcomes.Add(await AddAttachmentOutcomeAsync(context, submissionId, packageVersion, request, descriptor, "rejected", null, "Feature attachment count limit would be exceeded.", cancellationToken)
                     .ConfigureAwait(false));
             }
 
@@ -611,7 +656,7 @@ internal sealed class FormSubmissionService
             if (string.IsNullOrWhiteSpace(descriptor.PartName) ||
                 !byPartName.TryGetValue(descriptor.PartName, out var file))
             {
-                outcomes.Add(await AddAttachmentOutcomeAsync(context, submissionId, packageVersion, request, descriptor, "rejected", null, "Attachment multipart part was not provided.")
+                outcomes.Add(await AddAttachmentOutcomeAsync(context, submissionId, packageVersion, request, descriptor, "rejected", null, "Attachment multipart part was not provided.", cancellationToken)
                     .ConfigureAwait(false));
                 continue;
             }
@@ -626,9 +671,9 @@ internal sealed class FormSubmissionService
                     descriptor.ContentType ?? file.ContentType,
                     stream,
                     descriptor.FieldId,
-                    context.RequestAborted).ConfigureAwait(false);
+                    cancellationToken).ConfigureAwait(false);
 
-                outcomes.Add(await AddAttachmentOutcomeAsync(context, submissionId, packageVersion, request, descriptor, "accepted", attachment.Id, null)
+                outcomes.Add(await AddAttachmentOutcomeAsync(context, submissionId, packageVersion, request, descriptor, "accepted", attachment.Id, null, cancellationToken)
                     .ConfigureAwait(false));
             }
             catch (OperationCanceledException)
@@ -638,7 +683,7 @@ internal sealed class FormSubmissionService
             catch (Exception ex)
             {
                 FormSubmissionLog.AttachmentUploadFailed(_logger, ex, packageVersion.FormId, packageVersion.Version, submissionId, descriptor.FieldId ?? string.Empty);
-                outcomes.Add(await AddAttachmentOutcomeAsync(context, submissionId, packageVersion, request, descriptor, "failed", null, "Attachment could not be persisted.")
+                outcomes.Add(await AddAttachmentOutcomeAsync(context, submissionId, packageVersion, request, descriptor, "failed", null, "Attachment could not be persisted.", cancellationToken)
                     .ConfigureAwait(false));
             }
         }
@@ -654,7 +699,8 @@ internal sealed class FormSubmissionService
         FormSubmissionAttachmentDescriptor descriptor,
         string status,
         long? attachmentId,
-        string? reason)
+        string? reason,
+        CancellationToken cancellationToken)
     {
         _ = request;
         var outcome = new FormSubmissionAttachmentOutcome
@@ -666,7 +712,7 @@ internal sealed class FormSubmissionService
             Reason = reason,
             PrivacyApplied = true
         };
-        await RecordAttachmentOutcomeAsync(context, submissionId, packageVersion, request, outcome).ConfigureAwait(false);
+        await RecordAttachmentOutcomeAsync(context, submissionId, packageVersion, request, outcome, cancellationToken).ConfigureAwait(false);
         return outcome;
     }
 
@@ -675,7 +721,8 @@ internal sealed class FormSubmissionService
         Guid submissionId,
         FormPackageVersion packageVersion,
         FormSubmissionRequest request,
-        FormSubmissionAttachmentOutcome outcome)
+        FormSubmissionAttachmentOutcome outcome,
+        CancellationToken cancellationToken)
     {
         var descriptor = request.Attachments.FirstOrDefault(attachment =>
             string.Equals(attachment.ClientAttachmentId, outcome.ClientAttachmentId, StringComparison.Ordinal) &&
@@ -685,9 +732,9 @@ internal sealed class FormSubmissionService
                 ClientAttachmentId = outcome.ClientAttachmentId,
                 FieldId = outcome.FieldId
             };
-        await _store.RecordAttachmentOutcomeAsync(submissionId, descriptor, outcome, packageVersion, context.RequestAborted)
+        await _store.RecordAttachmentOutcomeAsync(submissionId, descriptor, outcome, packageVersion, cancellationToken)
             .ConfigureAwait(false);
-        await RecordAuditAsync(context, "forms.attachment.policy", packageVersion.FormId, AuditOutcome.Success, $"{{\"version\":{packageVersion.Version},\"status\":\"{outcome.Status}\"}}")
+        await RecordAuditAsync(context, "forms.attachment.policy", packageVersion.FormId, AuditOutcome.Success, $"{{\"version\":{packageVersion.Version},\"status\":\"{outcome.Status}\"}}", cancellationToken)
             .ConfigureAwait(false);
         FormSubmissionLog.AttachmentPolicyRecorded(_logger, packageVersion.FormId, packageVersion.Version, submissionId, outcome.FieldId ?? string.Empty, outcome.Status);
     }
@@ -711,6 +758,31 @@ internal sealed class FormSubmissionService
             {
                 Retryable = retryable,
                 Reason = retryable ? "Submission policy denied this operation." : "Submission must be corrected before retry."
+            }
+        };
+
+    private static FormSubmissionResponse BuildFailedResponse(
+        Guid submissionId,
+        FormPackageVersion packageVersion,
+        FormSubmissionRequest request,
+        string retryReason)
+        => new()
+        {
+            SubmissionId = submissionId,
+            Status = "failed",
+            FormId = packageVersion.FormId,
+            FormVersion = packageVersion.Version,
+            Operation = request.Operation,
+            TargetFeatureId = request.TargetFeatureId,
+            EditOutcome = new FormEditOutcome
+            {
+                Succeeded = false,
+                Error = "Submission could not be applied."
+            },
+            Retry = new FormSubmissionRetryGuidance
+            {
+                Retryable = true,
+                Reason = retryReason
             }
         };
 
@@ -773,7 +845,8 @@ internal sealed class FormSubmissionService
         string action,
         string formId,
         AuditOutcome outcome,
-        string details)
+        string details,
+        CancellationToken cancellationToken)
         => _auditLog.RecordAsync(new AuditEvent
         {
             Timestamp = DateTimeOffset.UtcNow,
@@ -788,7 +861,7 @@ internal sealed class FormSubmissionService
             RemoteIp = context.Connection.RemoteIpAddress?.ToString(),
             UserAgent = context.Request.Headers.UserAgent.ToString(),
             Details = details
-        }, context.RequestAborted);
+        }, cancellationToken);
 
     private static string Hash(string value)
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();

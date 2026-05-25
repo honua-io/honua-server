@@ -142,6 +142,7 @@ How to build against Honua's APIs, SDKs, and protocols.
 - [Spec Engine](developer/SPEC_ENGINE.md)
 - [AI Builder SDK Contract](ai-builder-sdk-contract.md) — Map of honua-server MCP surfaces to the honua-sdk-js AI Spatial App Builder workflow, fixture cases, and capability states.
 - [AI Builder Contract Fixtures](developer/ai-builder-contract-fixtures.md)
+- [Form Package API](developer/form-package-api.md) — Versioned form package drafts, validation, immutable publishing, offline policy discovery, and field submission contracts.
 - [SDK Compatibility Matrix](developer/SDK_COMPATIBILITY_MATRIX.md)
 - [SDK Compatibility Metadata](developer/SDK_COMPATIBILITY_METADATA.md)
 - [SDK Standards Coverage](developer/SDK_STANDARDS_COVERAGE.md)

@@ -94,9 +94,13 @@ public interface IFormPackageStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Creates a pending submission record.
+    /// Attempts to create a pending submission record.
     /// </summary>
-    Task CreateSubmissionAsync(
+    /// <returns>
+    /// <see langword="true"/> when this caller owns the new pending row; <see langword="false"/>
+    /// when another submission already owns the same idempotency key.
+    /// </returns>
+    Task<bool> CreateSubmissionAsync(
         Guid submissionId,
         string? idempotencyKey,
         string actorHash,
