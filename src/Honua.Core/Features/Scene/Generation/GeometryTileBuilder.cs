@@ -49,13 +49,23 @@ public static class GeometryTileBuilder
     /// <param name="extrusion">Optional extrusion that converts polygons into vertical prisms.</param>
     /// <param name="generatorTag">Optional generator label (omitted when null/empty).</param>
     /// <param name="warnings">Optional sink for non-fatal coercion warnings (e.g., int64 → int32 clamping).</param>
+    /// <param name="perFeatureSymbology">
+    /// Optional resolved per-feature symbology, indexed parallel to
+    /// <paramref name="features"/>. When supplied, the builder bakes the
+    /// resolved RGBA color into a normalized <c>COLOR_0</c> vertex attribute and
+    /// switches the primitive material to a metallic-roughness material with a
+    /// neutral <c>baseColorFactor</c> so per-vertex colors multiply through.
+    /// When null the builder emits the legacy single double-sided white
+    /// material with no vertex colors.
+    /// </param>
     /// <returns>A deterministic GLB byte sequence.</returns>
     public static byte[] BuildGlb(
         IReadOnlyList<SceneFeature> features,
         IReadOnlyList<SceneAttributeSchema> metadataAttributes,
         LayerExtrusionInfo? extrusion,
         string? generatorTag = null,
-        IList<string>? warnings = null)
+        IList<string>? warnings = null,
+        IReadOnlyList<ResolvedSymbology>? perFeatureSymbology = null)
     {
         ArgumentNullException.ThrowIfNull(features);
         ArgumentNullException.ThrowIfNull(metadataAttributes);
@@ -63,6 +73,13 @@ public static class GeometryTileBuilder
         if (features.Count == 0)
         {
             throw new ArgumentException("At least one feature is required to build a tile.", nameof(features));
+        }
+
+        if (perFeatureSymbology is not null && perFeatureSymbology.Count != features.Count)
+        {
+            throw new ArgumentException(
+                "perFeatureSymbology must have exactly one entry per feature.",
+                nameof(perFeatureSymbology));
         }
 
         var kind = features[0].Geometry.Kind;
@@ -102,11 +119,31 @@ public static class GeometryTileBuilder
         // 2. Build the per-feature property table buffers.
         var propertyTable = SceneMetadataTable.Build(features, metadataAttributes, warnings);
 
-        // 3. Lay out the binary buffer: positions, feature ids, then each property column.
+        // 2b. Bake per-vertex colors from the resolved symbology (if any). The
+        // color for vertex v is the resolved color of the feature that owns v;
+        // featureIds already carries that ownership in vertex order, so the
+        // color buffer stays in lockstep with positions deterministically.
+        byte[]? colorBytes = null;
+        if (perFeatureSymbology is not null)
+        {
+            colorBytes = new byte[vertexCount * 4];
+            for (var v = 0; v < vertexCount; v++)
+            {
+                var symbology = perFeatureSymbology[(int)featureIds[v]];
+                var alpha = (byte)Math.Clamp((int)Math.Round(symbology.Opacity * 255.0), 0, 255);
+                colorBytes[v * 4] = symbology.Color.Red;
+                colorBytes[v * 4 + 1] = symbology.Color.Green;
+                colorBytes[v * 4 + 2] = symbology.Color.Blue;
+                colorBytes[v * 4 + 3] = alpha;
+            }
+        }
+
+        // 3. Lay out the binary buffer: positions, feature ids, optional vertex
+        // colors, then each property column.
         var positionBytes = AsByteSpan(positions);
         var featureIdBytes = AsByteSpan(featureIds);
 
-        var bufferViews = new List<BufferViewDescriptor>(2 + propertyTable.Columns.Count);
+        var bufferViews = new List<BufferViewDescriptor>(3 + propertyTable.Columns.Count);
         var binaryWriter = new BinaryBufferBuilder();
 
         var positionView = binaryWriter.Append(positionBytes);
@@ -114,6 +151,14 @@ public static class GeometryTileBuilder
 
         var featureIdView = binaryWriter.Append(featureIdBytes);
         bufferViews.Add(new BufferViewDescriptor(featureIdView, BufferViewTarget.ArrayBuffer));
+
+        var colorViewIndex = -1;
+        if (colorBytes is not null)
+        {
+            var colorView = binaryWriter.Append(colorBytes);
+            colorViewIndex = bufferViews.Count;
+            bufferViews.Add(new BufferViewDescriptor(colorView, BufferViewTarget.ArrayBuffer));
+        }
 
         var propertyViewIndices = new int[propertyTable.Columns.Count];
         for (var i = 0; i < propertyTable.Columns.Count; i++)
@@ -141,6 +186,7 @@ public static class GeometryTileBuilder
             bufferViews,
             positionViewIndex: 0,
             featureIdViewIndex: 1,
+            colorViewIndex,
             featureCount: features.Count,
             propertyTable,
             propertyViewIndices,
@@ -380,12 +426,14 @@ public static class GeometryTileBuilder
         List<BufferViewDescriptor> bufferViews,
         int positionViewIndex,
         int featureIdViewIndex,
+        int colorViewIndex,
         int featureCount,
         SceneMetadataTable propertyTable,
         int[] propertyViewIndices,
         int totalBinaryLength,
         string? generatorTag)
     {
+        var hasVertexColors = colorViewIndex >= 0;
         var (minX, minY, minZ, maxX, maxY, maxZ) = ComputePositionBounds(positions);
 
         using var stream = new MemoryStream();
@@ -431,6 +479,11 @@ public static class GeometryTileBuilder
             writer.WriteStartObject("attributes");
             writer.WriteNumber("POSITION", 0);
             writer.WriteNumber("_FEATURE_ID_0", 1);
+            if (hasVertexColors)
+            {
+                // Accessor 2 holds the baked normalized RGBA vertex colors.
+                writer.WriteNumber("COLOR_0", 2);
+            }
             writer.WriteEndObject();
 
             writer.WriteNumber("mode", primitiveMode);
@@ -482,6 +535,20 @@ public static class GeometryTileBuilder
             writer.WriteNumber("count", vertexCount);
             writer.WriteString("type", "SCALAR");
             writer.WriteEndObject();
+
+            if (hasVertexColors)
+            {
+                // COLOR_0 accessor: normalized unsigned-byte RGBA. glTF readers
+                // expand a VEC4 UBYTE accessor with normalized=true to [0,1]
+                // floats, so the baked 0-255 channels render at full fidelity.
+                writer.WriteStartObject();
+                writer.WriteNumber("bufferView", colorViewIndex);
+                writer.WriteNumber("componentType", 5121); // UNSIGNED_BYTE
+                writer.WriteBoolean("normalized", true);
+                writer.WriteNumber("count", vertexCount);
+                writer.WriteString("type", "VEC4");
+                writer.WriteEndObject();
+            }
             writer.WriteEndArray();
 
             // Default double-sided material — referenced by `material: 0`
@@ -495,6 +562,25 @@ public static class GeometryTileBuilder
             writer.WriteStartObject();
             writer.WriteString("name", "honua_default");
             writer.WriteBoolean("doubleSided", true);
+            if (hasVertexColors)
+            {
+                // Per-vertex COLOR_0 multiplies against baseColorFactor in the
+                // glTF PBR model. A neutral white, fully-rough, non-metal base
+                // lets the baked symbology color pass through unaltered while
+                // staying a valid metallic-roughness material. alphaMode BLEND
+                // honors the per-vertex alpha channel (resolved opacity).
+                writer.WriteStartObject("pbrMetallicRoughness");
+                writer.WriteStartArray("baseColorFactor");
+                writer.WriteNumberValue(1.0);
+                writer.WriteNumberValue(1.0);
+                writer.WriteNumberValue(1.0);
+                writer.WriteNumberValue(1.0);
+                writer.WriteEndArray();
+                writer.WriteNumber("metallicFactor", 0.0);
+                writer.WriteNumber("roughnessFactor", 1.0);
+                writer.WriteEndObject();
+                writer.WriteString("alphaMode", "BLEND");
+            }
             writer.WriteEndObject();
             writer.WriteEndArray();
 

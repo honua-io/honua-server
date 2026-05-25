@@ -27,13 +27,19 @@ public static class TilesetDocumentWriter
     /// <param name="geometricError">Geometric error in meters.</param>
     /// <param name="tileContentUris">Ordered relative URIs of child tile content (e.g. <c>tile_0000.glb</c>).</param>
     /// <param name="generatorTag">Optional generator label written into the asset block.</param>
+    /// <param name="styleReference">
+    /// Optional reference to the emitted style-metadata contract sidecar. When
+    /// supplied it is advertised under the root <c>extras.honua_style</c> block
+    /// so a client can discover the attribute-driven symbology spec.
+    /// </param>
     public static TilesetDocument Build(
         double[] boundingRegionDegrees,
         double minHeightMeters,
         double maxHeightMeters,
         double geometricError,
         IReadOnlyList<string> tileContentUris,
-        string? generatorTag = null)
+        string? generatorTag = null,
+        TilesetStyleReference? styleReference = null)
     {
         ArgumentNullException.ThrowIfNull(boundingRegionDegrees);
         ArgumentNullException.ThrowIfNull(tileContentUris);
@@ -80,7 +86,10 @@ public static class TilesetDocumentWriter
                 GeometricError = geometricError,
                 Refine = "ADD",
                 Children = children
-            }
+            },
+            Extras = styleReference is null
+                ? null
+                : new TilesetExtras { Style = styleReference }
         };
     }
 
