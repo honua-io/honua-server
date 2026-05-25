@@ -23,7 +23,7 @@ namespace Honua.Core.Features.GeoETL.Services.Transforms;
 /// </list>
 /// Numeric operators parse both operands as doubles; string operators compare ordinally.
 /// </remarks>
-public sealed class AttributeFilterTransform : IPipelineTransform
+public sealed class AttributeFilterTransform : IPipelineTransform, ISchemaAwareTransform
 {
     /// <summary>
     /// The transform type discriminator.
@@ -32,6 +32,19 @@ public sealed class AttributeFilterTransform : IPipelineTransform
 
     /// <inheritdoc />
     public string Type => TransformType;
+
+    /// <inheritdoc />
+    public TransformSchemaEffect DescribeSchema(TransformConfig config)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        if (!config.Options.TryGetValue("field", out var field) || string.IsNullOrWhiteSpace(field))
+        {
+            throw new InvalidOperationException("Attribute-filter transform requires a 'field' option.");
+        }
+
+        // A filter reads the field but does not change the schema (rows are dropped, not columns).
+        return new TransformSchemaEffect(RequiredFields: [field], ProducedFields: [], RemovedFields: []);
+    }
 
     /// <inheritdoc />
     public async IAsyncEnumerable<IFeature> TransformAsync(

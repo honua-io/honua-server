@@ -105,8 +105,90 @@ public sealed class PipelineValidator(IPipelineComponentFactory factory)
         ValidateSource(definition, issues);
         ValidateTransforms(definition, issues);
         ValidateSink(definition, issues);
+        ValidateStageChainSchema(definition, issues);
 
         return new PipelineValidationResult(issues);
+    }
+
+    /// <summary>
+    /// Stage-chain schema-compatibility check (ADR-0038 § Stage-chain validation). When the
+    /// source declares its output fields (a <c>declaredFields</c> connector option, a
+    /// comma-separated list), the validator threads the field set through each
+    /// schema-aware transform and reports a hard failure for any transform that requires a
+    /// field neither the source declared nor an earlier stage produced — so the pipeline
+    /// fails fast at CRUD / pre-execution time rather than mid-run. Sources that do not
+    /// declare fields use the documented permissive passthrough mode: the check is skipped
+    /// because the schema is dynamic and only knowable at runtime.
+    /// </summary>
+    private void ValidateStageChainSchema(PipelineDefinition definition, List<PipelineValidationIssue> issues)
+    {
+        var source = definition.Source;
+        if (source?.Connector is null)
+        {
+            return;
+        }
+
+        if (!source.Connector.Options.TryGetValue("declaredFields", out var declared) ||
+            string.IsNullOrWhiteSpace(declared))
+        {
+            // Permissive passthrough: source schema is dynamic, defer to runtime.
+            return;
+        }
+
+        var available = new HashSet<string>(
+            declared.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            StringComparer.Ordinal);
+
+        var stageIndex = 0;
+        foreach (var stage in definition.Transforms)
+        {
+            stageIndex++;
+            if (stage.Transform is null)
+            {
+                continue;
+            }
+
+            if (factory.ResolveTransform(stage.Transform.Type) is not ISchemaAwareTransform schemaAware)
+            {
+                continue;
+            }
+
+            TransformSchemaEffect effect;
+            try
+            {
+                effect = schemaAware.DescribeSchema(stage.Transform);
+            }
+            catch (InvalidOperationException ex)
+            {
+                issues.Add(new PipelineValidationIssue(
+                    "TRANSFORM_CONFIG_INVALID",
+                    $"Transform stage {stageIndex} ('{stage.Transform.Type}') is misconfigured: {ex.Message}",
+                    false));
+                continue;
+            }
+
+            foreach (var required in effect.RequiredFields)
+            {
+                if (!available.Contains(required))
+                {
+                    issues.Add(new PipelineValidationIssue(
+                        "SCHEMA_FIELD_UNAVAILABLE",
+                        $"Transform stage {stageIndex} ('{stage.Transform.Type}') requires attribute " +
+                        $"'{required}', which the source does not declare and no earlier stage produces.",
+                        false));
+                }
+            }
+
+            foreach (var removed in effect.RemovedFields)
+            {
+                available.Remove(removed);
+            }
+
+            foreach (var produced in effect.ProducedFields)
+            {
+                available.Add(produced);
+            }
+        }
     }
 
     private void ValidateSource(PipelineDefinition definition, List<PipelineValidationIssue> issues)

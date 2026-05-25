@@ -20,7 +20,13 @@ public sealed class PipelineComponentTests
 {
     private static PipelineComponentFactory BuildFactory() => new(
         [new GeoJsonSourceConnector()],
-        [new ReprojectTransform(), new AttributeFilterTransform()],
+        [
+            new ReprojectTransform(),
+            new AttributeFilterTransform(),
+            new AttributeRenameTransform(),
+            new AttributeCastTransform(),
+            new ComputedFieldTransform()
+        ],
         [new NullPreviewSinkConnector()]);
 
     private static PipelineDefinition ValidPipeline() => new()
@@ -182,6 +188,135 @@ public sealed class PipelineComponentTests
 
         results.Should().HaveCount(1);
         results.Single().Attributes!.GetOptionalValue("score").Should().Be(90L);
+    }
+
+    [UnitTest]
+    public void Validator_FailsFast_WhenTransformRequiresFieldSourceDoesNotDeclare()
+    {
+        var validator = new PipelineValidator(BuildFactory());
+        var pipeline = ValidPipeline() with
+        {
+            Stages =
+            [
+                new PipelineStage
+                {
+                    Kind = PipelineStageKind.Source,
+                    Connector = new ConnectorConfig
+                    {
+                        Type = GeoJsonSourceConnector.ConnectorType,
+                        Options = new Dictionary<string, string> { ["declaredFields"] = "name,score" }
+                    }
+                },
+                new PipelineStage
+                {
+                    Kind = PipelineStageKind.Transform,
+                    Transform = new TransformConfig
+                    {
+                        Type = AttributeRenameTransform.TransformType,
+                        Options = new Dictionary<string, string> { ["from"] = "missing", ["to"] = "renamed" }
+                    }
+                },
+                new PipelineStage
+                {
+                    Kind = PipelineStageKind.Sink,
+                    Connector = new ConnectorConfig { Type = NullPreviewSinkConnector.ConnectorType }
+                }
+            ]
+        };
+
+        var result = validator.Validate(pipeline);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.Code == "SCHEMA_FIELD_UNAVAILABLE");
+    }
+
+    [UnitTest]
+    public void Validator_PassesSchemaChain_WhenEarlierStageProducesRequiredField()
+    {
+        var validator = new PipelineValidator(BuildFactory());
+        var pipeline = ValidPipeline() with
+        {
+            Stages =
+            [
+                new PipelineStage
+                {
+                    Kind = PipelineStageKind.Source,
+                    Connector = new ConnectorConfig
+                    {
+                        Type = GeoJsonSourceConnector.ConnectorType,
+                        Options = new Dictionary<string, string> { ["declaredFields"] = "first,last" }
+                    }
+                },
+                new PipelineStage
+                {
+                    Kind = PipelineStageKind.Transform,
+                    Transform = new TransformConfig
+                    {
+                        Type = ComputedFieldTransform.TransformType,
+                        Options = new Dictionary<string, string>
+                        {
+                            ["target"] = "full", ["op"] = "concat", ["fields"] = "first,last"
+                        }
+                    }
+                },
+                new PipelineStage
+                {
+                    Kind = PipelineStageKind.Transform,
+                    Transform = new TransformConfig
+                    {
+                        Type = AttributeFilterTransform.TransformType,
+                        Options = new Dictionary<string, string> { ["field"] = "full", ["op"] = "exists" }
+                    }
+                },
+                new PipelineStage
+                {
+                    Kind = PipelineStageKind.Sink,
+                    Connector = new ConnectorConfig { Type = NullPreviewSinkConnector.ConnectorType }
+                }
+            ]
+        };
+
+        var result = validator.Validate(pipeline);
+
+        result.IsValid.Should().BeTrue();
+        result.Errors.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public void Validator_SkipsSchemaChain_WhenSourceDeclaresNoFields()
+    {
+        // Permissive passthrough: a source with a dynamic schema (no declaredFields) must
+        // not be blocked by stage-chain field reachability.
+        var validator = new PipelineValidator(BuildFactory());
+        var pipeline = ValidPipeline() with
+        {
+            Stages =
+            [
+                new PipelineStage
+                {
+                    Kind = PipelineStageKind.Source,
+                    Connector = new ConnectorConfig { Type = GeoJsonSourceConnector.ConnectorType }
+                },
+                new PipelineStage
+                {
+                    Kind = PipelineStageKind.Transform,
+                    Transform = new TransformConfig
+                    {
+                        Type = AttributeRenameTransform.TransformType,
+                        Options = new Dictionary<string, string> { ["from"] = "whatever", ["to"] = "x" }
+                    }
+                },
+                new PipelineStage
+                {
+                    Kind = PipelineStageKind.Sink,
+                    Connector = new ConnectorConfig { Type = NullPreviewSinkConnector.ConnectorType }
+                }
+            ]
+        };
+
+        var result = validator.Validate(pipeline);
+
+        result.IsValid.Should().BeTrue();
     }
 
     private static async IAsyncEnumerable<IFeature> Single(IFeature feature)
