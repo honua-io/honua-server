@@ -270,23 +270,23 @@ internal sealed partial class OperateObservabilityFixtureSeeder(
         CancellationToken cancellationToken)
     {
         var created = await store.TryAppendAsync(new AlertEventEnvelope
-            {
-                DedupeKey = dedupeKey,
-                RuleId = rule.RuleId,
-                ZoneId = zone.ZoneId,
-                ServiceId = OperateObservabilityFixtureConstants.ServiceId,
-                LayerId = OperateObservabilityFixtureConstants.LayerId,
-                ObjectId = objectId,
-                TriggerType = AlertTriggerType.Enter,
-                Generation = generation,
-                Severity = severity,
-                OccurredAt = occurredAt,
-                PayloadJson = payloadJson,
-                IncidentStatus = incidentStatus,
-                IncidentDurationMs = incidentStatus == AlertIncidentStatus.Ended
+        {
+            DedupeKey = dedupeKey,
+            RuleId = rule.RuleId,
+            ZoneId = zone.ZoneId,
+            ServiceId = OperateObservabilityFixtureConstants.ServiceId,
+            LayerId = OperateObservabilityFixtureConstants.LayerId,
+            ObjectId = objectId,
+            TriggerType = AlertTriggerType.Enter,
+            Generation = generation,
+            Severity = severity,
+            OccurredAt = occurredAt,
+            PayloadJson = payloadJson,
+            IncidentStatus = incidentStatus,
+            IncidentDurationMs = incidentStatus == AlertIncidentStatus.Ended
                     ? (long)TimeSpan.FromMinutes(7).TotalMilliseconds
                     : 0
-            },
+        },
             cancellationToken).ConfigureAwait(false);
         if (created.HasValue)
         {

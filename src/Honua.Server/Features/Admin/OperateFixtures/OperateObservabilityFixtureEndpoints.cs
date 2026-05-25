@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.OperateFixtures;
 
-internal static class OperateObservabilityFixtureEndpointExtensions
+internal static class OperateObservabilityFixtureEndpoints
 {
     public static void MapOperateObservabilityFixtureEndpoints(this IEndpointRouteBuilder endpoints)
     {
