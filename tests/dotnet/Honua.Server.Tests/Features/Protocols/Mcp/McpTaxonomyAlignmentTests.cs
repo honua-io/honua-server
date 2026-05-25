@@ -273,6 +273,27 @@ public sealed class McpTaxonomyAlignmentTests
             .TryGetProperty("enum", out _).Should().BeFalse();
     }
 
+    [UnitTest]
+    public void PackageReviewSchema_AllowsNullRequirementsAndResourceRefs_SoSchemaClientsMatchTheService()
+    {
+        // The request model normalizes an explicit null requirements/resourceRefs
+        // to an empty set, so the published schema must permit null. A stricter
+        // schema would let strict JSON-schema clients reject inputs the service
+        // accepts and normalizes.
+        var properties = McpToolSchemas.PackageReviewArgumentSchema.GetProperty("properties");
+
+        SchemaTypeTokens(properties.GetProperty("requirements")).Should().Contain("null");
+        SchemaTypeTokens(properties.GetProperty("resourceRefs")).Should().Contain("null");
+    }
+
+    private static string[] SchemaTypeTokens(JsonElement schema)
+    {
+        var type = schema.GetProperty("type");
+        return type.ValueKind == JsonValueKind.Array
+            ? type.EnumerateArray().Select(static e => e.GetString()!).ToArray()
+            : [type.GetString()!];
+    }
+
     private static string[] ExtractEnumValues(JsonElement root, params string[] path)
     {
         var current = root;

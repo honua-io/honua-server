@@ -10253,7 +10253,7 @@
           },
           "packageFamily": {
             "type": "string",
-            "description": "Supported values are query, analysis_plan, map_package, dashboard_report, form, app_package, workflow, gp, and etl. Unknown values are returned as unsupported_package_family findings rather than HTTP validation errors."
+            "description": "Supported values are query, analysis_plan, map_package, dashboard_report, form, app_package, workflow, gp, and etl. packageFamily is not required and not enum-limited: a missing value returns a missing_package_family finding and an unknown value returns an unsupported_package_family finding, rather than an HTTP validation error."
           },
           "packageId": { "type": "string", "nullable": true },
           "requestedAction": {
@@ -10273,7 +10273,11 @@
               { "type": "boolean" }
             ]
           },
-          "requirements": { "$ref": "#/components/schemas/PackageReviewRequirements" },
+          "requirements": {
+            "nullable": true,
+            "description": "Shared validation requirements. An explicit null is normalized to an empty requirement set.",
+            "allOf": [{ "$ref": "#/components/schemas/PackageReviewRequirements" }]
+          },
           "estimate": { "$ref": "#/components/schemas/PackageEstimate" },
           "includePreviewPlan": {
             "type": "boolean",
@@ -10282,7 +10286,9 @@
           "includePassFindings": { "type": "boolean" },
           "resourceRefs": {
             "type": "object",
-            "additionalProperties": { "type": "string" }
+            "nullable": true,
+            "additionalProperties": { "type": "string" },
+            "description": "Safe caller-visible resource references. An explicit null is normalized to an empty map."
           }
         }
       },

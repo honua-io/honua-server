@@ -431,7 +431,12 @@ catalog discovery on top of the same authorization graph via
   [Package Review API](package-review-api.md). Both tools return the canonical
   `PackageReviewResponse`; `honua_preview_package` forces read-only preview
   planning on the server side, while `honua_validate_package` forces
-  `includePreviewPlan: false`. Package-review tools require the same
+  `includePreviewPlan: false`. Like `honua_validate_plan`, the published schema
+  for these tools intentionally does not mark `packageFamily` as required or
+  enum-limit it: missing or unknown families come back as structured
+  `missing_package_family` / `unsupported_package_family` findings, so a
+  stricter schema would let schema-driven clients block the very inputs these
+  tools exist to inspect. Package-review tools require the same
   authenticated operator flow as other planning tools and authorize with the
   process read grant before calling `IPackageReviewService`.
   Clients should disable execute and publish controls from `canExecute` and

@@ -87,8 +87,8 @@ internal static class McpToolSchemas
               "description": "Opaque package payload inspected only by the matching package-family adapter."
             },
             "requirements": {
-              "type": "object",
-              "description": "Shared data binding, permission, schema, CRS, capability, dependency, and approval requirements."
+              "type": ["object", "null"],
+              "description": "Shared data binding, permission, schema, CRS, capability, dependency, and approval requirements. An explicit null is normalized to an empty requirement set."
             },
             "estimate": {
               "type": "object",
@@ -97,8 +97,9 @@ internal static class McpToolSchemas
             "includePreviewPlan": { "type": "boolean" },
             "includePassFindings": { "type": "boolean" },
             "resourceRefs": {
-              "type": "object",
-              "additionalProperties": { "type": "string" }
+              "type": ["object", "null"],
+              "additionalProperties": { "type": "string" },
+              "description": "Safe caller-visible resource references. An explicit null is normalized to an empty map."
             }
           }
         }
@@ -115,7 +116,10 @@ internal static class McpToolSchemas
     /// reviews missing and unknown families and reports them as structured
     /// <c>missing_package_family</c>/<c>unsupported_package_family</c> findings,
     /// so a stricter published schema would let schema-driven clients block the
-    /// very inputs these tools are meant to inspect.
+    /// very inputs these tools are meant to inspect. For the same reason
+    /// <c>requirements</c> and <c>resourceRefs</c> permit <c>null</c>: the
+    /// request model normalizes an explicit null to an empty set, so the
+    /// published schema must not reject a value the service accepts.
     /// </summary>
     public static readonly JsonElement PackageReviewArgumentSchema = Parse(PackageReviewArgumentSchemaJson);
 
