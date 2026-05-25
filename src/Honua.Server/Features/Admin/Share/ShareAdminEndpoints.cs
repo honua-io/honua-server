@@ -368,7 +368,8 @@ internal static class ShareAdminEndpoints
         [FromServices] IShareExportDestinationResolver destinationResolver,
         [FromServices] TimeProvider timeProvider,
         [FromServices] ILogger<ShareAdminEndpointsLog> logger,
-        [FromServices] IExecutionJobStore? jobStore = null)
+        [FromServices] IExecutionJobStore? jobStore = null,
+        [FromServices] IJobQueue? jobQueue = null)
     {
         try
         {
@@ -419,7 +420,12 @@ internal static class ShareAdminEndpoints
                 return UnprocessableDestination(context, currentStatus);
             }
 
-            if (jobStore is null)
+            // A Supported destination runs on the local batch backend, which is dispatched by
+            // enqueuing onto the durable job queue for a worker to claim. Both the durable job
+            // store and the queue must be present, otherwise the job would be created but never
+            // dispatched (stuck Queued forever). Bail before creating any record so no orphan job
+            // is left behind.
+            if (jobStore is null || jobQueue is null)
             {
                 return Unavailable(context, "Share export job runner is not configured.");
             }
@@ -430,6 +436,41 @@ internal static class ShareAdminEndpoints
             if (!created)
             {
                 return Unavailable(context, "Share export job runner could not create a job record.");
+            }
+
+            try
+            {
+                // Enqueue after the durable job record exists (queue contract requires the job to
+                // be persisted first) so a worker can claim and execute it.
+                await jobQueue.EnqueueAsync(job.OperationId, OperationPriority.Normal, context.RequestAborted)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Dispatch failed: roll the created job back to a terminal Failed state and record a
+                // Failed run so a returned run never lingers as a Queued job no worker will run.
+                await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
+                        jobStore,
+                        job.OperationId,
+                        failureMessage: "Share export dispatch failed.",
+                        cancellationToken: CancellationToken.None)
+                    .ConfigureAwait(false);
+
+                var failedRun = run with
+                {
+                    Status = ShareExportRunStatus.Failed,
+                    CompletedAt = now,
+                    LastError = "share-export-dispatch-failed"
+                };
+                await store.AppendRunAsync(failedRun, context.RequestAborted).ConfigureAwait(false);
+
+                ShareAdminLog.ExportDispatchFailed(logger, failedRun.RunId, exportId, job.OperationId, ex);
+                activity?.SetTag(HonuaTelemetry.Tags.ShareRunId, failedRun.RunId);
+                activity?.SetTag(HonuaTelemetry.Tags.JobId, job.OperationId);
+                activity?.SetStatus(ActivityStatusCode.Error, failedRun.LastError);
+                activity?.SetTag(HonuaTelemetry.Tags.Error, true);
+                activity?.SetTag(HonuaTelemetry.Tags.ErrorMessage, failedRun.LastError);
+                return Unavailable(context, "Share export job could not be dispatched.");
             }
 
             run = await store.AppendRunAsync(run, context.RequestAborted).ConfigureAwait(false);
@@ -925,7 +966,21 @@ internal static class ShareAdminEndpoints
         }
 
         var bucketDuration = TimeSpan.FromMinutes(effectiveBucketMinutes);
-        if ((end - start).Ticks / bucketDuration.Ticks > MaxTrafficBuckets)
+
+        // The series stores emit one bucket per step while cursor < periodEnd, i.e. a ceiling
+        // count of ceil(range / bucketDuration). Guard against that exact emitted count (not the
+        // floor) so a range of MaxTrafficBuckets buckets plus a partial tick cannot slip through
+        // as one bucket over the documented cap. Ceiling division avoids the overflow a
+        // MaxTrafficBuckets * bucketTicks multiplication would risk for very large bucket widths.
+        var rangeTicks = (end - start).Ticks;
+        var bucketTicks = bucketDuration.Ticks;
+        var bucketCount = rangeTicks / bucketTicks;
+        if (rangeTicks % bucketTicks != 0)
+        {
+            bucketCount++;
+        }
+
+        if (bucketCount > MaxTrafficBuckets)
         {
             problem = BadRequest(context, $"Traffic series cannot exceed {MaxTrafficBuckets.ToString(CultureInfo.InvariantCulture)} buckets.");
             return false;

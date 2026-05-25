@@ -313,8 +313,18 @@ internal sealed class InMemoryShareTrafficStore : IShareTrafficStore
             return true;
         }
 
-        return actual is not null
-            && string.Equals(requested.ResourceId, actual.ResourceId, StringComparison.Ordinal)
+        if (actual is null)
+        {
+            return false;
+        }
+
+        // resourceId is an optional refinement: match it only when the caller supplied one,
+        // mirroring the Postgres store's "@resource_id IS NULL OR resource_id = @resource_id"
+        // so omitting resourceId still matches buckets that carry one.
+        var resourceMatches = string.IsNullOrEmpty(requested.ResourceId)
+            || string.Equals(requested.ResourceId, actual.ResourceId, StringComparison.Ordinal);
+
+        return resourceMatches
             && string.Equals(requested.ServiceName, actual.ServiceName, StringComparison.OrdinalIgnoreCase)
             && requested.LayerId == actual.LayerId;
     }

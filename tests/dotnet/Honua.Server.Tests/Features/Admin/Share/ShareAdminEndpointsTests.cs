@@ -32,6 +32,7 @@ public sealed class ShareAdminEndpointsTests : IAsyncLifetime
     private readonly InMemoryShareExportStore _exportStore = new();
     private readonly InMemoryShareTrafficStore _trafficStore = new();
     private readonly RecordingJobStore _jobStore = new();
+    private readonly RecordingJobQueue _jobQueue = new();
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
@@ -45,10 +46,12 @@ public sealed class ShareAdminEndpointsTests : IAsyncLifetime
                 services.RemoveAll<IShareTrafficStore>();
                 services.RemoveAll<IShareExportDestinationResolver>();
                 services.RemoveAll<IExecutionJobStore>();
+                services.RemoveAll<IJobQueue>();
                 services.AddSingleton<IShareExportStore>(_exportStore);
                 services.AddSingleton<IShareTrafficStore>(_trafficStore);
                 services.AddSingleton<IShareExportDestinationResolver, TestDestinationResolver>();
                 services.AddSingleton<IExecutionJobStore>(_jobStore);
+                services.AddSingleton<IJobQueue>(_jobQueue);
             });
     }
 
@@ -265,6 +268,10 @@ public sealed class ShareAdminEndpointsTests : IAsyncLifetime
         job.Spec.Parameters[ExecutionJobParameterKeys.ShareExportId].Should().Be(exportId);
         job.Spec.Parameters[ExecutionJobParameterKeys.ShareRunId].Should().Be(runId);
 
+        // The job must be dispatched onto the durable queue, not merely created, otherwise a
+        // returned 202 would leave the run Queued with no worker able to claim it.
+        _jobQueue.Enqueued.Should().ContainSingle().Which.Should().Be(jobRunId);
+
         var listRuns = await _client.GetAsync($"/api/v1/admin/share/exports/{exportId}/runs");
         listRuns.StatusCode.Should().Be(HttpStatusCode.OK);
         using (var doc = await ReadJsonAsync(listRuns))
@@ -349,6 +356,55 @@ public sealed class ShareAdminEndpointsTests : IAsyncLifetime
         {
             doc.RootElement.GetProperty("buckets")[0].GetProperty("total").GetInt64().Should().Be(5);
             doc.RootElement.GetProperty("buckets")[1].GetProperty("total").GetInt64().Should().Be(0);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic/series")]
+    public async Task PerItemTraffic_WithoutResourceId_MatchesServiceAndLayerBuckets()
+    {
+        const string range = "periodStart=2026-05-25T00:00:00Z&periodEnd=2026-05-25T02:00:00Z";
+
+        // The seeded parcels/7 bucket carries resourceId "content-parcels". Omitting resourceId
+        // must still match it (resourceId is an optional refinement), matching Postgres behavior.
+        var summary = await _client.GetAsync($"/api/v1/admin/services/parcels/layers/7/share/traffic?{range}");
+        summary.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var doc = await ReadJsonAsync(summary))
+        {
+            doc.RootElement.GetProperty("totalRequests").GetInt64().Should().Be(5);
+            doc.RootElement.GetProperty("byInteractionType").GetProperty("export").GetInt64().Should().Be(2);
+        }
+
+        var series = await _client.GetAsync($"/api/v1/admin/services/parcels/layers/7/share/traffic/series?{range}&bucketMinutes=60");
+        series.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var doc = await ReadJsonAsync(series))
+        {
+            doc.RootElement.GetProperty("buckets")[0].GetProperty("total").GetInt64().Should().Be(5);
+            doc.RootElement.GetProperty("buckets")[1].GetProperty("total").GetInt64().Should().Be(0);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/share/traffic/series")]
+    public async Task TrafficSeries_BucketCountBoundary_AllowsExactlyMaxAndRejectsOneTickOver()
+    {
+        // 2000 one-minute buckets from midnight (00:00 -> 33h20m later) is exactly the documented cap.
+        var atMax = await _client.GetAsync(
+            "/api/v1/admin/share/traffic/series?periodStart=2026-05-25T00:00:00Z&periodEnd=2026-05-26T09:20:00Z&bucketMinutes=1");
+        atMax.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var doc = await ReadJsonAsync(atMax))
+        {
+            doc.RootElement.GetProperty("buckets").GetArrayLength().Should().Be(2000);
+        }
+
+        // One tick past that boundary would emit a 2001st bucket, so it must be rejected.
+        var overByOneTick = await _client.GetAsync(
+            "/api/v1/admin/share/traffic/series?periodStart=2026-05-25T00:00:00Z&periodEnd=2026-05-26T09:20:00.0000001Z&bucketMinutes=1");
+        overByOneTick.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using (var doc = await ReadJsonAsync(overByOneTick))
+        {
+            doc.RootElement.GetProperty("detail").GetString().Should().Contain("2000");
         }
     }
 
@@ -520,6 +576,29 @@ public sealed class ShareAdminEndpointsTests : IAsyncLifetime
             => Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(
                 _jobs.Values.Where(job => !kind.HasValue || job.Spec.Kind == kind.Value).ToArray());
     }
+
+    private sealed class RecordingJobQueue : IJobQueue
+    {
+        public List<string> Enqueued { get; } = [];
+
+        public Task EnqueueAsync(string operationId, OperationPriority priority = OperationPriority.Normal, CancellationToken cancellationToken = default)
+        {
+            Enqueued.Add(operationId);
+            return Task.CompletedTask;
+        }
+
+        public Task<string?> TryClaimAsync(string workerId, IReadOnlySet<ExecutionJobKind>? acceptedKinds = null, CancellationToken cancellationToken = default)
+            => Task.FromResult<string?>(null);
+
+        public Task RequeueAsync(string operationId, OperationPriority priority = OperationPriority.Normal, TimeSpan? visibleAfter = null, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task RemoveAsync(string operationId, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<long> GetQueueDepthAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<long>(0);
+    }
 }
 
 /// <summary>
@@ -594,5 +673,157 @@ public sealed class ShareAdminTrafficUnavailableTests : IAsyncLifetime
             ShareTrafficQuery query,
             CancellationToken cancellationToken = default)
             => throw new ShareTrafficStoreUnavailableException("Share traffic store is unavailable.");
+    }
+}
+
+/// <summary>
+/// Verifies a Supported trigger whose dispatch to the job queue fails rolls the created job back
+/// to a terminal state and records a Failed run, rather than leaving a Queued job no worker runs.
+/// </summary>
+[Collection("Database")]
+[Protocol(TestProtocols.Admin)]
+[Operation(Operations.Export)]
+public sealed class ShareExportDispatchFailureTests : IAsyncLifetime
+{
+    private readonly InMemoryShareExportStore _exportStore = new();
+    private readonly RollbackTrackingJobStore _jobStore = new();
+    private readonly WebAppFixture _fixture;
+    private HttpClient _client = null!;
+
+    public ShareExportDispatchFailureTests()
+    {
+        _fixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IShareExportStore>();
+                services.RemoveAll<IShareExportDestinationResolver>();
+                services.RemoveAll<IExecutionJobStore>();
+                services.RemoveAll<IJobQueue>();
+                services.AddSingleton<IShareExportStore>(_exportStore);
+                services.AddSingleton<IShareExportDestinationResolver, SupportedDestinationResolver>();
+                services.AddSingleton<IExecutionJobStore>(_jobStore);
+                services.AddSingleton<IJobQueue, ThrowingJobQueue>();
+            });
+    }
+
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _client = _fixture.CreateAdminClient();
+    }
+
+    public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/share/exports/{exportId}/trigger")]
+    [Endpoint("GET /api/v1/admin/share/exports/{exportId}/runs")]
+    public async Task Trigger_WhenDispatchFails_RollsBackJobAndRecordsFailedRun()
+    {
+        var definition = new ShareExportDefinition
+        {
+            ExportId = "dispatch-failure-export",
+            ResourceId = "content-dispatch",
+            ServiceName = "dispatch-layer",
+            LayerId = 7,
+            DisplayName = "Dispatch failure export",
+            DestinationType = ShareExportDestinationType.Webhook,
+            DestinationStatus = ShareExportDestinationStatus.Supported,
+            DestinationConfig = new Dictionary<string, string> { ["url"] = "https://example.invalid/webhook" },
+            Format = "GeoJSON",
+            Schedule = "0 * * * *",
+            ScheduleState = ShareExportScheduleState.Active,
+            CreatedAt = DateTimeOffset.Parse("2026-05-25T00:00:00Z", CultureInfo.InvariantCulture),
+            UpdatedAt = DateTimeOffset.Parse("2026-05-25T00:00:00Z", CultureInfo.InvariantCulture)
+        };
+        await _exportStore.CreateDefinitionAsync(definition);
+
+        var trigger = await _client.PostAsync($"/api/v1/admin/share/exports/{definition.ExportId}/trigger", null);
+
+        trigger.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+
+        var runs = await _client.GetAsync($"/api/v1/admin/share/exports/{definition.ExportId}/runs");
+        runs.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = await ReadJsonAsync(runs);
+        var run = doc.RootElement.GetProperty("items")[0];
+        run.GetProperty("status").GetString().Should().Be("Failed");
+        run.GetProperty("lastError").GetString().Should().Be("share-export-dispatch-failed");
+        var jobRunId = run.GetProperty("jobRunId").GetString();
+        jobRunId.Should().NotBeNullOrWhiteSpace();
+
+        // The created job must be rolled back to a terminal state, not left Queued.
+        var job = await _jobStore.GetAsync(jobRunId!);
+        job.Should().NotBeNull();
+        job!.Status.Should().Be(ExecutionJobStatus.Failed);
+    }
+
+    private static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response)
+    {
+        var payload = await response.Content.ReadAsStringAsync();
+        return JsonDocument.Parse(payload);
+    }
+
+    private sealed class SupportedDestinationResolver : IShareExportDestinationResolver
+    {
+        public ShareExportDestinationStatus Resolve(ShareExportDestinationType destinationType)
+            => ShareExportDestinationStatus.Supported;
+    }
+
+    private sealed class ThrowingJobQueue : IJobQueue
+    {
+        public Task EnqueueAsync(string operationId, OperationPriority priority = OperationPriority.Normal, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Queue backend is unavailable.");
+
+        public Task<string?> TryClaimAsync(string workerId, IReadOnlySet<ExecutionJobKind>? acceptedKinds = null, CancellationToken cancellationToken = default)
+            => Task.FromResult<string?>(null);
+
+        public Task RequeueAsync(string operationId, OperationPriority priority = OperationPriority.Normal, TimeSpan? visibleAfter = null, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task RemoveAsync(string operationId, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<long> GetQueueDepthAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<long>(0);
+    }
+
+    private sealed class RollbackTrackingJobStore : IExecutionJobStore
+    {
+        private readonly Dictionary<string, ExecutionJobRecord> _jobs = new(StringComparer.Ordinal);
+
+        public Task<bool> TryAcquireLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task<bool> RenewLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task ReleaseLeaseAsync(string operationId, string ownerId, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<bool> TryCreateAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            _jobs[job.OperationId] = job;
+            return Task.FromResult(true);
+        }
+
+        public Task<ExecutionJobRecord?> GetAsync(string operationId, CancellationToken cancellationToken = default)
+            => Task.FromResult(_jobs.TryGetValue(operationId, out var job) ? job : null);
+
+        public Task SetAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            _jobs[job.OperationId] = job;
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> TrySetAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            _jobs[job.OperationId] = job;
+            return Task.FromResult(true);
+        }
+
+        public Task<ExecutionJobPage> QueryAsync(ExecutionJobQuery query, CancellationToken cancellationToken = default)
+            => Task.FromResult(new ExecutionJobPage { Items = _jobs.Values.ToArray(), NextCursor = null });
+
+        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(_jobs.Values.ToArray());
     }
 }

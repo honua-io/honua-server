@@ -33,4 +33,12 @@ internal static partial class ShareAdminLog
         ILogger logger,
         string operation,
         Exception exception);
+
+    [LoggerMessage(EventId = 121604, Level = LogLevel.Error, Message = "Share export run {RunId} for definition {ExportId} failed to dispatch; job {JobRunId} was rolled back.")]
+    public static partial void ExportDispatchFailed(
+        ILogger logger,
+        string runId,
+        string exportId,
+        string jobRunId,
+        Exception exception);
 }

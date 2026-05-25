@@ -142,7 +142,8 @@ parameters.
 
 `POST /api/v1/admin/share/exports/{exportId}/trigger` creates a manual run.
 If the destination resolves to `Supported`, the endpoint writes an
-`ExecutionJobKind.ShareExport` job and returns `202`:
+`ExecutionJobKind.ShareExport` job, enqueues it on the durable job queue for a
+worker to claim, and returns `202`:
 
 ```json
 {
@@ -180,8 +181,13 @@ If the destination is not runnable, the endpoint records a failed run with
 | `Unsupported` | `share-export-destination-unsupported` | `share-export-destination-unsupported` |
 | `NotConfigured` | `share-export-destination-not-configured` | `share-export-destination-not-configured` |
 
-If the destination is `Supported` but the execution job store cannot create a
-job record, the endpoint returns `503` and does not append a run.
+A `Supported` trigger runs on the local batch backend, so it requires both the
+durable execution job store and the job queue. If either is unavailable, or the
+job record cannot be created, the endpoint returns `503` and does not append a
+run. If the job record is created but enqueuing it fails, the endpoint rolls the
+job back to a terminal `Failed` state, records a `Failed` run (keeping its
+`jobRunId`) with `lastError` `share-export-dispatch-failed`, and returns `503`.
+A returned `202` therefore always means the job was both created and dispatched.
 
 `pause` and `resume` only update `scheduleState`; they do not cancel already
 queued jobs. Scheduled execution is not implemented in this API slice, so
