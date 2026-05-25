@@ -52,6 +52,14 @@ internal static class GeoEtlServiceCollectionExtensions
             ServiceDescriptor.Singleton<IPipelineTransform, AttributeCastTransform>());
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IPipelineTransform, ComputedFieldTransform>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IPipelineTransform, SpatialFilterTransform>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IPipelineTransform, ClipTransform>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IPipelineTransform, SpatialJoinTransform>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IPipelineTransform, DedupTransform>());
 
         // Phase 1 sinks. The dry-run null preview sink is always available; the
         // Honua-layer / PostGIS sink registers only when a feature sink writer exists.
