@@ -113,6 +113,11 @@ omitted, it defaults to the latest version id. `createdFromJobId` and
 `createdFromArtifactIds` are provenance fields for versions derived from prior
 results.
 
+Version creation re-reads the latest item state and retries bounded store
+conflicts before returning `409 Conflict`. Clients that receive `409` should
+reopen `versions/latest`, rebase their payload if needed, and submit a new
+version request.
+
 The public slice reopens content by known `itemId` plus either `latest` or an
 explicit version number; it does not expose a list route yet. `contentHash` is
 computed from the saved `savedQuery` or `analysisPackage` payload only, so
@@ -296,7 +301,7 @@ record and a binding clients can place into downstream packages:
 }
 ```
 
-Completed geoprocessing jobs that carry `analysis.content.item_id`,
+Terminal geoprocessing jobs that carry `analysis.content.item_id`,
 `analysis.content.version`, and `analysis.content.version_id` persist retained
 result-artifact records during terminal callback handling. These records store
 metadata, provenance, and the artifact URI produced by the job result package;
@@ -352,6 +357,19 @@ Classification values are `validationFailed`, `authorizationDenied`,
 `cancelled`, `timedOut`, `artifactOutputFailed`, `executionFailed`,
 `storeUnavailable`, and `unknown`. Non-failed, non-cancelled jobs return
 `409 Conflict`.
+
+## Runtime Notes
+
+Analysis content emits `honua.analysis_content.*` activities for create,
+version, preview, submit/rerun, artifact, log, and failure flows. The
+`honua.analysis_content.operations_total` counter is tagged by operation and
+`success` or `error`; bounded version-conflict retries are logged before a
+final `409` is returned.
+
+Saved-query previews are high-cardinality ad hoc feature queries, so the API
+does not add exact-response caching for preview responses. Persisted artifact
+records are metadata and binding handles only; artifact bytes remain in the
+backing artifact or job-result store.
 
 ## Storage Notes
 

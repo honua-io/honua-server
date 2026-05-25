@@ -10,6 +10,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Geoprocessing;
 
@@ -22,7 +23,7 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
     IUniversalProgressStore progressStore,
     IProcessCatalog processCatalog,
     IGeoprocessingResultPackageStore? resultPackageStore,
-    IAnalysisContentStore? analysisContentStore,
+    IServiceScopeFactory serviceScopeFactory,
     ILogger<GeoprocessingJobTerminalCallback> logger) : IJobTerminalCallback
 {
     private static readonly TimeSpan ProgressRetention = TimeSpan.FromDays(7);
@@ -37,7 +38,8 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
         try
         {
             AnalysisResultPackage? package = null;
-            if (resultPackageStore != null || analysisContentStore != null && HasAnalysisContentSource(job))
+            var hasAnalysisContentSource = HasAnalysisContentSource(job);
+            if (resultPackageStore != null || hasAnalysisContentSource)
             {
                 package = GeoprocessingResultPackageFactory.Create(job, processCatalog);
             }
@@ -51,13 +53,10 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
                     cancellationToken).ConfigureAwait(false);
             }
 
-            if (analysisContentStore != null && package != null)
+            if (hasAnalysisContentSource && package != null)
             {
-                await PersistAnalysisContentArtifactsAsync(
-                    analysisContentStore,
-                    job,
-                    package,
-                    cancellationToken).ConfigureAwait(false);
+                await PersistAnalysisContentArtifactsWithScopedStoreAsync(job, package, cancellationToken)
+                    .ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -119,6 +118,25 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
         => job.Spec.Parameters.ContainsKey(AnalysisContentMetadataKeys.ItemId)
            && job.Spec.Parameters.ContainsKey(AnalysisContentMetadataKeys.Version)
            && job.Spec.Parameters.ContainsKey(AnalysisContentMetadataKeys.VersionId);
+
+    private async Task PersistAnalysisContentArtifactsWithScopedStoreAsync(
+        ExecutionJobRecord job,
+        AnalysisResultPackage package,
+        CancellationToken cancellationToken)
+    {
+        using var scope = serviceScopeFactory.CreateScope();
+        var artifactStore = scope.ServiceProvider.GetService<IAnalysisContentStore>();
+        if (artifactStore == null)
+        {
+            return;
+        }
+
+        await PersistAnalysisContentArtifactsAsync(
+            artifactStore,
+            job,
+            package,
+            cancellationToken).ConfigureAwait(false);
+    }
 
     private static async Task PersistAnalysisContentArtifactsAsync(
         IAnalysisContentStore artifactStore,

@@ -1125,16 +1125,22 @@ envelope shape.
 | `/api/v1/analysis/jobs/{jobId}/logs` | GET | Read bounded, sanitized structured logs. |
 | `/api/v1/analysis/jobs/{jobId}/failure` | GET | Read safe failure classification for failed or cancelled jobs. |
 
-Saved-query previews default to 25 features and clamp at 200. The preview path
+Saved-query previews honor a request `limit` first, then the stored
+`previewLimit`, then the 25-feature default, and clamp at 200. The preview path
 compiles any saved `filterPlan`, validates the canonical query against the
-target layer, and records a one-hour `preview` artifact. Analysis package run
-requests stamp the submitted job with `analysis.content.*` metadata for source
-item id, version, version id, source SRID, source units, package parameters,
-runtime parameters, and rerun links. Terminal geoprocessing jobs with analysis
-content source metadata persist retained artifact metadata and URIs; artifact
-bytes remain in the backing artifact store. Failed-job diagnostics redact stack
-traces, provider internals, connection strings, password/secret metadata, and
-long diagnostic values.
+target layer, and records a one-hour `preview` artifact without exact-response
+caching. Version creation retries bounded store conflicts before returning
+`409`; callers should reopen `versions/latest` before rebasing after a
+conflict. Analysis package run requests stamp the submitted job with
+`analysis.content.*` metadata for source item id, version, version id, source
+SRID, source units, package parameters, runtime parameters, and rerun links.
+Terminal geoprocessing jobs with analysis content source metadata persist
+retained artifact metadata and URIs; artifact bytes remain in the backing
+artifact store. Failed-job diagnostics use bounded log tail reads and redact
+stack traces, provider internals, connection strings, password/secret metadata,
+and long diagnostic values. Analysis content emits `honua.analysis_content.*`
+activities and the `honua.analysis_content.operations_total` metric tagged by
+operation and success/error result.
 
 Full request/response examples and storage notes are documented in
 [Analysis Content](../admin-api/analysis-content.md).

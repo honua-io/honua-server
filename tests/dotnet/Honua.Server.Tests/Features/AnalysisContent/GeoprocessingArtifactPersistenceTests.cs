@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.AnalysisContent;
+using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AnalysisContent.Domain;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
@@ -13,6 +15,8 @@ using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.AnalysisContent;
@@ -22,21 +26,32 @@ public sealed class GeoprocessingArtifactPersistenceTests
 {
     [UnitTest]
     [Operation(Operations.ProcessExecution)]
-    public async Task TerminalCallback_WithAnalysisContentMetadata_PersistsDurableArtifactRecord()
+    public async Task TerminalCallback_WithScopedAnalysisContentStore_PersistsDurableArtifactRecord()
     {
-        var store = new InMemoryAnalysisContentStore();
-        var callback = new GeoprocessingJobTerminalCallback(
-            new NullProgressStore(),
-            new EmptyProcessCatalog(),
-            resultPackageStore: null,
-            analysisContentStore: store,
+        var artifacts = new Dictionary<string, ResultArtifactRecord>(StringComparer.Ordinal);
+        var services = new ServiceCollection();
+        services.AddSingleton<IUniversalProgressStore, NullProgressStore>();
+        services.AddSingleton<IProcessCatalog, EmptyProcessCatalog>();
+        services.AddSingleton<IGeoprocessingResultPackageStore, NullResultPackageStore>();
+        services.AddScoped<IAnalysisContentStore>(_ => new RecordingAnalysisContentStore(artifacts));
+        services.AddSingleton<ILogger<GeoprocessingJobTerminalCallback>>(
             NullLogger<GeoprocessingJobTerminalCallback>.Instance);
+        services.AddSingleton<IJobTerminalCallback, GeoprocessingJobTerminalCallback>();
+
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions
+            {
+                ValidateOnBuild = true,
+                ValidateScopes = true
+            });
+
+        var callback = provider.GetRequiredService<IJobTerminalCallback>();
 
         var job = CreateTerminalJob();
 
         await callback.OnTerminalAsync(job, CancellationToken.None);
 
-        var artifact = await store.GetArtifactAsync("job-1182:artifact:1");
+        artifacts.TryGetValue("job-1182:artifact:1", out var artifact);
 
         Assert.NotNull(artifact);
         Assert.Equal("content-1182", artifact!.SourceItemId);
@@ -125,5 +140,71 @@ public sealed class GeoprocessingArtifactPersistenceTests
         public IReadOnlyList<ProcessDefinition> ListProcesses() => [];
 
         public IReadOnlyList<ProcessDefinition> GetProcessesByCategory(string category) => [];
+    }
+
+    private sealed class NullResultPackageStore : IGeoprocessingResultPackageStore
+    {
+        public Task<AnalysisResultPackage?> GetAsync(
+            string jobId,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<AnalysisResultPackage?>(null);
+
+        public Task SetAsync(
+            string jobId,
+            AnalysisResultPackage package,
+            TimeSpan? ttl = null,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+    }
+
+    private sealed class RecordingAnalysisContentStore(
+        Dictionary<string, ResultArtifactRecord> artifacts) : IAnalysisContentStore
+    {
+        public Task<AnalysisContentItem> CreateItemAsync(
+            AnalysisContentItem item,
+            AnalysisContentVersion version,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<AnalysisContentItem?> GetItemAsync(
+            string itemId,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<AnalysisContentVersion> AddVersionAsync(
+            string itemId,
+            AnalysisContentVersion version,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<AnalysisContentVersion?> GetVersionAsync(
+            string itemId,
+            int? version = null,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<AnalysisContentVersion>> ListVersionsAsync(
+            string itemId,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<ResultArtifactRecord> UpsertArtifactAsync(
+            ResultArtifactRecord artifact,
+            CancellationToken cancellationToken = default)
+        {
+            artifacts[artifact.ArtifactId] = artifact;
+            return Task.FromResult(artifact);
+        }
+
+        public Task<ResultArtifactRecord?> GetArtifactAsync(
+            string artifactId,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(artifacts.GetValueOrDefault(artifactId));
+
+        public Task<IReadOnlyList<ResultArtifactRecord>> ListArtifactsForJobAsync(
+            string jobId,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<ResultArtifactRecord>>(
+                artifacts.Values.Where(artifact => artifact.JobId == jobId).ToArray());
     }
 }
