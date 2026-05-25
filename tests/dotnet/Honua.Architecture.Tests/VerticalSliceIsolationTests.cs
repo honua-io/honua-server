@@ -46,7 +46,8 @@ public sealed class VerticalSliceIsolationTests
         "SpatialAnalytics",
         "Spec",
         "Reporting",
-        "Studio"
+        "Studio",
+        "WorkflowPackages"
     };
 
     /// <summary>
@@ -67,7 +68,8 @@ public sealed class VerticalSliceIsolationTests
             ["AnalysisContent"] = new[] { "Geoprocessing" },
             ["NlQuery"] = new[] { "AiBuilder" },
             ["PackageReview"] = new[] { "Geoprocessing" },
-            ["Reporting"] = new[] { "Geoprocessing" }
+            ["Reporting"] = new[] { "Geoprocessing" },
+            ["WorkflowPackages"] = new[] { "Geoprocessing", "Orchestration" }
         };
 
     private static readonly string[] _protocolAdapterNames =

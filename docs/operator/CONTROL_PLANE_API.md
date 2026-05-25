@@ -35,6 +35,7 @@ The Honua Admin UI is intended to operate as a UI on top of this control-plane A
 | `/api/v1/admin/config` | Runtime configuration and env var reference |
 | `/api/v1/admin/openapi.json` | Admin API OpenAPI schema snapshot served by runtime |
 | `/api/v1/capabilities/manifest` | Public neutral runtime capability manifest for Console, MCP, QGIS, native hosts, and SDK clients |
+| `/api/v1/console` | Console control-plane surfaces using the same admin authorization posture |
 | `/openapi.json` | OGC API Features OpenAPI schema |
 | `/healthz/live` | Liveness check |
 | `/healthz/ready` | Readiness check |
@@ -68,6 +69,14 @@ The Honua Admin UI is intended to operate as a UI on top of this control-plane A
 |-- compliance/               # SOC 2 / FedRAMP readiness dashboard, residency policy + dry-run, key-version posture rotation, report export
 ```
 
+Console sibling endpoints:
+```
+/api/v1/console/
+|-- workflow-node-registry    # Server-owned GP/ETL node palette
+|-- workflow-packages          # Drafts, immutable versions, validation, dry-run, publication
+|-- workflow-publications      # Published workflow runs and provenance
+```
+
 Additional metrics endpoints:
 ```
 /api/v1/metrics/
@@ -78,7 +87,7 @@ Additional metrics endpoints:
 |-- memory
 ```
 
-**Note**: Some admin surfaces vary by build. Control-plane SDK compatibility should not guess. Use `GET /api/v1/admin/capabilities` for the authenticated admin runtime handshake, `/api/v1/admin/config` for runtime validation details, and `/api/v1/admin/openapi.json` for the bundled `docs/developer/api-specs/admin-api.json` contract snapshot used for SDK generation. Use the public `GET /api/v1/capabilities/manifest` when clients need user/environment/workspace-scoped feature availability such as package families, temporal support, sync/realtime, jobs, GitOps, transports, mTLS, runtime limits, and entitlement/policy hints. See [Capability Manifest](../developer/capability-manifest.md) for the public manifest contract.
+**Note**: Some admin and Console surfaces vary by build. SDK-facing compatibility should not guess. Use `GET /api/v1/admin/capabilities` for the authenticated admin runtime handshake, `/api/v1/admin/config` for runtime validation details, `/api/v1/admin/openapi.json` for the bundled `docs/developer/api-specs/admin-api.json` contract snapshot used for SDK generation, and the [Console Workflow Packages](../admin-api/console-workflow-packages.md) contract for the sibling GP/ETL workflow package surface. Use the public `GET /api/v1/capabilities/manifest` when clients need user/environment/workspace-scoped feature availability such as package families, temporal support, sync/realtime, jobs, GitOps, transports, mTLS, runtime limits, and entitlement/policy hints. See [Capability Manifest](../developer/capability-manifest.md) for the public manifest contract.
 
 ## **SDKs and Contract Governance**
 

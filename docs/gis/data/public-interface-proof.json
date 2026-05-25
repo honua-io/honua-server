@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedUtc": "2026-05-24T00:00:00Z",
+  "updatedUtc": "2026-05-25T00:00:00Z",
   "surfaces": [
     {
       "surfaceId": "capability-manifest",
@@ -331,6 +331,50 @@
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": "#1162",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "console-workflow-packages",
+      "displayName": "Console workflow package and node registry API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/console/workflow-*",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [
+        "/api/v1/console/workflow-"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and WorkflowPackageEndpointsTests integration tests assert node registry rendering data, package version lifecycle, validation, dry run, publication targets, run creation, and workflow provenance metadata",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/WorkflowPackages/WorkflowPackageEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1185",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Source-generated WorkflowPackagesJsonContext keeps workflow package, node registry, validation, dry-run, publication, and run DTOs AOT-safe; the Console Workflow Packages contract documents endpoint and provenance semantics",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/WorkflowPackages/WorkflowPackagesJsonContext.cs",
+            "src/Honua.Core/Features/WorkflowPackages/Domain/WorkflowPackageModels.cs",
+            "docs/admin-api/console-workflow-packages.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1185",
           "versionCaptureRule": null
         }
       ]
