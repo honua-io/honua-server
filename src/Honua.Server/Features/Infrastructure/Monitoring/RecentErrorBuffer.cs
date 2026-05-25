@@ -89,6 +89,41 @@ internal sealed class RecentErrorBuffer
     }
 
     /// <summary>
+    /// Inserts a deterministic fixture entry without requiring an HTTP failure path.
+    /// Existing entries with the same correlation, path, status, and message are replaced.
+    /// </summary>
+    public void RecordSeed(RecentErrorEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+
+        if (_capacity <= 0)
+        {
+            return;
+        }
+
+        lock (_lock)
+        {
+            var retained = _entries
+                .Where(existing => !IsSameSeedEntry(existing, entry))
+                .TakeLast(Math.Max(0, _capacity - 1))
+                .ToArray();
+
+            _entries.Clear();
+            foreach (var retainedEntry in retained)
+            {
+                _entries.Enqueue(retainedEntry);
+            }
+
+            while (_entries.Count >= _capacity)
+            {
+                _entries.Dequeue();
+            }
+
+            _entries.Enqueue(entry);
+        }
+    }
+
+    /// <summary>
     /// Returns recent errors ordered newest-first.
     /// </summary>
     public IReadOnlyList<RecentErrorEntry> Snapshot()
@@ -98,4 +133,10 @@ internal sealed class RecentErrorBuffer
             return _entries.Reverse().ToArray();
         }
     }
+
+    private static bool IsSameSeedEntry(RecentErrorEntry left, RecentErrorEntry right)
+        => string.Equals(left.CorrelationId, right.CorrelationId, StringComparison.Ordinal) &&
+           string.Equals(left.Path, right.Path, StringComparison.Ordinal) &&
+           left.StatusCode == right.StatusCode &&
+           string.Equals(left.Message, right.Message, StringComparison.Ordinal);
 }

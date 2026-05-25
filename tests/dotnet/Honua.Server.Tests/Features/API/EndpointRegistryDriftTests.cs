@@ -58,6 +58,9 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
     {
         // Mapped only when ServeApiDocs/HONUA_SERVE_API_DOCS is enabled.
         "GET /docs",
+        // Explicit Development/Test fixture endpoint, mapped only when
+        // OperateObservabilityFixture:Enabled=true.
+        "POST /api/v1/admin/dev/fixtures/operate-observability/{profile}",
         // These surfaces have direct endpoint-level tests, but ASP.NET's test-host
         // EndpointDataSource does not expose their route metadata consistently.
         "GET /monitoring/alerts",
