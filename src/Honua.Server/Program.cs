@@ -23,10 +23,13 @@ using Honua.Core.Features.Security;
 using Honua.Core.Features.Styling;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Admin;
+using Honua.Server.Features.Admin.Jobs;
+using Honua.Server.Features.Admin.OperateFixtures;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Features.CloudDemo;
 using Honua.Server.Features.Collaboration;
+using Honua.Server.Features.Console;
 using Honua.Server.Features.Collaboration.Sessions;
 using Honua.Server.Features.Export;
 using Honua.Server.Features.PrintingTools;
@@ -35,6 +38,7 @@ using Honua.Server.Features.FileStorage;
 using Honua.Server.Features.HealthCheck;
 using Honua.Server.Features.Import;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Authentication.ClientCertificates;
 using Honua.Server.Features.Infrastructure.AuditLog;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Configuration;
@@ -53,7 +57,10 @@ using Honua.Server.Features.Mobile.Auth;
 using Honua.Server.Features.Mobile.Diagnostics;
 using Honua.Server.Features.Mobile.FieldCollection;
 using Honua.Server.Features.Orchestration;
+using Honua.Server.Features.Studio;
+using Honua.Server.Features.PackageReview;
 using Honua.Server.Features.Streaming;
+using Honua.Server.Features.WorkflowPackages;
 using Honua.Server.Startup;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -69,6 +76,7 @@ using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Enrichers.Span;
 using StackExchange.Redis;
+using Microsoft.AspNetCore.Server.Kestrel.Https;
 
 // CLEAN ARCHITECTURE COMPOSITION ROOT
 // This is the application layer that wires dependencies:
@@ -106,6 +114,18 @@ if (serveStacOpsDemo && !builder.Environment.IsDevelopment())
 
 // Load optional security configuration without overriding environment-specific settings.
 StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, builder.Environment);
+var clientCertificateMode = builder.Configuration.GetValue<ClientCertificateAuthenticationMode>(
+    "Authentication:ClientCertificates:Mode");
+if (clientCertificateMode != ClientCertificateAuthenticationMode.Disabled)
+{
+    builder.WebHost.ConfigureKestrel(options =>
+    {
+        options.ConfigureHttpsDefaults(httpsOptions =>
+        {
+            httpsOptions.ClientCertificateMode = ClientCertificateMode.AllowCertificate;
+        });
+    });
+}
 builder.Services.AddDataProtection();
 
 // Enable Aspire integrations only when Aspire configuration is present.
@@ -379,6 +399,8 @@ builder.Services.AddHonuaLicensing(builder.Configuration);
 
 // Register configuration documentation service for self-documenting admin endpoint
 builder.Services.AddScoped<Honua.Server.Features.Admin.Services.ConfigurationDocumentationService>();
+builder.Services.TryAddSingleton(TimeProvider.System);
+builder.Services.TryAddScoped<IConsoleJobService, ConsoleJobService>();
 
 // Register control plane IAM services (in-memory implementations until #496, #498, #355 land)
 builder.Services.AddSingleton<Honua.Core.Features.Identity.Abstractions.IOidcProviderStore,
@@ -391,6 +413,13 @@ builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Authenticatio
     new Honua.Server.Features.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>()));
 // v1 metadata-resource / manifest-approval / gitops-watch admin surface removed in #1035 cutover.
 // V2 admin UX (epic #1046) edits the canonical MetadataV2Graph document directly via IMetadataV2GraphStore.
+
+// Console metadata v2 content + RBAC baseline (#1162). Persistent store lands in #1163.
+builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleContentStore>(sp =>
+    new Honua.Server.Features.Console.Services.InMemoryConsoleContentStore(
+        sp.GetService<TimeProvider>() ?? TimeProvider.System));
+builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleActionEvaluator,
+    Honua.Server.Features.Console.Services.ConsoleActionEvaluator>();
 
 // Register shared Infrastructure services
 builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.IGeometryConverter,
@@ -413,6 +442,8 @@ builder.Services.AddValidationServices();
 
 // Register feature services (FeatureServer, OGC, OData, Observability)
 builder.Services.AddServerFeatures(builder.Configuration);
+builder.Services.AddOperateObservabilityFixtures(builder.Configuration, builder.Environment);
+builder.Services.AddWorkflowPackages();
 builder.Services.AddAdminRealtime();
 if (!isTestEnvironment)
 {
@@ -512,6 +543,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.SecureConnectionJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerPublishingJsonContext.Default,
         Honua.Server.Features.Admin.Models.ServiceSettingsJsonContext.Default,
+        Honua.Core.Features.Metadata.Domain.V2.MetadataReleaseJsonContext.Default,
+        Honua.Server.Features.Admin.Models.MetadataPrevalidationJsonContext.Default,
         Honua.Server.Features.Admin.Models.DeployControlJsonContext.Default,
         Honua.Server.Features.Infrastructure.Monitoring.MetricsJsonContext.Default,
         Honua.Server.Features.Import.ImportJsonContext.Default,
@@ -535,6 +568,12 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.OidcProviderJsonContext.Default,
         Honua.Server.Features.Admin.Models.UserManagementJsonContext.Default,
         Honua.Server.Features.Admin.Models.RoleJsonContext.Default,
+        Honua.Server.Features.Console.Models.ConsoleJsonContext.Default,
+        Honua.Server.Features.Studio.Models.StudioApiJsonContext.Default,
+        Honua.Core.Features.Studio.Domain.StudioJsonContext.Default,
+        Honua.Server.Features.AnalysisContent.AnalysisContentApiJsonContext.Default,
+        Honua.Server.Features.Capabilities.Models.CapabilityManifestJsonContext.Default,
+        Honua.Server.Features.WorkflowPackages.WorkflowPackagesJsonContext.Default,
         Honua.Server.Features.Admin.Models.AdminApiKeyJsonContext.Default,
         Honua.Server.Features.Admin.Models.SceneDatasetJsonContext.Default,
         Honua.Server.Features.Admin.Models.SceneGenerationJsonContext.Default,
@@ -543,6 +582,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.TableDiscoveryJsonContext.Default,
         Honua.Server.Features.Admin.Models.ExternalServiceDiscoveryJsonContext.Default,
         Honua.Server.Features.Admin.Models.AdminAuthJsonContext.Default,
+        Honua.Server.Features.Admin.Models.ClientCertificateJsonContext.Default,
         Honua.Server.Features.Admin.Models.ConfigurationJsonContext.Default,
         Honua.Server.Features.Admin.Models.LicenseAdminJsonContext.Default,
         Honua.Server.Features.Infrastructure.Licensing.LicenseFileJsonContext.Default,
@@ -553,9 +593,11 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.CacheOperationsJsonContext.Default,
         Honua.Server.Features.Admin.Models.StreamingOperationsJsonContext.Default,
         Honua.Server.Features.Admin.Models.GeocodingOperationsJsonContext.Default,
+        Honua.Server.Features.PackageReview.PackageReviewJsonContext.Default,
         Honua.Server.Features.CloudDemo.CloudDemoJsonContext.Default,
         Honua.Server.Features.HealthCheck.HealthJsonContext.Default,
         Honua.Server.Features.Infrastructure.Models.ProblemJsonContext.Default,
+        Honua.Server.Features.Infrastructure.Authentication.ClientCertificates.ClientCertificateInfrastructureJsonContext.Default,
         Honua.Server.Features.Infrastructure.Middleware.LimitsEnforcementJsonContext.Default,
         Honua.Server.Features.Infrastructure.Security.CspViolationJsonContext.Default,
         Honua.Server.Features.Protocols.GeoServices.GeometryService.Models.GeometryServiceJsonContext.Default,
@@ -569,6 +611,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Collaboration.Sessions.CollaborationSessionJsonContext.Default,
         Honua.Server.Features.Collaboration.FeatureLocks.FeatureLockJsonContext.Default,
         Honua.Core.Features.Authorization.Domain.OperatorAuthorizationJsonContext.Default,
+        Honua.Server.Features.Admin.ObservabilityJsonContext.Default,
+        Honua.Server.Features.Admin.InvestigationJsonContext.Default,
         Honua.Server.Features.Protocols.Ogc.Api.Processes.OgcProcessesJsonContext.Default);
 });
 
@@ -589,6 +633,12 @@ if (activeDbConnectionTracker != null)
 
 if (forwardedHeadersEnabled)
 {
+    app.Use(async (context, next) =>
+    {
+        context.Items[ClientCertificateHttpContextItems.OriginalProxyPeerIpAddress] =
+            context.Connection.RemoteIpAddress;
+        await next(context).ConfigureAwait(false);
+    });
     app.UseForwardedHeaders();
 }
 
@@ -816,6 +866,23 @@ app.UseSerilogRequestLogging(options =>
 // Add global exception handling middleware after request logging.
 app.UseGlobalExceptionHandling();
 
+// Capture the original gRPC-Web indicator before UseGrpcWeb rewrites Content-Type
+// from application/grpc-web* to application/grpc, so the client-certificate
+// enforcement middleware downstream can still distinguish gRPC-Web from native gRPC
+// and skip mTLS enforcement for browser/gRPC-Web callers. Only Content-Type is
+// authoritative here — it matches what UseGrpcWeb itself uses for protocol
+// detection, and treating a client-supplied X-Grpc-Web header as sufficient
+// would let an unauthenticated caller bypass required native mTLS by setting a
+// single header alongside application/grpc.
+app.Use(async (context, next) =>
+{
+    var contentType = context.Request.ContentType;
+    var isGrpcWeb = !string.IsNullOrWhiteSpace(contentType) &&
+        contentType.StartsWith("application/grpc-web", StringComparison.OrdinalIgnoreCase);
+    context.Items[ClientCertificateHttpContextItems.OriginalGrpcWebRequest] = isGrpcWeb;
+    await next(context).ConfigureAwait(false);
+});
+
 // Enable gRPC-Web for all gRPC services (before CORS and endpoint mapping)
 app.UseGrpcWeb(new GrpcWebOptions { DefaultEnabled = true });
 
@@ -824,6 +891,10 @@ app.UseHonuaCors(app.Environment);
 
 // Validate query, form, and selected header inputs before authentication and endpoint execution.
 app.UseInputValidation();
+
+// Validate optional/required client certificates before the regular auth stack so
+// required mTLS surfaces can return machine-readable errors instead of TLS handshakes.
+app.UseHonuaClientCertificateAuthentication();
 
 // Add authentication and authorization middleware early to short-circuit unauthorized requests
 app.UseApiKeyAuthentication();
@@ -876,6 +947,7 @@ app.MapAdminEndpoints();
 app.MapExternalServiceDiscoveryEndpoints();
 app.MapConfigurationDiscoveryEndpoints();
 app.MapAdminObservabilityEndpoints();
+app.MapConsoleJobEndpoints();
 app.MapAdminRealtimeHub();
 
 // Configure layer publishing endpoints
@@ -886,6 +958,8 @@ app.MapServiceSettingsEndpoints();
 
 // Configure admin metadata version/manifest endpoints
 // v1 admin endpoint mappings removed in #1035 cutover; V2 admin UX (#1046) lives elsewhere.
+app.MapMetadataReleaseEndpoints();
+app.MapMetadataPrevalidationEndpoints();
 app.MapDeployControlEndpoints();
 
 // Configure admin layer style endpoints
@@ -898,6 +972,13 @@ app.MapAdminSldStyleEndpoints();
 
 // Configure admin alerting zone/rule endpoints
 app.MapAlertAdminEndpoints();
+
+// Configure Console Operate observability endpoints (#1168)
+app.MapObservabilityAlertEndpoints();
+app.MapObservabilityAuditEndpoints();
+app.MapObservabilityEventEndpoints();
+app.MapInvestigationEndpoints();
+app.MapOperateObservabilityFixtureEndpoints();
 
 // Configure platform admin endpoints (license, identity, cache, geocoding, features)
 app.MapLicenseAdminEndpoints();
@@ -912,13 +993,22 @@ app.MapComplianceAdminEndpoints();
 
 // Configure secure connection management endpoints
 app.MapSecureConnectionEndpoints();
+app.MapClientCertificateAdminEndpoints();
 
 // Configure control plane IAM endpoints (#511)
 app.MapLicenseEndpoints();
 app.MapOidcProviderEndpoints();
 app.MapUserManagementEndpoints();
 app.MapRoleEndpoints();
+
+// Configure Console metadata v2 content + RBAC endpoints (#1162)
+app.MapConsoleSessionEndpoints();
+app.MapConsoleContentEndpoints();
+app.MapConsoleActionEndpoints();
+app.MapStudioPackageEndpoints();
+app.MapWorkflowPackageEndpoints();
 app.MapAdminApiKeyEndpoints();
+app.MapPackageReviewEndpoints();
 
 // Configure metadata resource endpoints (ADR-0023)
 // v1 MapMetadataResourceEndpoints removed in #1035 cutover.
@@ -1154,4 +1244,3 @@ async Task RunPostGisPreflightCheckAsync()
 
     Honua.Server.Features.Infrastructure.Logging.Log.PostGisPreflightCheckFailedDevelopment(app.Logger, errorMessage);
 }
-

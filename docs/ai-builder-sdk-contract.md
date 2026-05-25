@@ -10,8 +10,9 @@ and SDK eval harnesses can replay the flow without live model calls.
 Text sequence:
 
 `prompt` -> `honua_ground_candidates` -> `honua_clarify_intent` ->
-`honua_plan_analysis` -> SDK review -> `honua_validate_plan` ->
-`honua_dry_run_plan` -> `honua_execute_plan` ->
+`honua_plan_analysis` -> SDK review -> `honua_preview_package` /
+`honua_validate_package` -> `honua_validate_plan` -> `honua_dry_run_plan` ->
+`honua_execute_plan` ->
 poll `honua://jobs/{jobId}` -> read `honua://jobs/{jobId}/results` ->
 consume `honua://app-packages/{appPackageId}`.
 
@@ -20,6 +21,7 @@ consume `honua://app-packages/{appPackageId}`.
 | Prompt grounding | MCP tool `honua_ground_candidates` | Resolve candidate services, layers, fields, CRS, predicates, and operations. |
 | Clarification | MCP tool `honua_clarify_intent` | Render selectable candidates for ambiguous sources, fields, units, CRS, filters, and operations. |
 | Draft | MCP tool `honua_plan_analysis` | Render `specDraft`, `appPackage` preview, `warnings`, `capabilityState`, `cache`, and plan DAG without hidden model state. |
+| Package review | MCP tools `honua_preview_package`, `honua_validate_package` | Review generated plans, map packages, app packages, workflows, ETL candidates, and publish candidates through the canonical `PackageReviewResponse`; disable execute/publish controls from `canExecute` and `canPublish`. |
 | Review validation | MCP tool `honua_validate_plan` | Re-run deterministic plan/spec validation before showing apply controls. |
 | Estimate | MCP tool `honua_dry_run_plan` | Show cost, artifact estimates, warnings, and non-executable states. |
 | Apply | MCP tool `honua_execute_plan` | Submit the reviewed plan and receive `jobId` plus `honua://jobs/{jobId}`. |

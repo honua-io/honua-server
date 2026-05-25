@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Honua Server Management API",
-    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints for configuration, import scanning, connections, layers, styles, observability, runtime licensing, and deploy control. For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
+    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints for configuration, import scanning, connections, layers, styles, observability, realtime alert management, durable job viewing, package validation and preview planning, runtime licensing, deploy control, and native client-certificate trust management. For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
     "version": "1.0.0",
     "contact": {
       "name": "Honua Server",
@@ -30,6 +30,11 @@
       "BasicAuth": []
     }
   ],
+  "x-honua-client-certificate-auth": {
+    "configurationSection": "Authentication:ClientCertificates",
+    "modes": ["Disabled", "Optional", "RequiredForNative", "RequiredForAdmin", "RequiredForEnvironment"],
+    "note": "OpenAPI 3.0 cannot directly model TLS client-certificate presentation. Required admin/native mTLS modes are enforced before normal RBAC and return application/problem+json with stable client_certificate_* codes."
+  },
   "tags": [
     {
       "name": "Configuration",
@@ -60,6 +65,14 @@
       "description": "System monitoring and telemetry"
     },
     {
+      "name": "Alerts",
+      "description": "Console Operate geofence zones, alert rules, draft validation, and delivery health"
+    },
+    {
+      "name": "Jobs",
+      "description": "Console durable job observability, logs, artifacts, and controls"
+    },
+    {
       "name": "Metadata Resources",
       "description": "Metadata resource CRUD operations"
     },
@@ -82,9 +95,599 @@
     {
       "name": "Features",
       "description": "Edition-gated feature catalog and active entitlement state"
+    },
+    {
+      "name": "Packages",
+      "description": "Package validation and read-only preview planning"
+    },
+    {
+      "name": "Security",
+      "description": "Authentication policy metadata and client-certificate trust management"
     }
   ],
   "paths": {
+    "/alerts/zones": {
+      "get": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "List Alert Zones",
+        "description": "List geofence alert zones, optionally filtered by owning service.",
+        "operationId": "listAlertZones",
+        "parameters": [
+          {
+            "name": "serviceId",
+            "in": "query",
+            "required": false,
+            "description": "Filter zones by owning service identifier.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert zone list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAlertZoneResponseArray"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "Create Alert Zone",
+        "description": "Create a geofence alert zone. Polygon WKT is normalized to MultiPolygon WKT in the response.",
+        "operationId": "createAlertZone",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertZoneRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Alert zone created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAlertZoneResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/alerts/zones/{zoneId}": {
+      "get": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "Get Alert Zone",
+        "description": "Read a geofence alert zone by identifier.",
+        "operationId": "getAlertZone",
+        "parameters": [
+          {
+            "name": "zoneId",
+            "in": "path",
+            "required": true,
+            "description": "Alert zone identifier.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert zone",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAlertZoneResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "Update Alert Zone",
+        "description": "Replace a geofence alert zone by identifier.",
+        "operationId": "updateAlertZone",
+        "parameters": [
+          {
+            "name": "zoneId",
+            "in": "path",
+            "required": true,
+            "description": "Alert zone identifier.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertZoneRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Alert zone updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAlertZoneResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "Delete Alert Zone",
+        "description": "Delete a geofence alert zone by identifier.",
+        "operationId": "deleteAlertZone",
+        "parameters": [
+          {
+            "name": "zoneId",
+            "in": "path",
+            "required": true,
+            "description": "Alert zone identifier.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert zone deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseObject"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/alerts/rules": {
+      "get": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "List Alert Rules",
+        "description": "List alert rules, optionally filtered by service and layer.",
+        "operationId": "listAlertRules",
+        "parameters": [
+          {
+            "name": "serviceId",
+            "in": "query",
+            "required": false,
+            "description": "Filter rules by service identifier.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "layerId",
+            "in": "query",
+            "required": false,
+            "description": "Filter rules by layer identifier.",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert rule list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAlertRuleResponseArray"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "Create Alert Rule",
+        "description": "Create a realtime alert rule after validating trigger, conditions, geofence zone reference, edition, and delivery channels. Persisted enter/exit/dwell rules require zoneId; threshold rules must omit zoneId.",
+        "operationId": "createAlertRule",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertRuleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Alert rule created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAlertRuleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/alerts/rules/test": {
+      "post": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "Test Alert Rule",
+        "description": "Validate a draft alert rule and optional geofence draft zone without persisting either resource. Invalid drafts return 200 with data.isValid=false and validation details. Draft zones are only accepted for enter, exit, and dwell rules.",
+        "operationId": "testAlertRule",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertRuleTestRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Draft validation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAlertRuleTestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/alerts/rules/{ruleId}": {
+      "get": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "Get Alert Rule",
+        "description": "Read an alert rule by identifier.",
+        "operationId": "getAlertRule",
+        "parameters": [
+          {
+            "name": "ruleId",
+            "in": "path",
+            "required": true,
+            "description": "Alert rule identifier.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert rule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAlertRuleResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "Update Alert Rule",
+        "description": "Replace an alert rule by identifier after validating trigger, conditions, geofence zone reference, edition, and delivery channels. Persisted enter/exit/dwell rules require zoneId; threshold rules must omit zoneId.",
+        "operationId": "updateAlertRule",
+        "parameters": [
+          {
+            "name": "ruleId",
+            "in": "path",
+            "required": true,
+            "description": "Alert rule identifier.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertRuleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Alert rule updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAlertRuleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "Delete Alert Rule",
+        "description": "Delete an alert rule by identifier.",
+        "operationId": "deleteAlertRule",
+        "parameters": [
+          {
+            "name": "ruleId",
+            "in": "path",
+            "required": true,
+            "description": "Alert rule identifier.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert rule deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseObject"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/alerts/rules/{ruleId}/enabled": {
+      "put": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "Set Alert Rule Enabled State",
+        "description": "Enable or disable an alert rule. Enabling validates the existing rule and can return 400 when the rule is no longer valid.",
+        "operationId": "setAlertRuleEnabled",
+        "parameters": [
+          {
+            "name": "ruleId",
+            "in": "path",
+            "required": true,
+            "description": "Alert rule identifier.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertRuleEnabledRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Alert rule enabled state updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAlertRuleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/alerts/rules/{ruleId}/health": {
+      "get": {
+        "tags": [
+          "Alerts"
+        ],
+        "summary": "Get Alert Rule Health",
+        "description": "Inspect evaluator state, active incidents, recent triggers, delivery failures, dead-letter state, and channel health for an alert rule. Active incidents are derived from current evaluator state, not historical alert-event rows.",
+        "operationId": "getAlertRuleHealth",
+        "parameters": [
+          {
+            "name": "ruleId",
+            "in": "path",
+            "required": true,
+            "description": "Alert rule identifier.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert rule health",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAlertRuleHealthResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/config": {
       "get": {
         "tags": [
@@ -1674,6 +2277,492 @@
         }
       }
     },
+    "/jobs": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "List Console Jobs",
+        "description": "List durable execution jobs for Console job viewers. Results are ordered by createdAt descending, use opaque cursor pagination, and are returned as a plain JSON DTO with Cache-Control: no-store.",
+        "operationId": "listConsoleJobs",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated or repeated execution status filter.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/ConsoleJobStatus"
+              }
+            },
+            "style": "form",
+            "explode": false
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "description": "Execution job kind filter.",
+            "schema": {
+              "$ref": "#/components/schemas/ConsoleJobKind"
+            }
+          },
+          {
+            "name": "backend",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "queue",
+            "in": "query",
+            "required": false,
+            "description": "Resolved queue/routing lane. Matches honua.job.queue when present, otherwise the job backend.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "required": false,
+            "description": "Submitting actor. Alias: requestedBy.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "requestedBy",
+            "in": "query",
+            "required": false,
+            "description": "Submitting actor alias.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "correlationId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "traceId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "definitionId",
+            "in": "query",
+            "required": false,
+            "description": "Matches honua.job.definition_id or honua.geoprocessing.plan_id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resourceRef",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "server",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "releaseId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "changeSetId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "alertId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "Inclusive createdAt lower bound.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "Exclusive createdAt upper bound.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Opaque cursor returned by a previous page.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Requested page size. Defaults to 50 and is clamped by the backing store.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50,
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Console job page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleJobListResponse"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "503": {
+            "description": "Execution job store is unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/{jobId}": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Get Console Job Detail",
+        "description": "Get durable execution job detail for a Console job viewer. Returns X-Correlation-Id when the job has a correlation id.",
+        "operationId": "getConsoleJob",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConsoleJobId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Console job detail",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Job correlation id when available.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleJobDetail"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "503": {
+            "description": "Execution job store is unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/{jobId}/logs": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Get Console Job Logs",
+        "description": "Page structured execution logs for a durable job. If the log store is unavailable, returns state=unavailable with an empty item list.",
+        "operationId": "getConsoleJobLogs",
+        "parameters": [
+          { "$ref": "#/components/parameters/ConsoleJobId" },
+          { "$ref": "#/components/parameters/ConsoleJobCursor" },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Requested log page size. Defaults to 100 and Redis clamps to 1..500.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100,
+              "minimum": 1,
+              "maximum": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Console job log page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleJobLogPageResponse"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "503": {
+            "description": "Execution job store is unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/{jobId}/artifacts": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Get Console Job Artifacts",
+        "description": "Page artifact references for a durable job and expose safe provider links when available.",
+        "operationId": "getConsoleJobArtifacts",
+        "parameters": [
+          { "$ref": "#/components/parameters/ConsoleJobId" },
+          { "$ref": "#/components/parameters/ConsoleJobCursor" },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Requested artifact page size. Defaults to 100 and is clamped to 1..200.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 100,
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Console job artifact page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleJobArtifactPageResponse"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "503": {
+            "description": "Execution job store is unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/{jobId}/actions": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Get Console Job Actions",
+        "description": "Return cancel/retry action descriptors currently applicable to the job. Retry availability considers execute permission, retry budget, local queue availability, and remote backend retry capability.",
+        "operationId": "getConsoleJobActions",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConsoleJobId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Console job action descriptors",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleJobActionsResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "503": {
+            "description": "Execution job store is unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/{jobId}/cancel": {
+      "post": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Cancel Console Job",
+        "description": "Cancel a queued, provisioning, or running durable execution job. May return approval-required problem details when destructive action approval is required.",
+        "operationId": "cancelConsoleJob",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConsoleJobId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Job cancellation applied or already cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleJobControlResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "503": {
+            "description": "Execution job store or backend is unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/{jobId}/retry": {
+      "post": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "Retry Console Job",
+        "description": "Retry a failed or cancelled durable execution job when the retry policy budget allows it. Local jobs require the job queue; remote jobs require a registered backend that supports retry.",
+        "operationId": "retryConsoleJob",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConsoleJobId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Job queued for manual retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleJobControlResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "503": {
+            "description": "Local job queue is unavailable, a local retry queue write failed, the remote retry backend is unavailable, or remote retry capability lookup failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/license": {
       "get": {
         "tags": ["License"],
@@ -1868,6 +2957,90 @@
         }
       }
     },
+    "/packages/validate": {
+      "post": {
+        "tags": ["Packages"],
+        "summary": "Validate Package",
+        "description": "Validate a package using the shared package-review contract. The server forces includePreviewPlan to false on this route.",
+        "operationId": "validatePackage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PackageReviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Package review result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePackageReviewResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "500": {
+            "description": "Package review failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/packages/preview": {
+      "post": {
+        "tags": ["Packages"],
+        "summary": "Preview Package",
+        "description": "Validate a package and return a read-only preview plan when the package can be planned. The server forces includePreviewPlan to true on this route.",
+        "operationId": "previewPackage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PackageReviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Package review result with optional read-only preview plan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePackageReviewResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "500": {
+            "description": "Package review failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/manifest": {
       "get": {
         "tags": ["Metadata"],
@@ -1929,6 +3102,216 @@
           "400": { "$ref": "#/components/responses/BadRequest" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/metadata/environments/{environment}/inventory": {
+      "get": {
+        "tags": ["Metadata"],
+        "summary": "Get Metadata Semantic Inventory",
+        "description": "Return the active Metadata v2 revision-stamped semantic inventory for an environment.",
+        "operationId": "getMetadataSemanticInventory",
+        "parameters": [
+          {
+            "name": "environment",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "artifactKind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["resource", "service", "publication", "field", "catalog", "policy", "role"]
+            }
+          },
+          {
+            "name": "resourceType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["feature-dataset", "raster-dataset", "table", "tile-dataset", "process", "style", "document", "external-resource", "map", "dashboard", "form", "app", "workflow", "geoprocessing-service", "etl-pipeline"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revision-stamped semantic inventory",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MetadataSemanticInventoryResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/metadata/environment-bindings/query": {
+      "post": {
+        "tags": ["Metadata"],
+        "summary": "Query Metadata Environment Bindings",
+        "description": "Return secret-safe binding summaries for semantic ids across target environments.",
+        "operationId": "queryMetadataEnvironmentBindings",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/MetadataEnvironmentBindingsRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Secret-safe binding summaries",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MetadataEnvironmentBindingsResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/metadata/release-packages": {
+      "post": {
+        "tags": ["Metadata"],
+        "summary": "Create Metadata Release Package",
+        "description": "Persist a Metadata v2 release package for semantic cross-environment promotion.",
+        "operationId": "createMetadataReleasePackage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateMetadataReleasePackageRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Metadata release package created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MetadataReleasePackage" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/metadata/release-packages/{packageId}": {
+      "get": {
+        "tags": ["Metadata"],
+        "summary": "Get Metadata Release Package",
+        "operationId": "getMetadataReleasePackage",
+        "parameters": [
+          {
+            "name": "packageId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metadata release package",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MetadataReleasePackage" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/metadata/release-packages/{packageId}/gitops-manifest": {
+      "get": {
+        "tags": ["Metadata"],
+        "summary": "Get Metadata Release GitOps Manifest",
+        "description": "Export a persisted release package as a GitOps-safe JSON manifest.",
+        "operationId": "getMetadataReleaseGitOpsManifest",
+        "parameters": [
+          {
+            "name": "packageId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "GitOps-safe metadata release manifest",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/GitOpsMetadataReleaseManifest" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/metadata/prevalidate": {
+      "post": {
+        "tags": ["Metadata"],
+        "summary": "Prevalidate Metadata Release Package Compatibility",
+        "description": "Generate an environment-scoped Metadata v2 compatibility report for a release package. The endpoint compares the package source graph revision with the current target environment snapshot, evaluates optional declared data-script before/after contracts, and does not execute scripts.",
+        "operationId": "prevalidateMetadataReleasePackageCompatibility",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetadataPrevalidateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Metadata compatibility report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMetadataCompatibilityReport"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "500": {
+            "description": "Prevalidation could not be completed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -2626,6 +4009,426 @@
         }
       }
     },
+    "/auth/config": {
+      "get": {
+        "tags": ["Security"],
+        "summary": "Get Admin Auth Configuration",
+        "description": "Bootstrap endpoint for Admin UI and native clients. It does not require API-key, OIDC, or admin-session auth, but required client-certificate prefix enforcement can still apply. Returns OIDC provider labels plus non-secret client-certificate policy hints such as mode, environment id, required surfaces, supported transports, accepted issuer hints, expiration warning threshold, and forwarded-certificate status. Issuer hints are sourced from the live trust store, so admin-API profile create/update/disable mutations are reflected immediately without a restart.",
+        "operationId": "getAdminAuthConfig",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Client-safe authentication bootstrap metadata",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AdminAuthConfigResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/security/client-certificates/profiles": {
+      "get": {
+        "tags": ["Security"],
+        "summary": "List Client Certificate Trust Profiles",
+        "description": "Lists active and disabled client-certificate trust profiles in the in-memory trust store. Configuration-defined profiles are loaded at startup; admin mutations should be mirrored to the deployment source of truth for durable multi-node rollout.",
+        "operationId": "listClientCertificateTrustProfiles",
+        "responses": {
+          "200": {
+            "description": "Client-certificate trust profiles",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseClientCertificateTrustProfileResponseArray" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "post": {
+        "tags": ["Security"],
+        "summary": "Create Client Certificate Trust Profile",
+        "description": "Creates a client-certificate trust profile. Enabled profiles require at least one accepted issuer subject, accepted issuer thumbprint, or custom trust anchor certificate.",
+        "operationId": "createClientCertificateTrustProfile",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpsertClientCertificateTrustProfileRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Trust profile created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseClientCertificateTrustProfileResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/security/client-certificates/profiles/{profileId}": {
+      "get": {
+        "tags": ["Security"],
+        "summary": "Get Client Certificate Trust Profile",
+        "operationId": "getClientCertificateTrustProfile",
+        "parameters": [
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trust profile",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseClientCertificateTrustProfileResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "put": {
+        "tags": ["Security"],
+        "summary": "Update Client Certificate Trust Profile",
+        "operationId": "updateClientCertificateTrustProfile",
+        "parameters": [
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpsertClientCertificateTrustProfileRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Trust profile updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseClientCertificateTrustProfileResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "delete": {
+        "tags": ["Security"],
+        "summary": "Disable Client Certificate Trust Profile",
+        "description": "Disables a trust profile without deleting its mappings or revocation entries.",
+        "operationId": "disableClientCertificateTrustProfile",
+        "parameters": [
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trust profile disabled",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseClientCertificateTrustProfileResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/security/client-certificates/profiles/{profileId}/mappings": {
+      "get": {
+        "tags": ["Security"],
+        "summary": "List Client Certificate Principal Mappings",
+        "operationId": "listClientCertificatePrincipalMappings",
+        "parameters": [
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Principal mappings",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseClientCertificatePrincipalMappingResponseArray" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "post": {
+        "tags": ["Security"],
+        "summary": "Create Client Certificate Principal Mapping",
+        "operationId": "createClientCertificatePrincipalMapping",
+        "parameters": [
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpsertClientCertificatePrincipalMappingRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Principal mapping created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseClientCertificatePrincipalMappingResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/security/client-certificates/profiles/{profileId}/mappings/{mappingId}": {
+      "put": {
+        "tags": ["Security"],
+        "summary": "Update Client Certificate Principal Mapping",
+        "operationId": "updateClientCertificatePrincipalMapping",
+        "parameters": [
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "mappingId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpsertClientCertificatePrincipalMappingRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Principal mapping updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseClientCertificatePrincipalMappingResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "delete": {
+        "tags": ["Security"],
+        "summary": "Disable Client Certificate Principal Mapping",
+        "operationId": "disableClientCertificatePrincipalMapping",
+        "parameters": [
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "mappingId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Principal mapping disabled",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseClientCertificatePrincipalMappingResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/security/client-certificates/profiles/{profileId}/revocations": {
+      "get": {
+        "tags": ["Security"],
+        "summary": "List Client Certificate Revocations",
+        "operationId": "listClientCertificateRevocations",
+        "parameters": [
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revocation entries",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseClientCertificateRevocationEntryResponseArray" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "post": {
+        "tags": ["Security"],
+        "summary": "Add Client Certificate Revocation",
+        "description": "Adds a revocation by SHA-256 fingerprint or by issuer plus serial number.",
+        "operationId": "addClientCertificateRevocation",
+        "parameters": [
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AddClientCertificateRevocationRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Revocation added",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseClientCertificateRevocationEntryResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/security/client-certificates/profiles/{profileId}/revocations/{revocationId}": {
+      "delete": {
+        "tags": ["Security"],
+        "summary": "Remove Client Certificate Revocation",
+        "operationId": "removeClientCertificateRevocation",
+        "parameters": [
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "revocationId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revocation removed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseObject" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/security/client-certificates/validate": {
+      "post": {
+        "tags": ["Security"],
+        "summary": "Validate Client Certificate",
+        "description": "Validates a supplied public client certificate against configured trust profiles without storing the certificate. A parsed-but-untrusted certificate returns 200 with data.valid=false and a stable data.code; 400 is reserved for missing/blank certificate bodies and unknown encoding values.",
+        "operationId": "validateClientCertificate",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ValidateClientCertificateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Validation result. A parsed but untrusted certificate returns 200 with data.valid=false and a stable data.code value.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiResponseValidateClientCertificateResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
     "/compliance/dashboard": {
       "get": {
         "tags": ["Compliance"],
@@ -2752,6 +4555,26 @@
         "description": "Optional HTTP Basic compatibility mode for legacy clients (requires HTTPS in production). Basic is used only when compatibility mode is enabled and API key auth did not succeed."
       }
     },
+    "parameters": {
+      "ConsoleJobId": {
+        "name": "jobId",
+        "in": "path",
+        "required": true,
+        "description": "Durable execution job identifier.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "ConsoleJobCursor": {
+        "name": "cursor",
+        "in": "query",
+        "required": false,
+        "description": "Opaque cursor returned by a previous page.",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
     "responses": {
       "BadRequest": {
         "description": "Bad request - invalid parameters",
@@ -2815,6 +4638,709 @@
           "version": {
             "type": "string",
             "description": "Server version"
+          }
+        }
+      },
+      "AlertZoneRequest": {
+        "type": "object",
+        "required": [
+          "serviceId",
+          "zoneName"
+        ],
+        "properties": {
+          "serviceId": {
+            "type": "string",
+            "description": "Service identifier that owns the zone."
+          },
+          "zoneName": {
+            "type": "string",
+            "description": "Human-readable zone name."
+          },
+          "wkt": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional Polygon or MultiPolygon WKT. Polygon inputs are normalized to MultiPolygon WKT in responses."
+          },
+          "srid": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "default": 4326,
+            "description": "Spatial reference identifier for the supplied WKT. Defaults to EPSG:4326."
+          },
+          "metadata": {
+            "type": "object",
+            "nullable": true,
+            "description": "Optional UI and operations metadata.",
+            "additionalProperties": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "isActive": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether the zone is active for rule evaluation."
+          }
+        }
+      },
+      "AlertZoneResponse": {
+        "type": "object",
+        "required": [
+          "zoneId",
+          "serviceId",
+          "zoneName",
+          "metadata",
+          "isActive"
+        ],
+        "properties": {
+          "zoneId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Persistent zone identifier."
+          },
+          "serviceId": {
+            "type": "string",
+            "description": "Service identifier that owns the zone."
+          },
+          "zoneName": {
+            "type": "string",
+            "description": "Human-readable zone name."
+          },
+          "wkt": {
+            "type": "string",
+            "nullable": true,
+            "description": "Zone geometry as WKT, normalized to MultiPolygon when geometry is present."
+          },
+          "srid": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "description": "Spatial reference identifier for the zone geometry."
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "Whether the zone is active for rule evaluation."
+          }
+        }
+      },
+      "AlertRuleRequest": {
+        "type": "object",
+        "required": [
+          "serviceId",
+          "layerId",
+          "ruleName",
+          "triggerType"
+        ],
+        "properties": {
+          "serviceId": {
+            "type": "string",
+            "description": "Service identifier targeted by the rule."
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1,
+            "description": "Layer identifier targeted by the rule."
+          },
+          "zoneId": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "Required for persisted enter, exit, and dwell rules. Must be omitted for threshold rules."
+          },
+          "ruleName": {
+            "type": "string",
+            "description": "Human-readable rule name."
+          },
+          "triggerType": {
+            "type": "string",
+            "enum": [
+              "enter",
+              "exit",
+              "dwell",
+              "threshold"
+            ],
+            "description": "Trigger type evaluated by the alert worker."
+          },
+          "conditionsJson": {
+            "type": "string",
+            "default": "{}",
+            "description": "Rule conditions serialized as a JSON object string. Dwell requires positive dwellSeconds; threshold requires field, operator, and numeric value."
+          },
+          "cooldownSeconds": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "default": 0,
+            "description": "Cooldown in seconds between alerts for the same feature."
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ],
+            "default": "warning"
+          },
+          "editionRequired": {
+            "type": "string",
+            "enum": [
+              "pro",
+              "enterprise"
+            ],
+            "default": "pro"
+          },
+          "channels": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "webhook",
+                "websocket",
+                "email",
+                "digest",
+                "aws_sns",
+                "azure_eventgrid",
+                "slack",
+                "microsoft_teams",
+                "aws_sqs",
+                "azure_eventhub"
+              ]
+            },
+            "description": "Delivery channel names. May be omitted or empty when no external dispatch sink should be used. Responses always use canonical snake-case names."
+          },
+          "isActive": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether the rule is active for evaluation."
+          }
+        }
+      },
+      "AlertRuleResponse": {
+        "type": "object",
+        "required": [
+          "ruleId",
+          "serviceId",
+          "layerId",
+          "ruleName",
+          "triggerType",
+          "conditionsJson",
+          "cooldownSeconds",
+          "severity",
+          "editionRequired",
+          "channels",
+          "isActive"
+        ],
+        "properties": {
+          "ruleId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Persistent rule identifier."
+          },
+          "serviceId": {
+            "type": "string"
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "zoneId": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "ruleName": {
+            "type": "string"
+          },
+          "triggerType": {
+            "type": "string",
+            "enum": [
+              "enter",
+              "exit",
+              "dwell",
+              "threshold"
+            ]
+          },
+          "conditionsJson": {
+            "type": "string",
+            "description": "Rule conditions serialized as a JSON object string."
+          },
+          "cooldownSeconds": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ]
+          },
+          "editionRequired": {
+            "type": "string",
+            "enum": [
+              "pro",
+              "enterprise"
+            ]
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AlertRuleEnabledRequest": {
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Requested enabled state."
+          }
+        }
+      },
+      "AlertRuleTestRequest": {
+        "type": "object",
+        "required": [
+          "rule"
+        ],
+        "properties": {
+          "rule": {
+            "$ref": "#/components/schemas/AlertRuleRequest"
+          },
+          "zone": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AlertZoneRequest"
+              }
+            ],
+            "nullable": true,
+            "description": "Optional draft zone used to validate enter, exit, and dwell geofence rules without persisting the zone. The draft zone serviceId must match the rule serviceId; if both zone and zoneId are supplied, validation uses the draft zone geometry and returns a warning."
+          }
+        }
+      },
+      "AlertRuleTestResponse": {
+        "type": "object",
+        "required": [
+          "isValid",
+          "errors",
+          "warnings",
+          "deliveryChannels",
+          "evaluatedAt"
+        ],
+        "properties": {
+          "isValid": {
+            "type": "boolean",
+            "description": "Whether the draft can be persisted safely."
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "deliveryChannels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlertChannelValidationResponse"
+            }
+          },
+          "evaluatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AlertChannelValidationResponse": {
+        "type": "object",
+        "required": [
+          "channel",
+          "status",
+          "isAllowed",
+          "isConfigured",
+          "message"
+        ],
+        "properties": {
+          "channel": {
+            "type": "string",
+            "description": "Canonical channel name."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "configured",
+              "unconfigured",
+              "disabled",
+              "unauthorized"
+            ]
+          },
+          "isAllowed": {
+            "type": "boolean",
+            "description": "Whether the current edition allows the channel."
+          },
+          "isConfigured": {
+            "type": "boolean",
+            "description": "Whether server configuration can deliver the channel."
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "AlertRuleHealthResponse": {
+        "type": "object",
+        "required": [
+          "ruleId",
+          "activeIncidentCount",
+          "recentTriggerCount",
+          "coolingDownFeatureCount",
+          "deliveryFailureCount",
+          "deadLetterCount",
+          "linkedEventIds",
+          "deliveryChannels",
+          "recentTriggers"
+        ],
+        "properties": {
+          "ruleId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "lastEvaluatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Most recent evaluator state update for this rule, when available."
+          },
+          "lastTriggeredAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Most recent alert event emitted for this rule, when available."
+          },
+          "activeIncidentCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "description": "Count of current evaluator state rows that represent active incidents. Enter and dwell rules count features currently inside the zone; threshold rules count currently breached threshold state; exit transition events do not keep an active incident open after the feature has left."
+          },
+          "recentTriggerCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "description": "Count of alert events for this rule in the previous 24 hours."
+          },
+          "coolingDownFeatureCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "description": "Count of evaluator state rows currently inside their cooldown window."
+          },
+          "nextCooldownExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Latest cooldown expiry across currently cooling down feature states."
+          },
+          "deliveryFailureCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "description": "Count of retryable delivery failures for this rule."
+          },
+          "deadLetterCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "description": "Count of dead-lettered delivery rows for this rule."
+          },
+          "linkedEventIds": {
+            "type": "array",
+            "description": "Newest-first recent event identifiers linked to this rule, capped by the server at 10 entries.",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "deliveryChannels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlertRuleDeliveryHealthResponse"
+            }
+          },
+          "recentTriggers": {
+            "type": "array",
+            "description": "Newest-first recent trigger summaries, capped by the server at 10 entries.",
+            "items": {
+              "$ref": "#/components/schemas/AlertRuleRecentTriggerResponse"
+            }
+          }
+        }
+      },
+      "AlertRuleDeliveryHealthResponse": {
+        "type": "object",
+        "required": [
+          "channel",
+          "status",
+          "pendingCount",
+          "processingCount",
+          "deliveredCount",
+          "failedCount",
+          "deadLetterCount"
+        ],
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "configured",
+              "unconfigured",
+              "disabled",
+              "unauthorized",
+              "rate_limited",
+              "failing"
+            ],
+            "description": "Channel health status. Policy and configuration states take precedence; rate_limited and failing reflect recent delivery errors."
+          },
+          "pendingCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "processingCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "deliveredCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "failedCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "deadLetterCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "lastAttemptAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastDeliveredAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastError": {
+            "type": "string",
+            "nullable": true,
+            "description": "Most recent sanitized delivery error summary. Raw provider error text is not returned."
+          }
+        }
+      },
+      "AlertRuleRecentTriggerResponse": {
+        "type": "object",
+        "required": [
+          "eventId",
+          "triggerType",
+          "severity",
+          "occurredAt",
+          "incidentStatus",
+          "lifecycleStatus",
+          "resourceRef"
+        ],
+        "properties": {
+          "eventId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "triggerType": {
+            "type": "string",
+            "enum": [
+              "enter",
+              "exit",
+              "dwell",
+              "threshold"
+            ]
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ]
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "incidentStatus": {
+            "type": "string",
+            "enum": [
+              "started",
+              "ongoing",
+              "ended"
+            ]
+          },
+          "lifecycleStatus": {
+            "type": "string",
+            "enum": [
+              "open",
+              "acknowledged",
+              "suppressed",
+              "resolved"
+            ]
+          },
+          "resourceRef": {
+            "type": "string",
+            "description": "Operate event resource reference, formatted as alert/{eventId}."
+          }
+        }
+      },
+      "ApiResponseAlertZoneResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AlertZoneResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseAlertZoneResponseArray": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlertZoneResponse"
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseAlertRuleResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AlertRuleResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseAlertRuleResponseArray": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlertRuleResponse"
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseAlertRuleTestResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AlertRuleTestResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponseAlertRuleHealthResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AlertRuleHealthResponse"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -3092,6 +5618,402 @@
             "type": "string",
             "description": "Creator identity"
           }
+        }
+      },
+      "ConsoleJobKind": {
+        "type": "string",
+        "enum": [
+          "Geoprocessing",
+          "ExtractTransformLoad",
+          "TileCache"
+        ]
+      },
+      "ConsoleJobStatus": {
+        "type": "string",
+        "enum": [
+          "Queued",
+          "Provisioning",
+          "Running",
+          "Succeeded",
+          "Failed",
+          "Cancelled"
+        ]
+      },
+      "ConsoleJobListResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConsoleJobSummary"
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true,
+            "description": "Opaque cursor for the next page."
+          }
+        }
+      },
+      "ConsoleJobSummary": {
+        "type": "object",
+        "required": [
+          "jobId",
+          "kind",
+          "backend",
+          "targetKind",
+          "workloadName",
+          "status",
+          "priority",
+          "createdAt",
+          "updatedAt",
+          "resourceRefs",
+          "latestEvent",
+          "links"
+        ],
+        "properties": {
+          "jobId": { "type": "string" },
+          "kind": { "$ref": "#/components/schemas/ConsoleJobKind" },
+          "queue": {
+            "type": "string",
+            "nullable": true,
+            "description": "Resolved queue/routing lane: honua.job.queue when present, otherwise backend."
+          },
+          "backend": { "type": "string" },
+          "targetKind": { "type": "string" },
+          "workloadName": { "type": "string" },
+          "definitionId": { "type": "string", "nullable": true },
+          "status": { "$ref": "#/components/schemas/ConsoleJobStatus" },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "Low",
+              "Normal",
+              "High",
+              "Critical"
+            ]
+          },
+          "requestedBy": { "type": "string", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "completedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "durationMs": { "type": "integer", "format": "int64", "nullable": true },
+          "percentComplete": { "type": "number", "format": "double", "nullable": true },
+          "currentPhase": { "type": "string", "nullable": true },
+          "attemptCount": { "type": "integer", "format": "int32" },
+          "maxAttempts": { "type": "integer", "format": "int32" },
+          "nextRetryAt": { "type": "string", "format": "date-time", "nullable": true },
+          "correlationId": { "type": "string", "nullable": true },
+          "traceId": { "type": "string", "nullable": true },
+          "resourceRefs": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "artifactCount": { "type": "integer", "format": "int32" },
+          "latestEvent": { "$ref": "#/components/schemas/ConsoleJobLatestEvent" },
+          "links": { "$ref": "#/components/schemas/ConsoleJobLinks" }
+        }
+      },
+      "ConsoleJobDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ConsoleJobSummary"
+          },
+          {
+            "type": "object",
+            "required": [
+              "warnings",
+              "retryPolicy",
+              "childJobIds",
+              "selectedMetadata",
+              "stages",
+              "actions"
+            ],
+            "properties": {
+              "providerOperationId": { "type": "string", "nullable": true },
+              "claimedBy": { "type": "string", "nullable": true },
+              "claimedAt": { "type": "string", "format": "date-time", "nullable": true },
+              "lastHeartbeatAt": { "type": "string", "format": "date-time", "nullable": true },
+              "cancellationRequestedAt": { "type": "string", "format": "date-time", "nullable": true },
+              "warnings": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "failure": {
+                "nullable": true,
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ConsoleJobFailure"
+                  }
+                ]
+              },
+              "retryPolicy": { "$ref": "#/components/schemas/ConsoleJobRetryPolicy" },
+              "parentJobId": { "type": "string", "nullable": true },
+              "childJobIds": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "selectedMetadata": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "stages": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ConsoleJobStage"
+                }
+              },
+              "actions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ConsoleJobActionDescriptor"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ConsoleJobLatestEvent": {
+        "type": "object",
+        "required": [
+          "type",
+          "occurredAt",
+          "status"
+        ],
+        "properties": {
+          "type": { "type": "string" },
+          "occurredAt": { "type": "string", "format": "date-time" },
+          "status": { "$ref": "#/components/schemas/ConsoleJobStatus" },
+          "phase": { "type": "string", "nullable": true },
+          "message": { "type": "string", "nullable": true }
+        }
+      },
+      "ConsoleJobLinks": {
+        "type": "object",
+        "required": [
+          "self",
+          "logs",
+          "artifacts",
+          "actions"
+        ],
+        "properties": {
+          "self": { "type": "string" },
+          "logs": { "type": "string" },
+          "artifacts": { "type": "string" },
+          "actions": { "type": "string" },
+          "cancel": { "type": "string", "nullable": true },
+          "retry": { "type": "string", "nullable": true },
+          "eventsByJob": { "type": "string", "nullable": true },
+          "eventsByCorrelation": { "type": "string", "nullable": true }
+        }
+      },
+      "ConsoleJobFailure": {
+        "type": "object",
+        "required": [
+          "message",
+          "classification"
+        ],
+        "properties": {
+          "message": { "type": "string" },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "execution_failed",
+              "cancelled"
+            ]
+          }
+        }
+      },
+      "ConsoleJobRetryPolicy": {
+        "type": "object",
+        "required": [
+          "strategy"
+        ],
+        "properties": {
+          "maxAttempts": { "type": "integer", "format": "int32" },
+          "strategy": { "type": "string" },
+          "baseDelayMs": { "type": "integer", "format": "int64" },
+          "maxDelayMs": { "type": "integer", "format": "int64" }
+        }
+      },
+      "ConsoleJobStage": {
+        "type": "object",
+        "required": [
+          "name",
+          "status"
+        ],
+        "properties": {
+          "name": { "type": "string" },
+          "status": { "$ref": "#/components/schemas/ConsoleJobStatus" },
+          "startedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "completedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "percentComplete": { "type": "number", "format": "double", "nullable": true }
+        }
+      },
+      "ConsoleJobActionDescriptor": {
+        "type": "object",
+        "required": [
+          "name",
+          "method",
+          "href"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "cancel",
+              "retry"
+            ]
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "POST"
+            ]
+          },
+          "href": { "type": "string" },
+          "allowed": { "type": "boolean" },
+          "disabledReason": {
+            "type": "string",
+            "nullable": true,
+            "description": "Operator-facing reason when the advertised action is currently disabled, such as execute permission required, job queue unavailable, job backend unavailable, job backend retry capability unavailable, job backend does not support retry, retry budget exhausted, or not retryable."
+          },
+          "requiresApproval": { "type": "boolean" }
+        }
+      },
+      "ConsoleJobActionsResponse": {
+        "type": "object",
+        "required": [
+          "jobId",
+          "actions"
+        ],
+        "properties": {
+          "jobId": { "type": "string" },
+          "correlationId": { "type": "string", "nullable": true },
+          "actions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConsoleJobActionDescriptor"
+            }
+          }
+        }
+      },
+      "ConsoleJobLogPageResponse": {
+        "type": "object",
+        "required": [
+          "jobId",
+          "state",
+          "items"
+        ],
+        "properties": {
+          "jobId": { "type": "string" },
+          "correlationId": { "type": "string", "nullable": true },
+          "state": {
+            "type": "string",
+            "enum": [
+              "available",
+              "unavailable"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConsoleJobLogEntry"
+            }
+          },
+          "nextCursor": { "type": "string", "nullable": true }
+        }
+      },
+      "ConsoleJobLogEntry": {
+        "type": "object",
+        "required": [
+          "timestamp",
+          "level",
+          "message"
+        ],
+        "properties": {
+          "timestamp": { "type": "string", "format": "date-time" },
+          "level": { "type": "string" },
+          "message": { "type": "string" },
+          "phase": { "type": "string", "nullable": true },
+          "metadata": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ConsoleJobArtifactPageResponse": {
+        "type": "object",
+        "required": [
+          "jobId",
+          "items"
+        ],
+        "properties": {
+          "jobId": { "type": "string" },
+          "correlationId": { "type": "string", "nullable": true },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConsoleJobArtifact"
+            }
+          },
+          "nextCursor": { "type": "string", "nullable": true }
+        }
+      },
+      "ConsoleJobArtifact": {
+        "type": "object",
+        "required": [
+          "artifactId",
+          "availability"
+        ],
+        "properties": {
+          "artifactId": { "type": "string" },
+          "availability": {
+            "type": "string",
+            "enum": [
+              "Available",
+              "Unavailable",
+              "Expired",
+              "Redacted",
+              "ProviderError"
+            ]
+          },
+          "kind": { "type": "string", "nullable": true },
+          "label": { "type": "string", "nullable": true },
+          "contentType": { "type": "string", "nullable": true },
+          "sizeBytes": { "type": "integer", "format": "int64", "nullable": true },
+          "providerLink": { "type": "string", "nullable": true },
+          "message": { "type": "string", "nullable": true }
+        }
+      },
+      "ConsoleJobControlResponse": {
+        "type": "object",
+        "required": [
+          "jobId",
+          "action",
+          "status",
+          "message"
+        ],
+        "properties": {
+          "jobId": { "type": "string" },
+          "correlationId": { "type": "string", "nullable": true },
+          "action": {
+            "type": "string",
+            "enum": [
+              "cancel",
+              "retry"
+            ]
+          },
+          "status": { "$ref": "#/components/schemas/ConsoleJobStatus" },
+          "message": { "type": "string" }
         }
       },
       "CreateConnectionRequest": {
@@ -5139,6 +8061,499 @@
           "timestamp": { "type": "string", "format": "date-time" }
         }
       },
+      "AdminAuthConfigResponse": {
+        "type": "object",
+        "required": ["oidcEnabled", "providers", "clientCertificates"],
+        "properties": {
+          "oidcEnabled": {
+            "type": "boolean",
+            "description": "Whether at least one configured OIDC provider is available for admin login."
+          },
+          "providers": {
+            "type": "array",
+            "description": "Client-safe OIDC provider labels. Authority, tenant, client id, and secrets are never returned.",
+            "items": { "$ref": "#/components/schemas/AdminAuthProviderInfo" }
+          },
+          "clientCertificates": {
+            "$ref": "#/components/schemas/AdminAuthClientCertificateInfo"
+          }
+        }
+      },
+      "AdminAuthProviderInfo": {
+        "type": "object",
+        "required": ["key", "displayName"],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Provider selection key such as azuread, google, oidc, okta, or auth0."
+          },
+          "displayName": {
+            "type": "string",
+            "description": "Provider display name shown to operators."
+          }
+        }
+      },
+      "AdminAuthClientCertificateInfo": {
+        "type": "object",
+        "required": [
+          "mode",
+          "environmentId",
+          "requiredForAdmin",
+          "requiredForNative",
+          "supportedTransports",
+          "acceptedIssuerSubjects",
+          "acceptedIssuerThumbprints",
+          "forwardedCertificateEnabled"
+        ],
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["Disabled", "Optional", "RequiredForNative", "RequiredForAdmin", "RequiredForEnvironment"],
+            "description": "Configured client-certificate authentication mode."
+          },
+          "environmentId": {
+            "type": "string",
+            "description": "Server environment id used for trust-profile matching."
+          },
+          "requiredForAdmin": {
+            "type": "boolean",
+            "description": "Whether configured admin path prefixes require a valid mapped client certificate."
+          },
+          "requiredForNative": {
+            "type": "boolean",
+            "description": "Whether configured native gRPC services require a valid mapped client certificate."
+          },
+          "supportedTransports": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["https", "grpc-https"] },
+            "description": "Transports that can satisfy native client-certificate authentication. Empty when mode is Disabled."
+          },
+          "acceptedIssuerSubjects": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Issuer subject hints from enabled profiles for this environment, returned in the canonicalized form (uppercase, no internal whitespace) used for certificate matching."
+          },
+          "acceptedIssuerThumbprints": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Issuer thumbprint hints from enabled profiles for this environment, returned in the canonicalized form (uppercase, no internal whitespace) used for certificate matching."
+          },
+          "expirationWarningThresholdDays": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Minimum warning threshold across enabled profiles for this environment, or null when none are enabled."
+          },
+          "forwardedCertificateEnabled": {
+            "type": "boolean",
+            "description": "Whether trusted forwarded client-certificate headers are enabled."
+          }
+        }
+      },
+      "ClientCertificateTrustProfileResponse": {
+        "type": "object",
+        "required": [
+          "profileId",
+          "environmentId",
+          "displayName",
+          "enabled",
+          "acceptedIssuerThumbprints",
+          "acceptedIssuerSubjects",
+          "allowedSanTypes",
+          "allowSubjectFallback",
+          "requireClientAuthenticationEku",
+          "requireChainTrust",
+          "chainRevocationMode",
+          "expirationWarningThresholdDays",
+          "rotationGracePeriodDays",
+          "revision",
+          "principalMappings",
+          "revocations"
+        ],
+        "properties": {
+          "profileId": { "type": "string" },
+          "environmentId": { "type": "string" },
+          "displayName": { "type": "string" },
+          "enabled": { "type": "boolean" },
+          "acceptedIssuerThumbprints": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "acceptedIssuerSubjects": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "allowedSanTypes": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ClientCertificateIdentityType" }
+          },
+          "allowSubjectFallback": { "type": "boolean" },
+          "requireClientAuthenticationEku": { "type": "boolean" },
+          "requireChainTrust": { "type": "boolean" },
+          "chainRevocationMode": {
+            "type": "string",
+            "enum": ["NoCheck", "Offline", "Online"]
+          },
+          "expirationWarningThresholdDays": { "type": "integer" },
+          "rotationGracePeriodDays": { "type": "integer" },
+          "revision": { "type": "integer", "format": "int64" },
+          "principalMappings": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ClientCertificatePrincipalMappingResponse" }
+          },
+          "revocations": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ClientCertificateRevocationEntryResponse" }
+          }
+        }
+      },
+      "UpsertClientCertificateTrustProfileRequest": {
+        "type": "object",
+        "required": ["environmentId"],
+        "properties": {
+          "profileId": {
+            "type": "string",
+            "description": "Optional trust profile id for create requests."
+          },
+          "environmentId": {
+            "type": "string",
+            "description": "Honua environment id this profile applies to."
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "acceptedIssuerThumbprints": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "SHA-1 thumbprints of accepted issuer/CA certificates (leaf thumbprints are not honored). Matching is gated by cryptographic chain build, so the issuing CA must be reachable through the OS trust store or the profile's customTrustAnchorCertificates; a thumbprint that only appears in a forged leaf's attached chain will not match."
+          },
+          "acceptedIssuerSubjects": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "allowedSanTypes": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ClientCertificateIdentityType" },
+            "default": ["sanUri", "sanEmail", "sanDns"]
+          },
+          "allowSubjectFallback": {
+            "type": "boolean",
+            "default": false
+          },
+          "requireClientAuthenticationEku": {
+            "type": "boolean",
+            "default": true
+          },
+          "requireChainTrust": {
+            "type": "boolean",
+            "default": false,
+            "description": "Required to be true when acceptedIssuerSubjects is non-empty; subject-DN matching alone is forgeable, so the chain must be cryptographically verified. Thumbprint and custom-anchor profiles already perform cryptographic chain build during the issuer-hint check; enabling requireChainTrust additionally applies the configured chainRevocationMode (Online/Offline)."
+          },
+          "chainRevocationMode": {
+            "type": "string",
+            "enum": ["NoCheck", "Offline", "Online"],
+            "default": "NoCheck"
+          },
+          "expirationWarningThresholdDays": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 30
+          },
+          "rotationGracePeriodDays": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0
+          },
+          "customTrustAnchorCertificates": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Custom trust anchor public certificates as PEM or base64 DER. Private keys are never accepted. The presented chain must build successfully under custom-root trust mode and terminate at one of these anchors; cryptographic chain verification is enforced regardless of requireChainTrust."
+          }
+        }
+      },
+      "ClientCertificatePrincipalMappingResponse": {
+        "type": "object",
+        "required": ["mappingId", "matchType", "matchValue", "principalId", "displayName", "roles", "environmentScopes", "enabled", "revision"],
+        "properties": {
+          "mappingId": { "type": "string" },
+          "matchType": { "$ref": "#/components/schemas/ClientCertificateIdentityType" },
+          "matchValue": {
+            "type": "string",
+            "description": "Normalized identity match value."
+          },
+          "principalId": { "type": "string" },
+          "displayName": { "type": "string" },
+          "roles": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "tenantId": {
+            "type": "string",
+            "nullable": true
+          },
+          "environmentScopes": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "enabled": { "type": "boolean" },
+          "notBefore": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "notAfter": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "revision": { "type": "integer", "format": "int64" }
+        }
+      },
+      "UpsertClientCertificatePrincipalMappingRequest": {
+        "type": "object",
+        "required": ["matchType", "matchValue", "principalId"],
+        "properties": {
+          "mappingId": {
+            "type": "string",
+            "description": "Optional mapping id for create requests."
+          },
+          "matchType": { "$ref": "#/components/schemas/ClientCertificateIdentityType" },
+          "matchValue": { "type": "string" },
+          "principalId": { "type": "string" },
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "roles": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "tenantId": {
+            "type": "string",
+            "nullable": true
+          },
+          "environmentScopes": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "notBefore": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "notAfter": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "ClientCertificateRevocationEntryResponse": {
+        "type": "object",
+        "required": ["revocationId", "reason", "revokedAt", "actor", "enabled"],
+        "properties": {
+          "revocationId": { "type": "string" },
+          "fingerprintSha256": {
+            "type": "string",
+            "nullable": true
+          },
+          "issuer": {
+            "type": "string",
+            "nullable": true
+          },
+          "serialNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": { "type": "string" },
+          "revokedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "actor": { "type": "string" },
+          "enabled": { "type": "boolean" }
+        }
+      },
+      "AddClientCertificateRevocationRequest": {
+        "type": "object",
+        "properties": {
+          "revocationId": {
+            "type": "string",
+            "description": "Optional revocation id for idempotent automation."
+          },
+          "fingerprintSha256": {
+            "type": "string",
+            "description": "Revoked certificate SHA-256 fingerprint."
+          },
+          "issuer": {
+            "type": "string",
+            "description": "Revoked issuer distinguished name, used with serialNumber."
+          },
+          "serialNumber": {
+            "type": "string",
+            "description": "Revoked certificate serial number, used with issuer."
+          },
+          "reason": {
+            "type": "string",
+            "default": "unspecified"
+          }
+        }
+      },
+      "ValidateClientCertificateRequest": {
+        "type": "object",
+        "required": ["certificate"],
+        "properties": {
+          "certificate": {
+            "type": "string",
+            "description": "PEM, URL-encoded PEM, or base64 DER public client certificate."
+          },
+          "encoding": {
+            "type": "string",
+            "enum": ["pem", "urlEncodedPem", "base64Der"],
+            "default": "pem"
+          },
+          "profileId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional expected trust profile id."
+          }
+        }
+      },
+      "ValidateClientCertificateResponse": {
+        "type": "object",
+        "required": ["valid", "code", "detail"],
+        "properties": {
+          "valid": { "type": "boolean" },
+          "code": {
+            "type": "string",
+            "enum": [
+              "success",
+              "client_certificate_missing",
+              "client_certificate_expired",
+              "client_certificate_not_yet_valid",
+              "client_certificate_untrusted_issuer",
+              "client_certificate_untrusted_chain",
+              "client_certificate_revoked",
+              "client_certificate_wrong_environment",
+              "client_certificate_missing_identity",
+              "client_certificate_unmapped_identity",
+              "client_certificate_invalid_eku",
+              "client_certificate_forwarding_untrusted",
+              "client_certificate_forwarding_invalid",
+              "client_certificate_insufficient_rbac"
+            ]
+          },
+          "detail": { "type": "string" },
+          "principalId": {
+            "type": "string",
+            "nullable": true
+          },
+          "trustProfileId": {
+            "type": "string",
+            "nullable": true
+          },
+          "mappingId": {
+            "type": "string",
+            "nullable": true
+          },
+          "environmentId": {
+            "type": "string",
+            "nullable": true
+          },
+          "fingerprintSha256": {
+            "type": "string",
+            "nullable": true
+          },
+          "daysUntilExpiry": {
+            "type": "integer",
+            "nullable": true
+          }
+        }
+      },
+      "ClientCertificateIdentityType": {
+        "type": "string",
+        "enum": ["fingerprintSha256", "sanUri", "sanEmail", "sanDns", "subject"]
+      },
+      "ApiResponseClientCertificateTrustProfileResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/ClientCertificateTrustProfileResponse" },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiResponseClientCertificateTrustProfileResponseArray": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ClientCertificateTrustProfileResponse" }
+          },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiResponseClientCertificatePrincipalMappingResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/ClientCertificatePrincipalMappingResponse" },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiResponseClientCertificatePrincipalMappingResponseArray": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ClientCertificatePrincipalMappingResponse" }
+          },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiResponseClientCertificateRevocationEntryResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/ClientCertificateRevocationEntryResponse" },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiResponseClientCertificateRevocationEntryResponseArray": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ClientCertificateRevocationEntryResponse" }
+          },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiResponseValidateClientCertificateResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/ValidateClientCertificateResponse" },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
       "MetadataManifest": {
         "type": "object",
         "required": ["apiVersion", "generatedAt", "resources"],
@@ -5251,6 +8666,671 @@
           "data": { "$ref": "#/components/schemas/ManifestApplyResult" },
           "message": { "type": "string" },
           "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "MetadataSemanticInventoryResponse": {
+        "type": "object",
+        "required": ["environment", "revision", "etag", "generatedAt", "entries"],
+        "properties": {
+          "environment": { "type": "string" },
+          "revision": { "type": "integer", "format": "int64" },
+          "etag": { "type": "string" },
+          "generatedAt": { "type": "string", "format": "date-time" },
+          "entries": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MetadataSemanticInventoryEntry" }
+          }
+        }
+      },
+      "MetadataSemanticInventoryEntry": {
+        "type": "object",
+        "required": ["semanticId", "artifactKind", "name"],
+        "properties": {
+          "semanticId": { "type": "string" },
+          "artifactKind": {
+            "type": "string",
+            "enum": ["resource", "service", "publication", "field", "catalog", "policy", "role"]
+          },
+          "resourceType": {
+            "type": "string",
+            "enum": ["feature-dataset", "raster-dataset", "table", "tile-dataset", "process", "style", "document", "external-resource", "map", "dashboard", "form", "app", "workflow", "geoprocessing-service", "etl-pipeline"]
+          },
+          "serviceType": {
+            "type": "string",
+            "enum": ["ogc-api-features", "wfs", "wms", "wmts", "esri-feature-service", "esri-map-service", "esri-image-service", "stac-api", "dcat-catalog", "ogc-records", "odata", "custom"]
+          },
+          "publicationType": {
+            "type": "string",
+            "enum": ["ogc-collection", "wfs-feature-type", "wms-layer", "wmts-layer", "esri-feature-layer", "esri-map-layer", "esri-image-layer", "stac-collection", "dcat-distribution", "ogc-record", "odata-entity-set", "custom"]
+          },
+          "parentSemanticId": { "type": "string" },
+          "name": { "type": "string" },
+          "namespace": { "type": "string" },
+          "title": { "type": "string" },
+          "metadataGeneration": { "type": "integer", "format": "int64" },
+          "status": { "type": "string", "enum": ["draft", "active", "deprecated", "retired", "archived"] },
+          "contentVersionId": { "type": "string" },
+          "provenance": {
+            "type": "array",
+            "items": { "type": "object", "additionalProperties": true }
+          },
+          "policyIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "MetadataEnvironmentBindingsRequest": {
+        "type": "object",
+        "properties": {
+          "environments": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "semanticIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "MetadataEnvironmentBindingsResponse": {
+        "type": "object",
+        "required": ["requestedAt", "environments", "bindings"],
+        "properties": {
+          "requestedAt": { "type": "string", "format": "date-time" },
+          "environments": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "bindings": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MetadataEnvironmentBindingSummary" }
+          }
+        }
+      },
+      "MetadataEnvironmentBindingSummary": {
+        "type": "object",
+        "required": ["semanticId", "environment", "state"],
+        "properties": {
+          "semanticId": { "type": "string" },
+          "environment": { "type": "string" },
+          "state": { "type": "string", "enum": ["bound", "missing", "environment-unavailable"] },
+          "revision": { "type": "integer", "format": "int64" },
+          "etag": { "type": "string" },
+          "artifactKind": {
+            "type": "string",
+            "enum": ["resource", "service", "publication", "field", "catalog", "policy", "role"]
+          },
+          "resource": { "type": "object", "additionalProperties": true },
+          "field": { "$ref": "#/components/schemas/MetadataBoundFieldSummary" },
+          "service": { "type": "object", "additionalProperties": true },
+          "publication": { "type": "object", "additionalProperties": true },
+          "storage": { "type": "object", "additionalProperties": true },
+          "connection": { "type": "object", "additionalProperties": true },
+          "contentVersionId": { "type": "string" },
+          "lastObservedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateMetadataReleasePackageRequest": {
+        "type": "object",
+        "required": ["sourceEnvironment"],
+        "properties": {
+          "packageKey": { "type": "string" },
+          "namespace": { "type": "string" },
+          "title": { "type": "string" },
+          "summary": { "type": "string" },
+          "sourceEnvironment": { "type": "string" },
+          "targetEnvironments": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "semanticIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "desiredRevision": { "type": "integer", "format": "int64" },
+          "desiredContentVersionId": { "type": "string" },
+          "changeClasses": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "enum": ["metadata", "content", "binding", "policy", "delete"]
+            }
+          },
+          "provenance": {
+            "type": "array",
+            "items": { "type": "object", "additionalProperties": true }
+          }
+        }
+      },
+      "MetadataPrevalidateRequest": {
+        "type": "object",
+        "required": ["targetEnvironment"],
+        "description": "Request body for Metadata v2 release-package compatibility prevalidation. Exactly one of releasePackageId or releasePackage is required.",
+        "properties": {
+          "releasePackageId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Persisted MetadataReleasePackage identifier. Must not be an empty GUID."
+          },
+          "releasePackage": {
+            "$ref": "#/components/schemas/MetadataReleasePackage"
+          },
+          "targetEnvironment": {
+            "type": "string",
+            "description": "Target environment whose current Metadata v2 graph snapshot is compared. The value is trimmed and must not be blank."
+          },
+          "dataScripts": {
+            "type": "array",
+            "description": "Optional declared data script contracts. Omit for no scripts; explicit null arrays or entries are rejected. Prevalidation analyzes these declarations but never executes scripts.",
+            "items": { "$ref": "#/components/schemas/MetadataDataScriptEntry" }
+          }
+        }
+      },
+      "ApiResponseMetadataCompatibilityReport": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/MetadataCompatibilityReport" },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "MetadataCompatibilityReport": {
+        "type": "object",
+        "required": [
+          "targetEnvironment",
+          "generatedAt",
+          "status",
+          "canCreatePullRequest",
+          "canPromote",
+          "uncoveredErrorCount",
+          "coveredErrorCount",
+          "warningCount",
+          "scriptCount",
+          "findings",
+          "affectedDependents",
+          "rollbackReadiness"
+        ],
+        "properties": {
+          "targetEnvironment": { "type": "string" },
+          "releasePackageId": { "type": "string", "format": "uuid" },
+          "packageKey": { "type": "string" },
+          "sourceEnvironment": { "type": "string" },
+          "sourceRevision": { "type": "integer", "format": "int64" },
+          "sourceEtag": { "type": "string" },
+          "targetRevision": { "type": "integer", "format": "int64" },
+          "targetEtag": { "type": "string" },
+          "generatedAt": { "type": "string", "format": "date-time" },
+          "status": {
+            "type": "string",
+            "enum": ["ready", "warning", "blocked", "unknown"]
+          },
+          "canCreatePullRequest": {
+            "type": "boolean",
+            "description": "False for blocked and unknown reports; true for ready and warning reports."
+          },
+          "canPromote": {
+            "type": "boolean",
+            "description": "False for blocked and unknown reports; true for ready and warning reports."
+          },
+          "uncoveredErrorCount": { "type": "integer", "format": "int32" },
+          "coveredErrorCount": { "type": "integer", "format": "int32" },
+          "warningCount": { "type": "integer", "format": "int32" },
+          "scriptCount": { "type": "integer", "format": "int32" },
+          "findings": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MetadataCompatibilityFinding" }
+          },
+          "affectedDependents": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MetadataAffectedDependent" }
+          },
+          "rollbackReadiness": { "$ref": "#/components/schemas/MetadataRollbackReadiness" }
+        }
+      },
+      "MetadataCompatibilityFinding": {
+        "type": "object",
+        "required": [
+          "code",
+          "severity",
+          "kind",
+          "affectedSemanticId",
+          "affectedSemanticKind",
+          "message",
+          "expected",
+          "actual",
+          "requiredAction"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable metadata.compat.* finding code."
+          },
+          "severity": { "type": "string", "enum": ["info", "warning", "error"] },
+          "kind": {
+            "type": "string",
+            "enum": ["state", "resource", "field", "identifier", "spatial", "temporal", "storage", "service", "publication", "projection", "policy", "script"]
+          },
+          "affectedSemanticId": { "type": "string" },
+          "affectedSemanticKind": {
+            "type": "string",
+            "enum": ["resource", "service", "publication", "field", "catalog", "policy", "role"]
+          },
+          "affectedParentSemanticId": { "type": "string" },
+          "displayName": { "type": "string" },
+          "message": { "type": "string" },
+          "expected": { "$ref": "#/components/schemas/MetadataCompatibilityValue" },
+          "actual": { "$ref": "#/components/schemas/MetadataCompatibilityValue" },
+          "requiredAction": {
+            "type": "string",
+            "enum": [
+              "none",
+              "resolve-state",
+              "add-resource",
+              "update-resource",
+              "add-field",
+              "update-field",
+              "update-identifier",
+              "update-spatial",
+              "update-temporal",
+              "update-storage",
+              "add-service",
+              "update-service",
+              "add-publication",
+              "update-publication",
+              "run-data-script",
+              "manual-review"
+            ]
+          },
+          "coverageState": {
+            "type": "string",
+            "enum": ["not-applicable", "uncovered", "covered-by-script", "unknown"]
+          },
+          "coveringScriptId": { "type": "string" },
+          "coverageNotes": { "type": "string" }
+        }
+      },
+      "MetadataCompatibilityValue": {
+        "type": "object",
+        "required": ["label"],
+        "properties": {
+          "label": { "type": "string" },
+          "value": { "type": "string" },
+          "details": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          }
+        }
+      },
+      "MetadataAffectedDependent": {
+        "type": "object",
+        "required": ["semanticId", "semanticKind", "impactSeverity", "reason"],
+        "properties": {
+          "semanticId": { "type": "string" },
+          "semanticKind": {
+            "type": "string",
+            "enum": ["resource", "service", "publication", "field", "catalog", "policy", "role"]
+          },
+          "displayName": { "type": "string" },
+          "impactSeverity": { "type": "string", "enum": ["info", "warning", "error"] },
+          "reason": { "type": "string" },
+          "viaSemanticId": { "type": "string" },
+          "relationshipKind": { "type": "string" }
+        }
+      },
+      "MetadataRollbackReadiness": {
+        "type": "object",
+        "required": ["classification", "reason", "requiresSnapshot", "requiresManualAction", "scriptIds"],
+        "properties": {
+          "classification": {
+            "type": "string",
+            "enum": ["metadata-only", "service-revision", "script-reversible", "snapshot-required", "manual"]
+          },
+          "reason": { "type": "string" },
+          "requiresSnapshot": { "type": "boolean" },
+          "requiresManualAction": { "type": "boolean" },
+          "scriptIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "MetadataDataScriptEntry": {
+        "type": "object",
+        "required": ["scriptId"],
+        "properties": {
+          "scriptId": { "type": "string" },
+          "title": { "type": "string" },
+          "kind": { "type": "string" },
+          "targetEnvironment": {
+            "type": "string",
+            "description": "Optional target environment for this script. Omitted or blank applies to every target; populated values are trimmed and matched case-insensitively."
+          },
+          "reversible": { "type": "boolean" },
+          "beforeContract": {
+            "description": "Declared pre-script state. Omit when not known; child collection arrays may be omitted but explicit null arrays or entries are rejected.",
+            "allOf": [{ "$ref": "#/components/schemas/MetadataDataScriptContract" }]
+          },
+          "afterContract": {
+            "description": "Declared post-script state. Omit when no script coverage is claimed. Missing-artifact coverage requires expected discriminator/detail fields, not only exists=true.",
+            "allOf": [{ "$ref": "#/components/schemas/MetadataDataScriptContract" }]
+          },
+          "declaredOperations": {
+            "type": "array",
+            "description": "Optional operation labels. Omit for no labels; explicit null arrays or entries are rejected.",
+            "items": { "type": "string" }
+          },
+          "notes": { "type": "string" }
+        }
+      },
+      "MetadataDataScriptContract": {
+        "type": "object",
+        "properties": {
+          "resources": {
+            "type": "array",
+            "description": "Semantic artifact contracts. Omit for an empty contract; explicit null arrays or entries are rejected.",
+            "items": { "$ref": "#/components/schemas/MetadataScriptResourceContract" }
+          }
+        }
+      },
+      "MetadataScriptResourceContract": {
+        "type": "object",
+        "description": "Semantic artifact contract used by data-script before/after coverage. For missing artifacts, exists=true alone is not sufficient; include expected resourceType, serviceType/route/protocols, publication identity/details, or storage binding details as applicable.",
+        "required": ["semanticId"],
+        "properties": {
+          "semanticId": { "type": "string" },
+          "semanticKind": {
+            "type": "string",
+            "enum": ["resource", "service", "publication", "field", "catalog", "policy", "role"]
+          },
+          "resourceId": { "type": "string" },
+          "serviceId": { "type": "string" },
+          "exists": { "type": "boolean" },
+          "resourceType": {
+            "type": "string",
+            "enum": ["feature-dataset", "raster-dataset", "table", "tile-dataset", "process", "style", "document", "external-resource", "map", "dashboard", "form", "app", "workflow", "geoprocessing-service", "etl-pipeline"]
+          },
+          "serviceType": {
+            "type": "string",
+            "enum": ["ogc-api-features", "wfs", "wms", "wmts", "esri-feature-service", "esri-map-service", "esri-image-service", "stac-api", "dcat-catalog", "ogc-records", "odata", "custom"]
+          },
+          "publicationType": {
+            "type": "string",
+            "enum": ["ogc-collection", "wfs-feature-type", "wms-layer", "wmts-layer", "esri-feature-layer", "esri-map-layer", "esri-image-layer", "stac-collection", "dcat-distribution", "ogc-record", "odata-entity-set", "custom"]
+          },
+          "route": { "type": "string" },
+          "path": { "type": "string" },
+          "serviceLocalId": { "type": "string" },
+          "layerIndex": { "type": "integer", "format": "int32" },
+          "fields": {
+            "type": "array",
+            "description": "Fields expected before or after the script. Omit for no fields; explicit null arrays or entries are rejected.",
+            "items": { "$ref": "#/components/schemas/MetadataScriptFieldContract" }
+          },
+          "requiredIdentifiers": {
+            "type": "array",
+            "description": "Required field identifiers expected before or after the script. Omit for none; explicit null arrays or entries are rejected.",
+            "items": { "type": "string" }
+          },
+          "domains": {
+            "type": "array",
+            "description": "Canonical domain identifiers expected before or after the script. Omit for none; explicit null arrays or entries are rejected.",
+            "items": { "type": "string" }
+          },
+          "indexes": {
+            "type": "array",
+            "description": "Canonical index identifiers expected before or after the script. Omit for none; explicit null arrays or entries are rejected.",
+            "items": { "type": "string" }
+          },
+          "spatial": { "$ref": "#/components/schemas/MetadataScriptSpatialContract" },
+          "temporal": { "$ref": "#/components/schemas/MetadataScriptTemporalContract" },
+          "storage": { "$ref": "#/components/schemas/MetadataScriptStorageContract" },
+          "capabilities": {
+            "type": "array",
+            "description": "Service or publication capabilities expected before or after the script. Omit for none; explicit null arrays or entries are rejected.",
+            "items": { "type": "string" }
+          },
+          "supportedFormats": {
+            "type": "array",
+            "description": "Publication formats expected before or after the script. Omit for none; explicit null arrays or entries are rejected.",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "MetadataScriptFieldContract": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "semanticId": { "type": "string" },
+          "name": { "type": "string" },
+          "exists": { "type": "boolean" },
+          "type": { "type": "string" },
+          "nullable": { "type": "boolean" },
+          "semanticRoles": {
+            "type": "array",
+            "description": "Semantic roles expected on the field. Omit for none; explicit null arrays or entries are rejected.",
+            "items": { "type": "string" }
+          },
+          "domains": {
+            "type": "array",
+            "description": "Canonical domain identifiers expected on the field. Omit for none; explicit null arrays or entries are rejected.",
+            "items": { "type": "string" }
+          },
+          "indexes": {
+            "type": "array",
+            "description": "Canonical index identifiers expected on the field. Omit for none; explicit null arrays or entries are rejected.",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "MetadataScriptSpatialContract": {
+        "type": "object",
+        "properties": {
+          "geometryType": { "type": "string" },
+          "srid": { "type": "integer", "format": "int32" }
+        }
+      },
+      "MetadataScriptTemporalContract": {
+        "type": "object",
+        "properties": {
+          "startTimeField": { "type": "string" },
+          "endTimeField": { "type": "string" },
+          "trackIdField": { "type": "string" }
+        }
+      },
+      "MetadataScriptStorageContract": {
+        "type": "object",
+        "properties": {
+          "storageBindingId": { "type": "string" },
+          "storageType": {
+            "type": "string",
+            "enum": ["relational-table", "sql-view", "sql-query", "geopackage-table", "geojson", "geoparquet", "arrow", "cloud-optimized-geotiff", "zarr", "netcdf", "mbtiles", "pmtiles", "tile-cache", "object-prefix", "external-api", "stac-asset"]
+          },
+          "capabilities": {
+            "type": "array",
+            "description": "Storage binding capabilities. Omit for none; explicit null arrays or entries are rejected.",
+            "items": {
+              "type": "string",
+              "enum": ["query", "filter", "sort", "aggregate", "edit", "transactions", "render", "tile", "download", "search"]
+            }
+          }
+        }
+      },
+      "MetadataReleasePackage": {
+        "type": "object",
+        "required": ["packageId", "metadata", "sourceEnvironment", "sourceRevision", "sourceEtag", "createdBy", "createdAt", "updatedAt"],
+        "properties": {
+          "packageId": { "type": "string", "format": "uuid" },
+          "metadata": { "$ref": "#/components/schemas/MetadataV2ObjectMetadata" },
+          "sourceEnvironment": { "type": "string" },
+          "sourceRevision": { "type": "integer", "format": "int64" },
+          "sourceEtag": { "type": "string" },
+          "targetEnvironments": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "entries": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MetadataReleaseEntry" }
+          },
+          "status": { "type": "string", "enum": ["draft", "ready", "staged", "superseded", "cancelled"] },
+          "createdBy": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "extensions": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "MetadataReleaseEntry": {
+        "type": "object",
+        "required": ["semanticId", "artifactKind", "desiredMetadataRevision"],
+        "properties": {
+          "semanticId": { "type": "string" },
+          "artifactKind": {
+            "type": "string",
+            "enum": ["resource", "service", "publication", "field", "catalog", "policy", "role"]
+          },
+          "resourceType": {
+            "type": "string",
+            "enum": ["feature-dataset", "raster-dataset", "table", "tile-dataset", "process", "style", "document", "external-resource", "map", "dashboard", "form", "app", "workflow", "geoprocessing-service", "etl-pipeline"]
+          },
+          "sourceField": { "$ref": "#/components/schemas/MetadataBoundFieldSummary" },
+          "desiredMetadataRevision": { "type": "integer", "format": "int64" },
+          "desiredContentVersionId": { "type": "string" },
+          "desiredProvenance": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "changeClass": { "type": "string", "enum": ["metadata", "content", "binding", "policy", "delete"] },
+          "targetStates": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MetadataReleaseTargetState" }
+          },
+          "dependentSemanticIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "status": { "type": "string", "enum": ["draft", "ready"] }
+        }
+      },
+      "MetadataReleaseTargetState": {
+        "type": "object",
+        "required": ["environment", "bindingState"],
+        "properties": {
+          "environment": { "type": "string" },
+          "currentMetadataRevision": { "type": "integer", "format": "int64" },
+          "currentContentVersionId": { "type": "string" },
+          "bindingState": { "type": "string", "enum": ["bound", "missing", "environment-unavailable"] },
+          "bindingSummary": {
+            "type": "object",
+            "description": "Secret-safe environment binding summary.",
+            "additionalProperties": true
+          }
+        }
+      },
+      "GitOpsMetadataReleaseManifest": {
+        "type": "object",
+        "required": ["metadata", "spec"],
+        "properties": {
+          "apiVersion": { "type": "string", "description": "Metadata v2 API version." },
+          "kind": { "type": "string", "enum": ["MetadataReleasePackage"] },
+          "metadata": { "$ref": "#/components/schemas/MetadataV2ObjectMetadata" },
+          "spec": { "$ref": "#/components/schemas/GitOpsMetadataReleaseSpec" }
+        }
+      },
+      "GitOpsMetadataReleaseSpec": {
+        "type": "object",
+        "required": ["packageId", "source", "targets", "entries"],
+        "properties": {
+          "packageId": { "type": "string", "format": "uuid" },
+          "source": { "$ref": "#/components/schemas/GitOpsMetadataReleaseSource" },
+          "targets": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/GitOpsMetadataReleaseTarget" }
+          },
+          "entries": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/GitOpsMetadataReleaseEntry" }
+          }
+        }
+      },
+      "GitOpsMetadataReleaseSource": {
+        "type": "object",
+        "required": ["environment", "revision", "etag"],
+        "properties": {
+          "environment": { "type": "string" },
+          "revision": { "type": "integer", "format": "int64" },
+          "etag": { "type": "string" }
+        }
+      },
+      "GitOpsMetadataReleaseTarget": {
+        "type": "object",
+        "required": ["environment"],
+        "properties": {
+          "environment": { "type": "string" }
+        }
+      },
+      "GitOpsMetadataReleaseEntry": {
+        "type": "object",
+        "required": ["semanticId", "artifactKind", "desiredMetadataRevision"],
+        "properties": {
+          "semanticId": { "type": "string" },
+          "artifactKind": {
+            "type": "string",
+            "enum": ["resource", "service", "publication", "field", "catalog", "policy", "role"]
+          },
+          "resourceType": {
+            "type": "string",
+            "enum": ["feature-dataset", "raster-dataset", "table", "tile-dataset", "process", "style", "document", "external-resource", "map", "dashboard", "form", "app", "workflow", "geoprocessing-service", "etl-pipeline"]
+          },
+          "sourceField": { "$ref": "#/components/schemas/MetadataBoundFieldSummary" },
+          "desiredMetadataRevision": { "type": "integer", "format": "int64" },
+          "desiredContentVersionId": { "type": "string" },
+          "desiredProvenance": {
+            "type": "array",
+            "items": { "type": "object", "additionalProperties": true }
+          },
+          "changeClass": { "type": "string", "enum": ["metadata", "content", "binding", "policy", "delete"] },
+          "targetStates": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MetadataReleaseTargetState" }
+          },
+          "dependentSemanticIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "MetadataV2ObjectMetadata": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "namespace": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "metadataGeneration": { "type": "integer", "format": "int64" },
+          "annotations": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          }
+        }
+      },
+      "MetadataBoundFieldSummary": {
+        "type": "object",
+        "required": ["semanticId", "parentResourceId", "fieldName"],
+        "properties": {
+          "semanticId": { "type": "string" },
+          "parentResourceId": { "type": "string" },
+          "fieldName": { "type": "string" },
+          "fieldType": { "type": "string" }
         }
       },
       "MetadataResource": {
@@ -6152,6 +10232,419 @@
           "data": { "$ref": "#/components/schemas/ComplianceKeyRotationResponse" },
           "message": { "type": "string" },
           "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiResponsePackageReviewResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/PackageReviewResponse" },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "PackageReviewRequest": {
+        "type": "object",
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "nullable": true,
+            "description": "Package-review contract version. The current supported value is honua.package_review.v1."
+          },
+          "packageFamily": {
+            "type": "string",
+            "description": "Supported values are query, analysis_plan, map_package, dashboard_report, form, app_package, workflow, gp, and etl. packageFamily is not required and not enum-limited: a missing value returns a missing_package_family finding and an unknown value returns an unsupported_package_family finding, rather than an HTTP validation error."
+          },
+          "packageId": { "type": "string", "nullable": true },
+          "requestedAction": {
+            "type": "string",
+            "nullable": true,
+            "description": "Caller-requested action being reviewed, for example execute or publish."
+          },
+          "format": { "type": "string", "nullable": true },
+          "packagePayload": {
+            "nullable": true,
+            "description": "Opaque package payload. analysis_plan and gp payloads are parsed as analysis-plan candidates.",
+            "oneOf": [
+              { "type": "object", "additionalProperties": true },
+              { "type": "array", "items": {} },
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" }
+            ]
+          },
+          "requirements": {
+            "nullable": true,
+            "description": "Shared validation requirements. An explicit null is normalized to an empty requirement set.",
+            "allOf": [{ "$ref": "#/components/schemas/PackageReviewRequirements" }]
+          },
+          "estimate": { "$ref": "#/components/schemas/PackageEstimate" },
+          "includePreviewPlan": {
+            "type": "boolean",
+            "description": "Caller preference. /packages/validate forces false and /packages/preview forces true."
+          },
+          "includePassFindings": { "type": "boolean" },
+          "resourceRefs": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": { "type": "string" },
+            "description": "Safe caller-visible resource references. An explicit null is normalized to an empty map."
+          }
+        }
+      },
+      "PackageReviewRequirements": {
+        "type": "object",
+        "properties": {
+          "dataBindings": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageDataBindingRequirement" }
+          },
+          "permissions": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackagePermissionRequirement" }
+          },
+          "schemas": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageSchemaRequirement" }
+          },
+          "fields": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageFieldRequirement" }
+          },
+          "domains": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageDomainRequirement" }
+          },
+          "crs": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageCrsRequirement" }
+          },
+          "geometry": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageGeometryRequirement" }
+          },
+          "temporal": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageTemporalRequirement" }
+          },
+          "capabilities": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageCapabilityRequirement" }
+          },
+          "dependencies": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageDependencyRequirement" }
+          },
+          "formats": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageFormatRequirement" }
+          },
+          "approvals": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageApprovalRequirement" }
+          }
+        }
+      },
+      "PackageDataBindingRequirement": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "nullable": true },
+          "sourceId": { "type": "string", "nullable": true },
+          "layerId": { "type": "integer", "format": "int32", "nullable": true },
+          "path": { "type": "string", "nullable": true },
+          "required": { "type": "boolean", "default": true },
+          "isResolved": { "type": "boolean", "default": true },
+          "message": { "type": "string", "nullable": true }
+        }
+      },
+      "PackagePermissionRequirement": {
+        "type": "object",
+        "required": ["permission"],
+        "properties": {
+          "permission": { "type": "string" },
+          "target": { "type": "string", "nullable": true },
+          "path": { "type": "string", "nullable": true },
+          "granted": { "type": "boolean", "default": true },
+          "policyRef": { "type": "string", "nullable": true },
+          "appliesTo": { "$ref": "#/components/schemas/PackageReviewActionScope" }
+        }
+      },
+      "PackageSchemaRequirement": {
+        "type": "object",
+        "properties": {
+          "schemaId": { "type": "string", "nullable": true },
+          "path": { "type": "string", "nullable": true },
+          "exists": { "type": "boolean", "default": true },
+          "expectedVersion": { "type": "string", "nullable": true },
+          "actualVersion": { "type": "string", "nullable": true }
+        }
+      },
+      "PackageFieldRequirement": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string" },
+          "path": { "type": "string", "nullable": true },
+          "exists": { "type": "boolean", "default": true },
+          "expectedType": { "type": "string", "nullable": true },
+          "actualType": { "type": "string", "nullable": true }
+        }
+      },
+      "PackageDomainRequirement": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string" },
+          "field": { "type": "string", "nullable": true },
+          "path": { "type": "string", "nullable": true },
+          "exists": { "type": "boolean", "default": true },
+          "isValid": { "type": "boolean", "default": true },
+          "expected": { "type": "string", "nullable": true },
+          "actual": { "type": "string", "nullable": true }
+        }
+      },
+      "PackageCrsRequirement": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "nullable": true },
+          "expectedSrid": { "type": "integer", "format": "int32", "nullable": true },
+          "actualSrid": { "type": "integer", "format": "int32", "nullable": true },
+          "expectedUnits": { "type": "string", "nullable": true },
+          "actualUnits": { "type": "string", "nullable": true },
+          "assumption": { "type": "string", "nullable": true }
+        }
+      },
+      "PackageGeometryRequirement": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "nullable": true },
+          "expectedGeometryType": { "type": "string", "nullable": true },
+          "actualGeometryType": { "type": "string", "nullable": true },
+          "allowsNullGeometry": { "type": "boolean", "default": true },
+          "nullGeometryCount": { "type": "integer", "format": "int64", "nullable": true }
+        }
+      },
+      "PackageTemporalRequirement": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "nullable": true },
+          "required": { "type": "boolean", "default": true },
+          "field": { "type": "string", "nullable": true },
+          "exists": { "type": "boolean", "default": true }
+        }
+      },
+      "PackageCapabilityRequirement": {
+        "type": "object",
+        "required": ["capability"],
+        "properties": {
+          "capability": { "type": "string" },
+          "scope": { "type": "string", "nullable": true },
+          "path": { "type": "string", "nullable": true },
+          "required": { "type": "boolean", "default": true },
+          "supported": { "type": "boolean", "default": true },
+          "appliesTo": { "$ref": "#/components/schemas/PackageReviewActionScope" }
+        }
+      },
+      "PackageDependencyRequirement": {
+        "type": "object",
+        "required": ["packageId"],
+        "properties": {
+          "packageId": { "type": "string" },
+          "version": { "type": "string", "nullable": true },
+          "path": { "type": "string", "nullable": true },
+          "required": { "type": "boolean", "default": true },
+          "resolved": { "type": "boolean", "default": true }
+        }
+      },
+      "PackageFormatRequirement": {
+        "type": "object",
+        "required": ["format"],
+        "properties": {
+          "format": { "type": "string" },
+          "path": { "type": "string", "nullable": true },
+          "supported": { "type": "boolean", "default": true }
+        }
+      },
+      "PackageApprovalRequirement": {
+        "type": "object",
+        "properties": {
+          "policyRef": { "type": "string", "nullable": true },
+          "path": { "type": "string", "nullable": true },
+          "required": { "type": "boolean" },
+          "approved": { "type": "boolean" },
+          "appliesTo": { "$ref": "#/components/schemas/PackageReviewActionScope" }
+        }
+      },
+      "PackageReviewResponse": {
+        "type": "object",
+        "required": ["contractVersion", "reviewId", "packageFamily", "status", "canExecute", "canPublish", "requiresApproval", "checkedAt", "findings"],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": ["honua.package_review.v1"]
+          },
+          "reviewId": { "type": "string" },
+          "packageFamily": {
+            "type": "string",
+            "description": "Echoes the reviewed package family. Unknown values can appear in blocked reviews."
+          },
+          "packageId": { "type": "string", "nullable": true },
+          "status": { "$ref": "#/components/schemas/PackageReviewStatus" },
+          "canExecute": { "type": "boolean" },
+          "canPublish": { "type": "boolean" },
+          "requiresApproval": { "type": "boolean" },
+          "checkedAt": { "type": "string", "format": "date-time" },
+          "findings": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageFinding" }
+          },
+          "previewPlan": { "$ref": "#/components/schemas/PackagePreviewPlan" },
+          "estimate": { "$ref": "#/components/schemas/PackageEstimate" },
+          "links": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          },
+          "resourceRefs": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          }
+        }
+      },
+      "PackageFinding": {
+        "type": "object",
+        "required": ["code", "severity", "category", "disposition", "appliesTo", "message"],
+        "properties": {
+          "code": { "type": "string" },
+          "severity": { "$ref": "#/components/schemas/PackageFindingSeverity" },
+          "category": { "$ref": "#/components/schemas/PackageFindingCategory" },
+          "disposition": { "$ref": "#/components/schemas/PackageFindingDisposition" },
+          "appliesTo": { "$ref": "#/components/schemas/PackageReviewActionScope" },
+          "message": { "type": "string" },
+          "requiredAction": { "$ref": "#/components/schemas/PackageRequiredAction" },
+          "affectedArtifact": { "$ref": "#/components/schemas/PackageAffectedArtifact" },
+          "evidence": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageFindingEvidence" }
+          }
+        }
+      },
+      "PackageRequiredAction": {
+        "type": "object",
+        "required": ["actionKind"],
+        "properties": {
+          "actionKind": { "type": "string" },
+          "targetPath": { "type": "string", "nullable": true },
+          "title": { "type": "string", "nullable": true }
+        }
+      },
+      "PackageAffectedArtifact": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string", "nullable": true },
+          "id": { "type": "string", "nullable": true },
+          "path": { "type": "string", "nullable": true },
+          "sourceId": { "type": "string", "nullable": true },
+          "stepId": { "type": "string", "nullable": true }
+        }
+      },
+      "PackageFindingEvidence": {
+        "type": "object",
+        "required": ["kind"],
+        "properties": {
+          "kind": { "type": "string" },
+          "expected": { "type": "string", "nullable": true },
+          "actual": { "type": "string", "nullable": true },
+          "path": { "type": "string", "nullable": true },
+          "fieldName": { "type": "string", "nullable": true },
+          "srid": { "type": "integer", "format": "int32", "nullable": true },
+          "capability": { "type": "string", "nullable": true },
+          "policyRef": { "type": "string", "nullable": true },
+          "resourceRef": { "type": "string", "nullable": true }
+        }
+      },
+      "PackagePreviewPlan": {
+        "type": "object",
+        "required": ["planId", "mayMutatePublishedState", "operations"],
+        "properties": {
+          "planId": { "type": "string" },
+          "mayMutatePublishedState": {
+            "type": "boolean",
+            "description": "Must remain false for preview responses."
+          },
+          "operations": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackagePreviewOperation" }
+          }
+        }
+      },
+      "PackagePreviewOperation": {
+        "type": "object",
+        "required": ["operationId", "operationKind", "mayMutatePublishedState"],
+        "properties": {
+          "operationId": { "type": "string" },
+          "operationKind": { "type": "string" },
+          "inputRefs": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "outputArtifactKinds": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "dependsOn": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "mayMutatePublishedState": {
+            "type": "boolean",
+            "description": "Must remain false for preview responses."
+          },
+          "requiredCapabilities": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "PackageEstimate": {
+        "type": "object",
+        "properties": {
+          "rowCount": { "type": "integer", "format": "int64", "nullable": true },
+          "featureCount": { "type": "integer", "format": "int64", "nullable": true },
+          "bytes": { "type": "integer", "format": "int64", "nullable": true },
+          "durationMs": { "type": "number", "format": "double", "nullable": true },
+          "durationSeconds": { "type": "number", "format": "double", "nullable": true },
+          "costWeight": { "type": "number", "format": "double", "nullable": true },
+          "confidence": { "type": "string", "nullable": true }
+        }
+      },
+      "PackageReviewStatus": {
+        "type": "string",
+        "enum": ["ready", "warning", "blocked"]
+      },
+      "PackageFindingSeverity": {
+        "type": "string",
+        "enum": ["blocker", "warning", "info", "pass"]
+      },
+      "PackageFindingCategory": {
+        "type": "string",
+        "enum": ["data_binding", "permission", "rbac", "schema", "field", "domain", "crs", "geometry", "temporal", "capability", "dependency", "format", "approval", "preview"]
+      },
+      "PackageFindingDisposition": {
+        "type": "string",
+        "enum": ["unresolved", "resolved", "auth_denied", "unsupported", "requires_approval"]
+      },
+      "PackageReviewActionScope": {
+        "type": "string",
+        "enum": ["both", "execute", "publish", "review"]
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string", "nullable": true },
+          "title": { "type": "string", "nullable": true },
+          "status": { "type": "integer", "format": "int32", "nullable": true },
+          "detail": { "type": "string", "nullable": true },
+          "instance": { "type": "string", "nullable": true }
         }
       },
       "ComplianceKeyRotationResponse": {

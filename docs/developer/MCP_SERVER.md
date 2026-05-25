@@ -384,6 +384,8 @@ List parameterized resource URIs:
 |------|--------|-----------------|-----------------|
 | `honua_validate_plan` | functional | `IGeoprocessingJobService.ValidatePlan` | `planning` |
 | `honua_dry_run_plan` | functional | `IGeoprocessingJobService.DryRunPlan` | `planning` |
+| `honua_validate_package` | functional | `IPackageReviewService.ReviewAsync` | `planning` |
+| `honua_preview_package` | functional | `IPackageReviewService.ReviewAsync` | `planning` |
 | `honua_execute_plan` | functional | `IGeoprocessingJobService.SubmitJobAsync` | `execution` |
 | `honua_cancel_job` | functional | `IGeoprocessingJobService.CancelJobAsync` | `lifecycle` |
 | `honua_plan_analysis` | functional | `IPlanAnalysisService.PlanAsync` (fixture replay by default; host-replaceable live planner) | `planning` |
@@ -424,6 +426,24 @@ catalog discovery on top of the same authorization graph via
   `{ isExecutable, requiresApproval, violations, warnings }`.
 - `honua_dry_run_plan` returns
   `{ estimatedDurationSeconds, estimatedArtifacts, sideEffects }`.
+- `honua_validate_package` and `honua_preview_package` accept the shared
+  package-review request documented in
+  [Package Review API](package-review-api.md). Both tools return the canonical
+  `PackageReviewResponse`; `honua_preview_package` forces read-only preview
+  planning on the server side, while `honua_validate_package` forces
+  `includePreviewPlan: false`. Like `honua_validate_plan`, the published schema
+  for these tools intentionally does not mark `packageFamily` as required or
+  enum-limit it: missing or unknown families come back as structured
+  `missing_package_family` / `unsupported_package_family` findings, so a
+  stricter schema would let schema-driven clients block the very inputs these
+  tools exist to inspect. Package-review tools require the same
+  authenticated operator flow as other planning tools and authorize with the
+  process read grant before calling `IPackageReviewService`.
+  Clients should disable execute and publish controls from `canExecute` and
+  `canPublish`; unresolved `blocker` findings are already scoped to
+  `execute`, `publish`, `both`, or `review`. `review`-scoped blockers keep the
+  response `status` blocked without disabling execute or publish gates by
+  themselves.
 - `honua_execute_plan` accepts an optional `idempotencyKey`. Blank or
   whitespace keys are normalized to `null` before delegation. Success returns
   `{ jobId, status, createdAt, resourceUri }`.

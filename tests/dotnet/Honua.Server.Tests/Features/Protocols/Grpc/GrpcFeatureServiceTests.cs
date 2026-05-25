@@ -841,6 +841,42 @@ public sealed class GrpcFeatureServiceTests
     }
 
     [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeaturesStream")]
+    public async Task QueryFeaturesStream_WithGeoServicesParityOptions_NormalizesWildcardOutFields()
+    {
+        var features = new[]
+        {
+            Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty.Add("name", "pump"))
+        }.ToAsyncEnumerable();
+
+        _streamingStore.StreamFeaturesAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(features);
+
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            Where = "1=1",
+            ReturnGeometry = true,
+            ResultRecordCount = 1
+        };
+        request.OutFields.Add("*");
+
+        var writer = new TestServerStreamWriter<Proto.FeaturePage>();
+        await _sut.QueryFeaturesStream(request, writer, CreateCallContext());
+
+        writer.Pages.Should().ContainSingle();
+        writer.Pages[0].Features.Should().ContainSingle();
+        _streamingStore.Received(1).StreamFeaturesAsync(
+            0,
+            Arg.Is<FeatureQuery>(query =>
+                query.Where == "1=1" &&
+                query.OutFields == null &&
+                query.Limit == 1),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_WithUnsupportedSpatialFilterWkid_ThrowsInvalidArgument()
     {

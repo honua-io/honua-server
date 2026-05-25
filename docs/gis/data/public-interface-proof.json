@@ -1,7 +1,51 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedUtc": "2026-05-18T00:00:00Z",
+  "updatedUtc": "2026-05-25T00:00:00Z",
   "surfaces": [
+    {
+      "surfaceId": "capability-manifest",
+      "displayName": "Server capability manifest",
+      "surfaceKind": "http-route",
+      "protocol": "Capability Manifest HTTP",
+      "canonicalIdentifier": "/api/v1/capabilities/manifest",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [],
+      "endpointExactMatches": [
+        "/api/v1/capabilities/manifest"
+      ],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and CapabilityManifestEndpointTests integration tests assert anonymous, admin-scoped, unknown-environment, invalid-scope, no-store, and content-negotiation behavior.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Capabilities/CapabilityManifestEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1186",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Source-generated CapabilityManifestJsonContext keeps the wire shape AOT-safe; docs/developer/capability-manifest.md documents the raw manifest, scope validation, availability gates, limit sections, reason codes, cache policy, and SDK projection rules.",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/Capabilities/Models/CapabilityManifestJsonContext.cs",
+            "src/Honua.Server/Features/Capabilities/Models/CapabilityManifestModels.cs",
+            "docs/developer/capability-manifest.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1186",
+          "versionCaptureRule": null
+        }
+      ]
+    },
     {
       "surfaceId": "platform-http",
       "displayName": "Platform HTTP primitives",
@@ -201,6 +245,253 @@
           "status": "implemented",
           "linkedTicket": "#31",
           "versionCaptureRule": "The sdk-server-compatibility workflow records Honua.Sdk.Admin, Honua.Sdk.GeoServices, and Honua.Sdk.OgcFeatures package versions where present, SDK ref, Honua Server commit, seed profile, protocol surface list, and failure diagnostics in compat-result.json."
+        }
+      ]
+    },
+    {
+      "surfaceId": "forms-runtime",
+      "displayName": "Form package runtime API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Forms API",
+      "canonicalIdentifier": "/api/v1/forms/**",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/v1/forms/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus form package endpoint integration tests cover published package readback, offline policy, submissions, idempotency, and attachment persistence.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Forms/FormPackageEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#1184",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Form package contract and offline policy semantics are documented for Console, mobile, and SDK clients.",
+          "executionLane": "docs+review",
+          "evidenceLocations": [
+            "docs/developer/form-package-api.md",
+            "src/Honua.Core/Features/Forms/Packages/FormPackageContracts.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-server#1184",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "console-content-rbac",
+      "displayName": "Console metadata v2 content and RBAC baseline",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/console/**",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [
+        "/api/v1/console/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and ConsoleSessionEndpointTests integration tests asserting session bootstrap, content CRUD, action checks, and provenance traversal under admin authorization",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Console/ConsoleSessionEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1162",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Source-generated ConsoleJsonContext keeps the wire shapes AOT-safe and SDK-consumable; the docs/admin-api/console-content-and-rbac.md contract describes the canonical item, action, and provenance shapes",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/Console/Models/ConsoleJsonContext.cs",
+            "src/Honua.Core/Features/Console/Domain/ConsoleContentItem.cs",
+            "docs/admin-api/console-content-and-rbac.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1162",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "console-workflow-packages",
+      "displayName": "Console workflow package and node registry API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/console/workflow-*",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [
+        "/api/v1/console/workflow-"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and WorkflowPackageEndpointsTests integration tests assert node registry rendering data, package version lifecycle, validation, dry run, publication targets, run creation, and workflow provenance metadata",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/WorkflowPackages/WorkflowPackageEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1185",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Source-generated WorkflowPackagesJsonContext keeps workflow package, node registry, validation, dry-run, publication, and run DTOs AOT-safe; the Console Workflow Packages contract documents endpoint and provenance semantics",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/WorkflowPackages/WorkflowPackagesJsonContext.cs",
+            "src/Honua.Core/Features/WorkflowPackages/Domain/WorkflowPackageModels.cs",
+            "docs/admin-api/console-workflow-packages.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1185",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "console-job-observability",
+      "displayName": "Console durable job observability API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/admin/jobs/**",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [
+        "/api/v1/admin/jobs"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and ConsoleJobEndpointsTests integration tests assert the list, detail, logs, artifacts, actions, cancel, retry, and authorization surfaces",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/Jobs/ConsoleJobEndpointsTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/AdminAuthorizationTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1170",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Source-generated ConsoleJobJsonContext keeps job viewer DTOs AOT-safe; the admin API contract documents filters, response fields, cursor semantics, artifact states, controls, and Operate event deep links",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/Admin/Jobs/ConsoleJobJsonContext.cs",
+            "src/Honua.Server/Features/Admin/Jobs/ConsoleJobModels.cs",
+            "docs/admin-api/console-job-observability.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1170",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Redis execution substrate and Operate event feed tests verify cursor query indexes, queue/backend fallback filtering, structured log pagination, artifact/log persistence, retry/cancel durability across local queue and remote retry paths, and durable job event projection",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/ControlPlane/RedisExecutionSubstrateIntegrationTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Observability/LocalOperateEventFeedTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1170",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "studio-package-lifecycle",
+      "displayName": "Studio package lifecycle API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/studio/**",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [
+        "/api/v1/studio/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus StudioPackageEndpointsTests integration tests for package family discovery, draft lifecycle, validation, preview plans, immutable versions, publish requests, reopen, compare, rollback, and admin authorization",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Studio/StudioPackageEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1180",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Focused service, Postgres store, and endpoint tests assert mutable drafts, immutable content versions, stale generation rejection, format and validation errors, item/version ownership checks, publication request persistence, publication intent override rejection, reopen, rollback pointer transitions, comparison behavior, and lifecycle activity coverage for read/delete/list/get store work",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Core.Tests/Features/Studio/StudioPackageLifecycleServiceTests.cs",
+            "tests/dotnet/Honua.Postgres.Tests/Features/Studio/PostgresStudioPackageStoreTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Studio/StudioPackageEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1180",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Source-generated StudioApiJsonContext and StudioJsonContext preserve AOT-safe wire contracts; the admin API documentation records the response envelope, problem details, package envelope, lifecycle semantics, validation rules, persistence, and SDK projection requirements",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/Studio/Models/StudioApiJsonContext.cs",
+            "src/Honua.Core/Features/Studio/Domain/StudioJsonContext.cs",
+            "docs/admin-api/studio-package-lifecycle.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1180",
+          "versionCaptureRule": null
         }
       ]
     },
@@ -2735,6 +3026,51 @@
           "ownerRepo": "geospatial-grpc",
           "status": "implemented",
           "linkedTicket": null,
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "analysis-content",
+      "displayName": "Analysis content and artifact HTTP surface",
+      "surfaceKind": "http-route-family",
+      "protocol": "Analysis Content",
+      "canonicalIdentifier": "/api/v1/analysis/content/* + /api/v1/analysis/artifacts/* + /api/v1/analysis/jobs/*",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/v1/analysis/content/",
+        "/api/v1/analysis/artifacts/",
+        "/api/v1/analysis/jobs/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus analysis content endpoint integration tests",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/AnalysisContent/AnalysisContentEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1182",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Saved-query versioning and preview, analysis-package submit/rerun, artifact binding metadata, and safe failed-job diagnostics are covered by focused integration tests",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Server.Tests/Features/AnalysisContent/AnalysisContentEndpointsTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/AnalysisContent/GeoprocessingArtifactPersistenceTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1182",
           "versionCaptureRule": null
         }
       ]

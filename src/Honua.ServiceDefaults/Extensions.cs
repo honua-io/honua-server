@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Studio.Services;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
@@ -41,7 +42,9 @@ public static partial class Extensions
         "Honua.Server.Export",
         "Honua.Wfs20.Transactions",
         "Honua.Core.Metadata",
-        "Honua.MySql.FeatureDataAccess"
+        "Honua.MySql.FeatureDataAccess",
+        StudioPackageLifecycleService.ActivitySourceName,
+        "Honua.PackageReview"
     ];
 
     /// <summary>

@@ -76,6 +76,64 @@ sql:
       );
   - "ALTER TABLE IF EXISTS honua.layer_fields ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT FALSE;"
   - |
+      CREATE TABLE IF NOT EXISTS honua.analysis_content_items (
+          item_id            TEXT        PRIMARY KEY,
+          kind               TEXT        NOT NULL,
+          name               TEXT        NOT NULL,
+          title              TEXT        NULL,
+          owner_id           TEXT        NULL,
+          visibility         TEXT        NOT NULL DEFAULT 'organization',
+          current_version    INT         NOT NULL,
+          current_version_id TEXT        NOT NULL,
+          lifecycle          TEXT        NOT NULL DEFAULT 'Active',
+          created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          created_by         TEXT        NULL,
+          CONSTRAINT analysis_content_items_kind CHECK (kind IN ('SavedQuery', 'AnalysisPackage')),
+          CONSTRAINT analysis_content_items_lifecycle CHECK (lifecycle IN ('Active', 'Archived', 'Deleted')),
+          CONSTRAINT analysis_content_items_version_positive CHECK (current_version > 0),
+          CONSTRAINT analysis_content_items_name_not_empty CHECK (length(btrim(name)) > 0)
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_analysis_content_items_kind_updated ON honua.analysis_content_items (kind, updated_at DESC, item_id);"
+  - "CREATE INDEX IF NOT EXISTS idx_analysis_content_items_owner_updated ON honua.analysis_content_items (owner_id, updated_at DESC, item_id);"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.analysis_content_versions (
+          version_id    TEXT        PRIMARY KEY,
+          item_id       TEXT        NOT NULL REFERENCES honua.analysis_content_items(item_id) ON DELETE CASCADE,
+          version       INT         NOT NULL,
+          kind          TEXT        NOT NULL,
+          content_hash  TEXT        NOT NULL,
+          created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          created_by    TEXT        NULL,
+          version_body  JSONB       NOT NULL,
+          CONSTRAINT analysis_content_versions_item_version UNIQUE (item_id, version),
+          CONSTRAINT analysis_content_versions_kind CHECK (kind IN ('SavedQuery', 'AnalysisPackage')),
+          CONSTRAINT analysis_content_versions_version_positive CHECK (version > 0)
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_analysis_content_versions_item_created ON honua.analysis_content_versions (item_id, version DESC);"
+  - "CREATE INDEX IF NOT EXISTS idx_analysis_content_versions_hash ON honua.analysis_content_versions (content_hash);"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.analysis_result_artifacts (
+          artifact_id       TEXT        PRIMARY KEY,
+          result_package_id TEXT        NOT NULL,
+          job_id            TEXT        NOT NULL,
+          source_item_id    TEXT        NOT NULL,
+          source_version    INT         NOT NULL,
+          source_version_id TEXT        NOT NULL,
+          kind              TEXT        NOT NULL,
+          retention_state   TEXT        NOT NULL DEFAULT 'Retained',
+          promotion_state   TEXT        NOT NULL DEFAULT 'None',
+          created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          expires_at        TIMESTAMPTZ NULL,
+          artifact_body     JSONB       NOT NULL,
+          CONSTRAINT analysis_result_artifacts_source_version_positive CHECK (source_version > 0),
+          CONSTRAINT analysis_result_artifacts_retention CHECK (retention_state IN ('Preview', 'Retained', 'Promoted', 'Expired')),
+          CONSTRAINT analysis_result_artifacts_promotion CHECK (promotion_state IN ('None', 'Promoted'))
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_analysis_result_artifacts_job_created ON honua.analysis_result_artifacts (job_id, created_at, artifact_id);"
+  - "CREATE INDEX IF NOT EXISTS idx_analysis_result_artifacts_source ON honua.analysis_result_artifacts (source_item_id, source_version, artifact_id);"
+  - "CREATE INDEX IF NOT EXISTS idx_analysis_result_artifacts_retention ON honua.analysis_result_artifacts (retention_state, expires_at);"
+  - |
       CREATE TABLE IF NOT EXISTS honua.relationships (
           id SERIAL PRIMARY KEY,
           layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
@@ -680,6 +738,142 @@ sql:
       );
   - "CREATE UNIQUE INDEX IF NOT EXISTS uq_alert_events_dedupe_key ON honua.alert_events(dedupe_key);"
   - |
+      CREATE TABLE IF NOT EXISTS honua.alert_event_lifecycle (
+          event_id           BIGINT      PRIMARY KEY REFERENCES honua.alert_events(event_id) ON DELETE CASCADE,
+          lifecycle_status   SMALLINT    NOT NULL DEFAULT 0,
+          acknowledged_at    TIMESTAMPTZ NULL,
+          acknowledged_by    TEXT        NULL,
+          suppressed_until   TIMESTAMPTZ NULL,
+          suppressed_by      TEXT        NULL,
+          resolved_at        TIMESTAMPTZ NULL,
+          resolved_by        TEXT        NULL,
+          note               TEXT        NULL,
+          updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          CONSTRAINT alert_event_lifecycle_valid_status CHECK (lifecycle_status IN (0, 1, 2, 3))
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_alert_event_lifecycle_status_updated ON honua.alert_event_lifecycle(lifecycle_status, updated_at DESC);"
+  - "CREATE INDEX IF NOT EXISTS idx_alert_events_occurred_event ON honua.alert_events(occurred_at DESC, event_id DESC);"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.audit_log (
+          audit_id         BIGSERIAL    PRIMARY KEY,
+          timestamp        TIMESTAMPTZ  NOT NULL,
+          event_type       VARCHAR(32)  NOT NULL,
+          actor            VARCHAR(256) NOT NULL,
+          actor_type       VARCHAR(32)  NOT NULL,
+          resource_type    VARCHAR(64)  NOT NULL,
+          resource_id      VARCHAR(256),
+          action           VARCHAR(128) NOT NULL,
+          outcome          VARCHAR(16)  NOT NULL,
+          correlation_id   VARCHAR(64)  NOT NULL,
+          remote_ip        VARCHAR(64),
+          user_agent       VARCHAR(512),
+          details          TEXT         NOT NULL DEFAULT '',
+          CONSTRAINT chk_audit_log_event_type CHECK (event_type IN (
+              'Authentication','Authorization','AdminAction',
+              'ConfigChange','DataExport','DataDelete')),
+          CONSTRAINT chk_audit_log_actor_type CHECK (actor_type IN (
+              'Anonymous','UserId','ApiKey','System')),
+          CONSTRAINT chk_audit_log_outcome CHECK (outcome IN (
+              'Success','Failure','Denied'))
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON honua.audit_log(timestamp DESC);"
+  - "CREATE INDEX IF NOT EXISTS idx_audit_log_actor_timestamp ON honua.audit_log(actor, timestamp DESC);"
+  - "CREATE INDEX IF NOT EXISTS idx_audit_log_event_type_timestamp ON honua.audit_log(event_type, timestamp DESC);"
+  - "CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp_id ON honua.audit_log(timestamp DESC, audit_id DESC);"
+  - "DROP RULE IF EXISTS audit_log_no_update ON honua.audit_log;"
+  - "CREATE RULE audit_log_no_update AS ON UPDATE TO honua.audit_log DO INSTEAD NOTHING;"
+  - "DROP RULE IF EXISTS audit_log_no_delete ON honua.audit_log;"
+  - "CREATE RULE audit_log_no_delete AS ON DELETE TO honua.audit_log DO INSTEAD NOTHING;"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.investigations (
+          investigation_id   TEXT        PRIMARY KEY,
+          title              TEXT        NOT NULL,
+          status             SMALLINT    NOT NULL DEFAULT 0,
+          created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          created_by         TEXT        NOT NULL,
+          updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          summary            TEXT        NULL,
+          CONSTRAINT investigations_valid_title CHECK (length(title) > 0),
+          CONSTRAINT investigations_valid_status CHECK (status IN (0, 1))
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_investigations_updated_id ON honua.investigations(updated_at DESC, investigation_id DESC);"
+  - "CREATE INDEX IF NOT EXISTS idx_investigations_status_updated ON honua.investigations(status, updated_at DESC);"
+  - "CREATE INDEX IF NOT EXISTS idx_investigations_created_by ON honua.investigations(created_by);"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.investigation_pins (
+          pin_id           BIGSERIAL   PRIMARY KEY,
+          investigation_id TEXT        NOT NULL REFERENCES honua.investigations(investigation_id) ON DELETE CASCADE,
+          event_ref        TEXT        NOT NULL,
+          event_kind       SMALLINT    NOT NULL,
+          occurred_at      TIMESTAMPTZ NOT NULL,
+          note             TEXT        NULL,
+          created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          created_by       TEXT        NOT NULL,
+          CONSTRAINT investigation_pins_valid_kind CHECK (event_kind BETWEEN 1 AND 7),
+          CONSTRAINT investigation_pins_valid_ref CHECK (length(event_ref) > 0)
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_investigation_pins_investigation ON honua.investigation_pins(investigation_id, pin_id);"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.investigation_links (
+          link_id          BIGSERIAL   PRIMARY KEY,
+          investigation_id TEXT        NOT NULL REFERENCES honua.investigations(investigation_id) ON DELETE CASCADE,
+          resource_kind    SMALLINT    NOT NULL,
+          resource_id      TEXT        NOT NULL,
+          note             TEXT        NULL,
+          created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          created_by       TEXT        NOT NULL,
+          CONSTRAINT investigation_links_valid_kind CHECK (resource_kind BETWEEN 1 AND 4),
+          CONSTRAINT investigation_links_valid_resource CHECK (length(resource_id) > 0)
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_investigation_links_investigation ON honua.investigation_links(investigation_id, link_id);"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.operate_fixture_execution_jobs (
+          operation_id     TEXT        PRIMARY KEY,
+          fixture_profile  TEXT        NOT NULL,
+          record_json      JSONB       NOT NULL,
+          version          BIGINT      NOT NULL DEFAULT 1,
+          status           TEXT        NOT NULL,
+          kind             TEXT        NOT NULL,
+          backend          TEXT        NOT NULL,
+          queue            TEXT        NULL,
+          requested_by     TEXT        NULL,
+          correlation_id   TEXT        NULL,
+          trace_id         TEXT        NULL,
+          definition_id    TEXT        NULL,
+          resource_refs    TEXT[]      NOT NULL DEFAULT '{}'::text[],
+          environment      TEXT        NULL,
+          server           TEXT        NULL,
+          release_id       TEXT        NULL,
+          change_set_id    TEXT        NULL,
+          alert_id         TEXT        NULL,
+          created_at       TIMESTAMPTZ NOT NULL,
+          updated_at       TIMESTAMPTZ NOT NULL,
+          completed_at     TIMESTAMPTZ NULL,
+          CONSTRAINT operate_fixture_execution_jobs_profile_not_empty CHECK (length(fixture_profile) > 0),
+          CONSTRAINT operate_fixture_execution_jobs_record_object CHECK (jsonb_typeof(record_json) = 'object')
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_operate_fixture_jobs_profile_created ON honua.operate_fixture_execution_jobs(fixture_profile, created_at DESC, operation_id DESC);"
+  - "CREATE INDEX IF NOT EXISTS idx_operate_fixture_jobs_created ON honua.operate_fixture_execution_jobs(created_at DESC, operation_id DESC);"
+  - "CREATE INDEX IF NOT EXISTS idx_operate_fixture_jobs_status_created ON honua.operate_fixture_execution_jobs(status, created_at DESC, operation_id DESC);"
+  - "CREATE INDEX IF NOT EXISTS idx_operate_fixture_jobs_kind_created ON honua.operate_fixture_execution_jobs(kind, created_at DESC, operation_id DESC);"
+  - "CREATE INDEX IF NOT EXISTS idx_operate_fixture_jobs_correlation ON honua.operate_fixture_execution_jobs(correlation_id, created_at DESC) WHERE correlation_id IS NOT NULL;"
+  - "CREATE INDEX IF NOT EXISTS idx_operate_fixture_jobs_trace ON honua.operate_fixture_execution_jobs(trace_id, created_at DESC) WHERE trace_id IS NOT NULL;"
+  - "CREATE INDEX IF NOT EXISTS idx_operate_fixture_jobs_definition ON honua.operate_fixture_execution_jobs(definition_id, created_at DESC) WHERE definition_id IS NOT NULL;"
+  - "CREATE INDEX IF NOT EXISTS idx_operate_fixture_jobs_resource_refs ON honua.operate_fixture_execution_jobs USING GIN(resource_refs);"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.operate_fixture_execution_logs (
+          log_id           BIGSERIAL   PRIMARY KEY,
+          operation_id     TEXT        NOT NULL REFERENCES honua.operate_fixture_execution_jobs(operation_id) ON DELETE CASCADE,
+          fixture_profile  TEXT        NOT NULL,
+          timestamp        TIMESTAMPTZ NOT NULL,
+          level            TEXT        NOT NULL,
+          payload_json     JSONB       NOT NULL,
+          CONSTRAINT operate_fixture_execution_logs_profile_not_empty CHECK (length(fixture_profile) > 0),
+          CONSTRAINT operate_fixture_execution_logs_payload_object CHECK (jsonb_typeof(payload_json) = 'object')
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_operate_fixture_logs_operation ON honua.operate_fixture_execution_logs(operation_id, log_id);"
+  - "CREATE INDEX IF NOT EXISTS idx_operate_fixture_logs_profile ON honua.operate_fixture_execution_logs(fixture_profile, log_id);"
+  - |
       CREATE TABLE IF NOT EXISTS honua.alert_dispatch (
           dispatch_id BIGSERIAL PRIMARY KEY,
           event_id BIGINT NOT NULL REFERENCES honua.alert_events(event_id) ON DELETE CASCADE,
@@ -827,6 +1021,102 @@ sql:
           last_sync_generation BIGINT      NOT NULL DEFAULT 0,
           updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
       );
+  - |
+      CREATE TABLE IF NOT EXISTS honua.form_packages (
+          form_id                   TEXT        NOT NULL PRIMARY KEY,
+          title                     TEXT        NOT NULL,
+          service_id                TEXT        NOT NULL,
+          layer_id                  INT         NOT NULL,
+          current_draft_version     INT,
+          current_published_version INT,
+          created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at                TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_form_packages_target ON honua.form_packages(service_id, layer_id);"
+  - "CREATE INDEX IF NOT EXISTS idx_form_packages_current_published ON honua.form_packages(current_published_version) WHERE current_published_version IS NOT NULL;"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.form_package_versions (
+          form_id               TEXT        NOT NULL REFERENCES honua.form_packages(form_id) ON DELETE CASCADE,
+          version               INT         NOT NULL,
+          status                TEXT        NOT NULL,
+          package_json          JSONB       NOT NULL,
+          validation_json       JSONB,
+          content_hash          TEXT        NOT NULL,
+          policy_hash           TEXT        NOT NULL,
+          etag                  TEXT        NOT NULL,
+          created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+          created_by            TEXT,
+          published_at          TIMESTAMPTZ,
+          published_by          TEXT,
+          reopened_from_version INT,
+          PRIMARY KEY (form_id, version),
+          CONSTRAINT form_package_versions_valid_status CHECK (status IN ('draft', 'published', 'archived'))
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_form_package_versions_status ON honua.form_package_versions(status, form_id, version);"
+  - |
+      CREATE OR REPLACE FUNCTION honua.prevent_published_form_package_version_mutation()
+      RETURNS trigger AS $$
+      BEGIN
+          IF OLD.status = 'published' THEN
+              RAISE EXCEPTION 'Published form package versions are immutable';
+          END IF;
+          IF TG_OP = 'DELETE' THEN
+              RETURN OLD;
+          END IF;
+          RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+  - "DROP TRIGGER IF EXISTS trg_form_package_versions_immutable ON honua.form_package_versions;"
+  - "CREATE TRIGGER trg_form_package_versions_immutable BEFORE UPDATE OR DELETE ON honua.form_package_versions FOR EACH ROW EXECUTE FUNCTION honua.prevent_published_form_package_version_mutation();"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.form_submissions (
+          submission_id     UUID        NOT NULL PRIMARY KEY,
+          idempotency_key   TEXT,
+          actor_hash        TEXT        NOT NULL,
+          form_id           TEXT        NOT NULL,
+          form_version      INT         NOT NULL,
+          service_id        TEXT        NOT NULL,
+          layer_id          INT         NOT NULL,
+          target_feature_id BIGINT,
+          operation         TEXT        NOT NULL,
+          status            TEXT        NOT NULL,
+          package_hash      TEXT        NOT NULL,
+          policy_hash       TEXT        NOT NULL,
+          request_hash      TEXT        NOT NULL,
+          request_summary   JSONB       NOT NULL,
+          response_payload  JSONB,
+          validation_json   JSONB,
+          created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+          completed_at      TIMESTAMPTZ,
+          CONSTRAINT form_submissions_valid_status CHECK (status IN ('pending', 'accepted', 'rejected', 'failed'))
+      );
+  - "CREATE UNIQUE INDEX IF NOT EXISTS ux_form_submissions_idempotency ON honua.form_submissions(form_id, form_version, actor_hash, idempotency_key) WHERE idempotency_key IS NOT NULL;"
+  - "CREATE INDEX IF NOT EXISTS idx_form_submissions_form_time ON honua.form_submissions(form_id, form_version, created_at DESC);"
+  - "CREATE INDEX IF NOT EXISTS idx_form_submissions_target ON honua.form_submissions(service_id, layer_id, target_feature_id);"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.form_submission_attachments (
+          id                   BIGSERIAL   NOT NULL PRIMARY KEY,
+          submission_id        UUID        NOT NULL REFERENCES honua.form_submissions(submission_id) ON DELETE CASCADE,
+          field_id             TEXT,
+          client_attachment_id TEXT,
+          filename             TEXT,
+          content_type         TEXT,
+          size_bytes           BIGINT,
+          sha256               TEXT,
+          part_name            TEXT,
+          attachment_id        BIGINT,
+          privacy_policy       JSONB       NOT NULL,
+          status               TEXT        NOT NULL,
+          failure_reason       TEXT,
+          created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_form_submission_attachments_submission ON honua.form_submission_attachments(submission_id);"
+  - "ALTER TABLE IF EXISTS honua.form_package_versions DISABLE TRIGGER USER;"
+  - "DELETE FROM honua.form_submission_attachments;"
+  - "DELETE FROM honua.form_submissions;"
+  - "DELETE FROM honua.form_package_versions;"
+  - "DELETE FROM honua.form_packages;"
+  - "ALTER TABLE IF EXISTS honua.form_package_versions ENABLE TRIGGER USER;"
   - "DELETE FROM honua.fieldcollection_changes;"
   - "DELETE FROM honua.fieldcollection_pushed_changes;"
   - "DELETE FROM honua.fieldcollection_sync_cursors;"

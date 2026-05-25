@@ -4,9 +4,13 @@
 using System.Globalization;
 using System.Net.Http;
 using Honua.Core.Features.Alerts.Abstractions;
+using Honua.Core.Features.AnalysisContent.Abstractions;
+using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Forms.Packages;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.AutoDocs;
 using Honua.Core.Features.Import;
@@ -25,10 +29,13 @@ using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Mobile.FieldCollection.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.Admin;
 using Honua.Postgres.Features.Alerts;
+using Honua.Postgres.Features.AnalysisContent;
+using Honua.Postgres.Features.AuditLog;
 using Honua.Postgres.Features.Attachments;
 using Honua.Postgres.Features.Catalog;
 using Honua.Postgres.Features.FeatureStore;
@@ -45,9 +52,12 @@ using Honua.Postgres.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.Styling;
 using Honua.Postgres.Features.Metadata;
 using Honua.Postgres.Features.FeatureStore.Services;
+using Honua.Postgres.Features.Forms;
 using Honua.Postgres.Features.Mobile.FieldCollection;
+using Honua.Postgres.Features.Observability;
 using Honua.Postgres.Features.Raster;
 using Honua.Postgres.Features.Security;
+using Honua.Postgres.Features.Studio;
 using Honua.Postgres.Queries.Filters;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -111,6 +121,12 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IAlertDispatchStore, PostgresAlertDispatchStore>();
         services.AddScoped<IAlertCheckpointStore, PostgresAlertCheckpointStore>();
         services.AddScoped<IAlertAdminStore, PostgresAlertAdminStore>();
+        services.AddScoped<IAlertEventQuery, PostgresAlertEventQuery>();
+        services.AddScoped<IAlertLifecycleStore, PostgresAlertLifecycleStore>();
+
+        // Console Operate read APIs (#1168)
+        services.AddScoped<IAuditLogReader, PostgresAuditLogReader>();
+        services.AddScoped<IInvestigationStore, PostgresInvestigationStore>();
 
         // Register database performance metrics provider
         services.AddScoped<IDatabasePerformanceMetricsProvider, PostgresDatabasePerformanceMetricsProvider>();
@@ -136,6 +152,9 @@ internal static class ServiceCollectionExtensions
         // Register FieldCollection mobile sync store (#894)
         services.AddScoped<IFieldCollectionSyncStore, PostgresFieldCollectionSyncStore>();
 
+        // Register Forms package store (#1184)
+        services.AddScoped<IFormPackageStore, PostgresFormPackageStore>();
+
         // Register Metadata v2 graph store (Postgres-backed JSONB + sidecar indexes)
         services.AddScoped<IMetadataV2GraphStore>(serviceProvider =>
             new Features.Metadata.PostgresMetadataV2GraphStore(
@@ -143,6 +162,22 @@ internal static class ServiceCollectionExtensions
                 configuration["Metadata:Environment"] ?? configuration["Environment"] ?? "default",
                 configuration["Database:Schema"]));
         services.AddScoped<IMetadataV2GraphProvider>(sp => sp.GetRequiredService<IMetadataV2GraphStore>());
+        services.AddScoped<IMetadataV2EnvironmentSnapshotReader>(serviceProvider =>
+            new Features.Metadata.PostgresMetadataV2EnvironmentSnapshotReader(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+        services.AddScoped<IMetadataReleasePackageStore>(serviceProvider =>
+            new Features.Metadata.PostgresMetadataReleasePackageStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+        services.AddScoped<IStudioPackageStore>(serviceProvider =>
+            new PostgresStudioPackageStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+        services.AddScoped<IAnalysisContentStore>(serviceProvider =>
+            new PostgresAnalysisContentStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
 
         // Register layer style catalog for MapLibre/GeoServices styling
         services.AddScoped<ILayerStyleCatalog>(serviceProvider =>

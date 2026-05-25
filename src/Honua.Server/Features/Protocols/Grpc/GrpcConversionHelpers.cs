@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using Google.Protobuf;
+using Google.Protobuf.Collections;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -45,9 +46,7 @@ internal static class GrpcConversionHelpers
             ObjectIds = request.ObjectIds.Count > 0
                 ? request.ObjectIds.ToImmutableArray()
                 : null,
-            OutFields = request.OutFields.Count > 0
-                ? request.OutFields.ToImmutableArray()
-                : null,
+            OutFields = NormalizeOutFields(request.OutFields),
             Offset = request.ResultOffset > 0 ? request.ResultOffset : null,
             Limit = request.ResultRecordCount > 0 ? request.ResultRecordCount : null,
             OutputSrid = TryResolveOutputSrid(request.OutSr),
@@ -78,6 +77,26 @@ internal static class GrpcConversionHelpers
         }
 
         return query;
+    }
+
+    private static ImmutableArray<string>? NormalizeOutFields(RepeatedField<string> outFields)
+    {
+        if (outFields.Count == 0)
+        {
+            return null;
+        }
+
+        var fields = outFields
+            .SelectMany(static field => field.Split(
+                ',',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .Where(static field => field.Length > 0)
+            .ToImmutableArray();
+
+        return fields.IsDefaultOrEmpty ||
+            fields.Any(static field => string.Equals(field, "*", StringComparison.Ordinal))
+                ? null
+                : fields;
     }
 
     /// <summary>

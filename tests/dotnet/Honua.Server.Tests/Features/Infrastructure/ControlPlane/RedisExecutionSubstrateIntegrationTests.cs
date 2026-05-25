@@ -76,6 +76,281 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
     }
 
     [IntegrationTest]
+    public async Task ExecutionJobStore_WithRedis_QueriesByFiltersAndCursor()
+    {
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var now = DateTimeOffset.UtcNow;
+        var firstId = $"job-query-first-{Guid.NewGuid():N}";
+        var secondId = $"job-query-second-{Guid.NewGuid():N}";
+        var otherId = $"job-query-other-{Guid.NewGuid():N}";
+        var fallbackId = $"job-query-fallback-{Guid.NewGuid():N}";
+
+        await harness.JobStore.TryCreateAsync(CreateQueuedJob(firstId) with
+        {
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = now.AddMinutes(-3),
+            UpdatedAt = now.AddMinutes(-2),
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = "alice",
+                CorrelationId = "corr-query"
+            },
+            Spec = CreateQueuedJob(firstId).Spec with
+            {
+                Parameters = new Dictionary<string, string>
+                {
+                    [ExecutionJobParameterKeys.DefinitionId] = "definition-query",
+                    [ExecutionJobParameterKeys.Queue] = "critical",
+                    [ExecutionJobParameterKeys.ResourceRefs] = "service/parcels|layer/parcels",
+                    [ExecutionJobParameterKeys.TraceId] = "trace-query",
+                    [ExecutionJobParameterKeys.Environment] = "test"
+                }
+            }
+        });
+        await harness.JobStore.TryCreateAsync(CreateQueuedJob(secondId) with
+        {
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = now.AddMinutes(-1),
+            UpdatedAt = now,
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = "alice",
+                CorrelationId = "corr-query"
+            },
+            Spec = CreateQueuedJob(secondId).Spec with
+            {
+                Parameters = new Dictionary<string, string>
+                {
+                    [ExecutionJobParameterKeys.DefinitionId] = "definition-query",
+                    [ExecutionJobParameterKeys.Queue] = "critical",
+                    [ExecutionJobParameterKeys.ResourceRefs] = "service/parcels",
+                    [ExecutionJobParameterKeys.TraceId] = "trace-query",
+                    [ExecutionJobParameterKeys.Environment] = "test"
+                }
+            }
+        });
+        await harness.JobStore.TryCreateAsync(CreateQueuedJob(otherId) with
+        {
+            Status = ExecutionJobStatus.Succeeded,
+            CreatedAt = now.AddMinutes(-2),
+            UpdatedAt = now.AddMinutes(-1),
+            CompletedAt = now,
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = "bob",
+                CorrelationId = "corr-other"
+            },
+            Spec = CreateQueuedJob(otherId).Spec with
+            {
+                Parameters = new Dictionary<string, string>
+                {
+                    [ExecutionJobParameterKeys.Queue] = "standard"
+                }
+            }
+        });
+        await harness.JobStore.TryCreateAsync(CreateQueuedJob(fallbackId) with
+        {
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = now.AddMinutes(-4),
+            UpdatedAt = now.AddMinutes(-3),
+            Spec = CreateQueuedJob(fallbackId).Spec with
+            {
+                Backend = "fallback-queue",
+                Parameters = new Dictionary<string, string>()
+            }
+        });
+
+        var firstPage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Statuses = [ExecutionJobStatus.Running],
+            RequestedBy = "alice",
+            CorrelationId = "corr-query",
+            TraceId = "trace-query",
+            DefinitionId = "definition-query",
+            Queue = "critical",
+            ResourceRef = "service/parcels",
+            Environment = "test",
+            Limit = 1
+        });
+
+        firstPage.Items.Should().ContainSingle(job => job.OperationId == secondId);
+        firstPage.NextCursor.Should().NotBeNullOrWhiteSpace();
+
+        var secondPage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Statuses = [ExecutionJobStatus.Running],
+            RequestedBy = "alice",
+            CorrelationId = "corr-query",
+            TraceId = "trace-query",
+            DefinitionId = "definition-query",
+            Queue = "critical",
+            ResourceRef = "service/parcels",
+            Environment = "test",
+            Cursor = firstPage.NextCursor,
+            Limit = 1
+        });
+
+        secondPage.Items.Should().ContainSingle(job => job.OperationId == firstId);
+        secondPage.NextCursor.Should().BeNull();
+
+        var queuePage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Queue = "critical",
+            Limit = 10
+        });
+
+        queuePage.Items.Should().Contain(job => job.OperationId == firstId);
+        queuePage.Items.Should().Contain(job => job.OperationId == secondId);
+        queuePage.Items.Should().NotContain(job => job.OperationId == otherId);
+
+        var fallbackQueuePage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Queue = "fallback-queue",
+            Limit = 10
+        });
+
+        fallbackQueuePage.Items.Should().ContainSingle(job => job.OperationId == fallbackId);
+
+        var fallback = await harness.JobStore.GetAsync(fallbackId);
+        await harness.JobStore.SetAsync(fallback! with
+        {
+            UpdatedAt = now.AddMinutes(2),
+            Spec = fallback!.Spec with
+            {
+                Backend = "fallback-queue-next"
+            }
+        });
+
+        var oldFallbackQueuePage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Queue = "fallback-queue",
+            Limit = 10
+        });
+        oldFallbackQueuePage.Items.Should().NotContain(job => job.OperationId == fallbackId);
+
+        var newFallbackQueuePage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Queue = "fallback-queue-next",
+            Limit = 10
+        });
+        newFallbackQueuePage.Items.Should().ContainSingle(job => job.OperationId == fallbackId);
+
+        var loaded = await harness.JobStore.GetAsync(secondId);
+        await harness.JobStore.SetAsync(loaded! with
+        {
+            Status = ExecutionJobStatus.Succeeded,
+            CompletedAt = now.AddMinutes(1),
+            UpdatedAt = now.AddMinutes(1)
+        });
+
+        var running = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Statuses = [ExecutionJobStatus.Running],
+            Queue = "critical",
+            ResourceRef = "service/parcels",
+            Limit = 10
+        });
+
+        running.Items.Should().ContainSingle(job => job.OperationId == firstId);
+        running.Items.Should().NotContain(job => job.OperationId == secondId);
+
+        var invalidCursor = () => harness.JobStore.QueryAsync(new ExecutionJobQuery { Cursor = "not-a-cursor" });
+        await invalidCursor.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [IntegrationTest]
+    public async Task ExecutionJobStore_WithRedis_QueryPaginatesAcrossCreatedAtTies()
+    {
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var createdAt = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        var prefix = $"job-query-tie-{Guid.NewGuid():N}";
+        var targetId = $"{prefix}-000";
+        const int sameMillisecondJobCount = 270;
+
+        for (var index = 0; index < sameMillisecondJobCount; index++)
+        {
+            var operationId = $"{prefix}-{index:D3}";
+            var resourceRef = index == 0 ? "service/tie-late" : "service/tie-other";
+            var template = CreateQueuedJob(operationId);
+            await harness.JobStore.TryCreateAsync(template with
+            {
+                Status = ExecutionJobStatus.Running,
+                CreatedAt = createdAt,
+                UpdatedAt = createdAt,
+                Spec = template.Spec with
+                {
+                    Parameters = new Dictionary<string, string>
+                    {
+                        [ExecutionJobParameterKeys.ResourceRefs] = resourceRef
+                    }
+                }
+            });
+        }
+
+        var firstPage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Statuses = [ExecutionJobStatus.Running],
+            Limit = 200
+        });
+
+        firstPage.Items.Should().HaveCount(200);
+        firstPage.NextCursor.Should().NotBeNullOrWhiteSpace();
+
+        var secondPage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Statuses = [ExecutionJobStatus.Running],
+            Cursor = firstPage.NextCursor,
+            Limit = 200
+        });
+
+        secondPage.Items.Should().HaveCount(sameMillisecondJobCount - 200);
+        secondPage.Items.Should().Contain(job => job.OperationId == targetId);
+        secondPage.NextCursor.Should().BeNull();
+
+        var filteredPage = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            Statuses = [ExecutionJobStatus.Running],
+            ResourceRef = "service/tie-late",
+            Limit = 1
+        });
+
+        filteredPage.Items.Should().ContainSingle(job => job.OperationId == targetId);
+        filteredPage.NextCursor.Should().BeNull();
+    }
+
+    [IntegrationTest]
+    public async Task ExecutionJobStore_WithRedis_CreatedToInsideSameMillisecond_HonoursExclusiveBound()
+    {
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var createdAtMillisecond = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        var includedId = $"job-query-created-to-included-{Guid.NewGuid():N}";
+        var excludedId = $"job-query-created-to-excluded-{Guid.NewGuid():N}";
+
+        await harness.JobStore.TryCreateAsync(CreateQueuedJob(includedId) with
+        {
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = createdAtMillisecond.AddTicks(1_000),
+            UpdatedAt = createdAtMillisecond.AddTicks(1_000)
+        });
+        await harness.JobStore.TryCreateAsync(CreateQueuedJob(excludedId) with
+        {
+            Status = ExecutionJobStatus.Running,
+            CreatedAt = createdAtMillisecond.AddTicks(3_000),
+            UpdatedAt = createdAtMillisecond.AddTicks(3_000)
+        });
+
+        var page = await harness.JobStore.QueryAsync(new ExecutionJobQuery
+        {
+            CreatedTo = createdAtMillisecond.AddTicks(2_000),
+            Statuses = [ExecutionJobStatus.Running],
+            Limit = 10
+        });
+
+        page.Items.Should().ContainSingle(job => job.OperationId == includedId);
+        page.Items.Should().NotContain(job => job.OperationId == excludedId);
+    }
+
+    [IntegrationTest]
     public async Task ExecutionLogStore_WithRedis_AppendsInOrderAndHonoursRetention()
     {
         await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
@@ -101,6 +376,21 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
         logs.Select(entry => entry.Message).Should().Equal(
             "Started execution.",
             "Completed with warning.");
+
+        var firstPage = await harness.LogStore.QueryAsync(operationId, new ExecutionLogQuery { Limit = 1 });
+        firstPage.Items.Should().ContainSingle(entry => entry.Message == "Started execution.");
+        firstPage.NextCursor.Should().NotBeNullOrWhiteSpace();
+
+        var secondPage = await harness.LogStore.QueryAsync(operationId, new ExecutionLogQuery
+        {
+            Cursor = firstPage.NextCursor,
+            Limit = 1
+        });
+        secondPage.Items.Should().ContainSingle(entry => entry.Message == "Completed with warning.");
+        secondPage.NextCursor.Should().BeNull();
+
+        var invalidCursor = () => harness.LogStore.QueryAsync(operationId, new ExecutionLogQuery { Cursor = "not-a-cursor" });
+        await invalidCursor.Should().ThrowAsync<ArgumentException>();
 
         await harness.LogStore.SetRetentionAsync(operationId, TimeSpan.FromMinutes(2));
 

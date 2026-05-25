@@ -199,6 +199,12 @@ public sealed record MetadataV2Link
 public sealed record MetadataV2Field
 {
     /// <summary>
+    /// Stable semantic identifier for field-level promotion across environments.
+    /// </summary>
+    [JsonPropertyName("semanticId")]
+    public string? SemanticId { get; init; }
+
+    /// <summary>
     /// Stable source field name.
     /// </summary>
     [JsonPropertyName("name")]

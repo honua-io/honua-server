@@ -2,8 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Compliance;
+using Honua.Core.Features.Metadata;
 using Honua.Postgres.Features.Scene;
 using Honua.Server.Features.Admin;
+using Honua.Server.Features.AnalysisContent;
+using Honua.Server.Features.Capabilities;
 using Honua.Server.Features.Infrastructure.Scene;
 using Honua.Server.Features.Alerts;
 using Honua.Server.Features.CloudDemo;
@@ -12,6 +15,7 @@ using Honua.Server.Features.Protocols.Coverages.Multidimensional;
 using Honua.Server.Features.Protocols.Zarr;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer;
 using Honua.Server.Features.Geocoding;
+using Honua.Server.Features.Forms;
 using Honua.Server.Features.Grounding.Spec;
 using Honua.Server.Features.Protocols.GeoServices.GeometryService;
 using Honua.Server.Features.Geoprocessing;
@@ -33,6 +37,7 @@ using Honua.Server.Features.Protocols.Ogc.Api.Processes;
 using Honua.Server.Features.Protocols.Ogc.Api.Records;
 using Honua.Server.Features.Protocols.Ogc.Api.Tiles;
 using Honua.Server.Features.Orchestration;
+using Honua.Server.Features.PackageReview;
 using Honua.Server.Features.PrintingTools;
 using Honua.Server.Features.Protocols.Tiles;
 using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
@@ -47,6 +52,7 @@ using Honua.Server.Features.Reporting;
 using Honua.Server.Features.Spec;
 using Honua.Server.Features.StaticMap;
 using Honua.Server.Features.Protocols.Ogc.Classic.Wfs20;
+using Honua.Core.Features.Studio;
 
 namespace Honua.Server.Features.Infrastructure.Hosting;
 
@@ -66,6 +72,7 @@ internal static class FeatureRegistrationExtensions
         services.AddFeatureServer();
         services.AddCloudDemoServices(configuration);
         services.AddGeocoding(configuration);
+        services.AddForms(configuration);
         services.AddCogServices(configuration);
         services.AddMultidimensionalCoverageServices();
         services.AddZarrServices();
@@ -92,12 +99,17 @@ internal static class FeatureRegistrationExtensions
         services.AddSceneGeneration(configuration);
         services.AddPrintingTools();
         services.AddGeoprocessing(configuration);
+        services.AddAnalysisContent(configuration);
         services.AddAnalysisReporting(configuration);
+        services.AddCapabilityManifest();
+        services.AddPackageReview();
         services.AddMcpOperatorSurface(configuration);
         services.AddSpecGrounding();
         services.AddSpatialAnalytics();
         services.AddSpec(configuration);
         services.AddEnhancedAdminServices();
+        services.AddMetadataReleaseServices();
+        services.AddStudioPackageLifecycle();
         services.AddCompliance(configuration);
         services.AddOrchestration();
         services.AddPMTilesProxy();
@@ -121,6 +133,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapFeatureServerEndpoints();
         endpoints.MapCloudDemoEndpoints();
         endpoints.MapGeocodingEndpoints();
+        endpoints.MapFormPackageEndpoints();
         endpoints.MapCogEndpoints();
         endpoints.MapMultidimensionalCoverageEndpoints();
         endpoints.MapZarrEndpoints();
@@ -155,7 +168,9 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapSpatialAnalyticsRestEndpoints();
         endpoints.MapSpatialAnalyticsOgcEndpoints();
         endpoints.MapGPServerEndpoints();
+        endpoints.MapAnalysisContentEndpoints();
         endpoints.MapAnalysisReporting();
+        endpoints.MapCapabilityManifestEndpoints();
         endpoints.MapMcpOperatorSurface();
         endpoints.MapSpecGroundingEndpoints();
         endpoints.MapSpecEndpoints();

@@ -174,6 +174,41 @@ public sealed class ObservabilityEndpointsTests : IAsyncLifetime
             root.GetProperty("metricsExportState").GetString().Should().Be("notConfigured");
             root.GetProperty("logExportState").GetString().Should().Be("notConfigured");
             root.GetProperty("lastExportError").ValueKind.Should().Be(JsonValueKind.Null);
+            // #1168: probe state is exposed alongside exporter state so Console can distinguish
+            // configuration-derived states from runtime reachability.
+            root.GetProperty("otlpProbeState").GetString().Should().BeOneOf("unknown", "disabled");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/observability/telemetry")]
+    public async Task GetTelemetryStatus_WhenOtlpMisconfigured_ProbeStateReflectsExporterMisconfigured()
+    {
+        var fixture = CreateTelemetryFixture(new Dictionary<string, string?>
+        {
+            ["Tracing:Enabled"] = "true",
+            ["Tracing:OtlpEndpoint"] = "not-a-uri",
+            ["Tracing:OtlpHeaders"] = "",
+            ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "",
+            ["OTEL_EXPORTER_OTLP_HEADERS"] = ""
+        });
+
+        try
+        {
+            await fixture.InitializeAsync();
+            using var client = fixture.CreateAdminClient();
+
+            var response = await client.GetAsync("/api/v1/admin/observability/telemetry");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = document.RootElement;
+            root.GetProperty("otlpExporterState").GetString().Should().Be("misconfigured");
+            root.GetProperty("otlpProbeState").GetString().Should().Be("exporterMisconfigured");
         }
         finally
         {

@@ -30,6 +30,7 @@ This page is the canonical table of contents for every important doc in the repo
 | Serve terrain/elevation tiles | [Terrain-RGB Tiles](gis/terrain-tiles.md) |
 | Look up numeric elevation values | [Elevation Query and Profile API](gis/elevation-api.md) |
 | Integrate AI agents | [MCP Server](developer/MCP_SERVER.md) |
+| Validate packages before publish/execute | [Package Review API](developer/package-review-api.md) |
 | Troubleshoot issues | [Troubleshooting](operator/troubleshooting.md) |
 | Review OpenAPI specs | [API Specs](developer/api-specs/) |
 
@@ -63,6 +64,7 @@ How to deploy, run, harden, and respond to incidents.
 - [Monitoring](operator/monitoring.md) — metrics, traces, and SLO surfaces.
 - [Troubleshooting](operator/troubleshooting.md)
 - [Security](operator/security.md) — operator-facing hardening guidance.
+- [Client Certificate Authentication](operator/client-certificate-authentication.md) — native/admin mTLS modes, trust profiles, mappings, revocations, and response contracts.
 - [TLS Connection Guide](operator/tls-connection-guide.md)
 - [HTTP Client Resilience](operator/http-client-resilience.md)
 - [Tile Operations Runbook](operator/tile-operations-runbook.md)
@@ -135,12 +137,15 @@ How to build against Honua's APIs, SDKs, and protocols.
 - [Developer Guide (index)](developer/README.md)
 - [API Examples](developer/API_EXAMPLES.md)
 - [Integration Patterns](developer/INTEGRATION_PATTERNS.md)
+- [Capability Manifest](developer/capability-manifest.md) — neutral runtime capability discovery for Console, MCP, QGIS, native hosts, and SDK clients.
 - [Grounding](developer/GROUNDING.md) — natural-language grounding for AI builders.
 - [MCP Server](developer/MCP_SERVER.md) — JSON-RPC surface for AI agents.
+- [Package Review API](developer/package-review-api.md) — shared validation and read-only preview planning contract for publish/execute candidates.
 - [Redis Fallback Patterns](developer/REDIS_FALLBACK_PATTERNS.md)
 - [Spec Engine](developer/SPEC_ENGINE.md)
 - [AI Builder SDK Contract](ai-builder-sdk-contract.md) — Map of honua-server MCP surfaces to the honua-sdk-js AI Spatial App Builder workflow, fixture cases, and capability states.
 - [AI Builder Contract Fixtures](developer/ai-builder-contract-fixtures.md)
+- [Form Package API](developer/form-package-api.md) — Versioned form package drafts, validation, immutable publishing, offline policy discovery, and field submission contracts.
 - [SDK Compatibility Matrix](developer/SDK_COMPATIBILITY_MATRIX.md)
 - [SDK Compatibility Metadata](developer/SDK_COMPATIBILITY_METADATA.md)
 - [SDK Standards Coverage](developer/SDK_STANDARDS_COVERAGE.md)
@@ -155,6 +160,13 @@ How to build against Honua's APIs, SDKs, and protocols.
 
 ### Admin API
 
+- [Console Content and RBAC (Baseline)](admin-api/console-content-and-rbac.md) — Metadata v2 content item, session bootstrap, action-check, and provenance endpoints under `/api/v1/console/**` (#1162).
+- [Console Workflow Packages](admin-api/console-workflow-packages.md) — Server-owned node registry, mutable workflow package drafts, immutable versions, validation, dry-run, publication, runs, and provenance under `/api/v1/console/workflow-*` (#1185).
+- [Console Job Observability](admin-api/console-job-observability.md) — Durable execution job list, detail, logs, artifacts, action, cancel, retry, and Operate event correlation endpoints under `/api/v1/admin/jobs/**` (#1170).
+- [Operate Observability Fixtures](admin-api/operate-observability-fixtures.md) — Development/Test seed endpoint for Console Testcontainers to hydrate Operate events, logs, alerts, jobs, artifacts, and investigations from a real honua-server plus PostgreSQL runtime (#1209).
+- [Metadata Prevalidation Admin API](admin-api/metadata-prevalidation.md) — Metadata v2 release-package compatibility reports for Console pre-PR and CI checks (#1164).
+- [Studio Package Lifecycle](admin-api/studio-package-lifecycle.md) — Server-owned draft, validation, preview, immutable version, publish, reopen, compare, and rollback endpoints under `/api/v1/studio/**` (#1180).
+- [Analysis Content](admin-api/analysis-content.md) — Durable saved-query and analysis-package content items, immutable versions, preview artifacts, run/rerun provenance, artifact binding lookup, and failed-job diagnostics under `/api/v1/analysis/**` (#1182).
 - [Scene Dataset Registry](admin-api/scene-dataset-registry.md)
 
 ## Contributor Guides

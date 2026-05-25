@@ -61,11 +61,16 @@ namespace Honua.Server.Tests.Comprehensive;
 /// <item><term>POST /api/v1/admin/tile-operations/jobs/{id}/retry</term><description>happy (failed)</description></item>
 /// <item><term>GET  /api/v1/admin/alerts/zones</term><description>happy, 401</description></item>
 /// <item><term>POST /api/v1/admin/alerts/zones</term><description>happy, bad-wkt, 401</description></item>
+/// <item><term>GET  /api/v1/admin/alerts/zones/{id}</term><description>happy</description></item>
 /// <item><term>PUT  /api/v1/admin/alerts/zones/{id}</term><description>happy, 404</description></item>
 /// <item><term>DELETE /api/v1/admin/alerts/zones/{id}</term><description>happy, 404</description></item>
 /// <item><term>GET  /api/v1/admin/alerts/rules</term><description>happy, 401</description></item>
 /// <item><term>POST /api/v1/admin/alerts/rules</term><description>happy, unconfigured-channel, 401</description></item>
+/// <item><term>POST /api/v1/admin/alerts/rules/test</term><description>draft-zone, invalid-threshold</description></item>
+/// <item><term>GET  /api/v1/admin/alerts/rules/{id}</term><description>happy</description></item>
 /// <item><term>PUT  /api/v1/admin/alerts/rules/{id}</term><description>happy, 404</description></item>
+/// <item><term>PUT  /api/v1/admin/alerts/rules/{id}/enabled</term><description>happy</description></item>
+/// <item><term>GET  /api/v1/admin/alerts/rules/{id}/health</term><description>active-incidents, recent-trigger, rate-limited delivery</description></item>
 /// <item><term>DELETE /api/v1/admin/alerts/rules/{id}</term><description>happy, 404</description></item>
 /// </list>
 /// <para>Endpoint-to-Scenario Matrix (Geocoding REST):</para>

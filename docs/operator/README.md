@@ -13,6 +13,7 @@ Deploy, configure, monitor, and manage Honua Server.
 
 - [Environment Variables](../../.env.example) — Complete configuration reference
 - [Security](security.md) — Authentication, authorization, CORS, CSP
+- [Client Certificate Authentication](client-certificate-authentication.md) — Native/admin mTLS modes, trust profiles, mappings, revocations, and response contracts
 - [Compliance Framework](compliance-framework.md) — SOC 2 / FedRAMP readiness evidence, data residency policy + dry-run, compliance key-version rotation, report export
 - [HTTP Client Resilience](http-client-resilience.md) — Retry, circuit breaker, and timeout tuning for external services
 - [Feature Change Webhooks](feature-change-webhooks.md) — Event notification setup
@@ -29,6 +30,7 @@ Deploy, configure, monitor, and manage Honua Server.
 ## Server Management
 
 - [Control Plane API](CONTROL_PLANE_API.md) — Admin REST API for connections, layers, services, and migration inventory scans
+- [Console Job Observability](../admin-api/console-job-observability.md) — Durable job history, details, logs, artifacts, actions, cancellation, retry, and Operate event correlation for Console job viewers
 - [Migration Toolkit](migration-toolkit.md) — Inventory, manifest, parity evidence, and cutover readiness artifact workflow
 - [ArcGIS Inventory Discovery](arcgis-inventory-discovery.md) — Deterministic FeatureServer/MapServer inventory artifact, JSON export, and compatibility codes
 - [GeoServer Migration Guide](../gis/tutorials/geoserver-migration-guide.md) — Discovery scanner workflow, compatibility review, dry-run validation, and bounded catalog apply
