@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Net.Http;
 using Honua.Core.Features.Alerts.Abstractions;
+using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -32,6 +33,7 @@ using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.Admin;
 using Honua.Postgres.Features.Alerts;
+using Honua.Postgres.Features.AnalysisContent;
 using Honua.Postgres.Features.AuditLog;
 using Honua.Postgres.Features.Attachments;
 using Honua.Postgres.Features.Catalog;
@@ -167,6 +169,10 @@ internal static class ServiceCollectionExtensions
                 configuration["Database:Schema"]));
         services.AddScoped<IStudioPackageStore>(serviceProvider =>
             new PostgresStudioPackageStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+        services.AddScoped<IAnalysisContentStore>(serviceProvider =>
+            new PostgresAnalysisContentStore(
                 serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 

@@ -1100,6 +1100,51 @@ Notes:
   (`unauthenticated`, `permission_denied`, `not_found`, `failed_precondition`,
   `unavailable`).
 
+### **Analysis Content Endpoints**
+
+These routes also live at `/api/v1/analysis/...` and require admin
+authorization. They persist saved-query and analysis-package content items as
+immutable versions, preview saved queries through the canonical feature-query
+pipeline, submit and rerun analysis packages through the canonical
+geoprocessing runtime, and expose stable artifact bindings for downstream maps,
+dashboards, reports, apps, and workflows. Responses are plain camelCase JSON
+DTOs with shared admin `application/problem+json` errors, not the older admin
+envelope shape.
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/analysis/content/items` | POST | Create a saved-query or analysis-package item plus initial version. |
+| `/api/v1/analysis/content/items/{itemId}` | GET | Open the item and latest version. |
+| `/api/v1/analysis/content/items/{itemId}/versions/latest` | GET | Open the latest immutable version. |
+| `/api/v1/analysis/content/items/{itemId}/versions/{contentVersion}` | GET | Open an explicit immutable version number. |
+| `/api/v1/analysis/content/items/{itemId}/versions` | POST | Create a new immutable version. |
+| `/api/v1/analysis/content/items/{itemId}/versions/{contentVersion}/preview` | POST | Preview a saved-query version and persist a short-lived preview artifact. |
+| `/api/v1/analysis/content/items/{itemId}/versions/{contentVersion}/runs` | POST | Submit an analysis-package version as a durable geoprocessing job. |
+| `/api/v1/analysis/content/items/{itemId}/versions/{contentVersion}/reruns` | POST | Rerun an analysis package with provenance and optional parameter overrides. |
+| `/api/v1/analysis/artifacts/{artifactId}` | GET | Resolve artifact metadata and a downstream binding reference. |
+| `/api/v1/analysis/jobs/{jobId}/logs` | GET | Read bounded, sanitized structured logs. |
+| `/api/v1/analysis/jobs/{jobId}/failure` | GET | Read safe failure classification for failed or cancelled jobs. |
+
+Saved-query previews honor a request `limit` first, then the stored
+`previewLimit`, then the 25-feature default, and clamp at 200. The preview path
+compiles any saved `filterPlan`, validates the canonical query against the
+target layer, and records a one-hour `preview` artifact without exact-response
+caching. Version creation retries bounded store conflicts before returning
+`409`; callers should reopen `versions/latest` before rebasing after a
+conflict. Analysis package run requests stamp the submitted job with
+`analysis.content.*` metadata for source item id, version, version id, source
+SRID, source units, package parameters, runtime parameters, and rerun links.
+Terminal geoprocessing jobs with analysis content source metadata persist
+retained artifact metadata and URIs; artifact bytes remain in the backing
+artifact store. Failed-job diagnostics use bounded log tail reads and redact
+stack traces, provider internals, connection strings, password/secret metadata,
+and long diagnostic values. Analysis content emits `honua.analysis_content.*`
+activities and the `honua.analysis_content.operations_total` metric tagged by
+operation and success/error result.
+
+Full request/response examples and storage notes are documented in
+[Analysis Content](../admin-api/analysis-content.md).
+
 ---
 
 ## **Health Checks**

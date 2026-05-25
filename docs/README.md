@@ -160,6 +160,7 @@ How to build against Honua's APIs, SDKs, and protocols.
 - [Console Job Observability](admin-api/console-job-observability.md) — Durable execution job list, detail, logs, artifacts, action, cancel, retry, and Operate event correlation endpoints under `/api/v1/admin/jobs/**` (#1170).
 - [Metadata Prevalidation Admin API](admin-api/metadata-prevalidation.md) — Metadata v2 release-package compatibility reports for Console pre-PR and CI checks (#1164).
 - [Studio Package Lifecycle](admin-api/studio-package-lifecycle.md) — Server-owned draft, validation, preview, immutable version, publish, reopen, compare, and rollback endpoints under `/api/v1/studio/**` (#1180).
+- [Analysis Content](admin-api/analysis-content.md) — Durable saved-query and analysis-package content items, immutable versions, preview artifacts, run/rerun provenance, artifact binding lookup, and failed-job diagnostics under `/api/v1/analysis/**` (#1182).
 - [Scene Dataset Registry](admin-api/scene-dataset-registry.md)
 
 ## Contributor Guides

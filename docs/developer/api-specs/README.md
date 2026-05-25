@@ -85,6 +85,10 @@ See the [OGC API Coverages Coverage](../../gis/specifications/ogc-api-coverages-
 
 > **Note**: The runtime admin OpenAPI endpoint serves this bundled `admin-api.json` contract snapshot.
 > Use the [Server Management API guide](../../operator/CONTROL_PLANE_API.md) and `/api/v1/admin/config` for operational guidance.
+> The saved-query and analysis-package content surface lives beside the admin
+> API under `/api/v1/analysis/**`; its current markdown contract is
+> [Analysis Content](../../admin-api/analysis-content.md) until it is promoted
+> into the generated control-plane OpenAPI snapshot.
 >
 > **Migration scanner note**: `POST /api/v1/admin/import/scan` returns the inventory artifact itself, not the usual admin envelope, and a `200` response can still carry `scanCompleteness.status = "failed"`.
 > Request aliases normalize `sourceKind` to `geoserver-rest` or `arcgis-geoservices-rest`, and dependency addresses plus secret-like metadata are sanitized for planning-safe export.
@@ -112,6 +116,8 @@ See the [OGC API Coverages Coverage](../../gis/specifications/ogc-api-coverages-
 - Inspect deploy preflight and upgrade-readiness state per Honua instance
 - Manage geofence alert zones, realtime alert rules, draft validation, enable/disable state, and delivery health for Console Operate workflows
 - Inspect runtime license status, upload signed license files when enabled, and read the active feature/entitlement inventory
+- Save and reopen analysis content under `/api/v1/analysis/**` using the
+  markdown contract while the OpenAPI snapshot catches up
 
 {% swagger src="admin-api.json" %}
 {% endswagger %}
@@ -198,6 +204,7 @@ Control-plane SDK governance and contract diff checks:
 - [**Geospatial Data APIs**](../../gis/STANDARDS_APIS.md) - Protocol overview and selection guide
 - [**Server Management API**](../../operator/CONTROL_PLANE_API.md) - Admin API guide and key workflows
 - [**Console Job Observability**](../../admin-api/console-job-observability.md) - Durable job viewer contract for Console and admin integrations
+- [**Analysis Content**](../../admin-api/analysis-content.md) - Saved-query and analysis-package versions, preview artifacts, runs/reruns, artifact bindings, and safe failed-job diagnostics
 - [**Control Plane Versioning Policy**](../CONTROL_PLANE_VERSIONING_POLICY.md) - Breaking-change and deprecation lifecycle
 - [**Control Plane Migration Guide**](../CONTROL_PLANE_MIGRATION_GUIDE.md) - SDK quickstart and upgrade steps
 - [**API Examples**](../API_EXAMPLES.md) - Code examples for the major shipped protocols

@@ -2900,6 +2900,51 @@
       ]
     },
     {
+      "surfaceId": "analysis-content",
+      "displayName": "Analysis content and artifact HTTP surface",
+      "surfaceKind": "http-route-family",
+      "protocol": "Analysis Content",
+      "canonicalIdentifier": "/api/v1/analysis/content/* + /api/v1/analysis/artifacts/* + /api/v1/analysis/jobs/*",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/v1/analysis/content/",
+        "/api/v1/analysis/artifacts/",
+        "/api/v1/analysis/jobs/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus analysis content endpoint integration tests",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/AnalysisContent/AnalysisContentEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1182",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Saved-query versioning and preview, analysis-package submit/rerun, artifact binding metadata, and safe failed-job diagnostics are covered by focused integration tests",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Server.Tests/Features/AnalysisContent/AnalysisContentEndpointsTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/AnalysisContent/GeoprocessingArtifactPersistenceTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1182",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "analysis-reporting",
       "displayName": "Analysis report HTTP surface",
       "surfaceKind": "http-route-family",

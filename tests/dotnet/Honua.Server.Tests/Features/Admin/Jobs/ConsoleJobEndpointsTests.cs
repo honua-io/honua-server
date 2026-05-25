@@ -513,6 +513,19 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         public Task<IReadOnlyList<ExecutionLogEntry>> GetLogsAsync(string operationId, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<ExecutionLogEntry>>(_logs.TryGetValue(operationId, out var entries) ? entries : Array.Empty<ExecutionLogEntry>());
 
+        public Task<ExecutionLogTail> TailAsync(
+            string operationId,
+            int limit,
+            CancellationToken cancellationToken = default)
+        {
+            var entries = _logs.TryGetValue(operationId, out var found) ? found : Array.Empty<ExecutionLogEntry>();
+            return Task.FromResult(new ExecutionLogTail
+            {
+                Items = entries.TakeLast(Math.Max(1, limit)).ToArray(),
+                TotalCount = entries.Length
+            });
+        }
+
         public Task<ExecutionLogPage> QueryAsync(string operationId, ExecutionLogQuery query, CancellationToken cancellationToken = default)
         {
             var offset = DecodeOffset(query.Cursor);

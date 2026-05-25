@@ -75,6 +75,7 @@
 - [Console Job Observability (Admin API)](admin-api/console-job-observability.md)
 - [Metadata Prevalidation Admin API](admin-api/metadata-prevalidation.md)
 - [Studio Package Lifecycle API](admin-api/studio-package-lifecycle.md)
+- [Analysis Content (Admin API)](admin-api/analysis-content.md)
 - [Scene Dataset Registry (Admin API)](admin-api/scene-dataset-registry.md)
 - [SDK Compatibility](developer/SDK_COMPATIBILITY_MATRIX.md)
 - [SDK Migration Automation Evidence Manifest](developer/sdk-migration-evidence-manifest.md)
