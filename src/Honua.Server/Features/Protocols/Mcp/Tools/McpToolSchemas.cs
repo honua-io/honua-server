@@ -67,10 +67,61 @@ internal static class McpToolSchemas
         }
         """;
 
+    private const string PackageReviewArgumentSchemaJson = """
+        {
+          "type": "object",
+          "properties": {
+            "contractVersion": {
+              "type": "string",
+              "description": "Package-review contract version. Current value is honua.package_review.v1."
+            },
+            "packageFamily": {
+              "type": "string",
+              "description": "Supported values are query, analysis_plan, map_package, dashboard_report, form, app_package, workflow, gp, and etl. Missing or unknown values are returned as canonical missing_package_family or unsupported_package_family findings rather than rejected by the schema."
+            },
+            "packageId": { "type": "string" },
+            "requestedAction": { "type": "string" },
+            "format": { "type": "string" },
+            "packagePayload": {
+              "type": ["object", "array", "string", "number", "boolean", "null"],
+              "description": "Opaque package payload inspected only by the matching package-family adapter."
+            },
+            "requirements": {
+              "type": ["object", "null"],
+              "description": "Shared data binding, permission, schema, CRS, capability, dependency, and approval requirements. An explicit null is normalized to an empty requirement set."
+            },
+            "estimate": {
+              "type": "object",
+              "description": "Optional upstream estimate echoed in the shared package-review response."
+            },
+            "includePreviewPlan": { "type": "boolean" },
+            "includePassFindings": { "type": "boolean" },
+            "resourceRefs": {
+              "type": ["object", "null"],
+              "additionalProperties": { "type": "string" },
+              "description": "Safe caller-visible resource references. An explicit null is normalized to an empty map."
+            }
+          }
+        }
+        """;
+
     /// <summary>
     /// Schema for the <c>honua_plan_analysis</c> tool input.
     /// </summary>
     public static readonly JsonElement PlanAnalysisArgumentSchema = Parse(PlanAnalysisArgumentSchemaJson);
+
+    /// <summary>
+    /// Schema for the package-review tools. The schema intentionally does not
+    /// mark <c>packageFamily</c> as required or enum-limit it: the service
+    /// reviews missing and unknown families and reports them as structured
+    /// <c>missing_package_family</c>/<c>unsupported_package_family</c> findings,
+    /// so a stricter published schema would let schema-driven clients block the
+    /// very inputs these tools are meant to inspect. For the same reason
+    /// <c>requirements</c> and <c>resourceRefs</c> permit <c>null</c>: the
+    /// request model normalizes an explicit null to an empty set, so the
+    /// published schema must not reject a value the service accepts.
+    /// </summary>
+    public static readonly JsonElement PackageReviewArgumentSchema = Parse(PackageReviewArgumentSchemaJson);
 
     /// <summary>
     /// Schema for <see cref="Models.McpPlanArgument"/>, shared by validate_plan

@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Honua Server Management API",
-    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints for configuration, import scanning, connections, layers, styles, observability, realtime alert management, durable job viewing, runtime licensing, deploy control, and native client-certificate trust management. For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
+    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints for configuration, import scanning, connections, layers, styles, observability, realtime alert management, durable job viewing, package validation and preview planning, runtime licensing, deploy control, and native client-certificate trust management. For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
     "version": "1.0.0",
     "contact": {
       "name": "Honua Server",
@@ -95,6 +95,10 @@
     {
       "name": "Features",
       "description": "Edition-gated feature catalog and active entitlement state"
+    },
+    {
+      "name": "Packages",
+      "description": "Package validation and read-only preview planning"
     },
     {
       "name": "Security",
@@ -2950,6 +2954,90 @@
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/packages/validate": {
+      "post": {
+        "tags": ["Packages"],
+        "summary": "Validate Package",
+        "description": "Validate a package using the shared package-review contract. The server forces includePreviewPlan to false on this route.",
+        "operationId": "validatePackage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PackageReviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Package review result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePackageReviewResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "500": {
+            "description": "Package review failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/packages/preview": {
+      "post": {
+        "tags": ["Packages"],
+        "summary": "Preview Package",
+        "description": "Validate a package and return a read-only preview plan when the package can be planned. The server forces includePreviewPlan to true on this route.",
+        "operationId": "previewPackage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PackageReviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Package review result with optional read-only preview plan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePackageReviewResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "500": {
+            "description": "Package review failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -10144,6 +10232,419 @@
           "data": { "$ref": "#/components/schemas/ComplianceKeyRotationResponse" },
           "message": { "type": "string" },
           "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApiResponsePackageReviewResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/PackageReviewResponse" },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "PackageReviewRequest": {
+        "type": "object",
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "nullable": true,
+            "description": "Package-review contract version. The current supported value is honua.package_review.v1."
+          },
+          "packageFamily": {
+            "type": "string",
+            "description": "Supported values are query, analysis_plan, map_package, dashboard_report, form, app_package, workflow, gp, and etl. packageFamily is not required and not enum-limited: a missing value returns a missing_package_family finding and an unknown value returns an unsupported_package_family finding, rather than an HTTP validation error."
+          },
+          "packageId": { "type": "string", "nullable": true },
+          "requestedAction": {
+            "type": "string",
+            "nullable": true,
+            "description": "Caller-requested action being reviewed, for example execute or publish."
+          },
+          "format": { "type": "string", "nullable": true },
+          "packagePayload": {
+            "nullable": true,
+            "description": "Opaque package payload. analysis_plan and gp payloads are parsed as analysis-plan candidates.",
+            "oneOf": [
+              { "type": "object", "additionalProperties": true },
+              { "type": "array", "items": {} },
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" }
+            ]
+          },
+          "requirements": {
+            "nullable": true,
+            "description": "Shared validation requirements. An explicit null is normalized to an empty requirement set.",
+            "allOf": [{ "$ref": "#/components/schemas/PackageReviewRequirements" }]
+          },
+          "estimate": { "$ref": "#/components/schemas/PackageEstimate" },
+          "includePreviewPlan": {
+            "type": "boolean",
+            "description": "Caller preference. /packages/validate forces false and /packages/preview forces true."
+          },
+          "includePassFindings": { "type": "boolean" },
+          "resourceRefs": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": { "type": "string" },
+            "description": "Safe caller-visible resource references. An explicit null is normalized to an empty map."
+          }
+        }
+      },
+      "PackageReviewRequirements": {
+        "type": "object",
+        "properties": {
+          "dataBindings": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageDataBindingRequirement" }
+          },
+          "permissions": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackagePermissionRequirement" }
+          },
+          "schemas": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageSchemaRequirement" }
+          },
+          "fields": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageFieldRequirement" }
+          },
+          "domains": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageDomainRequirement" }
+          },
+          "crs": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageCrsRequirement" }
+          },
+          "geometry": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageGeometryRequirement" }
+          },
+          "temporal": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageTemporalRequirement" }
+          },
+          "capabilities": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageCapabilityRequirement" }
+          },
+          "dependencies": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageDependencyRequirement" }
+          },
+          "formats": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageFormatRequirement" }
+          },
+          "approvals": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageApprovalRequirement" }
+          }
+        }
+      },
+      "PackageDataBindingRequirement": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "nullable": true },
+          "sourceId": { "type": "string", "nullable": true },
+          "layerId": { "type": "integer", "format": "int32", "nullable": true },
+          "path": { "type": "string", "nullable": true },
+          "required": { "type": "boolean", "default": true },
+          "isResolved": { "type": "boolean", "default": true },
+          "message": { "type": "string", "nullable": true }
+        }
+      },
+      "PackagePermissionRequirement": {
+        "type": "object",
+        "required": ["permission"],
+        "properties": {
+          "permission": { "type": "string" },
+          "target": { "type": "string", "nullable": true },
+          "path": { "type": "string", "nullable": true },
+          "granted": { "type": "boolean", "default": true },
+          "policyRef": { "type": "string", "nullable": true },
+          "appliesTo": { "$ref": "#/components/schemas/PackageReviewActionScope" }
+        }
+      },
+      "PackageSchemaRequirement": {
+        "type": "object",
+        "properties": {
+          "schemaId": { "type": "string", "nullable": true },
+          "path": { "type": "string", "nullable": true },
+          "exists": { "type": "boolean", "default": true },
+          "expectedVersion": { "type": "string", "nullable": true },
+          "actualVersion": { "type": "string", "nullable": true }
+        }
+      },
+      "PackageFieldRequirement": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string" },
+          "path": { "type": "string", "nullable": true },
+          "exists": { "type": "boolean", "default": true },
+          "expectedType": { "type": "string", "nullable": true },
+          "actualType": { "type": "string", "nullable": true }
+        }
+      },
+      "PackageDomainRequirement": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string" },
+          "field": { "type": "string", "nullable": true },
+          "path": { "type": "string", "nullable": true },
+          "exists": { "type": "boolean", "default": true },
+          "isValid": { "type": "boolean", "default": true },
+          "expected": { "type": "string", "nullable": true },
+          "actual": { "type": "string", "nullable": true }
+        }
+      },
+      "PackageCrsRequirement": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "nullable": true },
+          "expectedSrid": { "type": "integer", "format": "int32", "nullable": true },
+          "actualSrid": { "type": "integer", "format": "int32", "nullable": true },
+          "expectedUnits": { "type": "string", "nullable": true },
+          "actualUnits": { "type": "string", "nullable": true },
+          "assumption": { "type": "string", "nullable": true }
+        }
+      },
+      "PackageGeometryRequirement": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "nullable": true },
+          "expectedGeometryType": { "type": "string", "nullable": true },
+          "actualGeometryType": { "type": "string", "nullable": true },
+          "allowsNullGeometry": { "type": "boolean", "default": true },
+          "nullGeometryCount": { "type": "integer", "format": "int64", "nullable": true }
+        }
+      },
+      "PackageTemporalRequirement": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "nullable": true },
+          "required": { "type": "boolean", "default": true },
+          "field": { "type": "string", "nullable": true },
+          "exists": { "type": "boolean", "default": true }
+        }
+      },
+      "PackageCapabilityRequirement": {
+        "type": "object",
+        "required": ["capability"],
+        "properties": {
+          "capability": { "type": "string" },
+          "scope": { "type": "string", "nullable": true },
+          "path": { "type": "string", "nullable": true },
+          "required": { "type": "boolean", "default": true },
+          "supported": { "type": "boolean", "default": true },
+          "appliesTo": { "$ref": "#/components/schemas/PackageReviewActionScope" }
+        }
+      },
+      "PackageDependencyRequirement": {
+        "type": "object",
+        "required": ["packageId"],
+        "properties": {
+          "packageId": { "type": "string" },
+          "version": { "type": "string", "nullable": true },
+          "path": { "type": "string", "nullable": true },
+          "required": { "type": "boolean", "default": true },
+          "resolved": { "type": "boolean", "default": true }
+        }
+      },
+      "PackageFormatRequirement": {
+        "type": "object",
+        "required": ["format"],
+        "properties": {
+          "format": { "type": "string" },
+          "path": { "type": "string", "nullable": true },
+          "supported": { "type": "boolean", "default": true }
+        }
+      },
+      "PackageApprovalRequirement": {
+        "type": "object",
+        "properties": {
+          "policyRef": { "type": "string", "nullable": true },
+          "path": { "type": "string", "nullable": true },
+          "required": { "type": "boolean" },
+          "approved": { "type": "boolean" },
+          "appliesTo": { "$ref": "#/components/schemas/PackageReviewActionScope" }
+        }
+      },
+      "PackageReviewResponse": {
+        "type": "object",
+        "required": ["contractVersion", "reviewId", "packageFamily", "status", "canExecute", "canPublish", "requiresApproval", "checkedAt", "findings"],
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "enum": ["honua.package_review.v1"]
+          },
+          "reviewId": { "type": "string" },
+          "packageFamily": {
+            "type": "string",
+            "description": "Echoes the reviewed package family. Unknown values can appear in blocked reviews."
+          },
+          "packageId": { "type": "string", "nullable": true },
+          "status": { "$ref": "#/components/schemas/PackageReviewStatus" },
+          "canExecute": { "type": "boolean" },
+          "canPublish": { "type": "boolean" },
+          "requiresApproval": { "type": "boolean" },
+          "checkedAt": { "type": "string", "format": "date-time" },
+          "findings": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageFinding" }
+          },
+          "previewPlan": { "$ref": "#/components/schemas/PackagePreviewPlan" },
+          "estimate": { "$ref": "#/components/schemas/PackageEstimate" },
+          "links": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          },
+          "resourceRefs": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          }
+        }
+      },
+      "PackageFinding": {
+        "type": "object",
+        "required": ["code", "severity", "category", "disposition", "appliesTo", "message"],
+        "properties": {
+          "code": { "type": "string" },
+          "severity": { "$ref": "#/components/schemas/PackageFindingSeverity" },
+          "category": { "$ref": "#/components/schemas/PackageFindingCategory" },
+          "disposition": { "$ref": "#/components/schemas/PackageFindingDisposition" },
+          "appliesTo": { "$ref": "#/components/schemas/PackageReviewActionScope" },
+          "message": { "type": "string" },
+          "requiredAction": { "$ref": "#/components/schemas/PackageRequiredAction" },
+          "affectedArtifact": { "$ref": "#/components/schemas/PackageAffectedArtifact" },
+          "evidence": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackageFindingEvidence" }
+          }
+        }
+      },
+      "PackageRequiredAction": {
+        "type": "object",
+        "required": ["actionKind"],
+        "properties": {
+          "actionKind": { "type": "string" },
+          "targetPath": { "type": "string", "nullable": true },
+          "title": { "type": "string", "nullable": true }
+        }
+      },
+      "PackageAffectedArtifact": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string", "nullable": true },
+          "id": { "type": "string", "nullable": true },
+          "path": { "type": "string", "nullable": true },
+          "sourceId": { "type": "string", "nullable": true },
+          "stepId": { "type": "string", "nullable": true }
+        }
+      },
+      "PackageFindingEvidence": {
+        "type": "object",
+        "required": ["kind"],
+        "properties": {
+          "kind": { "type": "string" },
+          "expected": { "type": "string", "nullable": true },
+          "actual": { "type": "string", "nullable": true },
+          "path": { "type": "string", "nullable": true },
+          "fieldName": { "type": "string", "nullable": true },
+          "srid": { "type": "integer", "format": "int32", "nullable": true },
+          "capability": { "type": "string", "nullable": true },
+          "policyRef": { "type": "string", "nullable": true },
+          "resourceRef": { "type": "string", "nullable": true }
+        }
+      },
+      "PackagePreviewPlan": {
+        "type": "object",
+        "required": ["planId", "mayMutatePublishedState", "operations"],
+        "properties": {
+          "planId": { "type": "string" },
+          "mayMutatePublishedState": {
+            "type": "boolean",
+            "description": "Must remain false for preview responses."
+          },
+          "operations": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PackagePreviewOperation" }
+          }
+        }
+      },
+      "PackagePreviewOperation": {
+        "type": "object",
+        "required": ["operationId", "operationKind", "mayMutatePublishedState"],
+        "properties": {
+          "operationId": { "type": "string" },
+          "operationKind": { "type": "string" },
+          "inputRefs": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "outputArtifactKinds": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "dependsOn": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "mayMutatePublishedState": {
+            "type": "boolean",
+            "description": "Must remain false for preview responses."
+          },
+          "requiredCapabilities": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "PackageEstimate": {
+        "type": "object",
+        "properties": {
+          "rowCount": { "type": "integer", "format": "int64", "nullable": true },
+          "featureCount": { "type": "integer", "format": "int64", "nullable": true },
+          "bytes": { "type": "integer", "format": "int64", "nullable": true },
+          "durationMs": { "type": "number", "format": "double", "nullable": true },
+          "durationSeconds": { "type": "number", "format": "double", "nullable": true },
+          "costWeight": { "type": "number", "format": "double", "nullable": true },
+          "confidence": { "type": "string", "nullable": true }
+        }
+      },
+      "PackageReviewStatus": {
+        "type": "string",
+        "enum": ["ready", "warning", "blocked"]
+      },
+      "PackageFindingSeverity": {
+        "type": "string",
+        "enum": ["blocker", "warning", "info", "pass"]
+      },
+      "PackageFindingCategory": {
+        "type": "string",
+        "enum": ["data_binding", "permission", "rbac", "schema", "field", "domain", "crs", "geometry", "temporal", "capability", "dependency", "format", "approval", "preview"]
+      },
+      "PackageFindingDisposition": {
+        "type": "string",
+        "enum": ["unresolved", "resolved", "auth_denied", "unsupported", "requires_approval"]
+      },
+      "PackageReviewActionScope": {
+        "type": "string",
+        "enum": ["both", "execute", "publish", "review"]
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string", "nullable": true },
+          "title": { "type": "string", "nullable": true },
+          "status": { "type": "integer", "format": "int32", "nullable": true },
+          "detail": { "type": "string", "nullable": true },
+          "instance": { "type": "string", "nullable": true }
         }
       },
       "ComplianceKeyRotationResponse": {

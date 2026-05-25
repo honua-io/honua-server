@@ -31,6 +31,7 @@ public sealed class VerticalSliceIsolationTests
         "Geoprocessing",
         "Grounding",
         "Orchestration",
+        "PackageReview",
         "Protocols",
         "Mobile", // Parent container for mobile sub-feature slices (e.g. FieldCollection sync)
         "NlQuery",
@@ -65,6 +66,7 @@ public sealed class VerticalSliceIsolationTests
             ["Grounding"] = new[] { "Geoprocessing" },
             ["AnalysisContent"] = new[] { "Geoprocessing" },
             ["NlQuery"] = new[] { "AiBuilder" },
+            ["PackageReview"] = new[] { "Geoprocessing" },
             ["Reporting"] = new[] { "Geoprocessing" }
         };
 

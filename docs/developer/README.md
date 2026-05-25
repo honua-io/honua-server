@@ -15,6 +15,7 @@ Build applications and integrations with Honua APIs and SDKs.
 - [NVIDIA Construction Demo Fixture](../demo/nvidia-construction.md) — Local-first 3D Tiles + observations sidecar fixture for the NVIDIA demo (no AWS, Azure, or Cesium ion)
 - [Form Package API](form-package-api.md) — Versioned form package drafts, validation, immutable publishing, offline policy discovery, and field submission contracts
 - [FieldCollection Mobile Sync API](fieldcollection-mobile-sync-api.md) — Generation, sync-cursor, pull, and push endpoints under `/api/v1/fieldcollection/` consumed by the `honua-mobile` offline sync clients
+- [Package Review API](package-review-api.md) — Shared validation and read-only preview planning contract for publish/execute candidates across HTTP, MCP, SDK, CI, and generated-app clients
 - [OpenAPI Specs](api-specs/) — Machine-readable API definitions
   - [Admin API](api-specs/admin-api.json) (curated subset; use `/api/v1/admin/config` for full discovery)
   - [OGC API Features](api-specs/ogc-api-features.json)

@@ -49,6 +49,8 @@ internal static class McpServiceCollectionExtensions
 
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ValidatePlanTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, DryRunPlanTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ValidatePackageTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PreviewPackageTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ExecutePlanTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CancelJobTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PlanAnalysisTool>());

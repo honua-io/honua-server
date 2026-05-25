@@ -43,7 +43,8 @@ public static partial class Extensions
         "Honua.Wfs20.Transactions",
         "Honua.Core.Metadata",
         "Honua.MySql.FeatureDataAccess",
-        StudioPackageLifecycleService.ActivitySourceName
+        StudioPackageLifecycleService.ActivitySourceName,
+        "Honua.PackageReview"
     ];
 
     /// <summary>

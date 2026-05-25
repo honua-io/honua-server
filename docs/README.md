@@ -30,6 +30,7 @@ This page is the canonical table of contents for every important doc in the repo
 | Serve terrain/elevation tiles | [Terrain-RGB Tiles](gis/terrain-tiles.md) |
 | Look up numeric elevation values | [Elevation Query and Profile API](gis/elevation-api.md) |
 | Integrate AI agents | [MCP Server](developer/MCP_SERVER.md) |
+| Validate packages before publish/execute | [Package Review API](developer/package-review-api.md) |
 | Troubleshoot issues | [Troubleshooting](operator/troubleshooting.md) |
 | Review OpenAPI specs | [API Specs](developer/api-specs/) |
 
@@ -139,6 +140,7 @@ How to build against Honua's APIs, SDKs, and protocols.
 - [Capability Manifest](developer/capability-manifest.md) — neutral runtime capability discovery for Console, MCP, QGIS, native hosts, and SDK clients.
 - [Grounding](developer/GROUNDING.md) — natural-language grounding for AI builders.
 - [MCP Server](developer/MCP_SERVER.md) — JSON-RPC surface for AI agents.
+- [Package Review API](developer/package-review-api.md) — shared validation and read-only preview planning contract for publish/execute candidates.
 - [Redis Fallback Patterns](developer/REDIS_FALLBACK_PATTERNS.md)
 - [Spec Engine](developer/SPEC_ENGINE.md)
 - [AI Builder SDK Contract](ai-builder-sdk-contract.md) — Map of honua-server MCP surfaces to the honua-sdk-js AI Spatial App Builder workflow, fixture cases, and capability states.

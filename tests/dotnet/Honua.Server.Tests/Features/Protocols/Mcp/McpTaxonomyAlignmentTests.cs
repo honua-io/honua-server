@@ -252,6 +252,48 @@ public sealed class McpTaxonomyAlignmentTests
             .GetProperty("minItems").GetInt32().Should().Be(1);
     }
 
+    [UnitTest]
+    public void PackageReviewSchema_DoesNotRequireOrEnumLimitPackageFamily_SoServiceReportsRequestShapeFindings()
+    {
+        // The package-review service intentionally reviews missing and unknown
+        // families and returns canonical missing_package_family /
+        // unsupported_package_family findings. Marking packageFamily required or
+        // enum-limiting it in the published schema would let strict JSON-schema
+        // clients block the very inputs the tools are meant to inspect.
+        var schema = McpToolSchemas.PackageReviewArgumentSchema;
+
+        if (schema.TryGetProperty("required", out var required))
+        {
+            required.EnumerateArray()
+                .Select(e => e.GetString())
+                .Should().NotContain("packageFamily");
+        }
+
+        schema.GetProperty("properties").GetProperty("packageFamily")
+            .TryGetProperty("enum", out _).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void PackageReviewSchema_AllowsNullRequirementsAndResourceRefs_SoSchemaClientsMatchTheService()
+    {
+        // The request model normalizes an explicit null requirements/resourceRefs
+        // to an empty set, so the published schema must permit null. A stricter
+        // schema would let strict JSON-schema clients reject inputs the service
+        // accepts and normalizes.
+        var properties = McpToolSchemas.PackageReviewArgumentSchema.GetProperty("properties");
+
+        SchemaTypeTokens(properties.GetProperty("requirements")).Should().Contain("null");
+        SchemaTypeTokens(properties.GetProperty("resourceRefs")).Should().Contain("null");
+    }
+
+    private static string[] SchemaTypeTokens(JsonElement schema)
+    {
+        var type = schema.GetProperty("type");
+        return type.ValueKind == JsonValueKind.Array
+            ? type.EnumerateArray().Select(static e => e.GetString()!).ToArray()
+            : [type.GetString()!];
+    }
+
     private static string[] ExtractEnumValues(JsonElement root, params string[] path)
     {
         var current = root;

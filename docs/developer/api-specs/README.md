@@ -127,6 +127,7 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 - Scan GeoServer REST and ArcGIS GeoServices REST FeatureServer/MapServer service roots into deterministic migration inventory artifacts with compatibility rollups
 - Monitor system health and observability
 - Inspect durable background jobs, structured logs, artifacts, control actions, and Operate event correlations
+- Validate packages and request read-only preview plans before publish or execute decisions
 - Access recent errors and telemetry status
 - Inspect deploy preflight and upgrade-readiness state per Honua instance
 - Manage geofence alert zones, realtime alert rules, draft validation, enable/disable state, and delivery health for Console Operate workflows
