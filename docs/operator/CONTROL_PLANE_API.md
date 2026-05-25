@@ -46,7 +46,7 @@ The Honua Admin UI is intended to operate as a UI on top of this control-plane A
 |-- version, capabilities, manifest
 |-- connections/              # Secure connections + table/layer publishing
 |-- services/                 # Service-level protocol and MapServer settings
-|-- metadata/resources/       # Metadata resources
+|-- metadata/                 # Metadata v2 inventory, release packages, prevalidation, and styles
 |-- metadata/layers/{id}/style
 |-- deploy/                   # Deploy preflight, plan, operations, submit, rollback
 |-- import/                   # Import workflows
@@ -511,6 +511,12 @@ The public `GET /api/styles/{layerId}.json` endpoint accepts an optional `?theme
 |----------|--------|---------|
 | `/api/v1/admin/version` | GET | Get current control-plane and metadata schema version info |
 | `/api/v1/admin/capabilities` | GET | Get admin metadata capabilities and the SDK compatibility contract |
+| `/api/v1/admin/metadata/environments/{environment}/inventory` | GET | Get revision-stamped Metadata v2 semantic inventory for an environment |
+| `/api/v1/admin/metadata/environment-bindings/query` | POST | Query secret-safe semantic binding summaries across environments |
+| `/api/v1/admin/metadata/release-packages` | POST | Create a persisted Metadata v2 release package for cross-environment promotion |
+| `/api/v1/admin/metadata/release-packages/{packageId}` | GET | Get a persisted Metadata v2 release package |
+| `/api/v1/admin/metadata/release-packages/{packageId}/gitops-manifest` | GET | Export a release package as a GitOps-safe manifest |
+| `/api/v1/admin/metadata/prevalidate` | POST | Generate an environment-scoped Metadata v2 compatibility report for a release package |
 | `/api/v1/admin/manifest` | GET | Export metadata manifest |
 | `/api/v1/admin/manifest/apply` | POST | Apply metadata manifest (supports dry-run/prune controls) |
 | `/api/v1/admin/metadata/resources` | GET | List metadata resources |
@@ -523,6 +529,16 @@ The public `GET /api/styles/{layerId}.json` endpoint accepts an optional `?theme
 | `/api/v1/admin/metadata/layers/{layerId}/style/import-sld` | POST | Convert an SLD/SE 1.0 or 1.1 XML document to MapLibre style JSON and store it (admin only, Community edition; 1 MiB body cap). See [SLD Migration Reference](sld-migration.md). |
 | `/api/v1/admin/metadata/layers/{layerId}/style/export-sld` | GET | Export the stored MapLibre style as an `application/xml` SLD 1.0 document. Diagnostic count surfaces in the `X-Sld-Diagnostic-Count` response header. |
 | `/api/styles/{layerId}.json` | GET | Public MapLibre style fetch with optional `?theme=default\|dark\|colorblind-safe\|print` deterministic transform; output cache varies per theme. |
+
+Metadata v2 release prevalidation accepts either `releasePackageId` or an inline
+`releasePackage`, plus a `targetEnvironment` and optional declared
+`dataScripts`. Omit `dataScripts` for no scripts; explicit `null` is rejected.
+Script-level `targetEnvironment` narrows a declaration to a matching target. It
+does not execute scripts. It reports `ready`, `warning`, `blocked`, or `unknown`,
+carries `canCreatePullRequest` / `canPromote` gates, lists affected dependents,
+and classifies rollback readiness. See
+[Metadata Prevalidation Admin API](../admin-api/metadata-prevalidation.md) for
+the full contract.
 
 `Group` and `SourceDescriptor` are stable `honua.io/v1alpha1` metadata resource kinds on the generic CRUD surface. SDKs can list them with `GET /api/v1/admin/metadata/resources?kind=Group` and `GET /api/v1/admin/metadata/resources?kind=SourceDescriptor` instead of probing undocumented catalog endpoints.
 

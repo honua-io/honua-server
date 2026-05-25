@@ -269,6 +269,7 @@ See **[docs/README.md](docs/README.md)** for the full table of contents. Common 
 | See protocol coverage | [Protocols Overview](docs/gis/STANDARDS_APIS.md) |
 | Use the admin API | [Control Plane API](docs/operator/CONTROL_PLANE_API.md) |
 | Check compatibility | [MVP Compatibility Contract](docs/gis/MVP_COMPATIBILITY_CONTRACT.md) |
+| Prevalidate Metadata v2 release packages | [Metadata Prevalidation Admin API](docs/admin-api/metadata-prevalidation.md) |
 | Run the STAC ops sample | [STAC Ops Demo](samples/Honua.StacOpsDemo/README.md) |
 | Contribute code | [Contributing](docs/contributor/development/contributing.md) |
 

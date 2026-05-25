@@ -51,6 +51,7 @@ public static class Operations
     // Admin Operations
     public const string TableDiscovery = "TableDiscovery";
     public const string Configuration = "Configuration";
+    public const string Validation = "Validation";
     public const string Cache = "Cache";
     public const string Infrastructure = "Infrastructure";
     public const string OperationsProgress = "OperationsProgress";

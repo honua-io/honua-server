@@ -25,6 +25,7 @@ public static class MetadataServiceCollectionExtensions
         services.TryAddScoped<IMetadataV2EnvironmentSnapshotReader, MetadataV2GraphProviderEnvironmentSnapshotReader>();
         services.TryAddSingleton<IMetadataReleasePackageStore, InMemoryMetadataReleasePackageStore>();
         services.TryAddScoped<IMetadataReleaseService, MetadataReleaseService>();
+        services.TryAddScoped<IMetadataCompatibilityPrevalidationService, MetadataCompatibilityPrevalidationService>();
         return services;
     }
 

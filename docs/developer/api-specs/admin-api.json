@@ -3017,6 +3017,216 @@
         }
       }
     },
+    "/metadata/environments/{environment}/inventory": {
+      "get": {
+        "tags": ["Metadata"],
+        "summary": "Get Metadata Semantic Inventory",
+        "description": "Return the active Metadata v2 revision-stamped semantic inventory for an environment.",
+        "operationId": "getMetadataSemanticInventory",
+        "parameters": [
+          {
+            "name": "environment",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "artifactKind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["resource", "service", "publication", "field", "catalog", "policy", "role"]
+            }
+          },
+          {
+            "name": "resourceType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["feature-dataset", "raster-dataset", "table", "tile-dataset", "process", "style", "document", "external-resource", "map", "dashboard", "form", "app", "workflow", "geoprocessing-service", "etl-pipeline"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revision-stamped semantic inventory",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MetadataSemanticInventoryResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/metadata/environment-bindings/query": {
+      "post": {
+        "tags": ["Metadata"],
+        "summary": "Query Metadata Environment Bindings",
+        "description": "Return secret-safe binding summaries for semantic ids across target environments.",
+        "operationId": "queryMetadataEnvironmentBindings",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/MetadataEnvironmentBindingsRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Secret-safe binding summaries",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MetadataEnvironmentBindingsResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/metadata/release-packages": {
+      "post": {
+        "tags": ["Metadata"],
+        "summary": "Create Metadata Release Package",
+        "description": "Persist a Metadata v2 release package for semantic cross-environment promotion.",
+        "operationId": "createMetadataReleasePackage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateMetadataReleasePackageRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Metadata release package created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MetadataReleasePackage" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/metadata/release-packages/{packageId}": {
+      "get": {
+        "tags": ["Metadata"],
+        "summary": "Get Metadata Release Package",
+        "operationId": "getMetadataReleasePackage",
+        "parameters": [
+          {
+            "name": "packageId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metadata release package",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MetadataReleasePackage" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/metadata/release-packages/{packageId}/gitops-manifest": {
+      "get": {
+        "tags": ["Metadata"],
+        "summary": "Get Metadata Release GitOps Manifest",
+        "description": "Export a persisted release package as a GitOps-safe JSON manifest.",
+        "operationId": "getMetadataReleaseGitOpsManifest",
+        "parameters": [
+          {
+            "name": "packageId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "GitOps-safe metadata release manifest",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/GitOpsMetadataReleaseManifest" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/metadata/prevalidate": {
+      "post": {
+        "tags": ["Metadata"],
+        "summary": "Prevalidate Metadata Release Package Compatibility",
+        "description": "Generate an environment-scoped Metadata v2 compatibility report for a release package. The endpoint compares the package source graph revision with the current target environment snapshot, evaluates optional declared data-script before/after contracts, and does not execute scripts.",
+        "operationId": "prevalidateMetadataReleasePackageCompatibility",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetadataPrevalidateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Metadata compatibility report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMetadataCompatibilityReport"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "500": {
+            "description": "Prevalidation could not be completed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/metadata/resources": {
       "get": {
         "tags": ["Metadata Resources"],
@@ -8368,6 +8578,671 @@
           "data": { "$ref": "#/components/schemas/ManifestApplyResult" },
           "message": { "type": "string" },
           "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "MetadataSemanticInventoryResponse": {
+        "type": "object",
+        "required": ["environment", "revision", "etag", "generatedAt", "entries"],
+        "properties": {
+          "environment": { "type": "string" },
+          "revision": { "type": "integer", "format": "int64" },
+          "etag": { "type": "string" },
+          "generatedAt": { "type": "string", "format": "date-time" },
+          "entries": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MetadataSemanticInventoryEntry" }
+          }
+        }
+      },
+      "MetadataSemanticInventoryEntry": {
+        "type": "object",
+        "required": ["semanticId", "artifactKind", "name"],
+        "properties": {
+          "semanticId": { "type": "string" },
+          "artifactKind": {
+            "type": "string",
+            "enum": ["resource", "service", "publication", "field", "catalog", "policy", "role"]
+          },
+          "resourceType": {
+            "type": "string",
+            "enum": ["feature-dataset", "raster-dataset", "table", "tile-dataset", "process", "style", "document", "external-resource", "map", "dashboard", "form", "app", "workflow", "geoprocessing-service", "etl-pipeline"]
+          },
+          "serviceType": {
+            "type": "string",
+            "enum": ["ogc-api-features", "wfs", "wms", "wmts", "esri-feature-service", "esri-map-service", "esri-image-service", "stac-api", "dcat-catalog", "ogc-records", "odata", "custom"]
+          },
+          "publicationType": {
+            "type": "string",
+            "enum": ["ogc-collection", "wfs-feature-type", "wms-layer", "wmts-layer", "esri-feature-layer", "esri-map-layer", "esri-image-layer", "stac-collection", "dcat-distribution", "ogc-record", "odata-entity-set", "custom"]
+          },
+          "parentSemanticId": { "type": "string" },
+          "name": { "type": "string" },
+          "namespace": { "type": "string" },
+          "title": { "type": "string" },
+          "metadataGeneration": { "type": "integer", "format": "int64" },
+          "status": { "type": "string", "enum": ["draft", "active", "deprecated", "retired", "archived"] },
+          "contentVersionId": { "type": "string" },
+          "provenance": {
+            "type": "array",
+            "items": { "type": "object", "additionalProperties": true }
+          },
+          "policyIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "MetadataEnvironmentBindingsRequest": {
+        "type": "object",
+        "properties": {
+          "environments": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "semanticIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "MetadataEnvironmentBindingsResponse": {
+        "type": "object",
+        "required": ["requestedAt", "environments", "bindings"],
+        "properties": {
+          "requestedAt": { "type": "string", "format": "date-time" },
+          "environments": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "bindings": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MetadataEnvironmentBindingSummary" }
+          }
+        }
+      },
+      "MetadataEnvironmentBindingSummary": {
+        "type": "object",
+        "required": ["semanticId", "environment", "state"],
+        "properties": {
+          "semanticId": { "type": "string" },
+          "environment": { "type": "string" },
+          "state": { "type": "string", "enum": ["bound", "missing", "environment-unavailable"] },
+          "revision": { "type": "integer", "format": "int64" },
+          "etag": { "type": "string" },
+          "artifactKind": {
+            "type": "string",
+            "enum": ["resource", "service", "publication", "field", "catalog", "policy", "role"]
+          },
+          "resource": { "type": "object", "additionalProperties": true },
+          "field": { "$ref": "#/components/schemas/MetadataBoundFieldSummary" },
+          "service": { "type": "object", "additionalProperties": true },
+          "publication": { "type": "object", "additionalProperties": true },
+          "storage": { "type": "object", "additionalProperties": true },
+          "connection": { "type": "object", "additionalProperties": true },
+          "contentVersionId": { "type": "string" },
+          "lastObservedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateMetadataReleasePackageRequest": {
+        "type": "object",
+        "required": ["sourceEnvironment"],
+        "properties": {
+          "packageKey": { "type": "string" },
+          "namespace": { "type": "string" },
+          "title": { "type": "string" },
+          "summary": { "type": "string" },
+          "sourceEnvironment": { "type": "string" },
+          "targetEnvironments": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "semanticIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "desiredRevision": { "type": "integer", "format": "int64" },
+          "desiredContentVersionId": { "type": "string" },
+          "changeClasses": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "enum": ["metadata", "content", "binding", "policy", "delete"]
+            }
+          },
+          "provenance": {
+            "type": "array",
+            "items": { "type": "object", "additionalProperties": true }
+          }
+        }
+      },
+      "MetadataPrevalidateRequest": {
+        "type": "object",
+        "required": ["targetEnvironment"],
+        "description": "Request body for Metadata v2 release-package compatibility prevalidation. Exactly one of releasePackageId or releasePackage is required.",
+        "properties": {
+          "releasePackageId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Persisted MetadataReleasePackage identifier. Must not be an empty GUID."
+          },
+          "releasePackage": {
+            "$ref": "#/components/schemas/MetadataReleasePackage"
+          },
+          "targetEnvironment": {
+            "type": "string",
+            "description": "Target environment whose current Metadata v2 graph snapshot is compared. The value is trimmed and must not be blank."
+          },
+          "dataScripts": {
+            "type": "array",
+            "description": "Optional declared data script contracts. Omit for no scripts; explicit null arrays or entries are rejected. Prevalidation analyzes these declarations but never executes scripts.",
+            "items": { "$ref": "#/components/schemas/MetadataDataScriptEntry" }
+          }
+        }
+      },
+      "ApiResponseMetadataCompatibilityReport": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/MetadataCompatibilityReport" },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "MetadataCompatibilityReport": {
+        "type": "object",
+        "required": [
+          "targetEnvironment",
+          "generatedAt",
+          "status",
+          "canCreatePullRequest",
+          "canPromote",
+          "uncoveredErrorCount",
+          "coveredErrorCount",
+          "warningCount",
+          "scriptCount",
+          "findings",
+          "affectedDependents",
+          "rollbackReadiness"
+        ],
+        "properties": {
+          "targetEnvironment": { "type": "string" },
+          "releasePackageId": { "type": "string", "format": "uuid" },
+          "packageKey": { "type": "string" },
+          "sourceEnvironment": { "type": "string" },
+          "sourceRevision": { "type": "integer", "format": "int64" },
+          "sourceEtag": { "type": "string" },
+          "targetRevision": { "type": "integer", "format": "int64" },
+          "targetEtag": { "type": "string" },
+          "generatedAt": { "type": "string", "format": "date-time" },
+          "status": {
+            "type": "string",
+            "enum": ["ready", "warning", "blocked", "unknown"]
+          },
+          "canCreatePullRequest": {
+            "type": "boolean",
+            "description": "False for blocked and unknown reports; true for ready and warning reports."
+          },
+          "canPromote": {
+            "type": "boolean",
+            "description": "False for blocked and unknown reports; true for ready and warning reports."
+          },
+          "uncoveredErrorCount": { "type": "integer", "format": "int32" },
+          "coveredErrorCount": { "type": "integer", "format": "int32" },
+          "warningCount": { "type": "integer", "format": "int32" },
+          "scriptCount": { "type": "integer", "format": "int32" },
+          "findings": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MetadataCompatibilityFinding" }
+          },
+          "affectedDependents": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MetadataAffectedDependent" }
+          },
+          "rollbackReadiness": { "$ref": "#/components/schemas/MetadataRollbackReadiness" }
+        }
+      },
+      "MetadataCompatibilityFinding": {
+        "type": "object",
+        "required": [
+          "code",
+          "severity",
+          "kind",
+          "affectedSemanticId",
+          "affectedSemanticKind",
+          "message",
+          "expected",
+          "actual",
+          "requiredAction"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable metadata.compat.* finding code."
+          },
+          "severity": { "type": "string", "enum": ["info", "warning", "error"] },
+          "kind": {
+            "type": "string",
+            "enum": ["state", "resource", "field", "identifier", "spatial", "temporal", "storage", "service", "publication", "projection", "policy", "script"]
+          },
+          "affectedSemanticId": { "type": "string" },
+          "affectedSemanticKind": {
+            "type": "string",
+            "enum": ["resource", "service", "publication", "field", "catalog", "policy", "role"]
+          },
+          "affectedParentSemanticId": { "type": "string" },
+          "displayName": { "type": "string" },
+          "message": { "type": "string" },
+          "expected": { "$ref": "#/components/schemas/MetadataCompatibilityValue" },
+          "actual": { "$ref": "#/components/schemas/MetadataCompatibilityValue" },
+          "requiredAction": {
+            "type": "string",
+            "enum": [
+              "none",
+              "resolve-state",
+              "add-resource",
+              "update-resource",
+              "add-field",
+              "update-field",
+              "update-identifier",
+              "update-spatial",
+              "update-temporal",
+              "update-storage",
+              "add-service",
+              "update-service",
+              "add-publication",
+              "update-publication",
+              "run-data-script",
+              "manual-review"
+            ]
+          },
+          "coverageState": {
+            "type": "string",
+            "enum": ["not-applicable", "uncovered", "covered-by-script", "unknown"]
+          },
+          "coveringScriptId": { "type": "string" },
+          "coverageNotes": { "type": "string" }
+        }
+      },
+      "MetadataCompatibilityValue": {
+        "type": "object",
+        "required": ["label"],
+        "properties": {
+          "label": { "type": "string" },
+          "value": { "type": "string" },
+          "details": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          }
+        }
+      },
+      "MetadataAffectedDependent": {
+        "type": "object",
+        "required": ["semanticId", "semanticKind", "impactSeverity", "reason"],
+        "properties": {
+          "semanticId": { "type": "string" },
+          "semanticKind": {
+            "type": "string",
+            "enum": ["resource", "service", "publication", "field", "catalog", "policy", "role"]
+          },
+          "displayName": { "type": "string" },
+          "impactSeverity": { "type": "string", "enum": ["info", "warning", "error"] },
+          "reason": { "type": "string" },
+          "viaSemanticId": { "type": "string" },
+          "relationshipKind": { "type": "string" }
+        }
+      },
+      "MetadataRollbackReadiness": {
+        "type": "object",
+        "required": ["classification", "reason", "requiresSnapshot", "requiresManualAction", "scriptIds"],
+        "properties": {
+          "classification": {
+            "type": "string",
+            "enum": ["metadata-only", "service-revision", "script-reversible", "snapshot-required", "manual"]
+          },
+          "reason": { "type": "string" },
+          "requiresSnapshot": { "type": "boolean" },
+          "requiresManualAction": { "type": "boolean" },
+          "scriptIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "MetadataDataScriptEntry": {
+        "type": "object",
+        "required": ["scriptId"],
+        "properties": {
+          "scriptId": { "type": "string" },
+          "title": { "type": "string" },
+          "kind": { "type": "string" },
+          "targetEnvironment": {
+            "type": "string",
+            "description": "Optional target environment for this script. Omitted or blank applies to every target; populated values are trimmed and matched case-insensitively."
+          },
+          "reversible": { "type": "boolean" },
+          "beforeContract": {
+            "description": "Declared pre-script state. Omit when not known; child collection arrays may be omitted but explicit null arrays or entries are rejected.",
+            "allOf": [{ "$ref": "#/components/schemas/MetadataDataScriptContract" }]
+          },
+          "afterContract": {
+            "description": "Declared post-script state. Omit when no script coverage is claimed. Missing-artifact coverage requires expected discriminator/detail fields, not only exists=true.",
+            "allOf": [{ "$ref": "#/components/schemas/MetadataDataScriptContract" }]
+          },
+          "declaredOperations": {
+            "type": "array",
+            "description": "Optional operation labels. Omit for no labels; explicit null arrays or entries are rejected.",
+            "items": { "type": "string" }
+          },
+          "notes": { "type": "string" }
+        }
+      },
+      "MetadataDataScriptContract": {
+        "type": "object",
+        "properties": {
+          "resources": {
+            "type": "array",
+            "description": "Semantic artifact contracts. Omit for an empty contract; explicit null arrays or entries are rejected.",
+            "items": { "$ref": "#/components/schemas/MetadataScriptResourceContract" }
+          }
+        }
+      },
+      "MetadataScriptResourceContract": {
+        "type": "object",
+        "description": "Semantic artifact contract used by data-script before/after coverage. For missing artifacts, exists=true alone is not sufficient; include expected resourceType, serviceType/route/protocols, publication identity/details, or storage binding details as applicable.",
+        "required": ["semanticId"],
+        "properties": {
+          "semanticId": { "type": "string" },
+          "semanticKind": {
+            "type": "string",
+            "enum": ["resource", "service", "publication", "field", "catalog", "policy", "role"]
+          },
+          "resourceId": { "type": "string" },
+          "serviceId": { "type": "string" },
+          "exists": { "type": "boolean" },
+          "resourceType": {
+            "type": "string",
+            "enum": ["feature-dataset", "raster-dataset", "table", "tile-dataset", "process", "style", "document", "external-resource", "map", "dashboard", "form", "app", "workflow", "geoprocessing-service", "etl-pipeline"]
+          },
+          "serviceType": {
+            "type": "string",
+            "enum": ["ogc-api-features", "wfs", "wms", "wmts", "esri-feature-service", "esri-map-service", "esri-image-service", "stac-api", "dcat-catalog", "ogc-records", "odata", "custom"]
+          },
+          "publicationType": {
+            "type": "string",
+            "enum": ["ogc-collection", "wfs-feature-type", "wms-layer", "wmts-layer", "esri-feature-layer", "esri-map-layer", "esri-image-layer", "stac-collection", "dcat-distribution", "ogc-record", "odata-entity-set", "custom"]
+          },
+          "route": { "type": "string" },
+          "path": { "type": "string" },
+          "serviceLocalId": { "type": "string" },
+          "layerIndex": { "type": "integer", "format": "int32" },
+          "fields": {
+            "type": "array",
+            "description": "Fields expected before or after the script. Omit for no fields; explicit null arrays or entries are rejected.",
+            "items": { "$ref": "#/components/schemas/MetadataScriptFieldContract" }
+          },
+          "requiredIdentifiers": {
+            "type": "array",
+            "description": "Required field identifiers expected before or after the script. Omit for none; explicit null arrays or entries are rejected.",
+            "items": { "type": "string" }
+          },
+          "domains": {
+            "type": "array",
+            "description": "Canonical domain identifiers expected before or after the script. Omit for none; explicit null arrays or entries are rejected.",
+            "items": { "type": "string" }
+          },
+          "indexes": {
+            "type": "array",
+            "description": "Canonical index identifiers expected before or after the script. Omit for none; explicit null arrays or entries are rejected.",
+            "items": { "type": "string" }
+          },
+          "spatial": { "$ref": "#/components/schemas/MetadataScriptSpatialContract" },
+          "temporal": { "$ref": "#/components/schemas/MetadataScriptTemporalContract" },
+          "storage": { "$ref": "#/components/schemas/MetadataScriptStorageContract" },
+          "capabilities": {
+            "type": "array",
+            "description": "Service or publication capabilities expected before or after the script. Omit for none; explicit null arrays or entries are rejected.",
+            "items": { "type": "string" }
+          },
+          "supportedFormats": {
+            "type": "array",
+            "description": "Publication formats expected before or after the script. Omit for none; explicit null arrays or entries are rejected.",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "MetadataScriptFieldContract": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "semanticId": { "type": "string" },
+          "name": { "type": "string" },
+          "exists": { "type": "boolean" },
+          "type": { "type": "string" },
+          "nullable": { "type": "boolean" },
+          "semanticRoles": {
+            "type": "array",
+            "description": "Semantic roles expected on the field. Omit for none; explicit null arrays or entries are rejected.",
+            "items": { "type": "string" }
+          },
+          "domains": {
+            "type": "array",
+            "description": "Canonical domain identifiers expected on the field. Omit for none; explicit null arrays or entries are rejected.",
+            "items": { "type": "string" }
+          },
+          "indexes": {
+            "type": "array",
+            "description": "Canonical index identifiers expected on the field. Omit for none; explicit null arrays or entries are rejected.",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "MetadataScriptSpatialContract": {
+        "type": "object",
+        "properties": {
+          "geometryType": { "type": "string" },
+          "srid": { "type": "integer", "format": "int32" }
+        }
+      },
+      "MetadataScriptTemporalContract": {
+        "type": "object",
+        "properties": {
+          "startTimeField": { "type": "string" },
+          "endTimeField": { "type": "string" },
+          "trackIdField": { "type": "string" }
+        }
+      },
+      "MetadataScriptStorageContract": {
+        "type": "object",
+        "properties": {
+          "storageBindingId": { "type": "string" },
+          "storageType": {
+            "type": "string",
+            "enum": ["relational-table", "sql-view", "sql-query", "geopackage-table", "geojson", "geoparquet", "arrow", "cloud-optimized-geotiff", "zarr", "netcdf", "mbtiles", "pmtiles", "tile-cache", "object-prefix", "external-api", "stac-asset"]
+          },
+          "capabilities": {
+            "type": "array",
+            "description": "Storage binding capabilities. Omit for none; explicit null arrays or entries are rejected.",
+            "items": {
+              "type": "string",
+              "enum": ["query", "filter", "sort", "aggregate", "edit", "transactions", "render", "tile", "download", "search"]
+            }
+          }
+        }
+      },
+      "MetadataReleasePackage": {
+        "type": "object",
+        "required": ["packageId", "metadata", "sourceEnvironment", "sourceRevision", "sourceEtag", "createdBy", "createdAt", "updatedAt"],
+        "properties": {
+          "packageId": { "type": "string", "format": "uuid" },
+          "metadata": { "$ref": "#/components/schemas/MetadataV2ObjectMetadata" },
+          "sourceEnvironment": { "type": "string" },
+          "sourceRevision": { "type": "integer", "format": "int64" },
+          "sourceEtag": { "type": "string" },
+          "targetEnvironments": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "entries": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MetadataReleaseEntry" }
+          },
+          "status": { "type": "string", "enum": ["draft", "ready", "staged", "superseded", "cancelled"] },
+          "createdBy": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "extensions": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "MetadataReleaseEntry": {
+        "type": "object",
+        "required": ["semanticId", "artifactKind", "desiredMetadataRevision"],
+        "properties": {
+          "semanticId": { "type": "string" },
+          "artifactKind": {
+            "type": "string",
+            "enum": ["resource", "service", "publication", "field", "catalog", "policy", "role"]
+          },
+          "resourceType": {
+            "type": "string",
+            "enum": ["feature-dataset", "raster-dataset", "table", "tile-dataset", "process", "style", "document", "external-resource", "map", "dashboard", "form", "app", "workflow", "geoprocessing-service", "etl-pipeline"]
+          },
+          "sourceField": { "$ref": "#/components/schemas/MetadataBoundFieldSummary" },
+          "desiredMetadataRevision": { "type": "integer", "format": "int64" },
+          "desiredContentVersionId": { "type": "string" },
+          "desiredProvenance": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "changeClass": { "type": "string", "enum": ["metadata", "content", "binding", "policy", "delete"] },
+          "targetStates": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MetadataReleaseTargetState" }
+          },
+          "dependentSemanticIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "status": { "type": "string", "enum": ["draft", "ready"] }
+        }
+      },
+      "MetadataReleaseTargetState": {
+        "type": "object",
+        "required": ["environment", "bindingState"],
+        "properties": {
+          "environment": { "type": "string" },
+          "currentMetadataRevision": { "type": "integer", "format": "int64" },
+          "currentContentVersionId": { "type": "string" },
+          "bindingState": { "type": "string", "enum": ["bound", "missing", "environment-unavailable"] },
+          "bindingSummary": {
+            "type": "object",
+            "description": "Secret-safe environment binding summary.",
+            "additionalProperties": true
+          }
+        }
+      },
+      "GitOpsMetadataReleaseManifest": {
+        "type": "object",
+        "required": ["metadata", "spec"],
+        "properties": {
+          "apiVersion": { "type": "string", "description": "Metadata v2 API version." },
+          "kind": { "type": "string", "enum": ["MetadataReleasePackage"] },
+          "metadata": { "$ref": "#/components/schemas/MetadataV2ObjectMetadata" },
+          "spec": { "$ref": "#/components/schemas/GitOpsMetadataReleaseSpec" }
+        }
+      },
+      "GitOpsMetadataReleaseSpec": {
+        "type": "object",
+        "required": ["packageId", "source", "targets", "entries"],
+        "properties": {
+          "packageId": { "type": "string", "format": "uuid" },
+          "source": { "$ref": "#/components/schemas/GitOpsMetadataReleaseSource" },
+          "targets": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/GitOpsMetadataReleaseTarget" }
+          },
+          "entries": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/GitOpsMetadataReleaseEntry" }
+          }
+        }
+      },
+      "GitOpsMetadataReleaseSource": {
+        "type": "object",
+        "required": ["environment", "revision", "etag"],
+        "properties": {
+          "environment": { "type": "string" },
+          "revision": { "type": "integer", "format": "int64" },
+          "etag": { "type": "string" }
+        }
+      },
+      "GitOpsMetadataReleaseTarget": {
+        "type": "object",
+        "required": ["environment"],
+        "properties": {
+          "environment": { "type": "string" }
+        }
+      },
+      "GitOpsMetadataReleaseEntry": {
+        "type": "object",
+        "required": ["semanticId", "artifactKind", "desiredMetadataRevision"],
+        "properties": {
+          "semanticId": { "type": "string" },
+          "artifactKind": {
+            "type": "string",
+            "enum": ["resource", "service", "publication", "field", "catalog", "policy", "role"]
+          },
+          "resourceType": {
+            "type": "string",
+            "enum": ["feature-dataset", "raster-dataset", "table", "tile-dataset", "process", "style", "document", "external-resource", "map", "dashboard", "form", "app", "workflow", "geoprocessing-service", "etl-pipeline"]
+          },
+          "sourceField": { "$ref": "#/components/schemas/MetadataBoundFieldSummary" },
+          "desiredMetadataRevision": { "type": "integer", "format": "int64" },
+          "desiredContentVersionId": { "type": "string" },
+          "desiredProvenance": {
+            "type": "array",
+            "items": { "type": "object", "additionalProperties": true }
+          },
+          "changeClass": { "type": "string", "enum": ["metadata", "content", "binding", "policy", "delete"] },
+          "targetStates": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MetadataReleaseTargetState" }
+          },
+          "dependentSemanticIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "MetadataV2ObjectMetadata": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "namespace": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "metadataGeneration": { "type": "integer", "format": "int64" },
+          "annotations": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          }
+        }
+      },
+      "MetadataBoundFieldSummary": {
+        "type": "object",
+        "required": ["semanticId", "parentResourceId", "fieldName"],
+        "properties": {
+          "semanticId": { "type": "string" },
+          "parentResourceId": { "type": "string" },
+          "fieldName": { "type": "string" },
+          "fieldType": { "type": "string" }
         }
       },
       "MetadataResource": {
