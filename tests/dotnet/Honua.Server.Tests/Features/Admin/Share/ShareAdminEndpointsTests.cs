@@ -827,3 +827,197 @@ public sealed class ShareExportDispatchFailureTests : IAsyncLifetime
             => Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(_jobs.Values.ToArray());
     }
 }
+
+/// <summary>
+/// Verifies a Supported trigger whose run record cannot be persisted rolls the created job back to
+/// a terminal state and never dispatches it, so a job is never claimable without a Share run.
+/// </summary>
+[Collection("Database")]
+[Protocol(TestProtocols.Admin)]
+[Operation(Operations.Export)]
+public sealed class ShareExportRunPersistFailureTests : IAsyncLifetime
+{
+    private readonly RunAppendThrowingStore _exportStore = new();
+    private readonly CapturingRollbackJobStore _jobStore = new();
+    private readonly RecordingJobQueue _jobQueue = new();
+    private readonly WebAppFixture _fixture;
+    private HttpClient _client = null!;
+
+    public ShareExportRunPersistFailureTests()
+    {
+        _fixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IShareExportStore>();
+                services.RemoveAll<IShareExportDestinationResolver>();
+                services.RemoveAll<IExecutionJobStore>();
+                services.RemoveAll<IJobQueue>();
+                services.AddSingleton<IShareExportStore>(_exportStore);
+                services.AddSingleton<IShareExportDestinationResolver, SupportedDestinationResolver>();
+                services.AddSingleton<IExecutionJobStore>(_jobStore);
+                services.AddSingleton<IJobQueue>(_jobQueue);
+            });
+    }
+
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _client = _fixture.CreateAdminClient();
+    }
+
+    public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/share/exports/{exportId}/trigger")]
+    [Endpoint("GET /api/v1/admin/share/exports/{exportId}/runs")]
+    public async Task Trigger_WhenRunPersistFails_RollsBackJobAndDoesNotDispatch()
+    {
+        var definition = new ShareExportDefinition
+        {
+            ExportId = "run-persist-failure-export",
+            ResourceId = "content-run-persist",
+            ServiceName = "run-persist-layer",
+            LayerId = 7,
+            DisplayName = "Run persist failure export",
+            DestinationType = ShareExportDestinationType.Webhook,
+            DestinationStatus = ShareExportDestinationStatus.Supported,
+            DestinationConfig = new Dictionary<string, string> { ["url"] = "https://example.invalid/webhook" },
+            Format = "GeoJSON",
+            Schedule = "0 * * * *",
+            ScheduleState = ShareExportScheduleState.Active,
+            CreatedAt = DateTimeOffset.Parse("2026-05-25T00:00:00Z", CultureInfo.InvariantCulture),
+            UpdatedAt = DateTimeOffset.Parse("2026-05-25T00:00:00Z", CultureInfo.InvariantCulture)
+        };
+        await _exportStore.SeedDefinitionAsync(definition);
+
+        var trigger = await _client.PostAsync($"/api/v1/admin/share/exports/{definition.ExportId}/trigger", null);
+
+        trigger.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+
+        // The job must never be dispatched when the run cannot be persisted first.
+        _jobQueue.Enqueued.Should().BeEmpty();
+
+        // The created job must be rolled back to a terminal state, not left Queued for a worker.
+        _jobStore.CreatedOperationId.Should().NotBeNullOrWhiteSpace();
+        var job = await _jobStore.GetAsync(_jobStore.CreatedOperationId!);
+        job.Should().NotBeNull();
+        job!.Status.Should().Be(ExecutionJobStatus.Failed);
+    }
+
+    private static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response)
+    {
+        var payload = await response.Content.ReadAsStringAsync();
+        return JsonDocument.Parse(payload);
+    }
+
+    private sealed class SupportedDestinationResolver : IShareExportDestinationResolver
+    {
+        public ShareExportDestinationStatus Resolve(ShareExportDestinationType destinationType)
+            => ShareExportDestinationStatus.Supported;
+    }
+
+    private sealed class RecordingJobQueue : IJobQueue
+    {
+        public List<string> Enqueued { get; } = [];
+
+        public Task EnqueueAsync(string operationId, OperationPriority priority = OperationPriority.Normal, CancellationToken cancellationToken = default)
+        {
+            Enqueued.Add(operationId);
+            return Task.CompletedTask;
+        }
+
+        public Task<string?> TryClaimAsync(string workerId, IReadOnlySet<ExecutionJobKind>? acceptedKinds = null, CancellationToken cancellationToken = default)
+            => Task.FromResult<string?>(null);
+
+        public Task RequeueAsync(string operationId, OperationPriority priority = OperationPriority.Normal, TimeSpan? visibleAfter = null, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task RemoveAsync(string operationId, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<long> GetQueueDepthAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<long>(0);
+    }
+
+    // Persists definitions through an in-memory store but fails every run append, exercising the
+    // pre-dispatch run-persist failure path.
+    private sealed class RunAppendThrowingStore : IShareExportStore
+    {
+        private readonly InMemoryShareExportStore _inner = new();
+
+        public Task<ShareExportDefinition> SeedDefinitionAsync(ShareExportDefinition definition) => _inner.CreateDefinitionAsync(definition);
+
+        public Task<ShareExportRun> AppendRunAsync(ShareExportRun run, CancellationToken cancellationToken = default)
+            => throw new ShareExportStoreUnavailableException("Share export store is unavailable.");
+
+        public Task<ShareExportDefinitionPage> ListDefinitionsAsync(ShareExportDefinitionQuery query, CancellationToken cancellationToken = default)
+            => _inner.ListDefinitionsAsync(query, cancellationToken);
+
+        public Task<ShareExportDefinition?> GetDefinitionAsync(string exportId, CancellationToken cancellationToken = default)
+            => _inner.GetDefinitionAsync(exportId, cancellationToken);
+
+        public Task<ShareExportDefinition> CreateDefinitionAsync(ShareExportDefinition definition, CancellationToken cancellationToken = default)
+            => _inner.CreateDefinitionAsync(definition, cancellationToken);
+
+        public Task<ShareExportDefinition?> UpdateDefinitionAsync(ShareExportDefinition definition, CancellationToken cancellationToken = default)
+            => _inner.UpdateDefinitionAsync(definition, cancellationToken);
+
+        public Task<bool> DeleteDefinitionAsync(string exportId, CancellationToken cancellationToken = default)
+            => _inner.DeleteDefinitionAsync(exportId, cancellationToken);
+
+        public Task<ShareExportRun?> UpdateRunAsync(ShareExportRun run, CancellationToken cancellationToken = default)
+            => _inner.UpdateRunAsync(run, cancellationToken);
+
+        public Task<ShareExportRunPage> ListRunsAsync(string exportId, string? cursor, int limit, CancellationToken cancellationToken = default)
+            => _inner.ListRunsAsync(exportId, cursor, limit, cancellationToken);
+
+        public Task<ShareExportRun?> GetRunAsync(string exportId, string runId, CancellationToken cancellationToken = default)
+            => _inner.GetRunAsync(exportId, runId, cancellationToken);
+    }
+
+    // Records the created job id and applies terminal rollback writes so the test can assert the
+    // job ended Failed rather than lingering Queued.
+    private sealed class CapturingRollbackJobStore : IExecutionJobStore
+    {
+        private readonly Dictionary<string, ExecutionJobRecord> _jobs = new(StringComparer.Ordinal);
+
+        public string? CreatedOperationId { get; private set; }
+
+        public Task<bool> TryAcquireLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task<bool> RenewLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task ReleaseLeaseAsync(string operationId, string ownerId, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<bool> TryCreateAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            CreatedOperationId = job.OperationId;
+            _jobs[job.OperationId] = job;
+            return Task.FromResult(true);
+        }
+
+        public Task<ExecutionJobRecord?> GetAsync(string operationId, CancellationToken cancellationToken = default)
+            => Task.FromResult(_jobs.TryGetValue(operationId, out var job) ? job : null);
+
+        public Task SetAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            _jobs[job.OperationId] = job;
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> TrySetAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            _jobs[job.OperationId] = job;
+            return Task.FromResult(true);
+        }
+
+        public Task<ExecutionJobPage> QueryAsync(ExecutionJobQuery query, CancellationToken cancellationToken = default)
+            => Task.FromResult(new ExecutionJobPage { Items = _jobs.Values.ToArray(), NextCursor = null });
+
+        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(_jobs.Values.ToArray());
+    }
+}

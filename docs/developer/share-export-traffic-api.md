@@ -189,11 +189,22 @@ If the destination is not runnable, the endpoint records a failed run with
 
 A `Supported` trigger runs on the local batch backend, so it requires both the
 durable execution job store and the job queue. If either is unavailable, or the
-job record cannot be created, the endpoint returns `503` and does not append a
-run. If the job record is created but enqueuing it fails, the endpoint rolls the
-job back to a terminal `Failed` state, records a `Failed` run (keeping its
-`jobRunId`) with `lastError` `share-export-dispatch-failed`, and returns `503`.
-A returned `202` therefore always means the job was both created and dispatched.
+job record cannot be created, the endpoint returns `503` and does not record a
+run. The run is persisted **before** the job is dispatched, so a dispatched job
+always has a run record tracking it: if the run cannot be persisted, the created
+job is rolled back and nothing is dispatched (`503`/`500`). If the run is
+persisted but enqueuing the job fails, the endpoint rolls the job back to a
+terminal `Failed` state, marks the run `Failed` (keeping its `jobRunId`) with
+`lastError` `share-export-dispatch-failed`, and returns `503`. A returned `202`
+therefore always means the run was persisted and the job was both created and
+dispatched.
+
+Once a run is backed by a job, its status reconciles to that job's terminal
+state: when the execution job reaches `Succeeded`, `Failed`, or `Cancelled` (for
+example after a Console cancel through the jobs API at
+`/api/v1/admin/jobs/{jobRunId}`), the run is updated to the matching status with
+`completedAt` and, on failure, the job's `lastError`. The first terminal status
+wins; a later job notification does not overwrite an already-terminal run.
 
 `pause` and `resume` only update `scheduleState`; they do not cancel already
 queued jobs. Scheduled execution is not implemented in this API slice, so

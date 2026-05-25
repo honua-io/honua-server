@@ -278,6 +278,46 @@ internal sealed class PostgresShareExportStore : IShareExportStore
             }
         });
 
+    public Task<ShareExportRun?> UpdateRunAsync(
+        ShareExportRun run,
+        CancellationToken cancellationToken = default)
+        => TranslateStoreFailuresAsync(async () =>
+        {
+            ArgumentNullException.ThrowIfNull(run);
+
+            // Only mutable lifecycle columns are updated; run identity (run_id, export_id,
+            // trigger_kind, job_run_id, triggered_at) is matched but never rewritten.
+            var sql = $"""
+                UPDATE {_runsTable}
+                SET status = @status,
+                    started_at = @started_at,
+                    completed_at = @completed_at,
+                    target_summary = @target_summary,
+                    result_artifacts = @result_artifacts,
+                    last_error = @last_error
+                WHERE run_id = @run_id AND export_id = @export_id
+                RETURNING run_id, export_id, trigger_kind, status, job_run_id, triggered_at,
+                          started_at, completed_at, target_summary, result_artifacts, last_error
+                """;
+
+            await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await using var command = new NpgsqlCommand(sql, connection.Connection);
+            command.Parameters.AddWithValue("@run_id", run.RunId);
+            command.Parameters.AddWithValue("@export_id", run.ExportId);
+            command.Parameters.AddWithValue("@status", run.Status.ToString());
+            command.Parameters.AddWithValue("@started_at", (object?)run.StartedAt ?? DBNull.Value);
+            command.Parameters.AddWithValue("@completed_at", (object?)run.CompletedAt ?? DBNull.Value);
+            command.Parameters.AddWithValue("@target_summary", (object?)run.TargetSummary ?? DBNull.Value);
+            command.Parameters.AddWithValue("@result_artifacts", run.ResultArtifacts.ToArray());
+            command.Parameters.AddWithValue("@last_error", (object?)run.LastError ?? DBNull.Value);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+                ? ReadRun(reader)
+                : null;
+        });
+
     public Task<ShareExportRunPage> ListRunsAsync(
         string exportId,
         string? cursor,

@@ -444,17 +444,43 @@ internal static class ShareAdminEndpoints
                 return Unavailable(context, "Share export job runner could not create a job record.");
             }
 
+            // Persist the run BEFORE dispatch so a dispatched job is never claimable without a Share
+            // run record tracking it. If the run cannot be persisted the job has not been dispatched
+            // yet, so roll the created job back and surface the store failure to the outer handler.
             try
             {
-                // Enqueue after the durable job record exists (queue contract requires the job to
-                // be persisted first) so a worker can claim and execute it.
+                run = await store.AppendRunAsync(run, context.RequestAborted).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
+                        jobStore,
+                        job.OperationId,
+                        failureMessage: "Share export run could not be persisted.",
+                        cancellationToken: CancellationToken.None)
+                    .ConfigureAwait(false);
+
+                ShareAdminLog.ExportRunPersistFailed(logger, run.RunId, exportId, job.OperationId, ex);
+                activity?.SetTag(HonuaTelemetry.Tags.ShareRunId, run.RunId);
+                activity?.SetTag(HonuaTelemetry.Tags.JobId, job.OperationId);
+                activity?.SetStatus(ActivityStatusCode.Error, "share-export-run-persist-failed");
+                activity?.SetTag(HonuaTelemetry.Tags.Error, true);
+                activity?.SetTag(HonuaTelemetry.Tags.ErrorMessage, "share-export-run-persist-failed");
+                throw;
+            }
+
+            try
+            {
+                // Dispatch last: enqueue the persisted job so a worker can claim and execute it.
                 await jobQueue.EnqueueAsync(job.OperationId, OperationPriority.Normal, context.RequestAborted)
                     .ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                // Dispatch failed: roll the created job back to a terminal Failed state and record a
-                // Failed run so a returned run never lingers as a Queued job no worker will run.
+                // Dispatch failed after the run was persisted: roll the created job back to a terminal
+                // Failed state and mark the already-persisted run Failed so it never lingers as a
+                // Queued run no worker will execute. Use CancellationToken.None so this durable
+                // correction completes even if the client has disconnected.
                 await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
                         jobStore,
                         job.OperationId,
@@ -468,7 +494,7 @@ internal static class ShareAdminEndpoints
                     CompletedAt = now,
                     LastError = "share-export-dispatch-failed"
                 };
-                await store.AppendRunAsync(failedRun, context.RequestAborted).ConfigureAwait(false);
+                await store.UpdateRunAsync(failedRun, CancellationToken.None).ConfigureAwait(false);
 
                 ShareAdminLog.ExportDispatchFailed(logger, failedRun.RunId, exportId, job.OperationId, ex);
                 activity?.SetTag(HonuaTelemetry.Tags.ShareRunId, failedRun.RunId);
@@ -479,7 +505,6 @@ internal static class ShareAdminEndpoints
                 return Unavailable(context, "Share export job could not be dispatched.");
             }
 
-            run = await store.AppendRunAsync(run, context.RequestAborted).ConfigureAwait(false);
             ShareAdminLog.ExportRunTriggered(logger, run.RunId, exportId, run.JobRunId);
             activity?.SetTag(HonuaTelemetry.Tags.ShareRunId, run.RunId);
             activity?.SetTag(HonuaTelemetry.Tags.JobId, run.JobRunId);

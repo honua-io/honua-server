@@ -41,4 +41,21 @@ internal static partial class ShareAdminLog
         string exportId,
         string jobRunId,
         Exception exception);
+
+    [LoggerMessage(EventId = 121605, Level = LogLevel.Error, Message = "Share export run {RunId} for definition {ExportId} could not be persisted before dispatch; job {JobRunId} was rolled back.")]
+    public static partial void ExportRunPersistFailed(
+        ILogger logger,
+        string runId,
+        string exportId,
+        string jobRunId,
+        Exception exception);
+
+    [LoggerMessage(EventId = 121606, Level = LogLevel.Warning, Message = "Share export run {RunId} for definition {ExportId} could not be reconciled to terminal status {Status} from job {JobRunId}.")]
+    public static partial void ExportRunReconcileFailed(
+        ILogger logger,
+        string runId,
+        string exportId,
+        ShareExportRunStatus status,
+        string jobRunId,
+        Exception exception);
 }

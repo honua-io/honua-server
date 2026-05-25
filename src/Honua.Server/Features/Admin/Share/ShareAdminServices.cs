@@ -169,6 +169,41 @@ internal sealed class InMemoryShareExportStore : IShareExportStore
         }
     }
 
+    public Task<ShareExportRun?> UpdateRunAsync(
+        ShareExportRun run,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_gate)
+        {
+            if (!_runsByExport.TryGetValue(run.ExportId, out var runs))
+            {
+                return Task.FromResult<ShareExportRun?>(null);
+            }
+
+            var index = runs.FindIndex(candidate => string.Equals(candidate.RunId, run.RunId, StringComparison.Ordinal));
+            if (index < 0)
+            {
+                return Task.FromResult<ShareExportRun?>(null);
+            }
+
+            // Preserve run identity; only lifecycle fields are updated, mirroring the Postgres store.
+            var updated = runs[index] with
+            {
+                Status = run.Status,
+                StartedAt = run.StartedAt,
+                CompletedAt = run.CompletedAt,
+                TargetSummary = run.TargetSummary,
+                ResultArtifacts = run.ResultArtifacts,
+                LastError = run.LastError
+            };
+            runs[index] = updated;
+            return Task.FromResult<ShareExportRun?>(updated);
+        }
+    }
+
     public Task<ShareExportRunPage> ListRunsAsync(
         string exportId,
         string? cursor,

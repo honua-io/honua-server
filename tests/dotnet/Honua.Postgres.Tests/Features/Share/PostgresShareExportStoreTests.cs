@@ -73,6 +73,61 @@ public sealed class PostgresShareExportStoreTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task UpdateRunAsync_ReconcilesLifecycleFieldsAndPreservesIdentity()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresShareExportStoreTests) + "_Update");
+        try
+        {
+            await EnsureShareTablesAsync(schema);
+            var store = new PostgresShareExportStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            var triggeredAt = DateTimeOffset.Parse("2026-05-25T04:00:00Z", CultureInfo.InvariantCulture);
+            var definition = BuildDefinition("postgres-update-definition", "postgres-update-layer", triggeredAt);
+            await store.CreateDefinitionAsync(definition);
+
+            var queued = BuildRun(definition.ExportId, "postgres-update-run", triggeredAt) with
+            {
+                JobRunId = "share-export-postgres-update",
+                Status = ShareExportRunStatus.Queued
+            };
+            await store.AppendRunAsync(queued);
+
+            var completedAt = triggeredAt.AddMinutes(5);
+            var succeeded = queued with
+            {
+                Status = ShareExportRunStatus.Succeeded,
+                StartedAt = triggeredAt.AddMinutes(1),
+                CompletedAt = completedAt,
+                ResultArtifacts = new[] { "s3://share-exports/postgres-update.geojson" },
+                LastError = null
+            };
+
+            var updated = await store.UpdateRunAsync(succeeded);
+
+            updated.Should().NotBeNull();
+            updated!.Status.Should().Be(ShareExportRunStatus.Succeeded);
+            updated.CompletedAt.Should().Be(completedAt);
+            updated.ResultArtifacts.Should().ContainSingle().Which.Should().Be("s3://share-exports/postgres-update.geojson");
+            // Identity fields are preserved across the update.
+            updated.RunId.Should().Be("postgres-update-run");
+            updated.ExportId.Should().Be(definition.ExportId);
+            updated.JobRunId.Should().Be("share-export-postgres-update");
+            updated.TriggerKind.Should().Be(ShareExportTriggerKind.Manual);
+            updated.TriggeredAt.Should().Be(triggeredAt);
+
+            var reread = await store.GetRunAsync(definition.ExportId, "postgres-update-run");
+            reread!.Status.Should().Be(ShareExportRunStatus.Succeeded);
+
+            // Updating a run that does not exist returns null rather than creating one.
+            var missing = await store.UpdateRunAsync(queued with { RunId = "postgres-missing-run" });
+            missing.Should().BeNull();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     private async Task EnsureShareTablesAsync(string schema)
     {
         var root = FindRepoRoot();

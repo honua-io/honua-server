@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Server.Features.Admin.Share;
 using Honua.Server.Features.Geoprocessing;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using StackExchange.Redis;
@@ -79,6 +80,7 @@ internal static class JobOrchestrationServiceCollectionExtensions
             sp => sp.GetRequiredService<ExecutionJobCancellationTokens>());
 
         services.AddSingleton<IJobTerminalCallback, GeoprocessingJobTerminalCallback>();
+        services.AddSingleton<IJobTerminalCallback, ShareExportJobTerminalCallback>();
 
         services.AddHostedService<JobExecutionService>();
         services.AddHostedService<JobReconciliationService>();

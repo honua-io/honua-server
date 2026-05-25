@@ -119,6 +119,19 @@ public interface IShareExportStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Updates the lifecycle fields (status, timing, result artifacts, last error) of an existing
+    /// run. Run identity fields (run id, export id, trigger kind, job run id, triggered-at) are not
+    /// changed. Used to mark a run failed when its backing job cannot be dispatched, and to
+    /// reconcile a run with its backing execution job's terminal state.
+    /// </summary>
+    /// <param name="run">Run carrying the identifier to match and the updated lifecycle fields.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The stored run, or null when no run with that identifier exists.</returns>
+    Task<ShareExportRun?> UpdateRunAsync(
+        ShareExportRun run,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Lists runs for an export definition newest first with cursor pagination.
     /// </summary>
     /// <param name="exportId">Export definition identifier.</param>
