@@ -107,10 +107,12 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 >
 > **Sibling control-plane surfaces**: Console (`/api/v1/console/**`) and Studio
 > (`/api/v1/studio/**`) require the same admin authorization posture but are not
-> part of this `/api/v1/admin` OpenAPI snapshot. The Studio package lifecycle
-> contract is maintained in
-> [Studio Package Lifecycle API](../../admin-api/studio-package-lifecycle.md)
-> until a dedicated Studio OpenAPI document is published.
+> part of this `/api/v1/admin` OpenAPI snapshot. Console workflow package
+> contracts are maintained in
+> [Console Workflow Packages](../../admin-api/console-workflow-packages.md), and
+> the Studio package lifecycle contract is maintained in
+> [Studio Package Lifecycle API](../../admin-api/studio-package-lifecycle.md),
+> until dedicated Console and Studio OpenAPI documents are published.
 >
 > **Runtime capability discovery**: `GET /api/v1/capabilities/manifest` is a
 > public, request-scoped discovery contract outside the admin OpenAPI snapshot.
@@ -126,6 +128,7 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 - Create Metadata v2 release packages and prevalidate release compatibility against target environments before GitOps promotion
 - Scan GeoServer REST and ArcGIS GeoServices REST FeatureServer/MapServer service roots into deterministic migration inventory artifacts with compatibility rollups
 - Monitor system health and observability
+- Render Console GP/ETL workflow palettes and manage workflow package versions through the sibling `/api/v1/console/workflow-*` surface
 - Inspect durable background jobs, structured logs, artifacts, control actions, and Operate event correlations
 - Validate packages and request read-only preview plans before publish or execute decisions
 - Access recent errors and telemetry status

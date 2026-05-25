@@ -73,6 +73,7 @@
 - [Metadata and Catalog Parity Matrix](developer/metadata-catalog-parity-matrix.md)
 - [NVIDIA Construction Demo Fixture](demo/nvidia-construction.md)
 - [Console Content and RBAC (Admin API)](admin-api/console-content-and-rbac.md)
+- [Console Workflow Packages (Admin API)](admin-api/console-workflow-packages.md)
 - [Console Job Observability (Admin API)](admin-api/console-job-observability.md)
 - [Operate Observability Fixtures (Admin API)](admin-api/operate-observability-fixtures.md)
 - [Metadata Prevalidation Admin API](admin-api/metadata-prevalidation.md)

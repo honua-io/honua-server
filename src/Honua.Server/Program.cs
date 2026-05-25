@@ -60,6 +60,7 @@ using Honua.Server.Features.Orchestration;
 using Honua.Server.Features.Studio;
 using Honua.Server.Features.PackageReview;
 using Honua.Server.Features.Streaming;
+using Honua.Server.Features.WorkflowPackages;
 using Honua.Server.Startup;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -442,6 +443,7 @@ builder.Services.AddValidationServices();
 // Register feature services (FeatureServer, OGC, OData, Observability)
 builder.Services.AddServerFeatures(builder.Configuration);
 builder.Services.AddOperateObservabilityFixtures(builder.Configuration, builder.Environment);
+builder.Services.AddWorkflowPackages();
 builder.Services.AddAdminRealtime();
 if (!isTestEnvironment)
 {
@@ -571,6 +573,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Core.Features.Studio.Domain.StudioJsonContext.Default,
         Honua.Server.Features.AnalysisContent.AnalysisContentApiJsonContext.Default,
         Honua.Server.Features.Capabilities.Models.CapabilityManifestJsonContext.Default,
+        Honua.Server.Features.WorkflowPackages.WorkflowPackagesJsonContext.Default,
         Honua.Server.Features.Admin.Models.AdminApiKeyJsonContext.Default,
         Honua.Server.Features.Admin.Models.SceneDatasetJsonContext.Default,
         Honua.Server.Features.Admin.Models.SceneGenerationJsonContext.Default,
@@ -1003,6 +1006,7 @@ app.MapConsoleSessionEndpoints();
 app.MapConsoleContentEndpoints();
 app.MapConsoleActionEndpoints();
 app.MapStudioPackageEndpoints();
+app.MapWorkflowPackageEndpoints();
 app.MapAdminApiKeyEndpoints();
 app.MapPackageReviewEndpoints();
 

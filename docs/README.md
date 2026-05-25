@@ -161,6 +161,7 @@ How to build against Honua's APIs, SDKs, and protocols.
 ### Admin API
 
 - [Console Content and RBAC (Baseline)](admin-api/console-content-and-rbac.md) — Metadata v2 content item, session bootstrap, action-check, and provenance endpoints under `/api/v1/console/**` (#1162).
+- [Console Workflow Packages](admin-api/console-workflow-packages.md) — Server-owned node registry, mutable workflow package drafts, immutable versions, validation, dry-run, publication, runs, and provenance under `/api/v1/console/workflow-*` (#1185).
 - [Console Job Observability](admin-api/console-job-observability.md) — Durable execution job list, detail, logs, artifacts, action, cancel, retry, and Operate event correlation endpoints under `/api/v1/admin/jobs/**` (#1170).
 - [Operate Observability Fixtures](admin-api/operate-observability-fixtures.md) — Development/Test seed endpoint for Console Testcontainers to hydrate Operate events, logs, alerts, jobs, artifacts, and investigations from a real honua-server plus PostgreSQL runtime (#1209).
 - [Metadata Prevalidation Admin API](admin-api/metadata-prevalidation.md) — Metadata v2 release-package compatibility reports for Console pre-PR and CI checks (#1164).
