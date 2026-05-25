@@ -90,6 +90,11 @@ public static class Protocols
     public const string Admin = "Admin";
 
     /// <summary>
+    /// Studio package lifecycle API.
+    /// </summary>
+    public const string Studio = "Studio";
+
+    /// <summary>
     /// Cloud Optimized GeoTIFF registration and tile-serving endpoints.
     /// </summary>
     public const string Cog = "Cog";

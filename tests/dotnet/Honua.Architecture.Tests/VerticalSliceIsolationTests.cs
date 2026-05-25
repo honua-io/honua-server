@@ -41,7 +41,8 @@ public sealed class VerticalSliceIsolationTests
         "StaticMap",
         "SpatialAnalytics",
         "Spec",
-        "Reporting"
+        "Reporting",
+        "Studio"
     };
 
     /// <summary>

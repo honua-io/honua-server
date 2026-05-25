@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "updatedUtc": "2026-05-18T00:00:00Z",
+  "updatedUtc": "2026-05-24T00:00:00Z",
   "surfaces": [
     {
       "surfaceId": "platform-http",
@@ -302,6 +302,64 @@
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": "#1170",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "studio-package-lifecycle",
+      "displayName": "Studio package lifecycle API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/studio/**",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [
+        "/api/v1/studio/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus StudioPackageEndpointsTests integration tests for package family discovery, draft lifecycle, validation, preview plans, immutable versions, publish requests, reopen, compare, rollback, and admin authorization",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Studio/StudioPackageEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1180",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Focused service, Postgres store, and endpoint tests assert mutable drafts, immutable content versions, stale generation rejection, format and validation errors, item/version ownership checks, publication request persistence, publication intent override rejection, reopen, rollback pointer transitions, comparison behavior, and lifecycle activity coverage for read/delete/list/get store work",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Core.Tests/Features/Studio/StudioPackageLifecycleServiceTests.cs",
+            "tests/dotnet/Honua.Postgres.Tests/Features/Studio/PostgresStudioPackageStoreTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Studio/StudioPackageEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1180",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Source-generated StudioApiJsonContext and StudioJsonContext preserve AOT-safe wire contracts; the admin API documentation records the response envelope, problem details, package envelope, lifecycle semantics, validation rules, persistence, and SDK projection requirements",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/Studio/Models/StudioApiJsonContext.cs",
+            "src/Honua.Core/Features/Studio/Domain/StudioJsonContext.cs",
+            "docs/admin-api/studio-package-lifecycle.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1180",
           "versionCaptureRule": null
         }
       ]

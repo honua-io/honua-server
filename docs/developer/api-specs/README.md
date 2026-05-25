@@ -91,6 +91,13 @@ See the [OGC API Coverages Coverage](../../gis/specifications/ogc-api-coverages-
 > Stable IDs cross-link `resources[*].styleIds`, `styles[*].resourceIds`, and `externalDependencies[*].resourceId` so review tooling can traverse the artifact without guessing by display name.
 >
 > **Control-plane direction**: this API is intended to back a Honua-managed control plane. Honua is not positioning Flux or Argo CD as the primary rollout controller.
+>
+> **Sibling control-plane surfaces**: Console (`/api/v1/console/**`) and Studio
+> (`/api/v1/studio/**`) require the same admin authorization posture but are not
+> part of this `/api/v1/admin` OpenAPI snapshot. The Studio package lifecycle
+> contract is maintained in
+> [Studio Package Lifecycle API](../../admin-api/studio-package-lifecycle.md)
+> until a dedicated Studio OpenAPI document is published.
 
 **What you can do**:
 - Manage database connections (create, test, list)
