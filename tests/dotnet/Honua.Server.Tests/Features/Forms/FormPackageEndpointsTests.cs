@@ -117,6 +117,44 @@ public sealed class FormPackageEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("POST /api/v1/admin/forms/packages")]
+    [Endpoint("POST /api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/validate")]
+    public async Task PackageValidation_WithMissingDomainChoiceCode_ReturnsValidationIssueWithoutDraftSaveFailure()
+    {
+        var packageJson = $$"""
+            {
+              "schemaVersion": "honua.form-package.v1",
+              "title": "Missing choice code",
+              "target": { "serviceId": "{{WebAppFixture.TestServiceId}}", "layerId": {{WebAppFixture.TestLayerId}} },
+              "sections": [ { "sectionId": "main", "label": "Main", "fieldIds": ["category"] } ],
+              "fields": [
+                {
+                  "fieldId": "category",
+                  "label": "Category",
+                  "type": "choice",
+                  "targetField": "category",
+                  "sectionId": "main",
+                  "domain": { "type": "codedValue", "choices": [ { "label": "Missing code" } ] }
+                }
+              ],
+              "submitPolicy": { "allowedOperations": ["create"] }
+            }
+            """;
+
+        var createResponse = await _fixture.Client.PostAsync("/api/v1/admin/forms/packages", JsonContent(packageJson));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var draft = await ReadJsonAsync(createResponse, FormPackageJsonContext.Default.FormPackageVersion);
+
+        var validation = await PostJsonAsync(
+            $"/api/v1/admin/forms/packages/{draft.FormId}/versions/{draft.Version}/validate",
+            FormPackageJsonContext.Default.FormPackageValidationResult);
+
+        validation.IsValid.Should().BeFalse();
+        validation.Issues.Should().Contain(issue => issue.Code == "domainChoiceCodeRequired");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /api/v1/forms/packages/{formId}/submissions")]
     public async Task SubmitForm_WithIdempotency_ReplaysSamePayloadAndRejectsChangedPayload()

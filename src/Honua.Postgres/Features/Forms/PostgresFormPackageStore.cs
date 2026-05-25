@@ -687,7 +687,7 @@ internal sealed class PostgresFormPackageStore : IFormPackageStore
             Description = package.Description,
             Target = package.Target,
             Sections = package.Sections,
-            Fields = package.Fields,
+            Fields = NormalizeFields(package.Fields),
             SubmitPolicy = package.SubmitPolicy,
             AttachmentPolicy = package.AttachmentPolicy,
             PrivacyPolicy = package.PrivacyPolicy,
@@ -695,6 +695,115 @@ internal sealed class PostgresFormPackageStore : IFormPackageStore
             Provenance = package.Provenance,
             Metadata = package.Metadata
         };
+
+    private static FormFieldDefinition[] NormalizeFields(FormFieldDefinition[] fields)
+    {
+        if (fields.Length == 0)
+        {
+            return fields;
+        }
+
+        var normalized = new FormFieldDefinition[fields.Length];
+        for (var i = 0; i < fields.Length; i++)
+        {
+            var field = fields[i];
+            normalized[i] = new FormFieldDefinition
+            {
+                FieldId = field.FieldId,
+                Label = field.Label,
+                Hint = field.Hint,
+                Type = field.Type,
+                TargetField = field.TargetField,
+                SectionId = field.SectionId,
+                Required = field.Required,
+                ReadOnly = field.ReadOnly,
+                Private = field.Private,
+                DefaultValue = NormalizeOptionalJson(field.DefaultValue),
+                Domain = NormalizeDomain(field.Domain),
+                Validation = NormalizeValidation(field.Validation),
+                Visibility = NormalizeVisibility(field.Visibility)
+            };
+        }
+
+        return normalized;
+    }
+
+    private static FormFieldDomainDefinition? NormalizeDomain(FormFieldDomainDefinition? domain)
+        => domain is null
+            ? null
+            : new FormFieldDomainDefinition
+            {
+                Type = domain.Type,
+                Choices = NormalizeDomainChoices(domain.Choices),
+                Min = NormalizeOptionalJson(domain.Min),
+                Max = NormalizeOptionalJson(domain.Max)
+            };
+
+    private static FormDomainChoice[] NormalizeDomainChoices(FormDomainChoice[] choices)
+    {
+        if (choices.Length == 0)
+        {
+            return choices;
+        }
+
+        var normalized = new FormDomainChoice[choices.Length];
+        for (var i = 0; i < choices.Length; i++)
+        {
+            var choice = choices[i];
+            normalized[i] = new FormDomainChoice
+            {
+                Code = NormalizeRequiredJson(choice.Code),
+                Label = choice.Label
+            };
+        }
+
+        return normalized;
+    }
+
+    private static FormValidationRule[] NormalizeValidation(FormValidationRule[] rules)
+    {
+        if (rules.Length == 0)
+        {
+            return rules;
+        }
+
+        var normalized = new FormValidationRule[rules.Length];
+        for (var i = 0; i < rules.Length; i++)
+        {
+            var rule = rules[i];
+            normalized[i] = new FormValidationRule
+            {
+                RuleId = rule.RuleId,
+                Type = rule.Type,
+                Message = rule.Message,
+                Parameters = NormalizeOptionalJson(rule.Parameters)
+            };
+        }
+
+        return normalized;
+    }
+
+    private static FormConditionalRule? NormalizeVisibility(FormConditionalRule? visibility)
+        => visibility is null
+            ? null
+            : new FormConditionalRule
+            {
+                DependsOnFieldId = visibility.DependsOnFieldId,
+                Operator = visibility.Operator,
+                Value = NormalizeOptionalJson(visibility.Value)
+            };
+
+    private static JsonElement? NormalizeOptionalJson(JsonElement? value)
+        => value is { ValueKind: JsonValueKind.Undefined } ? null : value;
+
+    private static JsonElement NormalizeRequiredJson(JsonElement value)
+        => value.ValueKind == JsonValueKind.Undefined ? JsonNull() : value;
+
+    private static JsonElement JsonNull()
+    {
+        using var document = JsonDocument.Parse("null");
+        return document.RootElement.Clone();
+    }
 
     private static string SerializePackage(FormPackageDocument package)
         => JsonSerializer.Serialize(package, FormPackageJsonContext.Default.FormPackageDocument);
