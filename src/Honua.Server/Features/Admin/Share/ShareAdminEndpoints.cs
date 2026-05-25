@@ -12,6 +12,7 @@ using Honua.Server.Features.Infrastructure.ControlPlane;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Admin.Share;
 
@@ -367,10 +368,15 @@ internal static class ShareAdminEndpoints
         [FromServices] IShareExportStore store,
         [FromServices] IShareExportDestinationResolver destinationResolver,
         [FromServices] TimeProvider timeProvider,
-        [FromServices] ILogger<ShareAdminEndpointsLog> logger,
-        [FromServices] IExecutionJobStore? jobStore = null,
-        [FromServices] IJobQueue? jobQueue = null)
+        [FromServices] ILogger<ShareAdminEndpointsLog> logger)
     {
+        // The durable job runner is optional: only a Supported trigger needs it, and the
+        // definition read plus unsupported/not-configured paths do not. Resolve both pieces from
+        // the request scope instead of as injected handler parameters so this handler stays within
+        // the endpoint dependency-injection limit (DependencyInjectionLimitsTests).
+        var jobStore = context.RequestServices.GetService<IExecutionJobStore>();
+        var jobQueue = context.RequestServices.GetService<IJobQueue>();
+
         try
         {
             var definition = await store.GetDefinitionAsync(exportId, context.RequestAborted).ConfigureAwait(false);

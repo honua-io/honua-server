@@ -18,6 +18,10 @@ All routes require admin authorization. Responses are camelCase JSON DTOs with
 null fields omitted, except `jobRunId` on export-run responses is always
 present so Console can distinguish "not linked" from "field missing".
 
+Create returns `201 Created` with a `Location` header pointing at the new
+definition. Trigger returns `202 Accepted`, delete returns `204 No Content`, and
+the remaining reads, updates, and pause/resume calls return `200 OK`.
+
 | Method | Route | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/v1/admin/share/exports` | List scheduled Share export definitions. |
@@ -118,7 +122,9 @@ resolved on create/update and refreshed when a manual trigger is attempted.
 `destinationConfig` must be display-safe. Raw secret-shaped keys are rejected
 unless they are reference keys. For example, `password`, `token`, `privateKey`,
 `apiKey`, and `accessKey` are rejected unless represented as `secretRef`,
-`credentialRef`, or another key ending in `Ref` or `Reference`.
+`credentialRef`, or another key ending in `Ref` or `Reference`. As a read-side
+safeguard, any stored config key that still looks like raw secret material has
+its value returned as `redacted` rather than the stored value.
 
 ## Listing And Cursors
 
@@ -223,11 +229,14 @@ Traffic query parameters:
 | `bucketMinutes` | series | Optional positive integer. Defaults to `60`. |
 | `resourceId` | per-item routes | Optional stable Console resource/content id used with the path `serviceName` and `layerId`. |
 
-All periods are normalized to UTC. Traffic reads currently share the same
-bucket guard: `(periodEnd - periodStart) / bucketMinutes` must not exceed
-`2000`. Summary routes use the default 60-minute guard and do not accept
-`bucketMinutes`; narrow the summary period for wider windows. Series clients
-can increase `bucketMinutes` when they need a longer period.
+All periods are normalized to UTC. Traffic reads share a bucket guard on the
+number of buckets a series would emit: `ceil((periodEnd - periodStart) /
+bucketMinutes)` must not exceed `2000`. The ceiling matches the buckets the
+series actually returns, so a window of exactly 2,000 buckets is allowed but a
+partial bucket past that is rejected with `400`. Summary routes use the default
+60-minute guard and do not accept `bucketMinutes`; narrow the summary period for
+wider windows. Series clients can increase `bucketMinutes` when they need a
+longer period.
 
 Aggregate summary example:
 
