@@ -1,10 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text.Json;
 using Honua.Core.Features.Studio;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
+using Honua.Core.Features.Studio.Services;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -250,12 +253,83 @@ public sealed class StudioPackageLifecycleServiceTests
             f.Limitations.Contains("family-specific deep validation is deferred; envelope validation is active"));
     }
 
-    private static ServiceProvider BuildServiceProvider()
+    [UnitTest]
+    public async Task ReadAndDeleteLifecycleActivities_CoverStoreWork()
+    {
+        var store = new BlockingStudioPackageStore();
+        var service = BuildServiceProvider(store).GetRequiredService<IStudioPackageLifecycleService>();
+        var draftId = Guid.NewGuid();
+        var itemId = Guid.NewGuid();
+        var versionId = Guid.NewGuid();
+        var stoppedActivities = new ConcurrentQueue<string>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == StudioPackageLifecycleService.ActivitySourceName,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = activity => stoppedActivities.Enqueue(activity.OperationName),
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        _ = await AssertActivityCoversBlockedStoreCallAsync(
+            store,
+            stoppedActivities,
+            nameof(IStudioPackageStore.GetDraftAsync),
+            "studio.package.draft.get",
+            () => service.GetDraftAsync(draftId));
+        _ = await AssertActivityCoversBlockedStoreCallAsync(
+            store,
+            stoppedActivities,
+            nameof(IStudioPackageStore.DeleteDraftAsync),
+            "studio.package.draft.delete",
+            () => service.DeleteDraftAsync(draftId));
+        _ = await AssertActivityCoversBlockedStoreCallAsync(
+            store,
+            stoppedActivities,
+            nameof(IStudioPackageStore.ListVersionsAsync),
+            "studio.package.version.list",
+            () => service.ListVersionsAsync(itemId));
+        _ = await AssertActivityCoversBlockedStoreCallAsync(
+            store,
+            stoppedActivities,
+            nameof(IStudioPackageStore.GetVersionAsync),
+            "studio.package.version.get",
+            () => service.GetVersionAsync(itemId, versionId));
+    }
+
+    private static ServiceProvider BuildServiceProvider(IStudioPackageStore? store = null)
     {
         var services = new ServiceCollection();
+        if (store is not null)
+        {
+            services.AddSingleton(store);
+        }
+
         services.AddStudioPackageLifecycle();
         return services.BuildServiceProvider();
     }
+
+    private static async Task<T> AssertActivityCoversBlockedStoreCallAsync<T>(
+        BlockingStudioPackageStore store,
+        ConcurrentQueue<string> stoppedActivities,
+        string storeOperation,
+        string activityName,
+        Func<Task<T>> action)
+    {
+        var stoppedBefore = CountStopped(stoppedActivities, activityName);
+        store.BlockNext(storeOperation);
+        var operation = action();
+
+        await store.WaitForBlockedAsync().ConfigureAwait(false);
+        Assert.Equal(stoppedBefore, CountStopped(stoppedActivities, activityName));
+
+        store.ReleaseBlocked();
+        var result = await operation.ConfigureAwait(false);
+        Assert.True(CountStopped(stoppedActivities, activityName) > stoppedBefore);
+        return result;
+    }
+
+    private static int CountStopped(ConcurrentQueue<string> stoppedActivities, string activityName)
+        => stoppedActivities.Count(name => string.Equals(name, activityName, StringComparison.Ordinal));
 
     private static StudioPackageEnvelope BuildEnvelope(string where, string dependencyRef)
         => BuildEnvelope(
@@ -307,5 +381,117 @@ public sealed class StudioPackageLifecycleServiceTests
             PublicationIntent = new StudioPublicationIntent { Route = "/studio/parcels", Visibility = "organization" },
             Body = body.RootElement.Clone(),
         };
+    }
+
+    private sealed class BlockingStudioPackageStore : IStudioPackageStore
+    {
+        private readonly object _gate = new();
+        private string? _blockedOperation;
+        private TaskCompletionSource<bool> _blocked = CreateCompletionSource();
+        private TaskCompletionSource<bool> _release = CreateCompletionSource();
+
+        public StudioPackagePersistenceMode PersistenceMode => StudioPackagePersistenceMode.InMemory;
+
+        public void BlockNext(string operation)
+        {
+            lock (_gate)
+            {
+                _blockedOperation = operation;
+                _blocked = CreateCompletionSource();
+                _release = CreateCompletionSource();
+            }
+        }
+
+        public Task<bool> WaitForBlockedAsync()
+            => _blocked.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        public void ReleaseBlocked()
+            => _release.TrySetResult(true);
+
+        public Task<StudioPackageDraft> CreateDraftAsync(
+            StudioPackageDraft draft,
+            CancellationToken cancellationToken = default)
+            => Task.FromException<StudioPackageDraft>(new NotSupportedException());
+
+        public async Task<StudioPackageDraft?> GetDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
+        {
+            await MaybeBlockAsync(nameof(GetDraftAsync)).ConfigureAwait(false);
+            return null;
+        }
+
+        public Task<StudioPackageDraft?> UpdateDraftAsync(
+            StudioPackageDraft draft,
+            CancellationToken cancellationToken = default)
+            => Task.FromException<StudioPackageDraft?>(new NotSupportedException());
+
+        public async Task<bool> DeleteDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
+        {
+            await MaybeBlockAsync(nameof(DeleteDraftAsync)).ConfigureAwait(false);
+            return true;
+        }
+
+        public Task<StudioContentVersion> CreateVersionAsync(
+            StudioPackageDraft draft,
+            string? changeNote,
+            string? actorId,
+            CancellationToken cancellationToken = default)
+            => Task.FromException<StudioContentVersion>(new NotSupportedException());
+
+        public async Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(
+            Guid itemId,
+            CancellationToken cancellationToken = default)
+        {
+            await MaybeBlockAsync(nameof(ListVersionsAsync)).ConfigureAwait(false);
+            return [];
+        }
+
+        public async Task<StudioContentVersion?> GetVersionAsync(
+            Guid itemId,
+            Guid versionId,
+            CancellationToken cancellationToken = default)
+        {
+            await MaybeBlockAsync(nameof(GetVersionAsync)).ConfigureAwait(false);
+            return null;
+        }
+
+        public Task<StudioContentItemPointers?> GetPointersAsync(Guid itemId, CancellationToken cancellationToken = default)
+            => Task.FromException<StudioContentItemPointers?>(new NotSupportedException());
+
+        public Task<StudioPublicationRequest> CreatePublicationRequestAsync(
+            StudioPublicationRequest request,
+            CancellationToken cancellationToken = default)
+            => Task.FromException<StudioPublicationRequest>(new NotSupportedException());
+
+        public Task<StudioRollbackRequest> RollbackAsync(
+            Guid itemId,
+            Guid targetVersionId,
+            StudioRollbackPointer target,
+            string? actorId,
+            string? reason,
+            CancellationToken cancellationToken = default)
+            => Task.FromException<StudioRollbackRequest>(new NotSupportedException());
+
+        private static TaskCompletionSource<bool> CreateCompletionSource()
+            => new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        private async Task MaybeBlockAsync(string operation)
+        {
+            TaskCompletionSource<bool>? blocked;
+            TaskCompletionSource<bool>? release;
+            lock (_gate)
+            {
+                if (!string.Equals(_blockedOperation, operation, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                _blockedOperation = null;
+                blocked = _blocked;
+                release = _release;
+            }
+
+            blocked.TrySetResult(true);
+            await release.Task.ConfigureAwait(false);
+        }
     }
 }

@@ -87,11 +87,11 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
     }
 
     /// <inheritdoc />
-    public Task<StudioPackageDraft?> GetDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
+    public async Task<StudioPackageDraft?> GetDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
     {
         using var activity = ActivitySource.StartActivity("studio.package.draft.get");
         activity?.SetTag("studio.draft.id", draftId.ToString("D"));
-        return _store.GetDraftAsync(draftId, cancellationToken);
+        return await _store.GetDraftAsync(draftId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -132,11 +132,11 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
     }
 
     /// <inheritdoc />
-    public Task<bool> DeleteDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
+    public async Task<bool> DeleteDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
     {
         using var activity = ActivitySource.StartActivity("studio.package.draft.delete");
         activity?.SetTag("studio.draft.id", draftId.ToString("D"));
-        return _store.DeleteDraftAsync(draftId, cancellationToken);
+        return await _store.DeleteDraftAsync(draftId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -234,17 +234,17 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
     }
 
     /// <inheritdoc />
-    public Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(
+    public async Task<IReadOnlyList<StudioContentVersion>> ListVersionsAsync(
         Guid itemId,
         CancellationToken cancellationToken = default)
     {
         using var activity = ActivitySource.StartActivity("studio.package.version.list");
         activity?.SetTag("studio.item.id", itemId.ToString("D"));
-        return _store.ListVersionsAsync(itemId, cancellationToken);
+        return await _store.ListVersionsAsync(itemId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
-    public Task<StudioContentVersion?> GetVersionAsync(
+    public async Task<StudioContentVersion?> GetVersionAsync(
         Guid itemId,
         Guid versionId,
         CancellationToken cancellationToken = default)
@@ -252,7 +252,7 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         using var activity = ActivitySource.StartActivity("studio.package.version.get");
         activity?.SetTag("studio.item.id", itemId.ToString("D"));
         activity?.SetTag("studio.version.id", versionId.ToString("D"));
-        return _store.GetVersionAsync(itemId, versionId, cancellationToken);
+        return await _store.GetVersionAsync(itemId, versionId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
