@@ -453,22 +453,45 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
     private static bool JsonEqualDependencies(
         IReadOnlyList<StudioPackageDependency> left,
         IReadOnlyList<StudioPackageDependency> right)
-        => string.Equals(
-            JsonSerializer.Serialize(left.ToArray(), StudioJsonContext.Default.StudioPackageDependencyArray),
-            JsonSerializer.Serialize(right.ToArray(), StudioJsonContext.Default.StudioPackageDependencyArray),
-            StringComparison.Ordinal);
+        => JsonMultisetEqual(
+            left,
+            right,
+            static dependency => JsonSerializer.Serialize(dependency, StudioJsonContext.Default.StudioPackageDependency));
 
     private static bool JsonEqualProvenance(
         IReadOnlyList<StudioProvenanceRef> left,
         IReadOnlyList<StudioProvenanceRef> right)
-        => string.Equals(
-            JsonSerializer.Serialize(left.ToArray(), StudioJsonContext.Default.StudioProvenanceRefArray),
-            JsonSerializer.Serialize(right.ToArray(), StudioJsonContext.Default.StudioProvenanceRefArray),
-            StringComparison.Ordinal);
+        => JsonMultisetEqual(
+            left,
+            right,
+            static provenance => JsonSerializer.Serialize(provenance, StudioJsonContext.Default.StudioProvenanceRef));
 
     private static bool JsonEqualValidation(StudioValidationSummary left, StudioValidationSummary right)
         => string.Equals(
             JsonSerializer.Serialize(left, StudioJsonContext.Default.StudioValidationSummary),
             JsonSerializer.Serialize(right, StudioJsonContext.Default.StudioValidationSummary),
             StringComparison.Ordinal);
+
+    private static bool JsonMultisetEqual<T>(
+        IReadOnlyList<T> left,
+        IReadOnlyList<T> right,
+        Func<T, string> serialize)
+    {
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        var leftValues = new string[left.Count];
+        var rightValues = new string[right.Count];
+        for (var i = 0; i < left.Count; i++)
+        {
+            leftValues[i] = serialize(left[i]);
+            rightValues[i] = serialize(right[i]);
+        }
+
+        Array.Sort(leftValues, StringComparer.Ordinal);
+        Array.Sort(rightValues, StringComparer.Ordinal);
+        return leftValues.SequenceEqual(rightValues, StringComparer.Ordinal);
+    }
 }

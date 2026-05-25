@@ -121,6 +121,141 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task PackageStore_UpdateDraftWithStaleGeneration_RejectsConflict()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresStudioPackageStore(provider, schema);
+            var created = await store.CreateDraftAsync(BuildDraft("1=1", "stale-query"));
+            var updated = await store.UpdateDraftAsync(created with
+            {
+                Envelope = BuildEnvelope("POPULATION > 1000"),
+                Generation = created.Generation,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            });
+            updated.Should().NotBeNull();
+
+            var stale = created with
+            {
+                Envelope = BuildEnvelope("POPULATION > 5000"),
+                Generation = created.Generation,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            };
+
+            var act = async () => await store.UpdateDraftAsync(stale);
+
+            await act.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("Stale draft generation; refresh and retry.");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task PackageStore_CreateVersionWithDifferentDraftItem_RejectsOwnershipMismatch()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresStudioPackageStore(provider, schema);
+            var created = await store.CreateDraftAsync(BuildDraft("1=1", "owned-draft-query"));
+            var tampered = created with { ItemId = Guid.NewGuid() };
+
+            var act = async () => await store.CreateVersionAsync(tampered, "tampered save", "tester");
+
+            await act.Should().ThrowAsync<KeyNotFoundException>()
+                .WithMessage("Studio package draft was not found.");
+            var wrongItemVersions = await store.ListVersionsAsync(tampered.ItemId);
+            wrongItemVersions.Should().BeEmpty();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task PackageStore_PublicationRequestWithForeignVersion_RejectsOwnershipMismatch()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresStudioPackageStore(provider, schema);
+            var first = await store.CreateDraftAsync(BuildDraft("1=1", "first-publish-query"));
+            var second = await store.CreateDraftAsync(BuildDraft("1=1", "second-publish-query"));
+            var firstVersion = await store.CreateVersionAsync(first, "first save", "tester");
+            var secondVersion = await store.CreateVersionAsync(second, "second save", "tester");
+
+            var act = async () => await store.CreatePublicationRequestAsync(new StudioPublicationRequest
+            {
+                RequestId = Guid.NewGuid(),
+                ItemId = firstVersion.ItemId,
+                VersionId = secondVersion.VersionId,
+                Intent = secondVersion.Envelope.PublicationIntent,
+                Status = StudioPublicationRequestStatus.Accepted,
+                Validation = secondVersion.Validation,
+                RequestedBy = "tester",
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
+
+            await act.Should().ThrowAsync<KeyNotFoundException>()
+                .WithMessage("Studio content version was not found.");
+            var firstPointers = await store.GetPointersAsync(firstVersion.ItemId);
+            firstPointers.Should().NotBeNull();
+            firstPointers!.PublishedVersionId.Should().BeNull();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task PackageStore_PendingPublicationRequest_DoesNotMovePublishedPointer()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresStudioPackageStore(provider, schema);
+            var draft = await store.CreateDraftAsync(BuildDraft("1=1", "pending-publish-query"));
+            var version = await store.CreateVersionAsync(draft, "first save", "tester");
+
+            var request = await store.CreatePublicationRequestAsync(new StudioPublicationRequest
+            {
+                RequestId = Guid.NewGuid(),
+                ItemId = version.ItemId,
+                VersionId = version.VersionId,
+                Intent = version.Envelope.PublicationIntent,
+                Status = StudioPublicationRequestStatus.Pending,
+                Validation = version.Validation,
+                RequestedBy = "tester",
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
+
+            request.Status.Should().Be(StudioPublicationRequestStatus.Pending);
+            var pointers = await store.GetPointersAsync(version.ItemId);
+            pointers.Should().NotBeNull();
+            pointers!.CurrentVersionId.Should().Be(version.VersionId);
+            pointers.PublishedVersionId.Should().BeNull();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task PackageStore_ConcurrentVersionCreates_SerializesVersionNumbers()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));

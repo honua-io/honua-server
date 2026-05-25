@@ -175,6 +175,64 @@ public sealed class StudioPackageLifecycleServiceTests
     }
 
     [UnitTest]
+    public async Task CompareVersions_WithReorderedDependenciesAndProvenance_DoesNotReportSetChanges()
+    {
+        var service = BuildServiceProvider().GetRequiredService<IStudioPackageLifecycleService>();
+        var draft = await service.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = "parcels-query",
+            WorkspaceId = "studio",
+            Envelope = BuildEnvelope(
+                "1=1",
+                [
+                    new StudioPackageDependency { Kind = "content-item", Ref = "content.parcels", VersionId = "v1" },
+                    new StudioPackageDependency { Kind = "content-item", Ref = "content.zoning", VersionId = "v3" },
+                ],
+                [
+                    new StudioProvenanceRef { Kind = "prompt", Ref = "prompt-1", Rel = "generated-by" },
+                    new StudioProvenanceRef { Kind = "tool", Ref = "builder", Rel = "assisted-by", ActorId = "tester" },
+                ]),
+            ActorId = "tester",
+        });
+        var first = await service.SaveDraftAsVersionAsync(draft.DraftId, "first save", "tester");
+        Assert.NotNull(first);
+
+        var currentDraft = await service.GetDraftAsync(draft.DraftId);
+        Assert.NotNull(currentDraft);
+        var updated = await service.UpdateDraftAsync(
+            draft.DraftId,
+            new UpdateStudioPackageDraftCommand
+            {
+                PackageKey = draft.PackageKey,
+                WorkspaceId = draft.WorkspaceId,
+                OwnerId = draft.OwnerId,
+                Envelope = BuildEnvelope(
+                    "1=1",
+                    [
+                        new StudioPackageDependency { Kind = "content-item", Ref = "content.zoning", VersionId = "v3" },
+                        new StudioPackageDependency { Kind = "content-item", Ref = "content.parcels", VersionId = "v1" },
+                    ],
+                    [
+                        new StudioProvenanceRef { Kind = "tool", Ref = "builder", Rel = "assisted-by", ActorId = "tester" },
+                        new StudioProvenanceRef { Kind = "prompt", Ref = "prompt-1", Rel = "generated-by" },
+                    ]),
+                Generation = currentDraft!.Generation,
+                ActorId = "tester",
+            });
+        Assert.NotNull(updated);
+        var second = await service.SaveDraftAsVersionAsync(draft.DraftId, "reordered refs", "tester");
+        Assert.NotNull(second);
+
+        var comparison = await service.CompareVersionsAsync(draft.ItemId, first!.VersionId, second!.VersionId);
+
+        Assert.NotNull(comparison);
+        Assert.True(comparison!.DependenciesEqual);
+        Assert.True(comparison.ProvenanceEqual);
+        Assert.DoesNotContain("dependencies", comparison.Changes);
+        Assert.DoesNotContain("provenance", comparison.Changes);
+    }
+
+    [UnitTest]
     public void PackageFamilyCapabilities_AdvertisesAllFamiliesAndLifecycleOperations()
     {
         var service = BuildServiceProvider().GetRequiredService<IStudioPackageLifecycleService>();
@@ -200,6 +258,31 @@ public sealed class StudioPackageLifecycleServiceTests
     }
 
     private static StudioPackageEnvelope BuildEnvelope(string where, string dependencyRef)
+        => BuildEnvelope(
+            where,
+            [
+                new StudioPackageDependency
+                {
+                    Kind = "content-item",
+                    Ref = dependencyRef,
+                    VersionId = "v1",
+                },
+            ],
+            [
+                new StudioProvenanceRef
+                {
+                    Kind = "prompt",
+                    Ref = "prompt-1",
+                    Rel = "generated-by",
+                },
+            ],
+            dependencyRef);
+
+    private static StudioPackageEnvelope BuildEnvelope(
+        string where,
+        IReadOnlyList<StudioPackageDependency> dependencies,
+        IReadOnlyList<StudioProvenanceRef> provenance,
+        string bindingRef = "content.parcels")
     {
         using var body = JsonDocument.Parse($$"""{"where":"{{where}}"}""");
         return new StudioPackageEnvelope
@@ -213,30 +296,14 @@ public sealed class StudioPackageLifecycleServiceTests
                 {
                     Key = "source",
                     Kind = "content",
-                    Ref = dependencyRef,
+                    Ref = bindingRef,
                     Crs = "EPSG:4326",
                     Srid = 4326,
                     RequiredPermissions = ["metadata.read"],
                 },
             ],
-            Dependencies =
-            [
-                new StudioPackageDependency
-                {
-                    Kind = "content-item",
-                    Ref = dependencyRef,
-                    VersionId = "v1",
-                },
-            ],
-            Provenance =
-            [
-                new StudioProvenanceRef
-                {
-                    Kind = "prompt",
-                    Ref = "prompt-1",
-                    Rel = "generated-by",
-                },
-            ],
+            Dependencies = dependencies,
+            Provenance = provenance,
             PublicationIntent = new StudioPublicationIntent { Route = "/studio/parcels", Visibility = "organization" },
             Body = body.RootElement.Clone(),
         };

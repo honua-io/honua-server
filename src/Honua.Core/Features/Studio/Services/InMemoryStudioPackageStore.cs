@@ -197,6 +197,11 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
 
         lock (_gate)
         {
+            if (!StudioPackageEnumHelpers.IsDefined(request.Status))
+            {
+                throw new ArgumentException("Publication request status is not supported.", nameof(request));
+            }
+
             var version = GetVersions(request.ItemId).FirstOrDefault(v => v.VersionId == request.VersionId);
             if (version is null)
             {
@@ -204,7 +209,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             }
 
             _publicationRequests.Add(request.RequestId, request);
-            if (request.Status == StudioPublicationRequestStatus.Rejected)
+            if (request.Status != StudioPublicationRequestStatus.Accepted)
             {
                 return Task.FromResult(request);
             }
@@ -239,6 +244,11 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
 
         lock (_gate)
         {
+            if (!StudioPackageEnumHelpers.IsDefined(target))
+            {
+                throw new ArgumentException("Rollback pointer is not supported.", nameof(target));
+            }
+
             var version = GetVersions(itemId).FirstOrDefault(v => v.VersionId == targetVersionId);
             if (version is null || !_items.TryGetValue(itemId, out var item))
             {

@@ -159,8 +159,11 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 updated_by = @updated_by,
                 updated_at = @updated_at
             WHERE draft_id = @draft_id
+              AND item_id = @item_id
               AND generation = @generation
-            RETURNING generation
+            RETURNING draft_id, item_id, package_key, workspace_id, owner_id, family,
+                      envelope, validation, base_version_id, generation,
+                      created_by, updated_by, created_at, updated_at
             """;
 
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -170,6 +173,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         {
             await using var command = new NpgsqlCommand(sql, lease.Connection, transaction);
             command.Parameters.AddWithValue("@draft_id", draft.DraftId);
+            command.Parameters.AddWithValue("@item_id", draft.ItemId);
             command.Parameters.AddWithValue("@package_key", draft.PackageKey);
             command.Parameters.AddWithValue("@workspace_id", (object?)draft.WorkspaceId ?? DBNull.Value);
             command.Parameters.AddWithValue("@owner_id", (object?)draft.OwnerId ?? DBNull.Value);
@@ -180,37 +184,54 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             command.Parameters.AddWithValue("@updated_at", draft.UpdatedAt);
             command.Parameters.AddWithValue("@generation", draft.Generation);
 
-            var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-            if (result is null)
+            StudioPackageDraft updated;
+            await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
             {
-                var exists = await DraftExistsAsync(lease.Connection, transaction, draft.DraftId, cancellationToken).ConfigureAwait(false);
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                if (exists)
+                if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
+                    await reader.DisposeAsync().ConfigureAwait(false);
+                    var state = await GetDraftStateAsync(
+                        lease.Connection,
+                        transaction,
+                        draft.DraftId,
+                        lockRow: false,
+                        cancellationToken).ConfigureAwait(false);
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    committed = true;
+                    if (state is null)
+                    {
+                        return null;
+                    }
+
+                    if (state.Value.ItemId != draft.ItemId)
+                    {
+                        throw new KeyNotFoundException("Studio package draft was not found.");
+                    }
+
                     throw new InvalidOperationException("Stale draft generation; refresh and retry.");
                 }
 
-                return null;
+                updated = ReadDraft(reader);
             }
 
             await UpsertItemAsync(
                 lease.Connection,
                 transaction,
-                draft.ItemId,
-                draft.PackageKey,
-                draft.WorkspaceId,
-                draft.Family,
+                updated.ItemId,
+                updated.PackageKey,
+                updated.WorkspaceId,
+                updated.Family,
                 currentVersionId: null,
                 publishedVersionId: null,
-                draft.CreatedBy,
-                draft.UpdatedBy,
-                draft.CreatedAt,
-                draft.UpdatedAt,
+                updated.CreatedBy,
+                updated.UpdatedBy,
+                updated.CreatedAt,
+                updated.UpdatedAt,
                 cancellationToken).ConfigureAwait(false);
 
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             committed = true;
-            return await GetDraftAsync(draft.DraftId, cancellationToken).ConfigureAwait(false);
+            return updated;
         }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
@@ -265,9 +286,25 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         var committed = false;
         try
         {
-            if (!await DraftExistsAsync(connection, transaction, draft.DraftId, cancellationToken).ConfigureAwait(false))
+            var draftState = await GetDraftStateAsync(
+                connection,
+                transaction,
+                draft.DraftId,
+                lockRow: true,
+                cancellationToken).ConfigureAwait(false);
+            if (draftState is null)
             {
                 throw new KeyNotFoundException("Studio package draft was not found.");
+            }
+
+            if (draftState.Value.ItemId != draft.ItemId)
+            {
+                throw new KeyNotFoundException("Studio package draft was not found.");
+            }
+
+            if (draftState.Value.Generation != draft.Generation)
+            {
+                throw new InvalidOperationException("Stale draft generation; refresh and retry.");
             }
 
             await UpsertItemAsync(
@@ -407,12 +444,18 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             ? null
             : JsonSerializer.Serialize(request.Intent, StudioJsonContext.Default.StudioPublicationIntent);
         var validationJson = SerializeValidation(request.Validation);
+        var status = ToDbPublicationStatus(request.Status);
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         var connection = lease.Connection;
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
         var committed = false;
         try
         {
+            if (!await VersionExistsAsync(connection, transaction, request.ItemId, request.VersionId, cancellationToken).ConfigureAwait(false))
+            {
+                throw new KeyNotFoundException("Studio content version was not found.");
+            }
+
             var insertSql = $"""
                 INSERT INTO {_publicationRequestsTable}
                     (request_id, item_id, version_id, intent, status, validation,
@@ -427,7 +470,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 command.Parameters.AddWithValue("@item_id", request.ItemId);
                 command.Parameters.AddWithValue("@version_id", request.VersionId);
                 command.Parameters.Add(new NpgsqlParameter("@intent", NpgsqlDbType.Jsonb) { Value = (object?)intentJson ?? DBNull.Value });
-                command.Parameters.AddWithValue("@status", ToDbPublicationStatus(request.Status));
+                command.Parameters.AddWithValue("@status", status);
                 command.Parameters.Add(new NpgsqlParameter("@validation", NpgsqlDbType.Jsonb) { Value = validationJson });
                 command.Parameters.AddWithValue("@warning_acknowledgement", (object?)request.WarningAcknowledgement ?? DBNull.Value);
                 command.Parameters.AddWithValue("@requested_by", (object?)request.RequestedBy ?? DBNull.Value);
@@ -435,7 +478,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            if (request.Status != StudioPublicationRequestStatus.Rejected)
+            if (request.Status == StudioPublicationRequestStatus.Accepted)
             {
                 await UpdatePointersAsync(
                     connection,
@@ -472,6 +515,12 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         string? reason,
         CancellationToken cancellationToken = default)
     {
+        if (!StudioPackageEnumHelpers.IsDefined(target))
+        {
+            throw new ArgumentException("Rollback pointer is not supported.", nameof(target));
+        }
+
+        var rollbackPointer = ToDbRollbackPointer(target);
         var now = DateTimeOffset.UtcNow;
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         var connection = lease.Connection;
@@ -525,7 +574,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 command.Parameters.AddWithValue("@request_id", request.RequestId);
                 command.Parameters.AddWithValue("@item_id", itemId);
                 command.Parameters.AddWithValue("@target_version_id", targetVersionId);
-                command.Parameters.AddWithValue("@pointer", ToDbRollbackPointer(target));
+                command.Parameters.AddWithValue("@pointer", rollbackPointer);
                 command.Parameters.AddWithValue("@current_version_id", (object?)pointers.CurrentVersionId ?? DBNull.Value);
                 command.Parameters.AddWithValue("@published_version_id", (object?)pointers.PublishedVersionId ?? DBNull.Value);
                 command.Parameters.AddWithValue("@requested_by", (object?)actorId ?? DBNull.Value);
@@ -674,16 +723,26 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         }
     }
 
-    private async Task<bool> DraftExistsAsync(
+    private async Task<(Guid ItemId, long Generation)?> GetDraftStateAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid draftId,
+        bool lockRow,
         CancellationToken cancellationToken)
     {
-        var sql = $"SELECT 1 FROM {_draftsTable} WHERE draft_id = @draft_id";
+        var lockClause = lockRow ? " FOR UPDATE" : string.Empty;
+        var sql = $"""
+            SELECT item_id, generation
+            FROM {_draftsTable}
+            WHERE draft_id = @draft_id
+            {lockClause}
+            """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@draft_id", draftId);
-        return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            ? (reader.GetGuid(0), reader.GetInt64(1))
+            : null;
     }
 
     private async Task<bool> VersionExistsAsync(

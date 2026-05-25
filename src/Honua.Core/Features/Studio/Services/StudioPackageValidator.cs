@@ -383,4 +383,10 @@ public static class StudioPackageEnumHelpers
         => target is StudioRollbackPointer.Current
             or StudioRollbackPointer.Published
             or StudioRollbackPointer.Both;
+
+    /// <summary>Returns true when the publication request status enum value is defined by the contract.</summary>
+    public static bool IsDefined(StudioPublicationRequestStatus status)
+        => status is StudioPublicationRequestStatus.Accepted
+            or StudioPublicationRequestStatus.Pending
+            or StudioPublicationRequestStatus.Rejected;
 }
