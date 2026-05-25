@@ -192,6 +192,23 @@ late is expensive, so it is fully scoped in Child Ticket A.
 - **Scheduling**: cron scheduler background service submits
   `ExtractTransformLoad` jobs to `IJobQueue` (same shape as
   `WorkflowSchedulerBackgroundService`).
+
+  > **Baseline status (geoetl-baseline branch).** On-demand triggering is
+  > built: `PipelineExecutionLauncher` is the single submission path behind the
+  > run and dry-run endpoints, stamping `RuntimeProfile=managed` and enqueuing
+  > on `IJobQueue` so the substrate's `JobExecutionService` claims and runs the
+  > job. **Cron scheduling is deliberately NOT built in the baseline** and is
+  > deferred to Child Ticket E. It is not a cheap substrate add: it requires a
+  > `schedule` (cron expression + time zone) field on `PipelineDefinition` plus
+  > a migration, a scheduled-list / durable-cursor / atomic fire-claim API on
+  > `IPipelineDefinitionStore` (and on both the in-memory and Postgres store
+  > implementations), and a distributed-safe background service mirroring the
+  > replay-protection and claim/cursor semantics of
+  > `WorkflowSchedulerBackgroundService` (~350 lines, multi-replica safe). That
+  > is a self-contained ticket, not a baseline slice — half-building it would
+  > ship an unsafe scheduler. The launcher and the durable `IJobQueue` path it
+  > already uses are exactly what a future scheduler tick will call, so Child
+  > Ticket E adds the scheduler on top without reshaping the submission path.
 - **Event triggers**: file-upload events and CDC events from `#316` enqueue
   the same job kind through the same queue.
 - **Execution worker**: Child Ticket E ships
