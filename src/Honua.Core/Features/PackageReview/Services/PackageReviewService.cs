@@ -220,11 +220,12 @@ internal sealed class PackageReviewService : IPackageReviewService
 
     private static string BuildEstimateSummary(PackageEstimate estimate)
     {
-        var parts = new List<string>(5);
+        var parts = new List<string>(6);
         if (estimate.RowCount.HasValue) parts.Add($"rows={estimate.RowCount.Value.ToString(CultureInfo.InvariantCulture)}");
         if (estimate.FeatureCount.HasValue) parts.Add($"features={estimate.FeatureCount.Value.ToString(CultureInfo.InvariantCulture)}");
         if (estimate.Bytes.HasValue) parts.Add($"bytes={estimate.Bytes.Value.ToString(CultureInfo.InvariantCulture)}");
         if (estimate.DurationMs.HasValue) parts.Add($"durationMs={estimate.DurationMs.Value.ToString("R", CultureInfo.InvariantCulture)}");
+        if (estimate.DurationSeconds.HasValue) parts.Add($"durationSeconds={estimate.DurationSeconds.Value.ToString("R", CultureInfo.InvariantCulture)}");
         if (estimate.CostWeight.HasValue) parts.Add($"costWeight={estimate.CostWeight.Value.ToString("R", CultureInfo.InvariantCulture)}");
         return string.Join(";", parts);
     }

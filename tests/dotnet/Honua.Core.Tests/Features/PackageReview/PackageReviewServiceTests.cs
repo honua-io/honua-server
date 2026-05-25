@@ -305,6 +305,27 @@ public sealed class PackageReviewServiceTests
     }
 
     [Fact]
+    public async Task ReviewAsync_WithExpensiveDurationSecondsOnly_IncludesDurationInEvidenceSummary()
+    {
+        // Only durationSeconds crosses the expensive threshold; the evidence
+        // summary must still report it instead of collapsing to an empty string.
+        var service = CreateService();
+        var request = new PackageReviewRequest
+        {
+            PackageFamily = PackageReviewFamilies.Etl,
+            Estimate = new PackageEstimate { DurationSeconds = 45 }
+        };
+
+        var response = await service.ReviewAsync(request, CreateContext());
+
+        response.Status.Should().Be(PackageReviewStatus.Warning);
+        var finding = response.Findings.Single(f => f.Code == "expensive_preview_estimate");
+        var summary = finding.Evidence.Single(e => e.Kind == "estimate").Actual;
+        summary.Should().NotBeNullOrEmpty();
+        summary.Should().Contain("durationSeconds=");
+    }
+
+    [Fact]
     public async Task ReviewAsync_WithExplicitlyNullRequirementsAndResourceRefs_ReturnsDeterministicResponse()
     {
         // Loosely typed clients can send "requirements": null and
