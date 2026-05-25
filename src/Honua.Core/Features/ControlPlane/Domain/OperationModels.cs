@@ -98,7 +98,13 @@ public enum ExecutionJobKind
     /// <summary>
     /// Scheduled Share export workload.
     /// </summary>
-    ShareExport
+    ShareExport,
+
+    /// <summary>
+    /// Temporal-history rollback applied as a forward corrective operation (honua-server#1166).
+    /// Appended at the end of the enum so existing job-store readers and serialized records remain stable.
+    /// </summary>
+    TemporalRollback
 }
 
 /// <summary>

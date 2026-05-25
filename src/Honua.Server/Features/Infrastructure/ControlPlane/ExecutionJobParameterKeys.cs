@@ -113,4 +113,19 @@ internal static class ExecutionJobParameterKeys
     /// a separate substrate.
     /// </summary>
     public const string GeoprocessingStepInputPrefix = "honua.geoprocessing.step.";
+
+    /// <summary>
+    /// Layer identifier targeted by a temporal-history rollback job.
+    /// </summary>
+    public const string TemporalRollbackLayerId = "honua.temporal.rollback.layer_id";
+
+    /// <summary>
+    /// Opaque target cursor a temporal-history rollback job restores.
+    /// </summary>
+    public const string TemporalRollbackToCursor = "honua.temporal.rollback.to_cursor";
+
+    /// <summary>
+    /// Operator-supplied reason recorded with a temporal-history rollback job.
+    /// </summary>
+    public const string TemporalRollbackReason = "honua.temporal.rollback.reason";
 }

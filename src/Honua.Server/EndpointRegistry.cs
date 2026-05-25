@@ -886,6 +886,15 @@ public static class EndpointRegistry
         new("GET", "/api/v1/analysis/jobs/{jobId}/logs"),
         new("GET", "/api/v1/analysis/jobs/{jobId}/failure"),
 
+        // Temporal data-history surface (#1166).
+        new("GET", "/api/v1/layers/{layerId}/history/capabilities"),
+        new("GET", "/api/v1/layers/{layerId}/history/checkpoints"),
+        new("GET", "/api/v1/layers/{layerId}/history/items"),
+        new("GET", "/api/v1/layers/{layerId}/history/diff"),
+        new("GET", "/api/v1/layers/{layerId}/history/items/{featureId}/timeline"),
+        new("GET", "/api/v1/layers/{layerId}/history/rollback-plan"),
+        new("POST", "/api/v1/layers/{layerId}/history/rollback"),
+
         // Analysis report HTTP surface (#801).
         new("GET", "/api/v1/analysis/reports/{jobId}"),
         new("GET", "/api/v1/analysis/reports/{jobId}/render"),

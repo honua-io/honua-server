@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Security.Domain;
+using Honua.Core.Features.TemporalHistory.Domain;
 
 namespace Honua.Core.Features.Catalog.Domain;
 
@@ -20,6 +21,13 @@ public sealed record CatalogMetadata
     /// Temporal metadata for time-aware layers.
     /// </summary>
     public LayerTimeInfo? TimeInfo { get; init; }
+
+    /// <summary>
+    /// Optional temporal-history source declaration that enables the data-history API (as-of,
+    /// checkpoints, diff, timeline, and rollback). Null for layers without temporal history. This is
+    /// distinct from <see cref="TimeInfo"/>, which only advertises interval-filter time queries.
+    /// </summary>
+    public TemporalSourceConfig? TemporalSource { get; init; }
 
     /// <summary>
     /// Protocols enabled for this service. When null, all protocols are enabled.

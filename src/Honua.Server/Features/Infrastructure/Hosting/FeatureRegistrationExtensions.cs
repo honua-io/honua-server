@@ -52,6 +52,7 @@ using Honua.Server.Features.Reporting;
 using Honua.Server.Features.Spec;
 using Honua.Server.Features.StaticMap;
 using Honua.Server.Features.Protocols.Ogc.Classic.Wfs20;
+using Honua.Server.Features.TemporalHistory;
 using Honua.Core.Features.Studio;
 
 namespace Honua.Server.Features.Infrastructure.Hosting;
@@ -112,6 +113,7 @@ internal static class FeatureRegistrationExtensions
         services.AddStudioPackageLifecycle();
         services.AddCompliance(configuration);
         services.AddOrchestration();
+        services.AddTemporalHistory();
         services.AddPMTilesProxy();
 
         return services;
@@ -176,6 +178,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapMcpOperatorSurface();
         endpoints.MapSpecGroundingEndpoints();
         endpoints.MapSpecEndpoints();
+        endpoints.MapTemporalHistoryEndpoints();
 
         return endpoints;
     }

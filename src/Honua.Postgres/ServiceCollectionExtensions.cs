@@ -32,6 +32,7 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Share.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Core.Features.TemporalHistory.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.Admin;
 using Honua.Postgres.Features.Alerts;
@@ -60,6 +61,7 @@ using Honua.Postgres.Features.Raster;
 using Honua.Postgres.Features.Security;
 using Honua.Postgres.Features.Share;
 using Honua.Postgres.Features.Studio;
+using Honua.Postgres.Features.TemporalHistory;
 using Honua.Postgres.Queries.Filters;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -137,6 +139,10 @@ internal static class ServiceCollectionExtensions
             new PostgresShareTrafficStore(
                 serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
+
+        // Temporal data-history source (#1166): as-of, diff, timeline, rollback over audit-log/temporal-table layers
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<ITemporalHistorySource, PostgresTemporalHistorySource>();
 
         // Register database performance metrics provider
         services.AddScoped<IDatabasePerformanceMetricsProvider, PostgresDatabasePerformanceMetricsProvider>();
