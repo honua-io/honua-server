@@ -160,7 +160,9 @@ internal sealed class InMemoryShareExportStore : IShareExportStore
             _definitions[run.ExportId] = definition with
             {
                 LastRunAt = lastRunAt,
-                UpdatedAt = run.TriggeredAt
+                UpdatedAt = definition.UpdatedAt > run.TriggeredAt
+                    ? definition.UpdatedAt
+                    : run.TriggeredAt
             };
 
             return Task.FromResult(run);

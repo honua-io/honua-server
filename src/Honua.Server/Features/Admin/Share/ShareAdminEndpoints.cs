@@ -605,6 +605,10 @@ internal static class ShareAdminEndpoints
                 MapSummary(summary),
                 ShareAdminJsonContext.Default.ShareTrafficSummaryResponse);
         }
+        catch (ShareTrafficStoreUnavailableException ex)
+        {
+            return Unavailable(context, ex.Message);
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             ShareAdminLog.EndpointFailed(logger, "share.traffic.summary", ex);
@@ -633,6 +637,10 @@ internal static class ShareAdminEndpoints
             return Results.Json(
                 MapSeries(series),
                 ShareAdminJsonContext.Default.ShareTrafficSeriesResponse);
+        }
+        catch (ShareTrafficStoreUnavailableException ex)
+        {
+            return Unavailable(context, ex.Message);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -1071,18 +1079,40 @@ internal static class ShareAdminEndpoints
     }
 
     private static bool IsSecretReferenceKey(string key)
-        => key.EndsWith("Ref", StringComparison.OrdinalIgnoreCase)
-            || key.EndsWith("Reference", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(key, "credentialRef", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(key, "secretRef", StringComparison.OrdinalIgnoreCase);
+    {
+        var normalized = NormalizeConfigKey(key);
+        return normalized.EndsWith("ref", StringComparison.Ordinal)
+            || normalized.EndsWith("reference", StringComparison.Ordinal);
+    }
 
     private static bool IsSecretMaterialKey(string key)
-        => key.Contains("password", StringComparison.OrdinalIgnoreCase)
-            || key.Contains("secret", StringComparison.OrdinalIgnoreCase)
-            || key.Contains("token", StringComparison.OrdinalIgnoreCase)
-            || key.Contains("privateKey", StringComparison.OrdinalIgnoreCase)
-            || key.Contains("accessKey", StringComparison.OrdinalIgnoreCase)
-            || key.Contains("apiKey", StringComparison.OrdinalIgnoreCase);
+    {
+        var normalized = NormalizeConfigKey(key);
+        return normalized.Contains("password", StringComparison.Ordinal)
+            || normalized.Contains("secret", StringComparison.Ordinal)
+            || normalized.Contains("token", StringComparison.Ordinal)
+            || normalized.Contains("privatekey", StringComparison.Ordinal)
+            || normalized.Contains("accesskey", StringComparison.Ordinal)
+            || normalized.Contains("apikey", StringComparison.Ordinal);
+    }
+
+    private static string NormalizeConfigKey(string key)
+    {
+        var normalized = new char[key.Length];
+        var length = 0;
+        foreach (var ch in key)
+        {
+            if (ch is '-' or '_' or '.' or ' ')
+            {
+                continue;
+            }
+
+            normalized[length] = char.ToLowerInvariant(ch);
+            length++;
+        }
+
+        return new string(normalized, 0, length);
+    }
 
     private static bool TryParseRequiredEnum<TEnum>(string? value, out TEnum parsed, out string error)
         where TEnum : struct, Enum

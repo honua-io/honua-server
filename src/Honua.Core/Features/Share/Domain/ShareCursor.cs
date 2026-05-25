@@ -14,6 +14,9 @@ namespace Honua.Core.Features.Share.Domain;
 /// </summary>
 public static class ShareCursor
 {
+    private const string LosslessPrefix = "v2";
+    private const char Separator = ':';
+
     /// <summary>
     /// Encodes a keyset position into an opaque, URL-safe cursor token.
     /// </summary>
@@ -23,7 +26,12 @@ public static class ShareCursor
     public static string Encode(DateTimeOffset timestamp, string id)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
-        var raw = $"{timestamp.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)}:{id}";
+        var raw = string.Concat(
+            LosslessPrefix,
+            Separator,
+            timestamp.ToUniversalTime().Ticks.ToString(CultureInfo.InvariantCulture),
+            Separator,
+            id);
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(raw));
     }
 
@@ -51,7 +59,12 @@ public static class ShareCursor
         }
 
         var raw = Encoding.UTF8.GetString(buffer, 0, written);
-        var separator = raw.IndexOf(':', StringComparison.Ordinal);
+        if (raw.StartsWith(string.Concat(LosslessPrefix, Separator), StringComparison.Ordinal))
+        {
+            return TryDecodeLossless(raw, out timestamp, out id);
+        }
+
+        var separator = raw.IndexOf(Separator);
         if (separator <= 0 || separator >= raw.Length - 1)
         {
             return false;
@@ -66,7 +79,49 @@ public static class ShareCursor
             return false;
         }
 
-        timestamp = DateTimeOffset.FromUnixTimeMilliseconds(unixMs);
+        try
+        {
+            timestamp = DateTimeOffset.FromUnixTimeMilliseconds(unixMs);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return false;
+        }
+
+        id = raw[(separator + 1)..];
+        return true;
+    }
+
+    private static bool TryDecodeLossless(string raw, out DateTimeOffset timestamp, out string id)
+    {
+        timestamp = default;
+        id = string.Empty;
+
+        var valueStart = LosslessPrefix.Length + 1;
+        var separator = raw.IndexOf(Separator, valueStart);
+        if (separator <= valueStart || separator >= raw.Length - 1)
+        {
+            return false;
+        }
+
+        if (!long.TryParse(
+                raw.AsSpan(valueStart, separator - valueStart),
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out var utcTicks))
+        {
+            return false;
+        }
+
+        try
+        {
+            timestamp = new DateTimeOffset(utcTicks, TimeSpan.Zero);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return false;
+        }
+
         id = raw[(separator + 1)..];
         return true;
     }

@@ -11,6 +11,7 @@ Build applications and integrations with Honua APIs and SDKs.
 - [Console Content and RBAC (Admin API)](../admin-api/console-content-and-rbac.md) — Honua Console metadata v2 session bootstrap, content CRUD/list/search, action-check, and provenance traversal under `/api/v1/console/**`
 - [Console Workflow Packages (Admin API)](../admin-api/console-workflow-packages.md) — Server-owned GP/ETL node registry, workflow package versioning, validation, dry-run, publication, runs, and provenance under `/api/v1/console/workflow-*`
 - [Console Job Observability (Admin API)](../admin-api/console-job-observability.md) — Durable job list/detail/log/artifact/action contract for Console job viewers under `/api/v1/admin/jobs/**`
+- [Share Export and Traffic API](share-export-traffic-api.md) — Scheduled Share export definitions, run history with Operate job links, and aggregate/per-item traffic projections under `/api/v1/admin/share/**`
 - [Operate Observability Fixtures (Admin API)](../admin-api/operate-observability-fixtures.md) — Development/Test seed profile for Console Testcontainers against a real server and PostgreSQL
 - [Studio Package Lifecycle API](../admin-api/studio-package-lifecycle.md) — shared package draft, immutable version, publish, reopen, compare, rollback, and SDK projection contract under `/api/v1/studio/**`
 - [Scene Dataset Registry (Admin API)](../admin-api/scene-dataset-registry.md) — Register, list, update, deactivate, and resolve hosted 3D scene datasets

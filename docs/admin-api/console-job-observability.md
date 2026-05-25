@@ -89,7 +89,7 @@ Supported query parameters:
 | Parameter | Notes |
 | --- | --- |
 | `status` | Comma-separated and repeatable list. Values: `Queued`, `Provisioning`, `Running`, `Succeeded`, `Failed`, `Cancelled`. Numeric enum tokens are rejected. |
-| `kind` | Single job kind. Values: `Geoprocessing`, `ExtractTransformLoad`, `TileCache`. |
+| `kind` | Single job kind. Values: `Geoprocessing`, `ExtractTransformLoad`, `TileCache`, `ShareExport`. |
 | `backend` | Backend identifier, compared case-insensitively. |
 | `queue` | Resolved queue/routing lane, compared case-insensitively. This matches the displayed `queue` value: `honua.job.queue` when present, otherwise the job `backend`. |
 | `actor` or `requestedBy` | Submitting actor filter. |
@@ -137,8 +137,15 @@ perform full log reads.
 | `actions[]` | Same action descriptors returned by `/actions`. |
 
 Selected metadata includes canonical job keys (`honua.job.*`,
-`honua.trace_id`) plus geoprocessing plan/process/output keys. It intentionally
-does not echo arbitrary job parameters.
+`honua.trace_id`), geoprocessing plan/process/output keys, and Share export
+keys (`honua.share.export_id`, `honua.share.run_id`,
+`honua.share.destination_type`, `honua.share.format`). It intentionally does
+not echo arbitrary job parameters.
+
+Share export trigger responses expose `jobRunId` as the backing
+`ExecutionJob.OperationId`; the corresponding Operate job is visible here with
+`kind = ShareExport`. See the [Share Export and Traffic API](../developer/share-export-traffic-api.md)
+for the export definition, run-history, and traffic contract.
 
 ## Logs
 

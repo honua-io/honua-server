@@ -3,6 +3,7 @@
 
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Share.Abstractions;
 using Honua.Core.Features.Share.Domain;
@@ -39,6 +40,7 @@ internal sealed class PostgresShareExportStore : IShareExportStore
                 FROM {_definitionsTable}
                 WHERE 1 = 1
                 """);
+            sql.AppendLine();
 
             await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken)
                 .ConfigureAwait(false);
@@ -290,6 +292,7 @@ internal sealed class PostgresShareExportStore : IShareExportStore
                 FROM {_runsTable}
                 WHERE export_id = @export_id
                 """);
+            sql.AppendLine();
 
             await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken)
                 .ConfigureAwait(false);
@@ -446,6 +449,10 @@ internal sealed class PostgresShareExportStore : IShareExportStore
         catch (OperationCanceledException)
         {
             throw;
+        }
+        catch (ServiceUnavailableException ex)
+        {
+            throw new ShareExportStoreUnavailableException("Share export store is unavailable.", ex);
         }
         catch (NpgsqlException ex)
         {

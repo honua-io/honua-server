@@ -62,6 +62,58 @@ public sealed class ShareAdminEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/share/exports")]
+    public async Task CreateDefinition_WithSnakeAndKebabSecretMaterialKeys_ReturnsBadRequest()
+    {
+        string[] secretKeys = ["api_key", "access-key", "private_key"];
+        foreach (var secretKey in secretKeys)
+        {
+            var response = await _client.PostAsJsonAsync(
+                "/api/v1/admin/share/exports",
+                BuildRequest(
+                    $"secret-{secretKey.Replace('_', '-')}",
+                    "Webhook",
+                    destinationConfig: new Dictionary<string, string>
+                    {
+                        [secretKey] = "raw-secret-material"
+                    }),
+                JsonOptions);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, secretKey);
+            using var problem = await ReadJsonAsync(response);
+            problem.RootElement.GetProperty("detail").GetString().Should().Contain($"destinationConfig.{secretKey}");
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/share/exports/{exportId}")]
+    public async Task GetDefinition_WithStoredSnakeAndKebabSecretMaterialKeys_RedactsValues()
+    {
+        var definition = BuildDefinitionRecord(
+            "redaction-definition",
+            "redaction-layer",
+            DateTimeOffset.Parse("2026-05-25T00:00:00.0009000Z", CultureInfo.InvariantCulture),
+            new Dictionary<string, string>
+            {
+                ["api_key"] = "raw-api-key",
+                ["access-key"] = "raw-access-key",
+                ["private_key"] = "raw-private-key",
+                ["secret_ref"] = "vault://share/secret"
+            });
+        await _exportStore.CreateDefinitionAsync(definition);
+
+        var response = await _client.GetAsync($"/api/v1/admin/share/exports/{definition.ExportId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = await ReadJsonAsync(response);
+        var config = doc.RootElement.GetProperty("destinationConfig");
+        config.GetProperty("api_key").GetString().Should().Be("redacted");
+        config.GetProperty("access-key").GetString().Should().Be("redacted");
+        config.GetProperty("private_key").GetString().Should().Be("redacted");
+        config.GetProperty("secret_ref").GetString().Should().Be("vault://share/secret");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/share/exports")]
     [Endpoint("GET /api/v1/admin/share/exports")]
     [Endpoint("GET /api/v1/admin/share/exports/{exportId}")]
     [Endpoint("PUT /api/v1/admin/share/exports/{exportId}")]
@@ -122,6 +174,69 @@ public sealed class ShareAdminEndpointsTests : IAsyncLifetime
 
         var missing = await _client.GetAsync($"/api/v1/admin/share/exports/{exportId}");
         missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/share/exports")]
+    [Endpoint("GET /api/v1/admin/share/exports/{exportId}/runs")]
+    public async Task CursorPagination_WithSubMillisecondTimestamps_ReturnsNextDefinitionAndRun()
+    {
+        var baseTime = DateTimeOffset.Parse("2026-05-25T03:00:00Z", CultureInfo.InvariantCulture);
+        var older = baseTime.AddTicks(800);
+        var newer = baseTime.AddTicks(900);
+        var olderDefinition = BuildDefinitionRecord("cursor-definition-a", "cursor-layer", older);
+        var newerDefinition = BuildDefinitionRecord("cursor-definition-b", "cursor-layer", newer);
+        await _exportStore.CreateDefinitionAsync(olderDefinition);
+        await _exportStore.CreateDefinitionAsync(newerDefinition);
+
+        var firstDefinitions = await _client.GetAsync("/api/v1/admin/share/exports?serviceName=cursor-layer&limit=1");
+
+        firstDefinitions.StatusCode.Should().Be(HttpStatusCode.OK);
+        string? definitionCursor;
+        using (var doc = await ReadJsonAsync(firstDefinitions))
+        {
+            doc.RootElement.GetProperty("items")[0].GetProperty("exportId").GetString().Should().Be(newerDefinition.ExportId);
+            definitionCursor = doc.RootElement.GetProperty("nextCursor").GetString();
+        }
+
+        var nextDefinitions = await _client.GetAsync(
+            $"/api/v1/admin/share/exports?serviceName=cursor-layer&limit=1&cursor={Uri.EscapeDataString(definitionCursor!)}");
+
+        nextDefinitions.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var doc = await ReadJsonAsync(nextDefinitions))
+        {
+            doc.RootElement.GetProperty("items")[0].GetProperty("exportId").GetString().Should().Be(olderDefinition.ExportId);
+        }
+
+        await _exportStore.AppendRunAsync(BuildRunRecord(newerDefinition.ExportId, "cursor-run-a", baseTime.AddTicks(100)));
+
+        var definitionsAfterOlderRun = await _client.GetAsync("/api/v1/admin/share/exports?serviceName=cursor-layer&limit=1");
+        definitionsAfterOlderRun.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var doc = await ReadJsonAsync(definitionsAfterOlderRun))
+        {
+            doc.RootElement.GetProperty("items")[0].GetProperty("exportId").GetString().Should().Be(newerDefinition.ExportId);
+        }
+
+        await _exportStore.AppendRunAsync(BuildRunRecord(newerDefinition.ExportId, "cursor-run-b", newer));
+
+        var firstRuns = await _client.GetAsync($"/api/v1/admin/share/exports/{newerDefinition.ExportId}/runs?limit=1");
+
+        firstRuns.StatusCode.Should().Be(HttpStatusCode.OK);
+        string? runCursor;
+        using (var doc = await ReadJsonAsync(firstRuns))
+        {
+            doc.RootElement.GetProperty("items")[0].GetProperty("runId").GetString().Should().Be("cursor-run-b");
+            runCursor = doc.RootElement.GetProperty("nextCursor").GetString();
+        }
+
+        var nextRuns = await _client.GetAsync(
+            $"/api/v1/admin/share/exports/{newerDefinition.ExportId}/runs?limit=1&cursor={Uri.EscapeDataString(runCursor!)}");
+
+        nextRuns.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var doc = await ReadJsonAsync(nextRuns))
+        {
+            doc.RootElement.GetProperty("items")[0].GetProperty("runId").GetString().Should().Be("cursor-run-a");
+        }
     }
 
     [IntegrationTest]
@@ -252,7 +367,8 @@ public sealed class ShareAdminEndpointsTests : IAsyncLifetime
         string serviceName,
         string destinationType,
         string? displayName = null,
-        string? scheduleState = null)
+        string? scheduleState = null,
+        IReadOnlyDictionary<string, string>? destinationConfig = null)
         => new
         {
             resourceId = $"content-{serviceName}",
@@ -260,7 +376,7 @@ public sealed class ShareAdminEndpointsTests : IAsyncLifetime
             layerId = 7,
             displayName = displayName ?? $"{serviceName} export",
             destinationType,
-            destinationConfig = destinationType switch
+            destinationConfig = destinationConfig ?? destinationType switch
             {
                 "S3" => new Dictionary<string, string>
                 {
@@ -276,6 +392,48 @@ public sealed class ShareAdminEndpointsTests : IAsyncLifetime
             format = "GeoJSON",
             schedule = "0 * * * *",
             scheduleState
+        };
+
+    private static ShareExportDefinition BuildDefinitionRecord(
+        string exportId,
+        string serviceName,
+        DateTimeOffset timestamp,
+        IReadOnlyDictionary<string, string>? destinationConfig = null)
+        => new()
+        {
+            ExportId = exportId,
+            ResourceId = $"content-{serviceName}",
+            ServiceName = serviceName,
+            LayerId = 7,
+            DisplayName = $"{serviceName} export",
+            DestinationType = ShareExportDestinationType.Webhook,
+            DestinationStatus = ShareExportDestinationStatus.Supported,
+            DestinationConfig = destinationConfig ?? new Dictionary<string, string>
+            {
+                ["url"] = "https://example.invalid/share-webhook",
+                ["credentialRef"] = "vault://share/webhook"
+            },
+            Format = "GeoJSON",
+            Schedule = "0 * * * *",
+            ScheduleState = ShareExportScheduleState.Active,
+            CreatedAt = timestamp,
+            UpdatedAt = timestamp
+        };
+
+    private static ShareExportRun BuildRunRecord(string exportId, string runId, DateTimeOffset triggeredAt)
+        => new()
+        {
+            RunId = runId,
+            ExportId = exportId,
+            TriggerKind = ShareExportTriggerKind.Manual,
+            Status = ShareExportRunStatus.Queued,
+            JobRunId = null,
+            TriggeredAt = triggeredAt,
+            StartedAt = null,
+            CompletedAt = null,
+            TargetSummary = "Webhook https://example.invalid/share-webhook",
+            ResultArtifacts = Array.Empty<string>(),
+            LastError = null
         };
 
     private void SeedTraffic()
@@ -361,5 +519,80 @@ public sealed class ShareAdminEndpointsTests : IAsyncLifetime
         public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(
                 _jobs.Values.Where(job => !kind.HasValue || job.Spec.Kind == kind.Value).ToArray());
+    }
+}
+
+/// <summary>
+/// Verifies Share traffic endpoints keep durable traffic-store outages retryable.
+/// </summary>
+[Collection("Database")]
+[Protocol(TestProtocols.Admin)]
+[Operation(Operations.Export)]
+public sealed class ShareAdminTrafficUnavailableTests : IAsyncLifetime
+{
+    private readonly WebAppFixture _fixture;
+    private HttpClient _client = null!;
+
+    public ShareAdminTrafficUnavailableTests()
+    {
+        _fixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IShareTrafficStore>();
+                services.AddSingleton<IShareTrafficStore, ThrowingTrafficStore>();
+            });
+    }
+
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _client = _fixture.CreateAdminClient();
+    }
+
+    public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/share/traffic")]
+    [Endpoint("GET /api/v1/admin/share/traffic/series")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic/series")]
+    public async Task TrafficEndpoints_WhenStoreUnavailable_ReturnServiceUnavailable()
+    {
+        const string range = "periodStart=2026-05-25T00:00:00Z&periodEnd=2026-05-25T02:00:00Z";
+        string[] urls =
+        [
+            $"/api/v1/admin/share/traffic?{range}",
+            $"/api/v1/admin/share/traffic/series?{range}&bucketMinutes=60",
+            $"/api/v1/admin/services/parcels/layers/7/share/traffic?{range}&resourceId=content-parcels",
+            $"/api/v1/admin/services/parcels/layers/7/share/traffic/series?{range}&resourceId=content-parcels&bucketMinutes=60"
+        ];
+
+        foreach (var url in urls)
+        {
+            var response = await _client.GetAsync(url);
+
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, url);
+            using var problem = await ReadJsonAsync(response);
+            problem.RootElement.GetProperty("title").GetString().Should().Be("Service Unavailable");
+        }
+    }
+
+    private static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response)
+    {
+        var payload = await response.Content.ReadAsStringAsync();
+        return JsonDocument.Parse(payload);
+    }
+
+    private sealed class ThrowingTrafficStore : IShareTrafficStore
+    {
+        public Task<ShareTrafficSummary> GetSummaryAsync(
+            ShareTrafficQuery query,
+            CancellationToken cancellationToken = default)
+            => throw new ShareTrafficStoreUnavailableException("Share traffic store is unavailable.");
+
+        public Task<ShareTrafficSeries> GetSeriesAsync(
+            ShareTrafficQuery query,
+            CancellationToken cancellationToken = default)
+            => throw new ShareTrafficStoreUnavailableException("Share traffic store is unavailable.");
     }
 }
