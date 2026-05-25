@@ -8,6 +8,7 @@ This map summarizes source-backed runtime capabilities in `honua-server`.
 - OGC API Features, Tiles, Maps, Coverages, Processes, WFS 2.0, WMS 1.3, WMTS 1.0, WCS 2.0.1, OData v4, STAC catalog/search/items, COG registration, vector tiles, Terrain-RGB tiles, and elevation value/profile APIs.
 - Output formats and negotiation for JSON, GeoJSON, PBF, FlatGeobuf, GeoParquet, GeoArrow, and native GeoBuf when supported by the feature store.
 - Server-owned field form packages with versioned drafts, immutable published versions, offline policy discovery, and idempotent published-package submissions through the shared edit and attachment pipelines.
+- Optional temporal history API under `/api/v1/layers/{layerId}/history/**` for configured Postgres-backed layers: capability discovery, checkpoints, deterministic as-of reads, diffs, per-feature timelines with attribution policy, rollback planning, and job-backed append-only corrective rollback.
 - File import for GeoJSON, Shapefile, GeoPackage, GPX, KML, WKT, FlatGeobuf, File Geodatabase zips, GeoParquet, and raster import; ArcGIS GeoServices REST layer import and migration inventory; GeoServer REST migration inventory, dry-run validation, and bounded PostGIS-backed catalog apply; and cross-server consume probes.
 - Streaming feature change/events endpoints, async geoprocessing over the canonical process runtime, and durable analysis content for saved-query/package versions plus reusable result artifacts.
 
@@ -36,6 +37,7 @@ This map summarizes source-backed runtime capabilities in `honua-server`.
 - Admin/control plane: `src/Honua.Server/Features/Admin/`
 - Capability manifest: `src/Honua.Server/Features/Capabilities/`
 - Console workflow packages: `src/Honua.Server/Features/WorkflowPackages/`
+- Temporal history: `src/Honua.Server/Features/TemporalHistory/`, `src/Honua.Core/Features/TemporalHistory/`, `src/Honua.Postgres/Features/TemporalHistory/`
 - Import/migration: `src/Honua.Server/Features/Import/`
 - Forms package/submission contracts: `src/Honua.Core/Features/Forms/Packages/`, `src/Honua.Server/Features/Forms/`, `src/Honua.Postgres/Features/Forms/`
 - Monitoring and health: `src/Honua.Server/Features/Infrastructure/Monitoring/`, `src/Honua.Server/Features/HealthCheck/`

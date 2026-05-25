@@ -113,6 +113,10 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 > the Studio package lifecycle contract is maintained in
 > [Studio Package Lifecycle API](../../admin-api/studio-package-lifecycle.md),
 > until dedicated Console and Studio OpenAPI documents are published.
+> Temporal data-history endpoints live under
+> `/api/v1/layers/{layerId}/history/**`; their markdown contract is maintained
+> in [Temporal History API](../../admin-api/temporal-history.md) until this
+> sibling surface is promoted into a generated OpenAPI snapshot.
 >
 > **Runtime capability discovery**: `GET /api/v1/capabilities/manifest` is a
 > public, request-scoped discovery contract outside the admin OpenAPI snapshot.
@@ -130,6 +134,7 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 - Monitor system health and observability
 - Render Console GP/ETL workflow palettes and manage workflow package versions through the sibling `/api/v1/console/workflow-*` surface
 - Inspect durable background jobs, structured logs, artifacts, control actions, and Operate event correlations
+- Inspect layer history, compare checkpoints, review attribution-aware timelines, and submit approved temporal rollback jobs through `/api/v1/layers/{layerId}/history/**`
 - Validate packages and request read-only preview plans before publish or execute decisions
 - Access recent errors and telemetry status
 - Inspect deploy preflight and upgrade-readiness state per Honua instance
@@ -239,6 +244,7 @@ Control-plane SDK governance and contract diff checks:
 - [**Server Management API**](../../operator/CONTROL_PLANE_API.md) - Admin API guide and key workflows
 - [**Console Job Observability**](../../admin-api/console-job-observability.md) - Durable job viewer contract for Console and admin integrations
 - [**Analysis Content**](../../admin-api/analysis-content.md) - Saved-query and analysis-package versions, preview artifacts, runs/reruns, artifact bindings, and safe failed-job diagnostics
+- [**Temporal History API**](../../admin-api/temporal-history.md) - Layer history capability discovery, as-of reads, diffs, timelines, rollback planning, and job-backed corrective rollback
 - [**Control Plane Versioning Policy**](../CONTROL_PLANE_VERSIONING_POLICY.md) - Breaking-change and deprecation lifecycle
 - [**Control Plane Migration Guide**](../CONTROL_PLANE_MIGRATION_GUIDE.md) - SDK quickstart and upgrade steps
 - [**API Examples**](../API_EXAMPLES.md) - Code examples for the major shipped protocols

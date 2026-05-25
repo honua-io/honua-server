@@ -36,7 +36,8 @@ internal static partial class TemporalHistoryEndpoints
         var group = endpoints.MapGroup(BasePath)
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
-            .WithTags("Temporal History");
+            .WithTags("Temporal History")
+            .AllowAnonymous();
 
         _ = group.MapGet("/capabilities", HandleCapabilitiesAsync)
             .WithName("GetTemporalCapabilities")

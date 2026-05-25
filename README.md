@@ -134,6 +134,8 @@ The source-backed feature map is maintained in [docs/features/README.md](docs/fe
 
 **Field forms** — Server-owned form packages under `/api/v1/admin/forms/packages` support draft validation, immutable publishing, reopened drafts, offline policy discovery, and idempotent JSON-compatible or multipart submissions through the shared edit and attachment pipelines.
 
+**Temporal history** — Configured Postgres-backed layers can expose `/api/v1/layers/{layerId}/history/**` for capability discovery, checkpoint lists, deterministic as-of reads, diffs, feature timelines with attribution policy, rollback planning, and approved job-backed corrective rollback.
+
 **Map rendering** — MapServer (export/identify/legend/find/query) plus OGC API Maps endpoints for rendered map images.
 
 **Raster and coverage access** — ImageServer export/identify/tile/catalog/statistics/legend routes, WCS 2.0.1 `GetCapabilities`, `DescribeCoverage`, and `GetCoverage`, plus OGC API Coverages discovery/schema/coverage retrieval over enabled raster layers.

@@ -78,6 +78,7 @@
 - [Share Export and Traffic API](developer/share-export-traffic-api.md)
 - [Operate Observability Fixtures (Admin API)](admin-api/operate-observability-fixtures.md)
 - [Metadata Prevalidation Admin API](admin-api/metadata-prevalidation.md)
+- [Temporal History API](admin-api/temporal-history.md)
 - [Studio Package Lifecycle API](admin-api/studio-package-lifecycle.md)
 - [Analysis Content (Admin API)](admin-api/analysis-content.md)
 - [Scene Dataset Registry (Admin API)](admin-api/scene-dataset-registry.md)

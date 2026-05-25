@@ -292,6 +292,50 @@
       ]
     },
     {
+      "surfaceId": "temporal-history",
+      "displayName": "Temporal history API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Temporal History HTTP",
+      "canonicalIdentifier": "/api/v1/layers/{layerId}/history/**",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/v1/layers/{layerId}/history"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus temporal history integration tests cover capabilities, checkpoints, as-of reads, diffs, timelines, rollback planning, rollback submission, and separate history/diff authorization.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/TemporalHistory/TemporalHistoryEndpointTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1166",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "The markdown contract documents cursor forms, paging, response envelopes, permission rules, Postgres source requirements, rollback behavior, and cache-vary requirements for SDK and Console consumers until the sibling API enters generated OpenAPI snapshots.",
+          "executionLane": "docs+review",
+          "evidenceLocations": [
+            "docs/admin-api/temporal-history.md",
+            "docs/developer/api-specs/README.md",
+            "src/Honua.Server/Features/TemporalHistory/TemporalHistoryApiModels.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1166",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "console-content-rbac",
       "displayName": "Console metadata v2 content and RBAC baseline",
       "surfaceKind": "http-route-family",
