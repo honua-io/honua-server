@@ -222,4 +222,10 @@ internal sealed record ReplicaState(
     public DateTimeOffset LastSyncTime { get; init; } = CreatedAt;
 
     public long LastSyncGeneration { get; init; }
+
+    /// <summary>Principal that registered the replica (operator-visible owner). Optional.</summary>
+    public string? Owner { get; init; }
+
+    /// <summary>Device or client identifier that created the replica. Optional.</summary>
+    public string? DeviceClient { get; init; }
 }

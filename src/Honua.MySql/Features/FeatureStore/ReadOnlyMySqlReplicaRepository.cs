@@ -28,6 +28,15 @@ internal sealed class ReadOnlyMySqlReplicaRepository : IReplicaRepository
         => Task.FromResult<IReadOnlyList<ReplicaRecord>>([]);
 
     /// <inheritdoc />
+    public Task<IReadOnlyList<ReplicaRecord>> ListAllAsync(
+        string? serviceId,
+        string? status,
+        int limit,
+        string? afterReplicaId,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<ReplicaRecord>>([]);
+
+    /// <inheritdoc />
     public Task<bool> RemoveAsync(string replicaId, CancellationToken cancellationToken = default)
         => Task.FromResult(false);
 }

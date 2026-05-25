@@ -35,6 +35,23 @@ public interface IReplicaRepository
     Task<IReadOnlyList<ReplicaRecord>> ListByServiceAsync(string serviceId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Lists persisted replicas across all services for operator review, newest-first, with
+    /// optional service/status filters and keyset pagination.
+    /// </summary>
+    /// <param name="serviceId">Optional feature service filter.</param>
+    /// <param name="status">Optional lifecycle status filter (active, stale, expired, unregistered).</param>
+    /// <param name="limit">Maximum number of replicas to return.</param>
+    /// <param name="afterReplicaId">Exclusive keyset cursor; pass the last id from the prior page.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Replica records ordered by creation time descending.</returns>
+    Task<IReadOnlyList<ReplicaRecord>> ListAllAsync(
+        string? serviceId,
+        string? status,
+        int limit,
+        string? afterReplicaId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Removes a replica record from persistent storage
     /// </summary>
     /// <param name="replicaId">Unique replica identifier to remove</param>

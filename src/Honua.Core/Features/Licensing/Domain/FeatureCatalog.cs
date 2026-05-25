@@ -66,6 +66,9 @@ public static class FeatureCatalog
 
         /// <summary>Printing and layout export features.</summary>
         public const string Printing = "Printing";
+
+        /// <summary>Disconnected replica sync and conflict review features.</summary>
+        public const string Sync = "Sync";
     }
 
     /// <summary>
@@ -202,5 +205,9 @@ public static class FeatureCatalog
             HonuaEdition.Pro, "Export print jobs as PDF files."),
         new("printing.layout-templates", "Print Layout Templates", Categories.Printing,
             HonuaEdition.Pro, "Use full print layout templates beyond MAP_ONLY."),
+
+        // Sync — Pro (disconnected replica conflict review)
+        new("replica.conflict-review", "Disconnected Replica Conflict Review", Categories.Sync,
+            HonuaEdition.Pro, "Inspect and resolve disconnected-sync conflicts and review named replica metadata."),
     ];
 }

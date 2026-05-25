@@ -423,6 +423,25 @@ public sealed class SynchronizeReplicaResponse
     /// </summary>
     [JsonPropertyName("serverGen")]
     public long ServerGen { get; set; }
+
+    /// <summary>
+    /// Number of conflicts detected during this upload. Omitted when there were no conflicts.
+    /// </summary>
+    [JsonPropertyName("conflictCount")]
+    public int? ConflictCount { get; set; }
+
+    /// <summary>
+    /// Identifiers of the durable conflict records created during this upload, for later review.
+    /// Omitted when there were no conflicts.
+    /// </summary>
+    [JsonPropertyName("conflictIds")]
+    public string[]? ConflictIds { get; set; }
+
+    /// <summary>
+    /// Identifier grouping all conflicts produced by this upload. Omitted when there were no conflicts.
+    /// </summary>
+    [JsonPropertyName("syncOpId")]
+    public string? SyncOpId { get; set; }
 }
 
 /// <summary>

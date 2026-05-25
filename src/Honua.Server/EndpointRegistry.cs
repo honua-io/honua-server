@@ -404,6 +404,13 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/jobs/{jobId}/cancel"),
         new("POST", "/api/v1/admin/jobs/{jobId}/retry"),
 
+        // Disconnected replica metadata and sync conflict review (#1167)
+        new("GET", "/api/v1/admin/replicas"),
+        new("GET", "/api/v1/admin/replicas/{replicaId}"),
+        new("GET", "/api/v1/admin/replicas/{replicaId}/conflicts"),
+        new("GET", "/api/v1/admin/replicas/{replicaId}/conflicts/{conflictId}"),
+        new("POST", "/api/v1/admin/replicas/{replicaId}/conflicts/{conflictId}/resolve"),
+
         // Console Share export jobs and traffic endpoints (#1216)
         new("GET", "/api/v1/admin/share/exports"),
         new("POST", "/api/v1/admin/share/exports"),

@@ -269,7 +269,9 @@ internal static partial class FeatureServerEndpoints
             layerIds,
             now)
         {
-            LastSyncGeneration = currentGen
+            LastSyncGeneration = currentGen,
+            Owner = ResolveReplicaOwner(context),
+            DeviceClient = ResolveReplicaDeviceClient(context)
         };
         await replicaStore.SetAsync(record, cancellationToken: cancellationToken);
 
@@ -588,7 +590,19 @@ internal static partial class FeatureServerEndpoints
         var syncDirection = GetValueString(values, "syncDirection") ?? "download";
         var editsJson = GetValueString(values, "edits");
 
-        // If upload or bidirectional sync includes edits, apply them
+        var changeTracker = context.RequestServices.GetRequiredService<IChangeTracker>();
+
+        // Base generation the client synced from; conflict detection compares server changes
+        // recorded after this point. Captured before the post-sync generation advance below.
+        var baseGeneration = replica.LastSyncGeneration;
+
+        int conflictCount = 0;
+        string[]? conflictIds = null;
+        Guid? syncOpId = null;
+
+        // If upload or bidirectional sync includes edits, apply them. Edits that collide with a
+        // server change since the replica's base generation become durable conflict records
+        // (manual review) instead of failing the whole sync; non-conflicting edits still apply.
         if (!string.IsNullOrWhiteSpace(editsJson) &&
             !string.Equals(syncDirection, "download", StringComparison.OrdinalIgnoreCase))
         {
@@ -607,37 +621,142 @@ internal static partial class FeatureServerEndpoints
 
             if (features is { Length: > 0 })
             {
-                // Apply the incoming edits to the first replica layer
-                var targetLayerId = replicaLayers[0].Id;
-                var editsHandler = context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
-                var limitsOptions = context.RequestServices
-                    .GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>();
+                // The simplified upload format applies edits to the first replica layer.
+                var targetLayer = replicaLayers[0];
+                var targetLayerId = targetLayer.Id;
+                var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(targetLayer);
 
-                var editRequest = new ApplyEditsRequest { Adds = features, RollbackOnFailure = false };
-                var editResult = await editsHandler.HandleApplyEditsAsync(
-                    serviceId, targetLayerId, editRequest, limitsOptions.Value.Edits, cancellationToken);
-
-                // If the edit handler returned an error, pass it through
-                if (editResult is not Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApplyEditsResponse> jsonResult)
+                // Server changes since the replica base, keyed by (layerId, objectId).
+                var serverChanges = await changeTracker.GetChangesSinceAsync(
+                    baseGeneration, replica.LayerIds, cancellationToken);
+                var serverChangeByObject = new Dictionary<long, FeatureChangeOperation>();
+                foreach (var change in serverChanges)
                 {
-                    return editResult;
+                    if (change.LayerId == targetLayerId)
+                    {
+                        serverChangeByObject[change.ObjectId] = change.Operation;
+                    }
                 }
 
-                if (jsonResult.Value is not { } applyResponse ||
-                    !applyResponse.Success ||
-                    HasFailedEditResult(applyResponse.AddResults) ||
-                    HasFailedEditResult(applyResponse.UpdateResults) ||
-                    HasFailedEditResult(applyResponse.DeleteResults))
+                var clean = new List<GeoServicesFeature>(features.Length);
+                var conflicted = new List<(GeoServicesFeature Feature, long ObjectId, FeatureChangeOperation ServerOp)>();
+                foreach (var feature in features)
                 {
-                    return StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        "Uploaded replica edits failed to apply.");
+                    if (TryExtractObjectId(feature, objectIdFieldName, out var objectId) &&
+                        serverChangeByObject.TryGetValue(objectId, out var serverOp))
+                    {
+                        conflicted.Add((feature, objectId, serverOp));
+                    }
+                    else
+                    {
+                        clean.Add(feature);
+                    }
+                }
+
+                // Apply the non-conflicting edits through the existing edit pipeline (validation,
+                // change tracking, audit). Unaffected by any conflicts in the same upload.
+                if (clean.Count > 0)
+                {
+                    var editsHandler = context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
+                    var limitsOptions = context.RequestServices
+                        .GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>();
+
+                    var editRequest = new ApplyEditsRequest { Adds = clean.ToArray(), RollbackOnFailure = false };
+                    var editResult = await editsHandler.HandleApplyEditsAsync(
+                        serviceId, targetLayerId, editRequest, limitsOptions.Value.Edits, cancellationToken);
+
+                    // If the edit handler returned an error, pass it through
+                    if (editResult is not Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApplyEditsResponse> jsonResult)
+                    {
+                        return editResult;
+                    }
+
+                    if (jsonResult.Value is not { } applyResponse ||
+                        !applyResponse.Success ||
+                        HasFailedEditResult(applyResponse.AddResults) ||
+                        HasFailedEditResult(applyResponse.UpdateResults) ||
+                        HasFailedEditResult(applyResponse.DeleteResults))
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(
+                            context,
+                            "Uploaded replica edits failed to apply.");
+                    }
+                }
+
+                // Persist durable conflict records for the conflicting edits.
+                if (conflicted.Count > 0)
+                {
+                    var conflictStore = context.RequestServices.GetRequiredService<IReplicaConflictStore>();
+                    var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+                    var operationId = Guid.NewGuid();
+                    var detectedAt = DateTimeOffset.UtcNow;
+                    var ids = new List<string>(conflicted.Count);
+
+                    foreach (var (feature, objectId, serverOp) in conflicted)
+                    {
+                        var serverResult = await featureReader.QueryAsync(
+                            targetLayerId,
+                            new FeatureQuery { ObjectIds = ImmutableArray.Create(objectId) },
+                            cancellationToken);
+                        var serverFeature = serverResult.Items.Length > 0
+                            ? serverResult.Items[0]
+                            : (Feature?)null;
+
+                        ReplicaConflictType conflictType;
+                        string serverPayloadJson;
+                        if (serverFeature is null || serverOp == FeatureChangeOperation.Delete)
+                        {
+                            // Client edits a feature the server deleted since the base generation.
+                            conflictType = ReplicaConflictType.UpdateDelete;
+                            serverPayloadJson = "null";
+                        }
+                        else
+                        {
+                            conflictType = feature.Geometry is not null
+                                ? ReplicaConflictType.Geometry
+                                : ReplicaConflictType.Attribute;
+                            serverPayloadJson = System.Text.Json.JsonSerializer.Serialize(
+                                ConvertFeatureToGeoServices(serverFeature.Value),
+                                FeatureServerJsonContext.Default.GeoServicesFeature);
+                        }
+
+                        var clientPayloadJson = System.Text.Json.JsonSerializer.Serialize(
+                            feature, FeatureServerJsonContext.Default.GeoServicesFeature);
+
+                        var conflictId = Guid.NewGuid();
+                        await conflictStore.AppendAsync(
+                            new ReplicaConflict
+                            {
+                                ConflictId = conflictId,
+                                ReplicaId = replica.ReplicaId,
+                                SyncOpId = operationId,
+                                ServiceId = serviceId,
+                                LayerId = targetLayerId,
+                                ObjectId = objectId,
+                                ConflictType = conflictType,
+                                BaseGeneration = baseGeneration,
+                                ClientPayloadJson = clientPayloadJson,
+                                ServerPayloadJson = serverPayloadJson,
+                                BasePayloadJson = null,
+                                CreatedAt = detectedAt,
+                                UpdatedAt = detectedAt
+                            },
+                            cancellationToken);
+                        ids.Add(conflictId.ToString());
+                    }
+
+                    conflictCount = conflicted.Count;
+                    conflictIds = ids.ToArray();
+                    syncOpId = operationId;
+                    activity?.SetTag("honua.conflictCount", conflictCount);
+                    var conflictLogger = context.RequestServices
+                        .GetRequiredService<ILogger<FeatureServerReplicationLog>>();
+                    Log.ReplicaSyncConflictsDetected(conflictLogger, replica.ReplicaId, conflictCount);
                 }
             }
         }
 
         // Update the last sync time and generation in distributed store.
-        var changeTracker = context.RequestServices.GetRequiredService<IChangeTracker>();
         var currentGen = await changeTracker.GetCurrentGenerationAsync(cancellationToken);
         var updated = replica with
         {
@@ -651,7 +770,10 @@ internal static partial class FeatureServerEndpoints
             Success = true,
             ReplicaId = replicaId,
             SyncDirection = syncDirection,
-            ServerGen = currentGen
+            ServerGen = currentGen,
+            ConflictCount = conflictCount > 0 ? conflictCount : null,
+            ConflictIds = conflictIds,
+            SyncOpId = syncOpId?.ToString()
         };
 
         return Results.Json(response, FeatureServerJsonContext.Default.SynchronizeReplicaResponse, contentType: "application/json");
@@ -918,7 +1040,9 @@ internal static partial class FeatureServerEndpoints
         record.CreatedAt)
     {
         LastSyncTime = record.LastSyncTime,
-        LastSyncGeneration = record.LastSyncGeneration
+        LastSyncGeneration = record.LastSyncGeneration,
+        Owner = record.Owner,
+        DeviceClient = record.DeviceClient
     };
 
     private static async Task<IResult?> RequireReplicaWriteAccessAsync(
@@ -983,5 +1107,87 @@ internal static partial class FeatureServerEndpoints
             Geometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
                 feature.Geometry, null, null, false, false)
         };
+    }
+
+    /// <summary>
+    /// Resolves the operator-visible owner of a replica from the authenticated principal.
+    /// </summary>
+    private static string? ResolveReplicaOwner(HttpContext context)
+        => context.User?.Identity?.Name is { Length: > 0 } name ? name : null;
+
+    /// <summary>
+    /// Resolves the device/client identifier of a replica from the request User-Agent.
+    /// </summary>
+    private static string? ResolveReplicaDeviceClient(HttpContext context)
+    {
+        var userAgent = context.Request.Headers.UserAgent.ToString();
+        return string.IsNullOrWhiteSpace(userAgent) ? null : userAgent;
+    }
+
+    /// <summary>
+    /// Extracts the object id from an uploaded feature using the layer's object-id field name.
+    /// Returns false when the attribute is absent or not a whole number.
+    /// </summary>
+    private static bool TryExtractObjectId(GeoServicesFeature feature, string objectIdFieldName, out long objectId)
+    {
+        objectId = 0;
+        if (feature.Attributes is null)
+        {
+            return false;
+        }
+
+        foreach (var kvp in feature.Attributes)
+        {
+            if (!string.Equals(kvp.Key, objectIdFieldName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return TryConvertToInt64(kvp.Value, out objectId);
+        }
+
+        return false;
+    }
+
+    private static bool TryConvertToInt64(object? value, out long result)
+    {
+        result = 0;
+        switch (value)
+        {
+            case null:
+                return false;
+            case long l:
+                result = l;
+                return true;
+            case int i:
+                result = i;
+                return true;
+            case System.Text.Json.JsonElement element:
+                return element.ValueKind == System.Text.Json.JsonValueKind.Number
+                    && element.TryGetInt64(out result);
+            case string s:
+                return long.TryParse(s, System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture, out result);
+            default:
+                try
+                {
+                    result = Convert.ToInt64(value, System.Globalization.CultureInfo.InvariantCulture);
+                    return true;
+                }
+                catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
+                {
+                    return false;
+                }
+        }
+    }
+
+    /// <summary>Logger category marker for replication conflict signals.</summary>
+    internal sealed class FeatureServerReplicationLog;
+
+    private static partial class Log
+    {
+        [LoggerMessage(EventId = 7730, Level = LogLevel.Information,
+            Message = "Disconnected sync detected {ConflictCount} conflict(s) for replica {ReplicaId}")]
+        public static partial void ReplicaSyncConflictsDetected(ILogger logger, string replicaId, int conflictCount);
     }
 }

@@ -36,6 +36,17 @@ internal sealed class ReadOnlyReplicaRepository : IReplicaRepository
     }
 
     /// <inheritdoc />
+    public Task<IReadOnlyList<ReplicaRecord>> ListAllAsync(
+        string? serviceId,
+        string? status,
+        int limit,
+        string? afterReplicaId,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<IReadOnlyList<ReplicaRecord>>([]);
+    }
+
+    /// <inheritdoc />
     public Task<bool> RemoveAsync(string replicaId, CancellationToken cancellationToken = default)
     {
         return Task.FromResult(false);

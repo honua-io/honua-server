@@ -927,9 +927,17 @@ sql:
           created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
           last_sync_time TIMESTAMPTZ NOT NULL DEFAULT now(),
           last_sync_generation BIGINT NOT NULL DEFAULT 0,
+          owner TEXT,
+          device_client TEXT,
+          sync_direction TEXT NOT NULL DEFAULT 'bidirectional',
+          status TEXT NOT NULL DEFAULT 'active',
+          replica_geometry_json TEXT,
+          branch_version_id TEXT,
           CONSTRAINT replicas_valid_name CHECK(LENGTH(replica_name) > 0 AND LENGTH(replica_name) <= 256),
           CONSTRAINT replicas_valid_service CHECK(LENGTH(service_id) > 0),
-          CONSTRAINT replicas_valid_sync_model CHECK(sync_model IN ('none', 'perLayer', 'perReplica'))
+          CONSTRAINT replicas_valid_sync_model CHECK(sync_model IN ('none', 'perLayer', 'perReplica')),
+          CONSTRAINT replicas_valid_sync_direction CHECK(sync_direction IN ('upload', 'download', 'bidirectional')),
+          CONSTRAINT replicas_valid_status CHECK(status IN ('active', 'stale', 'expired', 'unregistered'))
       );
   - |
       CREATE TABLE IF NOT EXISTS honua.feature_changes (
@@ -977,6 +985,32 @@ sql:
       $$ LANGUAGE plpgsql;
   - "DROP TRIGGER IF EXISTS trigger_track_feature_changes ON features;"
   - "CREATE TRIGGER trigger_track_feature_changes AFTER INSERT OR UPDATE OR DELETE ON features FOR EACH ROW EXECUTE FUNCTION honua.track_feature_changes();"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.replica_conflicts (
+          conflict_id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+          replica_id              TEXT        NOT NULL REFERENCES honua.replicas(replica_id) ON DELETE CASCADE,
+          sync_op_id              UUID        NOT NULL,
+          service_id              TEXT        NOT NULL,
+          layer_id                INT         NOT NULL,
+          object_id               BIGINT      NOT NULL,
+          conflict_type           SMALLINT    NOT NULL,
+          base_generation         BIGINT      NOT NULL,
+          client_payload_json     TEXT        NOT NULL,
+          server_payload_json     TEXT        NOT NULL,
+          base_payload_json       TEXT,
+          resolution              SMALLINT,
+          resolved_by             TEXT,
+          resolved_at             TIMESTAMPTZ,
+          resolution_payload_json TEXT,
+          created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CONSTRAINT replica_conflicts_valid_type CHECK (conflict_type BETWEEN 1 AND 6),
+          CONSTRAINT replica_conflicts_valid_resolution CHECK (resolution IS NULL OR resolution BETWEEN 1 AND 5)
+      );
+  - "CREATE INDEX IF NOT EXISTS ix_replica_conflicts_replica_pending ON honua.replica_conflicts (replica_id, created_at DESC, conflict_id) WHERE resolution IS NULL;"
+  - "CREATE INDEX IF NOT EXISTS ix_replica_conflicts_replica_created ON honua.replica_conflicts (replica_id, created_at DESC, conflict_id);"
+  - "CREATE INDEX IF NOT EXISTS ix_replica_conflicts_sync_op ON honua.replica_conflicts (sync_op_id);"
+  - "CREATE INDEX IF NOT EXISTS ix_replica_conflicts_layer_object ON honua.replica_conflicts (service_id, layer_id, object_id);"
   - |
       CREATE TABLE IF NOT EXISTS honua.fieldcollection_features (
           feature_id  TEXT        NOT NULL,

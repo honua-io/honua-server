@@ -171,6 +171,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapSpatialAnalyticsOgcEndpoints();
         endpoints.MapGPServerEndpoints();
         endpoints.MapAnalysisContentEndpoints();
+        endpoints.MapReplicaConflictsEndpoints();
         endpoints.MapAnalysisReporting();
         endpoints.MapCapabilityManifestEndpoints();
         endpoints.MapMcpOperatorSurface();

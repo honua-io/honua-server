@@ -9,6 +9,14 @@ namespace Honua.Core.Features.FeatureStore.Domain;
 public readonly record struct ReplicaRecord
 {
     /// <summary>
+    /// Initializes a replica record. Required members must still be set via object initializer;
+    /// the explicit constructor exists so the defaulted metadata fields run their initializers.
+    /// </summary>
+    public ReplicaRecord()
+    {
+    }
+
+    /// <summary>
     /// Unique replica identifier (GUID hex)
     /// </summary>
     public required string ReplicaId { get; init; }
@@ -47,4 +55,36 @@ public readonly record struct ReplicaRecord
     /// Generation number at last successful sync
     /// </summary>
     public required long LastSyncGeneration { get; init; }
+
+    /// <summary>
+    /// Principal that registered the replica (operator-visible owner). Optional.
+    /// </summary>
+    public string? Owner { get; init; }
+
+    /// <summary>
+    /// Device or client identifier that created the replica. Optional.
+    /// </summary>
+    public string? DeviceClient { get; init; }
+
+    /// <summary>
+    /// Sync direction: upload, download, or bidirectional. Defaults to bidirectional.
+    /// </summary>
+    public string SyncDirection { get; init; } = "bidirectional";
+
+    /// <summary>
+    /// Replica lifecycle status: active, stale, expired, or unregistered. Defaults to active.
+    /// </summary>
+    public string Status { get; init; } = "active";
+
+    /// <summary>
+    /// Optional raw GeoJSON spatial filter for the replica. CRS is validated on the
+    /// createReplica path, not on read.
+    /// </summary>
+    public string? ReplicaGeometryJson { get; init; }
+
+    /// <summary>
+    /// Optional named branch-version reference for #371 interop. Unused in the first slice;
+    /// reconcile/post remains #371 scope.
+    /// </summary>
+    public string? BranchVersionId { get; init; }
 }

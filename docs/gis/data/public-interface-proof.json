@@ -438,6 +438,50 @@
       ]
     },
     {
+      "surfaceId": "disconnected-replica-conflicts",
+      "displayName": "Disconnected replica metadata and sync conflict review API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API",
+      "canonicalIdentifier": "/api/v1/admin/replicas/**",
+      "parentSurfaceId": "control-plane-admin",
+      "endpointPrefixes": [
+        "/api/v1/admin/replicas"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage and ReplicaConflictsEndpointsTests integration tests assert replica listing/detail, conflict listing/detail, resolution, admin authorization, and the replica-conflict-review entitlement gate",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/ReplicaConflictsEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1167",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "Source-generated ReplicaConflictsJsonContext keeps the admin replica/conflict DTOs AOT-safe; the durable conflict model and the named-replica metadata columns are defined by the ReplicaConflict domain type and migration 037",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/Admin/Models/ReplicaConflictsModels.cs",
+            "src/Honua.Core/Features/FeatureStore/Domain/ReplicaConflict.cs",
+            "src/Honua.Server/Migrations/037_AddReplicaConflicts.sql"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1167",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "studio-package-lifecycle",
       "displayName": "Studio package lifecycle API",
       "surfaceKind": "http-route-family",
