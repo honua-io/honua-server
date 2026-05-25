@@ -60,6 +60,12 @@ internal static class GeoEtlServiceCollectionExtensions
             ServiceDescriptor.Singleton<IPipelineTransform, SpatialJoinTransform>());
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IPipelineTransform, DedupTransform>());
+        // Per-feature geometry operators (buffer / simplify / convex-hull /
+        // centroid / make-valid / difference) lifted to layer scope. Reused by
+        // the layer-scope geoprocessing executors so a GP process over a layer
+        // runs as a single-transform pipeline rather than a single-WKB primitive.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IPipelineTransform, GeometryOperationTransform>());
 
         // Phase 1 sinks. The dry-run null preview sink is always available; the
         // Honua-layer / PostGIS sink registers only when a feature sink writer exists.
