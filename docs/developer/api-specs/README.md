@@ -157,6 +157,21 @@ See the [OGC API Coverages Coverage](../../gis/specifications/ogc-api-coverages-
 > registered in the [public interface proof](../../gis/data/public-interface-proof.json)
 > under the `fieldcollection-mobile-sync` surface.
 
+## Form Package API
+
+**Protocol**: REST API
+**Base URLs**: `/api/v1/admin/forms/packages`, `/api/v1/forms/packages`
+**Authentication**: Admin route authorization for the shipped slice; submissions also require target layer data-editor authorization.
+
+> **Note**: The Forms contract covers versioned package drafts, validation,
+> immutable publish, reopened drafts, published-package readback, offline-policy
+> discovery, and idempotent JSON-compatible or multipart submissions with attachment outcomes. The
+> bundled `admin-api.json` snapshot does not yet include the Forms routes or schemas, so the
+> response and usage contract is documented in
+> [Form Package API](../form-package-api.md). Offline-policy responses point to
+> the existing FeatureServer replica and FieldCollection mobile sync routes
+> instead of defining a separate form-only sync protocol.
+
 ## Testing the APIs
 
 ### **Using the Interactive Docs**

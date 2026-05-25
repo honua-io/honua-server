@@ -7,12 +7,13 @@ This map summarizes source-backed runtime capabilities in `honua-server`.
 - GeoServices-style FeatureServer query, applyEdits, attachments, related records, MapServer export/identify/legend/find/query, ImageServer raster routes, Geometry Service operations, and NAServer-style routing hooks.
 - OGC API Features, Tiles, Maps, Coverages, Processes, WFS 2.0, WMS 1.3, WMTS 1.0, WCS 2.0.1, OData v4, STAC catalog/search/items, COG registration, vector tiles, Terrain-RGB tiles, and elevation value/profile APIs.
 - Output formats and negotiation for JSON, GeoJSON, PBF, FlatGeobuf, GeoParquet, GeoArrow, and native GeoBuf when supported by the feature store.
+- Server-owned field form packages with versioned drafts, immutable published versions, offline policy discovery, and idempotent published-package submissions through the shared edit and attachment pipelines.
 - File import for GeoJSON, Shapefile, GeoPackage, GPX, KML, WKT, FlatGeobuf, File Geodatabase zips, GeoParquet, and raster import; ArcGIS GeoServices REST layer import and migration inventory; GeoServer REST migration inventory, dry-run validation, and bounded PostGIS-backed catalog apply; and cross-server consume probes.
 - Streaming feature change/events endpoints, async geoprocessing over the canonical process runtime, and durable analysis content for saved-query/package versions plus reusable result artifacts.
 
 ## Control Plane
 
-- Admin APIs for auth, capabilities, version, connections, service settings, layer publishing, Metadata v2 environment inventory, release packages, compatibility prevalidation, metadata resources, styles, SLD import/export, style suggestions, imports, manifests, GitOps watch/drift/approval, deployment control, observability, geofence zones and alert rules, cache, rate limits, license, identity/OIDC, users, roles, geocoding, tile operations, and scene datasets.
+- Admin APIs for auth, capabilities, version, connections, service settings, layer publishing, Metadata v2 environment inventory, release packages, compatibility prevalidation, metadata resources, styles, SLD import/export, style suggestions, imports, manifests, GitOps watch/drift/approval, deployment control, observability, geofence zones and alert rules, form package authoring/publishing, cache, rate limits, license, identity/OIDC, users, roles, geocoding, tile operations, and scene datasets.
 - Console/Studio APIs for server-owned content metadata, action checks, mutable Studio package drafts, immutable content versions, validation, preview plans, publication requests, reopen, comparison, and rollback for query, analysis, map, dashboard, report, form, app, workflow, GP, and ETL packages.
 - Analysis content APIs for saving query/package content versions, previewing saved queries, submitting/rerunning analysis packages, resolving artifact bindings, and exposing safe failed-job diagnostics.
 - Spec workspace endpoints for validate, plan, apply, cancel, artifacts, and grounding helpers.
@@ -31,6 +32,7 @@ This map summarizes source-backed runtime capabilities in `honua-server`.
 - Terrain/elevation/vector tiles: `src/Honua.Server/Features/Protocols/Terrain/`, `Elevation/`, `Tiles/`
 - Admin/control plane: `src/Honua.Server/Features/Admin/`
 - Import/migration: `src/Honua.Server/Features/Import/`
+- Forms package/submission contracts: `src/Honua.Core/Features/Forms/Packages/`, `src/Honua.Server/Features/Forms/`, `src/Honua.Postgres/Features/Forms/`
 - Monitoring and health: `src/Honua.Server/Features/Infrastructure/Monitoring/`, `src/Honua.Server/Features/HealthCheck/`
 
 ## Release Risk

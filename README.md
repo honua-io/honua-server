@@ -116,6 +116,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 | MapLibre Styles | `/api/styles/{layerId}.json` | MapLibre |
 | Admin API | `/api/v1/admin` | Standalone Admin UI, automation scripts |
 | Studio Package Lifecycle | `/api/v1/studio` | Honua Console, SDKs, generated apps |
+| Form Package API | `/api/v1/admin/forms/packages`, `/api/v1/forms/packages` | Console Form Builder, field clients, mobile/offline SDKs |
 | STAC Ops Demo | `/samples/stac-ops` or `/samples/stac-ops/` | Browser *(Development/Test or `HONUA_SERVE_STAC_DEMO=true`; custom images also need demo assets)* |
 | OpenAPI (OGC Features) | `/openapi.json` | Any HTTP client |
 | OpenAPI (OGC Tiles) | `/ogc/tiles/openapi.json` | Any HTTP client |
@@ -129,6 +130,8 @@ Please use these forms instead of blank issues so reports include enough detail 
 The source-backed feature map is maintained in [docs/features/README.md](docs/features/README.md).
 
 **Query and edit** — FeatureServer query, applyEdits, attachments, and related records. OGC transactions (POST/PUT/DELETE). OData CRUD with spatial functions. Query output in JSON, GeoJSON, PBF, FlatGeobuf, GeoParquet, and GeoArrow (Arrow IPC) formats, plus GeoBuf when the configured feature store supports native GeoBuf output, with Accept-header content negotiation.
+
+**Field forms** — Server-owned form packages under `/api/v1/admin/forms/packages` support draft validation, immutable publishing, reopened drafts, offline policy discovery, and idempotent JSON-compatible or multipart submissions through the shared edit and attachment pipelines.
 
 **Map rendering** — MapServer (export/identify/legend/find/query) plus OGC API Maps endpoints for rendered map images.
 

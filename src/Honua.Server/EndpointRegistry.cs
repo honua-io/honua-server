@@ -397,6 +397,21 @@ public static class EndpointRegistry
         new("GET", "/api/v1/fieldcollection/changes"),
         new("POST", "/api/v1/fieldcollection/changes"),
 
+        // Forms package lifecycle, offline policy, and submissions (#1184)
+        new("GET", "/api/v1/admin/forms/packages"),
+        new("POST", "/api/v1/admin/forms/packages"),
+        new("GET", "/api/v1/admin/forms/packages/{formId}"),
+        new("GET", "/api/v1/admin/forms/packages/{formId}/versions"),
+        new("GET", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}"),
+        new("PUT", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}"),
+        new("POST", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/validate"),
+        new("POST", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/publish"),
+        new("POST", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/reopen"),
+        new("GET", "/api/v1/forms/packages/{formId}"),
+        new("GET", "/api/v1/forms/packages/{formId}/versions/{packageVersion}"),
+        new("GET", "/api/v1/forms/packages/{formId}/offline-policy"),
+        new("POST", "/api/v1/forms/packages/{formId}/submissions"),
+
         new("POST", "/api/v1/admin/tile-operations/jobs"),
         new("GET", "/api/v1/admin/tile-operations/jobs/{jobId}"),
         new("GET", "/api/v1/admin/tile-operations/jobs"),
