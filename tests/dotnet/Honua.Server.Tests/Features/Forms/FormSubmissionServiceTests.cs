@@ -149,6 +149,149 @@ public sealed class FormSubmissionServiceTests
     }
 
     [UnitTest]
+    public async Task SubmitAsync_WithUnderreportedMultipartSizes_ReturnsRejectedByActualTotal()
+    {
+        using var requestServices = CreateRequestServices();
+        var store = new FakeFormPackageStore(
+            includeAttachment: true,
+            allowedOperations: [FormSubmissionOperations.Create],
+            attachmentFieldRequired: false,
+            maxAttachmentBytes: 2_000_000,
+            maxTotalBytes: 1_000_000,
+            fieldAttachmentMaxCount: 2);
+        var writer = new FakeFeatureWriter();
+        var attachmentStore = new RecordingAttachmentStore();
+        var service = CreateService(store, writer, attachmentStore);
+        var request = CreateSubmission(
+            "underreported-total-1",
+            attachments:
+            [
+                new FormSubmissionAttachmentDescriptor
+                {
+                    ClientAttachmentId = "photo-1",
+                    FieldId = "photo",
+                    PartName = "photo-1",
+                    Filename = "photo-1.png",
+                    ContentType = "image/png",
+                    SizeBytes = 1
+                },
+                new FormSubmissionAttachmentDescriptor
+                {
+                    ClientAttachmentId = "photo-2",
+                    FieldId = "photo",
+                    PartName = "photo-2",
+                    Filename = "photo-2.png",
+                    ContentType = "image/png",
+                    SizeBytes = 1
+                }
+            ]);
+        var context = CreateMultipartContext(
+            request,
+            requestServices,
+            CreateFormFile(partName: "photo-1", fileName: "photo-1.png", byteLength: 900_000),
+            CreateFormFile(partName: "photo-2", fileName: "photo-2.png", byteLength: 900_000));
+
+        var result = await service.SubmitAsync(context, store.PackageVersion.FormId);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var body = ReadResponseBody(context);
+        body.Status.Should().Be("rejected");
+        body.ValidationIssues.Should().Contain(issue => issue.Code == "attachmentTotalSizeExceeded");
+        body.ValidationIssues.Should().NotContain(issue => issue.Code == "attachmentSizeInvalid");
+        body.AttachmentOutcomes.Should().HaveCount(2);
+        writer.ApplyEditsCalls.Should().Be(0);
+        attachmentStore.UploadCalls.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_WithUnsafeDescriptorFilename_ReturnsRejectedBeforeUpload()
+    {
+        using var requestServices = CreateRequestServices();
+        var store = new FakeFormPackageStore(
+            includeAttachment: true,
+            allowedOperations: [FormSubmissionOperations.Create],
+            attachmentFieldRequired: false);
+        var writer = new FakeFeatureWriter();
+        var attachmentStore = new RecordingAttachmentStore();
+        var service = CreateService(store, writer, attachmentStore);
+        var request = CreateSubmission(
+            "unsafe-descriptor-name-1",
+            attachments:
+            [
+                new FormSubmissionAttachmentDescriptor
+                {
+                    ClientAttachmentId = "photo-1",
+                    FieldId = "photo",
+                    PartName = "photo-file",
+                    Filename = "photo.exe",
+                    ContentType = "image/png",
+                    SizeBytes = 100
+                }
+            ]);
+        var context = CreateMultipartContext(request, requestServices, CreateFormFile(fileName: "photo.png"));
+
+        var result = await service.SubmitAsync(context, store.PackageVersion.FormId);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var body = ReadResponseBody(context);
+        body.Status.Should().Be("rejected");
+        body.ValidationIssues.Should().Contain(issue => issue.Code == "attachmentSecurityRejected");
+        writer.ApplyEditsCalls.Should().Be(0);
+        attachmentStore.UploadCalls.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_WithRejectedDuplicateAttachmentIds_RecordsEachDescriptorPart()
+    {
+        using var requestServices = CreateRequestServices();
+        var store = new FakeFormPackageStore(
+            includeAttachment: true,
+            allowedOperations: [FormSubmissionOperations.Create],
+            attachmentFieldRequired: false,
+            fieldAttachmentMaxCount: 2);
+        var writer = new FakeFeatureWriter();
+        var attachmentStore = new RecordingAttachmentStore();
+        var service = CreateService(store, writer, attachmentStore);
+        var request = CreateSubmission(
+            "duplicate-client-attachment-id-1",
+            attachments:
+            [
+                new FormSubmissionAttachmentDescriptor
+                {
+                    ClientAttachmentId = "photo-1",
+                    FieldId = "photo",
+                    PartName = "missing-photo-1",
+                    Filename = "photo-1.png",
+                    ContentType = "image/png",
+                    SizeBytes = 100
+                },
+                new FormSubmissionAttachmentDescriptor
+                {
+                    ClientAttachmentId = "photo-1",
+                    FieldId = "photo",
+                    PartName = "missing-photo-2",
+                    Filename = "photo-2.png",
+                    ContentType = "image/png",
+                    SizeBytes = 100
+                }
+            ]);
+        var context = CreateMultipartContext(request, requestServices);
+
+        var result = await service.SubmitAsync(context, store.PackageVersion.FormId);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var body = ReadResponseBody(context);
+        body.AttachmentOutcomes.Should().HaveCount(2);
+        store.RecordedAttachmentDescriptors.Select(static descriptor => descriptor.PartName)
+            .Should().Equal("missing-photo-1", "missing-photo-2");
+        writer.ApplyEditsCalls.Should().Be(0);
+        attachmentStore.UploadCalls.Should().Be(0);
+    }
+
+    [UnitTest]
     public async Task SubmitAsync_WithDeleteAttachmentDescriptor_ReturnsRejectedWithoutEditing()
     {
         using var requestServices = CreateRequestServices();
@@ -282,9 +425,12 @@ public sealed class FormSubmissionServiceTests
     private static FormFile CreateFormFile(
         string partName = "photo-file",
         string fileName = "photo.png",
-        string contentType = "image/png")
+        string contentType = "image/png",
+        int? byteLength = null)
     {
-        var bytes = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=");
+        var bytes = byteLength is int length
+            ? new byte[length]
+            : Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=");
         var stream = new MemoryStream(bytes);
         var file = new FormFile(stream, 0, stream.Length, partName, fileName)
         {
@@ -310,7 +456,8 @@ public sealed class FormSubmissionServiceTests
         string idempotencyKey,
         string operation = FormSubmissionOperations.Create,
         bool includeAttachment = false,
-        long? targetFeatureId = null)
+        long? targetFeatureId = null,
+        FormSubmissionAttachmentDescriptor[]? attachments = null)
         => new()
         {
             IdempotencyKey = idempotencyKey,
@@ -322,7 +469,7 @@ public sealed class FormSubmissionServiceTests
                 ["name"] = Json(JsonSerializer.Serialize("Inspection"))
             },
             Geometry = Json("""{"x":-157.8583,"y":21.3069,"spatialReference":{"wkid":4326}}"""),
-            Attachments = includeAttachment
+            Attachments = attachments ?? (includeAttachment
                 ?
                 [
                     new FormSubmissionAttachmentDescriptor
@@ -334,14 +481,17 @@ public sealed class FormSubmissionServiceTests
                         ContentType = "image/png"
                     }
                 ]
-                : []
+                : [])
         };
 
     private static FormPackageVersion CreatePackageVersion(
         ServiceDefinition service,
         bool includeAttachment = false,
         string[]? allowedOperations = null,
-        bool attachmentFieldRequired = false)
+        bool attachmentFieldRequired = false,
+        long maxAttachmentBytes = 1_000_000,
+        long maxTotalBytes = 2_000_000,
+        int fieldAttachmentMaxCount = 1)
         => new()
         {
             FormId = "inspection",
@@ -411,8 +561,8 @@ public sealed class FormSubmissionServiceTests
                     {
                         Enabled = true,
                         MaxAttachmentsPerSubmission = 2,
-                        MaxAttachmentBytes = 1_000_000,
-                        MaxTotalBytes = 2_000_000,
+                        MaxAttachmentBytes = maxAttachmentBytes,
+                        MaxTotalBytes = maxTotalBytes,
                         AllowedContentTypes = ["image/png"],
                         Fields =
                         [
@@ -420,7 +570,7 @@ public sealed class FormSubmissionServiceTests
                             {
                                 FieldId = "photo",
                                 Required = attachmentFieldRequired,
-                                MaxCount = 1,
+                                MaxCount = fieldAttachmentMaxCount,
                                 AllowedContentTypes = ["image/png"]
                             }
                         ]
@@ -458,10 +608,20 @@ public sealed class FormSubmissionServiceTests
         public FakeFormPackageStore(
             bool includeAttachment = false,
             string[]? allowedOperations = null,
-            bool attachmentFieldRequired = false)
+            bool attachmentFieldRequired = false,
+            long maxAttachmentBytes = 1_000_000,
+            long maxTotalBytes = 2_000_000,
+            int fieldAttachmentMaxCount = 1)
         {
             Service = CreateServiceDefinition();
-            PackageVersion = CreatePackageVersion(Service, includeAttachment, allowedOperations, attachmentFieldRequired);
+            PackageVersion = CreatePackageVersion(
+                Service,
+                includeAttachment,
+                allowedOperations,
+                attachmentFieldRequired,
+                maxAttachmentBytes,
+                maxTotalBytes,
+                fieldAttachmentMaxCount);
         }
 
         public ServiceDefinition Service { get; }
@@ -477,6 +637,10 @@ public sealed class FormSubmissionServiceTests
         public FormSubmissionResponse? CompletedResponse { get; private set; }
 
         public int GetSubmissionByIdempotencyCalls { get; private set; }
+
+        public List<FormSubmissionAttachmentDescriptor> RecordedAttachmentDescriptors { get; } = [];
+
+        public List<FormSubmissionAttachmentOutcome> RecordedAttachmentOutcomes { get; } = [];
 
         private string? LastRequestHash { get; set; }
 
@@ -595,7 +759,11 @@ public sealed class FormSubmissionServiceTests
             FormSubmissionAttachmentOutcome outcome,
             FormPackageVersion packageVersion,
             CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
+        {
+            RecordedAttachmentDescriptors.Add(descriptor);
+            RecordedAttachmentOutcomes.Add(outcome);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class StaticLayerCatalog(ServiceDefinition service) : ILayerCatalog

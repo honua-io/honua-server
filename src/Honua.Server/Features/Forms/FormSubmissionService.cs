@@ -161,13 +161,16 @@ internal sealed class FormSubmissionService
 
             if (!validation.IsValid)
             {
-                var rejectedAttachmentOutcomes = BuildRejectedAttachmentOutcomes(request, validation.Issues, fileValidation.Outcomes);
-                foreach (var outcome in rejectedAttachmentOutcomes)
+                var rejectedAttachmentRecords = BuildRejectedAttachmentOutcomes(request, validation.Issues, fileValidation.Outcomes);
+                foreach (var record in rejectedAttachmentRecords)
                 {
-                    await RecordAttachmentOutcomeAsync(context, submissionId, packageVersion, request, outcome, postClaimToken)
+                    await RecordAttachmentOutcomeAsync(context, submissionId, packageVersion, record.Descriptor, record.Outcome, postClaimToken)
                         .ConfigureAwait(false);
                 }
 
+                var rejectedAttachmentOutcomes = rejectedAttachmentRecords
+                    .Select(static record => record.Outcome)
+                    .ToArray();
                 var statusCode = validation.Issues.Any(static issue =>
                     string.Equals(issue.Code, "operationNotAllowed", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(issue.Code, "attachmentsNotAllowed", StringComparison.OrdinalIgnoreCase))
@@ -424,7 +427,7 @@ internal sealed class FormSubmissionService
                     PartName = descriptor.PartName,
                     Filename = string.IsNullOrWhiteSpace(descriptor.Filename) ? file.FileName : descriptor.Filename,
                     ContentType = string.IsNullOrWhiteSpace(descriptor.ContentType) ? file.ContentType : descriptor.ContentType,
-                    SizeBytes = descriptor.SizeBytes ?? file.Length,
+                    SizeBytes = file.Length,
                     Sha256 = descriptor.Sha256
                 };
             }
@@ -437,7 +440,7 @@ internal sealed class FormSubmissionService
         return CloneRequest(request, attachments: normalized);
     }
 
-    private async Task<(FormValidationIssue[] Issues, FormSubmissionAttachmentOutcome[] Outcomes)> ValidateAttachmentFilesAsync(
+    private async Task<(FormValidationIssue[] Issues, AttachmentOutcomeRecord[] Outcomes)> ValidateAttachmentFilesAsync(
         FormSubmissionRequest request,
         IFormFileCollection files,
         FormPackageVersion packageVersion,
@@ -449,7 +452,7 @@ internal sealed class FormSubmissionService
         }
 
         var issues = new List<FormValidationIssue>();
-        var outcomes = new List<FormSubmissionAttachmentOutcome>();
+        var outcomes = new List<AttachmentOutcomeRecord>();
         var (byPartName, duplicatePartNames) = BuildFilePartLookup(files);
         var policy = packageVersion.Package.AttachmentPolicy;
         var fieldPolicies = BuildAttachmentFieldPolicies(policy);
@@ -484,7 +487,10 @@ internal sealed class FormSubmissionService
             }
 
             var validation = await FileUploadSecurity.ValidateFileAsync(
-                file,
+                GetEffectiveFileName(descriptor, file),
+                file.ContentType,
+                file.Length,
+                file.OpenReadStream,
                 maxSize,
                 _fileUploadOptions.MaxSecurityScanSizeBytes,
                 cancellationToken).ConfigureAwait(false);
@@ -499,7 +505,7 @@ internal sealed class FormSubmissionService
 
     private static void AddAttachmentIssue(
         List<FormValidationIssue> issues,
-        List<FormSubmissionAttachmentOutcome> outcomes,
+        List<AttachmentOutcomeRecord> outcomes,
         FormSubmissionAttachmentDescriptor descriptor,
         string code,
         string message)
@@ -512,14 +518,15 @@ internal sealed class FormSubmissionService
             Path = "attachments",
             Message = message
         });
-        outcomes.Add(new FormSubmissionAttachmentOutcome
+        var outcome = new FormSubmissionAttachmentOutcome
         {
             ClientAttachmentId = descriptor.ClientAttachmentId,
             FieldId = descriptor.FieldId,
             Status = "rejected",
             Reason = message,
             PrivacyApplied = true
-        });
+        };
+        outcomes.Add(new AttachmentOutcomeRecord(descriptor, outcome));
     }
 
     private static FormPackageValidationResult MergeValidation(
@@ -721,7 +728,7 @@ internal sealed class FormSubmissionService
                 var attachment = await _attachmentStore.UploadAsync(
                     layer.Id,
                     targetFeatureId.Value,
-                    FileUploadSecurity.SanitizeFileName(descriptor.Filename ?? file.FileName),
+                    FileUploadSecurity.SanitizeFileName(GetEffectiveFileName(descriptor, file)),
                     descriptor.ContentType ?? file.ContentType,
                     stream,
                     descriptor.FieldId,
@@ -766,7 +773,7 @@ internal sealed class FormSubmissionService
             Reason = reason,
             PrivacyApplied = true
         };
-        await RecordAttachmentOutcomeAsync(context, submissionId, packageVersion, request, outcome, cancellationToken).ConfigureAwait(false);
+        await RecordAttachmentOutcomeAsync(context, submissionId, packageVersion, descriptor, outcome, cancellationToken).ConfigureAwait(false);
         return outcome;
     }
 
@@ -774,18 +781,10 @@ internal sealed class FormSubmissionService
         HttpContext context,
         Guid submissionId,
         FormPackageVersion packageVersion,
-        FormSubmissionRequest request,
+        FormSubmissionAttachmentDescriptor descriptor,
         FormSubmissionAttachmentOutcome outcome,
         CancellationToken cancellationToken)
     {
-        var descriptor = request.Attachments.FirstOrDefault(attachment =>
-            string.Equals(attachment.ClientAttachmentId, outcome.ClientAttachmentId, StringComparison.Ordinal) &&
-            string.Equals(attachment.FieldId, outcome.FieldId, StringComparison.OrdinalIgnoreCase))
-            ?? new FormSubmissionAttachmentDescriptor
-            {
-                ClientAttachmentId = outcome.ClientAttachmentId,
-                FieldId = outcome.FieldId
-            };
         await _store.RecordAttachmentOutcomeAsync(submissionId, descriptor, outcome, packageVersion, cancellationToken)
             .ConfigureAwait(false);
         await RecordAuditAsync(context, "forms.attachment.policy", packageVersion.FormId, AuditOutcome.Success, $"{{\"version\":{packageVersion.Version},\"status\":\"{outcome.Status}\"}}", cancellationToken)
@@ -842,10 +841,10 @@ internal sealed class FormSubmissionService
             }
         };
 
-    private static FormSubmissionAttachmentOutcome[] BuildRejectedAttachmentOutcomes(
+    private static AttachmentOutcomeRecord[] BuildRejectedAttachmentOutcomes(
         FormSubmissionRequest request,
         FormValidationIssue[] issues,
-        FormSubmissionAttachmentOutcome[] existingOutcomes)
+        AttachmentOutcomeRecord[] existingOutcomes)
     {
         if (request.Attachments.Length == 0)
         {
@@ -855,7 +854,7 @@ internal sealed class FormSubmissionService
         var outcomes = existingOutcomes.ToList();
         foreach (var descriptor in request.Attachments)
         {
-            if (outcomes.Any(outcome => SameAttachment(outcome, descriptor)))
+            if (outcomes.Any(outcome => ReferenceEquals(outcome.Descriptor, descriptor)))
             {
                 continue;
             }
@@ -869,14 +868,16 @@ internal sealed class FormSubmissionService
                 continue;
             }
 
-            outcomes.Add(new FormSubmissionAttachmentOutcome
-            {
-                ClientAttachmentId = descriptor.ClientAttachmentId,
-                FieldId = descriptor.FieldId,
-                Status = "rejected",
-                Reason = issue.Message,
-                PrivacyApplied = true
-            });
+            outcomes.Add(new AttachmentOutcomeRecord(
+                descriptor,
+                new FormSubmissionAttachmentOutcome
+                {
+                    ClientAttachmentId = descriptor.ClientAttachmentId,
+                    FieldId = descriptor.FieldId,
+                    Status = "rejected",
+                    Reason = issue.Message,
+                    PrivacyApplied = true
+                }));
         }
 
         return outcomes.ToArray();
@@ -885,10 +886,6 @@ internal sealed class FormSubmissionService
     private static bool IsAttachmentIssue(FormValidationIssue issue)
         => issue.Code.StartsWith("attachment", StringComparison.OrdinalIgnoreCase) ||
            issue.Code.StartsWith("requiredAttachment", StringComparison.OrdinalIgnoreCase);
-
-    private static bool SameAttachment(FormSubmissionAttachmentOutcome outcome, FormSubmissionAttachmentDescriptor descriptor)
-        => string.Equals(outcome.ClientAttachmentId, descriptor.ClientAttachmentId, StringComparison.Ordinal) &&
-           string.Equals(outcome.FieldId, descriptor.FieldId, StringComparison.OrdinalIgnoreCase);
 
     private static FormSubmissionResponse CloneReplayResponse(FormSubmissionResponse response)
         => new()
@@ -909,6 +906,9 @@ internal sealed class FormSubmissionService
     private static bool IsAttachmentField(FormFieldDefinition field)
         => string.Equals(field.Type, "attachment", StringComparison.OrdinalIgnoreCase) ||
            string.Equals(field.Type, "media", StringComparison.OrdinalIgnoreCase);
+
+    private static string GetEffectiveFileName(FormSubmissionAttachmentDescriptor descriptor, IFormFile file)
+        => string.IsNullOrWhiteSpace(descriptor.Filename) ? file.FileName : descriptor.Filename!;
 
     private static (Dictionary<string, IFormFile> ByPartName, HashSet<string> DuplicatePartNames) BuildFilePartLookup(
         IFormFileCollection files)
@@ -1025,6 +1025,10 @@ internal sealed class FormSubmissionService
         string? Error,
         string RawRequest,
         IFormFileCollection Files);
+
+    private readonly record struct AttachmentOutcomeRecord(
+        FormSubmissionAttachmentDescriptor Descriptor,
+        FormSubmissionAttachmentOutcome Outcome);
 }
 
 internal static partial class FormSubmissionLog

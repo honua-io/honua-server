@@ -265,6 +265,27 @@ public sealed class FormPackageValidatorTests
     }
 
     [UnitTest]
+    public async Task ValidateSubmission_WithArcGisWebMercatorLatestWkid_AcceptsLayerSrid()
+    {
+        var validator = CreateValidator(spatialReference: SpatialReference.WebMercator);
+        var packageVersion = new FormPackageVersion
+        {
+            FormId = "inspection",
+            Version = 1,
+            Status = FormPackageStatus.Published,
+            Package = CreatePackage()
+        };
+        var request = CreateSubmissionRequest(
+            FormSubmissionOperations.Create,
+            geometry: Json("""{"x":100,"y":200,"spatialReference":{"wkid":102100,"latestWkid":3857}}"""));
+
+        var result = await validator.ValidateSubmissionAsync(packageVersion, request);
+
+        result.IsValid.Should().BeTrue();
+        result.Issues.Select(static issue => issue.Code).Should().NotContain("geometrySridMismatch");
+    }
+
+    [UnitTest]
     public async Task ValidateSubmission_WithUnparseableNumericField_ReturnsValidationIssue()
     {
         var validator = CreateValidator();
@@ -455,14 +476,16 @@ public sealed class FormPackageValidatorTests
         ]);
     }
 
-    private static FormPackageValidator CreateValidator(string[]? serviceCapabilities = null)
+    private static FormPackageValidator CreateValidator(
+        string[]? serviceCapabilities = null,
+        SpatialReference? spatialReference = null)
     {
-        var layer = CreateLayer();
+        var layer = CreateLayer(spatialReference ?? SpatialReference.WGS84);
         var service = new ServiceDefinition(
             "test",
             "Test service",
             [layer],
-            SpatialReference.WGS84,
+            spatialReference ?? SpatialReference.WGS84,
             Capabilities: serviceCapabilities ?? ["Query", "Extract", "Create", "Update", "Delete"]);
         return new FormPackageValidator(
             new StaticLayerCatalog(service),
@@ -478,13 +501,13 @@ public sealed class FormPackageValidatorTests
             }));
     }
 
-    private static LayerDefinition CreateLayer()
+    private static LayerDefinition CreateLayer(SpatialReference spatialReference)
         => new(
             0,
             "Inspections",
             "Field inspections",
             GeometryType.Point,
-            SpatialReference.WGS84,
+            spatialReference,
             [
                 new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
                 new FieldDefinition("name", FieldType.String, Length: 255),

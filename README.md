@@ -131,7 +131,7 @@ The source-backed feature map is maintained in [docs/features/README.md](docs/fe
 
 **Query and edit** — FeatureServer query, applyEdits, attachments, and related records. OGC transactions (POST/PUT/DELETE). OData CRUD with spatial functions. Query output in JSON, GeoJSON, PBF, FlatGeobuf, GeoParquet, and GeoArrow (Arrow IPC) formats, plus GeoBuf when the configured feature store supports native GeoBuf output, with Accept-header content negotiation.
 
-**Field forms** — Server-owned form packages under `/api/v1/admin/forms/packages` support draft validation, immutable publishing, reopened drafts, offline policy discovery, and idempotent JSON or multipart submissions through the shared edit and attachment pipelines.
+**Field forms** — Server-owned form packages under `/api/v1/admin/forms/packages` support draft validation, immutable publishing, reopened drafts, offline policy discovery, and idempotent JSON-compatible or multipart submissions through the shared edit and attachment pipelines.
 
 **Map rendering** — MapServer (export/identify/legend/find/query) plus OGC API Maps endpoints for rendered map images.
 

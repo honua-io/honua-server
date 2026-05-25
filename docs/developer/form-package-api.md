@@ -39,6 +39,22 @@ Expected failures:
 
 Create and update draft routes persist the supplied package JSON without running publish validation. Draft updates clear the stored validation result; callers should run `validate` again before publishing. Published versions are immutable at the persistence layer. Reopen creates a new draft version with a fresh `ETag` instead of mutating the published document.
 
+List responses return one summary per package family, ordered by most recent update:
+
+```json
+[
+  {
+    "formId": "inspection-form",
+    "title": "Inspection Form",
+    "serviceId": "test",
+    "layerId": 0,
+    "currentDraftVersion": 2,
+    "currentPublishedVersion": 1,
+    "updatedAt": "2026-05-25T00:00:00Z"
+  }
+]
+```
+
 ## Runtime Routes
 
 | Method | Route | Success | Contract |
@@ -46,7 +62,7 @@ Create and update draft routes persist the supplied package JSON without running
 | `GET` | `/api/v1/forms/packages/{formId}` | `200` | Returns the current published `FormPackageVersion`; `Cache-Control: private, max-age=60, must-revalidate`. |
 | `GET` | `/api/v1/forms/packages/{formId}/versions/{packageVersion}` | `200` | Returns a published version only; same private cache policy. |
 | `GET` | `/api/v1/forms/packages/{formId}/offline-policy` | `200` | Returns `FormOfflinePolicyResponse`; always `Cache-Control: no-store`. |
-| `POST` | `/api/v1/forms/packages/{formId}/submissions` | `200` | Submits JSON or multipart field data against a published version; returns `FormSubmissionResponse`. |
+| `POST` | `/api/v1/forms/packages/{formId}/submissions` | `200` | Submits JSON-compatible or multipart field data against a published version; returns `FormSubmissionResponse`. |
 
 Runtime reads return `404` for missing packages and for versions that exist but are not published.
 
@@ -99,7 +115,7 @@ Validation responses use:
 
 ## Submissions
 
-Submissions are accepted only for published packages. The request body may be `application/json` or `multipart/form-data`. Malformed bodies, unsupported content types, route authorization failures, and target data-editor authorization failures use the shared problem/auth response path before a `FormSubmissionResponse` can be created.
+Submissions are accepted only for published packages. The request body may be `multipart/form-data` or a JSON-compatible content type whose media type contains `json`, such as `application/json` or `application/vnd.honua.form-submission+json`. Malformed bodies, unsupported content types, route authorization failures, and target data-editor authorization failures use the shared problem/auth response path before a `FormSubmissionResponse` can be created.
 
 JSON submission example:
 
@@ -127,7 +143,7 @@ Runtime validation checks:
 
 - Package status, allowed operation, and `targetFeatureId` for update/delete.
 - Required values, read-only fields, JSON value types, domain membership, and target field compatibility.
-- Point geometry shape, finite coordinates, and SRID. Geometry uses GeoServices-style `{ "x": number, "y": number, "spatialReference": { "wkid": number } }`; `x` and `y` may be finite JSON numbers or numeric strings, and `spatialReference.wkid` or `spatialReference.latestWkid` must match the target layer SRID when supplied.
+- Point geometry shape, finite coordinates, and SRID. Geometry uses GeoServices-style `{ "x": number, "y": number, "spatialReference": { "wkid": number } }`; `x` and `y` may be finite JSON numbers or numeric strings. When supplied, `spatialReference.latestWkid` is preferred over `wkid`, and common Web Mercator aliases (`102100`, `102113`, `900913`, `3785`) normalize to `3857` before matching the target layer SRID.
 - Required attachment fields for create/update submissions, package and per-field attachment counts, package/field/global MIME type allowlists, file part presence, unique multipart part names, file size, filename/content security, and global attachment limits. Delete submissions do not require attachment fields and cannot include attachment descriptors.
 
 Accepted submissions are translated into the shared edit pipeline (`IEditProcessor` and `IFeatureWriter`). Non-attachment field values are mapped from form `fieldId` to target layer `targetField`. Attachment upload runs only after a successful create/update edit produces or resolves a target feature id. Failed edits and delete operations do not persist attachments.
@@ -163,7 +179,7 @@ Multipart submissions must include a `submission` JSON part plus file parts refe
 }
 ```
 
-The server normalizes missing descriptor `filename`, `contentType`, and `sizeBytes` from the uploaded file when the multipart part exists and the part name is unique. Descriptor and file MIME types must satisfy the package allowlist, any per-field allowlist, and the global server allowlist; when a package or field allowlist is empty, the next broader policy supplies the constraint. Accepted files are stored through the FeatureServer attachment store and return per-file outcomes. The optional descriptor `sha256` is retained with submitted attachment metadata when supplied, but this slice does not perform checksum enforcement. Descriptors that name missing or duplicate parts are rejected with attachment validation issues and do not run the feature edit path.
+The server normalizes missing descriptor `filename` and `contentType` from the uploaded file when the multipart part exists and the part name is unique. `sizeBytes` validation and persistence use the uploaded file length so clients cannot underreport total attachment size. Descriptor filenames are validated with the same upload filename and extension checks used for the multipart file. Descriptor and file MIME types must satisfy the package allowlist, any per-field allowlist, and the global server allowlist; when a package or field allowlist is empty, the next broader policy supplies the constraint. Accepted files are stored through the FeatureServer attachment store and return per-file outcomes. The optional descriptor `sha256` is retained with submitted attachment metadata when supplied, but this slice does not perform checksum enforcement. Descriptors that name missing or duplicate parts are rejected with attachment validation issues and do not run the feature edit path.
 
 For idempotency, multipart requests hash the original `submission` JSON part. Metadata filled from file parts is used for validation and persistence, but it does not rewrite the replay hash or require clients to echo file-derived descriptor values.
 

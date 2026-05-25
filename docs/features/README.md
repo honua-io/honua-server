@@ -32,6 +32,7 @@ This map summarizes source-backed runtime capabilities in `honua-server`.
 - Terrain/elevation/vector tiles: `src/Honua.Server/Features/Protocols/Terrain/`, `Elevation/`, `Tiles/`
 - Admin/control plane: `src/Honua.Server/Features/Admin/`
 - Import/migration: `src/Honua.Server/Features/Import/`
+- Forms package/submission contracts: `src/Honua.Core/Features/Forms/Packages/`, `src/Honua.Server/Features/Forms/`, `src/Honua.Postgres/Features/Forms/`
 - Monitoring and health: `src/Honua.Server/Features/Infrastructure/Monitoring/`, `src/Honua.Server/Features/HealthCheck/`
 
 ## Release Risk

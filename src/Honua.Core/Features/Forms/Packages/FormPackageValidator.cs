@@ -6,6 +6,7 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Shared.Models;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Forms.Packages;
@@ -766,9 +767,10 @@ public sealed class FormPackageValidator
         }
 
         var submittedSrid = ResolveGeometrySrid(geometry);
-        if (submittedSrid is int srid && srid != layer.SpatialReference.Wkid)
+        var layerSrid = layer.SpatialReference.ToSrid();
+        if (submittedSrid is int srid && NormalizeSrid(srid) != NormalizeSrid(layerSrid))
         {
-            AddError(issues, "geometrySridMismatch", $"Submitted geometry SRID {srid} does not match target layer SRID {layer.SpatialReference.Wkid}.", path: "geometry.spatialReference");
+            AddError(issues, "geometrySridMismatch", $"Submitted geometry SRID {srid} does not match target layer SRID {layerSrid}.", path: "geometry.spatialReference");
         }
     }
 
@@ -1050,18 +1052,21 @@ public sealed class FormPackageValidator
             return null;
         }
 
-        if (spatialReference.TryGetProperty("wkid", out var wkid) && wkid.TryGetInt32(out var srid))
+        if (spatialReference.TryGetProperty("latestWkid", out var latestWkid) && latestWkid.TryGetInt32(out var srid))
         {
             return srid;
         }
 
-        if (spatialReference.TryGetProperty("latestWkid", out var latestWkid) && latestWkid.TryGetInt32(out srid))
+        if (spatialReference.TryGetProperty("wkid", out var wkid) && wkid.TryGetInt32(out srid))
         {
             return srid;
         }
 
         return null;
     }
+
+    private static int NormalizeSrid(int srid)
+        => srid is 102100 or 102113 or 900913 or 3785 ? 3857 : srid;
 
     private static string JsonElementToString(JsonElement element)
         => element.ValueKind == JsonValueKind.String
