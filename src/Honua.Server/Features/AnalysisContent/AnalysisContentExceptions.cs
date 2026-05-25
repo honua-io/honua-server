@@ -8,5 +8,3 @@ internal sealed class AnalysisContentValidationException(string message) : Excep
 internal sealed class AnalysisContentNotFoundException(string message) : Exception(message);
 
 internal sealed class AnalysisContentConflictException(string message) : Exception(message);
-
-internal sealed class AnalysisContentStoreUnavailableException(string message) : Exception(message);

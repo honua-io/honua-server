@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AnalysisContent.Domain;
 using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -339,7 +340,7 @@ internal static partial class AnalysisContentEndpoints
     {
         try
         {
-            var logs = await service.GetJobLogsAsync(jobId, limit, context.RequestAborted).ConfigureAwait(false);
+            var logs = await service.GetJobLogsAsync(jobId, limit, context.User, context.RequestAborted).ConfigureAwait(false);
             return Results.Json(logs, AnalysisContentApiJsonContext.Default.AnalysisJobLogs);
         }
         catch (Exception ex) when (TryMapException(ex, context, out var problem))

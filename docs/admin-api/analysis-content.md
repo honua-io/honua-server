@@ -333,12 +333,17 @@ or equal to zero return `400`.
 }
 ```
 
-If no execution log store is registered, the endpoint returns `200` with an
-empty entry list. Messages and phases are line-normalized, capped to 512
-characters, and replaced with a generic failure message when they look like
-stack traces, provider internals, connection strings, or secret-bearing text.
-Metadata keys containing password, secret, or connection are omitted; remaining
-metadata is capped to 20 entries.
+The job is resolved through the job service before any log content is returned,
+so an unknown `jobId` returns `404` (not `200` with an empty list) and the same
+job-read authorization enforced by the failure endpoint is applied first. For a
+known job with no execution log store registered, the endpoint returns `200`
+with an empty entry list. Messages, phases, and metadata values are
+line-normalized, capped to 512 characters, and replaced with a generic failure
+message when they look like stack traces, provider internals, connection
+strings, or secret-bearing text (secret, token, credential, api key, or bearer
+values) — including secret-bearing values stored under otherwise innocuous
+metadata keys. Metadata keys containing password, secret, or connection are
+omitted; remaining metadata is capped to 20 entries.
 
 `GET /api/v1/analysis/jobs/{jobId}/failure` is only valid for failed or
 cancelled jobs. Failed jobs return a safe classification:

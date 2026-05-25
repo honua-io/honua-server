@@ -422,6 +422,7 @@ internal sealed partial class AnalysisContentService(
     public async Task<AnalysisJobLogs> GetJobLogsAsync(
         string jobId,
         int? limit,
+        ClaimsPrincipal principal,
         CancellationToken cancellationToken)
         => await AnalysisContentTelemetry.TrackAsync(
             AnalysisContentTelemetry.OperationsNames.GetJobLogs,
@@ -430,6 +431,13 @@ internal sealed partial class AnalysisContentService(
                 var resolvedLimit = ResolveLimit(limit, DefaultLogLimit, MaxLogLimit);
                 activity?.SetTag(Honua.ServiceDefaults.HonuaTelemetry.Tags.JobId, jobId);
                 activity?.SetTag(AnalysisContentTelemetry.Tags.LogLimit, resolvedLimit);
+
+                // Resolve the job through the job service first so unknown ids return not-found
+                // (instead of 200 with empty logs) and the same job-read authorization enforced by
+                // the failure endpoint is applied before any log content is returned.
+                _ = await geoprocessingJobService.GetJobAsync(jobId, principal, cancellationToken)
+                    .ConfigureAwait(false);
+
                 if (_logStore is null)
                 {
                     return new AnalysisJobLogs
@@ -803,6 +811,22 @@ internal sealed partial class AnalysisContentService(
             : sanitized;
     }
 
+    private static readonly string[] SensitiveDiagnosticMarkers =
+    [
+        "Npgsql",
+        "connection string",
+        "password",
+        "pwd=",
+        "secret",
+        "token",
+        "credential",
+        "api key",
+        "apikey",
+        "api_key",
+        "bearer",
+        "private key"
+    ];
+
     private static string SanitizeDiagnostic(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -811,17 +835,35 @@ internal sealed partial class AnalysisContentService(
         }
 
         var sanitized = value.ReplaceLineEndings(" ").Trim();
-        if (sanitized.Contains(" at ", StringComparison.Ordinal) ||
-            sanitized.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) ||
-            sanitized.Contains("connection string", StringComparison.OrdinalIgnoreCase) ||
-            sanitized.Contains("password", StringComparison.OrdinalIgnoreCase))
+        if (ContainsSensitiveMarker(sanitized))
         {
-            sanitized = "The analysis job failed. See server logs for details.";
+            return "The analysis job failed. See server logs for details.";
         }
 
         return sanitized.Length <= MaxDiagnosticLength
             ? sanitized
             : sanitized[..MaxDiagnosticLength];
+    }
+
+    private static bool ContainsSensitiveMarker(string value)
+    {
+        // " at " (case-sensitive) catches stack-trace frames; the remaining markers catch
+        // provider internals and secret-bearing fragments (secret/token/credential/api key/
+        // bearer) regardless of case, including values embedded in otherwise innocuous keys.
+        if (value.Contains(" at ", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        foreach (var marker in SensitiveDiagnosticMarkers)
+        {
+            if (value.Contains(marker, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string? SanitizePhase(string? value)

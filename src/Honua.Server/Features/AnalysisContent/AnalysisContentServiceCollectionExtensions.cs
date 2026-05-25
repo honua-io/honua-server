@@ -16,7 +16,17 @@ internal static class AnalysisContentServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.TryAddSingleton(TimeProvider.System);
-        services.TryAddScoped<IAnalysisContentStore, InMemoryAnalysisContentStore>();
+
+        // In-memory baseline store for hosts without a durable provider (e.g. DuckDB/MySQL
+        // profiles or tests). It must be a process-wide singleton: the concrete store keeps all
+        // content in instance fields, so a scoped registration would resolve a fresh empty store
+        // per request and silently lose items written by an earlier request. The interface stays
+        // scoped (resolving the singleton) to match the durable Postgres store's lifetime, so the
+        // Postgres registration cleanly replaces it when configured. Data does not survive a
+        // restart; durable persistence requires the Postgres-backed store.
+        services.TryAddSingleton<InMemoryAnalysisContentStore>();
+        services.TryAddScoped<IAnalysisContentStore>(sp =>
+            sp.GetRequiredService<InMemoryAnalysisContentStore>());
         services.TryAddScoped<IAnalysisContentService, AnalysisContentService>();
 
         return services;

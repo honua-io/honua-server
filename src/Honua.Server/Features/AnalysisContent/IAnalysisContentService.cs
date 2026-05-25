@@ -56,6 +56,7 @@ internal interface IAnalysisContentService
     Task<AnalysisJobLogs> GetJobLogsAsync(
         string jobId,
         int? limit,
+        ClaimsPrincipal principal,
         CancellationToken cancellationToken);
 
     Task<AnalysisJobFailure> GetJobFailureAsync(

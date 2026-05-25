@@ -250,9 +250,31 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
         Assert.Equal(2, logs!.TotalCount);
         Assert.True(logs.Truncated);
         Assert.Single(logs.Entries);
-        Assert.DoesNotContain("password", JsonSerializer.Serialize(logs, JsonOptions), StringComparison.OrdinalIgnoreCase);
+        var serializedLogs = JsonSerializer.Serialize(logs, JsonOptions);
+        Assert.DoesNotContain("password", serializedLogs, StringComparison.OrdinalIgnoreCase);
+        // Secret-bearing metadata value under a non-sensitive key must be redacted by value, not
+        // only by key filtering.
+        Assert.DoesNotContain("topsecret123", serializedLogs, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("client_secret", serializedLogs, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(1, _logs.TailReadCount);
         Assert.Equal(0, _logs.GetLogsReadCount);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.JobStatus)]
+    [Endpoint("GET /api/v1/analysis/jobs/{jobId}/logs")]
+    [Endpoint("GET /api/v1/analysis/jobs/{jobId}/failure")]
+    public async Task JobDiagnostics_ForUnknownJob_ReturnNotFound()
+    {
+        // Both job-scoped diagnostic endpoints must resolve the job first so an unknown id is a
+        // 404, not a 200 with empty logs (logs) or a misleading conflict (failure).
+        var logsResponse = await _client.GetAsync("/api/v1/analysis/jobs/missing-job/logs");
+        Assert.Equal(HttpStatusCode.NotFound, logsResponse.StatusCode);
+        // The log store must not be read when the job does not exist.
+        Assert.Equal(0, _logs.TailReadCount);
+
+        var failureResponse = await _client.GetAsync("/api/v1/analysis/jobs/missing-job/failure");
+        Assert.Equal(HttpStatusCode.NotFound, failureResponse.StatusCode);
     }
 
     private static async Task<T?> ReadJsonAsync<T>(HttpResponseMessage response, HttpStatusCode expectedStatus)
@@ -349,7 +371,9 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
             string jobId,
             ClaimsPrincipal principal,
             CancellationToken cancellationToken = default)
-            => Task.FromResult(_jobs[jobId]);
+            => _jobs.TryGetValue(jobId, out var job)
+                ? Task.FromResult(job)
+                : throw new GeoprocessingNotFoundException($"Job '{jobId}' not found.");
 
         public Task<AnalysisResultPackage> GetJobResultsAsync(
             string jobId,
@@ -420,7 +444,10 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
                     Metadata = new Dictionary<string, string>
                     {
                         ["password"] = "secret",
-                        ["code"] = "invalid-distance"
+                        ["code"] = "invalid-distance",
+                        // Secret-bearing value under an otherwise innocuous key: the key-based
+                        // filter does not catch it, so value-level redaction must.
+                        ["detail"] = "client_secret=topsecret123"
                     }
                 }
             ];

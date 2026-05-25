@@ -32,6 +32,34 @@ public sealed class AnalysisContentStoreConflictException : Exception
 }
 
 /// <summary>
+/// Raised when the durable analysis content store cannot be reached or used because of an
+/// infrastructure outage (connection failure, timeout, resource exhaustion, or backend
+/// authorization failure) rather than a request-level problem. Callers map this to a
+/// retryable 503 so a transient store outage is not reported as a generic 500.
+/// </summary>
+public sealed class AnalysisContentStoreUnavailableException : Exception
+{
+    /// <summary>
+    /// Initializes a new instance of the <see cref="AnalysisContentStoreUnavailableException"/> class.
+    /// </summary>
+    /// <param name="message">Safe, store-neutral unavailability message.</param>
+    public AnalysisContentStoreUnavailableException(string message)
+        : base(message)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="AnalysisContentStoreUnavailableException"/> class.
+    /// </summary>
+    /// <param name="message">Safe, store-neutral unavailability message.</param>
+    /// <param name="innerException">Underlying provider exception.</param>
+    public AnalysisContentStoreUnavailableException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}
+
+/// <summary>
 /// Durable store for saved-query and analysis-package content items, immutable versions,
 /// and job result artifact metadata.
 /// </summary>
