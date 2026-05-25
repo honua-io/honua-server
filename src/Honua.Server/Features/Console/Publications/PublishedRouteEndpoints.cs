@@ -24,6 +24,10 @@ namespace Honua.Server.Features.Console.Publications;
 /// </summary>
 internal static class PublishedRouteEndpoints
 {
+    private const string OriginHeaderName = "Origin";
+    private const string RefererHeaderName = "Referer";
+    private const string NullOrigin = "null";
+
     /// <summary>Log category for published route reads.</summary>
     internal sealed class PublishedRouteLog;
 
@@ -89,7 +93,7 @@ internal static class PublishedRouteEndpoints
                 }
             }
 
-            if (embed == true && !route.Policy.Embed.AllowEmbedding)
+            if (embed == true && !IsEmbedRequestAuthorized(context.Request, route.Policy.Embed))
             {
                 ContentPublicationEndpointsLog.EmbedDenied(logger, routeSlug);
                 await ContentPublicationAudit.RecordAsync(
@@ -155,6 +159,89 @@ internal static class PublishedRouteEndpoints
         }
 
         return policy.Access ?? new AccessPolicy();
+    }
+
+    private static bool IsEmbedRequestAuthorized(HttpRequest request, ContentEmbedPolicy embed)
+    {
+        if (!embed.AllowEmbedding)
+        {
+            return false;
+        }
+
+        if (embed.AllowedOrigins is not { Count: > 0 } allowedOrigins)
+        {
+            return true;
+        }
+
+        if (!TryResolveRequestOrigin(request, out var requestOrigin))
+        {
+            return false;
+        }
+
+        foreach (var allowedOrigin in allowedOrigins)
+        {
+            if (TryNormalizeOrigin(allowedOrigin, out var normalizedAllowed)
+                && string.Equals(normalizedAllowed, requestOrigin, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryResolveRequestOrigin(HttpRequest request, out string? origin)
+    {
+        var originHeader = request.Headers[OriginHeaderName].ToString();
+        if (!string.IsNullOrWhiteSpace(originHeader))
+        {
+            return TryNormalizeOrigin(originHeader, out origin);
+        }
+
+        var referer = request.Headers[RefererHeaderName].ToString();
+        if (Uri.TryCreate(referer, UriKind.Absolute, out var refererUri))
+        {
+            origin = NormalizeOrigin(refererUri);
+            return true;
+        }
+
+        origin = null;
+        return false;
+    }
+
+    private static bool TryNormalizeOrigin(string? value, out string? origin)
+    {
+        origin = null;
+        var candidate = value?.Trim();
+        if (string.IsNullOrEmpty(candidate))
+        {
+            return false;
+        }
+
+        if (string.Equals(candidate, NullOrigin, StringComparison.OrdinalIgnoreCase))
+        {
+            origin = NullOrigin;
+            return true;
+        }
+
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri) || string.IsNullOrEmpty(uri.Host))
+        {
+            return false;
+        }
+
+        origin = NormalizeOrigin(uri);
+        return true;
+    }
+
+    private static string NormalizeOrigin(Uri uri)
+    {
+        var builder = new UriBuilder(uri.Scheme.ToLowerInvariant(), uri.Host.ToLowerInvariant());
+        if (!uri.IsDefaultPort)
+        {
+            builder.Port = uri.Port;
+        }
+
+        return builder.Uri.GetComponents(UriComponents.SchemeAndServer, UriFormat.UriEscaped);
     }
 
     private static IResult MapError(HttpContext context, ContentPublicationException ex) => ex.StatusCode switch

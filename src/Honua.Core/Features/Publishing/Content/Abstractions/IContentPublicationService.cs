@@ -26,6 +26,7 @@ public interface IContentPublicationService
         CancellationToken cancellationToken = default);
 
     /// <summary>Returns route state plus versions for a publication, or null when not found.</summary>
+    /// <exception cref="ContentPublicationValidationException">Publication id is not a valid GUID.</exception>
     Task<ContentPublicationDetail?> GetAsync(
         string publicationId,
         CancellationToken cancellationToken = default);
@@ -33,7 +34,7 @@ public interface IContentPublicationService
     /// <summary>
     /// Returns one immutable version selected by revision (numeric or <c>v{n}</c>) or version id.
     /// </summary>
-    /// <exception cref="ContentPublicationValidationException">Selector is not a valid revision or version id.</exception>
+    /// <exception cref="ContentPublicationValidationException">Publication id or selector is not valid.</exception>
     Task<ContentPublicationVersion?> GetVersionAsync(
         string publicationId,
         string versionSelector,

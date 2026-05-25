@@ -194,6 +194,19 @@ public sealed class PostgresContentPublicationStoreTests(PostgresFixture fixture
         }
     }
 
+    [IntegrationTest]
+    public async Task ReadMethods_MalformedPublicationId_ReturnStableEmptyResults()
+    {
+        var store = new PostgresContentPublicationStore(new ThrowingConnectionProvider(), schemaName: "unused");
+
+        (await store.GetRouteByPublicationIdAsync("not-a-guid")).Should().BeNull();
+        (await store.GetVersionByIdAsync("not-a-guid", Guid.NewGuid().ToString("D"))).Should().BeNull();
+        (await store.GetVersionByRevisionAsync("not-a-guid", 1)).Should().BeNull();
+        (await store.ListVersionsAsync("not-a-guid", 10)).Should().BeEmpty();
+        (await store.GetMaxRevisionAsync("not-a-guid")).Should().Be(0L);
+        (await store.ListEventsAsync("not-a-guid", 10)).Should().BeEmpty();
+    }
+
     private static (ContentPublicationVersion, ContentPublicationRouteState, ContentPublicationEvent) BuildPublish(
         string publicationId, string slug, string contentHash, ContentPublicationPolicy? policy = null)
     {
@@ -390,5 +403,24 @@ public sealed class PostgresContentPublicationStoreTests(PostgresFixture fixture
         public Task<T> ExecuteWithDeadlockRetryAsync<T>(Func<Task<T>> operation, CancellationToken cancellationToken = default) => operation();
 
         public Task ExecuteWithDeadlockRetryAsync(Func<Task> operation, CancellationToken cancellationToken = default) => operation();
+    }
+
+    private sealed class ThrowingConnectionProvider : IDatabaseConnectionProvider
+    {
+        public string GetConnectionString() => throw new InvalidOperationException("Unexpected database access.");
+
+        public Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Unexpected database access.");
+
+        public Task<(DbConnection Connection, DbTransaction Transaction)> OpenTransactionAsync(
+            IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
+            CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Unexpected database access.");
+
+        public Task<T> ExecuteWithDeadlockRetryAsync<T>(Func<Task<T>> operation, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Unexpected database access.");
+
+        public Task ExecuteWithDeadlockRetryAsync(Func<Task> operation, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Unexpected database access.");
     }
 }

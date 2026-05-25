@@ -96,6 +96,18 @@ public sealed class ContentPublicationEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/console/publications/{publicationId}")]
+    public async Task Get_WithMalformedPublicationId_ReturnsBadRequestWithoutLeakingInternals()
+    {
+        var response = await _client.GetAsync("/api/v1/console/publications/not-a-guid");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var payload = await response.Content.ReadAsStringAsync();
+        payload.Should().Contain("publicationId must be a valid GUID");
+        AssertNoSensitiveLeak(payload);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/console/publications/{publicationId}/versions/{versionSelector}")]
     public async Task GetVersion_ByRevisionAndVersionId_ReturnsImmutableVersion_AndRejectsBadSelector()
     {

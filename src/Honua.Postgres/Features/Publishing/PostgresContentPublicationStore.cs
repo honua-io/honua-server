@@ -49,9 +49,14 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
     /// <inheritdoc />
     public async Task<ContentPublicationRouteState?> GetRouteByPublicationIdAsync(string publicationId, CancellationToken cancellationToken = default)
     {
+        if (!TryParsePublicationId(publicationId, out var publicationGuid))
+        {
+            return null;
+        }
+
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand($"SELECT {RouteColumns} FROM {_routesTable} WHERE publication_id = @publication_id", connection);
-        command.Parameters.AddWithValue("@publication_id", Guid.Parse(publicationId));
+        command.Parameters.AddWithValue("@publication_id", publicationGuid);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? MapRoute(reader) : null;
     }
@@ -69,7 +74,8 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
     /// <inheritdoc />
     public async Task<ContentPublicationVersion?> GetVersionByIdAsync(string publicationId, string versionId, CancellationToken cancellationToken = default)
     {
-        if (!Guid.TryParse(versionId, out var versionGuid))
+        if (!TryParsePublicationId(publicationId, out var publicationGuid)
+            || !Guid.TryParse(versionId, out var versionGuid))
         {
             return null;
         }
@@ -77,7 +83,7 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(
             $"SELECT {VersionColumns} FROM {_versionsTable} WHERE publication_id = @publication_id AND version_id = @version_id", connection);
-        command.Parameters.AddWithValue("@publication_id", Guid.Parse(publicationId));
+        command.Parameters.AddWithValue("@publication_id", publicationGuid);
         command.Parameters.AddWithValue("@version_id", versionGuid);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? MapVersion(reader) : null;
@@ -86,10 +92,15 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
     /// <inheritdoc />
     public async Task<ContentPublicationVersion?> GetVersionByRevisionAsync(string publicationId, long revision, CancellationToken cancellationToken = default)
     {
+        if (!TryParsePublicationId(publicationId, out var publicationGuid))
+        {
+            return null;
+        }
+
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(
             $"SELECT {VersionColumns} FROM {_versionsTable} WHERE publication_id = @publication_id AND revision = @revision", connection);
-        command.Parameters.AddWithValue("@publication_id", Guid.Parse(publicationId));
+        command.Parameters.AddWithValue("@publication_id", publicationGuid);
         command.Parameters.AddWithValue("@revision", revision);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? MapVersion(reader) : null;
@@ -98,10 +109,15 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
     /// <inheritdoc />
     public async Task<IReadOnlyList<ContentPublicationVersion>> ListVersionsAsync(string publicationId, int limit, CancellationToken cancellationToken = default)
     {
+        if (!TryParsePublicationId(publicationId, out var publicationGuid))
+        {
+            return [];
+        }
+
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(
             $"SELECT {VersionColumns} FROM {_versionsTable} WHERE publication_id = @publication_id ORDER BY revision DESC LIMIT @limit", connection);
-        command.Parameters.AddWithValue("@publication_id", Guid.Parse(publicationId));
+        command.Parameters.AddWithValue("@publication_id", publicationGuid);
         command.Parameters.AddWithValue("@limit", Math.Max(0, limit));
         var results = new List<ContentPublicationVersion>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -116,10 +132,15 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
     /// <inheritdoc />
     public async Task<long> GetMaxRevisionAsync(string publicationId, CancellationToken cancellationToken = default)
     {
+        if (!TryParsePublicationId(publicationId, out var publicationGuid))
+        {
+            return 0L;
+        }
+
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(
             $"SELECT COALESCE(MAX(revision), 0) FROM {_versionsTable} WHERE publication_id = @publication_id", connection);
-        command.Parameters.AddWithValue("@publication_id", Guid.Parse(publicationId));
+        command.Parameters.AddWithValue("@publication_id", publicationGuid);
         var value = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return value is long revision ? revision : 0L;
     }
@@ -210,10 +231,15 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
     /// <inheritdoc />
     public async Task<IReadOnlyList<ContentPublicationEvent>> ListEventsAsync(string publicationId, int limit, CancellationToken cancellationToken = default)
     {
+        if (!TryParsePublicationId(publicationId, out var publicationGuid))
+        {
+            return [];
+        }
+
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(
             $"SELECT {EventColumns} FROM {_eventsTable} WHERE publication_id = @publication_id ORDER BY event_seq DESC LIMIT @limit", connection);
-        command.Parameters.AddWithValue("@publication_id", Guid.Parse(publicationId));
+        command.Parameters.AddWithValue("@publication_id", publicationGuid);
         command.Parameters.AddWithValue("@limit", Math.Max(0, limit));
         var results = new List<ContentPublicationEvent>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -452,6 +478,9 @@ internal sealed class PostgresContentPublicationStore : IContentPublicationStore
     private static object NullableText(string? value) => string.IsNullOrEmpty(value) ? DBNull.Value : value;
 
     private static object NullableGuid(string? value) => string.IsNullOrEmpty(value) ? DBNull.Value : Guid.Parse(value);
+
+    private static bool TryParsePublicationId(string publicationId, out Guid publicationGuid)
+        => Guid.TryParse(publicationId, out publicationGuid);
 
     private static string? StringOrNull(NpgsqlDataReader reader, int ordinal) => reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
 

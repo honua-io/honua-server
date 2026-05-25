@@ -129,6 +129,8 @@ public sealed class ContentPublicationService : IContentPublicationService
     /// <inheritdoc />
     public async Task<ContentPublicationDetail?> GetAsync(string publicationId, CancellationToken cancellationToken = default)
     {
+        ValidatePublicationId(publicationId);
+
         var route = await _store.GetRouteByPublicationIdAsync(publicationId, cancellationToken).ConfigureAwait(false);
         if (route is null)
         {
@@ -142,6 +144,8 @@ public sealed class ContentPublicationService : IContentPublicationService
     /// <inheritdoc />
     public async Task<ContentPublicationVersion?> GetVersionAsync(string publicationId, string versionSelector, CancellationToken cancellationToken = default)
     {
+        ValidatePublicationId(publicationId);
+
         if (string.IsNullOrWhiteSpace(versionSelector))
         {
             throw new ContentPublicationValidationException("A version selector is required.");
@@ -169,6 +173,7 @@ public sealed class ContentPublicationService : IContentPublicationService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ValidatePublicationId(publicationId);
         ValidateBbox(request.DefaultViewBbox);
 
         var route = await _store.GetRouteByPublicationIdAsync(publicationId, cancellationToken).ConfigureAwait(false)
@@ -240,6 +245,7 @@ public sealed class ContentPublicationService : IContentPublicationService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ValidatePublicationId(publicationId);
 
         var route = await _store.GetRouteByPublicationIdAsync(publicationId, cancellationToken).ConfigureAwait(false)
             ?? throw new ContentPublicationNotFoundException("Publication not found.");
@@ -299,6 +305,7 @@ public sealed class ContentPublicationService : IContentPublicationService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ValidatePublicationId(publicationId);
 
         var route = await _store.GetRouteByPublicationIdAsync(publicationId, cancellationToken).ConfigureAwait(false)
             ?? throw new ContentPublicationNotFoundException("Publication not found.");
@@ -414,6 +421,14 @@ public sealed class ContentPublicationService : IContentPublicationService
         if (expectedEtag is { Length: > 0 } && !string.Equals(route.Etag, expectedEtag, StringComparison.Ordinal))
         {
             throw new ContentPublicationConflictException("Route was modified concurrently (etag mismatch).");
+        }
+    }
+
+    private static void ValidatePublicationId(string publicationId)
+    {
+        if (!Guid.TryParse(publicationId, out _))
+        {
+            throw new ContentPublicationValidationException("publicationId must be a valid GUID.");
         }
     }
 

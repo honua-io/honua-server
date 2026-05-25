@@ -121,6 +121,10 @@ internal static class ContentPublicationEndpoints
                 ? ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status404NotFound, "Content publication not found.")
                 : Results.Json(detail, ContentPublicationJsonContext.Default.ContentPublicationDetail);
         }
+        catch (ContentPublicationException ex)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(context, ex.StatusCode, ex.Message);
+        }
         catch (OperationCanceledException)
         {
             throw;

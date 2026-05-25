@@ -112,7 +112,7 @@ public sealed class PublishedRouteEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/published/{*routeSlug}")]
-    public async Task Embed_DeniedWhenNotAllowed_AndAllowedAfterPolicyUpdate()
+    public async Task Embed_DeniedWhenNotAllowedOrOriginMismatched_AndAllowedForAllowedOrigin()
     {
         var detail = await PublishAsync("embed-map", ContentPublicationKind.Map);
         await SetVisibilityPublicAsync(detail.Route.PublicationId);
@@ -125,7 +125,14 @@ public sealed class PublishedRouteEndpointsTests : IAsyncLifetime
             Embed = new ContentEmbedPolicy { AllowEmbedding = true, AllowedOrigins = ["https://app.example"], FrameAncestors = ["https://app.example"] },
         });
 
-        var allowed = await _anonymousClient.GetAsync("/api/v1/published/embed-map?embed=true");
+        using var wrongOrigin = new HttpRequestMessage(HttpMethod.Get, "/api/v1/published/embed-map?embed=true");
+        wrongOrigin.Headers.TryAddWithoutValidation("Origin", "https://evil.example");
+        var originDenied = await _anonymousClient.SendAsync(wrongOrigin);
+        originDenied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        using var allowedOrigin = new HttpRequestMessage(HttpMethod.Get, "/api/v1/published/embed-map?embed=true");
+        allowedOrigin.Headers.TryAddWithoutValidation("Origin", "https://app.example");
+        var allowed = await _anonymousClient.SendAsync(allowedOrigin);
         allowed.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
