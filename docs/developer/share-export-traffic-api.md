@@ -120,11 +120,12 @@ badge those states rather than treating the definition as missing. The status is
 resolved on create/update and refreshed when a manual trigger is attempted.
 
 `destinationConfig` must be display-safe. Raw secret-shaped keys are rejected
-unless they are reference keys. For example, `password`, `token`, `privateKey`,
-`apiKey`, and `accessKey` are rejected unless represented as `secretRef`,
-`credentialRef`, or another key ending in `Ref` or `Reference`. As a read-side
-safeguard, any stored config key that still looks like raw secret material has
-its value returned as `redacted` rather than the stored value.
+unless they are reference keys. A key is treated as secret-shaped when it
+contains `password`, `secret`, `token`, `privateKey`, `apiKey`, or `accessKey`,
+and is rejected unless represented as `secretRef`, `credentialRef`, or another
+key ending in `Ref` or `Reference`. As a read-side safeguard, any stored config
+key that still looks like raw secret material has its value returned as
+`redacted` rather than the stored value.
 
 ## Listing And Cursors
 
@@ -203,8 +204,11 @@ Once a run is backed by a job, its status reconciles to that job's terminal
 state: when the execution job reaches `Succeeded`, `Failed`, or `Cancelled` (for
 example after a Console cancel through the jobs API at
 `/api/v1/admin/jobs/{jobRunId}`), the run is updated to the matching status with
-`completedAt` and, on failure, the job's `lastError`. The first terminal status
-wins; a later job notification does not overwrite an already-terminal run.
+`completedAt`, on failure the job's `lastError`, and any artifacts the worker
+published on the backing job copied into the run's `resultArtifacts` (including
+diagnostics from a failed job); the run keeps its existing `resultArtifacts` only
+when the job published none. The first terminal status wins; a later job
+notification does not overwrite an already-terminal run.
 
 `pause` and `resume` only update `scheduleState`; they do not cancel already
 queued jobs. Scheduled execution is not implemented in this API slice, so

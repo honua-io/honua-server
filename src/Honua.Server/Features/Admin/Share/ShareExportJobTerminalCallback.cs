@@ -68,6 +68,13 @@ internal sealed class ShareExportJobTerminalCallback(
                 Status = status.Value,
                 StartedAt = existing.StartedAt ?? job.ClaimedAt,
                 CompletedAt = job.CompletedAt ?? timeProvider.GetUtcNow(),
+                // Carry worker-published artifacts from the backing job into run history so Console's
+                // run detail matches the Operate job. The job record is the authoritative artifact
+                // source at terminal time (failed jobs may still publish diagnostics), so copy them
+                // whenever present and keep any already on the run only when the job published none.
+                ResultArtifacts = job.ArtifactReferences.Count > 0
+                    ? job.ArtifactReferences
+                    : existing.ResultArtifacts,
                 LastError = status.Value == ShareExportRunStatus.Failed
                     ? job.ErrorMessage ?? existing.LastError
                     : existing.LastError

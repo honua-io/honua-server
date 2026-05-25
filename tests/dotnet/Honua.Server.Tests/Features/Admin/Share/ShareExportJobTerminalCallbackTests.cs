@@ -32,6 +32,22 @@ public sealed class ShareExportJobTerminalCallbackTests
     private static readonly DateTimeOffset CompletedAt =
         DateTimeOffset.Parse("2026-05-25T06:30:00Z", CultureInfo.InvariantCulture);
 
+    private static readonly string[] SucceededArtifacts =
+    {
+        "https://example.test/share/exports/parcels-2026-05-25.geojson",
+        "s3://share-exports/parcels/2026-05-25.geojson"
+    };
+
+    private static readonly string[] FailedDiagnosticsArtifacts =
+    {
+        "https://example.test/share/exports/failed-diagnostics.json"
+    };
+
+    private static readonly string[] PreexistingArtifacts =
+    {
+        "https://example.test/share/exports/preexisting.geojson"
+    };
+
     [UnitTest]
     public async Task OnTerminal_SucceededJob_MarksRunSucceeded()
     {
@@ -41,6 +57,52 @@ public sealed class ShareExportJobTerminalCallbackTests
         run!.Status.Should().Be(ShareExportRunStatus.Succeeded);
         run.CompletedAt.Should().Be(CompletedAt);
         run.LastError.Should().BeNull();
+        // The job published no artifacts and the run had none, so none are fabricated.
+        run.ResultArtifacts.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task OnTerminal_SucceededJobWithArtifacts_CopiesArtifactsToRun()
+    {
+        // A successful worker publishes its output references on the backing job; the run history
+        // must surface them so Console run detail matches the Operate job (the cited finding).
+        var run = await ReconcileAsync(
+            ExecutionJobStatus.Succeeded,
+            jobArtifacts: SucceededArtifacts);
+
+        run.Should().NotBeNull();
+        run!.Status.Should().Be(ShareExportRunStatus.Succeeded);
+        run.ResultArtifacts.Should().Equal(SucceededArtifacts);
+    }
+
+    [UnitTest]
+    public async Task OnTerminal_FailedJobWithArtifacts_CopiesDiagnosticsArtifacts()
+    {
+        // Failed jobs can still publish diagnostics artifacts; reconciliation copies them rather
+        // than gating artifact propagation on success.
+        var run = await ReconcileAsync(
+            ExecutionJobStatus.Failed,
+            jobErrorMessage: "destination rejected delivery",
+            jobArtifacts: FailedDiagnosticsArtifacts);
+
+        run.Should().NotBeNull();
+        run!.Status.Should().Be(ShareExportRunStatus.Failed);
+        run.LastError.Should().Be("destination rejected delivery");
+        run.ResultArtifacts.Should().Equal(FailedDiagnosticsArtifacts);
+    }
+
+    [UnitTest]
+    public async Task OnTerminal_JobWithoutArtifacts_PreservesExistingRunArtifacts()
+    {
+        // When the backing job published no artifacts, any already recorded on the run are kept
+        // rather than being cleared by the reconcile.
+        var run = await ReconcileAsync(
+            ExecutionJobStatus.Succeeded,
+            seededArtifacts: PreexistingArtifacts);
+
+        run.Should().NotBeNull();
+        run!.Status.Should().Be(ShareExportRunStatus.Succeeded);
+        run.ResultArtifacts.Should().Equal(PreexistingArtifacts);
     }
 
     [UnitTest]
@@ -93,11 +155,13 @@ public sealed class ShareExportJobTerminalCallbackTests
         string? jobErrorMessage = null,
         ShareExportRunStatus seededStatus = ShareExportRunStatus.Queued,
         string? seededError = null,
-        ExecutionJobKind jobKind = ExecutionJobKind.ShareExport)
+        ExecutionJobKind jobKind = ExecutionJobKind.ShareExport,
+        IReadOnlyList<string>? jobArtifacts = null,
+        IReadOnlyList<string>? seededArtifacts = null)
     {
         var store = new InMemoryShareExportStore();
         await store.CreateDefinitionAsync(BuildDefinition());
-        await store.AppendRunAsync(BuildRun(seededStatus, seededError));
+        await store.AppendRunAsync(BuildRun(seededStatus, seededError, seededArtifacts));
 
         var services = new ServiceCollection();
         services.AddSingleton<IShareExportStore>(store);
@@ -110,7 +174,9 @@ public sealed class ShareExportJobTerminalCallbackTests
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
 
         var callback = provider.GetRequiredService<IJobTerminalCallback>();
-        await callback.OnTerminalAsync(BuildJob(jobKind, jobStatus, jobErrorMessage), CancellationToken.None);
+        await callback.OnTerminalAsync(
+            BuildJob(jobKind, jobStatus, jobErrorMessage, jobArtifacts),
+            CancellationToken.None);
 
         return await store.GetRunAsync(ExportId, RunId);
     }
@@ -133,7 +199,10 @@ public sealed class ShareExportJobTerminalCallbackTests
             UpdatedAt = DateTimeOffset.Parse("2026-05-25T06:00:00Z", CultureInfo.InvariantCulture)
         };
 
-    private static ShareExportRun BuildRun(ShareExportRunStatus status, string? lastError)
+    private static ShareExportRun BuildRun(
+        ShareExportRunStatus status,
+        string? lastError,
+        IReadOnlyList<string>? resultArtifacts = null)
         => new()
         {
             RunId = RunId,
@@ -147,14 +216,15 @@ public sealed class ShareExportJobTerminalCallbackTests
                 ? DateTimeOffset.Parse("2026-05-25T06:15:00Z", CultureInfo.InvariantCulture)
                 : null,
             TargetSummary = "Webhook https://example.invalid/webhook",
-            ResultArtifacts = Array.Empty<string>(),
+            ResultArtifacts = resultArtifacts ?? Array.Empty<string>(),
             LastError = lastError
         };
 
     private static ExecutionJobRecord BuildJob(
         ExecutionJobKind kind,
         ExecutionJobStatus status,
-        string? errorMessage)
+        string? errorMessage,
+        IReadOnlyList<string>? artifactReferences = null)
         => new()
         {
             OperationId = JobRunId,
@@ -163,6 +233,7 @@ public sealed class ShareExportJobTerminalCallbackTests
             UpdatedAt = CompletedAt,
             CompletedAt = CompletedAt,
             ErrorMessage = errorMessage,
+            ArtifactReferences = artifactReferences ?? Array.Empty<string>(),
             Spec = new ExecutionJobSpec
             {
                 Kind = kind,
