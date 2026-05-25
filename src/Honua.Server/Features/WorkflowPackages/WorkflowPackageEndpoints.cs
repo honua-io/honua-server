@@ -92,7 +92,8 @@ internal static class WorkflowPackageEndpoints
             .Accepts<PublishWorkflowPackageRequest>("application/json")
             .Produces<ApiResponse<WorkflowPublication>>()
             .Produces<ApiResponse<WorkflowPackageValidationResult>>(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status404NotFound);
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status409Conflict);
 
         group.MapGet("/workflow-publications", HandleListPublications)
             .WithName("ListWorkflowPublications")

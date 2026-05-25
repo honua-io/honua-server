@@ -153,12 +153,24 @@ internal sealed class WorkflowPackageService(
             OperatorResourceType.Process,
             OperatorOperation.Execute);
 
-        var plan = await CompileAnalysisPlanAsync(packageVersion, cancellationToken).ConfigureAwait(false);
-        var dryRun = geoprocessingJobService.DryRunPlan(plan, principal);
-        var estimatedSeconds = (int)Math.Ceiling(dryRun.EstimatedDurationSeconds);
-        if (estimatedSeconds <= 0)
+        var hasDataBindings = WorkflowPackageGraphCompiler.HasCrossNodeDataBindings(packageVersion.Graph);
+        ArtifactKind[] estimatedArtifacts;
+        int estimatedSeconds;
+        if (hasDataBindings)
         {
+            estimatedArtifacts = ResolveArtifactKinds(outputSchemas);
             estimatedSeconds = Math.Max(1, packageVersion.Graph.Nodes.Count);
+        }
+        else
+        {
+            var plan = await CompileAnalysisPlanAsync(packageVersion, cancellationToken).ConfigureAwait(false);
+            var dryRun = geoprocessingJobService.DryRunPlan(plan, principal);
+            estimatedArtifacts = dryRun.EstimatedArtifacts.ToArray();
+            estimatedSeconds = (int)Math.Ceiling(dryRun.EstimatedDurationSeconds);
+            if (estimatedSeconds <= 0)
+            {
+                estimatedSeconds = Math.Max(1, packageVersion.Graph.Nodes.Count);
+            }
         }
 
         var result = new WorkflowDryRunResult
@@ -173,10 +185,12 @@ internal sealed class WorkflowPackageService(
                 {
                     Timestamp = now,
                     Level = "Info",
-                    Message = "Dry run completed against the geoprocessing runtime."
+                    Message = hasDataBindings
+                        ? "Dry run completed against workflow graph bindings."
+                        : "Dry run completed against the geoprocessing runtime."
                 }
             ],
-            Artifacts = dryRun.EstimatedArtifacts
+            Artifacts = estimatedArtifacts
                 .Select(kind => new WorkflowDryRunArtifact
                 {
                     ArtifactId = $"preview-{kind.ToString().ToLowerInvariant()}",
@@ -215,6 +229,12 @@ internal sealed class WorkflowPackageService(
         var publicationId = string.IsNullOrWhiteSpace(request.PublicationId)
             ? $"wfp-{Guid.NewGuid():N}"
             : request.PublicationId.Trim();
+        var existingPublication = await store.GetPublicationAsync(publicationId, cancellationToken).ConfigureAwait(false);
+        if (existingPublication != null)
+        {
+            throw new WorkflowPublicationConflictException(publicationId);
+        }
+
         var schedule = request.Target == WorkflowPublicationTarget.Schedule
             ? request.Schedule ?? packageVersion.Graph.Schedule
             : null;
@@ -304,10 +324,15 @@ internal sealed class WorkflowPackageService(
         {
             foreach (var entry in requestParameters)
             {
-                if (!string.IsNullOrWhiteSpace(entry.Key))
+                // Reserved workflow provenance keys are stamped server-side from the
+                // publication. Skip caller-supplied overrides so jobs/runs keep accurate
+                // package/version/hash traceability.
+                if (string.IsNullOrWhiteSpace(entry.Key) || WorkflowPackageMetadataKeys.IsReserved(entry.Key))
                 {
-                    provenance[entry.Key] = entry.Value;
+                    continue;
                 }
+
+                provenance[entry.Key] = entry.Value;
             }
         }
 
@@ -392,13 +417,16 @@ internal sealed class WorkflowPackageService(
                     OperatorOperation.Execute);
                 var plan = await CompileAnalysisPlanAsync(graph, hash, cancellationToken).ConfigureAwait(false);
                 var planValidation = geoprocessingJobService.ValidatePlan(plan, principal);
+                var dataBoundInputFieldPaths = WorkflowPackageGraphCompiler.BuildDataBoundInputFieldPaths(graph);
                 warnings.AddRange(planValidation.Warnings);
-                failures.AddRange(planValidation.Violations.Select(violation => new WorkflowPackageValidationFailure
-                {
-                    Code = violation.Code,
-                    Message = violation.Message,
-                    FieldPath = violation.FieldPath
-                }));
+                failures.AddRange(planValidation.Violations
+                    .Where(violation => !IsDataBoundInputTypeValidation(violation, dataBoundInputFieldPaths))
+                    .Select(violation => new WorkflowPackageValidationFailure
+                    {
+                        Code = violation.Code,
+                        Message = violation.Message,
+                        FieldPath = violation.FieldPath
+                    }));
             }
             catch (WorkflowPackageValidationException ex)
             {
@@ -412,6 +440,13 @@ internal sealed class WorkflowPackageService(
             : WorkflowPackageValidationResult.Failed(failures, hash, warnings);
     }
 
+    private static bool IsDataBoundInputTypeValidation(
+        GeoprocessingValidationFailure violation,
+        HashSet<string> dataBoundInputFieldPaths)
+        => string.Equals(violation.Code, "INVALID_PARAMETER_VALUE", StringComparison.Ordinal)
+           && violation.FieldPath != null
+           && dataBoundInputFieldPaths.Contains(violation.FieldPath);
+
     private static void ValidateTargetEligibility(
         WorkflowGraph graph,
         IReadOnlyDictionary<string, WorkflowNodeDefinition> definitions,
@@ -421,6 +456,20 @@ internal sealed class WorkflowPackageService(
         if (target is null)
         {
             return;
+        }
+
+        // Job and process-endpoint publications compile to a single dispatched geoprocessing
+        // job, which cannot resolve cross-step artifact bindings. Graphs that wire data between
+        // nodes must publish to a Schedule target so the orchestration engine can chain outputs.
+        if (target is WorkflowPublicationTarget.Job or WorkflowPublicationTarget.ProcessEndpoint
+            && WorkflowPackageGraphCompiler.HasCrossNodeDataBindings(graph))
+        {
+            failures.Add(new WorkflowPackageValidationFailure
+            {
+                Code = "UNSUPPORTED_DATA_BINDING_TARGET",
+                Message = $"Publication target '{target}' cannot resolve cross-node data bindings; publish data-wired workflows to a Schedule target.",
+                FieldPath = "graph.edges"
+            });
         }
 
         foreach (var node in graph.Nodes)
@@ -499,7 +548,7 @@ internal sealed class WorkflowPackageService(
                 StepId = node.NodeId,
                 Kind = AnalysisPlanStepKind.Geoprocess,
                 ProcessId = processId,
-                Inputs = new Dictionary<string, string>(node.Parameters, StringComparer.Ordinal),
+                Inputs = WorkflowPackageGraphCompiler.BuildStepInputs(node, graph),
                 DependsOn = graph.Edges
                     .Where(edge => edge.Kind != WorkflowEdgeKind.Failure &&
                                    string.Equals(edge.TargetNodeId, node.NodeId, StringComparison.Ordinal))
@@ -567,7 +616,7 @@ internal sealed class WorkflowPackageService(
                             StepId = node.NodeId,
                             Kind = AnalysisPlanStepKind.Geoprocess,
                             ProcessId = processId,
-                            Inputs = new Dictionary<string, string>(node.Parameters, StringComparer.Ordinal)
+                            Inputs = WorkflowPackageGraphCompiler.BuildStepInputs(node, version.Graph)
                         }
                     ],
                     Outputs = outputs.Length == 0 ? [ArtifactKind.File] : outputs
@@ -578,6 +627,7 @@ internal sealed class WorkflowPackageService(
                     .Select(edge => edge.SourceNodeId)
                     .Distinct(StringComparer.Ordinal)
                     .ToArray(),
+                InputBindings = WorkflowPackageGraphCompiler.BuildStepInputBindings(version.Graph, node.NodeId),
                 FailurePolicy = WorkflowStepFailurePolicy.Fail
             });
         }
@@ -618,6 +668,21 @@ internal sealed class WorkflowPackageService(
                 ? definition.OutputSchemas
                 : Array.Empty<WorkflowNodePortSchema>())
             .ToArray();
+    }
+
+    private static ArtifactKind[] ResolveArtifactKinds(
+        IReadOnlyList<WorkflowNodePortSchema> outputSchemas)
+    {
+        var kinds = new HashSet<ArtifactKind>();
+        foreach (var schema in outputSchemas)
+        {
+            if (Enum.TryParse<ArtifactKind>(schema.Name, ignoreCase: false, out var kind))
+            {
+                kinds.Add(kind);
+            }
+        }
+
+        return kinds.Count == 0 ? [ArtifactKind.File] : kinds.ToArray();
     }
 
     private async Task<WorkflowPackage> RequirePackageAsync(
@@ -741,4 +806,14 @@ internal sealed class WorkflowPackageValidationException(WorkflowPackageValidati
     : InvalidOperationException("Workflow package validation failed.")
 {
     public WorkflowPackageValidationResult Result { get; } = result;
+}
+
+/// <summary>
+/// Raised when a publish request reuses an existing publication id. Derives from
+/// <see cref="InvalidOperationException"/> so the Console endpoint maps it to 409 Conflict.
+/// </summary>
+internal sealed class WorkflowPublicationConflictException(string publicationId)
+    : InvalidOperationException($"Workflow publication '{publicationId}' already exists.")
+{
+    public string PublicationId { get; } = publicationId;
 }

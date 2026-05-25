@@ -136,7 +136,15 @@ internal sealed class InMemoryWorkflowPackageStore : IWorkflowPackageStore
     {
         ArgumentNullException.ThrowIfNull(publication);
         cancellationToken.ThrowIfCancellationRequested();
-        _publications[publication.PublicationId] = publication;
+
+        // Publications are immutable, stable run targets. Reject re-use of an existing
+        // publication id rather than overwriting it, so a second publish cannot silently
+        // retarget a live publication to a different package/version.
+        if (!_publications.TryAdd(publication.PublicationId, publication))
+        {
+            throw new WorkflowPublicationConflictException(publication.PublicationId);
+        }
+
         return Task.FromResult(publication);
     }
 

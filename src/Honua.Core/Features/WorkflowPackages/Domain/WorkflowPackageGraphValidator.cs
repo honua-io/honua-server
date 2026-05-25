@@ -88,9 +88,12 @@ public static class WorkflowPackageGraphValidator
                 });
             }
 
+            var wiredInputs = WiredInputPorts(graph, node.NodeId);
             foreach (var parameter in definition.ParameterSchemas.Where(parameter => parameter.Required))
             {
-                if (!node.Parameters.ContainsKey(parameter.Name))
+                // A required parameter is satisfied either by a literal value or by an incoming
+                // data edge that wires it from an upstream node's output port.
+                if (!node.Parameters.ContainsKey(parameter.Name) && !wiredInputs.Contains(parameter.Name))
                 {
                     failures.Add(new WorkflowPackageValidationFailure
                     {
@@ -171,6 +174,22 @@ public static class WorkflowPackageGraphValidator
         return failures.Count == 0
             ? WorkflowPackageValidationResult.Success(packageHash, warnings)
             : WorkflowPackageValidationResult.Failed(failures, packageHash, warnings);
+    }
+
+    private static HashSet<string> WiredInputPorts(WorkflowGraph graph, string nodeId)
+    {
+        var ports = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var edge in graph.Edges)
+        {
+            if (edge.Kind == WorkflowEdgeKind.Data
+                && !string.IsNullOrWhiteSpace(edge.TargetPort)
+                && string.Equals(edge.TargetNodeId, nodeId, StringComparison.Ordinal))
+            {
+                ports.Add(edge.TargetPort.Trim());
+            }
+        }
+
+        return ports;
     }
 
     private static bool HasCycle(WorkflowGraph graph)

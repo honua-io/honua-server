@@ -257,6 +257,128 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
                                          failure.GetProperty("fieldPath").GetString()!.EndsWith(".srid", StringComparison.Ordinal));
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/workflow-packages/{packageId}/versions/{packageVersion}/publish")]
+    public async Task PublishVersion_WithDuplicatePublicationId_ReturnsConflict()
+    {
+        var packageId = await CreatePackageAsync("duplicate-publication", CreateAreaGraph());
+        var version = await CreateVersionAsync(packageId);
+
+        await PublishAsync(packageId, version.Version, new
+        {
+            publicationId = "pub-duplicate-1185",
+            target = "Job",
+            enabled = true
+        });
+
+        var conflict = await _client.PostAsJsonAsync(
+            $"/api/v1/console/workflow-packages/{packageId}/versions/{version.Version}/publish",
+            new
+            {
+                publicationId = "pub-duplicate-1185",
+                target = "Job",
+                enabled = true
+            },
+            JsonOptions);
+
+        conflict.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/workflow-publications/{publicationId}/runs")]
+    public async Task RunPublication_WithReservedProvenanceOverride_PreservesStampedProvenance()
+    {
+        var packageId = await CreatePackageAsync("provenance-guard", CreateAreaGraph());
+        var version = await CreateVersionAsync(packageId);
+        await PublishAsync(packageId, version.Version, new
+        {
+            publicationId = "pub-provenance-1185",
+            target = "Job",
+            enabled = true
+        });
+
+        var run = await _client.PostAsJsonAsync(
+            "/api/v1/console/workflow-publications/pub-provenance-1185/runs",
+            new
+            {
+                idempotencyKey = "provenance-guard-run",
+                parameters = new Dictionary<string, string>
+                {
+                    // Attempt to spoof reserved provenance; the server must ignore these.
+                    ["workflow.packageId"] = "spoofed-package",
+                    ["workflow.packageHash"] = "spoofed-hash",
+                    ["analysis.region"] = "pacific"
+                }
+            },
+            JsonOptions);
+
+        var runBody = await run.Content.ReadAsStringAsync();
+        run.StatusCode.Should().Be(HttpStatusCode.Created, runBody);
+
+        using var runDoc = JsonDocument.Parse(runBody);
+        var runData = runDoc.RootElement.GetProperty("data");
+        var jobId = runData.GetProperty("jobId").GetString();
+        var provenance = runData.GetProperty("provenance");
+        provenance.GetProperty("workflow.packageId").GetString().Should().Be(packageId);
+        provenance.GetProperty("workflow.packageHash").GetString().Should().Be(version.PackageHash);
+        provenance.GetProperty("analysis.region").GetString().Should().Be("pacific");
+
+        var job = await _jobStore.GetAsync(jobId!);
+        job.Should().NotBeNull();
+        job!.Spec.Parameters.Should().Contain("workflow.packageId", packageId);
+        job.Spec.Parameters.Should().Contain("workflow.packageHash", version.PackageHash);
+        job.Spec.Parameters.Should().Contain("analysis.region", "pacific");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/workflow-packages/{packageId}/versions")]
+    [Endpoint("POST /api/v1/console/workflow-packages/{packageId}/versions/{packageVersion}/dry-run")]
+    [Endpoint("POST /api/v1/console/workflow-packages/{packageId}/versions/{packageVersion}/publish")]
+    public async Task DataWiredWorkflow_ValidatesAndPublishesToScheduleButRejectsSingleJobTargets()
+    {
+        var packageId = await CreatePackageAsync("data-wired", CreateWiredGraph());
+
+        // The downstream node's required `wkb` input is supplied by a data edge, so an immutable
+        // version can be created without a literal value (the wiring satisfies the requirement).
+        var version = await CreateVersionAsync(packageId);
+        version.PackageHash.Should().NotBeNullOrWhiteSpace();
+
+        var dryRun = await _client.PostAsync(
+            $"/api/v1/console/workflow-packages/{packageId}/versions/{version.Version}/dry-run",
+            null);
+        dryRun.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var dryRunDoc = await ReadJsonAsync(dryRun))
+        {
+            var data = dryRunDoc.RootElement.GetProperty("data");
+            data.GetProperty("validation").GetProperty("isValid").GetBoolean().Should().BeTrue();
+            data.GetProperty("artifacts").GetArrayLength().Should().BeGreaterThan(0);
+        }
+
+        // Job and process-endpoint targets compile to a single dispatched job and cannot resolve
+        // cross-node data bindings, so publishing a data-wired graph to them is rejected.
+        foreach (var target in new[] { "Job", "ProcessEndpoint" })
+        {
+            var rejected = await _client.PostAsJsonAsync(
+                $"/api/v1/console/workflow-packages/{packageId}/versions/{version.Version}/publish",
+                new { publicationId = $"pub-wired-{target}", target, processId = "workflow.tests.wired", enabled = true },
+                JsonOptions);
+
+            rejected.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            using var doc = await ReadJsonAsync(rejected);
+            doc.RootElement.GetProperty("data").GetProperty("failures").EnumerateArray()
+                .Should().Contain(failure => failure.GetProperty("code").GetString() == "UNSUPPORTED_DATA_BINDING_TARGET");
+        }
+
+        // The orchestration-backed schedule target accepts data-wired graphs.
+        await PublishAsync(packageId, version.Version, new
+        {
+            publicationId = "pub-wired-schedule",
+            target = "Schedule",
+            schedule = new { cronExpression = "0 0 * * *", timeZone = "UTC", enabled = true },
+            enabled = true
+        });
+    }
+
     private async Task<string> CreatePackageAsync(string name, object graph)
     {
         var response = await _client.PostAsJsonAsync(
@@ -318,6 +440,44 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
                 }
             },
             edges = Array.Empty<object>(),
+            metadata = new Dictionary<string, string>()
+        };
+
+    private static object CreateWiredGraph()
+        => new
+        {
+            nodes = new object[]
+            {
+                new
+                {
+                    nodeId = "source",
+                    nodeTypeId = "process:geometry.area",
+                    parameters = new Dictionary<string, string>
+                    {
+                        ["wkb"] = "AQ==",
+                        ["srid"] = "4326"
+                    }
+                },
+                new
+                {
+                    nodeId = "sink",
+                    nodeTypeId = "process:geometry.area",
+                    parameters = new Dictionary<string, string>
+                    {
+                        // `wkb` is intentionally omitted; it is wired from the source node below.
+                        ["srid"] = "4326"
+                    }
+                }
+            },
+            edges = new object[]
+            {
+                new
+                {
+                    sourceNodeId = "source",
+                    targetNodeId = "sink",
+                    targetPort = "wkb"
+                }
+            },
             metadata = new Dictionary<string, string>()
         };
 
