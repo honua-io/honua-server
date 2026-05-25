@@ -454,7 +454,7 @@
       "proofs": [
         {
           "proofClass": "route-coverage",
-          "proofMechanism": "EndpointRegistry coverage plus content publication endpoint integration tests for publish, detail, immutable version reads, republish, rollback, policy updates, anonymous published reads, public links, embed policy, and generated app revision preview",
+          "proofMechanism": "EndpointRegistry coverage plus content publication endpoint integration tests for publish, detail, immutable version reads, republish, rollback, policy updates, anonymous published reads, owner and authenticated non-owner route access enforcement, undefined-policy rejection, public links, embed policy, and generated app revision preview",
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
@@ -469,7 +469,7 @@
         },
         {
           "proofClass": "scenario-depth",
-          "proofMechanism": "Core service and Postgres store tests cover slug reservation, immutable revisions, route pointer transitions, policy hashing, generated app manifest references, public view projection, dependency provenance, optimistic concurrency, and JSON contract round trips",
+          "proofMechanism": "Core service and Postgres store tests cover slug reservation, immutable revisions, route pointer transitions, policy hashing, visibility and dependency-kind validation, generated app manifest references, public view projection, dependency provenance, optimistic concurrency, and JSON contract round trips",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Core.Tests/Features/Publishing/Content/ContentPublicationServiceTests.cs",

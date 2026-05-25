@@ -57,7 +57,8 @@ The public route endpoint lives under `/api/v{version:apiVersion}/published`.
 - `report`
 - `generated-app`
 
-Dependency references are stored by id only. Known dependency `kind` values are
+Dependency references are stored by id only. `dependency.kind` is a closed
+enum; an undefined kind is rejected with `400`. The defined kinds are
 `service`, `resource`, `publication`, `published-service`, `deployment`,
 `map-package`, `app-package`, `result-package`, `report`, and
 `provenance-item`. Metadata v2 `service` / `resource` / `publication`
@@ -183,7 +184,9 @@ immutable version also stores a policy snapshot from publish time for history.
 
 Policy fields:
 
-- `visibility`: `private`, `organization`, `team`, or `public`.
+- `visibility`: `private`, `organization`, `team`, or `public`. This is a
+  closed enum; publish and policy-patch requests that supply an undefined
+  visibility are rejected with `400`.
 - `access`: optional shared `AccessPolicy`; used by runtime reads when the route
   is not public and anonymous sharing is not enabled.
 - `share.allowSharing`: whether sharing is allowed.
