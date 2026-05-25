@@ -314,6 +314,22 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<Core.Features.GeoETL.Abstractions.IFeatureSinkWriter,
             Features.GeoETL.Services.PostgresFeatureSinkWriter>();
 
+        // GeoETL durable definition / execution stores (#361 Child Ticket A). Registered
+        // here so they precede the in-memory baseline stores that AddGeoEtl falls back to
+        // via TryAdd when no PostgreSQL provider is wired. Persists definitions and
+        // executions to honua.pipeline_definitions / honua.pipeline_executions.
+        // Scoped to match the scoped IDatabaseConnectionProvider (avoids a captive
+        // dependency). The PipelineJobExecutor and launcher resolve these inside a
+        // per-job DI scope, so the lifetime aligns with the unit of work.
+        services.TryAddSingleton<TimeProvider>(TimeProvider.System);
+        services.AddScoped<Core.Features.GeoETL.Abstractions.IPipelineDefinitionStore>(sp =>
+            new Features.GeoETL.Services.PostgresPipelineDefinitionStore(
+                sp.GetRequiredService<IDatabaseConnectionProvider>(),
+                sp.GetRequiredService<TimeProvider>()));
+        services.AddScoped<Core.Features.GeoETL.Abstractions.IPipelineExecutionStore>(sp =>
+            new Features.GeoETL.Services.PostgresPipelineExecutionStore(
+                sp.GetRequiredService<IDatabaseConnectionProvider>()));
+
         // Register universal import job service using unified progress store
         // This replaces the in-memory job service with one that uses centralized progress tracking
         services.AddSingleton<IImportJobService>(serviceProvider =>
