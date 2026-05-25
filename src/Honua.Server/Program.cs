@@ -10,6 +10,7 @@ using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
@@ -325,6 +326,8 @@ builder.Services.AddOptions<ControlPlaneOptions>()
     .ValidateOnStart();
 builder.Services.AddOptions<KubernetesExecutionOptions>()
     .Bind(builder.Configuration.GetSection($"{ControlPlaneOptions.SectionName}:Kubernetes"));
+builder.Services.Configure<MetadataReleaseOperationOptions>(
+    builder.Configuration.GetSection(MetadataReleaseOperationOptions.SectionName));
 builder.Services.AddResilientHttpClient(
     "import-source",
     "import-source",
@@ -968,6 +971,7 @@ app.MapServiceSettingsEndpoints();
 // Configure admin metadata version/manifest endpoints
 // v1 admin endpoint mappings removed in #1035 cutover; V2 admin UX (#1046) lives elsewhere.
 app.MapMetadataReleaseEndpoints();
+app.MapMetadataReleaseOperationEndpoints();
 app.MapMetadataPrevalidationEndpoints();
 app.MapDeployControlEndpoints();
 

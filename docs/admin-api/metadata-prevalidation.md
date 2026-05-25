@@ -13,6 +13,13 @@ Related Metadata v2 release endpoints:
 | `POST /api/v1/admin/metadata/release-packages` | Creates a persisted `MetadataReleasePackage` from source and target environments. |
 | `GET /api/v1/admin/metadata/release-packages/{packageId}` | Reads a persisted release package. |
 | `GET /api/v1/admin/metadata/release-packages/{packageId}/gitops-manifest` | Exports a GitOps-safe JSON manifest for the package. |
+| `GET /api/v1/admin/metadata/releases/{packageId}/operation` | Reads the most recent metadata release operation for a package ID, including Git refs, linked deploy/jobs, evidence, lifecycle stage, and rollback plan. |
+
+Package-ID operation lookup is a current-attempt index. If a package is retried
+under the same ID, the lookup returns the most recent operation; earlier attempts
+remain readable by their stable operation ID through
+`GET /api/v1/admin/deploy/operations/{operationId}` for the configured metadata
+release retention window.
 
 ## Request
 

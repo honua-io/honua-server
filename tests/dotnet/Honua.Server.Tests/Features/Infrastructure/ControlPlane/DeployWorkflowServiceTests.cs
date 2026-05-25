@@ -648,6 +648,7 @@ public sealed class DeployWorkflowServiceTests
     private sealed class TestWorkflowOperationStore : IWorkflowOperationStore
     {
         private readonly ConcurrentDictionary<string, WorkflowOperationRecord> _operations = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, string> _metadataPackageIndex = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, string> _leases = new(StringComparer.Ordinal);
 
         public int RenewLeaseCount => _renewLeaseCount;
@@ -686,15 +687,29 @@ public sealed class DeployWorkflowServiceTests
                 return Task.FromResult(false);
             }
 
-            return Task.FromResult(_operations.TryAdd(operation.OperationId, operation));
+            var created = _operations.TryAdd(operation.OperationId, operation);
+            if (created)
+            {
+                IndexMetadataReleaseOperation(operation);
+            }
+
+            return Task.FromResult(created);
         }
 
         public Task<WorkflowOperationRecord?> GetAsync(string operationId, CancellationToken cancellationToken = default)
             => Task.FromResult(_operations.TryGetValue(operationId, out var operation) ? operation : null);
 
+        public Task<WorkflowOperationRecord?> GetByMetadataPackageIdAsync(string packageId, CancellationToken cancellationToken = default)
+            => Task.FromResult(
+                _metadataPackageIndex.TryGetValue(packageId, out var operationId) &&
+                _operations.TryGetValue(operationId, out var operation)
+                    ? operation
+                    : null);
+
         public Task SetAsync(WorkflowOperationRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
         {
             _operations[operation.OperationId] = operation;
+            IndexMetadataReleaseOperation(operation);
             return Task.CompletedTask;
         }
 
@@ -704,6 +719,15 @@ public sealed class DeployWorkflowServiceTests
                 .Where(operation => !kind.HasValue || operation.Kind == kind.Value)
                 .ToArray();
             return Task.FromResult<IReadOnlyList<WorkflowOperationRecord>>(operations);
+        }
+
+        private void IndexMetadataReleaseOperation(WorkflowOperationRecord operation)
+        {
+            if (operation.Kind == WorkflowOperationKind.MetadataRelease &&
+                !string.IsNullOrWhiteSpace(operation.MetadataRelease?.PackageId))
+            {
+                _metadataPackageIndex[operation.MetadataRelease.PackageId] = operation.OperationId;
+            }
         }
     }
 

@@ -78,6 +78,17 @@ public interface IWorkflowOperationStore : IOperationStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Retrieves the most recent metadata release workflow operation for a release package identifier.
+    /// Historical retry attempts remain addressable by operation identifier.
+    /// </summary>
+    /// <param name="packageId">Metadata release package identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Workflow operation or null when not found.</returns>
+    Task<WorkflowOperationRecord?> GetByMetadataPackageIdAsync(
+        string packageId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Persists the latest workflow operation state.
     /// </summary>
     /// <param name="operation">Workflow operation record.</param>

@@ -527,6 +527,7 @@ The public `GET /api/styles/{layerId}.json` endpoint accepts an optional `?theme
 | `/api/v1/admin/metadata/release-packages` | POST | Create a persisted Metadata v2 release package for cross-environment promotion |
 | `/api/v1/admin/metadata/release-packages/{packageId}` | GET | Get a persisted Metadata v2 release package |
 | `/api/v1/admin/metadata/release-packages/{packageId}/gitops-manifest` | GET | Export a release package as a GitOps-safe manifest |
+| `/api/v1/admin/metadata/releases/{packageId}/operation` | GET | Get the most recent metadata release operation for a package ID, including lifecycle stage, evidence, linked jobs/deploy operation, and rollback plan |
 | `/api/v1/admin/metadata/prevalidate` | POST | Generate an environment-scoped Metadata v2 compatibility report for a release package |
 | `/api/v1/admin/manifest` | GET | Export metadata manifest |
 | `/api/v1/admin/manifest/apply` | POST | Apply metadata manifest (supports dry-run/prune controls) |
@@ -654,9 +655,9 @@ for run lifecycle, scheduler semantics, and tuning details.
 | `/api/v1/admin/deploy/preflight` | GET | Get instance-local deploy preflight and upgrade-readiness state |
 | `/api/v1/admin/deploy/plan` | POST | Plan a deploy operation |
 | `/api/v1/admin/deploy/operations` | POST | Create a deploy operation |
-| `/api/v1/admin/deploy/operations/{operationId}` | GET | Get deploy operation status |
+| `/api/v1/admin/deploy/operations/{operationId}` | GET | Get deploy or metadata release operation status by stable operation ID |
 | `/api/v1/admin/deploy/operations/{operationId}/submit` | POST | Submit a deploy operation for execution |
-| `/api/v1/admin/deploy/operations/{operationId}/rollback` | POST | Rollback a deploy operation |
+| `/api/v1/admin/deploy/operations/{operationId}/rollback` | POST | Request rollback for a deploy or metadata release operation; metadata-only rollback is non-destructive, while data-affecting rollback classes use the destructive approval gate |
 
 ### **Alert Management Endpoints**
 
