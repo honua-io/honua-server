@@ -280,9 +280,11 @@ malformed slugs are treated as not found for public reads.
 
 Anonymous reads are allowed when the route visibility is `public`, when
 `share.allowAnonymous` is true, or when a valid public link authorizes the read.
-Private, organization, and team routes otherwise use the shared access-policy
-evaluator; unauthenticated reads return the shared unauthorized/forbidden
-response instead of a publication DTO. `embed=true` additionally enforces embed
+Private and team routes otherwise allow the publishing actor or explicit read
+grants in `access`; without either, they fail closed (`401` for anonymous,
+`403` for authenticated non-owners). Organization routes with no `access` policy
+allow any authenticated principal; when `access` is present it is evaluated by
+the shared access-policy evaluator. `embed=true` additionally enforces embed
 policy and returns `403` when embedding is disabled or the request origin does
 not match the configured allowlist.
 

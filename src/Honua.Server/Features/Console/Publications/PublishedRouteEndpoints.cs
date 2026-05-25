@@ -75,10 +75,16 @@ internal static class PublishedRouteEndpoints
             var linkAuthorized = linkProvided
                 && ContentPublicLinkVerifier.TryAuthorize(route.Policy.PublicLink, link, token, now);
 
+            ContentPublicationVersion? activeVersion = null;
+
             if (!linkAuthorized)
             {
-                var effectivePolicy = DeriveEffectiveAccessPolicy(route.Policy);
-                var accessError = AccessPolicyHelpers.RequireAccess(context, effectivePolicy, null, AccessScope.Read);
+                if (RequiresOwnerGate(route.Policy))
+                {
+                    activeVersion = await service.GetVersionAsync(route.PublicationId, route.ActiveVersionId, context.RequestAborted).ConfigureAwait(false);
+                }
+
+                var accessError = RequireRouteAccess(context, route.Policy, activeVersion);
                 if (accessError is not null)
                 {
                     if (linkProvided)
@@ -102,13 +108,13 @@ internal static class PublishedRouteEndpoints
                 return StandardErrorHelpers.CreateForbidden(context, "Embedding is not permitted for this artifact.");
             }
 
-            ContentPublicationVersion? resolved;
+            ContentPublicationVersion? resolved = activeVersion;
             if (!string.IsNullOrWhiteSpace(version))
             {
                 using var preview = HonuaTelemetry.StartActivity(ContentPublicationTelemetry.RevisionPreview);
                 resolved = await service.GetVersionAsync(route.PublicationId, version, context.RequestAborted).ConfigureAwait(false);
             }
-            else
+            else if (resolved is null)
             {
                 resolved = await service.GetVersionAsync(route.PublicationId, route.ActiveVersionId, context.RequestAborted).ConfigureAwait(false);
             }
@@ -146,20 +152,54 @@ internal static class PublishedRouteEndpoints
         }
     }
 
-    /// <summary>
-    /// Maps the route policy to an effective <see cref="AccessPolicy"/> for the shared
-    /// evaluator: public/anonymous-share routes allow anonymous; otherwise the route's
-    /// access policy (or authenticated-only when none) governs.
-    /// </summary>
-    private static AccessPolicy DeriveEffectiveAccessPolicy(ContentPublicationPolicy policy)
+    private static IResult? RequireRouteAccess(
+        HttpContext context,
+        ContentPublicationPolicy policy,
+        ContentPublicationVersion? activeVersion)
     {
         if (policy.Visibility == ContentPublicationVisibility.Public || policy.Share.AllowAnonymous)
         {
-            return new AccessPolicy { AllowAnonymous = true };
+            return null;
         }
 
-        return policy.Access ?? new AccessPolicy();
+        if (IsPublicationOwner(context, activeVersion))
+        {
+            return null;
+        }
+
+        if (policy.Visibility == ContentPublicationVisibility.Organization)
+        {
+            return AccessPolicyHelpers.RequireAccess(context, policy.Access ?? new AccessPolicy(), null, AccessScope.Read);
+        }
+
+        if (policy.Access is { } access && HasExplicitReadGrant(access))
+        {
+            return AccessPolicyHelpers.RequireAccess(context, access, null, AccessScope.Read);
+        }
+
+        return context.User.Identity?.IsAuthenticated == true
+            ? StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage)
+            : StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage);
     }
+
+    private static bool IsPublicationOwner(HttpContext context, ContentPublicationVersion? activeVersion)
+    {
+        if (activeVersion is null)
+        {
+            return false;
+        }
+
+        var actor = ConsolePrincipal.ResolveActorId(context.User);
+        return !string.IsNullOrWhiteSpace(actor)
+            && string.Equals(actor, activeVersion.CreatedBy, StringComparison.Ordinal);
+    }
+
+    private static bool HasExplicitReadGrant(AccessPolicy access)
+        => access.AllowAnonymous || access.AllowedRoles is { Length: > 0 };
+
+    private static bool RequiresOwnerGate(ContentPublicationPolicy policy)
+        => policy.Visibility is not ContentPublicationVisibility.Public and not ContentPublicationVisibility.Organization
+            && !policy.Share.AllowAnonymous;
 
     private static bool IsEmbedRequestAuthorized(HttpRequest request, ContentEmbedPolicy embed)
     {

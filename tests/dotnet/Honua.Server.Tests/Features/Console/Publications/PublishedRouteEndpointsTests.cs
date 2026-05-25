@@ -86,6 +86,31 @@ public sealed class PublishedRouteEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/published/{*routeSlug}")]
+    public async Task PrivateVisibility_OwnerRead_ReturnsClientSafeView()
+    {
+        await PublishAsAsync("admin", "owner-private-map", ContentPublicationKind.Map);
+
+        var response = await _adminClient.GetAsync("/api/v1/published/owner-private-map");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var view = await DeserializeAsync(response, ContentPublicationJsonContext.Default.PublishedArtifactView);
+        view!.RouteSlug.Should().Be("owner-private-map");
+        view.Visibility.Should().Be(ContentPublicationVisibility.Private);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/published/{*routeSlug}")]
+    public async Task PrivateVisibility_AuthenticatedNonOwnerRead_ReturnsForbidden()
+    {
+        await PublishAsAsync("owner-user", "non-owner-private-map", ContentPublicationKind.Map);
+
+        var response = await _adminClient.GetAsync("/api/v1/published/non-owner-private-map");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/published/{*routeSlug}")]
     public async Task UnknownSlug_ReturnsNotFound()
     {
         var response = await _anonymousClient.GetAsync("/api/v1/published/does-not-exist");
@@ -174,6 +199,16 @@ public sealed class PublishedRouteEndpointsTests : IAsyncLifetime
         var response = await _adminClient.PostAsync("/api/v1/console/publications", JsonContent(body));
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         return (await DeserializeAsync(response, ContentPublicationJsonContext.Default.ContentPublicationDetail))!;
+    }
+
+    private async Task<ContentPublicationDetail> PublishAsAsync(
+        string actor, string slug, ContentPublicationKind kind, string? manifestId = null, string? bundleId = null)
+    {
+        var service = _fixture.GetService<IContentPublicationService>();
+        return await service.PublishAsync(
+            new PublishContentRequest { Kind = kind, RouteSlug = slug, Title = slug, AppManifestId = manifestId, AppBundleArtifactId = bundleId },
+            actor,
+            correlationId: null);
     }
 
     private async Task SetVisibilityPublicAsync(string publicationId)
