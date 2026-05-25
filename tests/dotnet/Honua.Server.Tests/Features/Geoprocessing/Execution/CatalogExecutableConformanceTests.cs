@@ -104,16 +104,17 @@ public sealed class CatalogExecutableConformanceTests
     }
 
     [UnitTest]
-    public void ManagedVectorExecutableCount_CoversTheSixteenVectorProcesses()
+    public void ManagedVectorExecutableCount_CoversTheVectorProcesses()
     {
-        // Documents the closed honesty gap: 16 vector processes now execute
-        // (12 single-geometry primitives + 4 layer-scope), up from the
-        // 12 single-geometry executors before this stream.
+        // Documents the closed honesty gap: 17 vector processes now execute
+        // (12 single-geometry primitives + 5 layer-scope), up from the
+        // 12 single-geometry executors before this stream. The fifth layer-scope
+        // process is generalization.dissolve (group-aware aggregation).
         var managedVector = _catalog.ListProcesses()
             .Count(p => GeoprocessingExecutionRoutingClassifier.Classify(p)
                 == GeoprocessingExecutionRouting.ManagedVectorExecutable);
 
-        managedVector.Should().Be(16);
+        managedVector.Should().Be(17);
     }
 
     private static IReadOnlyCollection<string> DispatcherSupportedProcessIds()

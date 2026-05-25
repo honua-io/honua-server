@@ -76,6 +76,8 @@ internal static class GeoprocessingExecutionRoutingClassifier
             "geometry.difference",
             "generalization.simplify-layer",
             "conversion.feature-project",
+            // Group-aware vector aggregation lifted to executable layer scope.
+            "generalization.dissolve",
         }.ToFrozenSet(StringComparer.Ordinal);
 
     public static GeoprocessingExecutionRouting Classify(ProcessDefinition definition)
@@ -100,10 +102,11 @@ internal static class GeoprocessingExecutionRoutingClassifier
             return GeoprocessingExecutionRouting.RoutedToNativeWorker;
         }
 
-        // Everything else (analytics aggregation, generalization.dissolve,
-        // data-management mutation, scalar geometry-format conversion) is a
-        // vector-data process whose managed executor is not built in this
-        // baseline. Inventoried, not advertised as executable.
+        // Everything else (remaining analytics aggregation such as density /
+        // cluster, data-management mutation, scalar geometry-format conversion)
+        // is a vector-data process whose managed executor is not built in this
+        // baseline. Inventoried, not advertised as executable. (Clustering could
+        // be a future managed increment; density is raster-output → GDAL worker.)
         return GeoprocessingExecutionRouting.NotYetExecutable;
     }
 }

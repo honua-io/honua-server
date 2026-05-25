@@ -56,6 +56,7 @@ internal sealed partial class LayerGeometryJobExecutor : IJobExecutor
             "conversion.feature-project",
             "geometry.make-valid",
             "geometry.difference",
+            "generalization.dissolve",
         }.ToFrozenSet(StringComparer.Ordinal);
 
     private const string DataUriPrefix = "data:application/geo+json;base64,";
@@ -63,6 +64,7 @@ internal sealed partial class LayerGeometryJobExecutor : IJobExecutor
     private readonly IEnumerable<ILayerFeatureSource> _sources;
     private readonly GeometryOperationTransform _geometryOp;
     private readonly ReprojectTransform _reproject;
+    private readonly DissolveTransform _dissolve;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
     private readonly ILogger<LayerGeometryJobExecutor> _logger;
 
@@ -78,6 +80,7 @@ internal sealed partial class LayerGeometryJobExecutor : IJobExecutor
         _sources = sources;
         _geometryOp = new GeometryOperationTransform();
         _reproject = new ReprojectTransform();
+        _dissolve = new DissolveTransform();
         _options = options;
         _logger = logger;
     }
@@ -235,6 +238,35 @@ internal sealed partial class LayerGeometryJobExecutor : IJobExecutor
                 {
                     Type = GeometryOperationTransform.TransformType,
                     Options = new Dictionary<string, string>(StringComparer.Ordinal) { ["op"] = "make-valid" }
+                };
+                return true;
+            }
+
+            case "generalization.dissolve":
+            {
+                // groupByFields is OPTIONAL: when omitted the transform collapses
+                // every feature into a single group ("dissolve all"), matching
+                // ArcGIS Dissolve_management with no dissolve field.
+                var options = new Dictionary<string, string>(StringComparer.Ordinal);
+                if (parameters.TryGetValue(prefix + "groupByFields", out var groupByFields)
+                    && !string.IsNullOrWhiteSpace(groupByFields))
+                {
+                    options["groupByFields"] = groupByFields;
+                }
+
+                // statistics is the semicolon-separated field:stat summary spec
+                // (e.g. "pop:sum;area:mean;:count"). Optional.
+                if (parameters.TryGetValue(prefix + "statistics", out var statistics)
+                    && !string.IsNullOrWhiteSpace(statistics))
+                {
+                    options["statistics"] = statistics;
+                }
+
+                transform = _dissolve;
+                config = new TransformConfig
+                {
+                    Type = DissolveTransform.TransformType,
+                    Options = options
                 };
                 return true;
             }

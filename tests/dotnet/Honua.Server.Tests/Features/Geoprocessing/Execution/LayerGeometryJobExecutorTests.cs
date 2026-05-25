@@ -152,6 +152,74 @@ public sealed class LayerGeometryJobExecutorTests
     }
 
     [UnitTest]
+    public async Task ExecuteAsync_Dissolve_GroupsByFieldAndAggregates()
+    {
+        var collection =
+            "{\"type\":\"FeatureCollection\",\"features\":[" +
+            "{\"type\":\"Feature\",\"geometry\":{\"type\":\"Polygon\",\"coordinates\":" +
+            "[[[0,0],[1,0],[1,1],[0,1],[0,0]]]},\"properties\":{\"region\":\"A\",\"pop\":10}}," +
+            "{\"type\":\"Feature\",\"geometry\":{\"type\":\"Polygon\",\"coordinates\":" +
+            "[[[1,0],[2,0],[2,1],[1,1],[1,0]]]},\"properties\":{\"region\":\"A\",\"pop\":30}}," +
+            "{\"type\":\"Feature\",\"geometry\":{\"type\":\"Polygon\",\"coordinates\":" +
+            "[[[10,10],[11,10],[11,11],[10,11],[10,10]]]},\"properties\":{\"region\":\"B\",\"pop\":5}}]}";
+
+        var record = CreateJobRecord(
+            "generalization.dissolve",
+            inputGeoJson: collection,
+            extraInputs: new Dictionary<string, string>
+            {
+                ["groupByFields"] = "region",
+                ["statistics"] = ":count;pop:sum"
+            });
+
+        var context = Substitute.For<IJobExecutionContext>();
+        context.OperationId.Returns("op-dissolve");
+        string? published = null;
+        context.When(c => c.PublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()))
+            .Do(call => published = call.ArgAt<string>(0));
+
+        var result = await CreateExecutor().ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        var doc = ParseCollection(published);
+        doc.RootElement.GetProperty("featureCount").GetInt64().Should().Be(2);
+
+        var features = doc.RootElement.GetProperty("features");
+        JsonElement? groupA = null;
+        foreach (var f in features.EnumerateArray())
+        {
+            if (f.GetProperty("properties").GetProperty("region").GetString() == "A")
+            {
+                groupA = f;
+            }
+        }
+
+        groupA.Should().NotBeNull();
+        groupA!.Value.GetProperty("properties").GetProperty("COUNT").GetInt64().Should().Be(2);
+        groupA.Value.GetProperty("properties").GetProperty("SUM_pop").GetDouble().Should().Be(40.0);
+        var geometry = new GeoJsonReader().Read<Geometry>(groupA.Value.GetProperty("geometry").GetRawText());
+        geometry.Area.Should().BeApproximately(2.0, 1e-6);
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_DissolveAll_NoGroupField_CollapsesToOneFeature()
+    {
+        var collection =
+            "{\"type\":\"FeatureCollection\",\"features\":[" +
+            "{\"type\":\"Feature\",\"geometry\":{\"type\":\"Polygon\",\"coordinates\":" +
+            "[[[0,0],[1,0],[1,1],[0,1],[0,0]]]},\"properties\":{}}," +
+            "{\"type\":\"Feature\",\"geometry\":{\"type\":\"Polygon\",\"coordinates\":" +
+            "[[[5,5],[6,5],[6,6],[5,6],[5,5]]]},\"properties\":{}}]}";
+
+        var (result, published) = await RunAsync("generalization.dissolve", collection);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        var doc = ParseCollection(published);
+        doc.RootElement.GetProperty("featureCount").GetInt64().Should().Be(1);
+        ReadFirstGeometry(doc).Area.Should().BeApproximately(2.0, 1e-6);
+    }
+
+    [UnitTest]
     public async Task ExecuteAsync_MissingInputReference_FailsCleanly()
     {
         var executor = CreateExecutor();
