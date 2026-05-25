@@ -9,13 +9,14 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Infrastructure.ControlPlane;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using NpgsqlTypes;
 
 namespace Honua.Server.Features.Admin.OperateFixtures;
 
 internal sealed partial class PostgresOperateFixtureExecutionStore(
-    IDatabaseConnectionProvider connectionProvider,
+    IServiceScopeFactory scopeFactory,
     ILogger<PostgresOperateFixtureExecutionStore> logger) : IExecutionJobStore, IExecutionLogStore
 {
     private const string JobsTable = "honua.operate_fixture_execution_jobs";
@@ -62,8 +63,8 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
         ArgumentNullException.ThrowIfNull(job);
 
         var versioned = job with { Version = 1 };
-        await using var connection = await connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
+        await using var lease = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = lease.Connection.CreateCommand();
         command.CommandText = $"""
             INSERT INTO {JobsTable} (
                 operation_id, fixture_profile, record_json, version, status, kind, backend, queue,
@@ -91,8 +92,8 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
         string operationId,
         CancellationToken cancellationToken = default)
     {
-        await using var connection = await connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
+        await using var lease = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = lease.Connection.CreateCommand();
         command.CommandText = $"SELECT record_json FROM {JobsTable} WHERE operation_id = @operation_id";
         command.Parameters.Add(Parameter("operation_id", NpgsqlDbType.Text, operationId));
 
@@ -110,8 +111,8 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
         ArgumentNullException.ThrowIfNull(job);
 
         var versioned = job with { Version = job.Version + 1 };
-        await using var connection = await connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
+        await using var lease = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = lease.Connection.CreateCommand();
         command.CommandText = $"""
             INSERT INTO {JobsTable} (
                 operation_id, fixture_profile, record_json, version, status, kind, backend, queue,
@@ -157,8 +158,8 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
         ArgumentNullException.ThrowIfNull(job);
 
         var versioned = job with { Version = job.Version + 1 };
-        await using var connection = await connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
+        await using var lease = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = lease.Connection.CreateCommand();
         command.CommandText = $"""
             UPDATE {JobsTable}
             SET fixture_profile = @fixture_profile,
@@ -209,9 +210,13 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
         }
 
         var limit = Math.Clamp(query.Limit, MinQueryLimit, MaxJobQueryLimit);
-        var sql = new StringBuilder($"SELECT record_json FROM {JobsTable} WHERE 1=1");
-        await using var connection = await connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
+        // Select created_at alongside record_json so the keyset cursor is encoded from the
+        // exact TIMESTAMPTZ column used by ORDER BY and the cursor predicate. Encoding from the
+        // deserialized record_json instead can drift at the page boundary because PostgreSQL
+        // microsecond precision differs from the serialized DateTimeOffset ticks.
+        var sql = new StringBuilder($"SELECT record_json, created_at FROM {JobsTable} WHERE 1=1");
+        await using var lease = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = lease.Connection.CreateCommand();
 
         AppendJobFilters(sql, command, query, cursor);
         sql.Append(" ORDER BY created_at DESC, operation_id DESC LIMIT @limit");
@@ -219,6 +224,7 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
         command.CommandText = sql.ToString();
 
         var rows = new List<ExecutionJobRecord>(limit + 1);
+        var createdAts = new List<DateTimeOffset>(limit + 1);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
@@ -228,6 +234,7 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
             if (job is not null)
             {
                 rows.Add(job);
+                createdAts.Add(reader.GetFieldValue<DateTimeOffset>(1));
             }
         }
 
@@ -236,7 +243,7 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
         {
             var lastKept = rows[limit - 1];
             rows.RemoveAt(rows.Count - 1);
-            nextCursor = EncodeJobCursor(lastKept.CreatedAt, lastKept.OperationId);
+            nextCursor = EncodeJobCursor(createdAts[limit - 1], lastKept.OperationId);
         }
 
         return new ExecutionJobPage { Items = rows, NextCursor = nextCursor };
@@ -246,8 +253,8 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
         ExecutionJobKind? kind = null,
         CancellationToken cancellationToken = default)
     {
-        await using var connection = await connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
+        await using var lease = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = lease.Connection.CreateCommand();
         var sql = new StringBuilder($"""
             SELECT record_json
             FROM {JobsTable}
@@ -291,8 +298,8 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
         ArgumentException.ThrowIfNullOrWhiteSpace(operationId);
         ArgumentNullException.ThrowIfNull(entry);
 
-        await using var connection = await connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
+        await using var lease = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = lease.Connection.CreateCommand();
         command.CommandText = $"""
             INSERT INTO {LogsTable} (operation_id, fixture_profile, timestamp, level, payload_json)
             VALUES (@operation_id, @fixture_profile, @timestamp, @level, @payload_json)
@@ -306,9 +313,9 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
         string operationId,
         CancellationToken cancellationToken = default)
     {
-        await using var connection = await connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var lease = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         return await ReadLogsAsync(
-            connection,
+            lease.Connection,
             $"SELECT payload_json FROM {LogsTable} WHERE operation_id = @operation_id ORDER BY log_id",
             operationId,
             null,
@@ -321,9 +328,9 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
         CancellationToken cancellationToken = default)
     {
         var boundedLimit = Math.Clamp(limit, MinQueryLimit, MaxLogQueryLimit);
-        await using var connection = await connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var lease = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
-        await using var countCommand = connection.CreateCommand();
+        await using var countCommand = lease.Connection.CreateCommand();
         countCommand.CommandText = $"SELECT COUNT(*) FROM {LogsTable} WHERE operation_id = @operation_id";
         countCommand.Parameters.Add(Parameter("operation_id", NpgsqlDbType.Text, operationId));
         var total = Convert.ToInt32(await countCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false), CultureInfo.InvariantCulture);
@@ -334,7 +341,7 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
 
         var offset = Math.Max(0, total - boundedLimit);
         var entries = await ReadLogsAsync(
-            connection,
+            lease.Connection,
             $"SELECT payload_json FROM {LogsTable} WHERE operation_id = @operation_id ORDER BY log_id OFFSET @offset LIMIT @limit",
             operationId,
             command =>
@@ -360,9 +367,9 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
         }
 
         var limit = Math.Clamp(query.Limit, MinQueryLimit, MaxLogQueryLimit);
-        await using var connection = await connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var lease = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         var entries = await ReadLogsAsync(
-            connection,
+            lease.Connection,
             $"SELECT payload_json FROM {LogsTable} WHERE operation_id = @operation_id ORDER BY log_id OFFSET @offset LIMIT @limit",
             operationId,
             command =>
@@ -401,10 +408,10 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
         ArgumentException.ThrowIfNullOrWhiteSpace(profile);
         ArgumentNullException.ThrowIfNull(entries);
 
-        await using var connection = await connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await using var lease = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await lease.Connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-        await using (var delete = connection.CreateCommand())
+        await using (var delete = lease.Connection.CreateCommand())
         {
             delete.Transaction = transaction;
             delete.CommandText = $"DELETE FROM {LogsTable} WHERE operation_id = @operation_id AND fixture_profile = @fixture_profile";
@@ -415,7 +422,7 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
 
         foreach (var entry in entries)
         {
-            await using var insert = connection.CreateCommand();
+            await using var insert = lease.Connection.CreateCommand();
             insert.Transaction = transaction;
             insert.CommandText = $"""
                 INSERT INTO {LogsTable} (operation_id, fixture_profile, timestamp, level, payload_json)
@@ -426,6 +433,22 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
         }
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<ScopedConnectionLease> OpenConnectionAsync(CancellationToken cancellationToken)
+    {
+        var scope = scopeFactory.CreateScope();
+        try
+        {
+            var connectionProvider = scope.ServiceProvider.GetRequiredService<IDatabaseConnectionProvider>();
+            var connection = await connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            return new ScopedConnectionLease(scope, connection);
+        }
+        catch
+        {
+            scope.Dispose();
+            throw;
+        }
     }
 
     private static void AppendJobFilters(
@@ -454,7 +477,18 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
         AddExactFilter(sql, command, "requested_by", query.RequestedBy);
         AddExactFilter(sql, command, "correlation_id", query.CorrelationId);
         AddExactFilter(sql, command, "trace_id", query.TraceId);
-        AddExactFilter(sql, command, "definition_id", query.DefinitionId);
+        // Mirror RedisExecutionJobStore.MatchesDefinition: match the definition id against both
+        // the DefinitionId and GeoprocessingPlanId parameters, case-insensitively. The
+        // definition_id column stores DefinitionId ?? GeoprocessingPlanId, so the plan id is also
+        // matched directly from record_json when a distinct DefinitionId is present.
+        if (!string.IsNullOrWhiteSpace(query.DefinitionId))
+        {
+            sql.Append(" AND (lower(definition_id) = lower(@definition_id)")
+               .Append(" OR lower(record_json -> 'spec' -> 'parameters' ->> @plan_id_key) = lower(@definition_id))");
+            command.Parameters.Add(Parameter("definition_id", NpgsqlDbType.Text, query.DefinitionId.Trim()));
+            command.Parameters.Add(Parameter("plan_id_key", NpgsqlDbType.Text, ExecutionJobParameterKeys.GeoprocessingPlanId));
+        }
+
         AddExactFilter(sql, command, "environment", query.Environment);
         AddExactFilter(sql, command, "server", query.Server);
         AddExactFilter(sql, command, "release_id", query.ReleaseId);
@@ -463,7 +497,9 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
 
         if (!string.IsNullOrWhiteSpace(query.ResourceRef))
         {
-            sql.Append(" AND @resource_ref = ANY(resource_refs)");
+            // Case-insensitive membership to mirror RedisExecutionJobStore.MatchesAny, which
+            // compares resource refs with OrdinalIgnoreCase rather than the exact ANY(...) match.
+            sql.Append(" AND EXISTS (SELECT 1 FROM unnest(resource_refs) AS rref WHERE lower(rref) = lower(@resource_ref))");
             command.Parameters.Add(Parameter("resource_ref", NpgsqlDbType.Text, query.ResourceRef.Trim()));
         }
 
@@ -690,6 +726,23 @@ internal sealed partial class PostgresOperateFixtureExecutionStore(
 
     private static string EncodeOffsetCursor(int offset)
         => Convert.ToBase64String(Encoding.UTF8.GetBytes(offset.ToString(CultureInfo.InvariantCulture)));
+
+    private sealed class ScopedConnectionLease(IServiceScope scope, DbConnection connection) : IAsyncDisposable
+    {
+        public DbConnection Connection { get; } = connection;
+
+        public async ValueTask DisposeAsync()
+        {
+            try
+            {
+                await Connection.DisposeAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                scope.Dispose();
+            }
+        }
+    }
 
     private readonly record struct JobCursor(DateTimeOffset CreatedAt, string JobId);
 

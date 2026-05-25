@@ -1,16 +1,19 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Net;
 using System.Globalization;
+using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Admin.OperateFixtures;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -74,10 +77,13 @@ public sealed class OperateObservabilityFixtureEndpointsTests : IAsyncLifetime
         var repeatSeed = await _client.PostAsync(SeedRoute, content: null);
         repeatSeed.StatusCode.Should().Be(HttpStatusCode.OK);
 
+        AssertSingletonJobConsumersResolve();
         await AssertAlertZonesAsync();
         await AssertAlertRulesAsync();
         await AssertAlertEventsAsync(openAlertId, resolvedAlertId);
         await AssertJobsAsync();
+        await AssertJobPaginationAsync();
+        await AssertJobDefinitionAndResourceFiltersAsync();
         await AssertJobDetailsLogsAndArtifactsAsync();
         await AssertOperateEventsAsync();
         await AssertRecentLogsAsync();
@@ -134,6 +140,69 @@ public sealed class OperateObservabilityFixtureEndpointsTests : IAsyncLifetime
         jobs.Should().Contain(job => job.GetProperty("jobId").GetString() == SucceededJobId);
         jobs.Should().Contain(job => job.GetProperty("jobId").GetString() == FailedJobId);
         jobs.Should().HaveCount(2);
+    }
+
+    private void AssertSingletonJobConsumersResolve()
+    {
+        _fixture.Services.GetRequiredService<IExecutionAdmissionEvaluator>()
+            .Should()
+            .NotBeNull();
+        _fixture.Services.GetRequiredService<IGeoprocessingJobService>()
+            .Should()
+            .NotBeNull();
+    }
+
+    private async Task AssertJobPaginationAsync()
+    {
+        // limit=1 keyset pagination must page through both fixture jobs without re-including or
+        // skipping the boundary row, proving the cursor is encoded from the created_at column
+        // used by ORDER BY rather than the deserialized record.
+        var firstResponse = await _client.GetAsync(
+            "/api/v1/admin/jobs?correlationId=corr-operate-fixture-001&limit=1");
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var firstPage = await ReadJsonAsync(firstResponse);
+        var firstItems = firstPage.RootElement.GetProperty("items").EnumerateArray().ToArray();
+        firstItems.Should().ContainSingle();
+        var firstJobId = firstItems[0].GetProperty("jobId").GetString();
+        var cursor = firstPage.RootElement.GetProperty("nextCursor").GetString();
+        cursor.Should().NotBeNullOrWhiteSpace();
+
+        var secondResponse = await _client.GetAsync(
+            $"/api/v1/admin/jobs?correlationId=corr-operate-fixture-001&limit=1&cursor={Uri.EscapeDataString(cursor!)}");
+        secondResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var secondPage = await ReadJsonAsync(secondResponse);
+        var secondItems = secondPage.RootElement.GetProperty("items").EnumerateArray().ToArray();
+        secondItems.Should().ContainSingle();
+        var secondJobId = secondItems[0].GetProperty("jobId").GetString();
+
+        secondJobId.Should().NotBe(firstJobId);
+        new[] { firstJobId, secondJobId }.Should().BeEquivalentTo(new[] { SucceededJobId, FailedJobId });
+    }
+
+    private async Task AssertJobDefinitionAndResourceFiltersAsync()
+    {
+        // Mirror RedisExecutionJobStore matching: definitionId resolves against both the
+        // DefinitionId and GeoprocessingPlanId parameters, and resource refs match
+        // case-insensitively.
+        var byPlanId = await _client.GetAsync(
+            "/api/v1/admin/jobs?definitionId=operate-observability-fixture-plan&limit=10");
+        byPlanId.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var doc = await ReadJsonAsync(byPlanId))
+        {
+            var jobs = doc.RootElement.GetProperty("items").EnumerateArray().ToArray();
+            jobs.Should().Contain(job => job.GetProperty("jobId").GetString() == SucceededJobId);
+            jobs.Should().Contain(job => job.GetProperty("jobId").GetString() == FailedJobId);
+        }
+
+        var byMixedCaseResourceRef = await _client.GetAsync(
+            "/api/v1/admin/jobs?resourceRef=OPERATE-FIXTURE-CONSOLE&limit=10");
+        byMixedCaseResourceRef.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var doc = await ReadJsonAsync(byMixedCaseResourceRef))
+        {
+            var jobs = doc.RootElement.GetProperty("items").EnumerateArray().ToArray();
+            jobs.Should().Contain(job => job.GetProperty("jobId").GetString() == SucceededJobId);
+            jobs.Should().Contain(job => job.GetProperty("jobId").GetString() == FailedJobId);
+        }
     }
 
     private async Task AssertJobDetailsLogsAndArtifactsAsync()
