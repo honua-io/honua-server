@@ -78,6 +78,7 @@ internal static class GeoprocessingExecutionRoutingClassifier
             "conversion.feature-project",
             // Group-aware vector aggregation lifted to executable layer scope.
             "generalization.dissolve",
+            "analytics.spatial-join",
         }.ToFrozenSet(StringComparer.Ordinal);
 
     public static GeoprocessingExecutionRouting Classify(ProcessDefinition definition)

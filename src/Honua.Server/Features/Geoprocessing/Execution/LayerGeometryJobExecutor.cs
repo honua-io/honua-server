@@ -57,6 +57,7 @@ internal sealed partial class LayerGeometryJobExecutor : IJobExecutor
             "geometry.make-valid",
             "geometry.difference",
             "generalization.dissolve",
+            "analytics.spatial-join",
         }.ToFrozenSet(StringComparer.Ordinal);
 
     private const string DataUriPrefix = "data:application/geo+json;base64,";
@@ -65,6 +66,7 @@ internal sealed partial class LayerGeometryJobExecutor : IJobExecutor
     private readonly GeometryOperationTransform _geometryOp;
     private readonly ReprojectTransform _reproject;
     private readonly DissolveTransform _dissolve;
+    private readonly SpatialJoinTransform _spatialJoin;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
     private readonly ILogger<LayerGeometryJobExecutor> _logger;
 
@@ -81,6 +83,7 @@ internal sealed partial class LayerGeometryJobExecutor : IJobExecutor
         _geometryOp = new GeometryOperationTransform();
         _reproject = new ReprojectTransform();
         _dissolve = new DissolveTransform();
+        _spatialJoin = new SpatialJoinTransform();
         _options = options;
         _logger = logger;
     }
@@ -266,6 +269,50 @@ internal sealed partial class LayerGeometryJobExecutor : IJobExecutor
                 config = new TransformConfig
                 {
                     Type = DissolveTransform.TransformType,
+                    Options = options
+                };
+                return true;
+            }
+
+            case "analytics.spatial-join":
+            {
+                // The TARGET layer flows through the standard input reference
+                // (inputGeoJson / layerId). The JOIN layer is supplied inline as
+                // 'joinGeoJson' so the managed inline path can carry both layers
+                // without a storage provider.
+                if (!parameters.TryGetValue(prefix + "joinGeoJson", out var joinGeoJson)
+                    || string.IsNullOrWhiteSpace(joinGeoJson))
+                {
+                    error = "missing required input 'joinGeoJson' (the join layer as an inline GeoJSON FeatureCollection) for spatial-join";
+                    return false;
+                }
+
+                var options = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["referenceInline"] = joinGeoJson,
+                    // Summarizing (one-to-one) form: aggregate matched join rows.
+                    ["aggregate"] = "true",
+                };
+
+                if (parameters.TryGetValue(prefix + "predicate", out var predicate)
+                    && !string.IsNullOrWhiteSpace(predicate))
+                {
+                    options["predicate"] = predicate;
+                }
+
+                // statistics is the semicolon-separated field:stat summary spec
+                // (e.g. "value:sum;value:mean;:count"). Optional — JOIN_COUNT is
+                // always emitted regardless.
+                if (parameters.TryGetValue(prefix + "statistics", out var statistics)
+                    && !string.IsNullOrWhiteSpace(statistics))
+                {
+                    options["statistics"] = statistics;
+                }
+
+                transform = _spatialJoin;
+                config = new TransformConfig
+                {
+                    Type = SpatialJoinTransform.TransformType,
                     Options = options
                 };
                 return true;

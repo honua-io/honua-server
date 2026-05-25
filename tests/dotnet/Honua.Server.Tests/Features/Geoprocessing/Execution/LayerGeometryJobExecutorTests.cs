@@ -220,6 +220,60 @@ public sealed class LayerGeometryJobExecutorTests
     }
 
     [UnitTest]
+    public async Task ExecuteAsync_SpatialJoin_AggregatesMatchedJoinFeaturesPerTarget()
+    {
+        // Target: one polygon covering 0..10. Join: two points inside it.
+        var targetCollection =
+            "{\"type\":\"FeatureCollection\",\"features\":[" +
+            "{\"type\":\"Feature\",\"geometry\":{\"type\":\"Polygon\",\"coordinates\":" +
+            "[[[0,0],[10,0],[10,10],[0,10],[0,0]]]},\"properties\":{\"zone\":\"A\"}}]}";
+        var joinCollection =
+            "{\"type\":\"FeatureCollection\",\"features\":[" +
+            "{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[1,1]},\"properties\":{\"value\":10}}," +
+            "{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[2,2]},\"properties\":{\"value\":30}}]}";
+
+        var record = CreateJobRecord(
+            "analytics.spatial-join",
+            inputGeoJson: targetCollection,
+            extraInputs: new Dictionary<string, string>
+            {
+                ["joinGeoJson"] = joinCollection,
+                ["predicate"] = "intersects",
+                ["statistics"] = ":count;value:sum"
+            });
+
+        var context = Substitute.For<IJobExecutionContext>();
+        context.OperationId.Returns("op-sjoin");
+        string? published = null;
+        context.When(c => c.PublishArtifactAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()))
+            .Do(call => published = call.ArgAt<string>(0));
+
+        var result = await CreateExecutor().ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        var doc = ParseCollection(published);
+        doc.RootElement.GetProperty("featureCount").GetInt64().Should().Be(1);
+        var props = doc.RootElement.GetProperty("features")[0].GetProperty("properties");
+        props.GetProperty("zone").GetString().Should().Be("A");
+        props.GetProperty("JOIN_COUNT").GetInt64().Should().Be(2);
+        props.GetProperty("SUM_value").GetDouble().Should().Be(40.0);
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_SpatialJoin_MissingJoinLayer_FailsCleanly()
+    {
+        var record = CreateJobRecord("analytics.spatial-join", inputGeoJson: TwoPointCollection);
+
+        var context = Substitute.For<IJobExecutionContext>();
+        context.OperationId.Returns("op-sjoin-nojoin");
+
+        var result = await CreateExecutor().ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.ErrorMessage.Should().Contain("joinGeoJson");
+    }
+
+    [UnitTest]
     public async Task ExecuteAsync_MissingInputReference_FailsCleanly()
     {
         var executor = CreateExecutor();

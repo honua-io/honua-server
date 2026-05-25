@@ -91,6 +91,9 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         "conversion.feature-project",
         "geometry.make-valid",
         "geometry.difference",
+        // Group-aware vector aggregation lifted to executable layer scope.
+        "generalization.dissolve",
+        "analytics.spatial-join",
     };
 
     [UnitTest]
