@@ -648,6 +648,12 @@ public sealed class PackageReviewContext
     /// <summary>Actor identifier visible to the caller.</summary>
     public string? ActorId { get; init; }
 
+    /// <summary>Subject identifier used by authorization and approval policy evaluators.</summary>
+    public string? SubjectId { get; init; }
+
     /// <summary>Caller-visible authorization scope identifiers.</summary>
     public IReadOnlyList<string> Scopes { get; init; } = [];
+
+    /// <summary>Caller-visible role identifiers preserved for authorization and approval policy evaluators.</summary>
+    public IReadOnlyList<string> Roles { get; init; } = [];
 }

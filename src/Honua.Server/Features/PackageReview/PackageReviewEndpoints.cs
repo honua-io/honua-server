@@ -108,11 +108,24 @@ internal static partial class PackageReviewEndpoints
             .OrderBy(static value => value, StringComparer.Ordinal)
             .ToArray();
 
+        var roles = context.User.Claims
+            .Where(static claim => string.Equals(claim.Type, ClaimTypes.Role, StringComparison.Ordinal) ||
+                                   string.Equals(claim.Type, "roles", StringComparison.Ordinal) ||
+                                   string.Equals(claim.Type, "role", StringComparison.Ordinal))
+            .Select(static claim => claim.Value)
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static value => value, StringComparer.Ordinal)
+            .ToArray();
+
         return new PackageReviewContext
         {
             ActorId = context.User.Identity?.Name,
             TenantId = context.User.FindFirst("tenant_id")?.Value,
-            Scopes = scopes
+            SubjectId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ??
+                        context.User.FindFirst("sub")?.Value,
+            Scopes = scopes,
+            Roles = roles
         };
     }
 }

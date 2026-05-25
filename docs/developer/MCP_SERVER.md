@@ -436,7 +436,9 @@ catalog discovery on top of the same authorization graph via
   process read grant before calling `IPackageReviewService`.
   Clients should disable execute and publish controls from `canExecute` and
   `canPublish`; unresolved `blocker` findings are already scoped to
-  `execute`, `publish`, or `both`.
+  `execute`, `publish`, `both`, or `review`. `review`-scoped blockers keep the
+  response `status` blocked without disabling execute or publish gates by
+  themselves.
 - `honua_execute_plan` accepts an optional `idempotencyKey`. Blank or
   whitespace keys are normalized to `null` before delegation. Success returns
   `{ jobId, status, createdAt, resourceUri }`.

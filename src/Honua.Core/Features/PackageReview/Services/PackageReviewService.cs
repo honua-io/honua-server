@@ -302,9 +302,19 @@ internal sealed class PackageReviewService : IPackageReviewService
         AppendDictionary(builder, request.ResourceRefs);
         builder.Append(context.TenantId).Append('\n');
         builder.Append(context.ActorId).Append('\n');
+        if (!string.IsNullOrWhiteSpace(context.SubjectId))
+        {
+            builder.Append("subject=").Append(context.SubjectId).Append('\n');
+        }
+
         foreach (var scope in context.Scopes.Order(StringComparer.Ordinal))
         {
             builder.Append(scope).Append('\n');
+        }
+
+        foreach (var role in context.Roles.Order(StringComparer.Ordinal))
+        {
+            builder.Append("role=").Append(role).Append('\n');
         }
 
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));

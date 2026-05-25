@@ -110,6 +110,92 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
         apiResponse.Data.PreviewPlan.Operations[0].InputRefs.Should().Contain("layers/parks");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /api/v1/admin/packages/preview")]
+    public async Task PreviewPackage_WithDuplicateAnalysisStep_ReturnsBlockedFindingWithoutPreviewPlan()
+    {
+        var request = CreateAnalysisPlanRequest(
+            "pkg-invalid-analysis",
+            """
+            {
+              "planId": "plan-duplicate",
+              "intentId": "intent-duplicate",
+              "steps": [
+                {
+                  "stepId": "duplicate",
+                  "kind": "Geoprocess",
+                  "processId": "geometry.buffer"
+                },
+                {
+                  "stepId": "duplicate",
+                  "kind": "Geoprocess",
+                  "processId": "geometry.buffer"
+                }
+              ],
+              "outputs": [ "FeatureLayer" ]
+            }
+            """);
+
+        var response = await _client.PostAsync("/api/v1/admin/packages/preview", Serialize(request));
+
+        response.Be200Ok();
+        var apiResponse = await ReadResponseAsync(response);
+        apiResponse.Data.Should().NotBeNull();
+        apiResponse.Data!.Status.Should().Be(PackageReviewStatus.Blocked);
+        apiResponse.Data.PreviewPlan.Should().BeNull();
+        apiResponse.Data.Findings.Should().ContainSingle(f =>
+            f.Code == "invalid_analysis_plan_payload" &&
+            f.Evidence.Any(e => e.Actual != null && e.Actual.Contains("Duplicate step identifier", StringComparison.Ordinal)));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /api/v1/admin/packages/validate")]
+    public async Task ValidatePackage_WithAdminDestructiveAnalysisPlan_DoesNotRequireApproval()
+    {
+        var request = CreateAnalysisPlanRequest(
+            "pkg-admin-destructive-analysis",
+            """
+            {
+              "planId": "plan-delete",
+              "intentId": "intent-delete",
+              "steps": [
+                {
+                  "stepId": "delete",
+                  "kind": "Geoprocess",
+                  "processId": "data-management.delete-features",
+                  "inputs": {
+                    "layerId": "42",
+                    "where": "status = 'retired'"
+                  }
+                }
+              ],
+              "outputs": [ "Scalar" ]
+            }
+            """);
+
+        var response = await _client.PostAsync("/api/v1/admin/packages/validate", Serialize(request));
+
+        response.Be200Ok();
+        var apiResponse = await ReadResponseAsync(response);
+        apiResponse.Data.Should().NotBeNull();
+        apiResponse.Data!.Status.Should().Be(PackageReviewStatus.Ready);
+        apiResponse.Data.RequiresApproval.Should().BeFalse();
+        apiResponse.Data.Findings.Should().NotContain(f => f.Code == "approval_required");
+    }
+
+    private static PackageReviewRequest CreateAnalysisPlanRequest(string packageId, string payloadJson)
+    {
+        using var document = JsonDocument.Parse(payloadJson);
+        return new PackageReviewRequest
+        {
+            PackageFamily = PackageReviewFamilies.AnalysisPlan,
+            PackageId = packageId,
+            PackagePayload = document.RootElement.Clone()
+        };
+    }
+
     private static StringContent Serialize(PackageReviewRequest request)
         => new(
             JsonSerializer.Serialize(request, PackageReviewJsonContext.Default.PackageReviewRequest),

@@ -32,13 +32,17 @@ internal sealed class RequirementPackageReviewAdapter : IPackageFamilyReviewAdap
         var result = new PackageFamilyReviewResult
         {
             Findings = findings,
-            PreviewPlan = request.IncludePreviewPlan ? BuildPreviewPlan(request) : null,
+            PreviewPlan = request.IncludePreviewPlan && CanBuildGenericPreview(request) ? BuildPreviewPlan(request) : null,
             Estimate = request.Estimate,
             ResourceRefs = request.ResourceRefs
         };
 
         return ValueTask.FromResult(result);
     }
+
+    private static bool CanBuildGenericPreview(PackageReviewRequest request)
+        => !string.Equals(request.PackageFamily, PackageReviewFamilies.AnalysisPlan, StringComparison.Ordinal) &&
+           !string.Equals(request.PackageFamily, PackageReviewFamilies.Geoprocessing, StringComparison.Ordinal);
 
     private static void AddDataBindingFindings(PackageReviewRequest request, List<PackageFinding> findings)
     {

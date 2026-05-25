@@ -232,6 +232,36 @@ public sealed class PackageReviewServiceTests
         response.PreviewPlan.Operations[0].InputRefs.Should().Contain("layers/parks");
     }
 
+    [Theory]
+    [InlineData(PackageReviewFamilies.AnalysisPlan)]
+    [InlineData(PackageReviewFamilies.Geoprocessing)]
+    public async Task ReviewAsync_WithSpecializedPreviewFamily_DoesNotReturnGenericPreviewPlan(string family)
+    {
+        var service = CreateService();
+        var request = new PackageReviewRequest
+        {
+            PackageFamily = family,
+            PackageId = "specialized-preview",
+            IncludePreviewPlan = true,
+            Requirements = new PackageReviewRequirements
+            {
+                DataBindings =
+                [
+                    new PackageDataBindingRequirement
+                    {
+                        Id = "source",
+                        SourceId = "layers/source",
+                        IsResolved = true
+                    }
+                ]
+            }
+        };
+
+        var response = await service.ReviewAsync(request, CreateContext());
+
+        response.PreviewPlan.Should().BeNull();
+    }
+
     [Fact]
     public async Task ReviewAsync_WithUnsupportedFamily_ReturnsUnsupportedBlocker()
     {

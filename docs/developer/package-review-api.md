@@ -141,6 +141,9 @@ Action gates:
 Console and generated-app clients should disable execute or publish controls
 from `canExecute` and `canPublish`, not by reinterpreting finding codes.
 The supported action scopes are `both`, `execute`, `publish`, and `review`.
+`review`-scoped blockers make the overall `status` `blocked`, but they do not
+set `canExecute` or `canPublish` to `false` unless another blocker applies to
+those action gates.
 
 ## Findings
 

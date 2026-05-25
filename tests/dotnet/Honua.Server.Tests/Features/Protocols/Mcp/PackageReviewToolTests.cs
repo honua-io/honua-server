@@ -77,6 +77,35 @@ public sealed class PackageReviewToolTests
         structured.GetProperty("previewPlan").GetProperty("mayMutatePublishedState").GetBoolean().Should().BeFalse();
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_preview_package")]
+    public async Task PreviewPackage_PreservesRoleClaimsInReviewContext()
+    {
+        PackageReviewContext? capturedContext = null;
+        _reviewService.ReviewAsync(
+                Arg.Any<PackageReviewRequest>(),
+                Arg.Do<PackageReviewContext>(context => capturedContext = context),
+                Arg.Any<CancellationToken>())
+            .Returns(CreateResponse(includePreview: true));
+
+        var tool = new PreviewPackageTool(
+            _reviewService,
+            _jobService,
+            NullLogger<PreviewPackageTool>.Instance);
+        var arguments = McpTestFactory.ToArguments(CreateRequest(), PackageReviewJsonContext.Default.PackageReviewRequest);
+        var httpContext = McpTestFactory.AuthenticatedHttpContext("admin");
+        httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, "admin"), new Claim(ClaimTypes.Role, "admin")],
+            "Test"));
+
+        var result = await tool.InvokeAsync(httpContext, arguments, CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
+        capturedContext.Should().NotBeNull();
+        capturedContext!.Roles.Should().Contain("admin");
+    }
+
     private static PackageReviewRequest CreateRequest()
         => new()
         {

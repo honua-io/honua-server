@@ -69,7 +69,18 @@ internal sealed class AnalysisPlanPackageReviewAdapter : IPackageFamilyReviewAda
         }
 
         var principal = BuildPrincipal(context);
-        var validation = _jobService.ValidatePlan(plan, principal);
+        PlanValidationResult validation;
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            validation = _jobService.ValidatePlan(plan, principal);
+        }
+        catch (GeoprocessingValidationException ex)
+        {
+            findings.Add(InvalidPayloadFinding(ex.Message));
+            return ValueTask.FromResult(new PackageFamilyReviewResult { Findings = findings });
+        }
+
         findings.AddRange(validation.Violations.Select(ToFinding));
         findings.AddRange(validation.Warnings.Select(static warning => new PackageFinding
         {
@@ -116,14 +127,22 @@ internal sealed class AnalysisPlanPackageReviewAdapter : IPackageFamilyReviewAda
         PackageEstimate? estimate = null;
         if (request.IncludePreviewPlan && validation.IsExecutable)
         {
-            var dryRun = _jobService.DryRunPlan(plan, principal);
-            previewPlan = ToPreviewPlan(plan);
-            estimate = new PackageEstimate
+            try
             {
-                DurationSeconds = dryRun.EstimatedDurationSeconds,
-                CostWeight = Math.Max(plan.Steps.Count, 1),
-                Confidence = "medium"
-            };
+                cancellationToken.ThrowIfCancellationRequested();
+                var dryRun = _jobService.DryRunPlan(plan, principal);
+                previewPlan = ToPreviewPlan(plan);
+                estimate = new PackageEstimate
+                {
+                    DurationSeconds = dryRun.EstimatedDurationSeconds,
+                    CostWeight = Math.Max(plan.Steps.Count, 1),
+                    Confidence = "medium"
+                };
+            }
+            catch (GeoprocessingValidationException ex)
+            {
+                findings.Add(InvalidPayloadFinding(ex.Message));
+            }
         }
 
         return ValueTask.FromResult(new PackageFamilyReviewResult
@@ -214,9 +233,25 @@ internal sealed class AnalysisPlanPackageReviewAdapter : IPackageFamilyReviewAda
             claims.Add(new Claim(ClaimTypes.Name, context.ActorId));
         }
 
+        if (!string.IsNullOrWhiteSpace(context.SubjectId))
+        {
+            claims.Add(new Claim(ClaimTypes.NameIdentifier, context.SubjectId));
+        }
+
+        if (!string.IsNullOrWhiteSpace(context.TenantId))
+        {
+            claims.Add(new Claim("tenant_id", context.TenantId));
+        }
+
         foreach (var scope in context.Scopes)
         {
             claims.Add(new Claim("scope", scope));
+        }
+
+        foreach (var role in context.Roles.Distinct(StringComparer.Ordinal))
+        {
+            claims.Add(new Claim(ClaimTypes.Role, role));
+            claims.Add(new Claim("roles", role));
         }
 
         return new ClaimsPrincipal(new ClaimsIdentity(claims, "PackageReview"));
