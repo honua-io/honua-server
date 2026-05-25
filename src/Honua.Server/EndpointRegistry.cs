@@ -579,6 +579,9 @@ public static class EndpointRegistry
         // Scene analysis on the elevation surface (#1204).
         new("POST", "/elevation/{datasetId}/sun-shadow"),
         new("POST", "/elevation/{datasetId}/slice"),
+        // 3D visibility analysis on the elevation surface (#1203).
+        new("POST", "/elevation/{datasetId}/line-of-sight"),
+        new("POST", "/elevation/{datasetId}/viewshed"),
 
         new("GET", "/api/styles/{layerId}.json"),
 
