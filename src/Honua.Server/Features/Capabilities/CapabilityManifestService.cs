@@ -295,8 +295,8 @@ internal sealed class CapabilityManifestService(
             Capability("package.metadata-v2", "packages", context),
             Capability("package.release-package", "packages", context, policyCapability: "catalog.publish", requiresEnvironment: true),
             Capability("package.gitops-manifest", "packages", context, policyCapability: "catalog.publish", requiresEnvironment: true),
-            Capability("package.map", "packages", context, entitlementKey: "analytics.spatial-join", policyCapability: "studio.edit"),
-            Capability("package.app", "packages", context, entitlementKey: "analytics.spatial-join", policyCapability: "studio.edit"),
+            Capability("package.map", "packages", context, policyCapability: "studio.edit"),
+            Capability("package.app", "packages", context, policyCapability: "studio.edit"),
 
             Capability("temporal.filtering", "temporal", context, entitlementKey: "temporal.filtering"),
             Capability("temporal.extent-discovery", "temporal", context, entitlementKey: "temporal.extent-discovery"),
@@ -669,8 +669,9 @@ internal sealed class CapabilityManifestService(
         }
 
         var workspaceClaimType = rbacOptions.Value.WorkspaceScopeClaimType;
-        return principal.FindAll(workspaceClaimType).Any(claim =>
-            string.Equals(claim.Value, workspaceId, StringComparison.Ordinal));
+        return principal.Claims.Any(claim =>
+            string.Equals(claim.Type, workspaceClaimType, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(claim.Value, workspaceId, StringComparison.Ordinal));
     }
 
     private bool HasAdminRole(ClaimsPrincipal principal)

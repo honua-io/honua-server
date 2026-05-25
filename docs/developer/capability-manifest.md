@@ -154,6 +154,8 @@ Transport ids under `transports.items` are `rest-http`, `geoservices-rest`, `ogc
 
 Package families under `packages.families` are `metadata-v2-graph`, `metadata-release-package`, `gitops-metadata-release-manifest`, `map-package`, and `app-package`. `packages.storageFamilies` and `packages.publicationFamilies` are generated from the Metadata v2 enum values so clients can render storage/publication choices without duplicating server-side lists.
 
+`package.map` and `package.app` are policy-scoped package authoring capabilities. They do not require spatial analytics entitlements.
+
 `analysis.spatial` is an aggregate spatial analytics capability. It requires `features.query` policy and all four endpoint entitlements: `analytics.clustering`, `analytics.spatial-join`, `analytics.buffer-aggregate`, and `analytics.density`. If any required analytics entitlement is inactive, the aggregate capability is unavailable and the individual entitlement states remain visible under `policies.entitlements`.
 
 Reason codes are stable client-facing strings:

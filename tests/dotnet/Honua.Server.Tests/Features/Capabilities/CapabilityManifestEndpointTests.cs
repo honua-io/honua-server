@@ -3,20 +3,28 @@
 
 using System.Net;
 using System.Runtime.CompilerServices;
+using System.Security.Claims;
+using System.Text.Encodings.Web;
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Tests.Features.Licensing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Capabilities;
 
@@ -66,6 +74,24 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
                         ["FeatureStreaming:MaxConcurrentSessions"] = "12",
                         ["Grpc:StreamBatchSize"] = "42"
                     });
+                });
+            });
+
+    private static WebAppFixture CreateWorkspaceScopedManifestFixture()
+        => CreateManifestFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IRoleStore>();
+                services.AddSingleton<IRoleStore, CapabilityManifestRoleStore>();
+                services.AddAuthentication()
+                    .AddScheme<AuthenticationSchemeOptions, CapabilityManifestTestAuthHandler>(
+                        CapabilityManifestTestAuthHandler.SchemeName,
+                        static _ => { });
+                services.PostConfigureAll<AuthenticationOptions>(static options =>
+                {
+                    options.DefaultAuthenticateScheme = CapabilityManifestTestAuthHandler.SchemeName;
+                    options.DefaultChallengeScheme = CapabilityManifestTestAuthHandler.SchemeName;
+                    options.DefaultScheme = CapabilityManifestTestAuthHandler.SchemeName;
                 });
             });
 
@@ -169,7 +195,7 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
     [Endpoint("GET /api/v1/capabilities/manifest")]
     public async Task GetManifest_WithPartialSpatialAnalysisEntitlements_MarksAnalysisUnavailable()
     {
-        var fixture = CreateManifestFixture(entitlements: ["analytics.spatial-join"]);
+        var fixture = CreateManifestFixture(entitlements: ["analytics.clustering"]);
         await fixture.InitializeAsync();
 
         try
@@ -191,6 +217,50 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
                     "analytics.spatial-join",
                     "analytics.buffer-aggregate",
                     "analytics.density");
+
+            var mapPackage = GetCapability(document.RootElement, "package.map");
+            mapPackage.GetProperty("available").GetBoolean().Should().BeTrue();
+            mapPackage.TryGetProperty("reasonCode", out _).Should().BeFalse();
+            mapPackage.TryGetProperty("entitlementKey", out _).Should().BeFalse();
+
+            var appPackage = GetCapability(document.RootElement, "package.app");
+            appPackage.GetProperty("available").GetBoolean().Should().BeTrue();
+            appPackage.TryGetProperty("reasonCode", out _).Should().BeFalse();
+            appPackage.TryGetProperty("entitlementKey", out _).Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_WithWorkspaceClaimTypeDifferentCasing_MatchesRbacWorkspaceScope()
+    {
+        var fixture = CreateWorkspaceScopedManifestFixture();
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateClient(httpClient =>
+            {
+                httpClient.DefaultRequestHeaders.Add(CapabilityManifestTestAuthHandler.UserHeader, "workspace-user");
+                httpClient.DefaultRequestHeaders.Add(CapabilityManifestTestAuthHandler.RolesHeader, "editor");
+                httpClient.DefaultRequestHeaders.Add(CapabilityManifestTestAuthHandler.WorkspaceClaimTypeHeader, "GROUPS");
+                httpClient.DefaultRequestHeaders.Add(CapabilityManifestTestAuthHandler.WorkspaceScopeHeader, "field-team");
+            });
+            using var response = await client.GetAsync(
+                "/api/v1/capabilities/manifest?workspaceId=field-team");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var document = await ReadDocumentAsync(response);
+            var scope = document.RootElement.GetProperty("scope");
+            scope.GetProperty("authenticated").GetBoolean().Should().BeTrue();
+            scope.GetProperty("workspaceId").GetString().Should().Be("field-team");
+            scope.GetProperty("workspaceAvailable").GetBoolean().Should().BeTrue();
+            scope.TryGetProperty("workspaceReasonCode", out _).Should().BeFalse();
         }
         finally
         {
@@ -249,6 +319,142 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
     private static JsonElement GetById(JsonElement root, string propertyName, string id)
         => root.GetProperty(propertyName).EnumerateArray().Single(item =>
             string.Equals(item.GetProperty("id").GetString(), id, StringComparison.Ordinal));
+
+    private sealed class CapabilityManifestRoleStore : IRoleStore
+    {
+        private static readonly PermissionGrant[] EditorPermissions =
+        [
+            new() { Service = "*", Layer = "*", Operation = "write" }
+        ];
+
+        public Task<IReadOnlyList<RoleDefinition>> ListRolesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<RoleDefinition>>(Array.Empty<RoleDefinition>());
+
+        public Task<RoleDefinition?> GetRoleAsync(Guid roleId, CancellationToken cancellationToken = default)
+            => Task.FromResult<RoleDefinition?>(null);
+
+        public Task<RoleDefinition> CreateRoleAsync(
+            RoleDefinition role,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(role);
+
+        public Task<RoleDefinition?> UpdateRoleAsync(
+            RoleDefinition role,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<RoleDefinition?>(role);
+
+        public Task<bool> DeleteRoleAsync(Guid roleId, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
+        public Task<IReadOnlyList<PermissionGrant>> GetPermissionsAsync(
+            Guid roleId,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<PermissionGrant>>(Array.Empty<PermissionGrant>());
+
+        public Task<IReadOnlyList<PermissionGrant>> SetPermissionsAsync(
+            Guid roleId,
+            IReadOnlyList<PermissionGrant> permissions,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(permissions);
+
+        public Task<EffectivePermissions> GetEffectivePermissionsAsync(
+            string userId,
+            IReadOnlyList<string> roles,
+            CancellationToken cancellationToken = default)
+        {
+            var permissions = roles.Contains("editor", StringComparer.OrdinalIgnoreCase)
+                ? EditorPermissions
+                : Array.Empty<PermissionGrant>();
+            var result = new EffectivePermissions
+            {
+                UserId = userId,
+                Roles = roles,
+                Permissions = permissions,
+                ResolvedAt = DateTimeOffset.UtcNow
+            };
+            return Task.FromResult(result);
+        }
+    }
+
+    private sealed class CapabilityManifestTestAuthHandler(
+        IOptionsMonitor<AuthenticationSchemeOptions> options,
+        ILoggerFactory logger,
+        UrlEncoder encoder)
+        : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+    {
+        public const string SchemeName = "CapabilityManifestTest";
+        public const string UserHeader = "X-Capability-Test-User";
+        public const string RolesHeader = "X-Capability-Test-Roles";
+        public const string WorkspaceClaimTypeHeader = "X-Capability-Test-Workspace-Claim-Type";
+        public const string WorkspaceScopeHeader = "X-Capability-Test-Workspace-Scope";
+
+        protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+        {
+            if (!Request.Headers.TryGetValue(UserHeader, out var userValues))
+            {
+                return Task.FromResult(AuthenticateResult.NoResult());
+            }
+
+            var userName = userValues.FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(userName))
+            {
+                return Task.FromResult(AuthenticateResult.NoResult());
+            }
+
+            var claims = new List<Claim>
+            {
+                new(ClaimTypes.NameIdentifier, userName),
+                new(ClaimTypes.Name, userName)
+            };
+            AddRoles(claims);
+            AddWorkspaceScope(claims);
+
+            var identity = new ClaimsIdentity(claims, Scheme.Name);
+            var principal = new ClaimsPrincipal(identity);
+            var ticket = new AuthenticationTicket(principal, Scheme.Name);
+            return Task.FromResult(AuthenticateResult.Success(ticket));
+        }
+
+        private void AddRoles(List<Claim> claims)
+        {
+            if (!Request.Headers.TryGetValue(RolesHeader, out var roleValues))
+            {
+                return;
+            }
+
+            var roles = roleValues.ToString()
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            foreach (var role in roles)
+            {
+                claims.Add(new Claim(ClaimTypes.Role, role));
+                claims.Add(new Claim("roles", role));
+            }
+        }
+
+        private void AddWorkspaceScope(List<Claim> claims)
+        {
+            if (!Request.Headers.TryGetValue(WorkspaceScopeHeader, out var workspaceValues))
+            {
+                return;
+            }
+
+            var workspaceId = workspaceValues.FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(workspaceId))
+            {
+                return;
+            }
+
+            var claimType = Request.Headers.TryGetValue(WorkspaceClaimTypeHeader, out var claimTypeValues)
+                ? claimTypeValues.FirstOrDefault()
+                : null;
+            if (string.IsNullOrWhiteSpace(claimType))
+            {
+                claimType = new RbacOptions().WorkspaceScopeClaimType;
+            }
+
+            claims.Add(new Claim(claimType, workspaceId));
+        }
+    }
 
     private sealed class StaticEnvironmentSnapshotReader : IMetadataV2EnvironmentSnapshotReader
     {
