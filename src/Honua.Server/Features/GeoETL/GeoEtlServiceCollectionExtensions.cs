@@ -65,6 +65,11 @@ internal static class GeoEtlServiceCollectionExtensions
         // Honua-layer / PostGIS sink registers only when a feature sink writer exists.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IPipelineSinkConnector, NullPreviewSinkConnector>());
+        // Managed file + dead-letter sinks (no native deps, always available).
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IPipelineSinkConnector, GeoJsonFileSinkConnector>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IPipelineSinkConnector, QuarantineSinkConnector>());
         if (services.Any(d => d.ServiceType == typeof(IFeatureSinkWriter)))
         {
             services.TryAddEnumerable(ServiceDescriptor.Scoped<IPipelineSinkConnector>(
