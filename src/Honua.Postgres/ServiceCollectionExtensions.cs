@@ -308,6 +308,12 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<PostgresSchemaConfiguration>());
         });
 
+        // GeoETL Honua-layer sink writer (#361 Child Ticket D / baseline slice). Reuses
+        // the same honua.create_import_table / honua.insert_import_feature path the import
+        // service uses, so the pipeline Honua-layer sink does not duplicate the insert code.
+        services.AddScoped<Core.Features.GeoETL.Abstractions.IFeatureSinkWriter,
+            Features.GeoETL.Services.PostgresFeatureSinkWriter>();
+
         // Register universal import job service using unified progress store
         // This replaces the in-memory job service with one that uses centralized progress tracking
         services.AddSingleton<IImportJobService>(serviceProvider =>
