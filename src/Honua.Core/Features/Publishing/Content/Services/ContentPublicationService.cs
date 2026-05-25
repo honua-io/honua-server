@@ -22,6 +22,24 @@ public sealed class ContentPublicationService : IContentPublicationService
     private const int VersionPageSize = 100;
     private const string RoutePathPrefix = "/api/v1/published/";
 
+    // Canonical WGS 84 lon/lat (EPSG:4326) and CRS84 identifiers, matched exactly so
+    // identifiers that merely contain "4326"/"CRS84" are not mistaken for lon/lat and
+    // clamped to [-180, 180] x [-90, 90].
+    private static readonly HashSet<string> Wgs84LonLatCrs = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "EPSG:4326",
+        "4326",
+        "urn:ogc:def:crs:EPSG::4326",
+        "http://www.opengis.net/def/crs/EPSG/0/4326",
+        "https://www.opengis.net/def/crs/EPSG/0/4326",
+        "CRS84",
+        "OGC:CRS84",
+        "urn:ogc:def:crs:OGC:1.3:CRS84",
+        "urn:ogc:def:crs:OGC::CRS84",
+        "http://www.opengis.net/def/crs/OGC/1.3/CRS84",
+        "https://www.opengis.net/def/crs/OGC/1.3/CRS84",
+    };
+
     private readonly IContentPublicationStore _store;
     private readonly TimeProvider _timeProvider;
     private readonly IMetadataV2GraphProvider? _graphProvider;
@@ -485,16 +503,44 @@ public sealed class ContentPublicationService : IContentPublicationService
             return;
         }
 
-        if (embed.AllowedOrigins is { } origins)
+        // allowedOrigins are compared against request origins; frameAncestors are
+        // written into the Content-Security-Policy header on embed reads. Both are
+        // single space-delimited tokens, so reject empty, whitespace, or control
+        // characters here to keep malformed values out of persistence and off the
+        // response header path (a stray control character would otherwise fail the
+        // header write and surface as a 500).
+        ValidateEmbedTokens(embed.AllowedOrigins, "embed.allowedOrigins");
+        ValidateEmbedTokens(embed.FrameAncestors, "embed.frameAncestors");
+    }
+
+    private static void ValidateEmbedTokens(IReadOnlyList<string>? tokens, string field)
+    {
+        if (tokens is null)
         {
-            foreach (var origin in origins)
+            return;
+        }
+
+        foreach (var token in tokens)
+        {
+            if (string.IsNullOrWhiteSpace(token) || ContainsWhitespaceOrControl(token))
             {
-                if (string.IsNullOrWhiteSpace(origin) || origin.Contains(' ', StringComparison.Ordinal))
-                {
-                    throw new ContentPublicationValidationException("embed.allowedOrigins entries must be non-empty origins without whitespace.");
-                }
+                throw new ContentPublicationValidationException(
+                    $"{field} entries must be non-empty values without whitespace or control characters.");
             }
         }
+    }
+
+    private static bool ContainsWhitespaceOrControl(string value)
+    {
+        foreach (var character in value)
+        {
+            if (char.IsWhiteSpace(character) || char.IsControl(character))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static void ValidateBbox(ContentPublicationBbox? bbox)
@@ -522,8 +568,7 @@ public sealed class ContentPublicationService : IContentPublicationService
     }
 
     private static bool IsWgs84(string crs)
-        => crs.Contains("4326", StringComparison.OrdinalIgnoreCase)
-            || crs.Contains("CRS84", StringComparison.OrdinalIgnoreCase);
+        => Wgs84LonLatCrs.Contains(crs.Trim());
 
     private static bool TryParseRevision(string selector, out long revision)
     {

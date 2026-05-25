@@ -326,6 +326,83 @@ public sealed class ContentPublicationServiceTests
     }
 
     [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task Publish_WithOutOfRangeCrs84Bbox_ThrowsValidation()
+    {
+        var (service, _) = CreateService();
+        var request = new PublishContentRequest
+        {
+            Kind = ContentPublicationKind.Map,
+            RouteSlug = "map",
+            DefaultViewBbox = new ContentPublicationBbox { Crs = "CRS84", MinX = 0, MinY = -91, MaxX = 10, MaxY = 10 },
+        };
+
+        var act = () => service.PublishAsync(request, Actor, null);
+        await act.Should().ThrowAsync<ContentPublicationValidationException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task Publish_WithNonWgs84CrsContaining4326Substring_DoesNotClampToLonLat()
+    {
+        var (service, _) = CreateService();
+        var request = new PublishContentRequest
+        {
+            Kind = ContentPublicationKind.Map,
+            RouteSlug = "map",
+            // "EPSG:43267" merely contains the "4326" digits; it must not be treated as
+            // WGS 84 lon/lat, so out-of-lon/lat coordinates are accepted as-is.
+            DefaultViewBbox = new ContentPublicationBbox { Crs = "EPSG:43267", MinX = -200, MinY = -500, MaxX = 200, MaxY = 500 },
+        };
+
+        var detail = await service.PublishAsync(request, Actor, null);
+
+        detail.Versions[0].DefaultViewBbox!.Crs.Should().Be("EPSG:43267");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public async Task Publish_WithControlCharFrameAncestor_ThrowsValidation()
+    {
+        var (service, _) = CreateService();
+        var request = new PublishContentRequest
+        {
+            Kind = ContentPublicationKind.Map,
+            RouteSlug = "map",
+            Policy = new ContentPublicationPolicy
+            {
+                Embed = new ContentEmbedPolicy
+                {
+                    AllowEmbedding = true,
+                    FrameAncestors = ["https://ok.example", "https://evil\r\nx-injected: 1"],
+                },
+            },
+        };
+
+        var act = () => service.PublishAsync(request, Actor, null);
+
+        await act.Should().ThrowAsync<ContentPublicationValidationException>()
+            .WithMessage("*frameAncestors*");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Update)]
+    public async Task UpdatePolicy_WithControlCharFrameAncestor_ThrowsValidation()
+    {
+        var (service, _) = CreateService();
+        var published = await service.PublishAsync(
+            new PublishContentRequest { Kind = ContentPublicationKind.Map, RouteSlug = "map" }, Actor, null);
+
+        var act = () => service.UpdatePolicyAsync(published.Route.PublicationId, new UpdatePublicationPolicyRequest
+        {
+            Embed = new ContentEmbedPolicy { AllowEmbedding = true, FrameAncestors = ["bad\nvalue"] },
+        }, Actor, null);
+
+        await act.Should().ThrowAsync<ContentPublicationValidationException>()
+            .WithMessage("*frameAncestors*");
+    }
+
+    [UnitTest]
     [Operation(Operations.Query)]
     public void Version_JsonRoundTrip_PreservesContract()
     {

@@ -197,9 +197,13 @@ Policy fields:
   this slice.
 - `embed.allowEmbedding`: whether `?embed=true` route reads are allowed.
 - `embed.allowedOrigins`: optional allowlist compared against the `Origin`
-  header, falling back to `Referer` origin when `Origin` is absent.
+  header, falling back to `Referer` origin when `Origin` is absent. Entries must
+  be non-empty tokens free of whitespace and control characters.
 - `embed.frameAncestors`: optional values emitted as the `frame-ancestors`
-  Content Security Policy when an embed read succeeds.
+  Content Security Policy when an embed read succeeds. Entries are validated with
+  the same strictness as `allowedOrigins` (non-empty; no whitespace or control
+  characters) so they are safe to write into the response header; an invalid
+  entry is rejected with `400`.
 - `service.requireAuthenticatedServices`: whether backing service reads still
   require authentication even when the route is public.
 - `service.allowedServiceIds`: optional backing service allowlist.
