@@ -92,6 +92,12 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         "transform.spatial-filter",
         "transform.clip",
         "transform.dedup",
+        "transform.reproject",
+        "source.geojson",
+        "source.csv",
+        "sink.geojson-file",
+        "sink.quarantine",
+        "sink.external-postgis",
     };
 
     [UnitTest]
@@ -138,6 +144,12 @@ public sealed class GeoprocessingDispatchJobExecutorTests
             new SpatialFilterTransformExecutor(monitor),
             new ClipTransformExecutor(monitor),
             new DedupTransformExecutor(monitor),
+            new ReprojectTransformExecutor(monitor),
+            new GeoJsonSourceExecutor(monitor),
+            new CsvSourceExecutor(monitor),
+            new GeoJsonFileSinkExecutor(monitor),
+            new QuarantineSinkExecutor(monitor),
+            new ExternalPostgisSinkExecutor(monitor),
             NullLogger<GeoprocessingDispatchJobExecutor>.Instance);
     }
 

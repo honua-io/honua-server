@@ -130,6 +130,12 @@ internal static class GeoprocessingServiceCollectionExtensions
         services.TryAddSingleton<SpatialFilterTransformExecutor>();
         services.TryAddSingleton<ClipTransformExecutor>();
         services.TryAddSingleton<DedupTransformExecutor>();
+        services.TryAddSingleton<ReprojectTransformExecutor>();
+        services.TryAddSingleton<GeoJsonSourceExecutor>();
+        services.TryAddSingleton<CsvSourceExecutor>();
+        services.TryAddSingleton<GeoJsonFileSinkExecutor>();
+        services.TryAddSingleton<QuarantineSinkExecutor>();
+        services.TryAddSingleton<ExternalPostgisSinkExecutor>();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IJobExecutor, GeoprocessingDispatchJobExecutor>());
 

@@ -347,6 +347,68 @@ internal static partial class ProcessPlanValidator
             case "transform.dedup":
                 ValidateDedupTransformSemantics(step, violations);
                 break;
+            case "transform.reproject":
+                // fromSrid/toSrid are declared-required Srid; the type validator
+                // enforces positive SRIDs. Unsupported datum-shift pairs are
+                // rejected at execution time by the managed transform path.
+                break;
+            case "source.geojson":
+                ValidateGeoJsonSourceSemantics(step, violations);
+                break;
+            case "source.csv":
+                // 'inline' is declared-required Text; the base validator enforces it.
+                break;
+            case "sink.geojson-file":
+            case "sink.quarantine":
+                // input/path are declared-required Text; the base validator enforces them.
+                break;
+            case "sink.external-postgis":
+                ValidateExternalPostgisSinkSemantics(step, violations);
+                break;
+        }
+    }
+
+    private static void ValidateExternalPostgisSinkSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        // Identifiers cannot be parameterized in DDL/DML, so the executor rejects any
+        // value outside ^[A-Za-z_][A-Za-z0-9_]*$. Mirror that here for table/schema/
+        // geometryColumn so the validator does not admit plans the executor will refuse.
+        ValidatePostgisIdentifier(step, "table", violations);
+        ValidatePostgisIdentifier(step, "schema", violations);
+        ValidatePostgisIdentifier(step, "geometryColumn", violations);
+    }
+
+    private static void ValidatePostgisIdentifier(
+        AnalysisPlanStep step,
+        string parameter,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (step.Inputs.TryGetValue(parameter, out var value)
+            && !string.IsNullOrWhiteSpace(value)
+            && !IsSimpleIdentifier(value))
+        {
+            AddRangeViolationIfNew(step, parameter,
+                $"expected an identifier matching ^[A-Za-z_][A-Za-z0-9_]*$, got '{value}'", violations);
+        }
+    }
+
+    private static void ValidateGeoJsonSourceSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        var hasInline = step.Inputs.TryGetValue("inline", out var inline) && !string.IsNullOrWhiteSpace(inline);
+        var hasInput = step.Inputs.TryGetValue("input", out var input) && !string.IsNullOrWhiteSpace(input);
+
+        if (!hasInline && !hasInput)
+        {
+            violations.Add(new GeoprocessingValidationFailure
+            {
+                Code = "MISSING_REQUIRED_PARAMETER",
+                Message = $"Step '{step.StepId}' requires an 'inline' GeoJSON document or an 'input' data URI for process '{step.ProcessId}'.",
+                FieldPath = $"steps[{step.StepId}].inputs.inline"
+            });
         }
     }
 

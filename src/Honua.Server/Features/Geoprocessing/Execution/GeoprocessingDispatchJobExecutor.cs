@@ -55,6 +55,12 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         SpatialFilterTransformExecutor spatialFilter,
         ClipTransformExecutor clip2,
         DedupTransformExecutor dedup,
+        ReprojectTransformExecutor reproject,
+        GeoJsonSourceExecutor geoJsonSource,
+        CsvSourceExecutor csvSource,
+        GeoJsonFileSinkExecutor geoJsonFileSink,
+        QuarantineSinkExecutor quarantineSink,
+        ExternalPostgisSinkExecutor externalPostgisSink,
         ILogger<GeoprocessingDispatchJobExecutor> logger)
     {
         ArgumentNullException.ThrowIfNull(buffer);
@@ -76,6 +82,12 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         ArgumentNullException.ThrowIfNull(spatialFilter);
         ArgumentNullException.ThrowIfNull(clip2);
         ArgumentNullException.ThrowIfNull(dedup);
+        ArgumentNullException.ThrowIfNull(reproject);
+        ArgumentNullException.ThrowIfNull(geoJsonSource);
+        ArgumentNullException.ThrowIfNull(csvSource);
+        ArgumentNullException.ThrowIfNull(geoJsonFileSink);
+        ArgumentNullException.ThrowIfNull(quarantineSink);
+        ArgumentNullException.ThrowIfNull(externalPostgisSink);
         ArgumentNullException.ThrowIfNull(logger);
 
         _handlers = new Dictionary<string, IJobExecutor>(StringComparer.Ordinal)
@@ -99,6 +111,12 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             [SpatialFilterTransformExecutor.HandledProcessId] = spatialFilter,
             [ClipTransformExecutor.HandledProcessId] = clip2,
             [DedupTransformExecutor.HandledProcessId] = dedup,
+            [ReprojectTransformExecutor.HandledProcessId] = reproject,
+            [GeoJsonSourceExecutor.HandledProcessId] = geoJsonSource,
+            [CsvSourceExecutor.HandledProcessId] = csvSource,
+            [GeoJsonFileSinkExecutor.HandledProcessId] = geoJsonFileSink,
+            [QuarantineSinkExecutor.HandledProcessId] = quarantineSink,
+            [ExternalPostgisSinkExecutor.HandledProcessId] = externalPostgisSink,
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
         _logger = logger;

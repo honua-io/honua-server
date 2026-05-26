@@ -742,6 +742,117 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
+        new ProcessDefinition
+        {
+            ProcessId = "transform.reproject",
+            Title = "Reproject Features",
+            Description = "Reprojects every feature's geometry between SRIDs on the managed, GDAL-free path (identity, Web Mercator aliases, and WGS 84 (4326) ↔ Web Mercator), reusing the same in-memory CoordinateTransformer as geometry.project. Datum-shift pairs requiring ST_Transform are deferred to the native worker profile and rejected. Attributes are carried through.",
+            Category = "transform",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("fromSrid", "From SRID", "Source spatial reference identifier.", ProcessParameterValueType.Srid, required: true),
+                Param("toSrid", "To SRID", "Target spatial reference identifier.", ProcessParameterValueType.Srid, required: true),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+
+        // -----------------------------------------------------------------------
+        // GeoETL source operations (2)
+        // Produce a FeatureCollection artifact from an inline document so the
+        // workflow DAG starts from a uniform envelope. Managed parsers only.
+        // Native-format sources (shapefile, geopackage) need native libs and are
+        // deferred to the GDAL worker stream as gdal.* / native-profile processes.
+        // -----------------------------------------------------------------------
+        new ProcessDefinition
+        {
+            ProcessId = "source.geojson",
+            Title = "GeoJSON Source",
+            Description = "Parses an inline GeoJSON FeatureCollection (or one supplied as a data:application/geo+json;base64 data URI) into the standard FeatureCollection artifact. Managed NetTopologySuite reader — no native dependency.",
+            Category = "source",
+            Parameters =
+            [
+                Param("inline", "Inline GeoJSON", "GeoJSON FeatureCollection document supplied directly. Supply this or 'input'.", ProcessParameterValueType.Text),
+                Param("input", "Input Data URI", "FeatureCollection as a data:application/geo+json;base64 data URI. Supply this or 'inline'.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "source.csv",
+            Title = "CSV Source",
+            Description = "Parses an inline CSV document into a FeatureCollection, deriving geometry from a WKT column (wkt/geom/geometry/shape/...) or a longitude/latitude column pair (lon/lng/x and lat/y). Managed parser — no native dependency.",
+            Category = "source",
+            Parameters =
+            [
+                Param("inline", "Inline CSV", "CSV document supplied directly, including a header row.", ProcessParameterValueType.Text, required: true),
+                Param("delimiter", "Delimiter", "Single-character field delimiter override. Defaults to comma.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+
+        // -----------------------------------------------------------------------
+        // GeoETL sink operations (3)
+        // Terminate a workflow by writing the input FeatureCollection to an external
+        // target and emit a small result-descriptor artifact (the target location +
+        // row counts). Managed writers / Npgsql only — no GDAL.
+        // The catalog honua-layer sink (insert through honua.create_import_table /
+        // honua.insert_import_feature) is DEFERRED: unlike external-postgis (which
+        // takes a connection string as a plan parameter and so stays DI-free), it
+        // must reach the catalog NpgsqlDataSource. Injecting that into an executor
+        // would break the dispatcher's unconditional construction in lean
+        // deployments where Postgres is not registered, and a plan-parameter
+        // connection string would leak catalog credentials into the workflow DAG.
+        // Resolving that conditional-registration shape is a follow-on.
+        // Native-format sinks (shapefile, geopackage) are deferred to the GDAL stream.
+        // -----------------------------------------------------------------------
+        new ProcessDefinition
+        {
+            ProcessId = "sink.geojson-file",
+            Title = "GeoJSON File Sink",
+            Description = "Writes the input FeatureCollection to a GeoJSON FeatureCollection file at the supplied path, emitting a result descriptor with written/rejected counts. Managed NetTopologySuite writer — no native dependency.",
+            Category = "sink",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("path", "Output Path", "Absolute output file path (overwritten if it exists).", ProcessParameterValueType.Text, required: true),
+            ],
+            OutputArtifactKinds = [ArtifactKind.File]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "sink.quarantine",
+            Title = "Quarantine Sink",
+            Description = "Dead-letter sink: writes every input feature to a companion GeoJSON artifact tagged with the run batch id and a rejection reason, never throwing on a malformed row. The sink half of the row-level-error contract.",
+            Category = "sink",
+            Parameters =
+            [
+                Param("input", "Rejected Features", "Input FeatureCollection of rejected rows as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("path", "Output Path", "Absolute dead-letter output file path (overwritten if it exists).", ProcessParameterValueType.Text, required: true),
+                Param("reasonField", "Reason Field", "Attribute name carrying a per-row reason string. Defaults to _quarantine_reason.", ProcessParameterValueType.Text, defaultValue: "_quarantine_reason"),
+                Param("batchId", "Batch Id", "Run batch identifier tagged on every quarantined row. Defaults to the operation id.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.File]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "sink.external-postgis",
+            Title = "External PostGIS Sink",
+            Description = "Loads the input FeatureCollection into a customer-owned PostGIS database identified by a caller-supplied connection string (NOT the Honua catalog). Managed Npgsql + WKB — no GDAL. Every row's attributes JSONB carries a reserved __pipeline_batch_id key for soft-delete rollback.",
+            Category = "sink",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("connectionString", "Connection String", "External PostGIS connection string.", ProcessParameterValueType.Text, required: true),
+                Param("table", "Table", "Destination table name (created if missing). Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, required: true),
+                Param("targetSrid", "Target SRID", "Geometry SRID for the destination column.", ProcessParameterValueType.Srid, required: true),
+                Param("schema", "Schema", "Destination schema. Defaults to public. Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, defaultValue: "public"),
+                Param("geometryColumn", "Geometry Column", "Destination geometry column. Defaults to geom. Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, defaultValue: "geom"),
+                Param("batchSize", "Batch Size", "Insert batch size. Defaults to 1000.", ProcessParameterValueType.WholeNumber, defaultValue: "1000"),
+                Param("batchId", "Batch Id", "Run batch id tagged on every row. Defaults to the operation id.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
     ];
 
     // Shared GeoServices-style filter inputs that every analytics handler honors via
