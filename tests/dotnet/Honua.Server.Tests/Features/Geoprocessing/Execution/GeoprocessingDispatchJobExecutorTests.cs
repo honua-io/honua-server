@@ -33,15 +33,16 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         var context = Substitute.For<IJobExecutionContext>();
         context.OperationId.Returns("op-unknown");
 
-        // geometry.difference is still catalog-only after slice 5 — pick it
-        // for the unknown-id smoke so the assertion stays meaningful as the
-        // slice adds geometry.simplify / geometry.dissolve / geometry.snap.
-        var record = CreateJobRecord("geometry.difference");
+        // analytics.cluster is a catalog process that is NOT job-routed (it
+        // executes through the layer-scoped PostGIS analytics protocol path,
+        // not the dispatcher) — pick it for the unknown-id smoke now that the
+        // reconciliation routes geometry.make-valid / geometry.difference.
+        var record = CreateJobRecord("analytics.cluster");
 
         var result = await dispatcher.ExecuteAsync(record, context, CancellationToken.None);
 
         result.Status.Should().Be(ExecutionJobStatus.Failed);
-        result.ErrorMessage.Should().Contain("geometry.difference");
+        result.ErrorMessage.Should().Contain("analytics.cluster");
         result.ErrorMessage.Should().Contain("geometry.buffer");
         result.ErrorMessage.Should().Contain("geometry.clip");
         result.ErrorMessage.Should().Contain("geometry.intersect");
@@ -54,6 +55,8 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         result.ErrorMessage.Should().Contain("geometry.dissolve");
         result.ErrorMessage.Should().Contain("geometry.simplify");
         result.ErrorMessage.Should().Contain("geometry.snap");
+        result.ErrorMessage.Should().Contain("geometry.make-valid");
+        result.ErrorMessage.Should().Contain("geometry.difference");
     }
 
     [UnitTest]
@@ -85,6 +88,8 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         "geometry.dissolve",
         "geometry.simplify",
         "geometry.snap",
+        "geometry.make-valid",
+        "geometry.difference",
         "transform.attribute-rename",
         "transform.attribute-cast",
         "transform.computed-field",
@@ -137,6 +142,8 @@ public sealed class GeoprocessingDispatchJobExecutorTests
             new GeometryDissolveJobExecutor(monitor, NullLogger<GeometryDissolveJobExecutor>.Instance),
             new GeometrySimplifyJobExecutor(monitor, NullLogger<GeometrySimplifyJobExecutor>.Instance),
             new GeometrySnapJobExecutor(monitor, NullLogger<GeometrySnapJobExecutor>.Instance),
+            new GeometryMakeValidJobExecutor(monitor, NullLogger<GeometryMakeValidJobExecutor>.Instance),
+            new GeometryDifferenceJobExecutor(monitor, NullLogger<GeometryDifferenceJobExecutor>.Instance),
             new AttributeRenameTransformExecutor(monitor),
             new AttributeCastTransformExecutor(monitor),
             new ComputedFieldTransformExecutor(monitor),

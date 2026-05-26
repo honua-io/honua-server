@@ -120,6 +120,14 @@ internal static class GeoprocessingServiceCollectionExtensions
         services.TryAddSingleton<GeometrySimplifyJobExecutor>();
         services.TryAddSingleton<GeometrySnapJobExecutor>();
 
+        // Catalog-honesty reconciliation onto #1185: geometry.make-valid and
+        // geometry.difference were advertised in the catalog (and flagged
+        // synchronous / first-slice automated) on trunk but had no executor, so
+        // a job submission could never reach them. Add the managed NTS executors
+        // (GeometryFixer / Geometry.Difference) so the advertised set is honest.
+        services.TryAddSingleton<GeometryMakeValidJobExecutor>();
+        services.TryAddSingleton<GeometryDifferenceJobExecutor>();
+
         // GeoETL transform executors reconciled from feat/geoetl-baseline onto the
         // #1185 add-a-capability contract. Each reads/writes a FeatureCollection
         // data URI and is composed behind GeoprocessingDispatchJobExecutor.
