@@ -178,6 +178,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             await PreflightSceneRegistrationConflictAsync(sceneId, cancellationToken).ConfigureAwait(false);
 
             var extrusion = generationOptions.ExtrusionOverride ?? layer.Metadata?.Extrusion;
+            var symbology = layer.Metadata?.Symbology3D;
             var attributeSchemas = BuildAttributeSchemas(layer, includeAttributes);
             var collected = await CollectFeaturesAsync(
                 layer, includeAttributes, maxFeatures, cancellationToken).ConfigureAwait(false);
@@ -242,18 +243,46 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             {
                 Directory.CreateDirectory(stagingDirectory);
 
+                // Resolve attribute-driven 3D symbology per feature (when a
+                // layer declares it) so the GLB carries baked color/opacity and
+                // the tileset advertises the matching style-metadata contract.
+                // Resolution is parallel to collected.Features and is null when
+                // the layer has no symbology (legacy white-material output).
+                var perFeatureSymbology = ResolvePerFeatureSymbology(symbology, collected.Features);
+
                 var glb = GeometryTileBuilder.BuildGlb(
                     collected.Features,
                     attributeSchemas,
                     extrusion,
                     serverOptions.GeneratorTag,
-                    collected.Warnings);
+                    collected.Warnings,
+                    perFeatureSymbology);
 
                 var tileFileName = "tile_0000.glb";
                 await File.WriteAllBytesAsync(
                     Path.Combine(stagingDirectory, tileFileName),
                     glb,
                     cancellationToken).ConfigureAwait(false);
+
+                // Emit the style-metadata contract sidecar and advertise it from
+                // the tileset's extras so the JS client can apply the
+                // attribute-driven 3D Tiles Styling expressions at runtime.
+                TilesetStyleReference? styleReference = null;
+                if (symbology is not null)
+                {
+                    var styleSpec = TileStyleSpecWriter.Build(symbology, attributeSchemas);
+                    var styleBytes = TileStyleSpecWriter.Serialize(styleSpec);
+                    await File.WriteAllBytesAsync(
+                        Path.Combine(stagingDirectory, TileStyleSpecDefaults.FileName),
+                        styleBytes,
+                        cancellationToken).ConfigureAwait(false);
+                    styleReference = new TilesetStyleReference
+                    {
+                        Encoding = TileStyleSpecDefaults.Encoding,
+                        Version = TileStyleSpecDefaults.Version,
+                        Uri = TileStyleSpecDefaults.FileName
+                    };
+                }
 
                 var geometricError = ComputeGeometricError(bounds, minHeight, maxHeight);
                 var tileset = TilesetDocumentWriter.Build(
@@ -262,7 +291,8 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                     maxHeight,
                     geometricError,
                     tileContentUris: [tileFileName],
-                    serverOptions.GeneratorTag);
+                    serverOptions.GeneratorTag,
+                    styleReference);
                 var tilesetBytes = TilesetDocumentWriter.Serialize(tileset);
                 await File.WriteAllBytesAsync(
                     Path.Combine(stagingDirectory, "tileset.json"),
@@ -594,6 +624,29 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             MaxFeatureCount = maxFeatures,
             CacheMaxAgeSeconds = cacheMaxAge
         };
+    }
+
+    /// <summary>
+    /// Resolves the per-feature 3D symbology (color / opacity / visibility) for
+    /// every collected feature, indexed parallel to <paramref name="features"/>.
+    /// Returns null when the layer declares no symbology so the GLB builder
+    /// keeps its legacy single-material path.
+    /// </summary>
+    private static ResolvedSymbology[]? ResolvePerFeatureSymbology(
+        Symbology3D? symbology,
+        List<SceneFeature> features)
+    {
+        if (symbology is null)
+        {
+            return null;
+        }
+
+        var resolved = new ResolvedSymbology[features.Count];
+        for (var i = 0; i < features.Count; i++)
+        {
+            resolved[i] = Symbology3DResolver.Resolve(symbology, features[i].Attributes);
+        }
+        return resolved;
     }
 
     private static List<SceneAttributeSchema> BuildAttributeSchemas(

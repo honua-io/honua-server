@@ -51,6 +51,16 @@ public sealed record CatalogMetadata
     public LayerExtrusionInfo? Extrusion { get; init; }
 
     /// <summary>
+    /// Optional attribute-driven 3D symbology for scene / 3D Tiles generation.
+    /// Null for layers with no thematic 3D styling; the generator then bakes a
+    /// plain opaque-white material. When present, the generator bakes the
+    /// resolved per-feature color into the tile content and emits the
+    /// equivalent <c>3d-tiles-styling</c> style-metadata contract alongside the
+    /// tileset.
+    /// </summary>
+    public Honua.Core.Features.Scene.Domain.Symbology3D? Symbology3D { get; init; }
+
+    /// <summary>
     /// Optional operator-managed filter that is always applied to public feature output.
     /// </summary>
     public LayerPermanentFilter? PermanentFilter { get; init; }

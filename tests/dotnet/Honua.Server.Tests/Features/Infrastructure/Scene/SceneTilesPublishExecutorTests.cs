@@ -106,6 +106,74 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     }
 
     [UnitTest]
+    public async Task Execute_WithSymbology_EmitsStyleSidecarAndAdvertisesItInTileset()
+    {
+        var symbology = new Symbology3D
+        {
+            DefaultColor = new Symbology3DColor(255, 255, 255),
+            Rules =
+            [
+                new Symbology3DRule
+                {
+                    Attribute = "height",
+                    Comparison = Symbology3DComparison.GreaterThan,
+                    Value = "30",
+                    Color = new Symbology3DColor(255, 0, 0)
+                }
+            ]
+        };
+        _catalog.Layer = BuildLayer(symbology: symbology);
+        _featureSource.Features = SamplePolygons();
+
+        var outcome = await _executor.RunDirectAsync(BuildIntent(), CancellationToken.None);
+
+        // style.json sidecar is emitted with the contract shape.
+        var stylePath = Path.Combine(outcome.Result.AssetRoot, "style.json");
+        File.Exists(stylePath).Should().BeTrue("a layer with symbology must emit the style-metadata contract.");
+        using (var styleJson = JsonDocument.Parse(await File.ReadAllBytesAsync(stylePath)))
+        {
+            styleJson.RootElement.GetProperty("encoding").GetString().Should().Be("3d-tiles-styling");
+            var conditions = styleJson.RootElement.GetProperty("style").GetProperty("color").GetProperty("conditions");
+            conditions[0][0].GetString().Should().Be("${height} > 30");
+            conditions[0][1].GetString().Should().Be("color('#ff0000', 1)");
+        }
+
+        // tileset.json advertises the style contract via extras.
+        var tilesetBytes = await File.ReadAllBytesAsync(Path.Combine(outcome.Result.AssetRoot, "tileset.json"));
+        using (var tilesetJson = JsonDocument.Parse(tilesetBytes))
+        {
+            var style = tilesetJson.RootElement.GetProperty("extras").GetProperty("honua_style");
+            style.GetProperty("encoding").GetString().Should().Be("3d-tiles-styling");
+            style.GetProperty("uri").GetString().Should().Be("style.json");
+        }
+
+        // GLB bakes a COLOR_0 attribute; feature B (height 50 > 30) resolves to red.
+        var tile = await File.ReadAllBytesAsync(Path.Combine(outcome.Result.AssetRoot, "tile_0000.glb"));
+        var glbJson = ExtractJsonChunk(tile);
+        using var doc = JsonDocument.Parse(glbJson);
+        doc.RootElement.GetProperty("meshes")[0].GetProperty("primitives")[0]
+            .GetProperty("attributes").TryGetProperty("COLOR_0", out _).Should().BeTrue(
+            "a symbology-driven tileset must bake per-feature vertex colors.");
+        doc.RootElement.GetProperty("materials")[0].GetProperty("alphaMode").GetString().Should().Be("BLEND");
+    }
+
+    [UnitTest]
+    public async Task Execute_NoSymbology_OmitsStyleSidecarAndExtras()
+    {
+        _catalog.Layer = BuildLayer();
+        _featureSource.Features = SamplePolygons();
+
+        var outcome = await _executor.RunDirectAsync(BuildIntent(), CancellationToken.None);
+
+        File.Exists(Path.Combine(outcome.Result.AssetRoot, "style.json")).Should().BeFalse(
+            "a layer with no symbology must not emit a style sidecar.");
+
+        var tilesetBytes = await File.ReadAllBytesAsync(Path.Combine(outcome.Result.AssetRoot, "tileset.json"));
+        using var tilesetJson = JsonDocument.Parse(tilesetBytes);
+        tilesetJson.RootElement.TryGetProperty("extras", out _).Should().BeFalse();
+    }
+
+    [UnitTest]
     public async Task Execute_RegistersSceneWithBoundsCoveringAllFeatures()
     {
         _catalog.Layer = BuildLayer();
@@ -934,7 +1002,8 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     private LayerDefinition BuildLayer(
         SpatialReference? spatialReference = null,
         LayerExtrusionInfo? extrusion = null,
-        AccessPolicy? accessPolicy = null)
+        AccessPolicy? accessPolicy = null,
+        Symbology3D? symbology = null)
     {
         var sr = spatialReference ?? SpatialReference.Create(4326, 4326);
         var fields = new[]
@@ -944,10 +1013,10 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
             new FieldDefinition("name", FieldType.String, Length: 64, Nullable: true),
             new FieldDefinition("height", FieldType.Integer, Length: null, Nullable: true)
         };
-        var metadata = (extrusion, accessPolicy) switch
+        var metadata = (extrusion, accessPolicy, symbology) switch
         {
-            (null, null) => null,
-            _ => new CatalogMetadata { Extrusion = extrusion, AccessPolicy = accessPolicy }
+            (null, null, null) => null,
+            _ => new CatalogMetadata { Extrusion = extrusion, AccessPolicy = accessPolicy, Symbology3D = symbology }
         };
         return new LayerDefinition(
             LayerId,
