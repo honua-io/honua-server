@@ -28,6 +28,12 @@ internal static class VisibilityAnalysisEndpoints
 
     public static IEndpointRouteBuilder MapVisibilityAnalysisEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        // HANDLER-AUTHORIZED (#1144): these POST routes mirror the read-only
+        // elevation API (GET /elevation/{datasetId}/profile). Access is enforced
+        // inside the handler — LicenseGate.RequireEntitlement gates the Pro-tier
+        // entitlement, and ValidateDatasetAsync runs the layer access check
+        // (AccessScope.Read) before any analysis. Marked AllowAnonymous so the
+        // audit architecture guard records the explicit (read-only) decision.
         endpoints.MapPost("/elevation/{datasetId}/line-of-sight", HandleLineOfSight)
             .WithDisplayName("Compute Line of Sight")
             .WithName("ComputeLineOfSight")
@@ -41,8 +47,13 @@ internal static class VisibilityAnalysisEndpoints
             .Produces(StatusCodes.Status402PaymentRequired)
             .Produces(StatusCodes.Status403Forbidden)
             .Produces(StatusCodes.Status404NotFound)
-            .Produces(StatusCodes.Status422UnprocessableEntity);
+            .Produces(StatusCodes.Status422UnprocessableEntity)
+            .AllowAnonymous();
 
+        // HANDLER-AUTHORIZED (#1144): see the line-of-sight route above —
+        // LicenseGate.RequireEntitlement + ValidateDatasetAsync (AccessScope.Read)
+        // enforce access inside the handler. Marked AllowAnonymous so the audit
+        // architecture guard records the explicit (read-only) decision.
         endpoints.MapPost("/elevation/{datasetId}/viewshed", HandleViewshed)
             .WithDisplayName("Compute Viewshed")
             .WithName("ComputeViewshed")
@@ -56,7 +67,8 @@ internal static class VisibilityAnalysisEndpoints
             .Produces(StatusCodes.Status402PaymentRequired)
             .Produces(StatusCodes.Status403Forbidden)
             .Produces(StatusCodes.Status404NotFound)
-            .Produces(StatusCodes.Status422UnprocessableEntity);
+            .Produces(StatusCodes.Status422UnprocessableEntity)
+            .AllowAnonymous();
 
         return endpoints;
     }
