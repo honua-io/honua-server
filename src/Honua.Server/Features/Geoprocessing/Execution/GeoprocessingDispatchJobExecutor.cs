@@ -48,6 +48,10 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         GeometryDissolveJobExecutor dissolve,
         GeometrySimplifyJobExecutor simplify,
         GeometrySnapJobExecutor snap,
+        AttributeRenameTransformExecutor attributeRename,
+        AttributeCastTransformExecutor attributeCast,
+        ComputedFieldTransformExecutor computedField,
+        AttributeFilterTransformExecutor attributeFilter,
         ILogger<GeoprocessingDispatchJobExecutor> logger)
     {
         ArgumentNullException.ThrowIfNull(buffer);
@@ -62,6 +66,10 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         ArgumentNullException.ThrowIfNull(dissolve);
         ArgumentNullException.ThrowIfNull(simplify);
         ArgumentNullException.ThrowIfNull(snap);
+        ArgumentNullException.ThrowIfNull(attributeRename);
+        ArgumentNullException.ThrowIfNull(attributeCast);
+        ArgumentNullException.ThrowIfNull(computedField);
+        ArgumentNullException.ThrowIfNull(attributeFilter);
         ArgumentNullException.ThrowIfNull(logger);
 
         _handlers = new Dictionary<string, IJobExecutor>(StringComparer.Ordinal)
@@ -78,6 +86,10 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             [GeometryDissolveJobExecutor.HandledProcessId] = dissolve,
             [GeometrySimplifyJobExecutor.HandledProcessId] = simplify,
             [GeometrySnapJobExecutor.HandledProcessId] = snap,
+            [AttributeRenameTransformExecutor.HandledProcessId] = attributeRename,
+            [AttributeCastTransformExecutor.HandledProcessId] = attributeCast,
+            [ComputedFieldTransformExecutor.HandledProcessId] = computedField,
+            [AttributeFilterTransformExecutor.HandledProcessId] = attributeFilter,
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
         _logger = logger;

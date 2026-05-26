@@ -326,6 +326,100 @@ internal static partial class ProcessPlanValidator
             case "data-management.calculate-field":
                 ValidateCalculateFieldSemantics(step, violations);
                 break;
+            case "transform.attribute-rename":
+                // from/to are declared-required Text; no extra enum semantics.
+                break;
+            case "transform.attribute-cast":
+                ValidateAttributeCastSemantics(step, violations);
+                break;
+            case "transform.computed-field":
+                ValidateComputedFieldSemantics(step, violations);
+                break;
+            case "transform.attribute-filter":
+                ValidateAttributeFilterSemantics(step, violations);
+                break;
+        }
+    }
+
+    // GeoETL transform enum allow-lists mirror the executor bodies reconciled from
+    // feat/geoetl-baseline so the validator rejects the same values the executors
+    // would refuse at runtime.
+    private static readonly HashSet<string> AttributeCastTargetTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "int", "long", "double", "bool", "string"
+    };
+
+    private static readonly HashSet<string> AttributeCastOnErrorValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "drop", "null", "keep"
+    };
+
+    private static readonly HashSet<string> ComputedFieldOps = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "concat", "add", "subtract", "multiply", "divide", "const"
+    };
+
+    private static readonly HashSet<string> AttributeFilterOps = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "eq", "neq", "gt", "gte", "lt", "lte", "contains", "exists"
+    };
+
+    private static void ValidateAttributeCastSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (step.Inputs.TryGetValue("to", out var toRaw)
+            && !string.IsNullOrWhiteSpace(toRaw)
+            && !AttributeCastTargetTypes.Contains(toRaw.Trim()))
+        {
+            AddEnumViolation(step, "to", toRaw, "int, long, double, bool, string", violations);
+        }
+
+        if (step.Inputs.TryGetValue("onError", out var onErrorRaw)
+            && !string.IsNullOrWhiteSpace(onErrorRaw)
+            && !AttributeCastOnErrorValues.Contains(onErrorRaw.Trim()))
+        {
+            AddEnumViolation(step, "onError", onErrorRaw, "drop, null, keep", violations);
+        }
+    }
+
+    private static void ValidateComputedFieldSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (!step.Inputs.TryGetValue("op", out var opRaw) || string.IsNullOrWhiteSpace(opRaw))
+        {
+            return;
+        }
+
+        var op = opRaw.Trim();
+        if (!ComputedFieldOps.Contains(op))
+        {
+            AddEnumViolation(step, "op", op, "concat, add, subtract, multiply, divide, const", violations);
+            return;
+        }
+
+        // Conditional requiredness mirrors the executor's RequireOption calls.
+        if (string.Equals(op, "concat", StringComparison.OrdinalIgnoreCase))
+        {
+            RequireConditionalParameter(step, "fields", "op=concat", violations);
+        }
+        else if (!string.Equals(op, "const", StringComparison.OrdinalIgnoreCase))
+        {
+            RequireConditionalParameter(step, "left", $"op={op}", violations);
+            RequireConditionalParameter(step, "right", $"op={op}", violations);
+        }
+    }
+
+    private static void ValidateAttributeFilterSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (step.Inputs.TryGetValue("op", out var opRaw)
+            && !string.IsNullOrWhiteSpace(opRaw)
+            && !AttributeFilterOps.Contains(opRaw.Trim()))
+        {
+            AddEnumViolation(step, "op", opRaw, "eq, neq, gt, gte, lt, lte, contains, exists", violations);
         }
     }
 

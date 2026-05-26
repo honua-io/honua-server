@@ -627,6 +627,78 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             ],
             OutputArtifactKinds = [ArtifactKind.Scalar]
         },
+
+        // -----------------------------------------------------------------------
+        // GeoETL transform operations (8)
+        // Reconciled from feat/geoetl-baseline onto the #1185 add-a-capability
+        // contract: each transform reads a FeatureCollection data URI on the
+        // canonical 'input' parameter and publishes a FeatureCollection data URI,
+        // carrying feature attributes through so they compose as workflow nodes.
+        // Managed NetTopologySuite only — no GDAL.
+        // -----------------------------------------------------------------------
+        new ProcessDefinition
+        {
+            ProcessId = "transform.attribute-rename",
+            Title = "Rename Attribute",
+            Description = "Renames one feature attribute key to another across every feature in the input FeatureCollection, preserving the value and geometry. Features lacking the source attribute pass through unchanged.",
+            Category = "transform",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("from", "From", "Existing attribute name to rename.", ProcessParameterValueType.Text, required: true),
+                Param("to", "To", "New attribute name.", ProcessParameterValueType.Text, required: true),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "transform.attribute-cast",
+            Title = "Cast Attribute",
+            Description = "Coerces one attribute to a target CLR type. Supported types: int, long, double, bool, string. Uncoercible rows are handled per the onError policy (drop/null/keep).",
+            Category = "transform",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("field", "Field", "Attribute name to cast.", ProcessParameterValueType.Text, required: true),
+                Param("to", "Target Type", "Target CLR type. Allowed values: int, long, double, bool, string.", ProcessParameterValueType.Text, required: true),
+                Param("onError", "On Error", "Behavior for uncoercible rows. Allowed values: drop (default), null, keep.", ProcessParameterValueType.Text, defaultValue: "drop"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "transform.computed-field",
+            Title = "Computed Field",
+            Description = "Adds a new attribute derived from existing attributes via a small AOT-safe operation set (no expression engine). Supported ops: concat, add, subtract, multiply, divide, const. Rows with non-numeric arithmetic operands are dropped as row-level data errors.",
+            Category = "transform",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("target", "Target Field", "Attribute name to write the computed value to.", ProcessParameterValueType.Text, required: true),
+                Param("op", "Operation", "Computation. Allowed values: concat, add, subtract, multiply, divide, const.", ProcessParameterValueType.Text, required: true),
+                Param("fields", "Fields", "Comma-separated source field names for the concat op.", ProcessParameterValueType.Text),
+                Param("separator", "Separator", "Join separator for the concat op.", ProcessParameterValueType.Text),
+                Param("left", "Left Operand", "Left operand for arithmetic ops: a source field name, or a numeric literal prefixed with '='.", ProcessParameterValueType.Text),
+                Param("right", "Right Operand", "Right operand for arithmetic ops: a source field name, or a numeric literal prefixed with '='.", ProcessParameterValueType.Text),
+                Param("value", "Constant Value", "Literal value assigned to the target for the const op.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "transform.attribute-filter",
+            Title = "Attribute Filter",
+            Description = "Passes through only features whose attribute satisfies a simple comparison, dropping the rest. Supported ops: eq, neq, gt, gte, lt, lte, contains, exists. Numeric operators parse both operands as doubles; string operators compare ordinally.",
+            Category = "transform",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("field", "Field", "Attribute name to test.", ProcessParameterValueType.Text, required: true),
+                Param("op", "Operator", "Comparison operator. Allowed values: eq, neq, gt, gte, lt, lte, contains, exists. Defaults to eq.", ProcessParameterValueType.Text, defaultValue: "eq"),
+                Param("value", "Value", "Comparison operand. Omitted for the 'exists' op.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
     ];
 
     // Shared GeoServices-style filter inputs that every analytics handler honors via

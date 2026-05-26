@@ -85,6 +85,10 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         "geometry.dissolve",
         "geometry.simplify",
         "geometry.snap",
+        "transform.attribute-rename",
+        "transform.attribute-cast",
+        "transform.computed-field",
+        "transform.attribute-filter",
     };
 
     [UnitTest]
@@ -124,6 +128,10 @@ public sealed class GeoprocessingDispatchJobExecutorTests
             new GeometryDissolveJobExecutor(monitor, NullLogger<GeometryDissolveJobExecutor>.Instance),
             new GeometrySimplifyJobExecutor(monitor, NullLogger<GeometrySimplifyJobExecutor>.Instance),
             new GeometrySnapJobExecutor(monitor, NullLogger<GeometrySnapJobExecutor>.Instance),
+            new AttributeRenameTransformExecutor(monitor),
+            new AttributeCastTransformExecutor(monitor),
+            new ComputedFieldTransformExecutor(monitor),
+            new AttributeFilterTransformExecutor(monitor),
             NullLogger<GeoprocessingDispatchJobExecutor>.Instance);
     }
 

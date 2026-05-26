@@ -119,6 +119,14 @@ internal static class GeoprocessingServiceCollectionExtensions
         services.TryAddSingleton<GeometryDissolveJobExecutor>();
         services.TryAddSingleton<GeometrySimplifyJobExecutor>();
         services.TryAddSingleton<GeometrySnapJobExecutor>();
+
+        // GeoETL transform executors reconciled from feat/geoetl-baseline onto the
+        // #1185 add-a-capability contract. Each reads/writes a FeatureCollection
+        // data URI and is composed behind GeoprocessingDispatchJobExecutor.
+        services.TryAddSingleton<AttributeRenameTransformExecutor>();
+        services.TryAddSingleton<AttributeCastTransformExecutor>();
+        services.TryAddSingleton<ComputedFieldTransformExecutor>();
+        services.TryAddSingleton<AttributeFilterTransformExecutor>();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IJobExecutor, GeoprocessingDispatchJobExecutor>());
 
