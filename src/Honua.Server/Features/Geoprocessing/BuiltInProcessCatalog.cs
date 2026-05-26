@@ -699,6 +699,49 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
+        new ProcessDefinition
+        {
+            ProcessId = "transform.spatial-filter",
+            Title = "Spatial Filter",
+            Description = "Passes through only features whose geometry satisfies a spatial predicate against a bounding box or arbitrary WKT region, dropping the rest. Pure managed NetTopologySuite — no native dependency. Features with null/empty geometry are dropped.",
+            Category = "transform",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("bbox", "Bounding Box", "Region as 'minX,minY,maxX,maxY' in the feature CRS. Supply this or 'wkt'.", ProcessParameterValueType.Text),
+                Param("wkt", "WKT Region", "Region geometry as WKT. Supply this or 'bbox'.", ProcessParameterValueType.Text),
+                Param("predicate", "Predicate", "Spatial predicate. Allowed values: intersects (default), within.", ProcessParameterValueType.Text, defaultValue: "intersects"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "transform.clip",
+            Title = "Clip Features",
+            Description = "Clips each feature's geometry to an area-of-interest region (the geometric intersection), dropping features that fall entirely outside the region. Pure managed NetTopologySuite overlay — no native dependency. Attributes are preserved and the clipped geometry keeps the source SRID.",
+            Category = "transform",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("bbox", "Bounding Box", "Clip region as 'minX,minY,maxX,maxY' in the feature CRS. Supply this or 'wkt'.", ProcessParameterValueType.Text),
+                Param("wkt", "WKT Region", "Clip region geometry as WKT. Supply this or 'bbox'.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "transform.dedup",
+            Title = "Deduplicate Features",
+            Description = "Emits the first feature for each distinct key and drops later duplicates. The key is built from one or more attribute fields, the geometry (normalized WKT), or both. At least one of 'keys' or 'geometry=true' is required.",
+            Category = "transform",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("keys", "Key Fields", "Comma-separated attribute field names whose values form the dedup key.", ProcessParameterValueType.Text),
+                Param("geometry", "Use Geometry", "Include the normalized geometry in the dedup key.", ProcessParameterValueType.Flag, defaultValue: "false"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
     ];
 
     // Shared GeoServices-style filter inputs that every analytics handler honors via

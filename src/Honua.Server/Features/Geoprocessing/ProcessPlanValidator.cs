@@ -338,6 +338,90 @@ internal static partial class ProcessPlanValidator
             case "transform.attribute-filter":
                 ValidateAttributeFilterSemantics(step, violations);
                 break;
+            case "transform.spatial-filter":
+                ValidateSpatialFilterSemantics(step, violations);
+                break;
+            case "transform.clip":
+                ValidateClipTransformSemantics(step, violations);
+                break;
+            case "transform.dedup":
+                ValidateDedupTransformSemantics(step, violations);
+                break;
+        }
+    }
+
+    private static readonly HashSet<string> SpatialFilterPredicateValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "intersects", "within"
+    };
+
+    private static void ValidateSpatialFilterSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        RequireRegion(step, violations);
+
+        if (step.Inputs.TryGetValue("predicate", out var predicateRaw)
+            && !string.IsNullOrWhiteSpace(predicateRaw)
+            && !SpatialFilterPredicateValues.Contains(predicateRaw.Trim()))
+        {
+            AddEnumViolation(step, "predicate", predicateRaw, "intersects, within", violations);
+        }
+    }
+
+    private static void ValidateClipTransformSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+        => RequireRegion(step, violations);
+
+    // Both spatial-filter and clip require exactly a region — one of bbox/wkt —
+    // mirroring the executor's ReadRegion contract.
+    private static void RequireRegion(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        var hasBbox = step.Inputs.TryGetValue("bbox", out var bbox) && !string.IsNullOrWhiteSpace(bbox);
+        var hasWkt = step.Inputs.TryGetValue("wkt", out var wkt) && !string.IsNullOrWhiteSpace(wkt);
+
+        if (!hasBbox && !hasWkt)
+        {
+            violations.Add(new GeoprocessingValidationFailure
+            {
+                Code = "MISSING_REQUIRED_PARAMETER",
+                Message = $"Step '{step.StepId}' requires a 'bbox' or 'wkt' region for process '{step.ProcessId}'.",
+                FieldPath = $"steps[{step.StepId}].inputs.bbox"
+            });
+        }
+        else if (hasBbox)
+        {
+            var parts = bbox!.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            var ok = parts.Length == 4
+                && parts.All(p => double.TryParse(p, NumberStyles.Float, CultureInfo.InvariantCulture, out _));
+            if (!ok)
+            {
+                AddRangeViolationIfNew(step, "bbox",
+                    $"expected 'minX,minY,maxX,maxY' with four numeric values, got '{bbox}'", violations);
+            }
+        }
+    }
+
+    private static void ValidateDedupTransformSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        var hasKeys = step.Inputs.TryGetValue("keys", out var keys) && !string.IsNullOrWhiteSpace(keys);
+        var useGeometry = step.Inputs.TryGetValue("geometry", out var geom)
+            && !string.IsNullOrWhiteSpace(geom)
+            && bool.TryParse(geom, out var parsed) && parsed;
+
+        if (!hasKeys && !useGeometry)
+        {
+            violations.Add(new GeoprocessingValidationFailure
+            {
+                Code = "MISSING_REQUIRED_PARAMETER",
+                Message = $"Step '{step.StepId}' requires a 'keys' attribute list, 'geometry=true', or both for process '{step.ProcessId}'.",
+                FieldPath = $"steps[{step.StepId}].inputs.keys"
+            });
         }
     }
 

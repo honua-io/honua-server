@@ -52,6 +52,9 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         AttributeCastTransformExecutor attributeCast,
         ComputedFieldTransformExecutor computedField,
         AttributeFilterTransformExecutor attributeFilter,
+        SpatialFilterTransformExecutor spatialFilter,
+        ClipTransformExecutor clip2,
+        DedupTransformExecutor dedup,
         ILogger<GeoprocessingDispatchJobExecutor> logger)
     {
         ArgumentNullException.ThrowIfNull(buffer);
@@ -70,6 +73,9 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         ArgumentNullException.ThrowIfNull(attributeCast);
         ArgumentNullException.ThrowIfNull(computedField);
         ArgumentNullException.ThrowIfNull(attributeFilter);
+        ArgumentNullException.ThrowIfNull(spatialFilter);
+        ArgumentNullException.ThrowIfNull(clip2);
+        ArgumentNullException.ThrowIfNull(dedup);
         ArgumentNullException.ThrowIfNull(logger);
 
         _handlers = new Dictionary<string, IJobExecutor>(StringComparer.Ordinal)
@@ -90,6 +96,9 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             [AttributeCastTransformExecutor.HandledProcessId] = attributeCast,
             [ComputedFieldTransformExecutor.HandledProcessId] = computedField,
             [AttributeFilterTransformExecutor.HandledProcessId] = attributeFilter,
+            [SpatialFilterTransformExecutor.HandledProcessId] = spatialFilter,
+            [ClipTransformExecutor.HandledProcessId] = clip2,
+            [DedupTransformExecutor.HandledProcessId] = dedup,
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
         _logger = logger;

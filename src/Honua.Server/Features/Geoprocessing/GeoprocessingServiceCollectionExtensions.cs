@@ -127,6 +127,9 @@ internal static class GeoprocessingServiceCollectionExtensions
         services.TryAddSingleton<AttributeCastTransformExecutor>();
         services.TryAddSingleton<ComputedFieldTransformExecutor>();
         services.TryAddSingleton<AttributeFilterTransformExecutor>();
+        services.TryAddSingleton<SpatialFilterTransformExecutor>();
+        services.TryAddSingleton<ClipTransformExecutor>();
+        services.TryAddSingleton<DedupTransformExecutor>();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IJobExecutor, GeoprocessingDispatchJobExecutor>());
 

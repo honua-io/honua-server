@@ -89,6 +89,9 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         "transform.attribute-cast",
         "transform.computed-field",
         "transform.attribute-filter",
+        "transform.spatial-filter",
+        "transform.clip",
+        "transform.dedup",
     };
 
     [UnitTest]
@@ -132,6 +135,9 @@ public sealed class GeoprocessingDispatchJobExecutorTests
             new AttributeCastTransformExecutor(monitor),
             new ComputedFieldTransformExecutor(monitor),
             new AttributeFilterTransformExecutor(monitor),
+            new SpatialFilterTransformExecutor(monitor),
+            new ClipTransformExecutor(monitor),
+            new DedupTransformExecutor(monitor),
             NullLogger<GeoprocessingDispatchJobExecutor>.Instance);
     }
 
