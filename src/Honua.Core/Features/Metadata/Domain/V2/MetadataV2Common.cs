@@ -46,6 +46,12 @@ public sealed record MetadataV2ObjectMetadata
     public string Name { get; init; } = string.Empty;
 
     /// <summary>
+    /// Optional namespace for grouping entities or release packages.
+    /// </summary>
+    [JsonPropertyName("namespace")]
+    public string? Namespace { get; init; }
+
+    /// <summary>
     /// Human-readable display title.
     /// </summary>
     [JsonPropertyName("title")]
@@ -56,6 +62,12 @@ public sealed record MetadataV2ObjectMetadata
     /// </summary>
     [JsonPropertyName("description")]
     public string? Description { get; init; }
+
+    /// <summary>
+    /// Legacy tag list retained for release-package compatibility.
+    /// </summary>
+    [JsonPropertyName("tags")]
+    public IReadOnlyList<string> Tags { get; init; } = Array.Empty<string>();
 
     /// <summary>
     /// Labels for selection and grouping (Kubernetes-style selectable key/values).
@@ -70,6 +82,12 @@ public sealed record MetadataV2ObjectMetadata
     /// </summary>
     [JsonPropertyName("annotations")]
     public IReadOnlyDictionary<string, string> Annotations { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>
+    /// Entity generation for optimistic concurrency and release comparisons.
+    /// </summary>
+    [JsonPropertyName("generation")]
+    public long? Generation { get; init; }
 
     /// <summary>
     /// Timestamp when the entity was created.
@@ -146,6 +164,102 @@ public sealed record MetadataV2ObjectMetadata
     /// </summary>
     [JsonPropertyName("links")]
     public IReadOnlyList<MetadataV2Link> Links { get; init; } = Array.Empty<MetadataV2Link>();
+}
+
+/// <summary>
+/// Lifecycle and observed status shared by Metadata v2 graph entities.
+/// </summary>
+public sealed record MetadataV2Status
+{
+    /// <summary>
+    /// Desired or declared lifecycle state.
+    /// </summary>
+    [JsonPropertyName("lifecycle")]
+    public MetadataV2LifecycleStatus Lifecycle { get; init; } = MetadataV2LifecycleStatus.Draft;
+
+    /// <summary>
+    /// Observed operational state.
+    /// </summary>
+    [JsonPropertyName("state")]
+    public MetadataV2OperationalState State { get; init; } = MetadataV2OperationalState.Unknown;
+
+    /// <summary>
+    /// Reconciliation or validation conditions.
+    /// </summary>
+    [JsonPropertyName("conditions")]
+    public IReadOnlyList<MetadataV2Condition> Conditions { get; init; } = Array.Empty<MetadataV2Condition>();
+
+    /// <summary>
+    /// Last observed timestamp.
+    /// </summary>
+    [JsonPropertyName("observedAt")]
+    public DateTimeOffset? ObservedAt { get; init; }
+}
+
+/// <summary>
+/// A status condition attached to a Metadata v2 entity.
+/// </summary>
+public sealed record MetadataV2Condition
+{
+    /// <summary>
+    /// Condition type.
+    /// </summary>
+    [JsonPropertyName("type")]
+    public string Type { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Condition status.
+    /// </summary>
+    [JsonPropertyName("status")]
+    public string Status { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Machine-readable reason.
+    /// </summary>
+    [JsonPropertyName("reason")]
+    public string? Reason { get; init; }
+
+    /// <summary>
+    /// Human-readable message.
+    /// </summary>
+    [JsonPropertyName("message")]
+    public string? Message { get; init; }
+
+    /// <summary>
+    /// Last transition timestamp.
+    /// </summary>
+    [JsonPropertyName("lastTransitionAt")]
+    public DateTimeOffset? LastTransitionAt { get; init; }
+}
+
+/// <summary>
+/// Named extension point for Metadata v2 tools and plugins.
+/// </summary>
+public sealed record MetadataV2ExtensionPoint
+{
+    /// <summary>
+    /// Extension point identifier.
+    /// </summary>
+    [JsonPropertyName("id")]
+    public string Id { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Graph entity kinds this extension point applies to.
+    /// </summary>
+    [JsonPropertyName("appliesTo")]
+    public IReadOnlyList<string> AppliesTo { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Optional description of the extension point.
+    /// </summary>
+    [JsonPropertyName("description")]
+    public string? Description { get; init; }
+
+    /// <summary>
+    /// Optional JSON schema fragment for extension values.
+    /// </summary>
+    [JsonPropertyName("schema")]
+    public JsonElement? Schema { get; init; }
 }
 
 /// <summary>

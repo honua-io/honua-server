@@ -19,8 +19,7 @@ internal static class StacCollectionIdHelpers
                 : null;
 
     internal static bool IsMetadataStacServiceEnabled(MetadataV2Service service)
-        => service.ServiceType == MetadataV2ServiceType.StacApi &&
-           ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.Stac);
+        => ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.Stac);
 
     internal static bool MatchesMetadataStacCollectionId(
         MetadataV2Publication publication,

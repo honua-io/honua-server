@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using System.Text.Json;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
@@ -10,6 +11,7 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 /// </summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(MetadataV2Graph))]
+[JsonSerializable(typeof(MetadataV2Catalog))]
 [JsonSerializable(typeof(MetadataV2Resource))]
 [JsonSerializable(typeof(MetadataV2ResourceDisplay))]
 [JsonSerializable(typeof(MetadataV2ResourceEditing))]
@@ -20,6 +22,13 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 [JsonSerializable(typeof(MetadataV2Service))]
 [JsonSerializable(typeof(MetadataV2ServiceSettings))]
 [JsonSerializable(typeof(MetadataV2Publication))]
+[JsonSerializable(typeof(MetadataV2ProjectionProfile))]
+[JsonSerializable(typeof(MetadataV2Policy))]
+[JsonSerializable(typeof(MetadataV2Role))]
+[JsonSerializable(typeof(MetadataV2RuntimeSnapshot))]
+[JsonSerializable(typeof(MetadataV2Status))]
+[JsonSerializable(typeof(MetadataV2Condition))]
+[JsonSerializable(typeof(MetadataV2ExtensionPoint))]
 [JsonSerializable(typeof(MetadataV2ObjectMetadata))]
 [JsonSerializable(typeof(MetadataV2ContactPoint))]
 [JsonSerializable(typeof(MetadataV2Link))]
@@ -34,7 +43,11 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 [JsonSerializable(typeof(MetadataV2TimeRange))]
 [JsonSerializable(typeof(MetadataV2ResourceTemporal))]
 [JsonSerializable(typeof(MetadataV2PermanentFilter))]
+[JsonSerializable(typeof(MetadataV2ServiceType))]
+[JsonSerializable(typeof(MetadataV2LifecycleStatus))]
+[JsonSerializable(typeof(MetadataV2OperationalState))]
 [JsonSerializable(typeof(IReadOnlyDictionary<string, string>), TypeInfoPropertyName = "ReadOnlyDictionaryStringString")]
+[JsonSerializable(typeof(IReadOnlyDictionary<string, JsonElement>), TypeInfoPropertyName = "ReadOnlyDictionaryStringJsonElement")]
 public sealed partial class MetadataV2JsonContext : JsonSerializerContext
 {
 }

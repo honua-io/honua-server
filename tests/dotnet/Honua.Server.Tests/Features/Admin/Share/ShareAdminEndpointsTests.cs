@@ -740,7 +740,11 @@ public sealed class ShareAdminEndpointsTests : IAsyncLifetime
             return Task.CompletedTask;
         }
 
-        public Task<string?> TryClaimAsync(string workerId, IReadOnlySet<ExecutionJobKind>? acceptedKinds = null, CancellationToken cancellationToken = default)
+        public Task<string?> TryClaimAsync(
+            string workerId,
+            IReadOnlySet<ExecutionJobKind>? acceptedKinds = null,
+            IReadOnlySet<string>? acceptedRuntimeProfiles = null,
+            CancellationToken cancellationToken = default)
             => Task.FromResult<string?>(null);
 
         public Task RequeueAsync(string operationId, OperationPriority priority = OperationPriority.Normal, TimeSpan? visibleAfter = null, CancellationToken cancellationToken = default)
@@ -934,7 +938,11 @@ public sealed class ShareExportDispatchFailureTests : IAsyncLifetime
         public Task EnqueueAsync(string operationId, OperationPriority priority = OperationPriority.Normal, CancellationToken cancellationToken = default)
             => throw new OperationCanceledException("Share export dispatch was canceled.");
 
-        public Task<string?> TryClaimAsync(string workerId, IReadOnlySet<ExecutionJobKind>? acceptedKinds = null, CancellationToken cancellationToken = default)
+        public Task<string?> TryClaimAsync(
+            string workerId,
+            IReadOnlySet<ExecutionJobKind>? acceptedKinds = null,
+            IReadOnlySet<string>? acceptedRuntimeProfiles = null,
+            CancellationToken cancellationToken = default)
             => Task.FromResult<string?>(null);
 
         public Task RequeueAsync(string operationId, OperationPriority priority = OperationPriority.Normal, TimeSpan? visibleAfter = null, CancellationToken cancellationToken = default)
@@ -1087,7 +1095,11 @@ public sealed class ShareExportRunPersistFailureTests : IAsyncLifetime
             return Task.CompletedTask;
         }
 
-        public Task<string?> TryClaimAsync(string workerId, IReadOnlySet<ExecutionJobKind>? acceptedKinds = null, CancellationToken cancellationToken = default)
+        public Task<string?> TryClaimAsync(
+            string workerId,
+            IReadOnlySet<ExecutionJobKind>? acceptedKinds = null,
+            IReadOnlySet<string>? acceptedRuntimeProfiles = null,
+            CancellationToken cancellationToken = default)
             => Task.FromResult<string?>(null);
 
         public Task RequeueAsync(string operationId, OperationPriority priority = OperationPriority.Normal, TimeSpan? visibleAfter = null, CancellationToken cancellationToken = default)

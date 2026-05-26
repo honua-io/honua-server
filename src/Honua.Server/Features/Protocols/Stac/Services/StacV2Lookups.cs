@@ -37,8 +37,7 @@ internal static class StacV2Lookups
 
     /// <summary>
     /// Enumerates the STAC publications visible to the caller. A publication is visible
-    /// when it lives on a service of type <see cref="MetadataV2ServiceType.StacApi"/>
-    /// exposing the STAC protocol
+    /// when it lives on a service exposing the STAC protocol
     /// and the access policy on the resource (and the service it is published through)
     /// allows the current principal to read it.
     /// </summary>

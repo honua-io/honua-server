@@ -10,6 +10,7 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 public sealed class MetadataV2GraphIndex
 {
     private MetadataV2GraphIndex(
+        IReadOnlyDictionary<string, MetadataV2Catalog> catalogsById,
         IReadOnlyDictionary<string, MetadataV2Resource> resourcesById,
         IReadOnlyDictionary<string, MetadataV2Resource> resourcesByName,
         IReadOnlyDictionary<string, MetadataV2Connection> connectionsById,
@@ -22,8 +23,11 @@ public sealed class MetadataV2GraphIndex
         IReadOnlyDictionary<string, MetadataV2Publication> publicationsById,
         ILookup<string, MetadataV2Publication> publicationsByService,
         ILookup<string, MetadataV2Publication> publicationsByResource,
+        IReadOnlyDictionary<string, MetadataV2Policy> policiesById,
+        IReadOnlyDictionary<string, MetadataV2Role> rolesById,
         ILookup<string, MetadataV2Resource> resourcesByStyleResourceId)
     {
+        CatalogsById = catalogsById;
         ResourcesById = resourcesById;
         ResourcesByName = resourcesByName;
         ConnectionsById = connectionsById;
@@ -36,9 +40,12 @@ public sealed class MetadataV2GraphIndex
         PublicationsById = publicationsById;
         PublicationsByService = publicationsByService;
         PublicationsByResource = publicationsByResource;
+        PoliciesById = policiesById;
+        RolesById = rolesById;
         ResourcesByStyleResourceId = resourcesByStyleResourceId;
     }
 
+    public IReadOnlyDictionary<string, MetadataV2Catalog> CatalogsById { get; }
     public IReadOnlyDictionary<string, MetadataV2Resource> ResourcesById { get; }
     public IReadOnlyDictionary<string, MetadataV2Resource> ResourcesByName { get; }
     public IReadOnlyDictionary<string, MetadataV2Connection> ConnectionsById { get; }
@@ -67,6 +74,8 @@ public sealed class MetadataV2GraphIndex
     public IReadOnlyDictionary<string, MetadataV2Publication> PublicationsById { get; }
     public ILookup<string, MetadataV2Publication> PublicationsByService { get; }
     public ILookup<string, MetadataV2Publication> PublicationsByResource { get; }
+    public IReadOnlyDictionary<string, MetadataV2Policy> PoliciesById { get; }
+    public IReadOnlyDictionary<string, MetadataV2Role> RolesById { get; }
 
     /// <summary>
     /// Reverse lookup from a style resource id to every resource that
@@ -81,6 +90,7 @@ public sealed class MetadataV2GraphIndex
     {
         ArgumentNullException.ThrowIfNull(graph);
 
+        var catalogsById = graph.Catalogs.ToDictionary(c => c.Metadata.Id, StringComparer.Ordinal);
         var resourcesById = graph.Resources.ToDictionary(r => r.Metadata.Id, StringComparer.Ordinal);
         // Multiple resources may share the same display name (different IDs / namespaces).
         // First-wins keeps the index deterministic and avoids ArgumentException on construction.
@@ -127,6 +137,8 @@ public sealed class MetadataV2GraphIndex
         var publicationsById = graph.Publications.ToDictionary(p => p.Metadata.Id, StringComparer.Ordinal);
         var publicationsByService = graph.Publications.ToLookup(p => p.ServiceId, StringComparer.Ordinal);
         var publicationsByResource = graph.Publications.ToLookup(p => p.ResourceId, StringComparer.Ordinal);
+        var policiesById = graph.Policies.ToDictionary(p => p.Metadata.Id, StringComparer.Ordinal);
+        var rolesById = graph.Roles.ToDictionary(r => r.Metadata.Id, StringComparer.Ordinal);
 
         // Flatten (resource, styleResourceId) pairs into a reverse lookup so
         // callers can answer "which resources use style X?" in O(1).
@@ -137,6 +149,7 @@ public sealed class MetadataV2GraphIndex
             .ToLookup(pair => pair.StyleId, pair => pair.Resource, StringComparer.Ordinal);
 
         return new MetadataV2GraphIndex(
+            catalogsById,
             resourcesById,
             resourcesByName,
             connectionsById,
@@ -149,6 +162,8 @@ public sealed class MetadataV2GraphIndex
             publicationsById,
             publicationsByService,
             publicationsByResource,
+            policiesById,
+            rolesById,
             resourcesByStyleResourceId);
     }
 }
