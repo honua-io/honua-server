@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <!--
+      The heavyweight worker is NOT cold-start sensitive, so it deliberately does
+      NOT enable PublishAot (unlike the lean serving image). This keeps the GDAL
+      CLI subprocess approach simple and avoids trim/AOT constraints on the
+      worker-only code paths.
+    -->
+    <PublishAot>false</PublishAot>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <RootNamespace>Honua.Worker.Gdal</RootNamespace>
+    <AssemblyName>Honua.Worker.Gdal</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Worker.Gdal.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Reuses the durable job-execution substrate from Honua.Server (the shared
+      JobExecutionService loop, RedisJobQueue, and Redis-backed stores). GDAL is
+      NOT referenced as a package — it is provided by the worker image base layer
+      via the gdalwarp / ogr2ogr CLI tools. See ADR-0038.
+    -->
+    <ProjectReference Include="..\Honua.Server\Honua.Server.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Microsoft.Extensions.Hosting is provided by the Worker SDK / transitively by Honua.Server. -->
+    <PackageReference Include="StackExchange.Redis" />
+  </ItemGroup>
+
+</Project>
