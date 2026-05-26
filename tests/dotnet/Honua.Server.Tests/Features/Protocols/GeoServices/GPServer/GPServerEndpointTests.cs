@@ -183,8 +183,11 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         root.GetProperty("description").GetString().Should().Contain("Creates a polygon");
         root.GetProperty("category").GetString().Should().Be("geometry");
         root.GetProperty("helpUrl").GetString().Should().BeEmpty();
-        // geometry.buffer is a deterministic single-geometry task → synchronous.
-        root.GetProperty("executionType").GetString().Should().Be("esriExecutionTypeSynchronous");
+        // ADVERTISED executionType stays asynchronous for all tasks (the established
+        // contract cross-repo integration tests assert). The synchronous execute
+        // route is purely additive and gates itself via GPServerExecutionPolicy;
+        // it does not change advertised task metadata. See #1228.
+        root.GetProperty("executionType").GetString().Should().Be("esriExecutionTypeAsynchronous");
 
         var parameters = root.GetProperty("parameters").EnumerateArray().ToArray();
         parameters.Should().Contain(parameter =>
@@ -983,44 +986,29 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     // -----------------------------------------------------------------------
 
     [IntegrationTest]
-    [Operation(Operations.Create)]
+    [Operation(Operations.ErrorHandling)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_WithEnvOutSR_IsAcceptedAndStoredAsMetadata()
+    public async Task SubmitJob_WithEnvOutSR_ReturnsBadRequest()
     {
-        // env:outSR is now honored (recorded as protocol metadata for downstream
-        // result reprojection) rather than rejected with a 400.
-        var recordingService = new RecordingGeoprocessingJobService();
-        var fixture = new WebAppFixture()
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<IGeoprocessingJobService>();
-                services.AddSingleton<IGeoprocessingJobService>(recordingService);
-            });
-
-        await fixture.InitializeAsync();
-        try
+        // The ESTABLISHED async submitJob contract rejects ALL env:* controls with
+        // a clear 400 (cross-repo integration tests assert this). Honoring env:outSR
+        // is an ADDITIVE feature of the synchronous execute route only. See #1228.
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
-            using var client = fixture.CreateAdminClient();
-            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["f"] = "json",
-                ["wkb"] = PointWkbBase64,
-                ["srid"] = "4326",
-                ["distance"] = "10",
-                ["env:outSR"] = "3857"
-            });
+            ["f"] = "json",
+            ["wkb"] = PointWkbBase64,
+            ["srid"] = "4326",
+            ["distance"] = "10",
+            ["env:outSR"] = "3857"
+        });
 
-            var response = await client.PostAsync(
-                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob", content);
+        var response = await _client.PostAsync(
+            $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob", content);
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            recordingService.LastProtocolMetadata.Should().Contain(
-                new KeyValuePair<string, string>("gpserver.env.outSR", "3857"));
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("GP environment controls are not yet supported");
+        body.Should().Contain("env:outSR");
     }
 
     [IntegrationTest]
@@ -1050,16 +1038,18 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJobGet_WithEnvProcessSR_IsAccepted()
+    public async Task SubmitJobGet_WithEnvProcessSR_ReturnsBadRequest()
     {
-        // env:processSR is honored (recorded as metadata). Without a job store the
-        // submit cannot complete, so a 503 (store unavailable) is returned — not a
-        // 400 rejecting the env control.
+        // The async submitJob contract rejects ALL env:* controls with a clear 400
+        // BEFORE any store check, so env:processSR yields a 400 (not a 503). Honoring
+        // env:processSR is an additive feature of the sync execute route. See #1228.
         var response = await _client.GetAsync(
             $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob?f=json&wkb={Uri.EscapeDataString(PointWkbBase64)}&srid=4326&distance=10&env:processSR=3857");
 
-        response.StatusCode.Should().NotBe(HttpStatusCode.BadRequest);
-        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("GP environment controls are not yet supported");
+        body.Should().Contain("env:processSR");
     }
 
     // -----------------------------------------------------------------------

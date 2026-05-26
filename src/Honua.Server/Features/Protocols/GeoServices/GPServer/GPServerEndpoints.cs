@@ -284,10 +284,12 @@ internal static class GPServerEndpoints
                 return formatError;
             }
 
-            // Parse GP environment controls. env:outSR / env:processSR are honored
-            // (recorded as protocol metadata for downstream result handling);
-            // any other env:* control yields a clear 400.
-            var envError = TryParseEnvControls(context, logger, parameters, out var envControls);
+            // Reject unsupported GP environment controls (env:outSR, env:processSR, context)
+            // with a clear 400 instead of silently stripping them. This is the
+            // ESTABLISHED async submitJob contract that cross-repo integration tests
+            // assert; env:outSR honoring is an ADDITIVE feature of the sync execute
+            // route only (see HandleExecute / TryParseEnvControls). See #1228.
+            var envError = RejectUnsupportedEnvControls(context, logger, parameters);
             if (envError != null)
             {
                 return envError;
@@ -314,7 +316,8 @@ internal static class GPServerEndpoints
             }
 
             var plan = planResult.Plan!;
-            var protocolMetadata = BuildProtocolMetadata(serviceId, taskName, definition, parameters, envControls);
+            // submitJob rejects all env:* controls above, so there are none to record.
+            var protocolMetadata = BuildProtocolMetadata(serviceId, taskName, definition, parameters, default);
             var job = await jobService.SubmitJobAsync(
                 plan,
                 idempotencyKey: null,
@@ -928,6 +931,44 @@ internal static class GPServerEndpoints
     }
 
     /// <summary>
+    /// Rejects unsupported GP environment controls (<c>env:outSR</c>, <c>env:processSR</c>)
+    /// with a structured 400 error instead of silently stripping them.
+    /// Returns null when no unsupported controls are present.
+    /// <para>
+    /// This guard backs the ESTABLISHED async <c>submitJob</c> contract (cross-repo
+    /// integration tests assert env:* → 400). Honoring <c>env:outSR</c> /
+    /// <c>env:processSR</c> is an additive feature of the synchronous <c>execute</c>
+    /// route only, which uses <see cref="TryParseEnvControls"/> instead. See #1228.
+    /// </para>
+    /// </summary>
+    private static IResult? RejectUnsupportedEnvControls(
+        HttpContext context, ILogger logger, IReadOnlyDictionary<string, string> allParams)
+    {
+        List<string>? unsupported = null;
+        foreach (var key in allParams.Keys)
+        {
+            if (key.StartsWith("env:", StringComparison.OrdinalIgnoreCase))
+            {
+                unsupported ??= [];
+                unsupported.Add(key);
+            }
+        }
+
+        if (unsupported == null)
+        {
+            return null;
+        }
+
+        var names = string.Join(", ", unsupported);
+        GPServerLog.UnsupportedEnvControlsRejected(logger, names);
+        return SetSpanErrorAndReturn(
+            StandardErrorHelpers.CreateBadRequest(context,
+                $"GP environment controls are not yet supported: {names}. " +
+                "Remove these parameters or wait for engine support."),
+            $"Unsupported GP env controls: {names}");
+    }
+
+    /// <summary>
     /// Parsed GP environment controls. <c>env:outSR</c> and <c>env:processSR</c>
     /// are honored (output reprojection / informational); any other <c>env:*</c>
     /// control is unsupported and surfaced for a 400 response.
@@ -1126,7 +1167,12 @@ internal static class GPServerEndpoints
             Description = definition.Description,
             Category = definition.Category,
             HelpUrl = string.Empty,
-            ExecutionType = GPServerExecutionPolicy.ExecutionType(definition),
+            // ADVERTISED contract stays asynchronous (the value trunk advertised and
+            // that cross-repo integration tests assert). The synchronous `execute`
+            // route is purely additive capability and gates itself via
+            // GPServerExecutionPolicy.IsSynchronous; it does not change advertised
+            // task/service metadata. See #1228.
+            ExecutionType = "esriExecutionTypeAsynchronous",
             Parameters = [.. parameters]
         };
     }
