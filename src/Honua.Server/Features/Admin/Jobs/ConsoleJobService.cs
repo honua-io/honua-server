@@ -366,9 +366,10 @@ internal sealed partial class ConsoleJobService(
         }
 
         var policy = job.RetryPolicy ?? JobRetryPolicy.Default;
-        if (!policy.ShouldRetry(job.AttemptCount))
+        var policyDisabledReason = ResolveRetryPolicyDisabledReason(policy, job.AttemptCount);
+        if (policyDisabledReason != null)
         {
-            throw new ConsoleJobConflictException("The retry policy budget is exhausted.");
+            ThrowForRetryDisabledReason(policyDisabledReason);
         }
 
         var approval = approvalGate.EvaluateApproval(
@@ -736,9 +737,10 @@ internal sealed partial class ConsoleJobService(
         CancellationToken cancellationToken)
     {
         var retryPolicy = job.RetryPolicy ?? JobRetryPolicy.Default;
-        if (!retryPolicy.ShouldRetry(job.AttemptCount))
+        var policyDisabledReason = ResolveRetryPolicyDisabledReason(retryPolicy, job.AttemptCount);
+        if (policyDisabledReason != null)
         {
-            return RetryDispatch.Disabled(RetryDisabledReasons.RetryBudgetExhausted);
+            return RetryDispatch.Disabled(policyDisabledReason);
         }
 
         if (IsLocalBackend(job))
@@ -778,6 +780,25 @@ internal sealed partial class ConsoleJobService(
             : RetryDispatch.Disabled(RetryDisabledReasons.BackendRetryUnsupported);
     }
 
+    // Determines whether the retry policy alone forbids a manual retry, independent of dispatch
+    // capability. A no-retry policy (MaxAttempts <= 1, e.g. JobRetryPolicy.None) forbids manual retry
+    // regardless of AttemptCount, including a job that reached a terminal state before its first
+    // attempt (AttemptCount == 0) such as a cancel before worker pickup or a dispatch rollback. There
+    // ShouldRetry(0) would otherwise be true for MaxAttempts == 1, and re-queuing the job would re-run
+    // work whose downstream first-terminal state (e.g. a Share export run reconciled first-terminal-
+    // wins) cannot reopen, desyncing the job and the run. Returns null when the policy permits a retry.
+    private static string? ResolveRetryPolicyDisabledReason(JobRetryPolicy policy, int attemptCount)
+    {
+        if (policy.MaxAttempts <= 1)
+        {
+            return RetryDisabledReasons.NotRetryable;
+        }
+
+        return policy.ShouldRetry(attemptCount)
+            ? null
+            : RetryDisabledReasons.RetryBudgetExhausted;
+    }
+
     private static string ResolveRetryDisabledReason(bool canExecute, string? retryDisabledReason)
     {
         if (!canExecute)
@@ -792,6 +813,7 @@ internal sealed partial class ConsoleJobService(
             RetryDisabledReasons.BackendCapabilityUnavailable => "job backend retry capability unavailable",
             RetryDisabledReasons.BackendRetryUnsupported => "job backend does not support retry",
             RetryDisabledReasons.RetryBudgetExhausted => "retry budget exhausted",
+            RetryDisabledReasons.NotRetryable => "not retryable",
             _ => "not retryable"
         };
     }
@@ -805,6 +827,7 @@ internal sealed partial class ConsoleJobService(
             RetryDisabledReasons.BackendCapabilityUnavailable => new ConsoleJobServiceUnavailableException("Job backend retry capabilities could not be loaded."),
             RetryDisabledReasons.BackendRetryUnsupported => new ConsoleJobConflictException("The selected job backend does not support retry."),
             RetryDisabledReasons.RetryBudgetExhausted => new ConsoleJobConflictException("The retry policy budget is exhausted."),
+            RetryDisabledReasons.NotRetryable => new ConsoleJobConflictException("Job is not retryable."),
             _ => new ConsoleJobConflictException("Job is not retryable.")
         };
     }
@@ -1094,6 +1117,7 @@ internal sealed partial class ConsoleJobService(
         public const string BackendCapabilityUnavailable = "backend_capability_unavailable";
         public const string BackendRetryUnsupported = "backend_retry_unsupported";
         public const string RetryBudgetExhausted = "retry_budget_exhausted";
+        public const string NotRetryable = "not_retryable";
     }
 
     private readonly record struct RetryDispatch(

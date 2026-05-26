@@ -330,6 +330,62 @@ public sealed class ShareAdminEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/share/exports/{exportId}/trigger")]
+    [Endpoint("POST /api/v1/admin/jobs/{jobId}/cancel")]
+    [Endpoint("POST /api/v1/admin/jobs/{jobId}/retry")]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/actions")]
+    public async Task RetryCancelledShareExportJob_IsRejectedAsNotRetryable()
+    {
+        // A Share export job is created with JobRetryPolicy.None. Cancelling it before any worker
+        // pickup leaves it terminal at AttemptCount 0, where ShouldRetry(0) would be true for
+        // MaxAttempts 1. The generic jobs API must still refuse retry: re-queuing the job would re-run
+        // it while the first-terminal-wins run stays Cancelled, desyncing the Operate job and the run.
+        var created = await CreateDefinitionAsync("retry-guard-layer", "Webhook");
+        var exportId = created.GetProperty("exportId").GetString()!;
+
+        var trigger = await _client.PostAsync($"/api/v1/admin/share/exports/{exportId}/trigger", null);
+        trigger.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        string runId;
+        string jobRunId;
+        using (var triggerDoc = await ReadJsonAsync(trigger))
+        {
+            runId = triggerDoc.RootElement.GetProperty("runId").GetString()!;
+            jobRunId = triggerDoc.RootElement.GetProperty("jobRunId").GetString()!;
+        }
+
+        var cancel = await _client.PostAsync($"/api/v1/admin/jobs/{jobRunId}/cancel", null);
+        cancel.StatusCode.Should().Be(HttpStatusCode.OK);
+        var cancelledJob = await _jobStore.GetAsync(jobRunId);
+        cancelledJob!.Status.Should().Be(ExecutionJobStatus.Cancelled);
+        cancelledJob.AttemptCount.Should().Be(0, "the job never reached a worker so the retry budget is untouched");
+
+        // The retry action descriptor must advertise the job as not retryable (not "budget exhausted").
+        var actions = await _client.GetAsync($"/api/v1/admin/jobs/{jobRunId}/actions");
+        actions.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var actionsDoc = await ReadJsonAsync(actions))
+        {
+            var retry = actionsDoc.RootElement.GetProperty("actions")
+                .EnumerateArray()
+                .Single(action => action.GetProperty("name").GetString() == "retry");
+            retry.GetProperty("allowed").GetBoolean().Should().BeFalse();
+            retry.GetProperty("disabledReason").GetString().Should().Be("not retryable");
+        }
+
+        // The retry endpoint must reject with 409 rather than re-queuing the job.
+        var retryResponse = await _client.PostAsync($"/api/v1/admin/jobs/{jobRunId}/retry", null);
+        retryResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await _jobStore.GetAsync(jobRunId))!.Status.Should().Be(ExecutionJobStatus.Cancelled);
+
+        // And the Share run must remain Cancelled — the rejected retry must not have reopened it.
+        var detail = await _client.GetAsync($"/api/v1/admin/share/exports/{exportId}/runs/{runId}");
+        detail.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var doc = await ReadJsonAsync(detail))
+        {
+            doc.RootElement.GetProperty("status").GetString().Should().Be("Cancelled");
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/share/exports")]
     [Endpoint("POST /api/v1/admin/share/exports/{exportId}/trigger")]
     [Endpoint("GET /api/v1/admin/share/exports/{exportId}/runs")]
@@ -447,6 +503,61 @@ public sealed class ShareAdminEndpointsTests : IAsyncLifetime
         using (var doc = await ReadJsonAsync(overByOneTick))
         {
             doc.RootElement.GetProperty("detail").GetString().Should().Contain("2000");
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/share/exports")]
+    [Endpoint("GET /api/v1/admin/share/exports")]
+    public async Task ListDefinitions_ServiceNameFilter_IsCaseSensitive()
+    {
+        // serviceName is documented as an exact filter and Postgres compares service_name =
+        // @service_name. The in-memory store must match ordinally so a different casing excludes the
+        // definition, otherwise the fallback would hide casing bugs the durable provider would surface.
+        var created = await CreateDefinitionAsync("Casing-Layer", "Webhook");
+        var exportId = created.GetProperty("exportId").GetString()!;
+
+        var mismatched = await _client.GetAsync("/api/v1/admin/share/exports?serviceName=casing-layer&limit=50");
+        mismatched.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var doc = await ReadJsonAsync(mismatched))
+        {
+            doc.RootElement.GetProperty("items")
+                .EnumerateArray()
+                .Should()
+                .NotContain(item => item.GetProperty("exportId").GetString() == exportId);
+        }
+
+        var exact = await _client.GetAsync("/api/v1/admin/share/exports?serviceName=Casing-Layer&limit=50");
+        exact.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var doc = await ReadJsonAsync(exact))
+        {
+            doc.RootElement.GetProperty("items")
+                .EnumerateArray()
+                .Should()
+                .Contain(item => item.GetProperty("exportId").GetString() == exportId);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic")]
+    public async Task PerItemTraffic_ServiceNameMatch_IsCaseSensitive()
+    {
+        const string range = "periodStart=2026-05-25T00:00:00Z&periodEnd=2026-05-25T02:00:00Z";
+
+        // The seeded bucket carries serviceName "parcels". A mismatched-casing path segment must not
+        // match it; the per-item matcher compares serviceName ordinally, mirroring Postgres.
+        var mismatched = await _client.GetAsync($"/api/v1/admin/services/Parcels/layers/7/share/traffic?{range}");
+        mismatched.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var doc = await ReadJsonAsync(mismatched))
+        {
+            doc.RootElement.GetProperty("totalRequests").GetInt64().Should().Be(0);
+        }
+
+        var exact = await _client.GetAsync($"/api/v1/admin/services/parcels/layers/7/share/traffic?{range}");
+        exact.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var doc = await ReadJsonAsync(exact))
+        {
+            doc.RootElement.GetProperty("totalRequests").GetInt64().Should().Be(5);
         }
     }
 

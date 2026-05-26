@@ -28,8 +28,11 @@ internal sealed class InMemoryShareExportStore : IShareExportStore
         lock (_gate)
         {
             var items = _definitions.Values
+                // serviceName is an exact filter (Postgres uses "service_name = @service_name"), so the
+                // in-memory store must match ordinally too — a case-insensitive fallback would diverge
+                // from the durable provider and hide casing bugs from tests.
                 .Where(definition => string.IsNullOrWhiteSpace(query.ServiceName)
-                    || string.Equals(definition.ServiceName, query.ServiceName, StringComparison.OrdinalIgnoreCase))
+                    || string.Equals(definition.ServiceName, query.ServiceName, StringComparison.Ordinal))
                 .Where(definition => string.IsNullOrWhiteSpace(query.ResourceId)
                     || string.Equals(definition.ResourceId, query.ResourceId, StringComparison.Ordinal))
                 .Where(definition => !query.LayerId.HasValue || definition.LayerId == query.LayerId.Value)
@@ -359,8 +362,10 @@ internal sealed class InMemoryShareTrafficStore : IShareTrafficStore
         var resourceMatches = string.IsNullOrEmpty(requested.ResourceId)
             || string.Equals(requested.ResourceId, actual.ResourceId, StringComparison.Ordinal);
 
+        // serviceName is an exact match in the Postgres store ("service_name = @service_name"), so use
+        // Ordinal here too rather than a case-insensitive compare that would diverge from the durable provider.
         return resourceMatches
-            && string.Equals(requested.ServiceName, actual.ServiceName, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(requested.ServiceName, actual.ServiceName, StringComparison.Ordinal)
             && requested.LayerId == actual.LayerId;
     }
 

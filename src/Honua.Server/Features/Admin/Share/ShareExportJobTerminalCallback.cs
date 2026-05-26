@@ -16,7 +16,8 @@ namespace Honua.Server.Features.Admin.Share;
 /// mapped terminal status (e.g. when a job is cancelled via the Console jobs API). Mirrors the
 /// <c>GeoprocessingJobTerminalCallback</c> pattern: best-effort, kind-guarded, and resolves the
 /// Share store from a fresh scope because the store is scoped under the PostgreSQL provider while
-/// this callback is a singleton consumed by the job worker.
+/// this callback is a singleton fired outside any request scope (from worker terminal transitions
+/// and from API-side operator cancel through the Console jobs API).
 /// </summary>
 internal sealed class ShareExportJobTerminalCallback(
     IServiceScopeFactory serviceScopeFactory,

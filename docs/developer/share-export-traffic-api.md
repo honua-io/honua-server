@@ -198,7 +198,10 @@ persisted but enqueuing the job fails, the endpoint rolls the job back to a
 terminal `Failed` state, marks the run `Failed` (keeping its `jobRunId`) with
 `lastError` `share-export-dispatch-failed`, and returns `503`. A returned `202`
 therefore always means the run was persisted and the job was both created and
-dispatched.
+dispatched. These compensating paths run as a commit-once critical section that
+is not bound to the client connection, so a trigger aborted or disconnected after
+the job record is created still completes one of the outcomes above rather than
+stranding a job without a run, or a persisted run whose job was never enqueued.
 
 Once a run is backed by a job, its status reconciles to that job's terminal
 state: when the execution job reaches `Succeeded`, `Failed`, or `Cancelled` (for
@@ -211,9 +214,12 @@ when the job published none. The first terminal status wins; a later job
 notification does not overwrite an already-terminal run.
 
 The backing job is created with `JobRetryPolicy.None`. Because run history is
-first-terminal-wins, retrying an export through the generic jobs API
-(`/api/v1/admin/jobs/{jobRunId}/retry`) is rejected as budget-exhausted once the
-run has executed; re-running an export uses a fresh trigger (a new run) rather
+first-terminal-wins, the generic jobs API refuses to retry a `ShareExport` job:
+`POST /api/v1/admin/jobs/{jobRunId}/retry` returns `409` and the `retry` action is
+reported with `allowed: false` and `disabledReason: not retryable`. This holds
+even when the job became terminal before its first attempt (for example a cancel
+before worker pickup), so a rejected retry can never re-run the export while its
+run stays terminal. Re-running an export uses a fresh trigger (a new run) rather
 than reopening the original run.
 
 `pause` and `resume` only update `scheduleState`; they do not cancel already
