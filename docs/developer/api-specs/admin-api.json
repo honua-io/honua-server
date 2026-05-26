@@ -3272,6 +3272,37 @@
         }
       }
     },
+    "/metadata/releases/{packageId}/operation": {
+      "get": {
+        "tags": ["Metadata"],
+        "summary": "Get Metadata Release Operation",
+        "description": "Get the most recent metadata release operation for a package ID. Retry attempts remain stable by operation ID through /deploy/operations/{operationId}.",
+        "operationId": "getMetadataReleaseOperationByPackageId",
+        "parameters": [
+          {
+            "name": "packageId",
+            "in": "path",
+            "required": true,
+            "description": "Metadata release package identifier. Package-ID lookup returns the most recent operation for retry scenarios.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metadata release operation state",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DeployOperationResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
     "/metadata/prevalidate": {
       "post": {
         "tags": ["Metadata"],
@@ -3667,14 +3698,14 @@
       "get": {
         "tags": ["Deploy"],
         "summary": "Get Deploy Operation",
-        "description": "Get the current state of a deploy operation. May trigger reconciliation for in-progress operations.",
+        "description": "Get the current state of a deploy or metadata release operation. May trigger reconciliation for in-progress operations.",
         "operationId": "getDeployOperation",
         "parameters": [
           {
             "name": "operationId",
             "in": "path",
             "required": true,
-            "description": "Deploy operation identifier",
+            "description": "Workflow operation identifier",
             "schema": { "type": "string" }
           }
         ],
@@ -3742,14 +3773,14 @@
       "post": {
         "tags": ["Deploy"],
         "summary": "Rollback Deploy Operation",
-        "description": "Request rollback of a deploy operation.",
+        "description": "Request rollback of a deploy or metadata release operation. Metadata-only rollback uses the non-destructive approval path unless the stored rollback plan sets requiresExplicitApproval; data-affecting metadata rollback classes use the destructive approval gate. For metadata release operations the rollback plan's approval-affecting classification is re-checked against the values the approval gate evaluated before the state change is written; if it changed in between, the request returns 409 and the stored operation is left unchanged.",
         "operationId": "rollbackDeployOperation",
         "parameters": [
           {
             "name": "operationId",
             "in": "path",
             "required": true,
-            "description": "Deploy operation identifier",
+            "description": "Workflow operation identifier",
             "schema": { "type": "string" }
           }
         ],
@@ -3776,7 +3807,8 @@
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
         }
       }
     },
@@ -9538,6 +9570,7 @@
           "status": { "type": "string" },
           "priority": { "type": "string" },
           "target": { "$ref": "#/components/schemas/DeployPlanTargetResponse" },
+          "metadataRelease": { "$ref": "#/components/schemas/MetadataReleaseContextResponse" },
           "providerOperationId": { "type": "string" },
           "currentPhase": { "type": "string" },
           "observedState": { "type": "string" },
@@ -9556,6 +9589,71 @@
           "createdAt": { "type": "string", "format": "date-time" },
           "updatedAt": { "type": "string", "format": "date-time" },
           "completedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "MetadataReleaseContextResponse": {
+        "type": "object",
+        "required": ["packageId", "desiredRevision", "targetEnvironment", "jobIds", "evidenceRefs", "currentStage", "blockers", "warnings"],
+        "properties": {
+          "packageId": { "type": "string" },
+          "gitOperationId": { "type": "string" },
+          "prUrl": { "type": "string", "format": "uri" },
+          "commitSha": { "type": "string" },
+          "desiredRevision": { "type": "string" },
+          "targetEnvironment": { "type": "string" },
+          "deployOperationId": { "type": "string" },
+          "jobIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "evidenceRefs": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MetadataEvidenceRefResponse" }
+          },
+          "currentStage": {
+            "type": "string",
+            "enum": ["Preflight", "Backup", "ScriptMigration", "MetadataApply", "ServicePublication", "Smoke", "SloWatch", "Promotion", "Complete", "Failed", "RollbackRequested"]
+          },
+          "rollbackPlan": { "$ref": "#/components/schemas/MetadataRollbackPlanResponse" },
+          "blockers": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "warnings": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "MetadataRollbackPlanResponse": {
+        "type": "object",
+        "required": ["class", "isDataAffecting", "requiresExplicitApproval", "steps", "evidenceRequired"],
+        "properties": {
+          "class": {
+            "type": "string",
+            "enum": ["MetadataOnly", "AliasRepoint", "ServiceRevisionRevert", "ScriptRollback", "SnapshotRestore", "ManualRecovery"]
+          },
+          "isDataAffecting": { "type": "boolean" },
+          "requiresExplicitApproval": { "type": "boolean" },
+          "steps": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "evidenceRequired": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "approvalPolicyRef": { "type": "string" }
+        }
+      },
+      "MetadataEvidenceRefResponse": {
+        "type": "object",
+        "required": ["kind", "refId", "at"],
+        "properties": {
+          "kind": { "type": "string" },
+          "refId": { "type": "string" },
+          "uri": { "type": "string" },
+          "at": { "type": "string", "format": "date-time" }
         }
       },
       "SubmitDeployOperationRequest": {

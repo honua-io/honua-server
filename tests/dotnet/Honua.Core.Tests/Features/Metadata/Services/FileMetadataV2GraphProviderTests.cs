@@ -137,7 +137,7 @@ public sealed class FileMetadataV2GraphProviderTests
                     ResourceId = "resource.parcels",
                     StorageType = MetadataV2StorageType.RelationalTable,
                     Locator = "public.parcels",
-                    StorageLayerId = 1,
+                    StorageLayerId = 7,
                 }
             ],
             Services =

@@ -527,6 +527,7 @@ The public `GET /api/styles/{layerId}.json` endpoint accepts an optional `?theme
 | `/api/v1/admin/metadata/release-packages` | POST | Create a persisted Metadata v2 release package for cross-environment promotion |
 | `/api/v1/admin/metadata/release-packages/{packageId}` | GET | Get a persisted Metadata v2 release package |
 | `/api/v1/admin/metadata/release-packages/{packageId}/gitops-manifest` | GET | Export a release package as a GitOps-safe manifest |
+| `/api/v1/admin/metadata/releases/{packageId}/operation` | GET | Get the most recent metadata release operation for a package ID, including lifecycle stage, evidence, linked jobs/deploy operation, and rollback plan |
 | `/api/v1/admin/metadata/prevalidate` | POST | Generate an environment-scoped Metadata v2 compatibility report for a release package |
 | `/api/v1/admin/manifest` | GET | Export metadata manifest |
 | `/api/v1/admin/manifest/apply` | POST | Apply metadata manifest (supports dry-run/prune controls) |
@@ -550,6 +551,14 @@ carries `canCreatePullRequest` / `canPromote` gates, lists affected dependents,
 and classifies rollback readiness. See
 [Metadata Prevalidation Admin API](../admin-api/metadata-prevalidation.md) for
 the full contract.
+
+Metadata release operation reads use the deploy-control operation response
+contract directly. `GET /api/v1/admin/metadata/releases/{packageId}/operation`
+returns the latest operation indexed for that release package, while
+`GET /api/v1/admin/deploy/operations/{operationId}` remains the stable lookup
+for a specific attempt. Metadata release operation records and their package-ID
+index entries use `ControlPlane:MetadataRelease:OperationRetention`, which
+defaults to 30 days.
 
 `Group` and `SourceDescriptor` are stable `honua.io/v1alpha1` metadata resource kinds on the generic CRUD surface. SDKs can list them with `GET /api/v1/admin/metadata/resources?kind=Group` and `GET /api/v1/admin/metadata/resources?kind=SourceDescriptor` instead of probing undocumented catalog endpoints.
 
@@ -654,9 +663,24 @@ for run lifecycle, scheduler semantics, and tuning details.
 | `/api/v1/admin/deploy/preflight` | GET | Get instance-local deploy preflight and upgrade-readiness state |
 | `/api/v1/admin/deploy/plan` | POST | Plan a deploy operation |
 | `/api/v1/admin/deploy/operations` | POST | Create a deploy operation |
-| `/api/v1/admin/deploy/operations/{operationId}` | GET | Get deploy operation status |
+| `/api/v1/admin/deploy/operations/{operationId}` | GET | Get deploy or metadata release operation status by stable operation ID |
 | `/api/v1/admin/deploy/operations/{operationId}/submit` | POST | Submit a deploy operation for execution |
-| `/api/v1/admin/deploy/operations/{operationId}/rollback` | POST | Rollback a deploy operation |
+| `/api/v1/admin/deploy/operations/{operationId}/rollback` | POST | Request rollback for a deploy or metadata release operation; metadata-only rollback is non-destructive unless the plan sets `requiresExplicitApproval`, while data-affecting rollback classes use the destructive approval gate |
+
+For metadata release operations, rollback requests reuse
+`/api/v1/admin/deploy/operations/{operationId}/rollback` with an optional
+`reason`. Accepted requests set the workflow status and
+`metadataRelease.currentStage` to `RollbackRequested`; rejected approval checks
+return `403` without mutating the stored operation. The approval decision is
+taken from the rollback plan's `isDataAffecting` and
+`requiresExplicitApproval` values: metadata-only plans can still require
+explicit approval without being treated as data-affecting, while data-affecting
+plans use the destructive approval gate. The server then re-reads the stored
+operation before writing the state change and returns `409 Conflict` without
+mutation if either approval-affecting classification changed between the
+approval check and the write (mitigating a TOCTOU race where a recomputed plan
+would otherwise roll back under a stale approval). Callers should re-read the
+operation and re-approve against the current plan.
 
 ### **Alert Management Endpoints**
 

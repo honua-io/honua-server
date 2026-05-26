@@ -16,6 +16,8 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal static class AdminInfoEndpoints
 {
+    private const string LoggerCategory = "Admin.Info";
+
     public static void MapAdminInfoEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin")
@@ -39,7 +41,6 @@ internal static class AdminInfoEndpoints
 
     private static IResult HandleGetVersion(HttpContext context, ILoggerFactory loggerFactory)
     {
-        var logger = loggerFactory.CreateLogger("Admin.AdminInfo");
         try
         {
             var response = new AdminVersionResponse
@@ -55,17 +56,17 @@ internal static class AdminInfoEndpoints
         }
         catch (Exception ex)
         {
+            var logger = loggerFactory.CreateLogger(LoggerCategory);
             AdminInfoLog.EndpointFailed(logger, "version", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context,
                 StatusCodes.Status500InternalServerError,
-                "Failed to resolve admin version info.");
+                "Admin version information is temporarily unavailable.");
         }
     }
 
     private static IResult HandleGetCapabilities(HttpContext context, ILoggerFactory loggerFactory)
     {
-        var logger = loggerFactory.CreateLogger("Admin.AdminInfo");
         try
         {
             var response = new AdminCapabilitiesResponse
@@ -80,11 +81,12 @@ internal static class AdminInfoEndpoints
         }
         catch (Exception ex)
         {
+            var logger = loggerFactory.CreateLogger(LoggerCategory);
             AdminInfoLog.EndpointFailed(logger, "capabilities", ex);
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context,
                 StatusCodes.Status500InternalServerError,
-                "Failed to resolve admin capabilities.");
+                "Admin capabilities are temporarily unavailable.");
         }
     }
 
@@ -94,6 +96,12 @@ internal static class AdminInfoEndpoints
         var info = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
         return string.IsNullOrWhiteSpace(info) ? asm.GetName().Version?.ToString() ?? "0.0.0" : info;
     }
+}
+
+internal static partial class AdminInfoLog
+{
+    [LoggerMessage(EventId = 9320, Level = LogLevel.Error, Message = "Admin info endpoint {Operation} failed.")]
+    public static partial void EndpointFailed(ILogger logger, string operation, Exception exception);
 }
 
 public sealed record AdminVersionResponse
@@ -127,10 +135,4 @@ public sealed record AdminCapabilitiesResponse
 [JsonSerializable(typeof(ApiResponse<AdminCapabilitiesResponse>))]
 internal sealed partial class AdminInfoJsonContext : JsonSerializerContext
 {
-}
-
-internal static partial class AdminInfoLog
-{
-    [LoggerMessage(EventId = 120920, Level = LogLevel.Error, Message = "Admin info endpoint {Operation} failed.")]
-    public static partial void EndpointFailed(ILogger logger, string operation, Exception exception);
 }

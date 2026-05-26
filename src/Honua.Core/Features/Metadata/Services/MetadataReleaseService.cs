@@ -705,7 +705,7 @@ public sealed class MetadataReleaseService(
             SemanticId = GetFieldSemanticId(resource, field),
             ParentResourceId = resource.Metadata.Id,
             FieldName = field.Name,
-            FieldType = FormatEnumToken(field.Type),
+            FieldType = field.Type.ToWireName(),
         };
 
     private static MetadataBoundFieldSummary? ToSourceFieldSummary(ResolvedSemanticArtifact artifact)
@@ -808,10 +808,6 @@ public sealed class MetadataReleaseService(
         => string.IsNullOrWhiteSpace(field.SemanticId)
             ? $"field.{resource.Metadata.Id}.{field.Name}"
             : field.SemanticId.Trim();
-
-    private static string FormatEnumToken<TEnum>(TEnum value)
-        where TEnum : struct, Enum
-        => value.ToString().ToLowerInvariant();
 
     private static List<string> NormalizeRequiredList(
         IReadOnlyList<string>? values,

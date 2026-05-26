@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit.Attributes;
@@ -755,7 +756,12 @@ public sealed class MetadataCompatibilityAnalyzerTests
     {
         var spatial = new MetadataV2ResourceSpatial
         {
-            SpatialReference = new MetadataV2SpatialReference { Srid = srid },
+            SpatialReference = new MetadataV2SpatialReference
+            {
+                Srid = srid,
+                Crs = FormattableString.Invariant($"EPSG:{srid}"),
+                IsGeographic = srid == 4326,
+            },
             GeometryType = MetadataV2GeometryType.Point,
         };
 

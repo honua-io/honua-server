@@ -49,6 +49,20 @@ internal sealed class DefaultOperatorApprovalEvaluator(
             return result;
         }
 
+        if (request.RequiresExplicitApproval)
+        {
+            var policyRef = string.IsNullOrWhiteSpace(request.ApprovalPolicyRef)
+                ? $"operator.explicit.{request.ResourceType.ToString().ToLowerInvariant()}"
+                : request.ApprovalPolicyRef;
+            var reasonCodes = request.ApprovalReasonCodes.Count > 0
+                ? request.ApprovalReasonCodes.ToArray()
+                : ["explicit-approval-required"];
+            var result = ApprovalRequirement.Required(policyRef, reasonCodes);
+            OperatorAuthorizationLog.ApprovalRequired(
+                logger, userId, request.ResourceType, request.Operation, result.PolicyRef);
+            return result;
+        }
+
         if (request.IsDestructive && options.Value.DestructiveActionsRequireApproval)
         {
             // Resource-qualified policy ref: include the resource family so downstream consumers

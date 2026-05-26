@@ -275,8 +275,8 @@ public static class MetadataCompatibilityAnalyzer
                 sourceResource.Metadata.Id,
                 sourceField.Title ?? sourceField.Name,
                 "The target field type does not match the proposed field type.",
-                Value("fieldType", FormatEnumToken(sourceField.Type), expectedDetails),
-                Value("fieldType", FormatEnumToken(targetField.Type), FieldDetails(targetResource, targetField)),
+                Value("fieldType", sourceField.Type.ToWireName(), expectedDetails),
+                Value("fieldType", targetField.Type.ToWireName(), FieldDetails(targetResource, targetField)),
                 MetadataCompatibilityRequiredAction.UpdateField,
                 MetadataCompatibilityCoverageState.Uncovered));
         }
@@ -415,7 +415,7 @@ public static class MetadataCompatibilityAnalyzer
                     null,
                     source.Metadata.Title ?? source.Metadata.Name,
                     "The target resource does not declare comparable geometry type metadata.",
-                    Value("geometryType", FormatEnumToken(expectedGeometryType)),
+                    Value("geometryType", expectedGeometryType.ToString()),
                     Value("geometryType", "unavailable"),
                     MetadataCompatibilityRequiredAction.UpdateSpatial,
                     MetadataCompatibilityCoverageState.Unknown));
@@ -431,8 +431,8 @@ public static class MetadataCompatibilityAnalyzer
                     null,
                     source.Metadata.Title ?? source.Metadata.Name,
                     "The target resource geometry type does not match the proposed geometry type.",
-                    Value("geometryType", FormatEnumToken(expectedGeometryType)),
-                    Value("geometryType", FormatEnumToken(actualGeometryType)),
+                    Value("geometryType", expectedGeometryType.ToString()),
+                    Value("geometryType", actualGeometryType.ToString()),
                     MetadataCompatibilityRequiredAction.UpdateSpatial,
                     MetadataCompatibilityCoverageState.Uncovered));
             }
@@ -1710,14 +1710,10 @@ public static class MetadataCompatibilityAnalyzer
         {
             ["semanticId"] = GetFieldSemanticId(resource, field),
             ["fieldName"] = field.Name,
-            ["type"] = FormatEnumToken(field.Type),
+            ["type"] = field.Type.ToWireName(),
             ["nullable"] = field.Nullable.ToString(CultureInfo.InvariantCulture),
             ["resourceId"] = resource.Metadata.Id,
         };
-
-    private static string FormatEnumToken<TEnum>(TEnum value)
-        where TEnum : struct, Enum
-        => value.ToString().ToLowerInvariant();
 
     private static Dictionary<string, string> TemporalDetails(MetadataV2TemporalFields fields)
         => new(StringComparer.Ordinal)

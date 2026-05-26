@@ -46,7 +46,7 @@ public sealed record MetadataV2ObjectMetadata
     public string Name { get; init; } = string.Empty;
 
     /// <summary>
-    /// Optional namespace for grouping entities.
+    /// Optional namespace for grouping metadata entities.
     /// </summary>
     [JsonPropertyName("namespace")]
     public string? Namespace { get; init; }
@@ -78,12 +78,6 @@ public sealed record MetadataV2ObjectMetadata
     public IReadOnlyDictionary<string, string> Annotations { get; init; } = new Dictionary<string, string>();
 
     /// <summary>
-    /// Entity generation for optimistic concurrency.
-    /// </summary>
-    [JsonPropertyName("generation")]
-    public long? Generation { get; init; }
-
-    /// <summary>
     /// Timestamp when the entity was created.
     /// </summary>
     [JsonPropertyName("createdAt")]
@@ -94,6 +88,12 @@ public sealed record MetadataV2ObjectMetadata
     /// </summary>
     [JsonPropertyName("updatedAt")]
     public DateTimeOffset? UpdatedAt { get; init; }
+
+    /// <summary>
+    /// Entity generation for optimistic comparison and release planning.
+    /// </summary>
+    [JsonPropertyName("generation")]
+    public long? Generation { get; init; }
 
     /// <summary>
     /// Free-form discovery keywords. Mapped to OGC-API-Records.keywords,
@@ -161,12 +161,12 @@ public sealed record MetadataV2ObjectMetadata
 }
 
 /// <summary>
-/// Lifecycle and observed status shared by Metadata v2 graph entities.
+/// Lifecycle and operational status for Metadata v2 graph artifacts.
 /// </summary>
 public sealed record MetadataV2Status
 {
     /// <summary>
-    /// Desired or declared lifecycle state.
+    /// Declared lifecycle status.
     /// </summary>
     [JsonPropertyName("lifecycle")]
     public MetadataV2LifecycleStatus Lifecycle { get; init; } = MetadataV2LifecycleStatus.Draft;
@@ -178,52 +178,64 @@ public sealed record MetadataV2Status
     public MetadataV2OperationalState State { get; init; } = MetadataV2OperationalState.Unknown;
 
     /// <summary>
-    /// Reconciliation or validation conditions.
-    /// </summary>
-    [JsonPropertyName("conditions")]
-    public IReadOnlyList<MetadataV2Condition> Conditions { get; init; } = Array.Empty<MetadataV2Condition>();
-
-    /// <summary>
-    /// Last observed timestamp.
-    /// </summary>
-    [JsonPropertyName("observedAt")]
-    public DateTimeOffset? ObservedAt { get; init; }
-}
-
-/// <summary>
-/// A status condition attached to a Metadata v2 entity.
-/// </summary>
-public sealed record MetadataV2Condition
-{
-    /// <summary>
-    /// Condition type.
-    /// </summary>
-    [JsonPropertyName("type")]
-    public string Type { get; init; } = string.Empty;
-
-    /// <summary>
-    /// Condition status.
-    /// </summary>
-    [JsonPropertyName("status")]
-    public string Status { get; init; } = string.Empty;
-
-    /// <summary>
-    /// Machine-readable reason.
-    /// </summary>
-    [JsonPropertyName("reason")]
-    public string? Reason { get; init; }
-
-    /// <summary>
-    /// Human-readable message.
+    /// Optional status message safe to expose in metadata APIs.
     /// </summary>
     [JsonPropertyName("message")]
     public string? Message { get; init; }
 
     /// <summary>
-    /// Last transition timestamp.
+    /// Last time the status was observed or changed.
     /// </summary>
-    [JsonPropertyName("lastTransitionAt")]
-    public DateTimeOffset? LastTransitionAt { get; init; }
+    [JsonPropertyName("observedAt")]
+    public DateTimeOffset? ObservedAt { get; init; }
+
+    /// <summary>
+    /// Additional typed conditions attached to the artifact.
+    /// </summary>
+    [JsonPropertyName("conditions")]
+    public IReadOnlyList<MetadataV2Condition> Conditions { get; init; } = Array.Empty<MetadataV2Condition>();
+}
+
+/// <summary>
+/// A status condition for a Metadata v2 graph artifact.
+/// </summary>
+public sealed record MetadataV2Condition
+{
+    /// <summary>
+    /// Stable condition type.
+    /// </summary>
+    [JsonPropertyName("type")]
+    public required string Type { get; init; }
+
+    /// <summary>
+    /// Condition state, commonly <c>true</c>, <c>false</c>, or <c>unknown</c>.
+    /// </summary>
+    [JsonPropertyName("status")]
+    public required string Status { get; init; }
+
+    /// <summary>
+    /// Machine-readable reason for the condition state.
+    /// </summary>
+    [JsonPropertyName("reason")]
+    public string? Reason { get; init; }
+
+    /// <summary>
+    /// Safe human-readable condition message.
+    /// </summary>
+    [JsonPropertyName("message")]
+    public string? Message { get; init; }
+
+    /// <summary>
+    /// Generation observed when this condition was produced.
+    /// </summary>
+    [JsonPropertyName("observedGeneration")]
+    public long? ObservedGeneration { get; init; }
+
+    /// <summary>
+    /// Time when the condition last changed.
+    /// </summary>
+    [JsonPropertyName("lastTransitionTime")]
+    public DateTimeOffset? LastTransitionTime { get; init; }
 }
 
 /// <summary>
