@@ -84,8 +84,27 @@ public sealed class VisibilityAnalysisService : IVisibilityAnalysisService
                 "Line of sight requires at least two profile samples.");
         }
 
-        var observerGround = samples[0].Elevation ?? 0.0;
-        var targetGround = samples[^1].Elevation ?? 0.0;
+        // The observer and target ground elevations anchor the whole sight line.
+        // When either endpoint resolves to no-data (a no-data pixel or a point
+        // outside the raster coverage) we cannot fabricate a ground/eye height:
+        // coercing to 0.0 (sea level) silently invents terrain and tends to
+        // report a bogus visible=true. Fail the request the same way the
+        // elevation profile path signals missing terrain so the endpoint maps it
+        // to an unambiguous error rather than a fabricated answer.
+        if (samples[0].Elevation is not { } observerGround)
+        {
+            throw new ElevationQueryException(
+                ElevationFailureKind.SourceUnavailable,
+                "Observer position has no elevation data (no-data pixel or outside raster coverage); line of sight is indeterminate.");
+        }
+
+        if (samples[^1].Elevation is not { } targetGround)
+        {
+            throw new ElevationQueryException(
+                ElevationFailureKind.SourceUnavailable,
+                "Target position has no elevation data (no-data pixel or outside raster coverage); line of sight is indeterminate.");
+        }
+
         var observerHeight = observerGround + observer.HeightOffsetMeters;
         var targetHeight = targetGround + target.HeightOffsetMeters;
         var totalDistance = profile.LineLengthMeters;

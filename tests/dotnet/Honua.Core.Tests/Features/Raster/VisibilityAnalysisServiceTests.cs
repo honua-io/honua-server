@@ -219,6 +219,88 @@ public sealed class VisibilityAnalysisServiceTests
     }
 
     [UnitTest]
+    public async Task ComputeLineOfSightAsync_ObserverOnNoData_FailsAndDoesNotReportVisible()
+    {
+        // The observer endpoint resolves to no-data (outside coverage / no-data
+        // pixel). The service must fail rather than fabricate a 0.0 ground/eye
+        // height and report a bogus visible=true.
+        var service = new VisibilityAnalysisService(
+            new EndpointNoDataElevationService(observerNoData: true, targetNoData: false, baseElevation: 100));
+
+        var act = async () => await service.ComputeLineOfSightAsync(
+            LayerId,
+            new VisibilityPoint { Longitude = 0, Latitude = 0, HeightOffsetMeters = 2 },
+            new VisibilityPoint { Longitude = 0.1, Latitude = 0, HeightOffsetMeters = 2 },
+            sampleCount: 32,
+            RasterMergeStrategy.Newest);
+
+        var exception = await act.Should().ThrowAsync<ElevationQueryException>();
+        exception.Which.FailureKind.Should().Be(ElevationFailureKind.SourceUnavailable);
+        exception.Which.Message.Should().Contain("Observer");
+    }
+
+    [UnitTest]
+    public async Task ComputeLineOfSightAsync_TargetOnNoData_FailsAndDoesNotReportVisible()
+    {
+        var service = new VisibilityAnalysisService(
+            new EndpointNoDataElevationService(observerNoData: false, targetNoData: true, baseElevation: 100));
+
+        var act = async () => await service.ComputeLineOfSightAsync(
+            LayerId,
+            new VisibilityPoint { Longitude = 0, Latitude = 0, HeightOffsetMeters = 2 },
+            new VisibilityPoint { Longitude = 0.1, Latitude = 0, HeightOffsetMeters = 2 },
+            sampleCount: 32,
+            RasterMergeStrategy.Newest);
+
+        var exception = await act.Should().ThrowAsync<ElevationQueryException>();
+        exception.Which.FailureKind.Should().Be(ElevationFailureKind.SourceUnavailable);
+        exception.Which.Message.Should().Contain("Target");
+    }
+
+    [UnitTest]
+    public async Task ComputeLineOfSightAsync_SampleCountTwoBothNoData_Fails()
+    {
+        // Regression: with sampleCount==2 there are no intermediate samples, so
+        // HasNoDataSamples (which only inspects interior samples) stays false.
+        // The previous code coerced both endpoints to 0.0 and reported
+        // visible=true. The service must now fail on the no-data endpoints.
+        var service = new VisibilityAnalysisService(
+            new EndpointNoDataElevationService(observerNoData: true, targetNoData: true, baseElevation: 100));
+
+        var act = async () => await service.ComputeLineOfSightAsync(
+            LayerId,
+            new VisibilityPoint { Longitude = 0, Latitude = 0, HeightOffsetMeters = 2 },
+            new VisibilityPoint { Longitude = 0.1, Latitude = 0, HeightOffsetMeters = 2 },
+            sampleCount: 2,
+            RasterMergeStrategy.Newest);
+
+        var exception = await act.Should().ThrowAsync<ElevationQueryException>();
+        exception.Which.FailureKind.Should().Be(ElevationFailureKind.SourceUnavailable);
+    }
+
+    [UnitTest]
+    public async Task ComputeLineOfSightAsync_CoveredEndpointsWithNoDataInterior_FlagsHasNoDataSamples()
+    {
+        // Both endpoints have valid terrain; an interior stretch is no-data.
+        // The request succeeds (endpoints anchor the sight line) but the result
+        // must mark the interior no-data so callers know visibility is
+        // best-effort.
+        var service = new VisibilityAnalysisService(
+            new InteriorNoDataElevationService(baseElevation: 100));
+
+        var result = await service.ComputeLineOfSightAsync(
+            LayerId,
+            new VisibilityPoint { Longitude = 0, Latitude = 0, HeightOffsetMeters = 2 },
+            new VisibilityPoint { Longitude = 0.2, Latitude = 0, HeightOffsetMeters = 2 },
+            sampleCount: 32,
+            RasterMergeStrategy.Newest);
+
+        result.HasNoDataSamples.Should().BeTrue();
+        result.ObserverGroundElevation.Should().Be(100);
+        result.TargetGroundElevation.Should().Be(100);
+    }
+
+    [UnitTest]
     public void DestinationPoint_DueEast_IncreasesLongitude()
     {
         var (lon, lat) = VisibilityAnalysisService.DestinationPoint(0, 0, azimuthDegrees: 90, distanceMeters: 111_320);
@@ -294,6 +376,8 @@ public sealed class VisibilityAnalysisServiceTests
                 };
             }
 
+            TransformSamples(samples);
+
             var result = new ElevationProfileResult
             {
                 Samples = samples,
@@ -313,6 +397,14 @@ public sealed class VisibilityAnalysisServiceTests
         }
 
         protected abstract double? ElevationAt(double lon, double lat, double distanceFromStartMeters);
+
+        /// <summary>
+        /// Optional index-aware post-processing of the generated samples (e.g.
+        /// to mark specific endpoints as no-data). Default is a no-op.
+        /// </summary>
+        protected virtual void TransformSamples(ElevationSample[] samples)
+        {
+        }
 
         private static (double StartLon, double StartLat, double EndLon, double EndLat) DecodeLine(byte[] wkb)
         {
@@ -363,5 +455,57 @@ public sealed class VisibilityAnalysisServiceTests
             => distanceFromStartMeters >= rimStartMeters && distanceFromStartMeters <= rimEndMeters
                 ? rimElevation
                 : baseElevation;
+    }
+
+    /// <summary>
+    /// Valid terrain everywhere, then marks the observer (first sample) and/or
+    /// target (last sample) endpoint as no-data, modeling an observer/target
+    /// that falls on a no-data pixel or outside the raster coverage.
+    /// </summary>
+    private sealed class EndpointNoDataElevationService(
+        bool observerNoData,
+        bool targetNoData,
+        double baseElevation) : TerrainElevationServiceBase
+    {
+        protected override double? ElevationAt(double lon, double lat, double distanceFromStartMeters)
+            => baseElevation;
+
+        protected override void TransformSamples(ElevationSample[] samples)
+        {
+            if (samples.Length == 0)
+            {
+                return;
+            }
+
+            if (observerNoData)
+            {
+                samples[0] = samples[0] with { Elevation = null, NoData = true };
+            }
+
+            if (targetNoData)
+            {
+                samples[^1] = samples[^1] with { Elevation = null, NoData = true };
+            }
+        }
+    }
+
+    /// <summary>
+    /// Valid terrain at both endpoints but no-data across the interior of the
+    /// profile, exercising the best-effort <c>HasNoDataSamples</c> flag.
+    /// </summary>
+    private sealed class InteriorNoDataElevationService(double baseElevation) : TerrainElevationServiceBase
+    {
+        protected override double? ElevationAt(double lon, double lat, double distanceFromStartMeters)
+            => baseElevation;
+
+        protected override void TransformSamples(ElevationSample[] samples)
+        {
+            // Keep the first and last samples (the observer/target endpoints)
+            // valid; null out every interior sample.
+            for (var i = 1; i < samples.Length - 1; i++)
+            {
+                samples[i] = samples[i] with { Elevation = null, NoData = true };
+            }
+        }
     }
 }
