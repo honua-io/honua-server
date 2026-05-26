@@ -817,6 +817,8 @@ public static class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/GPServer"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}"),
         new("POST", "/rest/services/{serviceId}/GPServer/{taskName}"),
+        new("POST", "/rest/services/{serviceId}/GPServer/{taskName}/execute"),
+        new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/execute"),
         new("POST", "/rest/services/{serviceId}/GPServer/{taskName}/submitJob"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/submitJob"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}"),
