@@ -46,6 +46,12 @@ public sealed record MetadataV2ObjectMetadata
     public string Name { get; init; } = string.Empty;
 
     /// <summary>
+    /// Optional namespace for grouping metadata entities.
+    /// </summary>
+    [JsonPropertyName("namespace")]
+    public string? Namespace { get; init; }
+
+    /// <summary>
     /// Human-readable display title.
     /// </summary>
     [JsonPropertyName("title")]
@@ -82,6 +88,12 @@ public sealed record MetadataV2ObjectMetadata
     /// </summary>
     [JsonPropertyName("updatedAt")]
     public DateTimeOffset? UpdatedAt { get; init; }
+
+    /// <summary>
+    /// Entity generation for optimistic comparison and release planning.
+    /// </summary>
+    [JsonPropertyName("generation")]
+    public long? Generation { get; init; }
 
     /// <summary>
     /// Free-form discovery keywords. Mapped to OGC-API-Records.keywords,
@@ -146,6 +158,84 @@ public sealed record MetadataV2ObjectMetadata
     /// </summary>
     [JsonPropertyName("links")]
     public IReadOnlyList<MetadataV2Link> Links { get; init; } = Array.Empty<MetadataV2Link>();
+}
+
+/// <summary>
+/// Lifecycle and operational status for Metadata v2 graph artifacts.
+/// </summary>
+public sealed record MetadataV2Status
+{
+    /// <summary>
+    /// Declared lifecycle status.
+    /// </summary>
+    [JsonPropertyName("lifecycle")]
+    public MetadataV2LifecycleStatus Lifecycle { get; init; } = MetadataV2LifecycleStatus.Draft;
+
+    /// <summary>
+    /// Observed operational state.
+    /// </summary>
+    [JsonPropertyName("state")]
+    public MetadataV2OperationalState State { get; init; } = MetadataV2OperationalState.Unknown;
+
+    /// <summary>
+    /// Optional status message safe to expose in metadata APIs.
+    /// </summary>
+    [JsonPropertyName("message")]
+    public string? Message { get; init; }
+
+    /// <summary>
+    /// Last time the status was observed or changed.
+    /// </summary>
+    [JsonPropertyName("observedAt")]
+    public DateTimeOffset? ObservedAt { get; init; }
+
+    /// <summary>
+    /// Additional typed conditions attached to the artifact.
+    /// </summary>
+    [JsonPropertyName("conditions")]
+    public IReadOnlyList<MetadataV2Condition> Conditions { get; init; } = Array.Empty<MetadataV2Condition>();
+}
+
+/// <summary>
+/// A status condition for a Metadata v2 graph artifact.
+/// </summary>
+public sealed record MetadataV2Condition
+{
+    /// <summary>
+    /// Stable condition type.
+    /// </summary>
+    [JsonPropertyName("type")]
+    public required string Type { get; init; }
+
+    /// <summary>
+    /// Condition state, commonly <c>true</c>, <c>false</c>, or <c>unknown</c>.
+    /// </summary>
+    [JsonPropertyName("status")]
+    public required string Status { get; init; }
+
+    /// <summary>
+    /// Machine-readable reason for the condition state.
+    /// </summary>
+    [JsonPropertyName("reason")]
+    public string? Reason { get; init; }
+
+    /// <summary>
+    /// Safe human-readable condition message.
+    /// </summary>
+    [JsonPropertyName("message")]
+    public string? Message { get; init; }
+
+    /// <summary>
+    /// Generation observed when this condition was produced.
+    /// </summary>
+    [JsonPropertyName("observedGeneration")]
+    public long? ObservedGeneration { get; init; }
+
+    /// <summary>
+    /// Time when the condition last changed.
+    /// </summary>
+    [JsonPropertyName("lastTransitionTime")]
+    public DateTimeOffset? LastTransitionTime { get; init; }
 }
 
 /// <summary>

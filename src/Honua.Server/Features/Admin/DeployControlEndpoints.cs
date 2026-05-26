@@ -316,18 +316,39 @@ internal static class DeployControlEndpoints
         [FromServices] DeployWorkflowService deployWorkflowService,
         HttpContext context)
     {
-        var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
-        var approvalResult = gate.EvaluateApproval(
-            context, OperatorResourceType.Deployment, OperatorOperation.Execute, isDestructive: true);
-        if (approvalResult != null) return approvalResult;
-
         try
         {
+            var existing = await deployWorkflowService.GetAsync(operationId, context.RequestAborted).ConfigureAwait(false);
+            if (existing == null)
+            {
+                return ProblemDetailsHelpers.CreateAdminProblem(
+                    StatusCodes.Status404NotFound,
+                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status404NotFound),
+                    $"Deploy operation '{operationId}' was not found.");
+            }
+
+            var rollbackPlan = existing.MetadataRelease?.RollbackPlan;
+            var isDestructive = rollbackPlan?.IsDataAffecting ?? true;
+            var requiresExplicitApproval = rollbackPlan?.RequiresExplicitApproval == true;
+            var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
+            var approvalResult = gate.EvaluateApproval(
+                context,
+                OperatorResourceType.Deployment,
+                OperatorOperation.Execute,
+                resourceId: operationId,
+                isDestructive: isDestructive,
+                requiresExplicitApproval: requiresExplicitApproval,
+                approvalPolicyRef: rollbackPlan?.ApprovalPolicyRef,
+                approvalReasonCodes: ResolveMetadataRollbackApprovalReasonCodes(rollbackPlan));
+            if (approvalResult != null) return approvalResult;
+
             var operation = await deployWorkflowService.RequestRollbackAsync(
                     operationId,
                     ResolveRequestedBy(context),
                     request?.Reason,
-                    context.RequestAborted)
+                    approvedMetadataReleaseIsDataAffecting: isDestructive,
+                    approvedMetadataReleaseRequiresApproval: isDestructive || requiresExplicitApproval,
+                    cancellationToken: context.RequestAborted)
                 .ConfigureAwait(false);
 
             if (operation == null)
@@ -339,6 +360,13 @@ internal static class DeployControlEndpoints
             }
 
             return Results.Json(MapOperationResponse(operation), DeployControlJsonContext.Default.DeployOperationResponse);
+        }
+        catch (ResourceConflictException)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status409Conflict,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status409Conflict),
+                DeployConflictMessage);
         }
         catch (InvalidOperationException)
         {
@@ -373,7 +401,7 @@ internal static class DeployControlEndpoints
             GeneratedAt = DateTimeOffset.UtcNow
         };
 
-    private static DeployOperationResponse MapOperationResponse(WorkflowOperationRecord operation)
+    internal static DeployOperationResponse MapOperationResponse(WorkflowOperationRecord operation)
         => new()
         {
             OperationId = operation.OperationId,
@@ -390,10 +418,56 @@ internal static class DeployControlEndpoints
             RequestedBy = operation.Audit.RequestedBy,
             Reason = operation.Audit.Reason,
             CorrelationId = operation.Audit.CorrelationId,
+            MetadataRelease = operation.MetadataRelease == null ? null : MapMetadataReleaseResponse(operation.MetadataRelease),
             CreatedAt = operation.CreatedAt,
             UpdatedAt = operation.UpdatedAt,
             CompletedAt = operation.CompletedAt
         };
+
+    private static MetadataReleaseContextResponse MapMetadataReleaseResponse(MetadataReleaseContext metadataRelease)
+        => new()
+        {
+            PackageId = metadataRelease.PackageId,
+            GitOperationId = metadataRelease.GitOperationId,
+            PrUrl = metadataRelease.PrUrl,
+            CommitSha = metadataRelease.CommitSha,
+            DesiredRevision = metadataRelease.DesiredRevision,
+            TargetEnvironment = metadataRelease.TargetEnvironment,
+            DeployOperationId = metadataRelease.DeployOperationId,
+            JobIds = metadataRelease.JobIds,
+            EvidenceRefs = metadataRelease.EvidenceRefs
+                .Select(MapEvidenceRefResponse)
+                .ToArray(),
+            CurrentStage = metadataRelease.CurrentStage.ToString(),
+            RollbackPlan = metadataRelease.RollbackPlan == null ? null : MapRollbackPlanResponse(metadataRelease.RollbackPlan),
+            Blockers = metadataRelease.Blockers,
+            Warnings = metadataRelease.Warnings
+        };
+
+    private static MetadataRollbackPlanResponse MapRollbackPlanResponse(MetadataRollbackPlan rollbackPlan)
+        => new()
+        {
+            Class = rollbackPlan.Class.ToString(),
+            IsDataAffecting = rollbackPlan.IsDataAffecting,
+            RequiresExplicitApproval = rollbackPlan.RequiresExplicitApproval || rollbackPlan.IsDataAffecting,
+            Steps = rollbackPlan.Steps,
+            EvidenceRequired = rollbackPlan.EvidenceRequired,
+            ApprovalPolicyRef = rollbackPlan.ApprovalPolicyRef
+        };
+
+    private static MetadataEvidenceRefResponse MapEvidenceRefResponse(MetadataEvidenceRef evidenceRef)
+        => new()
+        {
+            Kind = evidenceRef.Kind,
+            RefId = evidenceRef.RefId,
+            Uri = evidenceRef.Uri,
+            At = evidenceRef.At
+        };
+
+    private static string[] ResolveMetadataRollbackApprovalReasonCodes(MetadataRollbackPlan? rollbackPlan)
+        => rollbackPlan?.RequiresExplicitApproval == true
+            ? ["metadata-rollback-explicit-approval"]
+            : Array.Empty<string>();
 
     private static DeployPlanTargetResponse MapTargetResponse(DeployOperationSpec spec)
         => new()

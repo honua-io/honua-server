@@ -379,6 +379,9 @@ public sealed class DeployOperationResponse
     [JsonPropertyName("target")]
     public DeployPlanTargetResponse? Target { get; init; }
 
+    [JsonPropertyName("metadataRelease")]
+    public MetadataReleaseContextResponse? MetadataRelease { get; init; }
+
     [JsonPropertyName("providerOperationId")]
     public string? ProviderOperationId { get; init; }
 
@@ -414,4 +417,91 @@ public sealed class DeployOperationResponse
 
     [JsonPropertyName("completedAt")]
     public DateTimeOffset? CompletedAt { get; init; }
+}
+
+/// <summary>
+/// Metadata release lifecycle context embedded in a workflow operation response.
+/// </summary>
+public sealed class MetadataReleaseContextResponse
+{
+    [JsonPropertyName("packageId")]
+    public string PackageId { get; init; } = string.Empty;
+
+    [JsonPropertyName("gitOperationId")]
+    public string? GitOperationId { get; init; }
+
+    [JsonPropertyName("prUrl")]
+    public string? PrUrl { get; init; }
+
+    [JsonPropertyName("commitSha")]
+    public string? CommitSha { get; init; }
+
+    [JsonPropertyName("desiredRevision")]
+    public string DesiredRevision { get; init; } = string.Empty;
+
+    [JsonPropertyName("targetEnvironment")]
+    public string TargetEnvironment { get; init; } = string.Empty;
+
+    [JsonPropertyName("deployOperationId")]
+    public string? DeployOperationId { get; init; }
+
+    [JsonPropertyName("jobIds")]
+    public IReadOnlyList<string> JobIds { get; init; } = Array.Empty<string>();
+
+    [JsonPropertyName("evidenceRefs")]
+    public IReadOnlyList<MetadataEvidenceRefResponse> EvidenceRefs { get; init; } = Array.Empty<MetadataEvidenceRefResponse>();
+
+    [JsonPropertyName("currentStage")]
+    public string CurrentStage { get; init; } = string.Empty;
+
+    [JsonPropertyName("rollbackPlan")]
+    public MetadataRollbackPlanResponse? RollbackPlan { get; init; }
+
+    [JsonPropertyName("blockers")]
+    public IReadOnlyList<string> Blockers { get; init; } = Array.Empty<string>();
+
+    [JsonPropertyName("warnings")]
+    public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
+}
+
+/// <summary>
+/// Rollback plan embedded in a metadata release operation response.
+/// </summary>
+public sealed class MetadataRollbackPlanResponse
+{
+    [JsonPropertyName("class")]
+    public string Class { get; init; } = string.Empty;
+
+    [JsonPropertyName("isDataAffecting")]
+    public bool IsDataAffecting { get; init; }
+
+    [JsonPropertyName("requiresExplicitApproval")]
+    public bool RequiresExplicitApproval { get; init; }
+
+    [JsonPropertyName("steps")]
+    public IReadOnlyList<string> Steps { get; init; } = Array.Empty<string>();
+
+    [JsonPropertyName("evidenceRequired")]
+    public IReadOnlyList<string> EvidenceRequired { get; init; } = Array.Empty<string>();
+
+    [JsonPropertyName("approvalPolicyRef")]
+    public string? ApprovalPolicyRef { get; init; }
+}
+
+/// <summary>
+/// Metadata release evidence reference embedded in operation responses.
+/// </summary>
+public sealed class MetadataEvidenceRefResponse
+{
+    [JsonPropertyName("kind")]
+    public string Kind { get; init; } = string.Empty;
+
+    [JsonPropertyName("refId")]
+    public string RefId { get; init; } = string.Empty;
+
+    [JsonPropertyName("uri")]
+    public string? Uri { get; init; }
+
+    [JsonPropertyName("at")]
+    public DateTimeOffset At { get; init; }
 }

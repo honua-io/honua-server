@@ -141,7 +141,7 @@ public sealed class MetadataCompatibilityPrevalidationServiceTests
                             {
                                 SemanticId = "field.parcels.apn",
                                 Name = "apn",
-                                Type = "string",
+                                Type = MetadataV2FieldType.String,
                             },
                         ]
                         : Array.Empty<MetadataV2Field>(),

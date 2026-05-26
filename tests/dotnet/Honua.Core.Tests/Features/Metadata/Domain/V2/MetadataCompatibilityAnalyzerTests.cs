@@ -754,8 +754,16 @@ public sealed class MetadataCompatibilityAnalyzerTests
         string publicationServiceId = "svc.features",
         IReadOnlyList<MetadataV2StorageBindingCapability>? storageCapabilities = null)
     {
-        var spatial = JsonSerializer.Deserialize<JsonElement>(
-            $$"""{"srid":{{srid}},"geometryType":"Point"}""");
+        var spatial = new MetadataV2ResourceSpatial
+        {
+            SpatialReference = new MetadataV2SpatialReference
+            {
+                Srid = srid,
+                Crs = FormattableString.Invariant($"EPSG:{srid}"),
+                IsGeographic = srid == 4326,
+            },
+            GeometryType = MetadataV2GeometryType.Point,
+        };
 
         var resources = new List<MetadataV2Resource>();
         if (includeResource)
@@ -864,7 +872,7 @@ public sealed class MetadataCompatibilityAnalyzerTests
         {
             SemanticId = "field.parcels.apn",
             Name = "apn",
-            Type = "string",
+            Type = MetadataV2FieldType.String,
             Nullable = false,
             SemanticRoles = identifierRole ? ["identifier.primary"] : Array.Empty<string>(),
         };

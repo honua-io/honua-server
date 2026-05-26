@@ -894,7 +894,7 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
             {
                 SemanticId = "field.parcels.apn",
                 Name = "apn",
-                Type = "string",
+                Type = MetadataV2FieldType.String,
             },
         ];
     }
