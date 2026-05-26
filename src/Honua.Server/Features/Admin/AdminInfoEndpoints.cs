@@ -37,31 +37,51 @@ internal static class AdminInfoEndpoints
             .Produces<ApiResponse<AdminCapabilitiesResponse>>();
     }
 
-    private static IResult HandleGetVersion()
+    private static IResult HandleGetVersion(HttpContext context)
     {
-        var response = new AdminVersionResponse
+        try
         {
-            Version = GetServerVersion(),
-            MetadataApiVersion = MetadataV2Constants.ApiVersion,
-            MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
-            ServerTime = DateTimeOffset.UtcNow
-        };
-        return Results.Json(
-            ApiResponse<AdminVersionResponse>.CreateSuccess(response),
-            AdminInfoJsonContext.Default.ApiResponseAdminVersionResponse);
+            var response = new AdminVersionResponse
+            {
+                Version = GetServerVersion(),
+                MetadataApiVersion = MetadataV2Constants.ApiVersion,
+                MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
+                ServerTime = DateTimeOffset.UtcNow
+            };
+            return Results.Json(
+                ApiResponse<AdminVersionResponse>.CreateSuccess(response),
+                AdminInfoJsonContext.Default.ApiResponseAdminVersionResponse);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status500InternalServerError,
+                "Admin version metadata could not be generated.");
+        }
     }
 
-    private static IResult HandleGetCapabilities()
+    private static IResult HandleGetCapabilities(HttpContext context)
     {
-        var response = new AdminCapabilitiesResponse
+        try
         {
-            MetadataApiVersion = MetadataV2Constants.ApiVersion,
-            MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
-            ServerVersion = GetServerVersion()
-        };
-        return Results.Json(
-            ApiResponse<AdminCapabilitiesResponse>.CreateSuccess(response),
-            AdminInfoJsonContext.Default.ApiResponseAdminCapabilitiesResponse);
+            var response = new AdminCapabilitiesResponse
+            {
+                MetadataApiVersion = MetadataV2Constants.ApiVersion,
+                MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
+                ServerVersion = GetServerVersion()
+            };
+            return Results.Json(
+                ApiResponse<AdminCapabilitiesResponse>.CreateSuccess(response),
+                AdminInfoJsonContext.Default.ApiResponseAdminCapabilitiesResponse);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status500InternalServerError,
+                "Admin capability metadata could not be generated.");
+        }
     }
 
     private static string GetServerVersion()
