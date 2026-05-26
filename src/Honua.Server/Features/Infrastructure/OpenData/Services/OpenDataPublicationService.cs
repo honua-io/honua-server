@@ -680,13 +680,11 @@ internal sealed class OpenDataPublicationService
             Coordinates =
             [
                 [
-                    [
-                        [spatial.MinX, spatial.MinY],
-                        [spatial.MinX, spatial.MaxY],
-                        [spatial.MaxX, spatial.MaxY],
-                        [spatial.MaxX, spatial.MinY],
-                        [spatial.MinX, spatial.MinY]
-                    ]
+                    [spatial.MinX, spatial.MinY],
+                    [spatial.MinX, spatial.MaxY],
+                    [spatial.MaxX, spatial.MaxY],
+                    [spatial.MaxX, spatial.MinY],
+                    [spatial.MinX, spatial.MinY]
                 ]
             ]
         };

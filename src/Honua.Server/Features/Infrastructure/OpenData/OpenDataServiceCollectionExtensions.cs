@@ -31,8 +31,23 @@ internal static class OpenDataServiceCollectionExtensions
         {
             services.TryAddSingleton<IOpenDataStore, InMemoryOpenDataStore>();
         }
+        else if (UsesNonPostgresProvider(configuration) &&
+                 !services.Any(static descriptor => descriptor.ServiceType == typeof(IOpenDataStore)))
+        {
+            throw new InvalidOperationException(
+                "OpenData:Enabled=true requires a registered IOpenDataStore or OpenData:UseInMemoryStore=true.");
+        }
 
         services.TryAddScoped<OpenDataPublicationService>();
         return services;
+    }
+
+    private static bool UsesNonPostgresProvider(IConfiguration configuration)
+    {
+        var provider = configuration.GetValue<string>("DataSource:Provider");
+        return !string.IsNullOrWhiteSpace(provider) &&
+               !provider.Equals("postgres", StringComparison.OrdinalIgnoreCase) &&
+               !provider.Equals("postgresql", StringComparison.OrdinalIgnoreCase) &&
+               !provider.Equals("postgis", StringComparison.OrdinalIgnoreCase);
     }
 }

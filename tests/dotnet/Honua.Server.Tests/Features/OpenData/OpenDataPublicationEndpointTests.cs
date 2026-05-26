@@ -272,10 +272,27 @@ public sealed class OpenDataPublicationEndpointTests : IAsyncLifetime
 
         var catalogResponse = await _publicClient.GetAsync("/open-data/catalog.json");
         Assert.Equal(HttpStatusCode.OK, catalogResponse.StatusCode);
+        var catalogPayload = await catalogResponse.Content.ReadAsStringAsync();
         var catalog = JsonSerializer.Deserialize<DcatCatalogResponse>(
-            await catalogResponse.Content.ReadAsStringAsync(),
+            catalogPayload,
             JsonOptions)!;
         Assert.Contains(catalog.Dataset, dataset => dataset.Identifier.EndsWith(completeItem.Id, StringComparison.Ordinal));
+        using (var catalogDocument = JsonDocument.Parse(catalogPayload))
+        {
+            var completeDataset = catalogDocument.RootElement
+                .GetProperty("dataset")
+                .EnumerateArray()
+                .Single(dataset => dataset.GetProperty("identifier").GetString()!
+                    .EndsWith(completeItem.Id, StringComparison.Ordinal));
+            var coordinates = completeDataset
+                .GetProperty("spatial")
+                .GetProperty("coordinates");
+            var firstRing = coordinates[0];
+            var firstPosition = firstRing[0];
+            Assert.Equal(JsonValueKind.Number, firstPosition[0].ValueKind);
+            Assert.Equal(-158.3, firstPosition[0].GetDouble(), precision: 6);
+            Assert.Equal(21.2, firstPosition[1].GetDouble(), precision: 6);
+        }
 
         var statusResponse = await _adminClient.GetAsync("/api/v1/admin/open-data/dcat/status");
         Assert.Equal(HttpStatusCode.OK, statusResponse.StatusCode);
@@ -310,6 +327,11 @@ public sealed class OpenDataPublicationEndpointTests : IAsyncLifetime
             visibility: ConsoleVisibility.Public,
             title: "STAC Layer",
             description: "STAC publication source.");
+        var pageResponse = await _adminClient.PutAsJsonAsync(
+            $"/api/v1/admin/open-data/{item.Id}",
+            CompleteOpenDataPage("STAC Layer"),
+            JsonOptions);
+        Assert.Equal(HttpStatusCode.OK, pageResponse.StatusCode);
 
         var publishResponse = await _adminClient.PostAsJsonAsync("/api/v1/admin/stac/publications", new StacPublicationPublishRequest
         {
@@ -331,6 +353,10 @@ public sealed class OpenDataPublicationEndpointTests : IAsyncLifetime
             JsonOptions)!;
         Assert.Equal("stac-life", publicCollection.Id);
         Assert.Equal("Initial STAC", publicCollection.Title);
+        Assert.Equal("CC-BY-4.0", publicCollection.License);
+        Assert.Contains(publicCollection.Links, link =>
+            link.Rel == "license" &&
+            link.Href == "https://creativecommons.org/licenses/by/4.0/");
 
         var publicCollectionsResponse = await _publicClient.GetAsync("/stac/collections");
         Assert.Equal(HttpStatusCode.OK, publicCollectionsResponse.StatusCode);

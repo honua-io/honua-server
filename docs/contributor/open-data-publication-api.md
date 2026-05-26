@@ -8,7 +8,11 @@ content-store baseline: page and STAC publication state are persisted through
 dedicated `honua.open_data_pages` and
 `honua.open_data_stac_publications` tables; `InMemoryOpenDataStore` is an opt-in
 development/test fallback for hosts that do not register the PostgreSQL provider,
-selected with `OpenData:UseInMemoryStore=true`. Anonymous Open Data/DCAT/STAC
+selected with `OpenData:UseInMemoryStore=true`. Hosts that set
+`OpenData:Enabled=true` with an explicit non-PostgreSQL provider and without
+either a registered `IOpenDataStore` or the explicit in-memory fallback fail
+during service registration rather than discovering the missing store at request
+time. Anonymous Open Data/DCAT/STAC
 publication projection is controlled by the explicit deployment capability flag
 `OpenData:Enabled=true`; the default is disabled, and eligibility responses
 include `OpenDataDisabled` when the flag is off. The STAC controls create and
@@ -65,23 +69,31 @@ sending `null`; send replacement objects instead. Empty `tags`,
 `isPublished` controls whether the page is eligible for anonymous reads after
 policy and validation checks pass.
 
-`POST /api/v1/admin/stac/publications` returns `409 Conflict` when the target
-collection is already published, `400 Bad Request` with eligibility details
-when the source item is ineligible, and `404 Not Found` when the source item is
-missing. The published collection id is the request `collectionId` when
-supplied, otherwise a slug of the source item name, otherwise the item id
-(lowercased, with non-alphanumeric runs collapsed to single hyphens and capped
-at 120 characters). If a collection was previously unpublished, publishing the
-same collection id reuses the existing record and returns it to `published`.
-`DELETE` preserves the publication record with status `unpublished`;
-subsequent `GET` requests return that status instead of `404`.
+The publish collection id comes from the request `collectionId`, falling back
+to a slug of the source item name and then the item id, lowercased with
+non-alphanumeric runs collapsed to single hyphens and capped at 120 characters.
+`POST /api/v1/admin/stac/publications` returns `409 Conflict` when that
+collection is already published, or when the resolved collection id collides
+with an existing Metadata v2-backed STAC collection so Console open-data
+publications cannot shadow Metadata STAC collections. It returns `400 Bad
+Request` with eligibility details when the source item is ineligible, and `404
+Not Found` when the source item is missing. If a collection was previously
+unpublished, publishing the same collection id reuses the existing record and
+returns it to `published`. `DELETE` preserves the publication record with
+status `unpublished`; subsequent `GET` requests return that status instead of
+`404`.
 
 The STAC publication response is a Console control-plane readback:
 `collectionId`, `itemId`, `status`, `publicStacCollectionUrl`, optional
 title/description overrides, current eligibility when the source item still
 exists, and `updatedAt`. `GET /stac/collections/{collectionId}` returns the
 standards-shaped STAC Collection projection for published, eligible records and
-returns `404` after the record is unpublished or becomes ineligible.
+returns `404` after the record is unpublished or becomes ineligible. STAC
+collection `license` values are emitted as STAC-compatible identifiers: known
+open-data license URLs such as Creative Commons BY 4.0 are normalized to SPDX
+identifiers like `CC-BY-4.0`; unrecognized absolute license URLs fall back to
+`proprietary` in the STAC `license` field and are retained as a `rel=license`
+link.
 
 ## Eligibility
 
@@ -147,7 +159,7 @@ Open-data page fields map to DCAT/data.json and Schema.org Dataset as follows:
 | `tags` | `dataset[].keyword` | `keywords` |
 | `landingPage` | `dataset[].landingPage` | `url` |
 | `distributions` | `dataset[].distribution[]` | `distribution[]` |
-| `spatialCoverage` | GeoJSON `Polygon` in `dataset[].spatial` | not emitted separately |
+| `spatialCoverage` | GeoJSON `Polygon` in `dataset[].spatial` with `coordinates` encoded as rings of positions | not emitted separately |
 | `temporalCoverage` | `dataset[].temporal` | not emitted separately |
 | `provenanceReferences` | page projection only | page projection only |
 

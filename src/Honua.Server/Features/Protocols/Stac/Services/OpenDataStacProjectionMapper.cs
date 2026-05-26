@@ -31,6 +31,32 @@ internal static class OpenDataStacProjectionMapper
         var page = projection.Page;
         var stacBase = $"{baseUrl}/stac";
         var collectionUrl = $"{stacBase}/collections/{Uri.EscapeDataString(record.CollectionId)}";
+        var links = ImmutableArray.CreateBuilder<Link>();
+        links.Add(Link.Create(
+            href: collectionUrl,
+            rel: RelationTypes.Self,
+            type: MediaTypes.Json,
+            title: record.Title ?? record.CollectionId));
+        links.Add(Link.Create(
+            href: stacBase,
+            rel: StacConstants.StacRelations.Root,
+            type: MediaTypes.Json,
+            title: "STAC Catalog"));
+        links.Add(Link.Create(
+            href: stacBase,
+            rel: StacConstants.StacRelations.Parent,
+            type: MediaTypes.Json,
+            title: "STAC Catalog"));
+
+        var licenseUri = ResolveLicenseUri(page?.License);
+        if (licenseUri is not null)
+        {
+            links.Add(Link.Create(
+                href: licenseUri,
+                rel: "license",
+                type: MediaTypes.Html,
+                title: "License"));
+        }
 
         return new StacCollection
         {
@@ -38,26 +64,9 @@ internal static class OpenDataStacProjectionMapper
             Title = record.Title,
             Description = FirstNonEmpty(record.Description, record.Title, record.CollectionId)!,
             Keywords = page?.Tags.Count > 0 ? page.Tags.ToImmutableArray() : null,
-            License = FirstNonEmpty(page?.License, "proprietary")!,
+            License = ResolveStacLicense(page?.License),
             Extent = BuildExtent(page),
-            Links =
-            [
-                Link.Create(
-                    href: collectionUrl,
-                    rel: RelationTypes.Self,
-                    type: MediaTypes.Json,
-                    title: record.Title ?? record.CollectionId),
-                Link.Create(
-                    href: stacBase,
-                    rel: StacConstants.StacRelations.Root,
-                    type: MediaTypes.Json,
-                    title: "STAC Catalog"),
-                Link.Create(
-                    href: stacBase,
-                    rel: StacConstants.StacRelations.Parent,
-                    type: MediaTypes.Json,
-                    title: "STAC Catalog")
-            ]
+            Links = links.ToImmutable()
         };
     }
 
@@ -108,5 +117,61 @@ internal static class OpenDataStacProjectionMapper
         }
 
         return null;
+    }
+
+    private static string ResolveStacLicense(string? license)
+    {
+        var value = FirstNonEmpty(license);
+        if (value is null)
+        {
+            return "proprietary";
+        }
+
+        if (TryMapLicenseUriToSpdx(value, out var spdxIdentifier))
+        {
+            return spdxIdentifier;
+        }
+
+        return Uri.TryCreate(value, UriKind.Absolute, out _)
+            ? "proprietary"
+            : value;
+    }
+
+    private static string? ResolveLicenseUri(string? license)
+    {
+        var value = FirstNonEmpty(license);
+        return value is not null && Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+               (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            ? uri.ToString()
+            : null;
+    }
+
+    private static bool TryMapLicenseUriToSpdx(string value, out string spdxIdentifier)
+    {
+        spdxIdentifier = string.Empty;
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        var normalized = uri.GetLeftPart(UriPartial.Path).TrimEnd('/').ToLowerInvariant();
+        spdxIdentifier = normalized switch
+        {
+            "http://creativecommons.org/licenses/by/4.0" or
+            "https://creativecommons.org/licenses/by/4.0" => "CC-BY-4.0",
+            "http://creativecommons.org/licenses/by-sa/4.0" or
+            "https://creativecommons.org/licenses/by-sa/4.0" => "CC-BY-SA-4.0",
+            "http://creativecommons.org/licenses/by-nc/4.0" or
+            "https://creativecommons.org/licenses/by-nc/4.0" => "CC-BY-NC-4.0",
+            "http://creativecommons.org/publicdomain/zero/1.0" or
+            "https://creativecommons.org/publicdomain/zero/1.0" => "CC0-1.0",
+            "http://opensource.org/licenses/mit" or
+            "https://opensource.org/licenses/mit" or
+            "http://opensource.org/license/mit" or
+            "https://opensource.org/license/mit" => "MIT",
+            _ => string.Empty
+        };
+
+        return spdxIdentifier.Length > 0;
     }
 }

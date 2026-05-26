@@ -331,7 +331,7 @@ public sealed class DcatSpatialResponse
 
     /// <summary>GeoJSON coordinates in WGS84 longitude/latitude order.</summary>
     [JsonPropertyName("coordinates")]
-    public required double[][][][] Coordinates { get; init; }
+    public required double[][][] Coordinates { get; init; }
 }
 
 /// <summary>

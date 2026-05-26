@@ -30,7 +30,7 @@ public sealed class OpenDataServiceCollectionTests
     }
 
     [UnitTest]
-    public void AddOpenDataPublication_WhenCapabilityEnabledWithoutFallback_DoesNotRegisterStore()
+    public void AddOpenDataPublication_WhenCapabilityEnabledWithoutStore_ThrowsStartupError()
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -41,9 +41,8 @@ public sealed class OpenDataServiceCollectionTests
             .Build();
         var services = new ServiceCollection();
 
-        services.AddOpenDataPublication(configuration);
-
-        using var provider = services.BuildServiceProvider();
-        Assert.Null(provider.GetService<IOpenDataStore>());
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => services.AddOpenDataPublication(configuration));
+        Assert.Contains("OpenData:Enabled=true", exception.Message, StringComparison.Ordinal);
     }
 }
