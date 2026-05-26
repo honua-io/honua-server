@@ -19,6 +19,11 @@ internal static class ElevationServiceCollectionExtensions
         // an elevation service is available.
         services.TryAddScoped<ISceneAnalysisService>(sp =>
             new SceneAnalysisService(sp.GetRequiredService<IElevationService>()));
+        // 3D visibility analysis (line-of-sight + viewshed) builds on the
+        // elevation profile sampler and is provider-agnostic, so it is
+        // registered wherever an elevation service is available.
+        services.TryAddScoped<IVisibilityAnalysisService>(sp =>
+            new VisibilityAnalysisService(sp.GetRequiredService<IElevationService>()));
         return services;
     }
 

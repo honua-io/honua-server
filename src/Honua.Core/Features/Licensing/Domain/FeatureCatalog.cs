@@ -178,6 +178,10 @@ public static class FeatureCatalog
             HonuaEdition.Pro, "Compute solar position from date/time/location and cast the shadow extent against the elevation surface."),
         new("analytics.slice", "Slice/Volumetric Analysis", Categories.Analytics,
             HonuaEdition.Pro, "Intersect a vertical slice plane with the elevation surface and return cross-section metadata."),
+        new("analytics.line-of-sight", "Line of Sight", Categories.Analytics,
+            HonuaEdition.Pro, "Determine terrain visibility between an observer and target over the elevation surface."),
+        new("analytics.viewshed", "Viewshed", Categories.Analytics,
+            HonuaEdition.Pro, "Compute the radially-sampled visible area around an observer over the elevation surface."),
 
         // Temporal — Community (basic discovery)
         new("temporal.filtering", "Temporal Query Filtering", Categories.Temporal,
