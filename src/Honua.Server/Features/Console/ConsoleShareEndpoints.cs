@@ -267,12 +267,13 @@ internal static class ConsoleShareEndpoints
         MintPublicLinkRequest request,
         [FromServices] IConsoleContentStore contentStore,
         [FromServices] IConsoleShareStore shareStore,
+        [FromServices] TimeProvider timeProvider,
         [FromServices] ILogger<ConsoleShareEndpointsLogCategory> logger,
         HttpContext context)
     {
         try
         {
-            var now = DateTimeOffset.UtcNow;
+            var now = timeProvider.GetUtcNow();
             if (request.ExpiresAt is { } expiry && expiry <= now)
             {
                 return TypedResults.BadRequest(ApiResponse<object>.Failure("expiresAt must be in the future."));

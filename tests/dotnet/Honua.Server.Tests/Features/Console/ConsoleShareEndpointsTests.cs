@@ -203,11 +203,37 @@ public sealed class ConsoleShareEndpointsTests : IAsyncLifetime
 
         var privateToken = await MintPublicLinkAsync(item.Id, expiresAt: null);
         await SetAccessTierAsync(item.Id, ConsoleShareAccessTier.Private);
+        var downgradedResponse = await _adminClient.GetAsync($"/api/v1/console/content/{item.Id}/share");
+        Assert.Equal(HttpStatusCode.OK, downgradedResponse.StatusCode);
+        var downgradedProjection = await ReadDataAsync<ConsoleShareProjection>(downgradedResponse);
+        Assert.Equal(ConsoleShareAccessTier.Private, downgradedProjection.AccessTier);
+        Assert.False(downgradedProjection.PublicLinkEnabled);
+        Assert.False(downgradedProjection.AnonymousEligible);
+        Assert.Contains(downgradedProjection.PublicLinkTokens, token => token.TokenId == privateToken.TokenId);
+
         var privateResponse = await _anonymousClient.GetAsync($"/api/v1/console/share/link/{privateToken.Token}");
         await AssertNonLeakingNotFoundAsync(privateResponse, item.Id, item.Title);
 
         var invalidResponse = await _anonymousClient.GetAsync("/api/v1/console/share/link/not-a-real-token");
         await AssertNonLeakingNotFoundAsync(invalidResponse, item.Id, item.Title);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/content/{id}/share/link")]
+    public async Task MintPublicLink_RejectsExpiryPastInjectedClock()
+    {
+        var item = await CreateItemAsync("share-link-clock", ConsoleVisibility.Personal, title: "Clocked public link");
+        await SetAccessTierAsync(item.Id, ConsoleShareAccessTier.PublicLink);
+
+        _clock.Advance(TimeSpan.FromDays(2));
+        var response = await _adminClient.PostAsJsonAsync(
+            $"/api/v1/console/content/{item.Id}/share/link",
+            new MintPublicLinkRequest { ExpiresAt = DateTimeOffset.UtcNow.AddHours(1) },
+            JsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("expiresAt", body, StringComparison.Ordinal);
     }
 
     [IntegrationTest]

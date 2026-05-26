@@ -46,13 +46,17 @@ internal static class ConsoleShareMapper
         IReadOnlyList<ConsoleContentAction> callerActions)
     {
         var effectiveTier = ResolveEffectiveTier(state, item);
+        var publicLinkTierEnabled = effectiveTier is ConsoleShareAccessTier.PublicLink or ConsoleShareAccessTier.PublicIndexed;
         var publicLinkEnabled = false;
-        foreach (var token in publicLinkTokens)
+        if (publicLinkTierEnabled)
         {
-            if (!token.IsExpired)
+            foreach (var token in publicLinkTokens)
             {
-                publicLinkEnabled = true;
-                break;
+                if (!token.IsExpired)
+                {
+                    publicLinkEnabled = true;
+                    break;
+                }
             }
         }
 
