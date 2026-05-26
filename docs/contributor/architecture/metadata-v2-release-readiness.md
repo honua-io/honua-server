@@ -234,6 +234,15 @@ Release evidence:
   non-gated `MetadataOnly` to either explicit-approval metadata-only or
   data-affecting could otherwise roll back under a stale non-destructive
   approval.
+- Approval-gated rejections use the shared approval-denied problem shape
+  (`403 application/problem+json`, `type: urn:honua:approval-required`) with a
+  `policyRef` and machine-readable `reasonCodes`. A metadata rollback whose plan
+  sets `requiresExplicitApproval: true` (explicit-approval metadata-only and
+  data-affecting classes) reports reason code `metadata-rollback-explicit-approval`
+  and `policyRef` set to the plan's `approvalPolicyRef` or, when absent, the
+  `operator.explicit.deployment` default; a data-affecting rollback with no stored
+  plan falls back to the destructive gate (`operator.destructive.deployment`,
+  `destructive-action-requires-approval`).
 - The admin endpoint has tests for package-ID timeline state with rollback plan,
   operation-ID failure state with rollback plan, the metadata-only
   non-destructive path, metadata-only explicit approval gating, data-affecting
