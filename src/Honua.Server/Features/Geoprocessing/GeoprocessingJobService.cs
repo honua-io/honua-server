@@ -206,7 +206,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         }
 
         var workload = await ResolveWorkloadAsync(cancellationToken).ConfigureAwait(false);
-        var spec = BuildSpec(plan, specParams, workload);
+        var requiredRuntimeProfile = ResolveRequiredRuntimeProfile(plan);
+        var spec = BuildSpec(plan, specParams, workload, requiredRuntimeProfile);
 
         var jobRecord = new ExecutionJobRecord
         {
@@ -284,10 +285,48 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return definitions.FirstOrDefault(d => d.Kind == ExecutionJobKind.Geoprocessing);
     }
 
+    /// <summary>
+    /// Resolves the runtime profile a job for <paramref name="plan"/> must run
+    /// under, read DATA-DRIVEN from the process catalog rather than hard-coded
+    /// here. Each <see cref="ProcessDefinition"/> declares its required
+    /// <see cref="ProcessDefinition.RuntimeProfile"/> (managed by default; native
+    /// for the out-of-process GDAL <c>gdal.*</c> family). The effective job profile
+    /// is the first non-managed profile among the plan's processes — a single plan
+    /// step that requires the native worker forces the whole job onto the native
+    /// profile so the claim fence routes it to the GDAL worker and away from the
+    /// lean dispatcher. Returns <c>null</c> (managed/default) when no process
+    /// requires a specialized profile, leaving the spec profile-agnostic.
+    /// </summary>
+    private string? ResolveRequiredRuntimeProfile(AnalysisPlan plan)
+    {
+        foreach (var step in plan.Steps)
+        {
+            if (string.IsNullOrWhiteSpace(step.ProcessId))
+            {
+                continue;
+            }
+
+            var definition = _processCatalog.GetProcess(step.ProcessId);
+            if (definition == null)
+            {
+                continue;
+            }
+
+            var profile = RuntimeProfiles.Normalize(definition.RuntimeProfile);
+            if (!string.Equals(profile, RuntimeProfiles.Managed, StringComparison.Ordinal))
+            {
+                return profile;
+            }
+        }
+
+        return null;
+    }
+
     private static ExecutionJobSpec BuildSpec(
         AnalysisPlan plan,
         Dictionary<string, string> specParams,
-        ExecutionJobDefinition? workload)
+        ExecutionJobDefinition? workload,
+        string? requiredRuntimeProfile)
     {
         specParams[ExecutionJobParameterKeys.GeoprocessingPlanId] = plan.PlanId;
         var processDefinitions = plan.Steps
@@ -341,6 +380,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 TargetKind = BatchComputeTargetKind.KubernetesJob,
                 Backend = LocalBatchComputeBackend.BackendId,
                 WorkloadName = $"geoprocessing:{plan.PlanId}",
+                // Data-driven native-profile stamping: a catalog process that
+                // requires a specialized worker (the gdal.* native family) forces
+                // this profile so the claim fence routes the job to the GDAL worker
+                // and away from the lean dispatcher. Null leaves the job managed/default.
+                RuntimeProfile = requiredRuntimeProfile,
                 Parameters = specParams
             };
         }
@@ -358,7 +402,10 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             WorkloadId = workload.WorkloadId,
             WorkloadName = workload.WorkloadName,
             Artifact = workload.ArtifactReference,
-            RuntimeProfile = workload.RuntimeProfile,
+            // A catalog-required native profile takes precedence over the workload's
+            // declared profile so a native gdal.* step still routes to the GDAL worker;
+            // otherwise fall back to the workload's own runtime profile.
+            RuntimeProfile = requiredRuntimeProfile ?? workload.RuntimeProfile,
             Parameters = specParams
         };
     }

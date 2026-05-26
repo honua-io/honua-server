@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Geoprocessing.Execution;
 using Honua.TestKit.Attributes;
@@ -102,8 +103,14 @@ public sealed class CatalogExecutableConformanceTests
         "conversion.feature-project",
     };
 
-    // Processes routed to the GDAL native worker (a later stream). NOT executable
-    // in the GDAL-free serving image; MUST be absent from the managed dispatcher.
+    // Processes routed to the GDAL native worker. NOT executable in the GDAL-free
+    // serving image; MUST be absent from the managed dispatcher. The gdal.* family
+    // are the processes the heavyweight worker's executors actually handle
+    // (GdalRasterReprojectJobExecutor / GdalVectorConvertJobExecutor) and are the
+    // only catalog entries that declare RuntimeProfile = native; the raster.* /
+    // surface.* / conversion.raster-* idioms are catalog-advertised native-routed
+    // operations whose canonical execution likewise belongs to the worker, not the
+    // lean dispatcher.
     private static readonly string[] RoutedToNativeProcessIds =
     {
         "surface.slope",
@@ -119,6 +126,10 @@ public sealed class CatalogExecutableConformanceTests
         "raster.zonal-statistics",
         "conversion.raster-format",
         "conversion.raster-reproject",
+        // Native GDAL worker processes (executable in the out-of-process worker,
+        // NOT in the lean dispatcher handler map).
+        "gdal.gdalwarp",
+        "gdal.ogr2ogr",
     };
 
     [UnitTest]
@@ -211,6 +222,53 @@ public sealed class CatalogExecutableConformanceTests
             executable.Should().Contain(
                 processId,
                 $"every advertised geometry.* process must be job-executable; '{processId}' is missing an executor");
+        }
+    }
+
+    [UnitTest]
+    public void NativeRoutedGdalProcesses_DeclareTheNativeRuntimeProfile_AndAreAbsentFromTheManagedDispatcher()
+    {
+        // The data-driven native-profile contract: only the gdal.* family declares
+        // RuntimeProfile = native (the submit path reads ProcessDefinition.RuntimeProfile
+        // to stamp the spec and route the job to the out-of-process GDAL worker). The
+        // worker's own test project asserts the worker dispatcher routes exactly these
+        // ids; here we lock in the catalog declaration AND that the lean dispatcher has
+        // no executor for them, so the routing decision and the GDAL-free baseline agree.
+        var gdalProcessIds = new[] { "gdal.gdalwarp", "gdal.ogr2ogr" };
+        var managedExecutable = DispatcherSupportedProcessIds();
+
+        foreach (var processId in gdalProcessIds)
+        {
+            var definition = _catalog.GetProcess(processId);
+            definition.Should().NotBeNull($"the catalog must advertise native process '{processId}'");
+            definition!.RuntimeProfile.Should().Be(
+                RuntimeProfiles.Native,
+                $"'{processId}' executes out-of-process in the GDAL worker, so it must declare the native runtime profile for the submit path to stamp the spec");
+            RoutedToNativeProcessIds.Should().Contain(processId);
+            managedExecutable.Should().NotContain(
+                processId,
+                $"'{processId}' is native-routed and must NOT have an executor in the GDAL-free managed dispatcher");
+        }
+    }
+
+    [UnitTest]
+    public void EveryManagedClassifiedProcess_DeclaresTheManagedRuntimeProfile()
+    {
+        // Symmetry guard: nothing outside the native-routed bucket may claim the
+        // native profile, so a misclassified native declaration cannot silently
+        // strand a job on the wrong worker.
+        var nativeRouted = RoutedToNativeProcessIds.ToHashSet(StringComparer.Ordinal);
+
+        foreach (var process in _catalog.ListProcesses())
+        {
+            if (nativeRouted.Contains(process.ProcessId))
+            {
+                continue;
+            }
+
+            RuntimeProfiles.Normalize(process.RuntimeProfile).Should().Be(
+                RuntimeProfiles.Managed,
+                $"'{process.ProcessId}' is not routed to the native worker, so it must run under the managed/default profile");
         }
     }
 

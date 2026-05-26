@@ -35,14 +35,16 @@ public sealed class ProcessCatalogTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
-    public void Catalog_ListProcesses_ReturnsExactly52BuiltIns()
+    public void Catalog_ListProcesses_ReturnsExactly54BuiltIns()
     {
         var all = _catalog.ListProcesses();
 
         // 38 original trunk processes + 13 GeoETL transform/source/sink processes
         // reconciled from feat/geoetl-baseline + 1 managed spatial-join
-        // (analytics.spatial-join-managed) added for the workflow/codemod job path.
-        all.Should().HaveCount(52);
+        // (analytics.spatial-join-managed) added for the workflow/codemod job path
+        // + 2 native-profile GDAL worker processes (gdal.gdalwarp, gdal.ogr2ogr)
+        // reconciled from feat/gdal-heavy-worker.
+        all.Should().HaveCount(54);
         all.Select(p => p.ProcessId).Should().OnlyHaveUniqueItems();
     }
 

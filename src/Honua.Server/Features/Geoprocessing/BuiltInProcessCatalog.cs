@@ -3,6 +3,7 @@
 
 using System.Collections.Frozen;
 using System.Collections.Immutable;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -867,6 +868,52 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("batchId", "Batch Id", "Run batch id tagged on every row. Defaults to the operation id.", ProcessParameterValueType.Text),
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+
+        // -----------------------------------------------------------------------
+        // Native GDAL worker operations (2)
+        // Reconciled from feat/gdal-heavy-worker onto the #1185 contract. These
+        // are the ONLY catalog processes that declare RuntimeProfile = native:
+        // they execute OUT-OF-PROCESS in the heavyweight GDAL worker image
+        // (gdalwarp / ogr2ogr via subprocess), never in the lean GDAL-free serving
+        // image. The geoprocessing submit path reads ProcessDefinition.RuntimeProfile
+        // to stamp ExecutionJobSpec.RuntimeProfile = "native", so the claim fence
+        // routes the job to the GDAL worker and away from the lean dispatcher (which
+        // has no executor for these ids). They are the native counterparts to the
+        // managed geometry.project / conversion.* idioms, covering the PROJ-backed
+        // raster reprojection and OGR vector conversions the managed readers cannot
+        // perform. The worker's executors handle exactly these ids
+        // (GdalRasterReprojectJobExecutor.HandledProcessId / GdalVectorConvertJobExecutor.HandledProcessId).
+        // -----------------------------------------------------------------------
+        new ProcessDefinition
+        {
+            ProcessId = "gdal.gdalwarp",
+            Title = "Raster Reproject (GDAL)",
+            Description = "Full PROJ-backed raster reprojection executed out-of-process by the heavyweight GDAL worker via the gdalwarp CLI. The native counterpart to the managed geometry.project executor, which rejects datum-shift transforms that require PROJ. Reads a base64 GeoTIFF source and a target CRS (EPSG code or AUTHORITY:CODE) from the durable spec and publishes the reprojected GeoTIFF as a data-URI artifact. Routed to the native worker profile — NOT executable in the GDAL-free serving image.",
+            Category = "raster",
+            Parameters =
+            [
+                Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes.", ProcessParameterValueType.Text, required: true),
+                Param("targetSrs", "Target CRS", "Target spatial reference as an EPSG code (e.g. 'EPSG:3857' or '3857').", ProcessParameterValueType.Srid, required: true),
+                Param("sourceSrs", "Source CRS", "Optional source spatial reference override when the raster lacks embedded CRS metadata.", ProcessParameterValueType.Srid),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Raster],
+            RuntimeProfile = RuntimeProfiles.Native
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "gdal.ogr2ogr",
+            Title = "Vector Convert (GDAL)",
+            Description = "OGR vector format conversion executed out-of-process by the heavyweight GDAL worker via the ogr2ogr CLI, for formats the managed NetTopologySuite readers cannot handle. Reads a base64 source dataset and a target OGR driver from the durable spec and publishes the converted bytes as a data-URI artifact. Supported target drivers: GeoJSON, GPKG, CSV, FlatGeobuf, ESRI Shapefile. Routed to the native worker profile — NOT executable in the GDAL-free serving image.",
+            Category = "conversion",
+            Parameters =
+            [
+                Param("source", "Source Dataset", "Source vector dataset as base64-encoded bytes in the source format.", ProcessParameterValueType.Text, required: true),
+                Param("targetFormat", "Target Format", "Target OGR driver. Allowed values: GeoJSON, GPKG, CSV, FlatGeobuf, ESRI Shapefile.", ProcessParameterValueType.Text, required: true),
+                Param("sourceFormat", "Source Format", "Source OGR driver hint used to choose the input file extension. Defaults to GeoJSON.", ProcessParameterValueType.Text, defaultValue: "GeoJSON"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer],
+            RuntimeProfile = RuntimeProfiles.Native
         },
     ];
 
