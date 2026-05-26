@@ -311,6 +311,7 @@ public sealed class MetadataV2ModelTests
     {
         Enum.GetNames<MetadataV2ResourceType>().Should().BeEquivalentTo(
             nameof(MetadataV2ResourceType.FeatureDataset),
+            nameof(MetadataV2ResourceType.Table),
             nameof(MetadataV2ResourceType.RasterDataset),
             nameof(MetadataV2ResourceType.TileDataset),
             nameof(MetadataV2ResourceType.Process),
@@ -469,7 +470,8 @@ public sealed class MetadataV2ModelTests
                     StorageBindingIds =
                     [
                         "storage.hydrants.postgis"
-                    ]
+                    ],
+                    PrimaryStorageBindingId = "storage.parcels.postgis"
                 }
             ],
             StorageBindings =
@@ -480,7 +482,8 @@ public sealed class MetadataV2ModelTests
                     {
                         Id = "storage.hydrants.postgis"
                     },
-                    ResourceId = "resource.hydrants"
+                    ResourceId = "resource.hydrants",
+                    StorageLayerId = 2
                 }
             ]
         };
@@ -570,7 +573,8 @@ public sealed class MetadataV2ModelTests
                         Id = "storage.parcels.postgis"
                     },
                     ResourceId = "resource.parcels",
-                    ConnectionId = "connection.postgis"
+                    ConnectionId = "connection.postgis",
+                    StorageLayerId = 1
                 }
             ],
             Services =
