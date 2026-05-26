@@ -41,11 +41,12 @@ internal sealed class InMemoryConsoleShareStore : IConsoleShareStore
 
     public Task<ConsoleShareState> UpdateAccessTierAsync(string itemId, ConsoleShareAccessTier tier, string? principalId, CancellationToken cancellationToken = default)
     {
-        var updated = Mutate(itemId, principalId, state => state with { AccessTier = tier });
+        // The mutator sets the tier explicitly, so the seed tier is equal to it.
+        var updated = Mutate(itemId, tier, principalId, state => state with { AccessTier = tier });
         return Task.FromResult(updated);
     }
 
-    public Task<ConsolePublicLinkToken> MintPublicLinkAsync(string itemId, DateTimeOffset? expiresAt, string? principalId, CancellationToken cancellationToken = default)
+    public Task<ConsolePublicLinkToken> MintPublicLinkAsync(string itemId, ConsoleShareAccessTier seedAccessTier, DateTimeOffset? expiresAt, string? principalId, CancellationToken cancellationToken = default)
     {
         var now = _timeProvider.GetUtcNow();
         var token = new ConsolePublicLinkToken
@@ -59,7 +60,7 @@ internal sealed class InMemoryConsoleShareStore : IConsoleShareStore
             IsExpired = false,
         };
 
-        Mutate(itemId, principalId, state => state with
+        Mutate(itemId, seedAccessTier, principalId, state => state with
         {
             PublicLinkTokens = Append(state.PublicLinkTokens, token),
         });
@@ -154,9 +155,9 @@ internal sealed class InMemoryConsoleShareStore : IConsoleShareStore
         return Task.FromResult<ConsolePublicLinkResolution?>(null);
     }
 
-    public Task<ConsoleShareState> SetEmbedAsync(string itemId, bool enabled, ConsoleEmbedAudience? audience, string? principalId, CancellationToken cancellationToken = default)
+    public Task<ConsoleShareState> SetEmbedAsync(string itemId, ConsoleShareAccessTier seedAccessTier, bool enabled, ConsoleEmbedAudience? audience, string? principalId, CancellationToken cancellationToken = default)
     {
-        var updated = Mutate(itemId, principalId, state => state with
+        var updated = Mutate(itemId, seedAccessTier, principalId, state => state with
         {
             EmbedEnabled = enabled,
             EmbedAudience = enabled ? audience : null,
@@ -164,7 +165,7 @@ internal sealed class InMemoryConsoleShareStore : IConsoleShareStore
         return Task.FromResult(updated);
     }
 
-    public Task<ConsoleEmbedToken> MintEmbedTokenAsync(string itemId, ConsoleEmbedAudience audience, TimeSpan ttl, string? principalId, CancellationToken cancellationToken = default)
+    public Task<ConsoleEmbedToken> MintEmbedTokenAsync(string itemId, ConsoleShareAccessTier seedAccessTier, ConsoleEmbedAudience audience, TimeSpan ttl, string? principalId, CancellationToken cancellationToken = default)
     {
         var now = _timeProvider.GetUtcNow();
         var token = new ConsoleEmbedToken
@@ -179,7 +180,7 @@ internal sealed class InMemoryConsoleShareStore : IConsoleShareStore
             IsExpired = false,
         };
 
-        Mutate(itemId, principalId, state => state with
+        Mutate(itemId, seedAccessTier, principalId, state => state with
         {
             EmbedTokens = Append(state.EmbedTokens, token),
         });
@@ -226,10 +227,11 @@ internal sealed class InMemoryConsoleShareStore : IConsoleShareStore
 
     /// <summary>
     /// Applies <paramref name="mutator"/> to the item's state under a
-    /// compare-and-swap loop, seeding default state when none exists. Always
-    /// refreshes the audit stamp.
+    /// compare-and-swap loop, seeding new state with
+    /// <paramref name="seedAccessTier"/> when none exists. Always refreshes the
+    /// audit stamp.
     /// </summary>
-    private ConsoleShareState Mutate(string itemId, string? principalId, Func<ConsoleShareState, ConsoleShareState> mutator)
+    private ConsoleShareState Mutate(string itemId, ConsoleShareAccessTier seedAccessTier, string? principalId, Func<ConsoleShareState, ConsoleShareState> mutator)
     {
         while (true)
         {
@@ -250,7 +252,10 @@ internal sealed class InMemoryConsoleShareStore : IConsoleShareStore
                 continue;
             }
 
-            var seeded = mutator(new ConsoleShareState { ItemId = itemId }) with
+            // First write for this item: seed with the caller-supplied effective
+            // tier so a visibility-derived tier (e.g. public-indexed) is preserved
+            // instead of being reset to the ConsoleShareState default (private).
+            var seeded = mutator(new ConsoleShareState { ItemId = itemId, AccessTier = seedAccessTier }) with
             {
                 ItemId = itemId,
                 UpdatedAt = now,

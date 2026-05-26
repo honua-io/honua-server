@@ -35,8 +35,13 @@ public interface IConsoleShareStore
     /// <summary>
     /// Mints a new public-link token. The returned token carries its opaque value
     /// (disclosed once); subsequent reads never re-emit it.
+    /// <paramref name="seedAccessTier"/> is applied only on the first share write
+    /// for the item (when no state exists yet): callers pass the item's current
+    /// effective tier so a visibility-derived tier (e.g. <c>public-indexed</c>) is
+    /// preserved rather than reset to the default. It is ignored when share state
+    /// already exists.
     /// </summary>
-    Task<ConsolePublicLinkToken> MintPublicLinkAsync(string itemId, DateTimeOffset? expiresAt, string? principalId, CancellationToken cancellationToken = default);
+    Task<ConsolePublicLinkToken> MintPublicLinkAsync(string itemId, ConsoleShareAccessTier seedAccessTier, DateTimeOffset? expiresAt, string? principalId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Lists public-link tokens for an item with token values omitted and
@@ -59,14 +64,20 @@ public interface IConsoleShareStore
     /// <summary>
     /// Enables or disables embedding for an item with the supplied audience,
     /// creating share state when none exists. Returns the updated state.
+    /// <paramref name="seedAccessTier"/> is applied only on the first share write
+    /// (when no state exists yet) so toggling embed does not silently reset a
+    /// visibility-derived tier; it is ignored when share state already exists.
     /// </summary>
-    Task<ConsoleShareState> SetEmbedAsync(string itemId, bool enabled, ConsoleEmbedAudience? audience, string? principalId, CancellationToken cancellationToken = default);
+    Task<ConsoleShareState> SetEmbedAsync(string itemId, ConsoleShareAccessTier seedAccessTier, bool enabled, ConsoleEmbedAudience? audience, string? principalId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Mints an embed token with the supplied audience and TTL. The returned token
-    /// carries its opaque value (disclosed once).
+    /// carries its opaque value (disclosed once). <paramref name="seedAccessTier"/>
+    /// is applied only on the first share write (when no state exists yet); minting
+    /// requires embedding to already be enabled, so in practice state always exists,
+    /// but the parameter keeps the seed behavior consistent and safe.
     /// </summary>
-    Task<ConsoleEmbedToken> MintEmbedTokenAsync(string itemId, ConsoleEmbedAudience audience, TimeSpan ttl, string? principalId, CancellationToken cancellationToken = default);
+    Task<ConsoleEmbedToken> MintEmbedTokenAsync(string itemId, ConsoleShareAccessTier seedAccessTier, ConsoleEmbedAudience audience, TimeSpan ttl, string? principalId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Redeems an embed token value, returning its resolution or

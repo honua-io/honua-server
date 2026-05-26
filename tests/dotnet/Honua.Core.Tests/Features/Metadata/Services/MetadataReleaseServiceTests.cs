@@ -511,12 +511,12 @@ public sealed class MetadataReleaseServiceTests
 
         return
         [
-            new MetadataV2Field
-            {
-                SemanticId = "field.parcels.apn",
-                Name = "apn",
-                Type = "string",
-            },
+                new MetadataV2Field
+                {
+                    SemanticId = "field.parcels.apn",
+                    Name = "apn",
+                    Type = MetadataV2FieldType.String,
+                },
         ];
     }
 

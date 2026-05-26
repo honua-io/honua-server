@@ -264,7 +264,7 @@ public static class MetadataCompatibilityAnalyzer
             return;
         }
 
-        if (!string.Equals(sourceField.Type, targetField.Type, StringComparison.OrdinalIgnoreCase))
+        if (sourceField.Type != targetField.Type)
         {
             findings.Add(Finding(
                 MetadataCompatibilityCode.FieldTypeMismatch,
@@ -275,8 +275,8 @@ public static class MetadataCompatibilityAnalyzer
                 sourceResource.Metadata.Id,
                 sourceField.Title ?? sourceField.Name,
                 "The target field type does not match the proposed field type.",
-                Value("fieldType", sourceField.Type, expectedDetails),
-                Value("fieldType", targetField.Type, FieldDetails(targetResource, targetField)),
+                Value("fieldType", FormatEnumToken(sourceField.Type), expectedDetails),
+                Value("fieldType", FormatEnumToken(targetField.Type), FieldDetails(targetResource, targetField)),
                 MetadataCompatibilityRequiredAction.UpdateField,
                 MetadataCompatibilityCoverageState.Uncovered));
         }
@@ -401,10 +401,10 @@ public static class MetadataCompatibilityAnalyzer
         List<MetadataCompatibilityFinding> findings)
     {
         var expectedGeometryType = source.ReadGeometryType();
-        if (!string.IsNullOrWhiteSpace(expectedGeometryType))
+        if (expectedGeometryType is not MetadataV2GeometryType.None)
         {
             var actualGeometryType = target.ReadGeometryType();
-            if (string.IsNullOrWhiteSpace(actualGeometryType))
+            if (actualGeometryType is MetadataV2GeometryType.None)
             {
                 findings.Add(Finding(
                     MetadataCompatibilityCode.SpatialGeometryTypeMismatch,
@@ -415,12 +415,12 @@ public static class MetadataCompatibilityAnalyzer
                     null,
                     source.Metadata.Title ?? source.Metadata.Name,
                     "The target resource does not declare comparable geometry type metadata.",
-                    Value("geometryType", expectedGeometryType),
+                    Value("geometryType", FormatEnumToken(expectedGeometryType)),
                     Value("geometryType", "unavailable"),
                     MetadataCompatibilityRequiredAction.UpdateSpatial,
                     MetadataCompatibilityCoverageState.Unknown));
             }
-            else if (!string.Equals(expectedGeometryType, actualGeometryType, StringComparison.OrdinalIgnoreCase))
+            else if (expectedGeometryType != actualGeometryType)
             {
                 findings.Add(Finding(
                     MetadataCompatibilityCode.SpatialGeometryTypeMismatch,
@@ -431,8 +431,8 @@ public static class MetadataCompatibilityAnalyzer
                     null,
                     source.Metadata.Title ?? source.Metadata.Name,
                     "The target resource geometry type does not match the proposed geometry type.",
-                    Value("geometryType", expectedGeometryType),
-                    Value("geometryType", actualGeometryType),
+                    Value("geometryType", FormatEnumToken(expectedGeometryType)),
+                    Value("geometryType", FormatEnumToken(actualGeometryType)),
                     MetadataCompatibilityRequiredAction.UpdateSpatial,
                     MetadataCompatibilityCoverageState.Uncovered));
             }
@@ -1710,10 +1710,14 @@ public static class MetadataCompatibilityAnalyzer
         {
             ["semanticId"] = GetFieldSemanticId(resource, field),
             ["fieldName"] = field.Name,
-            ["type"] = field.Type,
+            ["type"] = FormatEnumToken(field.Type),
             ["nullable"] = field.Nullable.ToString(CultureInfo.InvariantCulture),
             ["resourceId"] = resource.Metadata.Id,
         };
+
+    private static string FormatEnumToken<TEnum>(TEnum value)
+        where TEnum : struct, Enum
+        => value.ToString().ToLowerInvariant();
 
     private static Dictionary<string, string> TemporalDetails(MetadataV2TemporalFields fields)
         => new(StringComparer.Ordinal)

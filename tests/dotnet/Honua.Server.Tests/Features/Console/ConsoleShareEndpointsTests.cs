@@ -191,7 +191,7 @@ public sealed class ConsoleShareEndpointsTests : IAsyncLifetime
         Assert.Equal("Public Link Leak Sentinel", resolved.Title);
 
         var expiredToken = await _fixture.GetService<IConsoleShareStore>()
-            .MintPublicLinkAsync(item.Id, DateTimeOffset.UtcNow.AddMinutes(-1), "test", CancellationToken.None);
+            .MintPublicLinkAsync(item.Id, ConsoleShareAccessTier.PublicLink, DateTimeOffset.UtcNow.AddMinutes(-1), "test", CancellationToken.None);
         var expiredResponse = await _anonymousClient.GetAsync($"/api/v1/console/share/link/{expiredToken.Token}");
         await AssertNonLeakingNotFoundAsync(expiredResponse, item.Id, item.Title);
 
@@ -264,7 +264,7 @@ public sealed class ConsoleShareEndpointsTests : IAsyncLifetime
         Assert.True(redeemed.Endpoints.ContainsKey("self"));
 
         var expiredToken = await _fixture.GetService<IConsoleShareStore>()
-            .MintEmbedTokenAsync(item.Id, ConsoleEmbedAudience.Map, TimeSpan.FromSeconds(-1), "test", CancellationToken.None);
+            .MintEmbedTokenAsync(item.Id, ConsoleShareAccessTier.Organization, ConsoleEmbedAudience.Map, TimeSpan.FromSeconds(-1), "test", CancellationToken.None);
         var expiredResponse = await _anonymousClient.PostAsync($"/api/v1/console/share/embed/{expiredToken.Token}/redeem", content: null);
         await AssertNonLeakingNotFoundAsync(expiredResponse, item.Id, item.Title);
 
@@ -277,6 +277,61 @@ public sealed class ConsoleShareEndpointsTests : IAsyncLifetime
 
         var disabledRedeemResponse = await _anonymousClient.PostAsync($"/api/v1/console/share/embed/{disableToken.Token}/redeem", content: null);
         await AssertNonLeakingNotFoundAsync(disabledRedeemResponse, item.Id, item.Title);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/content/{id}/share/link")]
+    [Endpoint("GET /api/v1/console/content/{id}/share")]
+    [Endpoint("GET /api/v1/console/share/link/{token}")]
+    public async Task MintPublicLink_OnVisibilityDerivedPublicItem_PreservesPublicIndexedAndResolves()
+    {
+        // Public visibility, no explicit share state => effective tier public-indexed (derived).
+        var item = await CreateItemAsync("share-legacy-public", ConsoleVisibility.Public, title: "Legacy Public Sentinel");
+
+        // Minting is the first share write; it must not downgrade the item to private.
+        var token = await MintPublicLinkAsync(item.Id, expiresAt: null);
+
+        var projection = await ReadDataAsync<ConsoleShareProjection>(
+            await _adminClient.GetAsync($"/api/v1/console/content/{item.Id}/share"));
+        Assert.Equal(ConsoleShareAccessTier.PublicIndexed, projection.AccessTier);
+        Assert.True(projection.PublicLinkEnabled);
+        Assert.True(projection.AnonymousEligible);
+
+        // The minted link resolves under the same policy the mint check accepted.
+        var resolveResponse = await _anonymousClient.GetAsync($"/api/v1/console/share/link/{token.Token}");
+        Assert.Equal(HttpStatusCode.OK, resolveResponse.StatusCode);
+        var resolved = await ReadDataAsync<ConsolePublicLinkResolutionResponse>(resolveResponse);
+        Assert.Equal(item.Id, resolved.ItemId);
+        Assert.Equal(ConsoleShareAccessTier.PublicIndexed, resolved.AccessTier);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/console/content/{id}/share/embed")]
+    [Endpoint("GET /api/v1/console/content/{id}/share")]
+    public async Task SetEmbed_OnVisibilityDerivedItem_PreservesEffectiveTier()
+    {
+        // Organization visibility, no explicit share state => effective tier organization.
+        var item = await CreateItemAsync("share-embed-tier", ConsoleVisibility.Organization, title: "Embed Tier Sentinel");
+
+        // Enabling embed is the first share write; it must not reset the tier to private.
+        var enableResponse = await _adminClient.PutAsJsonAsync(
+            $"/api/v1/console/content/{item.Id}/share/embed",
+            new SetEmbedRequest { Enabled = true, Audience = ConsoleEmbedAudience.Content },
+            JsonOptions);
+        Assert.Equal(HttpStatusCode.OK, enableResponse.StatusCode);
+        var enabled = await ReadDataAsync<ConsoleShareProjection>(enableResponse);
+        Assert.Equal(ConsoleShareAccessTier.Organization, enabled.AccessTier);
+        Assert.True(enabled.EmbedEnabled);
+
+        // Disabling embed must likewise leave the tier intact.
+        var disableResponse = await _adminClient.PutAsJsonAsync(
+            $"/api/v1/console/content/{item.Id}/share/embed",
+            new SetEmbedRequest { Enabled = false },
+            JsonOptions);
+        Assert.Equal(HttpStatusCode.OK, disableResponse.StatusCode);
+        var disabled = await ReadDataAsync<ConsoleShareProjection>(disableResponse);
+        Assert.Equal(ConsoleShareAccessTier.Organization, disabled.AccessTier);
+        Assert.False(disabled.EmbedEnabled);
     }
 
     private async Task<ConsoleContentItem> CreateItemAsync(

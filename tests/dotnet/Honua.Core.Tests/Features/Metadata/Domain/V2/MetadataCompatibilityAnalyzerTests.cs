@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit.Attributes;
@@ -754,8 +753,11 @@ public sealed class MetadataCompatibilityAnalyzerTests
         string publicationServiceId = "svc.features",
         IReadOnlyList<MetadataV2StorageBindingCapability>? storageCapabilities = null)
     {
-        var spatial = JsonSerializer.Deserialize<JsonElement>(
-            $$"""{"srid":{{srid}},"geometryType":"Point"}""");
+        var spatial = new MetadataV2ResourceSpatial
+        {
+            SpatialReference = new MetadataV2SpatialReference { Srid = srid },
+            GeometryType = MetadataV2GeometryType.Point,
+        };
 
         var resources = new List<MetadataV2Resource>();
         if (includeResource)
@@ -864,7 +866,7 @@ public sealed class MetadataCompatibilityAnalyzerTests
         {
             SemanticId = "field.parcels.apn",
             Name = "apn",
-            Type = "string",
+            Type = MetadataV2FieldType.String,
             Nullable = false,
             SemanticRoles = identifierRole ? ["identifier.primary"] : Array.Empty<string>(),
         };

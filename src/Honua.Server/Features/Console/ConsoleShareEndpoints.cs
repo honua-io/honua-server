@@ -292,7 +292,10 @@ internal static class ConsoleShareEndpoints
             }
 
             var principalId = ConsolePrincipal.ResolveActorId(context.User);
-            var token = await shareStore.MintPublicLinkAsync(id, request.ExpiresAt, principalId, context.RequestAborted).ConfigureAwait(false);
+            // Seed with the effective tier so a visibility-derived public-indexed
+            // item keeps that tier (the minted link must resolve under the same
+            // policy the mint check just accepted) instead of resetting to private.
+            var token = await shareStore.MintPublicLinkAsync(id, effectiveTier, request.ExpiresAt, principalId, context.RequestAborted).ConfigureAwait(false);
             ConsoleShareEndpointsLog.PublicLinkMinted(logger, id, token.TokenId, principalId, token.ExpiresAt);
             return TypedResults.Ok(ApiResponse<ConsolePublicLinkToken>.CreateSuccess(token));
         }
@@ -368,6 +371,11 @@ internal static class ConsoleShareEndpoints
                 return TypedResults.NotFound(ApiResponse<object>.Failure("Console content item not found."));
 
             var principalId = ConsolePrincipal.ResolveActorId(context.User);
+            var currentState = await shareStore.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
+            // Preserve the current effective tier across the embed toggle so an
+            // implicit organization/public-indexed item is not silently downgraded
+            // to private on the first share write.
+            var effectiveTier = ConsoleShareMapper.ResolveEffectiveTier(currentState, item);
 
             // Enabling embed exposes the item to an external surface; require the
             // provenance closure to be shareable at public-link strength.
@@ -388,7 +396,7 @@ internal static class ConsoleShareEndpoints
                 }
             }
 
-            await shareStore.SetEmbedAsync(id, request.Enabled, request.Audience, principalId, context.RequestAborted).ConfigureAwait(false);
+            await shareStore.SetEmbedAsync(id, effectiveTier, request.Enabled, request.Audience, principalId, context.RequestAborted).ConfigureAwait(false);
             ConsoleShareEndpointsLog.EmbedConfigured(logger, id, request.Enabled, request.Audience, principalId);
 
             var projection = await BuildProjectionAsync(id, contentStore, shareStore, evaluator, context.User, context.RequestAborted).ConfigureAwait(false);
@@ -448,7 +456,10 @@ internal static class ConsoleShareEndpoints
 
             var principalId = ConsolePrincipal.ResolveActorId(context.User);
             var ttl = TimeSpan.FromSeconds(request.TtlSeconds ?? DefaultEmbedTtlSeconds);
-            var token = await shareStore.MintEmbedTokenAsync(id, request.Audience, ttl, principalId, context.RequestAborted).ConfigureAwait(false);
+            // State is guaranteed present here (embed must be enabled), so the seed
+            // tier is unused; pass the effective tier for a consistent contract.
+            var effectiveTier = ConsoleShareMapper.ResolveEffectiveTier(state, item);
+            var token = await shareStore.MintEmbedTokenAsync(id, effectiveTier, request.Audience, ttl, principalId, context.RequestAborted).ConfigureAwait(false);
             ConsoleShareEndpointsLog.EmbedTokenMinted(logger, id, token.TokenId, request.Audience, principalId);
             return TypedResults.Ok(ApiResponse<ConsoleEmbedToken>.CreateSuccess(token));
         }
