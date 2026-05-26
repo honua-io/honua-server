@@ -3,6 +3,7 @@
 
 using System.Collections.Frozen;
 using System.Collections.Immutable;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -280,6 +281,21 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 .. SharedAnalyticsFilterParameters,
             ],
             OutputArtifactKinds = [ArtifactKind.FeatureLayer, ArtifactKind.Table]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "analytics.spatial-join-managed",
+            Title = "Spatial Join (Managed)",
+            Description = "Job-executable, managed (NetTopologySuite) spatial join over two inline FeatureCollections. Distinct from analytics.spatial-join, which runs only synchronously through the layer-scoped PostGIS SpatialAnalytics protocol and is NOT job-dispatchable; this id is the workflow/codemod-reachable counterpart. For each target feature it summarizes EVERY matched join feature into per-target aggregates via an in-memory STRtree index — JOIN_COUNT plus optional numeric SUM/MEAN/MIN/MAX — preserving zero-match targets one-to-one. Pure managed overlay, no GDAL/GEOS dependency.",
+            Category = "analytics",
+            Parameters =
+            [
+                Param("input", "Target Features", "Target FeatureCollection as a data:application/geo+json;base64 data URI. Each target is preserved one-to-one with its match summary.", ProcessParameterValueType.Text, required: true),
+                Param("join", "Join Features", "Join (reference) FeatureCollection as a data:application/geo+json;base64 data URI. Materialized into an in-memory STRtree spatial index.", ProcessParameterValueType.Text, required: true),
+                Param("predicate", "Predicate", "Spatial predicate evaluating join-vs-target. Allowed values: intersects (default), contains (join geometry contains the target — point-in-polygon), within (target contains the join geometry).", ProcessParameterValueType.Text, defaultValue: "intersects"),
+                Param("statistics", "Statistics", "Semicolon-separated 'field:stat' aggregates over matched join features. Supported stats: count (always emitted as JOIN_COUNT), sum, mean, min, max on numeric join fields (emitted as STAT_field). Example: 'pop:sum;pop:mean'.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
         },
         new ProcessDefinition
         {
@@ -626,6 +642,278 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
                 Param("objectIds", "Object IDs", "Optional comma-separated feature identifiers to update.", ProcessParameterValueType.Text),
             ],
             OutputArtifactKinds = [ArtifactKind.Scalar]
+        },
+
+        // -----------------------------------------------------------------------
+        // GeoETL transform operations (8)
+        // Reconciled from feat/geoetl-baseline onto the #1185 add-a-capability
+        // contract: each transform reads a FeatureCollection data URI on the
+        // canonical 'input' parameter and publishes a FeatureCollection data URI,
+        // carrying feature attributes through so they compose as workflow nodes.
+        // Managed NetTopologySuite only — no GDAL.
+        // -----------------------------------------------------------------------
+        new ProcessDefinition
+        {
+            ProcessId = "transform.attribute-rename",
+            Title = "Rename Attribute",
+            Description = "Renames one feature attribute key to another across every feature in the input FeatureCollection, preserving the value and geometry. Features lacking the source attribute pass through unchanged.",
+            Category = "transform",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("from", "From", "Existing attribute name to rename.", ProcessParameterValueType.Text, required: true),
+                Param("to", "To", "New attribute name.", ProcessParameterValueType.Text, required: true),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "transform.attribute-cast",
+            Title = "Cast Attribute",
+            Description = "Coerces one attribute to a target CLR type. Supported types: int, long, double, bool, string. Uncoercible rows are handled per the onError policy (drop/null/keep).",
+            Category = "transform",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("field", "Field", "Attribute name to cast.", ProcessParameterValueType.Text, required: true),
+                Param("to", "Target Type", "Target CLR type. Allowed values: int, long, double, bool, string.", ProcessParameterValueType.Text, required: true),
+                Param("onError", "On Error", "Behavior for uncoercible rows. Allowed values: drop (default), null, keep.", ProcessParameterValueType.Text, defaultValue: "drop"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "transform.computed-field",
+            Title = "Computed Field",
+            Description = "Adds a new attribute derived from existing attributes via a small AOT-safe operation set (no expression engine). Supported ops: concat, add, subtract, multiply, divide, const. Rows with non-numeric arithmetic operands are dropped as row-level data errors.",
+            Category = "transform",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("target", "Target Field", "Attribute name to write the computed value to.", ProcessParameterValueType.Text, required: true),
+                Param("op", "Operation", "Computation. Allowed values: concat, add, subtract, multiply, divide, const.", ProcessParameterValueType.Text, required: true),
+                Param("fields", "Fields", "Comma-separated source field names for the concat op.", ProcessParameterValueType.Text),
+                Param("separator", "Separator", "Join separator for the concat op.", ProcessParameterValueType.Text),
+                Param("left", "Left Operand", "Left operand for arithmetic ops: a source field name, or a numeric literal prefixed with '='.", ProcessParameterValueType.Text),
+                Param("right", "Right Operand", "Right operand for arithmetic ops: a source field name, or a numeric literal prefixed with '='.", ProcessParameterValueType.Text),
+                Param("value", "Constant Value", "Literal value assigned to the target for the const op.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "transform.attribute-filter",
+            Title = "Attribute Filter",
+            Description = "Passes through only features whose attribute satisfies a simple comparison, dropping the rest. Supported ops: eq, neq, gt, gte, lt, lte, contains, exists. Numeric operators parse both operands as doubles; string operators compare ordinally.",
+            Category = "transform",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("field", "Field", "Attribute name to test.", ProcessParameterValueType.Text, required: true),
+                Param("op", "Operator", "Comparison operator. Allowed values: eq, neq, gt, gte, lt, lte, contains, exists. Defaults to eq.", ProcessParameterValueType.Text, defaultValue: "eq"),
+                Param("value", "Value", "Comparison operand. Omitted for the 'exists' op.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "transform.spatial-filter",
+            Title = "Spatial Filter",
+            Description = "Passes through only features whose geometry satisfies a spatial predicate against a bounding box or arbitrary WKT region, dropping the rest. Pure managed NetTopologySuite — no native dependency. Features with null/empty geometry are dropped.",
+            Category = "transform",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("bbox", "Bounding Box", "Region as 'minX,minY,maxX,maxY' in the feature CRS. Supply this or 'wkt'.", ProcessParameterValueType.Text),
+                Param("wkt", "WKT Region", "Region geometry as WKT. Supply this or 'bbox'.", ProcessParameterValueType.Text),
+                Param("predicate", "Predicate", "Spatial predicate. Allowed values: intersects (default), within.", ProcessParameterValueType.Text, defaultValue: "intersects"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "transform.clip",
+            Title = "Clip Features",
+            Description = "Clips each feature's geometry to an area-of-interest region (the geometric intersection), dropping features that fall entirely outside the region. Pure managed NetTopologySuite overlay — no native dependency. Attributes are preserved and the clipped geometry keeps the source SRID.",
+            Category = "transform",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("bbox", "Bounding Box", "Clip region as 'minX,minY,maxX,maxY' in the feature CRS. Supply this or 'wkt'.", ProcessParameterValueType.Text),
+                Param("wkt", "WKT Region", "Clip region geometry as WKT. Supply this or 'bbox'.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "transform.dedup",
+            Title = "Deduplicate Features",
+            Description = "Emits the first feature for each distinct key and drops later duplicates. The key is built from one or more attribute fields, the geometry (normalized WKT), or both. At least one of 'keys' or 'geometry=true' is required.",
+            Category = "transform",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("keys", "Key Fields", "Comma-separated attribute field names whose values form the dedup key.", ProcessParameterValueType.Text),
+                Param("geometry", "Use Geometry", "Include the normalized geometry in the dedup key.", ProcessParameterValueType.Flag, defaultValue: "false"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "transform.reproject",
+            Title = "Reproject Features",
+            Description = "Reprojects every feature's geometry between SRIDs on the managed, GDAL-free path (identity, Web Mercator aliases, and WGS 84 (4326) ↔ Web Mercator), reusing the same in-memory CoordinateTransformer as geometry.project. Datum-shift pairs requiring ST_Transform are deferred to the native worker profile and rejected. Attributes are carried through.",
+            Category = "transform",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("fromSrid", "From SRID", "Source spatial reference identifier.", ProcessParameterValueType.Srid, required: true),
+                Param("toSrid", "To SRID", "Target spatial reference identifier.", ProcessParameterValueType.Srid, required: true),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+
+        // -----------------------------------------------------------------------
+        // GeoETL source operations (2)
+        // Produce a FeatureCollection artifact from an inline document so the
+        // workflow DAG starts from a uniform envelope. Managed parsers only.
+        // Native-format sources (shapefile, geopackage) need native libs and are
+        // deferred to the GDAL worker stream as gdal.* / native-profile processes.
+        // -----------------------------------------------------------------------
+        new ProcessDefinition
+        {
+            ProcessId = "source.geojson",
+            Title = "GeoJSON Source",
+            Description = "Parses an inline GeoJSON FeatureCollection (or one supplied as a data:application/geo+json;base64 data URI) into the standard FeatureCollection artifact. Managed NetTopologySuite reader — no native dependency.",
+            Category = "source",
+            Parameters =
+            [
+                Param("inline", "Inline GeoJSON", "GeoJSON FeatureCollection document supplied directly. Supply this or 'input'.", ProcessParameterValueType.Text),
+                Param("input", "Input Data URI", "FeatureCollection as a data:application/geo+json;base64 data URI. Supply this or 'inline'.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "source.csv",
+            Title = "CSV Source",
+            Description = "Parses an inline CSV document into a FeatureCollection, deriving geometry from a WKT column (wkt/geom/geometry/shape/...) or a longitude/latitude column pair (lon/lng/x and lat/y). Managed parser — no native dependency.",
+            Category = "source",
+            Parameters =
+            [
+                Param("inline", "Inline CSV", "CSV document supplied directly, including a header row.", ProcessParameterValueType.Text, required: true),
+                Param("delimiter", "Delimiter", "Single-character field delimiter override. Defaults to comma.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+
+        // -----------------------------------------------------------------------
+        // GeoETL sink operations (3)
+        // Terminate a workflow by writing the input FeatureCollection to an external
+        // target and emit a small result-descriptor artifact (the target location +
+        // row counts). Managed writers / Npgsql only — no GDAL.
+        // The catalog honua-layer sink (insert through honua.create_import_table /
+        // honua.insert_import_feature) is DEFERRED: unlike external-postgis (which
+        // takes a connection string as a plan parameter and so stays DI-free), it
+        // must reach the catalog NpgsqlDataSource. Injecting that into an executor
+        // would break the dispatcher's unconditional construction in lean
+        // deployments where Postgres is not registered, and a plan-parameter
+        // connection string would leak catalog credentials into the workflow DAG.
+        // Resolving that conditional-registration shape is a follow-on.
+        // Native-format sinks (shapefile, geopackage) are deferred to the GDAL stream.
+        // -----------------------------------------------------------------------
+        new ProcessDefinition
+        {
+            ProcessId = "sink.geojson-file",
+            Title = "GeoJSON File Sink",
+            Description = "Writes the input FeatureCollection to a GeoJSON FeatureCollection file at the supplied path, emitting a result descriptor with written/rejected counts. Managed NetTopologySuite writer — no native dependency.",
+            Category = "sink",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("path", "Output Path", "Absolute output file path (overwritten if it exists).", ProcessParameterValueType.Text, required: true),
+            ],
+            OutputArtifactKinds = [ArtifactKind.File]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "sink.quarantine",
+            Title = "Quarantine Sink",
+            Description = "Dead-letter sink: writes every input feature to a companion GeoJSON artifact tagged with the run batch id and a rejection reason, never throwing on a malformed row. The sink half of the row-level-error contract.",
+            Category = "sink",
+            Parameters =
+            [
+                Param("input", "Rejected Features", "Input FeatureCollection of rejected rows as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("path", "Output Path", "Absolute dead-letter output file path (overwritten if it exists).", ProcessParameterValueType.Text, required: true),
+                Param("reasonField", "Reason Field", "Attribute name carrying a per-row reason string. Defaults to _quarantine_reason.", ProcessParameterValueType.Text, defaultValue: "_quarantine_reason"),
+                Param("batchId", "Batch Id", "Run batch identifier tagged on every quarantined row. Defaults to the operation id.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.File]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "sink.external-postgis",
+            Title = "External PostGIS Sink",
+            Description = "Loads the input FeatureCollection into a customer-owned PostGIS database identified by a caller-supplied connection string (NOT the Honua catalog). Managed Npgsql + WKB — no GDAL. Every row's attributes JSONB carries a reserved __pipeline_batch_id key for soft-delete rollback.",
+            Category = "sink",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("connectionString", "Connection String", "External PostGIS connection string.", ProcessParameterValueType.Text, required: true),
+                Param("table", "Table", "Destination table name (created if missing). Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, required: true),
+                Param("targetSrid", "Target SRID", "Geometry SRID for the destination column.", ProcessParameterValueType.Srid, required: true),
+                Param("schema", "Schema", "Destination schema. Defaults to public. Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, defaultValue: "public"),
+                Param("geometryColumn", "Geometry Column", "Destination geometry column. Defaults to geom. Must match ^[A-Za-z_][A-Za-z0-9_]*$.", ProcessParameterValueType.Text, defaultValue: "geom"),
+                Param("batchSize", "Batch Size", "Insert batch size. Defaults to 1000.", ProcessParameterValueType.WholeNumber, defaultValue: "1000"),
+                Param("batchId", "Batch Id", "Run batch id tagged on every row. Defaults to the operation id.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+
+        // -----------------------------------------------------------------------
+        // Native GDAL worker operations (2)
+        // Reconciled from feat/gdal-heavy-worker onto the #1185 contract. These
+        // are the ONLY catalog processes that declare RuntimeProfile = native:
+        // they execute OUT-OF-PROCESS in the heavyweight GDAL worker image
+        // (gdalwarp / ogr2ogr via subprocess), never in the lean GDAL-free serving
+        // image. The geoprocessing submit path reads ProcessDefinition.RuntimeProfile
+        // to stamp ExecutionJobSpec.RuntimeProfile = "native", so the claim fence
+        // routes the job to the GDAL worker and away from the lean dispatcher (which
+        // has no executor for these ids). They are the native counterparts to the
+        // managed geometry.project / conversion.* idioms, covering the PROJ-backed
+        // raster reprojection and OGR vector conversions the managed readers cannot
+        // perform. The worker's executors handle exactly these ids
+        // (GdalRasterReprojectJobExecutor.HandledProcessId / GdalVectorConvertJobExecutor.HandledProcessId).
+        // -----------------------------------------------------------------------
+        new ProcessDefinition
+        {
+            ProcessId = "gdal.gdalwarp",
+            Title = "Raster Reproject (GDAL)",
+            Description = "Full PROJ-backed raster reprojection executed out-of-process by the heavyweight GDAL worker via the gdalwarp CLI. The native counterpart to the managed geometry.project executor, which rejects datum-shift transforms that require PROJ. Reads a base64 GeoTIFF source and a target CRS (EPSG code or AUTHORITY:CODE) from the durable spec and publishes the reprojected GeoTIFF as a data-URI artifact. Routed to the native worker profile — NOT executable in the GDAL-free serving image.",
+            Category = "raster",
+            Parameters =
+            [
+                Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes.", ProcessParameterValueType.Text, required: true),
+                Param("targetSrs", "Target CRS", "Target spatial reference as an EPSG code (e.g. 'EPSG:3857' or '3857').", ProcessParameterValueType.Srid, required: true),
+                Param("sourceSrs", "Source CRS", "Optional source spatial reference override when the raster lacks embedded CRS metadata.", ProcessParameterValueType.Srid),
+            ],
+            OutputArtifactKinds = [ArtifactKind.Raster],
+            RuntimeProfile = RuntimeProfiles.Native
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "gdal.ogr2ogr",
+            Title = "Vector Convert (GDAL)",
+            Description = "OGR vector format conversion executed out-of-process by the heavyweight GDAL worker via the ogr2ogr CLI, for formats the managed NetTopologySuite readers cannot handle. Reads a base64 source dataset and a target OGR driver from the durable spec and publishes the converted bytes as a data-URI artifact. Supported target drivers: GeoJSON, GPKG, CSV, FlatGeobuf, ESRI Shapefile. Routed to the native worker profile — NOT executable in the GDAL-free serving image.",
+            Category = "conversion",
+            Parameters =
+            [
+                Param("source", "Source Dataset", "Source vector dataset as base64-encoded bytes in the source format.", ProcessParameterValueType.Text, required: true),
+                Param("targetFormat", "Target Format", "Target OGR driver. Allowed values: GeoJSON, GPKG, CSV, FlatGeobuf, ESRI Shapefile.", ProcessParameterValueType.Text, required: true),
+                Param("sourceFormat", "Source Format", "Source OGR driver hint used to choose the input file extension. Defaults to GeoJSON.", ProcessParameterValueType.Text, defaultValue: "GeoJSON"),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer],
+            RuntimeProfile = RuntimeProfiles.Native
         },
     ];
 

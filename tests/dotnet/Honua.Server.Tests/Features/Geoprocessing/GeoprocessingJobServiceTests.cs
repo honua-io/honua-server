@@ -160,6 +160,59 @@ public sealed class GeoprocessingJobServiceTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_ManagedPlan_LeavesRuntimeProfileUnstamped()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // A managed process (geometry.buffer) declares the managed/default catalog
+        // profile, so the submit path leaves the spec profile-agnostic (null) and the
+        // lean dispatcher claims it.
+        var job = await _sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal());
+
+        job.Spec.RuntimeProfile.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_NativeGdalPlan_StampsNativeRuntimeProfile()
+    {
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        // The data-driven stamping contract: a gdal.* process declares
+        // RuntimeProfile = native in the catalog, so the submit path stamps the spec
+        // and the claim fence routes the job to the out-of-process GDAL worker
+        // (never to the lean GDAL-free dispatcher).
+        var plan = new AnalysisPlan
+        {
+            PlanId = "plan-native",
+            IntentId = "intent-native",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "step-1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = "gdal.gdalwarp",
+                    Inputs = new Dictionary<string, string>
+                    {
+                        ["source"] = "AAAA",
+                        ["targetSrs"] = "3857"
+                    }
+                }
+            ]
+        };
+
+        var job = await _sut.SubmitJobAsync(plan, null, CreatePrincipal());
+
+        job.Spec.RuntimeProfile.Should().Be(RuntimeProfiles.Native);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_WithValidPlan_EnqueuesJob()
     {
         _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())

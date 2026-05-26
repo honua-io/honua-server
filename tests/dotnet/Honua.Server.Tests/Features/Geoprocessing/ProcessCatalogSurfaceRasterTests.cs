@@ -19,8 +19,12 @@ public sealed class ProcessCatalogSurfaceRasterTests
     public void Catalog_SurfaceRasterAndConversionCategories_AreRegistered()
     {
         _catalog.GetProcessesByCategory("surface").Should().HaveCount(6);
-        _catalog.GetProcessesByCategory("raster").Should().HaveCount(5);
-        _catalog.GetProcessesByCategory("conversion").Should().HaveCount(4);
+        // 5 managed raster idioms + gdal.gdalwarp (the native-profile raster
+        // reproject executed out-of-process by the GDAL worker).
+        _catalog.GetProcessesByCategory("raster").Should().HaveCount(6);
+        // 4 managed conversion idioms + gdal.ogr2ogr (the native-profile vector
+        // conversion executed out-of-process by the GDAL worker).
+        _catalog.GetProcessesByCategory("conversion").Should().HaveCount(5);
     }
 
     [UnitTest]
