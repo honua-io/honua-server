@@ -22,6 +22,9 @@ public sealed class MetadataV2GraphIndex
         IReadOnlyDictionary<string, MetadataV2Publication> publicationsById,
         ILookup<string, MetadataV2Publication> publicationsByService,
         ILookup<string, MetadataV2Publication> publicationsByResource,
+        IReadOnlyDictionary<string, MetadataV2Catalog> catalogsById,
+        IReadOnlyDictionary<string, MetadataV2Policy> policiesById,
+        IReadOnlyDictionary<string, MetadataV2Role> rolesById,
         ILookup<string, MetadataV2Resource> resourcesByStyleResourceId)
     {
         ResourcesById = resourcesById;
@@ -36,13 +39,35 @@ public sealed class MetadataV2GraphIndex
         PublicationsById = publicationsById;
         PublicationsByService = publicationsByService;
         PublicationsByResource = publicationsByResource;
+        CatalogsById = catalogsById;
+        PoliciesById = policiesById;
+        RolesById = rolesById;
         ResourcesByStyleResourceId = resourcesByStyleResourceId;
     }
 
+    /// <summary>
+    /// Resources by stable metadata identifier.
+    /// </summary>
     public IReadOnlyDictionary<string, MetadataV2Resource> ResourcesById { get; }
+
+    /// <summary>
+    /// Resources by metadata name. First match wins when names collide.
+    /// </summary>
     public IReadOnlyDictionary<string, MetadataV2Resource> ResourcesByName { get; }
+
+    /// <summary>
+    /// Connections by stable metadata identifier.
+    /// </summary>
     public IReadOnlyDictionary<string, MetadataV2Connection> ConnectionsById { get; }
+
+    /// <summary>
+    /// Storage bindings by stable metadata identifier.
+    /// </summary>
     public IReadOnlyDictionary<string, MetadataV2StorageBinding> StorageBindingsById { get; }
+
+    /// <summary>
+    /// Storage bindings grouped by canonical resource identifier.
+    /// </summary>
     public ILookup<string, MetadataV2StorageBinding> StorageBindingsByResource { get; }
 
     /// <summary>
@@ -62,11 +87,45 @@ public sealed class MetadataV2GraphIndex
     /// </summary>
     public IReadOnlyDictionary<int, MetadataV2Resource> ResourcesByStorageLayerId { get; }
 
+    /// <summary>
+    /// Services by stable metadata identifier.
+    /// </summary>
     public IReadOnlyDictionary<string, MetadataV2Service> ServicesById { get; }
+
+    /// <summary>
+    /// Services by metadata name. First match wins when names collide.
+    /// </summary>
     public IReadOnlyDictionary<string, MetadataV2Service> ServicesByName { get; }
+
+    /// <summary>
+    /// Publications by stable metadata identifier.
+    /// </summary>
     public IReadOnlyDictionary<string, MetadataV2Publication> PublicationsById { get; }
+
+    /// <summary>
+    /// Publications grouped by service identifier.
+    /// </summary>
     public ILookup<string, MetadataV2Publication> PublicationsByService { get; }
+
+    /// <summary>
+    /// Publications grouped by resource identifier.
+    /// </summary>
     public ILookup<string, MetadataV2Publication> PublicationsByResource { get; }
+
+    /// <summary>
+    /// Catalog targets by stable metadata identifier.
+    /// </summary>
+    public IReadOnlyDictionary<string, MetadataV2Catalog> CatalogsById { get; }
+
+    /// <summary>
+    /// Policies by stable metadata identifier.
+    /// </summary>
+    public IReadOnlyDictionary<string, MetadataV2Policy> PoliciesById { get; }
+
+    /// <summary>
+    /// Roles by stable metadata identifier.
+    /// </summary>
+    public IReadOnlyDictionary<string, MetadataV2Role> RolesById { get; }
 
     /// <summary>
     /// Reverse lookup from a style resource id to every resource that
@@ -127,6 +186,9 @@ public sealed class MetadataV2GraphIndex
         var publicationsById = graph.Publications.ToDictionary(p => p.Metadata.Id, StringComparer.Ordinal);
         var publicationsByService = graph.Publications.ToLookup(p => p.ServiceId, StringComparer.Ordinal);
         var publicationsByResource = graph.Publications.ToLookup(p => p.ResourceId, StringComparer.Ordinal);
+        var catalogsById = graph.Catalogs.ToDictionary(c => c.Metadata.Id, StringComparer.Ordinal);
+        var policiesById = graph.Policies.ToDictionary(p => p.Metadata.Id, StringComparer.Ordinal);
+        var rolesById = graph.Roles.ToDictionary(r => r.Metadata.Id, StringComparer.Ordinal);
 
         // Flatten (resource, styleResourceId) pairs into a reverse lookup so
         // callers can answer "which resources use style X?" in O(1).
@@ -149,6 +211,9 @@ public sealed class MetadataV2GraphIndex
             publicationsById,
             publicationsByService,
             publicationsByResource,
+            catalogsById,
+            policiesById,
+            rolesById,
             resourcesByStyleResourceId);
     }
 }

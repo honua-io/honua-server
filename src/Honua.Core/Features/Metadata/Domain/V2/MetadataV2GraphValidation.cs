@@ -123,6 +123,8 @@ public static class MetadataV2GraphValidator
         {
             var storageBindingIds = resource.StorageBindingIds ?? Array.Empty<string>();
 
+            ValidatePrimaryStorageBinding(errors, resource, storageBindingIds);
+
             foreach (var storageBindingId in storageBindingIds)
             {
                 if (!storageBindingsById.TryGetValue(storageBindingId, out var storageBinding))
@@ -144,6 +146,24 @@ public static class MetadataV2GraphValidator
             ValidateResourceTemporal(errors, resource);
             ValidateResourceSchemaFields(errors, resource);
             ValidateResourceDisplayEditing(errors, resource);
+        }
+    }
+
+    private static void ValidatePrimaryStorageBinding(
+        List<string> errors,
+        MetadataV2Resource resource,
+        IReadOnlyList<string> storageBindingIds)
+    {
+        var primaryStorageBindingId = resource.PrimaryStorageBindingId;
+        if (string.IsNullOrWhiteSpace(primaryStorageBindingId))
+        {
+            return;
+        }
+
+        if (!storageBindingIds.Contains(primaryStorageBindingId, StringComparer.Ordinal))
+        {
+            errors.Add(
+                $"resource '{resource.Metadata.Id}' primary storage binding '{primaryStorageBindingId}' must be listed in storageBindingIds.");
         }
     }
 

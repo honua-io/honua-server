@@ -464,7 +464,7 @@ internal static class DeployControlEndpoints
             At = evidenceRef.At
         };
 
-    private static IReadOnlyList<string> ResolveMetadataRollbackApprovalReasonCodes(MetadataRollbackPlan? rollbackPlan)
+    private static string[] ResolveMetadataRollbackApprovalReasonCodes(MetadataRollbackPlan? rollbackPlan)
         => rollbackPlan?.RequiresExplicitApproval == true
             ? ["metadata-rollback-explicit-approval"]
             : Array.Empty<string>();
