@@ -20,6 +20,18 @@ namespace Honua.Server.Features.Protocols.Elevation;
 /// cross-section) that build on the elevation profile sampler. Registered
 /// alongside the elevation API and gated through <see cref="LicenseGate"/>.
 /// </summary>
+/// <remarks>
+/// Like the other protocol mutation surfaces, these POST routes use
+/// <c>AllowAnonymous()</c> to bypass the application-wide authorization policy
+/// so the per-layer access check can run. Every handler invokes
+/// <c>LayerValidationHelpers.ValidateLayerWithAccessAsync(... AccessScope.Read)</c>
+/// (via <see cref="ValidateDatasetAsync"/>) plus the <see cref="LicenseGate"/>
+/// entitlement check before touching the elevation surface, which is what
+/// returns 401/403/402 for unauthenticated, unauthorized, or unlicensed
+/// callers. Removing <c>AllowAnonymous()</c> without first moving the per-layer
+/// gate into the pipeline would lock out every caller whose permissions live on
+/// the layer rather than on a global role.
+/// </remarks>
 internal static class SceneAnalysisEndpoints
 {
     private const string JsonContentType = "application/json";
@@ -41,7 +53,8 @@ internal static class SceneAnalysisEndpoints
             .Produces(StatusCodes.Status402PaymentRequired)
             .Produces(StatusCodes.Status403Forbidden)
             .Produces(StatusCodes.Status404NotFound)
-            .Produces(StatusCodes.Status422UnprocessableEntity);
+            .Produces(StatusCodes.Status422UnprocessableEntity)
+            .AllowAnonymous();
 
         endpoints.MapPost("/elevation/{datasetId}/slice", HandleSlice)
             .WithDisplayName("Compute Slice Cross-Section")
@@ -56,7 +69,8 @@ internal static class SceneAnalysisEndpoints
             .Produces(StatusCodes.Status402PaymentRequired)
             .Produces(StatusCodes.Status403Forbidden)
             .Produces(StatusCodes.Status404NotFound)
-            .Produces(StatusCodes.Status422UnprocessableEntity);
+            .Produces(StatusCodes.Status422UnprocessableEntity)
+            .AllowAnonymous();
 
         return endpoints;
     }
