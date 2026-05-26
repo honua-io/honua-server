@@ -141,6 +141,7 @@ How to build against Honua's APIs, SDKs, and protocols.
 - [Grounding](developer/GROUNDING.md) — natural-language grounding for AI builders.
 - [MCP Server](developer/MCP_SERVER.md) — JSON-RPC surface for AI agents.
 - [Package Review API](developer/package-review-api.md) — shared validation and read-only preview planning contract for publish/execute candidates.
+- [Share Export and Traffic API](developer/share-export-traffic-api.md) — Console Share scheduled exports, run history with Operate job links, and traffic projections.
 - [Redis Fallback Patterns](developer/REDIS_FALLBACK_PATTERNS.md)
 - [Spec Engine](developer/SPEC_ENGINE.md)
 - [AI Builder SDK Contract](ai-builder-sdk-contract.md) — Map of honua-server MCP surfaces to the honua-sdk-js AI Spatial App Builder workflow, fixture cases, and capability states.
@@ -163,6 +164,7 @@ How to build against Honua's APIs, SDKs, and protocols.
 - [Console Content and RBAC (Baseline)](admin-api/console-content-and-rbac.md) — Metadata v2 content item, session bootstrap, action-check, and provenance endpoints under `/api/v1/console/**` (#1162).
 - [Console Workflow Packages](admin-api/console-workflow-packages.md) — Server-owned node registry, mutable workflow package drafts, immutable versions, validation, dry-run, publication, runs, and provenance under `/api/v1/console/workflow-*` (#1185).
 - [Console Job Observability](admin-api/console-job-observability.md) — Durable execution job list, detail, logs, artifacts, action, cancel, retry, and Operate event correlation endpoints under `/api/v1/admin/jobs/**` (#1170).
+- [Share Export and Traffic API](developer/share-export-traffic-api.md) — Scheduled Share export definitions, run history with nullable `jobRunId`, and aggregate Share traffic panels under `/api/v1/admin/share/**`, plus per-item traffic under `/api/v1/admin/services/{serviceName}/layers/{layerId}/share/**` (#1216).
 - [Operate Observability Fixtures](admin-api/operate-observability-fixtures.md) — Development/Test seed endpoint for Console Testcontainers to hydrate Operate events, logs, alerts, jobs, artifacts, and investigations from a real honua-server plus PostgreSQL runtime (#1209).
 - [Metadata Prevalidation Admin API](admin-api/metadata-prevalidation.md) — Metadata v2 release-package compatibility reports for Console pre-PR and CI checks (#1164).
 - [Studio Package Lifecycle](admin-api/studio-package-lifecycle.md) — Server-owned draft, validation, preview, immutable version, publish, reopen, compare, and rollback endpoints under `/api/v1/studio/**` (#1180).

@@ -39,7 +39,11 @@ internal sealed partial class ConsoleJobService(
         ExecutionJobParameterKeys.TraceId,
         ExecutionJobParameterKeys.GeoprocessingPlanId,
         ExecutionJobParameterKeys.GeoprocessingProcessDefinitions,
-        ExecutionJobParameterKeys.GeoprocessingOutputArtifactKinds
+        ExecutionJobParameterKeys.GeoprocessingOutputArtifactKinds,
+        ExecutionJobParameterKeys.ShareExportId,
+        ExecutionJobParameterKeys.ShareRunId,
+        ExecutionJobParameterKeys.ShareDestinationType,
+        ExecutionJobParameterKeys.ShareFormat
     ];
 
     public async Task<ConsoleJobListResponse> ListAsync(
@@ -275,6 +279,7 @@ internal sealed partial class ConsoleJobService(
             if (preResult.Outcome == PreSubmissionCancelOutcome.Cancelled && preResult.Job != null)
             {
                 await RemoveFromQueueIfPresentAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+                await NotifyTerminalCallbacksAsync(preResult.Job).ConfigureAwait(false);
                 JobControlAction(logger, "cancel", job.OperationId, preResult.Job.Status.ToString());
                 return ControlResponse(preResult.Job, "cancel", "Job cancelled before submission.");
             }
@@ -318,6 +323,7 @@ internal sealed partial class ConsoleJobService(
                 if (ExecutionJobCancellationHelper.IsTerminal(applied.Job.Status))
                 {
                     await RemoveFromQueueIfPresentAsync(applied.Job.OperationId, cancellationToken).ConfigureAwait(false);
+                    await NotifyTerminalCallbacksAsync(applied.Job).ConfigureAwait(false);
                 }
 
                 JobControlAction(logger, "cancel", job.OperationId, applied.Job.Status.ToString());
@@ -360,9 +366,10 @@ internal sealed partial class ConsoleJobService(
         }
 
         var policy = job.RetryPolicy ?? JobRetryPolicy.Default;
-        if (!policy.ShouldRetry(job.AttemptCount))
+        var policyDisabledReason = ResolveRetryPolicyDisabledReason(policy, job.AttemptCount);
+        if (policyDisabledReason != null)
         {
-            throw new ConsoleJobConflictException("The retry policy budget is exhausted.");
+            ThrowForRetryDisabledReason(policyDisabledReason);
         }
 
         var approval = approvalGate.EvaluateApproval(
@@ -446,8 +453,31 @@ internal sealed partial class ConsoleJobService(
         CancellationToken cancellationToken)
     {
         await RemoveFromQueueIfPresentAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+        await NotifyTerminalCallbacksAsync(job).ConfigureAwait(false);
         JobControlAction(logger, "cancel", job.OperationId, job.Status.ToString());
         return ControlResponse(job, "cancel", "Job cancelled.");
+    }
+
+    // Operator cancel can be the only terminal transition a job ever receives (a queued job cancelled
+    // before worker pickup never reaches the worker/reconciler notify paths). Fire the registered
+    // terminal callbacks here, mirroring JobExecutionService/JobReconciliationService, so feature
+    // run/progress stores (e.g. Share export run history) reconcile to the job's terminal state.
+    // Callbacks are best-effort and kind-guarded. Use CancellationToken.None: the cancel is already
+    // durably committed, so a disconnected client must not strand a backing run at a pre-terminal
+    // status, consistent with the trigger path's commit-once side effects.
+    private async Task NotifyTerminalCallbacksAsync(ExecutionJobRecord job)
+    {
+        foreach (var callback in serviceProvider.GetServices<IJobTerminalCallback>())
+        {
+            try
+            {
+                await callback.OnTerminalAsync(job, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                TerminalCallbackFailed(logger, job.OperationId, ex);
+            }
+        }
     }
 
     private async Task<ExecutionJobRecord?> GetAuthorizedJobAsync(
@@ -707,9 +737,10 @@ internal sealed partial class ConsoleJobService(
         CancellationToken cancellationToken)
     {
         var retryPolicy = job.RetryPolicy ?? JobRetryPolicy.Default;
-        if (!retryPolicy.ShouldRetry(job.AttemptCount))
+        var policyDisabledReason = ResolveRetryPolicyDisabledReason(retryPolicy, job.AttemptCount);
+        if (policyDisabledReason != null)
         {
-            return RetryDispatch.Disabled(RetryDisabledReasons.RetryBudgetExhausted);
+            return RetryDispatch.Disabled(policyDisabledReason);
         }
 
         if (IsLocalBackend(job))
@@ -749,6 +780,25 @@ internal sealed partial class ConsoleJobService(
             : RetryDispatch.Disabled(RetryDisabledReasons.BackendRetryUnsupported);
     }
 
+    // Determines whether the retry policy alone forbids a manual retry, independent of dispatch
+    // capability. A no-retry policy (MaxAttempts <= 1, e.g. JobRetryPolicy.None) forbids manual retry
+    // regardless of AttemptCount, including a job that reached a terminal state before its first
+    // attempt (AttemptCount == 0) such as a cancel before worker pickup or a dispatch rollback. There
+    // ShouldRetry(0) would otherwise be true for MaxAttempts == 1, and re-queuing the job would re-run
+    // work whose downstream first-terminal state (e.g. a Share export run reconciled first-terminal-
+    // wins) cannot reopen, desyncing the job and the run. Returns null when the policy permits a retry.
+    private static string? ResolveRetryPolicyDisabledReason(JobRetryPolicy policy, int attemptCount)
+    {
+        if (policy.MaxAttempts <= 1)
+        {
+            return RetryDisabledReasons.NotRetryable;
+        }
+
+        return policy.ShouldRetry(attemptCount)
+            ? null
+            : RetryDisabledReasons.RetryBudgetExhausted;
+    }
+
     private static string ResolveRetryDisabledReason(bool canExecute, string? retryDisabledReason)
     {
         if (!canExecute)
@@ -763,6 +813,7 @@ internal sealed partial class ConsoleJobService(
             RetryDisabledReasons.BackendCapabilityUnavailable => "job backend retry capability unavailable",
             RetryDisabledReasons.BackendRetryUnsupported => "job backend does not support retry",
             RetryDisabledReasons.RetryBudgetExhausted => "retry budget exhausted",
+            RetryDisabledReasons.NotRetryable => "not retryable",
             _ => "not retryable"
         };
     }
@@ -776,6 +827,7 @@ internal sealed partial class ConsoleJobService(
             RetryDisabledReasons.BackendCapabilityUnavailable => new ConsoleJobServiceUnavailableException("Job backend retry capabilities could not be loaded."),
             RetryDisabledReasons.BackendRetryUnsupported => new ConsoleJobConflictException("The selected job backend does not support retry."),
             RetryDisabledReasons.RetryBudgetExhausted => new ConsoleJobConflictException("The retry policy budget is exhausted."),
+            RetryDisabledReasons.NotRetryable => new ConsoleJobConflictException("Job is not retryable."),
             _ => new ConsoleJobConflictException("Job is not retryable.")
         };
     }
@@ -1055,6 +1107,9 @@ internal sealed partial class ConsoleJobService(
     [LoggerMessage(117006, LogLevel.Warning, "Manual retry capability lookup failed for job {JobId}")]
     private static partial void JobRetryCapabilityLookupFailed(ILogger logger, string jobId, Exception exception);
 
+    [LoggerMessage(117007, LogLevel.Warning, "Terminal callback failed for job {JobId} after operator cancel; feature run/progress state may be stale until TTL or reconcile")]
+    private static partial void TerminalCallbackFailed(ILogger logger, string jobId, Exception exception);
+
     private static class RetryDisabledReasons
     {
         public const string JobQueueUnavailable = "job_queue_unavailable";
@@ -1062,6 +1117,7 @@ internal sealed partial class ConsoleJobService(
         public const string BackendCapabilityUnavailable = "backend_capability_unavailable";
         public const string BackendRetryUnsupported = "backend_retry_unsupported";
         public const string RetryBudgetExhausted = "retry_budget_exhausted";
+        public const string NotRetryable = "not_retryable";
     }
 
     private readonly record struct RetryDispatch(

@@ -20,11 +20,13 @@ using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security;
+using Honua.Core.Features.Share.Abstractions;
 using Honua.Core.Features.Styling;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Jobs;
 using Honua.Server.Features.Admin.OperateFixtures;
+using Honua.Server.Features.Admin.Share;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Features.CloudDemo;
@@ -401,6 +403,9 @@ builder.Services.AddHonuaLicensing(builder.Configuration);
 builder.Services.AddScoped<Honua.Server.Features.Admin.Services.ConfigurationDocumentationService>();
 builder.Services.TryAddSingleton(TimeProvider.System);
 builder.Services.TryAddScoped<IConsoleJobService, ConsoleJobService>();
+builder.Services.TryAddSingleton<IShareExportDestinationResolver, UnsupportedShareExportDestinationResolver>();
+builder.Services.TryAddSingleton<IShareExportStore, InMemoryShareExportStore>();
+builder.Services.TryAddSingleton<IShareTrafficStore, InMemoryShareTrafficStore>();
 
 // Register control plane IAM services (in-memory implementations until #496, #498, #355 land)
 builder.Services.AddSingleton<Honua.Core.Features.Identity.Abstractions.IOidcProviderStore,
@@ -614,6 +619,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Core.Features.Authorization.Domain.OperatorAuthorizationJsonContext.Default,
         Honua.Server.Features.Admin.ObservabilityJsonContext.Default,
         Honua.Server.Features.Admin.InvestigationJsonContext.Default,
+        Honua.Server.Features.Admin.Share.ShareAdminJsonContext.Default,
         Honua.Server.Features.Protocols.Ogc.Api.Processes.OgcProcessesJsonContext.Default);
 });
 
@@ -949,6 +955,7 @@ app.MapExternalServiceDiscoveryEndpoints();
 app.MapConfigurationDiscoveryEndpoints();
 app.MapAdminObservabilityEndpoints();
 app.MapConsoleJobEndpoints();
+app.MapShareAdminEndpoints();
 app.MapAdminRealtimeHub();
 
 // Configure layer publishing endpoints
