@@ -553,6 +553,77 @@ public sealed class MetadataV2ModelTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public void Validate_WithDanglingPolicyReferences_ReturnsResourceAndRoleErrors()
+    {
+        var graph = CreateValidGraph() with
+        {
+            Resources =
+            [
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource.parcels" },
+                    StorageBindingIds = ["storage.parcels.postgis"],
+                    PolicyIds = ["policy.absent"]
+                }
+            ],
+            Roles =
+            [
+                new MetadataV2Role
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "role.viewer" },
+                    PolicyIds = ["policy.missing"]
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(
+            "resource 'resource.parcels' references missing policy 'policy.absent'.");
+        result.Errors.Should().Contain(
+            "role 'role.viewer' references missing policy 'policy.missing'.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Validate_WithResolvedPolicyReferences_IsValid()
+    {
+        var graph = CreateValidGraph() with
+        {
+            Resources =
+            [
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource.parcels" },
+                    StorageBindingIds = ["storage.parcels.postgis"],
+                    PolicyIds = ["policy.public"]
+                }
+            ],
+            Policies =
+            [
+                new MetadataV2Policy
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "policy.public" }
+                }
+            ],
+            Roles =
+            [
+                new MetadataV2Role
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "role.viewer" },
+                    PolicyIds = ["policy.public"]
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public void Validate_WithStorageBindingOwnedByDifferentResource_ReturnsResourceFirstError()
     {
         var graph = CreateValidGraph() with

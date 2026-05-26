@@ -47,11 +47,13 @@ public static class MetadataV2GraphValidator
         var publicationsById = ToUniqueDictionary(
             graph.Publications,
             publication => publication.Metadata.Id);
+        var policyIds = graph.Policies.Select(policy => policy.Metadata.Id).ToHashSet(StringComparer.Ordinal);
 
         ValidateStorageBindings(errors, graph.StorageBindings, resourceIds, connectionIds);
         ValidateResources(errors, graph.Resources, storageBindingsById);
         ValidatePublications(errors, graph.Publications, resourceIds, storageBindingsById, serviceIds);
         ValidateServices(errors, graph.Services, publicationsById);
+        ValidatePolicyReferences(errors, graph, policyIds);
         ValidatePublicationPrimary(errors, graph.Publications);
         ValidateObjectMetadataUniversals(errors, graph);
         ValidateStyleResources(errors, graph);
@@ -410,6 +412,38 @@ public static class MetadataV2GraphValidator
             {
                 errors.Add(
                     $"publication '{publication.Metadata.Id}' uses storage binding '{publication.StorageBindingId}' owned by resource '{storageBinding.ResourceId}'.");
+            }
+        }
+    }
+
+    private static void ValidatePolicyReferences(
+        List<string> errors,
+        MetadataV2Graph graph,
+        HashSet<string> policyIds)
+    {
+        // Resources and roles attach policies by id; every reference must resolve
+        // to a declared policy so dangling policyIds cannot pass validation.
+        foreach (var resource in graph.Resources)
+        {
+            foreach (var policyId in resource.PolicyIds)
+            {
+                if (!policyIds.Contains(policyId))
+                {
+                    errors.Add(
+                        $"resource '{resource.Metadata.Id}' references missing policy '{policyId}'.");
+                }
+            }
+        }
+
+        foreach (var role in graph.Roles)
+        {
+            foreach (var policyId in role.PolicyIds)
+            {
+                if (!policyIds.Contains(policyId))
+                {
+                    errors.Add(
+                        $"role '{role.Metadata.Id}' references missing policy '{policyId}'.");
+                }
             }
         }
     }
