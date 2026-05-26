@@ -90,14 +90,26 @@ public sealed class TestMetadataV2GraphBuilder
         string name,
         MetadataV2ResourceType type = MetadataV2ResourceType.FeatureDataset,
         IEnumerable<MetadataV2Field>? fields = null,
-        AccessPolicy? accessPolicy = null)
+        AccessPolicy? accessPolicy = null,
+        MetadataV2ResourceSpatial? spatial = null,
+        MetadataV2ResourceTemporal? temporal = null,
+        string? description = null,
+        IReadOnlyDictionary<string, string>? annotations = null)
     {
         _resources.Add(new MetadataV2Resource
         {
-            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = id,
+                Name = name,
+                Description = description,
+                Annotations = annotations ?? new Dictionary<string, string>(),
+            },
             Type = type,
             SchemaFields = fields?.ToArray() ?? Array.Empty<MetadataV2Field>(),
             AccessPolicy = accessPolicy,
+            Spatial = spatial,
+            Temporal = temporal,
         });
         return this;
     }
@@ -140,11 +152,17 @@ public sealed class TestMetadataV2GraphBuilder
         string name,
         string? route = null,
         IReadOnlyList<string>? protocols = null,
-        AccessPolicy? accessPolicy = null)
+        AccessPolicy? accessPolicy = null,
+        string? description = null)
     {
         _services.Add(new MetadataV2Service
         {
-            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = id,
+                Name = name,
+                Description = description,
+            },
             Route = route,
             Protocols = protocols ?? Array.Empty<string>(),
             AccessPolicy = accessPolicy,

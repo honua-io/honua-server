@@ -6,11 +6,15 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
@@ -218,8 +222,19 @@ public sealed class StacCollectionsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}")]
     public async Task GetCollection_WithProjectedExtent_UsesTransformFallbackForSpatialBbox()
     {
+        const string serviceId = "projected-stac";
+        const int storageLayerId = ProjectedExtentLayerCatalog.LayerId;
+        const int projectedSrid = 26910;
+        var graphProvider = new TestMetadataV2GraphProvider(
+            BuildProjectedExtentGraph(serviceId, storageLayerId, projectedSrid));
+
         var fixture = new WebAppFixture()
-            .ReplaceService<ILayerCatalog>(new ProjectedExtentLayerCatalog());
+            .ReplaceService<ILayerCatalog>(new ProjectedExtentLayerCatalog())
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IMetadataV2GraphProvider>();
+                services.AddSingleton<IMetadataV2GraphProvider>(graphProvider);
+            });
 
         try
         {
@@ -247,6 +262,61 @@ public sealed class StacCollectionsTests : IAsyncLifetime
         {
             await fixture.DisposeAsync();
         }
+    }
+
+    private static MetadataV2Graph BuildProjectedExtentGraph(string serviceId, int storageLayerId, int projectedSrid)
+    {
+        const double minX = 500_000d;
+        const double minY = 4_100_000d;
+        const double maxX = 600_000d;
+        const double maxY = 4_200_000d;
+
+        return new TestMetadataV2GraphBuilder()
+            .AddResource(
+                "res-projected-stac",
+                "projected-layer",
+                fields:
+                [
+                    new MetadataV2Field
+                    {
+                        Name = "shape",
+                        Type = MetadataV2FieldType.Geometry,
+                        SemanticRoles = ["geometry.primary"],
+                    },
+                ],
+                spatial: new MetadataV2ResourceSpatial
+                {
+                    GeometryType = MetadataV2GeometryType.Point,
+                    SpatialReference = new MetadataV2SpatialReference
+                    {
+                        Srid = projectedSrid,
+                        Crs = $"EPSG:{projectedSrid}",
+                        IsGeographic = false,
+                    },
+                    Bbox = new MetadataV2Bbox
+                    {
+                        West = minX,
+                        South = minY,
+                        East = maxX,
+                        North = maxY,
+                    },
+                    PrimaryGeometryField = "shape",
+                })
+            .AddStorageBinding(
+                "binding-projected-stac",
+                "res-projected-stac",
+                "projected_layer",
+                storageLayerId: storageLayerId)
+            .AddService("svc-projected-stac", serviceId, protocols: [ServiceProtocols.Stac])
+            .AddPublication(
+                "pub-projected-stac",
+                "svc-projected-stac",
+                "res-projected-stac",
+                layerIndex: storageLayerId,
+                storageBindingId: "binding-projected-stac",
+                serviceLocalId: storageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                publicationType: MetadataV2PublicationType.StacCollection)
+            .Build();
     }
 
     private Task UpdateLayerMetadataAsync(CatalogMetadata metadata)
