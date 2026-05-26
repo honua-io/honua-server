@@ -24,6 +24,7 @@ heartbeat_seconds="${HONUA_SERVER_TEST_HEARTBEAT_SECONDS:-30}"
 heartbeat_tail_lines="${HONUA_SERVER_TEST_HEARTBEAT_TAIL_LINES:-40}"
 console_verbosity="${HONUA_SERVER_TEST_CONSOLE_VERBOSITY:-normal}"
 exclude_slow="${HONUA_SERVER_TEST_EXCLUDE_SLOW:-true}"
+exclude_fast="${HONUA_SERVER_TEST_EXCLUDE_FAST:-true}"
 
 mkdir -p "${results_dir}"
 
@@ -34,6 +35,9 @@ timing_file="${results_dir%/}/${log_name}.timing.json"
 filter="${filter_expression}"
 if [[ "${exclude_slow}" == "true" ]]; then
   filter="(${filter_expression})&Tier!=Slow"
+fi
+if [[ "${exclude_fast}" == "true" ]]; then
+  filter="(${filter})&Tier!=Fast"
 fi
 
 extra_args=()
