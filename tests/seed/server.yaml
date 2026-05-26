@@ -134,6 +134,26 @@ sql:
   - "CREATE INDEX IF NOT EXISTS idx_analysis_result_artifacts_source ON honua.analysis_result_artifacts (source_item_id, source_version, artifact_id);"
   - "CREATE INDEX IF NOT EXISTS idx_analysis_result_artifacts_retention ON honua.analysis_result_artifacts (retention_state, expires_at);"
   - |
+      CREATE TABLE IF NOT EXISTS honua.open_data_pages (
+          item_id      TEXT        NOT NULL PRIMARY KEY,
+          is_published BOOLEAN    NOT NULL DEFAULT FALSE,
+          updated_at   TIMESTAMPTZ NOT NULL,
+          updated_by   TEXT,
+          page_json    JSONB       NOT NULL
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_open_data_pages_published_updated ON honua.open_data_pages(is_published, updated_at DESC, item_id);"
+  - |
+      CREATE TABLE IF NOT EXISTS honua.open_data_stac_publications (
+          collection_id    TEXT        NOT NULL PRIMARY KEY,
+          item_id          TEXT        NOT NULL,
+          status           TEXT        NOT NULL,
+          updated_at       TIMESTAMPTZ NOT NULL,
+          publication_json JSONB       NOT NULL,
+          CONSTRAINT open_data_stac_publications_status CHECK (status IN ('Published', 'Unpublished'))
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_open_data_stac_publications_item_updated ON honua.open_data_stac_publications(item_id, updated_at DESC, collection_id);"
+  - "CREATE INDEX IF NOT EXISTS idx_open_data_stac_publications_status_updated ON honua.open_data_stac_publications(status, updated_at DESC, collection_id);"
+  - |
       CREATE TABLE IF NOT EXISTS honua.relationships (
           id SERIAL PRIMARY KEY,
           layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,

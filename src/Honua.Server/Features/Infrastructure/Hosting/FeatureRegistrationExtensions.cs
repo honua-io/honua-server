@@ -93,7 +93,7 @@ internal static class FeatureRegistrationExtensions
         services.AddAlerts(configuration);
         services.AddNlQuery(configuration);
         services.AddStac();
-        services.AddOpenDataPublication();
+        services.AddOpenDataPublication(configuration);
         services.AddStaticMap();
         services.AddTerrain();
         services.AddScene(configuration);

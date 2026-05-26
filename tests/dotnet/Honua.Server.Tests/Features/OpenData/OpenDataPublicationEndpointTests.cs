@@ -10,6 +10,7 @@ using Honua.Core.Features.OpenData.Domain;
 using Honua.Server.Features.Console.Models;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.OpenData.Models;
+using Honua.Server.Features.Protocols.Stac.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Hosting;
@@ -222,6 +223,8 @@ public sealed class OpenDataPublicationEndpointTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/stac/publications/{collectionId}")]
     [Endpoint("PUT /api/v1/admin/stac/publications/{collectionId}")]
     [Endpoint("DELETE /api/v1/admin/stac/publications/{collectionId}")]
+    [Endpoint("GET /stac/collections")]
+    [Endpoint("GET /stac/collections/{collectionId}")]
     public async Task StacPublicationLifecycle_PublishUpdateUnpublish_ReturnsStatusReadback()
     {
         var item = await CreateContentAsync(
@@ -243,6 +246,21 @@ public sealed class OpenDataPublicationEndpointTests : IAsyncLifetime
         Assert.Equal(OpenDataStacPublicationStatus.Published, published.Data!.Status);
         Assert.Equal("stac-life", published.Data.CollectionId);
 
+        var publicCollectionResponse = await _publicClient.GetAsync("/stac/collections/stac-life");
+        Assert.Equal(HttpStatusCode.OK, publicCollectionResponse.StatusCode);
+        var publicCollection = JsonSerializer.Deserialize<StacCollection>(
+            await publicCollectionResponse.Content.ReadAsStringAsync(),
+            JsonOptions)!;
+        Assert.Equal("stac-life", publicCollection.Id);
+        Assert.Equal("Initial STAC", publicCollection.Title);
+
+        var publicCollectionsResponse = await _publicClient.GetAsync("/stac/collections");
+        Assert.Equal(HttpStatusCode.OK, publicCollectionsResponse.StatusCode);
+        var publicCollections = JsonSerializer.Deserialize<StacCollectionsResponse>(
+            await publicCollectionsResponse.Content.ReadAsStringAsync(),
+            JsonOptions)!;
+        Assert.Contains(publicCollections.Collections, collection => collection.Id == "stac-life");
+
         var statusResponse = await _adminClient.GetAsync("/api/v1/admin/stac/publications/stac-life");
         Assert.Equal(HttpStatusCode.OK, statusResponse.StatusCode);
 
@@ -255,6 +273,13 @@ public sealed class OpenDataPublicationEndpointTests : IAsyncLifetime
         var updated = await ReadEnvelopeAsync<StacPublicationStatusResponse>(updateResponse);
         Assert.Equal("Updated STAC", updated.Data!.Title);
 
+        var publicUpdatedResponse = await _publicClient.GetAsync("/stac/collections/stac-life");
+        Assert.Equal(HttpStatusCode.OK, publicUpdatedResponse.StatusCode);
+        var publicUpdated = JsonSerializer.Deserialize<StacCollection>(
+            await publicUpdatedResponse.Content.ReadAsStringAsync(),
+            JsonOptions)!;
+        Assert.Equal("Updated STAC", publicUpdated.Title);
+
         var deleteResponse = await _adminClient.DeleteAsync("/api/v1/admin/stac/publications/stac-life");
         Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
 
@@ -262,6 +287,9 @@ public sealed class OpenDataPublicationEndpointTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, afterDeleteResponse.StatusCode);
         var afterDelete = await ReadEnvelopeAsync<StacPublicationStatusResponse>(afterDeleteResponse);
         Assert.Equal(OpenDataStacPublicationStatus.Unpublished, afterDelete.Data!.Status);
+
+        var publicAfterDeleteResponse = await _publicClient.GetAsync("/stac/collections/stac-life");
+        Assert.Equal(HttpStatusCode.NotFound, publicAfterDeleteResponse.StatusCode);
     }
 
     private static OpenDataPageUpdateRequest CompleteOpenDataPage(string title)

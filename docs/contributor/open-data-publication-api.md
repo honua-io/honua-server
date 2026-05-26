@@ -4,11 +4,13 @@ Ticket #1214 adds a server-owned publication surface for Console open-data pages
 DCAT/data.json export, Schema.org Dataset preview, and Console STAC publication
 controls. The implementation is intentionally bounded to the current Console
 content-store baseline: page and STAC publication state are persisted through
-`IOpenDataStore`, whose default server implementation is in-memory until the
-persistent Console content store lands. The STAC controls create and update
-Console-side publication state and expose the intended public collection URL;
-they do not mutate the Metadata v2 graph that backs the existing public `/stac`
-read endpoints in this slice.
+`IOpenDataStore`. The normal PostgreSQL provider stores those records in
+dedicated `honua.open_data_pages` and
+`honua.open_data_stac_publications` tables; `InMemoryOpenDataStore` is only an
+explicit development/test fallback. The STAC controls create and update
+Console-side publication state and the public `/stac` collection/catalog routes
+project eligible published records alongside Metadata v2-backed STAC
+publications.
 
 ## Surface
 
@@ -67,8 +69,9 @@ subsequent `GET` requests return that status instead of `404`.
 The STAC publication response is a Console control-plane readback:
 `collectionId`, `itemId`, `status`, `publicStacCollectionUrl`, optional
 title/description overrides, current eligibility when the source item still
-exists, and `updatedAt`. It is not the STAC Collection document returned by
-`GET /stac/collections/{collectionId}`.
+exists, and `updatedAt`. `GET /stac/collections/{collectionId}` returns the
+standards-shaped STAC Collection projection for published, eligible records and
+returns `404` after the record is unpublished or becomes ineligible.
 
 ## Eligibility
 
@@ -144,17 +147,21 @@ Public open-data list, item, and catalog responses use one-minute output-cache
 policies tagged `open-data` and `metadata`. The list policy varies by the
 `cursor` and `limit` query values and `Accept`; the item policy varies by
 `itemId` and `Accept`; the catalog policy varies by `Accept`. Admin page writes
-and STAC publication mutations evict the `open-data` and `metadata` tags, plus
-the per-item `open-data:{itemId}` tag, through `OutputCacheInvalidationService`.
+and STAC publication mutations evict the `open-data`, `metadata`, and
+`stac-metadata` tags, plus the per-item `open-data:{itemId}` tag, through
+`OutputCacheInvalidationService`.
 
 ## MVP Boundaries
 
-- `IOpenDataStore` is currently backed by `InMemoryOpenDataStore`; page and
-  STAC publication state is process-local until durable Console persistence is
-  added.
+- The PostgreSQL provider is durable. Non-PostgreSQL providers need a bounded
+  provider-specific `IOpenDataStore` before they can claim durable open-data
+  publication state.
 - `/open-data/catalog.json` is generated through the public list projection and
   currently includes at most 200 visible records.
 - Invalid or stale list cursors are treated as the first page instead of a
   client error.
 - Public Schema.org data is embedded under `schemaOrg` in the JSON response;
   there is no `application/ld+json` content-negotiated variant yet.
+- Console-managed public STAC collections expose collection metadata and links;
+  item search remains backed by the existing Metadata v2 STAC publication data
+  path until Console content items carry canonical feature/raster bindings.

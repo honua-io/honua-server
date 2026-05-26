@@ -28,6 +28,7 @@ using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Mobile.FieldCollection.Abstractions;
+using Honua.Core.Features.OpenData.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Share.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
@@ -56,6 +57,7 @@ using Honua.Postgres.Features.FeatureStore.Services;
 using Honua.Postgres.Features.Forms;
 using Honua.Postgres.Features.Mobile.FieldCollection;
 using Honua.Postgres.Features.Observability;
+using Honua.Postgres.Features.OpenData;
 using Honua.Postgres.Features.Raster;
 using Honua.Postgres.Features.Security;
 using Honua.Postgres.Features.Share;
@@ -164,6 +166,12 @@ internal static class ServiceCollectionExtensions
 
         // Register Forms package store (#1184)
         services.AddScoped<IFormPackageStore, PostgresFormPackageStore>();
+
+        // Register Console open-data publication store (#1214)
+        services.AddScoped<IOpenDataStore>(serviceProvider =>
+            new PostgresOpenDataStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
 
         // Register Metadata v2 graph store (Postgres-backed JSONB + sidecar indexes)
         services.AddScoped<IMetadataV2GraphStore>(serviceProvider =>

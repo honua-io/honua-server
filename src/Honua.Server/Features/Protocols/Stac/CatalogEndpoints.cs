@@ -146,6 +146,20 @@ internal static class CatalogEndpoints
                     title: title));
             }
 
+            var openDataService = OpenDataStacProjectionMapper.TryResolveOpenDataPublicationService(context);
+            var openDataPublicationCount = 0;
+            if (openDataService is not null)
+            {
+                var openDataPublications = await openDataService
+                    .ListPublicStacPublicationsAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                openDataPublicationCount = openDataPublications.Count;
+                foreach (var projection in openDataPublications)
+                {
+                    links.Add(OpenDataStacProjectionMapper.MapToChildLink(projection, stacBase));
+                }
+            }
+
             var catalog = new StacCatalog
             {
                 Id = StacConstants.CatalogId,
@@ -155,8 +169,8 @@ internal static class CatalogEndpoints
                 Links = links.ToImmutable()
             };
 
-            StacLog.CatalogReturned(logger, visible.Length);
-            StacTelemetry.SetResultCount(activity, visible.Length);
+            StacLog.CatalogReturned(logger, visible.Length + openDataPublicationCount);
+            StacTelemetry.SetResultCount(activity, visible.Length + openDataPublicationCount);
             return Results.Json(catalog, StacJsonContext.Default.StacCatalog, MediaTypes.Json);
         }
         catch (OperationCanceledException ex)

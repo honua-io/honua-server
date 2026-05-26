@@ -87,7 +87,7 @@
         "stac-catalog"
       ],
       "catalogRole": "Asset and spatiotemporal catalog/search surface for STAC clients.",
-      "sourceOfTruth": "STAC is a standards projection of cataloged resources and assets; it is not the operator control plane.",
+      "sourceOfTruth": "STAC is a standards projection of cataloged resources and assets. Console-managed STAC publication state contributes collection/catalog entries, while item/search data remains backed by Metadata v2 publication bindings.",
       "projectionTargets": [
         "stac-collection",
         "stac-item"
@@ -493,9 +493,9 @@
         "javascript": "Console Share admin client helpers for open-data/DCAT/Console STAC publication workflows",
         "python": "Admin open-data publication client where Console automation needs parity"
       },
-      "responseKind": "Admin ApiResponse envelopes for reads/writes, 201 Created plus Location on STAC publish, and 204 No Content on STAC unpublish. STAC publication responses are Console status readbacks, not public STAC Collection documents.",
+      "responseKind": "Admin ApiResponse envelopes for reads/writes, 201 Created plus Location on STAC publish, and 204 No Content on STAC unpublish. STAC publication responses are Console status readbacks; the public STAC Collection document is available from the returned Location while the record is published and eligible.",
       "paginationFiltering": "No admin paging in the current contract. GET /api/v1/admin/open-data/{itemId} synthesizes an unpublished default page when no page record exists. Eligibility and validation responses preserve all blocking reasons and documented validation exceptions.",
-      "testExpectation": "Open-data publication tests cover eligibility reasons, merge update/readback, denied public reads, DCAT validation/status, and STAC publish/update/unpublish readback."
+      "testExpectation": "Open-data publication tests cover eligibility reasons, merge update/readback, denied public reads, DCAT validation/status, STAC publish/update/unpublish readback, and public STAC collection visibility/removal."
     },
     {
       "id": "geoservices-featureserver-metadata",

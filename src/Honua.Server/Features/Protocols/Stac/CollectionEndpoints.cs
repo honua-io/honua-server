@@ -2,11 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Protocols.Ogc.Api.Features;
 using Honua.Server.Features.Protocols.Ogc.Common;
 using Honua.Server.Features.Protocols.Stac.Models;
@@ -91,6 +93,19 @@ internal static class CollectionEndpoints
                     ct),
                 cancellationToken).ConfigureAwait(false);
 
+            var openDataService = OpenDataStacProjectionMapper.TryResolveOpenDataPublicationService(context);
+            if (openDataService is not null)
+            {
+                var openDataPublications = await openDataService
+                    .ListPublicStacPublicationsAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                if (openDataPublications.Count > 0)
+                {
+                    collections = collections.AddRange(openDataPublications
+                        .Select(projection => OpenDataStacProjectionMapper.MapToCollection(projection, baseUrl)));
+                }
+            }
+
             var links = ImmutableArray.Create(
                 Link.Create(
                     href: $"{stacBase}/collections",
@@ -150,9 +165,43 @@ internal static class CollectionEndpoints
                 context, collectionId, cancellationToken).ConfigureAwait(false);
             if (resolved is null)
             {
-                StacTelemetry.SetFailed(activity, "collection_not_found");
-                StacLog.CollectionNotFound(logger, collectionId);
-                return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+                var legacyValidation = await LayerValidationHelpers.ValidateCollectionWithAccessAsync(
+                    context,
+                    collectionId,
+                    requiredProtocol: ServiceProtocols.Stac,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+                if (!legacyValidation.IsValid)
+                {
+                    var openDataService = OpenDataStacProjectionMapper.TryResolveOpenDataPublicationService(context);
+                    var openDataPublication = openDataService is null
+                        ? null
+                        : await openDataService.GetPublicStacPublicationAsync(collectionId, cancellationToken)
+                            .ConfigureAwait(false);
+                    if (openDataPublication is null)
+                    {
+                        StacTelemetry.SetFailed(activity, "collection_not_found");
+                        StacLog.CollectionNotFound(logger, collectionId);
+                        return legacyValidation.ErrorResult!;
+                    }
+
+                    var openDataBaseUrl = BaseUrlResolver.GetBaseUrl(context);
+                    var openDataCollection = OpenDataStacProjectionMapper.MapToCollection(
+                        openDataPublication.Value,
+                        openDataBaseUrl);
+                    StacTelemetry.SetResultCount(activity, 1);
+                    return Results.Json(openDataCollection, StacJsonContext.Default.StacCollection, MediaTypes.Json);
+                }
+
+                var legacyBaseUrl = BaseUrlResolver.GetBaseUrl(context);
+                var legacyCollection = await StacMappingService.MapLayerToCollectionAsync(
+                    legacyValidation.Layer!,
+                    featureReader,
+                    legacyBaseUrl,
+                    coordinateTransformService,
+                    cancellationToken).ConfigureAwait(false);
+
+                StacTelemetry.SetResultCount(activity, 1);
+                return Results.Json(legacyCollection, StacJsonContext.Default.StacCollection, MediaTypes.Json);
             }
 
             var accessError = Honua.Server.Features.Infrastructure.Authentication.AccessPolicyHelpers
@@ -190,4 +239,5 @@ internal static class CollectionEndpoints
                 context, "An error occurred while retrieving the STAC collection.");
         }
     }
+
 }

@@ -194,8 +194,10 @@ Share publication workflows
   emits up to 200 visible records; large-catalog streaming/export expansion is
   a follow-on.
 - STAC publication admin responses are Console status/readback documents. The
-  public STAC API remains under `/stac` and returns STAC Catalog, Collection,
-  and Item JSON from the Metadata v2-backed STAC route family.
+  public STAC API remains under `/stac`; published, eligible Console STAC
+  records are projected as STAC Catalog/Collection entries alongside Metadata
+  v2-backed STAC publications. STAC item/search routes remain backed by the
+  existing Metadata v2 data path.
 
 **Typical use cases:**
 - Publishing curated open-data landing pages

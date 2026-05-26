@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.OpenData.Abstractions;
 using Honua.Server.Features.Infrastructure.OpenData.Services;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.Infrastructure.OpenData;
@@ -15,9 +16,15 @@ internal static class OpenDataServiceCollectionExtensions
     /// <summary>
     /// Adds open-data publication services.
     /// </summary>
-    public static IServiceCollection AddOpenDataPublication(this IServiceCollection services)
+    public static IServiceCollection AddOpenDataPublication(this IServiceCollection services, IConfiguration configuration)
     {
-        services.TryAddSingleton<IOpenDataStore, InMemoryOpenDataStore>();
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        if (configuration.GetValue<bool>("OpenData:UseInMemoryStore"))
+        {
+            services.TryAddSingleton<IOpenDataStore, InMemoryOpenDataStore>();
+        }
+
         services.TryAddScoped<OpenDataPublicationService>();
         return services;
     }

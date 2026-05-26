@@ -126,7 +126,7 @@ internal sealed partial class OutputCacheInvalidationService
     /// </summary>
     public Task InvalidateOpenDataAsync(string? itemId, CancellationToken cancellationToken)
     {
-        var tags = new List<string> { "open-data", "metadata" };
+        var tags = new List<string> { "open-data", "metadata", "stac-metadata" };
         if (!string.IsNullOrWhiteSpace(itemId))
         {
             tags.Add($"open-data:{itemId.Trim().ToLowerInvariant()}");

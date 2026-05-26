@@ -301,6 +301,35 @@ internal sealed class OpenDataPublicationService
         return StacPublicationOperationResult.Success(stored, eligibility);
     }
 
+    public async Task<IReadOnlyList<OpenDataStacPublicationProjection>> ListPublicStacPublicationsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var records = await _openDataStore.ListStacPublicationsAsync(cancellationToken).ConfigureAwait(false);
+        var visible = new List<OpenDataStacPublicationProjection>();
+        foreach (var record in records)
+        {
+            var projection = await ResolvePublicStacPublicationAsync(record, cancellationToken).ConfigureAwait(false);
+            if (projection is not null)
+            {
+                visible.Add(projection.Value);
+            }
+        }
+
+        visible.Sort(static (left, right) =>
+            string.CompareOrdinal(left.Record.CollectionId, right.Record.CollectionId));
+        return visible;
+    }
+
+    public async Task<OpenDataStacPublicationProjection?> GetPublicStacPublicationAsync(
+        string collectionId,
+        CancellationToken cancellationToken = default)
+    {
+        var record = await _openDataStore.GetStacPublicationAsync(collectionId, cancellationToken).ConfigureAwait(false);
+        return record is null
+            ? null
+            : await ResolvePublicStacPublicationAsync(record, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<StacPublicationOperationResult> UpdateStacAsync(
         string collectionId,
         StacPublicationUpdateRequest request,
@@ -370,6 +399,27 @@ internal sealed class OpenDataPublicationService
         }
 
         return MapStacStatus(record, eligibility);
+    }
+
+    private async Task<OpenDataStacPublicationProjection?> ResolvePublicStacPublicationAsync(
+        OpenDataStacPublicationRecord record,
+        CancellationToken cancellationToken)
+    {
+        if (record.Status != OpenDataStacPublicationStatus.Published)
+        {
+            return null;
+        }
+
+        var item = await _contentStore.GetAsync(record.ItemId, cancellationToken).ConfigureAwait(false);
+        if (item is null)
+        {
+            return null;
+        }
+
+        var page = await _openDataStore.GetPageRecordAsync(record.ItemId, cancellationToken).ConfigureAwait(false);
+        return EvaluateEligibility(item, page).IsEligible
+            ? new OpenDataStacPublicationProjection(record, page)
+            : null;
     }
 
     internal static StacPublicationStatusResponse MapStacStatus(
@@ -802,3 +852,7 @@ internal readonly record struct StacPublicationOperationResult(
         OpenDataEligibility eligibility)
         => new(StacPublicationOperationStatus.Conflict, record, eligibility);
 }
+
+internal readonly record struct OpenDataStacPublicationProjection(
+    OpenDataStacPublicationRecord Record,
+    OpenDataPageRecord? Page);
