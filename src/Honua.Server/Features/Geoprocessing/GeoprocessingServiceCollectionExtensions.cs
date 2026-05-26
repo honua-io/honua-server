@@ -128,6 +128,12 @@ internal static class GeoprocessingServiceCollectionExtensions
         services.TryAddSingleton<GeometryMakeValidJobExecutor>();
         services.TryAddSingleton<GeometryDifferenceJobExecutor>();
 
+        // Managed spatial-join (analytics.spatial-join-managed) — a job-dispatchable
+        // counterpart to trunk's analytics.spatial-join, which runs only through the
+        // synchronous PostGIS SpatialAnalytics protocol and is not job-routed. NTS
+        // STRtree aggregate join over two inline FeatureCollections; no Postgres.
+        services.TryAddSingleton<ManagedSpatialJoinExecutor>();
+
         // GeoETL transform executors reconciled from feat/geoetl-baseline onto the
         // #1185 add-a-capability contract. Each reads/writes a FeatureCollection
         // data URI and is composed behind GeoprocessingDispatchJobExecutor.

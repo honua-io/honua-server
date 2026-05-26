@@ -50,6 +50,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         GeometrySnapJobExecutor snap,
         GeometryMakeValidJobExecutor makeValid,
         GeometryDifferenceJobExecutor difference,
+        ManagedSpatialJoinExecutor spatialJoinManaged,
         AttributeRenameTransformExecutor attributeRename,
         AttributeCastTransformExecutor attributeCast,
         ComputedFieldTransformExecutor computedField,
@@ -79,6 +80,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         ArgumentNullException.ThrowIfNull(snap);
         ArgumentNullException.ThrowIfNull(makeValid);
         ArgumentNullException.ThrowIfNull(difference);
+        ArgumentNullException.ThrowIfNull(spatialJoinManaged);
         ArgumentNullException.ThrowIfNull(attributeRename);
         ArgumentNullException.ThrowIfNull(attributeCast);
         ArgumentNullException.ThrowIfNull(computedField);
@@ -110,6 +112,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             [GeometrySnapJobExecutor.HandledProcessId] = snap,
             [GeometryMakeValidJobExecutor.HandledProcessId] = makeValid,
             [GeometryDifferenceJobExecutor.HandledProcessId] = difference,
+            [ManagedSpatialJoinExecutor.HandledProcessId] = spatialJoinManaged,
             [AttributeRenameTransformExecutor.HandledProcessId] = attributeRename,
             [AttributeCastTransformExecutor.HandledProcessId] = attributeCast,
             [ComputedFieldTransformExecutor.HandledProcessId] = computedField,

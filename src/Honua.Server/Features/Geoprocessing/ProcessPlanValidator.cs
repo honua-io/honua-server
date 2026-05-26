@@ -301,6 +301,9 @@ internal static partial class ProcessPlanValidator
                 ValidateSpatialJoinSemantics(step, analyticsLimits, violations);
                 ApplySharedAnalyticsFilterSemantics(step, violations);
                 break;
+            case "analytics.spatial-join-managed":
+                ValidateManagedSpatialJoinSemantics(step, violations);
+                break;
             case "analytics.density":
                 ValidateDensitySemantics(step, analyticsLimits, violations);
                 ApplySharedAnalyticsFilterSemantics(step, violations);
@@ -416,6 +419,69 @@ internal static partial class ProcessPlanValidator
     {
         "intersects", "within"
     };
+
+    // Managed spatial-join (analytics.spatial-join-managed) allow-lists mirror the
+    // ManagedSpatialJoinExecutor body so the validator rejects the same predicate /
+    // statistic spellings the executor refuses at runtime. Distinct from the
+    // PostGIS-protocol analytics.spatial-join (which also has 'contains') because
+    // this managed join has no 'dwithin'/distance support.
+    private static readonly HashSet<string> ManagedSpatialJoinPredicateValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "intersects", "contains", "within"
+    };
+
+    private static readonly HashSet<string> ManagedSpatialJoinStatValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "count", "sum", "mean", "avg", "average", "min", "max"
+    };
+
+    // analytics.spatial-join-managed reads two inline FeatureCollection data URIs
+    // (input target + join reference), an optional predicate, and a 'statistics'
+    // spec of semicolon-separated 'field:stat' pairs. input/join are declared-
+    // required Text (the base validator enforces presence); here we mirror the
+    // executor's predicate enum and the statistic spec shape so plans accepted at
+    // validation are also accepted by the executor.
+    private static void ValidateManagedSpatialJoinSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (step.Inputs.TryGetValue("predicate", out var predicateRaw)
+            && !string.IsNullOrWhiteSpace(predicateRaw)
+            && !ManagedSpatialJoinPredicateValues.Contains(predicateRaw.Trim()))
+        {
+            AddEnumViolation(step, "predicate", predicateRaw, "intersects, contains, within", violations);
+        }
+
+        if (!step.Inputs.TryGetValue("statistics", out var statsRaw)
+            || string.IsNullOrWhiteSpace(statsRaw))
+        {
+            return;
+        }
+
+        foreach (var token in statsRaw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = token.Split(':', StringSplitOptions.TrimEntries);
+            var statName = parts.Length >= 2 ? parts[1] : parts[0];
+            var field = parts.Length >= 2 ? parts[0] : string.Empty;
+
+            if (!ManagedSpatialJoinStatValues.Contains(statName))
+            {
+                AddRangeViolationIfNew(step, "statistics",
+                    $"unsupported statistic '{statName}' in '{token}' (allowed: count, sum, mean, min, max)", violations);
+                return;
+            }
+
+            // Every stat except count summarizes a numeric join field, so the
+            // 'field:stat' form is required; the executor throws otherwise.
+            if (!string.Equals(statName, "count", StringComparison.OrdinalIgnoreCase)
+                && string.IsNullOrWhiteSpace(field))
+            {
+                AddRangeViolationIfNew(step, "statistics",
+                    $"statistic '{statName}' requires a join field, e.g. 'fieldName:{statName}'", violations);
+                return;
+            }
+        }
+    }
 
     private static void ValidateSpatialFilterSemantics(
         AnalysisPlanStep step,

@@ -283,6 +283,21 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         },
         new ProcessDefinition
         {
+            ProcessId = "analytics.spatial-join-managed",
+            Title = "Spatial Join (Managed)",
+            Description = "Job-executable, managed (NetTopologySuite) spatial join over two inline FeatureCollections. Distinct from analytics.spatial-join, which runs only synchronously through the layer-scoped PostGIS SpatialAnalytics protocol and is NOT job-dispatchable; this id is the workflow/codemod-reachable counterpart. For each target feature it summarizes EVERY matched join feature into per-target aggregates via an in-memory STRtree index — JOIN_COUNT plus optional numeric SUM/MEAN/MIN/MAX — preserving zero-match targets one-to-one. Pure managed overlay, no GDAL/GEOS dependency.",
+            Category = "analytics",
+            Parameters =
+            [
+                Param("input", "Target Features", "Target FeatureCollection as a data:application/geo+json;base64 data URI. Each target is preserved one-to-one with its match summary.", ProcessParameterValueType.Text, required: true),
+                Param("join", "Join Features", "Join (reference) FeatureCollection as a data:application/geo+json;base64 data URI. Materialized into an in-memory STRtree spatial index.", ProcessParameterValueType.Text, required: true),
+                Param("predicate", "Predicate", "Spatial predicate evaluating join-vs-target. Allowed values: intersects (default), contains (join geometry contains the target — point-in-polygon), within (target contains the join geometry).", ProcessParameterValueType.Text, defaultValue: "intersects"),
+                Param("statistics", "Statistics", "Semicolon-separated 'field:stat' aggregates over matched join features. Supported stats: count (always emitted as JOIN_COUNT), sum, mean, min, max on numeric join fields (emitted as STAT_field). Example: 'pop:sum;pop:mean'.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
             ProcessId = "analytics.buffer-aggregate",
             Title = "Buffer Aggregate",
             Description = "Buffers features by a fixed distance and optionally dissolves per group with aggregate statistics.",

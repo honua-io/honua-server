@@ -57,6 +57,7 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         result.ErrorMessage.Should().Contain("geometry.snap");
         result.ErrorMessage.Should().Contain("geometry.make-valid");
         result.ErrorMessage.Should().Contain("geometry.difference");
+        result.ErrorMessage.Should().Contain("analytics.spatial-join-managed");
     }
 
     [UnitTest]
@@ -90,6 +91,7 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         "geometry.snap",
         "geometry.make-valid",
         "geometry.difference",
+        "analytics.spatial-join-managed",
         "transform.attribute-rename",
         "transform.attribute-cast",
         "transform.computed-field",
@@ -144,6 +146,7 @@ public sealed class GeoprocessingDispatchJobExecutorTests
             new GeometrySnapJobExecutor(monitor, NullLogger<GeometrySnapJobExecutor>.Instance),
             new GeometryMakeValidJobExecutor(monitor, NullLogger<GeometryMakeValidJobExecutor>.Instance),
             new GeometryDifferenceJobExecutor(monitor, NullLogger<GeometryDifferenceJobExecutor>.Instance),
+            new ManagedSpatialJoinExecutor(monitor),
             new AttributeRenameTransformExecutor(monitor),
             new AttributeCastTransformExecutor(monitor),
             new ComputedFieldTransformExecutor(monitor),
