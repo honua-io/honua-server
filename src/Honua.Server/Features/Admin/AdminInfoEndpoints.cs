@@ -37,31 +37,55 @@ internal static class AdminInfoEndpoints
             .Produces<ApiResponse<AdminCapabilitiesResponse>>();
     }
 
-    private static IResult HandleGetVersion()
+    private static IResult HandleGetVersion(HttpContext context, ILoggerFactory loggerFactory)
     {
-        var response = new AdminVersionResponse
+        var logger = loggerFactory.CreateLogger("Admin.AdminInfo");
+        try
         {
-            Version = GetServerVersion(),
-            MetadataApiVersion = MetadataV2Constants.ApiVersion,
-            MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
-            ServerTime = DateTimeOffset.UtcNow
-        };
-        return Results.Json(
-            ApiResponse<AdminVersionResponse>.CreateSuccess(response),
-            AdminInfoJsonContext.Default.ApiResponseAdminVersionResponse);
+            var response = new AdminVersionResponse
+            {
+                Version = GetServerVersion(),
+                MetadataApiVersion = MetadataV2Constants.ApiVersion,
+                MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
+                ServerTime = DateTimeOffset.UtcNow
+            };
+            return Results.Json(
+                ApiResponse<AdminVersionResponse>.CreateSuccess(response),
+                AdminInfoJsonContext.Default.ApiResponseAdminVersionResponse);
+        }
+        catch (Exception ex)
+        {
+            AdminInfoLog.EndpointFailed(logger, "version", ex);
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status500InternalServerError,
+                "Failed to resolve admin version info.");
+        }
     }
 
-    private static IResult HandleGetCapabilities()
+    private static IResult HandleGetCapabilities(HttpContext context, ILoggerFactory loggerFactory)
     {
-        var response = new AdminCapabilitiesResponse
+        var logger = loggerFactory.CreateLogger("Admin.AdminInfo");
+        try
         {
-            MetadataApiVersion = MetadataV2Constants.ApiVersion,
-            MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
-            ServerVersion = GetServerVersion()
-        };
-        return Results.Json(
-            ApiResponse<AdminCapabilitiesResponse>.CreateSuccess(response),
-            AdminInfoJsonContext.Default.ApiResponseAdminCapabilitiesResponse);
+            var response = new AdminCapabilitiesResponse
+            {
+                MetadataApiVersion = MetadataV2Constants.ApiVersion,
+                MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
+                ServerVersion = GetServerVersion()
+            };
+            return Results.Json(
+                ApiResponse<AdminCapabilitiesResponse>.CreateSuccess(response),
+                AdminInfoJsonContext.Default.ApiResponseAdminCapabilitiesResponse);
+        }
+        catch (Exception ex)
+        {
+            AdminInfoLog.EndpointFailed(logger, "capabilities", ex);
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status500InternalServerError,
+                "Failed to resolve admin capabilities.");
+        }
     }
 
     private static string GetServerVersion()
@@ -103,4 +127,10 @@ public sealed record AdminCapabilitiesResponse
 [JsonSerializable(typeof(ApiResponse<AdminCapabilitiesResponse>))]
 internal sealed partial class AdminInfoJsonContext : JsonSerializerContext
 {
+}
+
+internal static partial class AdminInfoLog
+{
+    [LoggerMessage(EventId = 120920, Level = LogLevel.Error, Message = "Admin info endpoint {Operation} failed.")]
+    public static partial void EndpointFailed(ILogger logger, string operation, Exception exception);
 }
