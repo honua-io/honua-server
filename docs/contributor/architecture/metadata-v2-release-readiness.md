@@ -205,25 +205,45 @@ Release evidence:
   retried attempts remain addressable by their stable operation ID for the
   configured retention window. Records and their package-ID index entries use
   `ControlPlane:MetadataRelease:OperationRetention`, which defaults to 30 days.
+  Creating an operation claims the package-ID index unconditionally; in-place
+  updates to an already-stored operation refresh the index entry (value and TTL)
+  only when it still points at that operation, via a compare-and-set Redis
+  script. A late update to a superseded attempt therefore cannot steal the
+  pointer back from the latest operation.
 - `metadataRelease` exposes Git refs (`gitOperationId`, `prUrl`, `commitSha`,
   `desiredRevision`), `targetEnvironment`, linked `deployOperationId` and
   `jobIds`, `evidenceRefs`, the fine-grained `currentStage`, `blockers`,
   `warnings`, and the precomputed `rollbackPlan`. The rollback plan is available
   before execution and retained after failure when known.
 - Metadata-only rollback (`class: "MetadataOnly"`) reports
-  `isDataAffecting: false` and uses the non-destructive path. All other rollback
-  classes are data-affecting, report `requiresExplicitApproval: true`, and route
-  through the existing operator destructive-approval gate. Rollback requests
-  reuse `POST /api/v1/admin/deploy/operations/{operationId}/rollback`; on accept
-  the workflow status and `metadataRelease.currentStage` move to
-  `RollbackRequested`, and a rejected destructive check returns `403` without
+  `isDataAffecting: false` and uses the non-destructive path unless the stored
+  plan sets `requiresExplicitApproval: true`; explicit-approval metadata-only
+  plans are approval-gated without being treated as data-affecting. All other
+  rollback classes are data-affecting, report `requiresExplicitApproval: true`,
+  and route through the existing operator destructive-approval gate. Rollback
+  requests reuse `POST /api/v1/admin/deploy/operations/{operationId}/rollback`;
+  on accept the workflow status and `metadataRelease.currentStage` move to
+  `RollbackRequested`, and a rejected approval check returns `403` without
   mutating the stored operation.
+- The approval decision is taken from the rollback plan's `isDataAffecting` and
+  `requiresExplicitApproval` values, and the workflow service re-reads the stored
+  operation before writing the rollback transition. If either approval-affecting
+  classification changed between the approval check and the write, the request
+  returns `409` without mutation so the operator re-reads and re-approves against
+  the current plan. This closes a TOCTOU window where a plan recomputed from
+  non-gated `MetadataOnly` to either explicit-approval metadata-only or
+  data-affecting could otherwise roll back under a stale non-destructive
+  approval.
 - The admin endpoint has tests for package-ID timeline state with rollback plan,
   operation-ID failure state with rollback plan, the metadata-only
-  non-destructive path, data-affecting approval gating, and unknown-package
-  `404`. Redis store integration tests cover the package-ID index returning the
-  latest operation while a prior attempt stays addressable by operation ID, and
-  the stale-index miss returning null.
+  non-destructive path, metadata-only explicit approval gating, data-affecting
+  approval gating, the `409` conflict when the rollback plan's approval-affecting
+  classification changes between approval and the write (asserting the stored
+  operation is not mutated), and unknown-package `404`.
+  Redis store integration tests cover the package-ID index returning the latest
+  operation while a prior attempt stays addressable by operation ID, the
+  stale-index miss returning null, and a late update to an older retry leaving
+  the latest operation's package-ID index entry in place.
 
 ## Review Output
 

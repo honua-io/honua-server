@@ -327,14 +327,19 @@ internal static class DeployControlEndpoints
                     $"Deploy operation '{operationId}' was not found.");
             }
 
-            var isDestructive = existing.MetadataRelease?.RollbackPlan?.IsDataAffecting ?? true;
+            var rollbackPlan = existing.MetadataRelease?.RollbackPlan;
+            var isDestructive = rollbackPlan?.IsDataAffecting ?? true;
+            var requiresExplicitApproval = rollbackPlan?.RequiresExplicitApproval == true;
             var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
             var approvalResult = gate.EvaluateApproval(
                 context,
                 OperatorResourceType.Deployment,
                 OperatorOperation.Execute,
                 resourceId: operationId,
-                isDestructive: isDestructive);
+                isDestructive: isDestructive,
+                requiresExplicitApproval: requiresExplicitApproval,
+                approvalPolicyRef: rollbackPlan?.ApprovalPolicyRef,
+                approvalReasonCodes: ResolveMetadataRollbackApprovalReasonCodes(rollbackPlan));
             if (approvalResult != null) return approvalResult;
 
             var operation = await deployWorkflowService.RequestRollbackAsync(
@@ -342,6 +347,7 @@ internal static class DeployControlEndpoints
                     ResolveRequestedBy(context),
                     request?.Reason,
                     approvedMetadataReleaseIsDataAffecting: isDestructive,
+                    approvedMetadataReleaseRequiresApproval: isDestructive || requiresExplicitApproval,
                     cancellationToken: context.RequestAborted)
                 .ConfigureAwait(false);
 
@@ -457,6 +463,11 @@ internal static class DeployControlEndpoints
             Uri = evidenceRef.Uri,
             At = evidenceRef.At
         };
+
+    private static IReadOnlyList<string> ResolveMetadataRollbackApprovalReasonCodes(MetadataRollbackPlan? rollbackPlan)
+        => rollbackPlan?.RequiresExplicitApproval == true
+            ? ["metadata-rollback-explicit-approval"]
+            : Array.Empty<string>();
 
     private static DeployPlanTargetResponse MapTargetResponse(DeployOperationSpec spec)
         => new()

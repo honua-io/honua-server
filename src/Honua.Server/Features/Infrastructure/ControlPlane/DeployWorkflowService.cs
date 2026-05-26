@@ -340,6 +340,7 @@ internal sealed partial class DeployWorkflowService
         string? requestedBy,
         string? reason,
         bool? approvedMetadataReleaseIsDataAffecting = null,
+        bool? approvedMetadataReleaseRequiresApproval = null,
         CancellationToken cancellationToken = default)
     {
         EnsureDurableStoreConfigured();
@@ -352,7 +353,10 @@ internal sealed partial class DeployWorkflowService
 
         if (operation.Kind == WorkflowOperationKind.MetadataRelease)
         {
-            EnsureMetadataReleaseRollbackApprovalStillMatches(operation, approvedMetadataReleaseIsDataAffecting);
+            EnsureMetadataReleaseRollbackApprovalStillMatches(
+                operation,
+                approvedMetadataReleaseIsDataAffecting,
+                approvedMetadataReleaseRequiresApproval);
             return await RequestMetadataReleaseRollbackAsync(operation, requestedBy, reason, cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -483,15 +487,19 @@ internal sealed partial class DeployWorkflowService
 
     private static void EnsureMetadataReleaseRollbackApprovalStillMatches(
         WorkflowOperationRecord operation,
-        bool? approvedIsDataAffecting)
+        bool? approvedIsDataAffecting,
+        bool? approvedRequiresApproval)
     {
-        if (!approvedIsDataAffecting.HasValue)
+        if (!approvedIsDataAffecting.HasValue && !approvedRequiresApproval.HasValue)
         {
             return;
         }
 
-        var currentIsDataAffecting = operation.MetadataRelease?.RollbackPlan?.IsDataAffecting ?? true;
-        if (currentIsDataAffecting == approvedIsDataAffecting.Value)
+        var currentPlan = operation.MetadataRelease?.RollbackPlan;
+        var currentIsDataAffecting = currentPlan?.IsDataAffecting ?? true;
+        var currentRequiresApproval = currentIsDataAffecting || currentPlan?.RequiresExplicitApproval == true;
+        if ((!approvedIsDataAffecting.HasValue || currentIsDataAffecting == approvedIsDataAffecting.Value) &&
+            (!approvedRequiresApproval.HasValue || currentRequiresApproval == approvedRequiresApproval.Value))
         {
             return;
         }

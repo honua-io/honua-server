@@ -665,13 +665,20 @@ for run lifecycle, scheduler semantics, and tuning details.
 | `/api/v1/admin/deploy/operations` | POST | Create a deploy operation |
 | `/api/v1/admin/deploy/operations/{operationId}` | GET | Get deploy or metadata release operation status by stable operation ID |
 | `/api/v1/admin/deploy/operations/{operationId}/submit` | POST | Submit a deploy operation for execution |
-| `/api/v1/admin/deploy/operations/{operationId}/rollback` | POST | Request rollback for a deploy or metadata release operation; metadata-only rollback is non-destructive, while data-affecting rollback classes use the destructive approval gate |
+| `/api/v1/admin/deploy/operations/{operationId}/rollback` | POST | Request rollback for a deploy or metadata release operation; metadata-only rollback is non-destructive unless the plan sets `requiresExplicitApproval`, while data-affecting rollback classes use the destructive approval gate |
 
 For metadata release operations, rollback requests reuse
 `/api/v1/admin/deploy/operations/{operationId}/rollback` with an optional
 `reason`. Accepted requests set the workflow status and
 `metadataRelease.currentStage` to `RollbackRequested`; rejected destructive
-approval checks return `403` without mutating the stored operation.
+approval checks return `403` without mutating the stored operation. The approval
+decision is taken from the rollback plan's `isDataAffecting` and
+`requiresExplicitApproval` values; the server then re-reads the stored operation
+before writing the state change and returns `409 Conflict` without mutation if
+either approval-affecting classification changed between the approval check and
+the write (mitigating a TOCTOU race where a recomputed plan would otherwise roll
+back under a stale approval). Callers should re-read the operation and re-approve
+against the current plan.
 
 ### **Alert Management Endpoints**
 

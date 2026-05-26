@@ -3773,7 +3773,7 @@
       "post": {
         "tags": ["Deploy"],
         "summary": "Rollback Deploy Operation",
-        "description": "Request rollback of a deploy or metadata release operation. Metadata-only rollback uses the non-destructive approval path; data-affecting metadata rollback classes use the destructive approval gate.",
+        "description": "Request rollback of a deploy or metadata release operation. Metadata-only rollback uses the non-destructive approval path unless the stored rollback plan sets requiresExplicitApproval; data-affecting metadata rollback classes use the destructive approval gate. For metadata release operations the rollback plan's approval-affecting classification is re-checked against the values the approval gate evaluated before the state change is written; if it changed in between, the request returns 409 and the stored operation is left unchanged.",
         "operationId": "rollbackDeployOperation",
         "parameters": [
           {
@@ -3807,7 +3807,8 @@
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
         }
       }
     },

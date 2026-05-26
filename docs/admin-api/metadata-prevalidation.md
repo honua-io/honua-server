@@ -60,13 +60,14 @@ and `RollbackRequested`.
 
 Rollback plan `class` values are `MetadataOnly`, `AliasRepoint`,
 `ServiceRevisionRevert`, `ScriptRollback`, `SnapshotRestore`, and
-`ManualRecovery`. `MetadataOnly` plans report `isDataAffecting: false` and do
-not use the destructive approval path. A metadata-only plan can still surface
-`requiresExplicitApproval: true` when the stored plan wants client-visible
-operator acknowledgement. All other rollback classes are treated as
-data-affecting; the response reports `requiresExplicitApproval: true`, the
-rollback endpoint evaluates the destructive approval gate, and the plan may list
-required evidence labels in `evidenceRequired`.
+`ManualRecovery`. `MetadataOnly` plans report `isDataAffecting: false` and use
+the non-destructive path unless the stored plan also sets
+`requiresExplicitApproval: true`; in that case the rollback endpoint evaluates an
+explicit operator approval gate without treating the plan as data-affecting. All
+other rollback classes are treated as data-affecting; the response reports
+`requiresExplicitApproval: true`, the rollback endpoint evaluates the destructive
+approval gate, and the plan may list required evidence labels in
+`evidenceRequired`.
 
 Rollback is requested through the existing deploy-control endpoint:
 `POST /api/v1/admin/deploy/operations/{operationId}/rollback`. The request body
@@ -75,6 +76,15 @@ operation status changes to `RollbackRequested` and
 `metadataRelease.currentStage` changes to `RollbackRequested`. If approval is
 required and not satisfied, the endpoint returns `403` and leaves the stored
 operation unchanged.
+
+The endpoint derives the approval decision from the rollback plan's
+`isDataAffecting` and `requiresExplicitApproval` values, then re-reads the stored
+operation before writing the state change. If either approval-affecting
+classification changed in that window (for example, a recomputed plan moved from
+`MetadataOnly` without explicit approval to either an explicit-approval or
+data-affecting plan), the endpoint returns `409` and leaves the stored operation
+unchanged so the operator can re-read the current plan and re-approve against the
+correct gate.
 
 ## Request
 

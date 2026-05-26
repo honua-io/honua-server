@@ -131,10 +131,37 @@ public sealed class MetadataReleaseOperationEndpointsTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         _approvalEvaluator.DestructiveFlags.Should().ContainSingle().Which.Should().BeFalse();
+        _approvalEvaluator.ExplicitApprovalFlags.Should().ContainSingle().Which.Should().BeFalse();
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var root = document.RootElement;
         root.GetProperty("status").GetString().Should().Be("RollbackRequested");
         root.GetProperty("metadataRelease").GetProperty("currentStage").GetString().Should().Be("RollbackRequested");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/rollback")]
+    public async Task RollbackDeployOperation_MetadataOnlyWithExplicitApproval_RequiresApproval()
+    {
+        var packageId = $"metadata-package-{Guid.NewGuid():N}";
+        var operation = CreateMetadataReleaseOperation(
+            packageId,
+            MetadataRollbackClass.MetadataOnly,
+            status: WorkflowOperationStatus.Failed,
+            stage: MetadataReleaseStage.Failed,
+            requiresExplicitApproval: true,
+            approvalPolicyRef: "operator.metadata.rollback");
+        (await _workflowStore.TryCreateAsync(operation)).Should().BeTrue();
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/v1/admin/deploy/operations/{operation.OperationId}/rollback",
+            new { reason = "metadata-only rollback" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        _approvalEvaluator.DestructiveFlags.Should().ContainSingle().Which.Should().BeFalse();
+        _approvalEvaluator.ExplicitApprovalFlags.Should().ContainSingle().Which.Should().BeTrue();
+        _approvalEvaluator.PolicyRefs.Should().ContainSingle().Which.Should().Be("operator.metadata.rollback");
+        var stored = await _workflowStore.GetAsync(operation.OperationId);
+        stored!.Status.Should().Be(WorkflowOperationStatus.Failed);
     }
 
     [IntegrationTest]
@@ -197,6 +224,41 @@ public sealed class MetadataReleaseOperationEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/rollback")]
+    public async Task RollbackDeployOperation_WhenRollbackPlanApprovalRequirementChangesAfterApproval_ReturnsConflictWithoutMutation()
+    {
+        var packageId = $"metadata-package-{Guid.NewGuid():N}";
+        var operation = CreateMetadataReleaseOperation(
+            packageId,
+            MetadataRollbackClass.MetadataOnly,
+            status: WorkflowOperationStatus.Failed,
+            stage: MetadataReleaseStage.Failed);
+        (await _workflowStore.TryCreateAsync(operation)).Should().BeTrue();
+        _workflowStore.MutateAfterGet(operation.OperationId, getNumber: 1, current => current with
+        {
+            MetadataRelease = current.MetadataRelease! with
+            {
+                RollbackPlan = current.MetadataRelease.RollbackPlan! with
+                {
+                    RequiresExplicitApproval = true,
+                    ApprovalPolicyRef = "operator.metadata.rollback"
+                }
+            }
+        });
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/v1/admin/deploy/operations/{operation.OperationId}/rollback",
+            new { reason = "metadata-only rollback" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        _approvalEvaluator.DestructiveFlags.Should().ContainSingle().Which.Should().BeFalse();
+        _approvalEvaluator.ExplicitApprovalFlags.Should().ContainSingle().Which.Should().BeFalse();
+        var stored = await _workflowStore.GetAsync(operation.OperationId);
+        stored!.Status.Should().Be(WorkflowOperationStatus.Failed);
+        stored.MetadataRelease!.RollbackPlan!.RequiresExplicitApproval.Should().BeTrue();
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/metadata/releases/{packageId}/operation")]
     public async Task GetMetadataReleaseOperation_UnknownPackageId_ReturnsNotFound()
     {
@@ -209,7 +271,9 @@ public sealed class MetadataReleaseOperationEndpointsTests : IAsyncLifetime
         string packageId,
         MetadataRollbackClass rollbackClass,
         WorkflowOperationStatus status = WorkflowOperationStatus.Reconciling,
-        MetadataReleaseStage stage = MetadataReleaseStage.Preflight)
+        MetadataReleaseStage stage = MetadataReleaseStage.Preflight,
+        bool? requiresExplicitApproval = null,
+        string? approvalPolicyRef = null)
     {
         var now = DateTimeOffset.UtcNow;
 
@@ -248,16 +312,16 @@ public sealed class MetadataReleaseOperationEndpointsTests : IAsyncLifetime
                 RollbackPlan = new MetadataRollbackPlan
                 {
                     Class = rollbackClass,
-                    RequiresExplicitApproval = rollbackClass is not MetadataRollbackClass.MetadataOnly,
+                    RequiresExplicitApproval = requiresExplicitApproval ?? rollbackClass is not MetadataRollbackClass.MetadataOnly,
                     Steps = rollbackClass == MetadataRollbackClass.MetadataOnly
                         ? ["Revert metadata package commit."]
                         : ["Verify snapshot evidence.", "Restore snapshot.", "Re-run smoke tests."],
                     EvidenceRequired = rollbackClass == MetadataRollbackClass.MetadataOnly
                         ? []
                         : ["snapshot-id", "operator-approval"],
-                    ApprovalPolicyRef = rollbackClass == MetadataRollbackClass.MetadataOnly
+                    ApprovalPolicyRef = approvalPolicyRef ?? (rollbackClass == MetadataRollbackClass.MetadataOnly
                         ? null
-                        : "operator.destructive.deployment"
+                        : "operator.destructive.deployment")
                 },
                 Warnings = ["metadata-warning"],
                 Blockers = ["metadata-blocker"]
@@ -366,14 +430,31 @@ public sealed class MetadataReleaseOperationEndpointsTests : IAsyncLifetime
     private sealed class RecordingDestructiveApprovalEvaluator : IOperatorApprovalEvaluator
     {
         private readonly ConcurrentQueue<bool> _destructiveFlags = new();
+        private readonly ConcurrentQueue<bool> _explicitApprovalFlags = new();
+        private readonly ConcurrentQueue<string?> _policyRefs = new();
 
         public IReadOnlyList<bool> DestructiveFlags => _destructiveFlags.ToArray();
+
+        public IReadOnlyList<bool> ExplicitApprovalFlags => _explicitApprovalFlags.ToArray();
+
+        public IReadOnlyList<string?> PolicyRefs => _policyRefs.ToArray();
 
         public ApprovalRequirement Evaluate(
             System.Security.Claims.ClaimsPrincipal principal,
             OperatorAuthorizationRequest request)
         {
             _destructiveFlags.Enqueue(request.IsDestructive);
+            _explicitApprovalFlags.Enqueue(request.RequiresExplicitApproval);
+            _policyRefs.Enqueue(request.ApprovalPolicyRef);
+            if (request.RequiresExplicitApproval)
+            {
+                return ApprovalRequirement.Required(
+                    request.ApprovalPolicyRef ?? "operator.explicit.deployment",
+                    request.ApprovalReasonCodes.Count > 0
+                        ? request.ApprovalReasonCodes.ToArray()
+                        : ["explicit-approval-required"]);
+            }
+
             return request.IsDestructive
                 ? ApprovalRequirement.Required("operator.destructive.deployment", "destructive-action-requires-approval")
                 : ApprovalRequirement.NotRequired();
