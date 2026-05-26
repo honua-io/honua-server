@@ -313,7 +313,8 @@ public sealed class WebAppFixture : IAsyncLifetime
                 "svc-test",
                 "test",
                 route: "/ogc/features",
-                protocols: allProtocols);
+                protocols: allProtocols,
+                description: "Default OGC API test service");
 
         // Cover the layer ids inserted by server.yaml (0..2 and the spatial-reference fixtures
         // at 101..104). Any test that needs a different id range can extend or replace the graph.
@@ -326,7 +327,13 @@ public sealed class WebAppFixture : IAsyncLifetime
                     resourceId,
                     $"layer-{layerIndex}",
                     MetadataV2ResourceType.FeatureDataset,
-                    fields: GetSeededLayerSchemaFields(layerIndex))
+                    fields: GetSeededLayerSchemaFields(layerIndex),
+                    spatial: GetSeededLayerSpatial(layerIndex))
+                .AddStorageBinding(
+                    id: $"storage-layer-{layerIndex}",
+                    resourceId: resourceId,
+                    locator: $"features:{layerIndex}",
+                    storageLayerId: layerIndex)
                 .AddPublication(
                     id: $"pub-layer-{layerIndex}",
                     serviceId: "svc-test",
@@ -339,7 +346,7 @@ public sealed class WebAppFixture : IAsyncLifetime
         // ImageServer handler tests resolve their layer index against this snapshot.
         builder
             .AddResource("res-image-test", "test-layer", MetadataV2ResourceType.RasterDataset)
-            .AddService("svc-image-test", TestServiceId, protocols: [ServiceProtocols.ImageServer])
+            .AddService("svc-image-test", TestServiceId, protocols: [ServiceProtocols.ImageServer], description: "Default ImageServer test service")
             .AddPublication(
                 id: "pub-image-test",
                 serviceId: "svc-image-test",
@@ -355,9 +362,9 @@ public sealed class WebAppFixture : IAsyncLifetime
         // layer ids that server.yaml seeds so /rest/services has services to return and
         // downstream FeatureServer/MapServer handler ports can resolve them by layer id.
         builder
-            .AddService("svc-test-feature", "test", protocols: [ServiceProtocols.FeatureServer])
-            .AddService("svc-test-map", "test", protocols: [ServiceProtocols.MapServer])
-            .AddService("svc-test-stac", "test", route: "/stac", protocols: [ServiceProtocols.Stac]);
+            .AddService("svc-test-feature", "test", protocols: [ServiceProtocols.FeatureServer], description: "Default FeatureServer test service")
+            .AddService("svc-test-map", "test", protocols: [ServiceProtocols.MapServer], description: "Default MapServer test service")
+            .AddService("svc-test-stac", "test", route: "/stac", protocols: [ServiceProtocols.Stac], description: "Default STAC test service");
         foreach (var layerIndex in seededLayerIndices)
         {
             var resourceId = $"res-layer-{layerIndex}";
@@ -422,7 +429,7 @@ public sealed class WebAppFixture : IAsyncLifetime
                     Type = MetadataV2FieldType.Geometry,
                     Nullable = true,
                     Description = "Geometry",
-                    SemanticRoles = ["geometry"],
+                    SemanticRoles = ["geometry.primary"],
                 },
             ],
             1 =>
@@ -438,7 +445,7 @@ public sealed class WebAppFixture : IAsyncLifetime
                     Type = MetadataV2FieldType.Geometry,
                     Nullable = true,
                     Description = "Geometry",
-                    SemanticRoles = ["geometry"],
+                    SemanticRoles = ["geometry.primary"],
                 },
             ],
             2 =>
@@ -453,11 +460,33 @@ public sealed class WebAppFixture : IAsyncLifetime
                     Type = MetadataV2FieldType.Geometry,
                     Nullable = true,
                     Description = "Geometry",
-                    SemanticRoles = ["geometry"],
+                    SemanticRoles = ["geometry.primary"],
                 },
             ],
             _ => null,
         };
+
+    private static MetadataV2ResourceSpatial? GetSeededLayerSpatial(int layerIndex)
+    {
+        if (GetSeededLayerSchemaFields(layerIndex)?.Any(static field => field.Type == MetadataV2FieldType.Geometry) != true)
+        {
+            return null;
+        }
+
+        return new MetadataV2ResourceSpatial
+        {
+            SpatialReference = MetadataV2SpatialReference.Wgs84,
+            GeometryType = MetadataV2GeometryType.Point,
+            Bbox = new MetadataV2Bbox
+            {
+                West = -180,
+                South = -90,
+                East = 180,
+                North = 90
+            },
+            PrimaryGeometryField = "shape"
+        };
+    }
 
     /// <summary>
     /// During the v1→v2 cutover several protocol handlers (WMS/WMTS GetCapabilities,
@@ -535,10 +564,12 @@ public sealed class WebAppFixture : IAsyncLifetime
         MetadataV2ResourceTemporal? temporal = null,
         MetadataV2ResourceSpatial? spatial = null,
         MetadataV2PermanentFilter? permanentFilter = null,
+        LayerExtrusionInfo? extrusion = null,
         JsonElement? stacExtension = null,
         bool clearAccessPolicy = false,
         bool clearTemporal = false,
-        bool clearPermanentFilter = false)
+        bool clearPermanentFilter = false,
+        bool clearExtrusion = false)
     {
         var provider = GetService<IMetadataV2GraphProvider>() as Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider
             ?? throw new InvalidOperationException(
@@ -603,6 +634,24 @@ public sealed class WebAppFixture : IAsyncLifetime
                 next = next with { Extensions = extensions };
             }
 
+            if (clearExtrusion || extrusion is not null)
+            {
+                var extensions = new Dictionary<string, JsonElement>(next.Extensions, StringComparer.Ordinal);
+                if (clearExtrusion)
+                {
+                    extensions.Remove("geoservices:extrusion");
+                    extensions.Remove("extrusion");
+                }
+                else
+                {
+                    extensions["geoservices:extrusion"] = JsonSerializer.SerializeToElement(
+                        extrusion,
+                        CatalogJsonContext.Default.LayerExtrusionInfo);
+                }
+
+                next = next with { Extensions = extensions };
+            }
+
             resources[i] = next;
             mutated = true;
         }
@@ -644,6 +693,7 @@ public sealed class WebAppFixture : IAsyncLifetime
                         Expression = permanentFilter.Expression,
                         Language = permanentFilter.Language,
                     }),
+            Extrusion = clearExtrusion ? null : extrusion,
         };
         WriteV1LayerCatalogBridge(layerIndex, bridge);
     }

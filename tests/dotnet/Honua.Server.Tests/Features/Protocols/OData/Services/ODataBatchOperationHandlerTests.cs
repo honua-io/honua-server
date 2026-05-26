@@ -11,6 +11,8 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Events;
@@ -20,6 +22,7 @@ using Honua.Server.Features.Protocols.OData.Models;
 using Honua.Server.Features.Protocols.OData.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.Extensions.DependencyInjection;
@@ -308,6 +311,23 @@ public sealed class ODataBatchOperationHandlerTests
         var services = new ServiceCollection();
         services.AddSingleton(outputCacheInvalidationService);
         services.AddSingleton(layerCatalog);
+        services.AddSingleton<IMetadataV2GraphProvider>(
+            new TestMetadataV2GraphBuilder()
+                .AddResource("res-layer-1", "Features", MetadataV2ResourceType.FeatureDataset)
+                .AddStorageBinding("storage-layer-1", "res-layer-1", "features", storageLayerId: 1)
+                .AddService(
+                    "svc-odata",
+                    "odata-service",
+                    protocols: [Honua.ServiceDefaults.HonuaTelemetry.Protocols.OData])
+                .AddPublication(
+                    "pub-layer-1-odata",
+                    "svc-odata",
+                    "res-layer-1",
+                    layerIndex: 1,
+                    storageBindingId: "storage-layer-1",
+                    serviceLocalId: "1",
+                    publicationType: MetadataV2PublicationType.ODataEntitySet)
+                .BuildProvider());
 
         var context = new DefaultHttpContext
         {

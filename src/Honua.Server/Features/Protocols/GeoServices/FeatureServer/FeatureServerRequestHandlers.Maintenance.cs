@@ -482,14 +482,12 @@ internal static partial class FeatureServerEndpoints
             return accessError;
         }
 
-        // The V2 canonical schema (MetadataV2Field) does not carry coded-value /
-        // range domains; domain info is a v1-only annotation surfaced from the
-        // catalog FieldDomainDefinition. Under V2 the queryDomains endpoint
-        // returns an empty domain list — clients that need domain metadata can
-        // continue to read it from the v1 catalog endpoints. A future task can
-        // add a typed domain extension to MetadataV2Field and surface it here.
-        _ = FilterAccessibleLayersV2(context, service, selectedLayers);
-        var domains = Array.Empty<DomainInfo>();
+        var accessibleLayers = FilterAccessibleLayersV2(context, service, selectedLayers);
+        var domains = accessibleLayers
+            .SelectMany(pair => pair.Resource.SchemaFields
+                .Where(static field => field.Domain is not null)
+                .Select(field => MapDomainInfoV2(pair.Publication, pair.Resource, field, snapshot)))
+            .ToArray();
 
         var response = new QueryDomainsResponse
         {
@@ -498,6 +496,37 @@ internal static partial class FeatureServerEndpoints
 
         scope.SetSuccess(domains.Length);
         return Results.Json(response, FeatureServerJsonContext.Default.QueryDomainsResponse, contentType: "application/json");
+    }
+
+    private static DomainInfo MapDomainInfoV2(
+        MetadataV2Publication publication,
+        MetadataV2Resource resource,
+        MetadataV2Field field,
+        MetadataV2GraphSnapshot snapshot)
+    {
+        var domain = field.Domain!;
+        return new DomainInfo
+        {
+            Type = domain.Type,
+            Name = field.Name,
+            FieldName = field.Name,
+            FieldType = MapFieldTypeToGeoServicesV2(field.Type),
+            LayerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(resource) ?? 0,
+            CodedValues = domain.CodedValues.Count == 0
+                ? null
+                : domain.CodedValues
+                    .Select(static value => new DomainCodedValueInfo
+                    {
+                        Name = value.Name,
+                        Code = JsonElementConverter.ConvertToObject(value.Code),
+                    })
+                    .ToArray(),
+            Range = domain.Range is null
+                ? null
+                : domain.Range
+                    .Select(static value => JsonElementConverter.ConvertToObject(value) ?? string.Empty)
+                    .ToArray(),
+        };
     }
 
     private static async Task<IResult> HandleQueryRelationships(

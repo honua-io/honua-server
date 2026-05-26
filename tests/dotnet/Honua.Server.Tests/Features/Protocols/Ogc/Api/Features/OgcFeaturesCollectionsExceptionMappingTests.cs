@@ -4,8 +4,8 @@
 using System.Net;
 using FluentAssertions;
 using Honua.Core.Exceptions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Validation.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -103,25 +103,11 @@ public sealed class OgcFeaturesCollectionsExceptionMappingTests
 
     private static WebAppFixture CreateFixtureThatThrows(Func<Exception> exceptionFactory)
     {
-        var catalog = Substitute.For<ILayerCatalog>();
-        catalog.GetLayerAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromException<LayerDefinition?>(exceptionFactory()));
-        catalog.ListLayersAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(Array.Empty<LayerDefinition>()));
-        catalog.GetServiceAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<ServiceDefinition?>(null));
-        catalog.ListServicesAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(Array.Empty<ServiceDefinition>()));
-        catalog.LayerExistsAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(false));
-        catalog.ServiceExistsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(false));
-        catalog.GetRelationshipAsync(Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<Relationship?>(null));
-        catalog.ListRelationshipsAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(Array.Empty<Relationship>()));
+        var validator = Substitute.For<IResourceValidator>();
+        validator.ValidateCollectionV2Async(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<ResourceValidationResult<MetadataV2Resource>>(exceptionFactory()));
 
         return new WebAppFixture()
-            .ReplaceService<ILayerCatalog>(catalog);
+            .ReplaceService<IResourceValidator>(validator);
     }
 }

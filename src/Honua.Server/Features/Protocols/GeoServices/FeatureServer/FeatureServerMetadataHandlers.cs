@@ -1,7 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -266,10 +268,18 @@ internal static partial class FeatureServerEndpoints
                 featureReader,
                 cancellationToken).ConfigureAwait(false);
 
-            // V2 has no extrusion or drawing-info model on the canonical resource; these
-            // remain v1-only concepts surfaced via the catalog/style services. The V2
-            // response builder tolerates null for both, mirroring the v1 path for layers
-            // without configured extrusion/style.
+            var extrusionValidationErrors = BuildExtrusionInfoV2(resource, out var extrusionInfo);
+            if (extrusionValidationErrors.Count > 0)
+            {
+                return StandardErrorHelpers.CreateUnprocessableEntity(
+                    context,
+                    "Layer extrusion metadata is invalid.",
+                    extrusionValidationErrors);
+            }
+
+            // Drawing-info is still style-service owned during this cutover. The V2
+            // response builder tolerates null, matching the v1 path for layers without
+            // configured style metadata.
             LayerResponse response = MapLayerToResponseV2(
                 service,
                 resource,
@@ -278,7 +288,7 @@ internal static partial class FeatureServerEndpoints
                 limits,
                 timeInfo,
                 drawingInfo: null,
-                extrusionInfo: null,
+                extrusionInfo: extrusionInfo,
                 supportsGeobufOutput: featureReader is IGeobufFeatureStore,
                 supportsAttachmentUploads: supportsAttachmentUploads);
 
@@ -298,6 +308,86 @@ internal static partial class FeatureServerEndpoints
                 "Layer metadata retrieval failed");
         }
     }
+
+    private static IReadOnlyList<string> BuildExtrusionInfoV2(
+        MetadataV2Resource resource,
+        out FeatureServerExtrusionInfo? extrusionInfo)
+    {
+        extrusionInfo = null;
+        if (!TryReadExtrusionExtensionV2(resource, out var extrusion) || extrusion is null)
+        {
+            return Array.Empty<string>();
+        }
+
+        var validationFields = resource.SchemaFields.Select(MapExtrusionFieldV2).ToArray();
+        var validationErrors = ExtrusionValidator.Validate(extrusion, validationFields);
+        if (validationErrors.Count > 0)
+        {
+            return validationErrors;
+        }
+
+        VerticalUnits.TryNormalize(extrusion.Unit, out var normalizedUnit);
+        extrusionInfo = new FeatureServerExtrusionInfo
+        {
+            Enabled = true,
+            HeightField = extrusion.HeightField,
+            BaseHeightField = extrusion.BaseHeightField,
+            Unit = normalizedUnit,
+            DefaultHeight = extrusion.DefaultHeight,
+            MaterialHint = extrusion.MaterialHint
+        };
+        return Array.Empty<string>();
+    }
+
+    private static bool TryReadExtrusionExtensionV2(
+        MetadataV2Resource resource,
+        out LayerExtrusionInfo? extrusion)
+    {
+        extrusion = null;
+        if (!resource.Extensions.TryGetValue("geoservices:extrusion", out var element) &&
+            !resource.Extensions.TryGetValue("extrusion", out element))
+        {
+            return false;
+        }
+
+        if (element.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return false;
+        }
+
+        try
+        {
+            extrusion = JsonSerializer.Deserialize(
+                element.GetRawText(),
+                CatalogJsonContext.Default.LayerExtrusionInfo);
+        }
+        catch (JsonException)
+        {
+            extrusion = new LayerExtrusionInfo();
+        }
+
+        return true;
+    }
+
+    private static FieldDefinition MapExtrusionFieldV2(MetadataV2Field field)
+        => new(
+            field.Name,
+            field.Type switch
+            {
+                MetadataV2FieldType.Integer => FieldType.Integer,
+                MetadataV2FieldType.BigInteger => FieldType.BigInteger,
+                MetadataV2FieldType.Double => FieldType.Double,
+                MetadataV2FieldType.Float => FieldType.Float,
+                MetadataV2FieldType.Boolean => FieldType.Boolean,
+                MetadataV2FieldType.DateTime => FieldType.DateTime,
+                MetadataV2FieldType.Date => FieldType.Date,
+                MetadataV2FieldType.Time => FieldType.Time,
+                MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography => FieldType.Geometry,
+                MetadataV2FieldType.Json => FieldType.Json,
+                MetadataV2FieldType.Binary => FieldType.Binary,
+                MetadataV2FieldType.Uuid => FieldType.Uuid,
+                _ => FieldType.String,
+            });
 
     /// <summary>
     /// V2 variant of <c>RequiresDefaultMetadataAuthentication</c>. Identical contract:
