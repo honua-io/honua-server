@@ -445,13 +445,18 @@ internal static class ShareAdminEndpoints
             }
 
             // Persist the run BEFORE dispatch so a dispatched job is never claimable without a Share
-            // run record tracking it. If the run cannot be persisted the job has not been dispatched
-            // yet, so roll the created job back and surface the store failure to the outer handler.
+            // run record tracking it. The durable job record now exists, so run persist+dispatch as a
+            // commit-once critical section under CancellationToken.None: a client disconnect must not
+            // interrupt it midway and strand a job without a run (or a queued run/job that was never
+            // enqueued). Any exception here is therefore a genuine store failure to compensate, not a
+            // client cancellation to propagate. If the run cannot be persisted the job has not been
+            // dispatched yet, so roll the created job back and surface the store failure to the outer
+            // handler.
             try
             {
-                run = await store.AppendRunAsync(run, context.RequestAborted).ConfigureAwait(false);
+                run = await store.AppendRunAsync(run, CancellationToken.None).ConfigureAwait(false);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex)
             {
                 await ExecutionJobSubmissionHelper.TryRollbackCreatedJobAsync(
                         jobStore,
@@ -471,11 +476,13 @@ internal static class ShareAdminEndpoints
 
             try
             {
-                // Dispatch last: enqueue the persisted job so a worker can claim and execute it.
-                await jobQueue.EnqueueAsync(job.OperationId, OperationPriority.Normal, context.RequestAborted)
+                // Dispatch last: enqueue the persisted job so a worker can claim and execute it. Uses
+                // CancellationToken.None for the same commit-once reason as the run persist above, so a
+                // client disconnect cannot leave a persisted run whose job was never enqueued.
+                await jobQueue.EnqueueAsync(job.OperationId, OperationPriority.Normal, CancellationToken.None)
                     .ConfigureAwait(false);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex)
             {
                 // Dispatch failed after the run was persisted: roll the created job back to a terminal
                 // Failed state and mark the already-persisted run Failed so it never lingers as a
@@ -875,6 +882,11 @@ internal static class ShareAdminEndpoints
             CreatedAt = now,
             UpdatedAt = now,
             CurrentPhase = "Queued",
+            // Share run history does not model per-attempt state and the run reconciler is
+            // first-terminal-wins, so a generic Console retry of a failed/cancelled ShareExport job
+            // would let the Operate job advance while the Share run stays frozen at its first
+            // terminal status. Disable retry until Share retry semantics are modeled.
+            RetryPolicy = JobRetryPolicy.None,
             Audit = new OperationAuditInfo
             {
                 RequestedBy = context.User.Identity?.Name,

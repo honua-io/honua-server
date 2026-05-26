@@ -268,6 +268,11 @@ public sealed class ShareAdminEndpointsTests : IAsyncLifetime
         job.Spec.Parameters[ExecutionJobParameterKeys.ShareExportId].Should().Be(exportId);
         job.Spec.Parameters[ExecutionJobParameterKeys.ShareRunId].Should().Be(runId);
 
+        // Share runs are first-terminal-wins and do not model retry attempts, so the backing job must
+        // opt out of the generic retry budget. Otherwise a Console retry could re-run the export while
+        // run history stays frozen at its first terminal status.
+        job.RetryPolicy.Should().Be(JobRetryPolicy.None);
+
         // The job must be dispatched onto the durable queue, not merely created, otherwise a
         // returned 202 would leave the run Queued with no worker able to claim it.
         _jobQueue.Enqueued.Should().ContainSingle().Which.Should().Be(jobRunId);
@@ -283,6 +288,43 @@ public sealed class ShareAdminEndpointsTests : IAsyncLifetime
         detail.StatusCode.Should().Be(HttpStatusCode.OK);
         using (var doc = await ReadJsonAsync(detail))
         {
+            doc.RootElement.GetProperty("jobRunId").GetString().Should().Be(jobRunId);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/share/exports/{exportId}/trigger")]
+    [Endpoint("POST /api/v1/admin/jobs/{jobId}/cancel")]
+    [Endpoint("GET /api/v1/admin/share/exports/{exportId}/runs/{runId}")]
+    public async Task CancelBackingJob_ReconcilesShareRunToCancelled()
+    {
+        var created = await CreateDefinitionAsync("cancel-link-layer", "Webhook");
+        var exportId = created.GetProperty("exportId").GetString()!;
+
+        var trigger = await _client.PostAsync($"/api/v1/admin/share/exports/{exportId}/trigger", null);
+        trigger.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        string runId;
+        string jobRunId;
+        using (var triggerDoc = await ReadJsonAsync(trigger))
+        {
+            triggerDoc.RootElement.GetProperty("status").GetString().Should().Be("Queued");
+            runId = triggerDoc.RootElement.GetProperty("runId").GetString()!;
+            jobRunId = triggerDoc.RootElement.GetProperty("jobRunId").GetString()!;
+        }
+
+        // Cancel the backing Operate job through the jobs API before any worker claims it. The Share
+        // docs promise this transitions the run; without terminal-callback notification on the cancel
+        // path the run would remain Queued forever.
+        var cancel = await _client.PostAsync($"/api/v1/admin/jobs/{jobRunId}/cancel", null);
+        cancel.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await _jobStore.GetAsync(jobRunId))!.Status.Should().Be(ExecutionJobStatus.Cancelled);
+
+        var detail = await _client.GetAsync($"/api/v1/admin/share/exports/{exportId}/runs/{runId}");
+        detail.StatusCode.Should().Be(HttpStatusCode.OK);
+        using (var doc = await ReadJsonAsync(detail))
+        {
+            doc.RootElement.GetProperty("status").GetString().Should().Be("Cancelled");
             doc.RootElement.GetProperty("jobRunId").GetString().Should().Be(jobRunId);
         }
     }
@@ -677,8 +719,11 @@ public sealed class ShareAdminTrafficUnavailableTests : IAsyncLifetime
 }
 
 /// <summary>
-/// Verifies a Supported trigger whose dispatch to the job queue fails rolls the created job back
-/// to a terminal state and records a Failed run, rather than leaving a Queued job no worker runs.
+/// Verifies a Supported trigger whose dispatch to the job queue fails with a cancellation-class
+/// (request-abort) exception still rolls the created job back to a terminal state and records a
+/// Failed run, rather than letting the cancellation bypass compensation and strand a Queued job no
+/// worker runs (#1216 request-abort regression). A generic dispatch failure is exercised by the
+/// run-persist failure suite's shared compensation path.
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
@@ -717,7 +762,7 @@ public sealed class ShareExportDispatchFailureTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/share/exports/{exportId}/trigger")]
     [Endpoint("GET /api/v1/admin/share/exports/{exportId}/runs")]
-    public async Task Trigger_WhenDispatchFails_RollsBackJobAndRecordsFailedRun()
+    public async Task Trigger_WhenDispatchThrowsCancellation_RollsBackJobAndRecordsFailedRun()
     {
         var definition = new ShareExportDefinition
         {
@@ -739,6 +784,8 @@ public sealed class ShareExportDispatchFailureTests : IAsyncLifetime
 
         var trigger = await _client.PostAsync($"/api/v1/admin/share/exports/{definition.ExportId}/trigger", null);
 
+        // The cancellation-class dispatch failure must be compensated (not propagated): the endpoint
+        // rolls the job back and records a Failed run, then returns 503.
         trigger.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
 
         var runs = await _client.GetAsync($"/api/v1/admin/share/exports/{definition.ExportId}/runs");
@@ -768,10 +815,13 @@ public sealed class ShareExportDispatchFailureTests : IAsyncLifetime
             => ShareExportDestinationStatus.Supported;
     }
 
+    // Throws a cancellation-class exception from dispatch. The post-create compensation must run for
+    // OperationCanceledException too, not only for ordinary failures, otherwise an aborted dispatch
+    // would bypass rollback and strand a Queued job/run.
     private sealed class ThrowingJobQueue : IJobQueue
     {
         public Task EnqueueAsync(string operationId, OperationPriority priority = OperationPriority.Normal, CancellationToken cancellationToken = default)
-            => throw new InvalidOperationException("Queue backend is unavailable.");
+            => throw new OperationCanceledException("Share export dispatch was canceled.");
 
         public Task<string?> TryClaimAsync(string workerId, IReadOnlySet<ExecutionJobKind>? acceptedKinds = null, CancellationToken cancellationToken = default)
             => Task.FromResult<string?>(null);

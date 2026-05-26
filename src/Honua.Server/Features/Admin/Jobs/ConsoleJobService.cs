@@ -279,6 +279,7 @@ internal sealed partial class ConsoleJobService(
             if (preResult.Outcome == PreSubmissionCancelOutcome.Cancelled && preResult.Job != null)
             {
                 await RemoveFromQueueIfPresentAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+                await NotifyTerminalCallbacksAsync(preResult.Job).ConfigureAwait(false);
                 JobControlAction(logger, "cancel", job.OperationId, preResult.Job.Status.ToString());
                 return ControlResponse(preResult.Job, "cancel", "Job cancelled before submission.");
             }
@@ -322,6 +323,7 @@ internal sealed partial class ConsoleJobService(
                 if (ExecutionJobCancellationHelper.IsTerminal(applied.Job.Status))
                 {
                     await RemoveFromQueueIfPresentAsync(applied.Job.OperationId, cancellationToken).ConfigureAwait(false);
+                    await NotifyTerminalCallbacksAsync(applied.Job).ConfigureAwait(false);
                 }
 
                 JobControlAction(logger, "cancel", job.OperationId, applied.Job.Status.ToString());
@@ -450,8 +452,31 @@ internal sealed partial class ConsoleJobService(
         CancellationToken cancellationToken)
     {
         await RemoveFromQueueIfPresentAsync(job.OperationId, cancellationToken).ConfigureAwait(false);
+        await NotifyTerminalCallbacksAsync(job).ConfigureAwait(false);
         JobControlAction(logger, "cancel", job.OperationId, job.Status.ToString());
         return ControlResponse(job, "cancel", "Job cancelled.");
+    }
+
+    // Operator cancel can be the only terminal transition a job ever receives (a queued job cancelled
+    // before worker pickup never reaches the worker/reconciler notify paths). Fire the registered
+    // terminal callbacks here, mirroring JobExecutionService/JobReconciliationService, so feature
+    // run/progress stores (e.g. Share export run history) reconcile to the job's terminal state.
+    // Callbacks are best-effort and kind-guarded. Use CancellationToken.None: the cancel is already
+    // durably committed, so a disconnected client must not strand a backing run at a pre-terminal
+    // status, consistent with the trigger path's commit-once side effects.
+    private async Task NotifyTerminalCallbacksAsync(ExecutionJobRecord job)
+    {
+        foreach (var callback in serviceProvider.GetServices<IJobTerminalCallback>())
+        {
+            try
+            {
+                await callback.OnTerminalAsync(job, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                TerminalCallbackFailed(logger, job.OperationId, ex);
+            }
+        }
     }
 
     private async Task<ExecutionJobRecord?> GetAuthorizedJobAsync(
@@ -1058,6 +1083,9 @@ internal sealed partial class ConsoleJobService(
 
     [LoggerMessage(117006, LogLevel.Warning, "Manual retry capability lookup failed for job {JobId}")]
     private static partial void JobRetryCapabilityLookupFailed(ILogger logger, string jobId, Exception exception);
+
+    [LoggerMessage(117007, LogLevel.Warning, "Terminal callback failed for job {JobId} after operator cancel; feature run/progress state may be stale until TTL or reconcile")]
+    private static partial void TerminalCallbackFailed(ILogger logger, string jobId, Exception exception);
 
     private static class RetryDisabledReasons
     {

@@ -210,6 +210,12 @@ diagnostics from a failed job); the run keeps its existing `resultArtifacts` onl
 when the job published none. The first terminal status wins; a later job
 notification does not overwrite an already-terminal run.
 
+The backing job is created with `JobRetryPolicy.None`. Because run history is
+first-terminal-wins, retrying an export through the generic jobs API
+(`/api/v1/admin/jobs/{jobRunId}/retry`) is rejected as budget-exhausted once the
+run has executed; re-running an export uses a fresh trigger (a new run) rather
+than reopening the original run.
+
 `pause` and `resume` only update `scheduleState`; they do not cancel already
 queued jobs. Scheduled execution is not implemented in this API slice, so
 `nextRunAt` is null unless a future scheduler writes it.
