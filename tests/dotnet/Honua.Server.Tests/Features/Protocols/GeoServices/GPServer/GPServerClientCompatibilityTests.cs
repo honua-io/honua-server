@@ -49,7 +49,9 @@ public sealed class GPServerClientCompatibilityTests : IAsyncLifetime
         service.Tasks.Should().Contain("geometry.buffer");
 
         task.Name.Should().Be("geometry.buffer");
-        task.ExecutionType.Should().Be("esriExecutionTypeAsynchronous");
+        // geometry.buffer is a deterministic single-geometry task and is now
+        // surfaced as synchronous so stock ArcGIS clients pick the execute verb.
+        task.ExecutionType.Should().Be("esriExecutionTypeSynchronous");
         task.Parameters.Should().Contain(parameter => parameter.Name == "wkb" && parameter.Direction == "esriGPParameterDirectionInput");
         task.Parameters.Should().Contain(parameter => parameter.Name == "distance" && parameter.DataType == "GPDouble");
         task.Parameters.Should().Contain(parameter => parameter.Name == "outputFeatureLayer" && parameter.Direction == "esriGPParameterDirectionOutput");
@@ -107,17 +109,20 @@ public sealed class GPServerClientCompatibilityTests : IAsyncLifetime
     {
         var client = new GPServerClient(_fixture.Client, ServiceId);
 
+        // A genuinely unsupported env:* control is still rejected with a clear
+        // Esri error. env:outSR / env:processSR are now honored (see the
+        // dedicated outSR tests) and are no longer in this rejection list.
         var error = await client.SubmitBufferJobExpectingErrorAsync(
             PointWkbBase64,
             4326,
             25.5,
-            new KeyValuePair<string, string>("env:outSR", "4326"));
+            new KeyValuePair<string, string>("env:transferDomains", "true"));
 
         error.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         error.Code.Should().Be(400);
         error.Message.Should().Be("Bad Request");
         error.Details.Should().Contain(detail => detail.Contains("GP environment controls are not yet supported", StringComparison.Ordinal));
-        error.Details.Should().Contain(detail => detail.Contains("env:outSR", StringComparison.Ordinal));
+        error.Details.Should().Contain(detail => detail.Contains("env:transferDomains", StringComparison.Ordinal));
     }
 
     private sealed class GPServerClient(HttpClient httpClient, string serviceId)
