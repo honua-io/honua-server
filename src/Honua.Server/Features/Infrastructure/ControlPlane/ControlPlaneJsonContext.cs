@@ -11,6 +11,9 @@ namespace Honua.Server.Features.Infrastructure.ControlPlane;
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(WorkflowOperationRecord))]
+[JsonSerializable(typeof(MetadataReleaseContext))]
+[JsonSerializable(typeof(MetadataRollbackPlan))]
+[JsonSerializable(typeof(MetadataEvidenceRef))]
 [JsonSerializable(typeof(ExecutionJobRecord))]
 [JsonSerializable(typeof(DeployTargetDefinition))]
 [JsonSerializable(typeof(ExecutionJobDefinition))]

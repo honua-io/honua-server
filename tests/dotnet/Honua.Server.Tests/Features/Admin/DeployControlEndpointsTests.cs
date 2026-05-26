@@ -363,8 +363,20 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
             await approvalFixture.InitializeAsync();
             var client = approvalFixture.CreateAdminClient();
 
+            var createResponse = await client.PostAsJsonAsync("/api/v1/admin/deploy/operations", new
+            {
+                targetId = "prod-api",
+                desiredRevision = "sha256:approval-rollback-test",
+                reason = "Create operation before rollback gate test",
+                submitImmediately = false
+            });
+            createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+            using var createDocument = JsonDocument.Parse(await createResponse.Content.ReadAsStringAsync());
+            var operationId = createDocument.RootElement.GetProperty("operationId").GetString();
+            operationId.Should().NotBeNullOrWhiteSpace();
+
             var response = await client.PostAsJsonAsync(
-                "/api/v1/admin/deploy/operations/deploy-any-id/rollback",
+                $"/api/v1/admin/deploy/operations/{operationId}/rollback",
                 new { reason = "Test approval gating on rollback" });
 
             response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
@@ -541,6 +553,7 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
     private sealed class InMemoryWorkflowOperationStore : IWorkflowOperationStore
     {
         private readonly Dictionary<string, WorkflowOperationRecord> _operations = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _metadataPackageIndex = new(StringComparer.Ordinal);
 
         public Task<bool> TryAcquireLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
             => Task.FromResult(true);
@@ -559,15 +572,24 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
             }
 
             _operations[operation.OperationId] = operation;
+            IndexMetadataReleaseOperation(operation);
             return Task.FromResult(true);
         }
 
         public Task<WorkflowOperationRecord?> GetAsync(string operationId, CancellationToken cancellationToken = default)
             => Task.FromResult(_operations.TryGetValue(operationId, out var operation) ? operation : null);
 
+        public Task<WorkflowOperationRecord?> GetByMetadataPackageIdAsync(string packageId, CancellationToken cancellationToken = default)
+            => Task.FromResult(
+                _metadataPackageIndex.TryGetValue(packageId, out var operationId) &&
+                _operations.TryGetValue(operationId, out var operation)
+                    ? operation
+                    : null);
+
         public Task SetAsync(WorkflowOperationRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
         {
             _operations[operation.OperationId] = operation;
+            IndexMetadataReleaseOperation(operation);
             return Task.CompletedTask;
         }
 
@@ -578,6 +600,15 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
                 .ToArray();
 
             return Task.FromResult<IReadOnlyList<WorkflowOperationRecord>>(operations);
+        }
+
+        private void IndexMetadataReleaseOperation(WorkflowOperationRecord operation)
+        {
+            if (operation.Kind == WorkflowOperationKind.MetadataRelease &&
+                !string.IsNullOrWhiteSpace(operation.MetadataRelease?.PackageId))
+            {
+                _metadataPackageIndex[operation.MetadataRelease.PackageId] = operation.OperationId;
+            }
         }
     }
 

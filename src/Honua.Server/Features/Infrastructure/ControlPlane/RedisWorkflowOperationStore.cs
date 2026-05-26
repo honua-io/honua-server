@@ -4,6 +4,7 @@
 using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace Honua.Server.Features.Infrastructure.ControlPlane;
@@ -13,10 +14,22 @@ namespace Honua.Server.Features.Infrastructure.ControlPlane;
 /// </summary>
 internal sealed partial class RedisWorkflowOperationStore(
     IConnectionMultiplexer redis,
-    ILogger<RedisWorkflowOperationStore> logger) : IWorkflowOperationStore
+    ILogger<RedisWorkflowOperationStore> logger,
+    IOptions<MetadataReleaseOperationOptions>? metadataReleaseOptions = null) : IWorkflowOperationStore
 {
     private static readonly TimeSpan DefaultRetention = TimeSpan.FromDays(7);
+    private const string RefreshMetadataPackageIndexScript = """
+        local current = redis.call('GET', KEYS[1])
+        if current == ARGV[1] then
+            redis.call('SET', KEYS[1], ARGV[1], 'PX', tonumber(ARGV[2]))
+            return 1
+        end
+        return 0
+        """;
+
     private readonly IDatabase _database = redis.GetDatabase();
+    private readonly MetadataReleaseOperationOptions _metadataReleaseOptions =
+        metadataReleaseOptions?.Value ?? new MetadataReleaseOperationOptions();
 
     public Task<bool> TryAcquireLeaseAsync(
         string operationId,
@@ -55,13 +68,15 @@ internal sealed partial class RedisWorkflowOperationStore(
         ArgumentNullException.ThrowIfNull(operation);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var created = await PersistAsync(operation, ttl ?? DefaultRetention, createOnly: true).ConfigureAwait(false);
+        var retention = ResolveRetention(operation, ttl);
+        var created = await PersistAsync(operation, retention, createOnly: true).ConfigureAwait(false);
         if (!created)
         {
             return false;
         }
 
         Log.WorkflowOperationCreated(logger, operation.OperationId, operation.Kind.ToString(), operation.Status.ToString());
+        LogMetadataReleaseStage(operation);
         return true;
     }
 
@@ -80,6 +95,31 @@ internal sealed partial class RedisWorkflowOperationStore(
         return JsonSerializer.Deserialize(payload.ToString(), ControlPlaneJsonContext.Default.WorkflowOperationRecord);
     }
 
+    public async Task<WorkflowOperationRecord?> GetByMetadataPackageIdAsync(
+        string packageId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (string.IsNullOrWhiteSpace(packageId))
+        {
+            return null;
+        }
+
+        var operationId = await _database.StringGetAsync(GetMetadataPackageIndexKey(packageId.Trim())).ConfigureAwait(false);
+        if (!operationId.HasValue)
+        {
+            return null;
+        }
+
+        var operation = await GetAsync(operationId.ToString(), cancellationToken).ConfigureAwait(false);
+        if (operation == null)
+        {
+            Log.MetadataPackageIndexStale(logger, packageId, operationId.ToString());
+        }
+
+        return operation;
+    }
+
     public async Task SetAsync(
         WorkflowOperationRecord operation,
         TimeSpan? ttl = null,
@@ -88,8 +128,9 @@ internal sealed partial class RedisWorkflowOperationStore(
         ArgumentNullException.ThrowIfNull(operation);
         cancellationToken.ThrowIfCancellationRequested();
 
-        await PersistAsync(operation, ttl ?? DefaultRetention, createOnly: false).ConfigureAwait(false);
+        await PersistAsync(operation, ResolveRetention(operation, ttl), createOnly: false).ConfigureAwait(false);
         Log.WorkflowOperationUpdated(logger, operation.OperationId, operation.Status.ToString());
+        LogMetadataReleaseStage(operation);
     }
 
     public async Task<IReadOnlyList<WorkflowOperationRecord>> ListActiveAsync(
@@ -146,6 +187,7 @@ internal sealed partial class RedisWorkflowOperationStore(
 
         var payload = JsonSerializer.Serialize(operation, ControlPlaneJsonContext.Default.WorkflowOperationRecord);
         var writeTask = transaction.StringSetAsync(operationKey, payload, retention);
+        QueueMetadataPackageIndexUpdate(transaction, operation, retention, createOnly);
         QueueActiveIndexUpdates(transaction, operation);
 
         var committed = await transaction.ExecuteAsync().ConfigureAwait(false);
@@ -172,6 +214,31 @@ internal sealed partial class RedisWorkflowOperationStore(
         transaction.SetAddAsync(GetKindActiveKey(operation.Kind), operationId);
     }
 
+    private static void QueueMetadataPackageIndexUpdate(
+        ITransaction transaction,
+        WorkflowOperationRecord operation,
+        TimeSpan retention,
+        bool createOnly)
+    {
+        var packageId = operation.MetadataRelease?.PackageId;
+        if (operation.Kind != WorkflowOperationKind.MetadataRelease || string.IsNullOrWhiteSpace(packageId))
+        {
+            return;
+        }
+
+        var indexKey = GetMetadataPackageIndexKey(packageId.Trim());
+        if (createOnly)
+        {
+            transaction.StringSetAsync(indexKey, operation.OperationId, retention);
+            return;
+        }
+
+        transaction.ScriptEvaluateAsync(
+            RefreshMetadataPackageIndexScript,
+            [(RedisKey)indexKey],
+            [(RedisValue)operation.OperationId, (RedisValue)(long)retention.TotalMilliseconds]);
+    }
+
     private async Task RemoveStaleMembersAsync(string activeKey, IReadOnlyList<RedisValue> staleIds)
     {
         foreach (var staleId in staleIds)
@@ -186,7 +253,36 @@ internal sealed partial class RedisWorkflowOperationStore(
             or WorkflowOperationStatus.RolledBack
             or WorkflowOperationStatus.ManualInterventionRequired;
 
+    private TimeSpan ResolveRetention(WorkflowOperationRecord operation, TimeSpan? ttl)
+    {
+        if (ttl.HasValue)
+        {
+            return ttl.Value;
+        }
+
+        return operation.Kind == WorkflowOperationKind.MetadataRelease
+            ? _metadataReleaseOptions.OperationRetention
+            : DefaultRetention;
+    }
+
+    private void LogMetadataReleaseStage(WorkflowOperationRecord operation)
+    {
+        if (operation.Kind != WorkflowOperationKind.MetadataRelease || operation.MetadataRelease == null)
+        {
+            return;
+        }
+
+        Log.MetadataReleaseStageObserved(
+            logger,
+            operation.OperationId,
+            operation.MetadataRelease.PackageId,
+            operation.MetadataRelease.CurrentStage.ToString(),
+            operation.Status.ToString());
+    }
+
     private static string GetOperationKey(string operationId) => $"controlplane:workflow:{operationId}";
+
+    private static string GetMetadataPackageIndexKey(string packageId) => $"controlplane:workflow:metapkg:{packageId}";
 
     private static string GetLeaseKey(string operationId) => $"controlplane:workflow:lease:{operationId}";
 
@@ -208,6 +304,20 @@ internal sealed partial class RedisWorkflowOperationStore(
         public static partial void WorkflowOperationUpdated(
             ILogger logger,
             string operationId,
+            string status);
+
+        [LoggerMessage(9002, LogLevel.Warning, "Metadata release package index for {PackageId} points to missing operation {OperationId}")]
+        public static partial void MetadataPackageIndexStale(
+            ILogger logger,
+            string packageId,
+            string operationId);
+
+        [LoggerMessage(9003, LogLevel.Information, "Metadata release operation {OperationId} for package {PackageId} is at stage {Stage} with status {Status}")]
+        public static partial void MetadataReleaseStageObserved(
+            ILogger logger,
+            string operationId,
+            string packageId,
+            string stage,
             string status);
     }
 }

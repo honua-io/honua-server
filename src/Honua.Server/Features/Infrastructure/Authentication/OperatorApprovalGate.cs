@@ -68,14 +68,20 @@ internal sealed class OperatorApprovalGate(
         OperatorResourceType resourceType,
         OperatorOperation operation,
         string? resourceId = null,
-        bool isDestructive = false)
+        bool isDestructive = false,
+        bool requiresExplicitApproval = false,
+        string? approvalPolicyRef = null,
+        IReadOnlyList<string>? approvalReasonCodes = null)
     {
         var request = new OperatorAuthorizationRequest
         {
             ResourceType = resourceType,
             Operation = operation,
             ResourceId = resourceId,
-            IsDestructive = isDestructive
+            IsDestructive = isDestructive,
+            RequiresExplicitApproval = requiresExplicitApproval,
+            ApprovalPolicyRef = approvalPolicyRef,
+            ApprovalReasonCodes = approvalReasonCodes ?? Array.Empty<string>()
         };
 
         var approval = CheckApproval(context.User, request);

@@ -1191,7 +1191,7 @@ public sealed class EditProcessor : IEditProcessor
                 }
             }
             return true;
-            next: ;
+        next:;
         }
         return false;
     }

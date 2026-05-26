@@ -705,7 +705,7 @@ public sealed class MetadataReleaseService(
             SemanticId = GetFieldSemanticId(resource, field),
             ParentResourceId = resource.Metadata.Id,
             FieldName = field.Name,
-            FieldType = field.Type,
+            FieldType = field.Type.ToWireName(),
         };
 
     private static MetadataBoundFieldSummary? ToSourceFieldSummary(ResolvedSemanticArtifact artifact)

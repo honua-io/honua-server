@@ -33,6 +33,10 @@ public sealed class MetadataV2ModelTests
         graph.StorageBindings.Should().BeEmpty();
         graph.Services.Should().BeEmpty();
         graph.Publications.Should().BeEmpty();
+        graph.Catalogs.Should().BeEmpty();
+        graph.Policies.Should().BeEmpty();
+        graph.Roles.Should().BeEmpty();
+        graph.ProjectionProfiles.Should().BeEmpty();
         graph.Extensions.Should().BeEmpty();
     }
 
@@ -312,6 +316,7 @@ public sealed class MetadataV2ModelTests
         Enum.GetNames<MetadataV2ResourceType>().Should().BeEquivalentTo(
             nameof(MetadataV2ResourceType.FeatureDataset),
             nameof(MetadataV2ResourceType.RasterDataset),
+            nameof(MetadataV2ResourceType.Table),
             nameof(MetadataV2ResourceType.TileDataset),
             nameof(MetadataV2ResourceType.Process),
             nameof(MetadataV2ResourceType.Style),
@@ -422,6 +427,161 @@ public sealed class MetadataV2ModelTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public void Validate_WithDuplicateNewGraphEntityIds_ReturnsError()
+    {
+        var graph = CreateValidGraph() with
+        {
+            Policies =
+            [
+                new MetadataV2Policy
+                {
+                    Metadata = new MetadataV2ObjectMetadata
+                    {
+                        Id = "policy.read"
+                    }
+                },
+                new MetadataV2Policy
+                {
+                    Metadata = new MetadataV2ObjectMetadata
+                    {
+                        Id = "policy.read"
+                    }
+                }
+            ],
+            ProjectionProfiles =
+            [
+                new MetadataV2ProjectionProfile
+                {
+                    Metadata = new MetadataV2ObjectMetadata
+                    {
+                        Id = "resource.parcels"
+                    }
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain("metadata id 'policy.read' is duplicated.");
+        result.Errors.Should().Contain("metadata id 'resource.parcels' is duplicated.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Validate_WithDuplicateStyleResourceIds_ReturnsValidationError()
+    {
+        var validGraph = CreateValidGraph();
+        var graph = validGraph with
+        {
+            Resources =
+            [
+                validGraph.Resources[0],
+                CreateStyleResource("style.default"),
+                CreateStyleResource("style.default")
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain("metadata id 'style.default' is duplicated.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Validate_WithNewGraphEntityMetadataIssues_ReturnsError()
+    {
+        var graph = CreateValidGraph() with
+        {
+            ProjectionProfiles =
+            [
+                new MetadataV2ProjectionProfile
+                {
+                    Metadata = new MetadataV2ObjectMetadata
+                    {
+                        Id = "profile.ogc",
+                        ContactPoint = new MetadataV2ContactPoint
+                        {
+                            Email = "metadata-team"
+                        }
+                    }
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(
+            "projection profile 'profile.ogc' metadata.contactPoint.email 'metadata-team' must contain '@'.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Validate_WithDanglingCatalogAndPolicyReferences_ReturnsErrors()
+    {
+        var validGraph = CreateValidGraph();
+        var graph = validGraph with
+        {
+            Resources =
+            [
+                validGraph.Resources[0] with
+                {
+                    PolicyIds =
+                    [
+                        "policy.missing"
+                    ]
+                }
+            ],
+            Catalogs =
+            [
+                new MetadataV2Catalog
+                {
+                    Metadata = new MetadataV2ObjectMetadata
+                    {
+                        Id = "catalog.public"
+                    },
+                    ParentCatalogId = "catalog.missing",
+                    ResourceIds =
+                    [
+                        "resource.missing"
+                    ],
+                    PublicationIds =
+                    [
+                        "publication.missing"
+                    ]
+                }
+            ],
+            Roles =
+            [
+                new MetadataV2Role
+                {
+                    Metadata = new MetadataV2ObjectMetadata
+                    {
+                        Id = "role.editor"
+                    },
+                    PolicyIds =
+                    [
+                        "policy.missing"
+                    ]
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain("resource 'resource.parcels' references missing policy 'policy.missing'.");
+        result.Errors.Should().Contain("catalog 'catalog.public' references missing parent catalog 'catalog.missing'.");
+        result.Errors.Should().Contain("catalog 'catalog.public' references missing resource 'resource.missing'.");
+        result.Errors.Should().Contain(
+            "catalog 'catalog.public' references missing publication 'publication.missing'.");
+        result.Errors.Should().Contain("role 'role.editor' references missing policy 'policy.missing'.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public void Validate_WithDanglingPublicationReferences_ReturnsResourceAndServiceErrors()
     {
         var graph = CreateValidGraph() with
@@ -466,6 +626,7 @@ public sealed class MetadataV2ModelTests
                     {
                         Id = "resource.parcels"
                     },
+                    PrimaryStorageBindingId = "storage.parcels.postgis",
                     StorageBindingIds =
                     [
                         "storage.hydrants.postgis"
@@ -570,7 +731,8 @@ public sealed class MetadataV2ModelTests
                         Id = "storage.parcels.postgis"
                     },
                     ResourceId = "resource.parcels",
-                    ConnectionId = "connection.postgis"
+                    ConnectionId = "connection.postgis",
+                    StorageLayerId = 0
                 }
             ],
             Services =
@@ -596,6 +758,29 @@ public sealed class MetadataV2ModelTests
                     StorageBindingId = "storage.parcels.postgis"
                 }
             ]
+        };
+    }
+
+    private static MetadataV2Resource CreateStyleResource(string id)
+    {
+        return new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = id
+            },
+            Type = MetadataV2ResourceType.Style,
+            Style = new MetadataV2ResourceStyle
+            {
+                Encodings =
+                [
+                    new MetadataV2StyleEncoding
+                    {
+                        Encoding = "mapbox-style",
+                        Body = "{}"
+                    }
+                ]
+            }
         };
     }
 }

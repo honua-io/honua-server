@@ -132,7 +132,7 @@ public sealed class MetadataV2GraphSnapshotTests
                     Metadata = new MetadataV2ObjectMetadata { Id = "resource.parcels", Name = "parcels" },
                     Type = MetadataV2ResourceType.FeatureDataset,
                     StorageBindingIds = ["storage.parcels.postgis"],
-                    
+
                     SchemaFields =
                     [
                         new MetadataV2Field { Name = "parcel_id", Type = MetadataV2FieldType.String, SemanticRoles = ["id.primary"] },
