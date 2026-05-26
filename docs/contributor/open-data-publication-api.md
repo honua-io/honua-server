@@ -173,8 +173,10 @@ and STAC publication mutations evict the `open-data`, `metadata`, and
   publication state.
 - `/open-data/catalog.json` is generated through the public list projection and
   currently includes at most 200 visible records.
-- Invalid or stale list cursors are treated as the first page instead of a
-  client error.
+- Undecodable list cursors (bad base64 or a non-numeric payload) restart at the
+  first page instead of returning a client error. A decodable cursor is clamped
+  into range, so an out-of-range (stale) value past the current end resolves to
+  an empty final page rather than restarting at the first page.
 - Public Schema.org data is embedded under `schemaOrg` in the normal JSON
   response and is also available as `application/ld+json` from the same item
   route.

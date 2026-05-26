@@ -23,8 +23,11 @@ internal static class OpenDataServiceCollectionExtensions
         services.Configure<OpenDataPublicationOptions>(
             configuration.GetSection(OpenDataPublicationOptions.SectionName));
 
-        if (configuration.GetValue<bool>(
-                $"{OpenDataPublicationOptions.SectionName}:{nameof(OpenDataPublicationOptions.UseInMemoryStore)}"))
+        var openDataEnabled = configuration.GetValue<bool>(
+            $"{OpenDataPublicationOptions.SectionName}:{nameof(OpenDataPublicationOptions.Enabled)}");
+        var useInMemoryStore = configuration.GetValue<bool>(
+            $"{OpenDataPublicationOptions.SectionName}:{nameof(OpenDataPublicationOptions.UseInMemoryStore)}");
+        if (useInMemoryStore || !openDataEnabled)
         {
             services.TryAddSingleton<IOpenDataStore, InMemoryOpenDataStore>();
         }

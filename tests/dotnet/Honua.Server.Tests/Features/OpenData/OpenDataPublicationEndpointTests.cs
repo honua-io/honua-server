@@ -371,6 +371,79 @@ public sealed class OpenDataPublicationEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/console/content")]
+    [Endpoint("POST /api/v1/admin/stac/publications")]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task PublishStac_WithExistingMetadataCollectionId_ReturnsConflict()
+    {
+        var existingCollectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
+        var existingCollectionResponse = await _adminClient.GetAsync($"/stac/collections/{existingCollectionId}");
+        Assert.Equal(HttpStatusCode.OK, existingCollectionResponse.StatusCode);
+
+        var item = await CreateContentAsync(
+            name: $"stac-collision-{Guid.NewGuid():N}",
+            visibility: ConsoleVisibility.Public,
+            title: "STAC Collision Source",
+            description: "Open-data publication source that must not shadow Metadata STAC.");
+
+        var publishResponse = await _adminClient.PostAsJsonAsync(
+            "/api/v1/admin/stac/publications",
+            new StacPublicationPublishRequest
+            {
+                ItemId = item.Id,
+                CollectionId = existingCollectionId,
+                Title = "Conflicting STAC"
+            },
+            JsonOptions);
+
+        Assert.Equal(HttpStatusCode.Conflict, publishResponse.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/content")]
+    [Endpoint("PUT /api/v1/admin/open-data/{itemId}")]
+    [Endpoint("POST /api/v1/admin/stac/publications")]
+    [Endpoint("GET /stac/collections/{collectionId}")]
+    public async Task PublishStac_WithInvalidSpatialCoverage_HidesPublicCollection()
+    {
+        var collectionId = $"invalid-spatial-{Guid.NewGuid():N}";
+        var item = await CreateContentAsync(
+            name: $"invalid-spatial-{Guid.NewGuid():N}",
+            visibility: ConsoleVisibility.Public,
+            title: "Invalid Spatial STAC",
+            description: "Open-data publication source with invalid spatial coverage.");
+
+        var invalidPage = CompleteOpenDataPage(
+            "Invalid Spatial STAC",
+            new OpenDataSpatialExtent
+            {
+                MinX = 10,
+                MinY = 20,
+                MaxX = 5,
+                MaxY = 25
+            });
+        var updateResponse = await _adminClient.PutAsJsonAsync(
+            $"/api/v1/admin/open-data/{item.Id}",
+            invalidPage,
+            JsonOptions);
+        Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
+
+        var publishResponse = await _adminClient.PostAsJsonAsync(
+            "/api/v1/admin/stac/publications",
+            new StacPublicationPublishRequest
+            {
+                ItemId = item.Id,
+                CollectionId = collectionId,
+                Title = "Invalid Spatial STAC"
+            },
+            JsonOptions);
+        Assert.Equal(HttpStatusCode.Created, publishResponse.StatusCode);
+
+        var publicCollectionResponse = await _publicClient.GetAsync($"/stac/collections/{collectionId}");
+        Assert.Equal(HttpStatusCode.NotFound, publicCollectionResponse.StatusCode);
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/stac/publications")]
     [Endpoint("PUT /api/v1/admin/stac/publications/{collectionId}")]
     [Endpoint("DELETE /api/v1/admin/stac/publications/{collectionId}")]
@@ -420,7 +493,9 @@ public sealed class OpenDataPublicationEndpointTests : IAsyncLifetime
         }
     }
 
-    private static OpenDataPageUpdateRequest CompleteOpenDataPage(string title)
+    private static OpenDataPageUpdateRequest CompleteOpenDataPage(
+        string title,
+        OpenDataSpatialExtent? spatialCoverage = null)
     {
         return new OpenDataPageUpdateRequest
         {
@@ -441,7 +516,7 @@ public sealed class OpenDataPublicationEndpointTests : IAsyncLifetime
                     DownloadUrl = "https://example.com/data.geojson"
                 }
             ],
-            SpatialCoverage = new OpenDataSpatialExtent
+            SpatialCoverage = spatialCoverage ?? new OpenDataSpatialExtent
             {
                 MinX = -158.3,
                 MinY = 21.2,

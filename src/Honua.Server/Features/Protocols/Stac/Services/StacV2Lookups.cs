@@ -1,10 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Protocols.Stac.Services;
@@ -37,7 +37,8 @@ internal static class StacV2Lookups
 
     /// <summary>
     /// Enumerates the STAC publications visible to the caller. A publication is visible
-    /// when it lives on a service exposing the <see cref="ServiceProtocols.Stac"/> protocol
+    /// when it lives on a service of type <see cref="MetadataV2ServiceType.StacApi"/>
+    /// exposing the STAC protocol
     /// and the access policy on the resource (and the service it is published through)
     /// allows the current principal to read it.
     /// </summary>
@@ -50,7 +51,7 @@ internal static class StacV2Lookups
         var snapshot = await GetSnapshotAsync(context, cancellationToken).ConfigureAwait(false);
 
         var stacServiceIds = snapshot.Graph.Services
-            .Where(s => ServiceProtocols.IsProtocolEnabled(s, ServiceProtocols.Stac))
+            .Where(StacCollectionIdHelpers.IsMetadataStacServiceEnabled)
             .Select(s => s.Metadata.Id)
             .ToHashSet(StringComparer.Ordinal);
 
@@ -115,13 +116,7 @@ internal static class StacV2Lookups
 
         var snapshot = await GetSnapshotAsync(context, cancellationToken).ConfigureAwait(false);
 
-        int? numericId = int.TryParse(
-            collectionId.Trim(),
-            System.Globalization.NumberStyles.Integer,
-            System.Globalization.CultureInfo.InvariantCulture,
-            out var parsed)
-                ? parsed
-                : null;
+        var numericId = StacCollectionIdHelpers.ParseNumericCollectionId(collectionId);
 
         foreach (var pub in snapshot.Graph.Publications)
         {
@@ -134,12 +129,12 @@ internal static class StacV2Lookups
             {
                 continue;
             }
-            if (!ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.Stac))
+            if (!StacCollectionIdHelpers.IsMetadataStacServiceEnabled(service))
             {
                 continue;
             }
 
-            if (!MatchesCollectionId(pub, collectionId, numericId))
+            if (!StacCollectionIdHelpers.MatchesMetadataStacCollectionId(pub, collectionId, numericId))
             {
                 continue;
             }
@@ -154,19 +149,6 @@ internal static class StacV2Lookups
         }
 
         return null;
-    }
-
-    private static bool MatchesCollectionId(MetadataV2Publication publication, string collectionId, int? numericId)
-    {
-        if (string.Equals(publication.ServiceLocalId, collectionId, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(publication.Path, collectionId, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(publication.Metadata.Name, collectionId, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(publication.Metadata.Id, collectionId, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        return numericId.HasValue && publication.LayerIndex == numericId.Value;
     }
 
     private static async Task<MetadataV2GraphSnapshot> GetSnapshotAsync(

@@ -6,10 +6,12 @@ using System.Security.Claims;
 using System.Text;
 using Honua.Core.Features.Console.Abstractions;
 using Honua.Core.Features.Console.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.OpenData.Abstractions;
 using Honua.Core.Features.OpenData.Domain;
 using Honua.Server.Features.Console;
+using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.OpenData;
 using Honua.Server.Features.Infrastructure.OpenData.Models;
 using Microsoft.Extensions.Options;
@@ -26,6 +28,7 @@ internal sealed class OpenDataPublicationService
     private const string Wgs84 = "EPSG:4326";
     private readonly IConsoleContentStore _contentStore;
     private readonly IOpenDataStore _openDataStore;
+    private readonly IMetadataV2GraphProvider? _metadataGraphProvider;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<OpenDataPublicationService> _logger;
     private readonly OpenDataPublicationOptions _options;
@@ -35,10 +38,12 @@ internal sealed class OpenDataPublicationService
         IOpenDataStore openDataStore,
         TimeProvider timeProvider,
         ILogger<OpenDataPublicationService> logger,
-        IOptions<OpenDataPublicationOptions> options)
+        IOptions<OpenDataPublicationOptions> options,
+        IMetadataV2GraphProvider? metadataGraphProvider = null)
     {
         _contentStore = contentStore;
         _openDataStore = openDataStore;
+        _metadataGraphProvider = metadataGraphProvider;
         _timeProvider = timeProvider;
         _logger = logger;
         _options = options.Value;
@@ -286,6 +291,10 @@ internal sealed class OpenDataPublicationService
         {
             return StacPublicationOperationResult.Conflict(existing, eligibility);
         }
+        if (await ConflictsWithMetadataStacCollectionAsync(collectionId, cancellationToken).ConfigureAwait(false))
+        {
+            return StacPublicationOperationResult.Conflict(eligibility);
+        }
 
         var now = _timeProvider.GetUtcNow();
         var record = new OpenDataStacPublicationRecord
@@ -421,9 +430,16 @@ internal sealed class OpenDataPublicationService
         }
 
         var page = await _openDataStore.GetPageRecordAsync(record.ItemId, cancellationToken).ConfigureAwait(false);
-        return EvaluateEligibility(item, page).IsEligible
-            ? new OpenDataStacPublicationProjection(record, page)
-            : null;
+        if (!EvaluateEligibility(item, page).IsEligible)
+        {
+            return null;
+        }
+        if (page is not null && !ValidateDcat(item, page).IsValid)
+        {
+            return null;
+        }
+
+        return new OpenDataStacPublicationProjection(record, page);
     }
 
     internal static StacPublicationStatusResponse MapStacStatus(
@@ -719,6 +735,36 @@ internal sealed class OpenDataPublicationService
         return candidate.Length <= 120 ? candidate : candidate[..120].Trim('-');
     }
 
+    private async Task<bool> ConflictsWithMetadataStacCollectionAsync(
+        string collectionId,
+        CancellationToken cancellationToken)
+    {
+        if (_metadataGraphProvider is null)
+        {
+            return false;
+        }
+
+        var snapshot = await _metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var numericId = StacCollectionIdHelpers.ParseNumericCollectionId(collectionId);
+
+        foreach (var publication in snapshot.Graph.Publications)
+        {
+            if (!publication.LayerIndex.HasValue ||
+                !snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) ||
+                !StacCollectionIdHelpers.IsMetadataStacServiceEnabled(service))
+            {
+                continue;
+            }
+
+            if (StacCollectionIdHelpers.MatchesMetadataStacCollectionId(publication, collectionId, numericId))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static OpenDataIssue Issue(
         string code,
         string message,
@@ -858,6 +904,9 @@ internal readonly record struct StacPublicationOperationResult(
 
     public static StacPublicationOperationResult Ineligible(OpenDataEligibility eligibility)
         => new(StacPublicationOperationStatus.Ineligible, null, eligibility);
+
+    public static StacPublicationOperationResult Conflict(OpenDataEligibility eligibility)
+        => new(StacPublicationOperationStatus.Conflict, null, eligibility);
 
     public static StacPublicationOperationResult Conflict(
         OpenDataStacPublicationRecord record,

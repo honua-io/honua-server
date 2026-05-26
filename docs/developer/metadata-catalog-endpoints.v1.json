@@ -215,7 +215,7 @@
         "python": "Open-data catalog client for page/list/detail and DCAT catalog reads"
       },
       "responseKind": "Public page/list JSON, application/ld+json Schema.org Dataset item projection, and DCAT/data.json-compatible catalog JSON. Public item JSON responses include the same Schema.org Dataset preview under schemaOrg. The catalog uses the same projection and currently emits up to 200 visible records.",
-      "paginationFiltering": "List supports cursor and limit; limit defaults to 25 and is capped at 200. Invalid or stale cursors restart at the first page. Item reads return an empty 404 for missing, private, unpublished, ineligible, disabled-capability, and validation-blocked items.",
+      "paginationFiltering": "List supports cursor and limit; limit defaults to 25 and is capped at 200. Undecodable cursors restart at the first page, while an out-of-range (stale) numeric cursor is clamped to the end and returns an empty final page; neither returns a client error. Item reads return an empty 404 for missing, private, unpublished, ineligible, disabled-capability, and validation-blocked items.",
       "testExpectation": "Open-data endpoint tests cover allowed reads, JSON-LD negotiation, disabled capability gating, non-leaking denied reads, catalog output, and documented validation exceptions. SDK parity tests should add explicit cursor/list behavior coverage."
     },
     {
