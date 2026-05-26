@@ -552,6 +552,14 @@ and classifies rollback readiness. See
 [Metadata Prevalidation Admin API](../admin-api/metadata-prevalidation.md) for
 the full contract.
 
+Metadata release operation reads use the deploy-control operation response
+contract directly. `GET /api/v1/admin/metadata/releases/{packageId}/operation`
+returns the latest operation indexed for that release package, while
+`GET /api/v1/admin/deploy/operations/{operationId}` remains the stable lookup
+for a specific attempt. Metadata release operation records and their package-ID
+index entries use `ControlPlane:MetadataRelease:OperationRetention`, which
+defaults to 30 days.
+
 `Group` and `SourceDescriptor` are stable `honua.io/v1alpha1` metadata resource kinds on the generic CRUD surface. SDKs can list them with `GET /api/v1/admin/metadata/resources?kind=Group` and `GET /api/v1/admin/metadata/resources?kind=SourceDescriptor` instead of probing undocumented catalog endpoints.
 
 `Group` resources use `metadata.name` and `metadata.namespace` as the stable group identity. `spec.description` is optional and should contain the human-readable group summary when present.
@@ -658,6 +666,12 @@ for run lifecycle, scheduler semantics, and tuning details.
 | `/api/v1/admin/deploy/operations/{operationId}` | GET | Get deploy or metadata release operation status by stable operation ID |
 | `/api/v1/admin/deploy/operations/{operationId}/submit` | POST | Submit a deploy operation for execution |
 | `/api/v1/admin/deploy/operations/{operationId}/rollback` | POST | Request rollback for a deploy or metadata release operation; metadata-only rollback is non-destructive, while data-affecting rollback classes use the destructive approval gate |
+
+For metadata release operations, rollback requests reuse
+`/api/v1/admin/deploy/operations/{operationId}/rollback` with an optional
+`reason`. Accepted requests set the workflow status and
+`metadataRelease.currentStage` to `RollbackRequested`; rejected destructive
+approval checks return `403` without mutating the stored operation.
 
 ### **Alert Management Endpoints**
 
