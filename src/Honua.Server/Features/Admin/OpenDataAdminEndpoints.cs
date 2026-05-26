@@ -6,9 +6,9 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.OpenData;
-using Honua.Server.Features.OpenData.Models;
-using Honua.Server.Features.OpenData.Services;
+using Honua.Server.Features.Infrastructure.OpenData;
+using Honua.Server.Features.Infrastructure.OpenData.Models;
+using Honua.Server.Features.Infrastructure.OpenData.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;

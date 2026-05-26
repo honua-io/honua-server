@@ -2,9 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.OpenData;
-using Honua.Server.Features.OpenData.Models;
-using Honua.Server.Features.OpenData.Services;
+using Honua.Server.Features.Infrastructure.OpenData;
+using Honua.Server.Features.Infrastructure.OpenData.Models;
+using Honua.Server.Features.Infrastructure.OpenData.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Protocols.OpenData;

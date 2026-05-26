@@ -212,9 +212,9 @@
         "javascript": "Open-data browser helpers for public page, list, and raw DCAT catalog reads",
         "python": "Open-data catalog client for page/list/detail and DCAT catalog reads"
       },
-      "responseKind": "Public page/list JSON and DCAT/data.json-compatible catalog JSON. Public item responses include a Schema.org Dataset preview under schemaOrg.",
-      "paginationFiltering": "List supports cursor and limit; limit defaults to 25 and is capped at 200. Item reads return an empty 404 for missing, private, unpublished, ineligible, and validation-blocked items.",
-      "testExpectation": "Open-data endpoint tests cover allowed reads, non-leaking denied reads, catalog output, documented validation exceptions, and list paging behavior when SDK parity tests land."
+      "responseKind": "Public page/list JSON and DCAT/data.json-compatible catalog JSON. Public item responses include a Schema.org Dataset preview under schemaOrg. The catalog uses the same projection and currently emits up to 200 visible records.",
+      "paginationFiltering": "List supports cursor and limit; limit defaults to 25 and is capped at 200. Invalid or stale cursors restart at the first page. Item reads return an empty 404 for missing, private, unpublished, ineligible, and validation-blocked items.",
+      "testExpectation": "Open-data endpoint tests cover allowed reads, non-leaking denied reads, catalog output, and documented validation exceptions. SDK parity tests should add explicit cursor/list behavior coverage."
     },
     {
       "id": "admin-sdk-capabilities",
@@ -465,7 +465,7 @@
     },
     {
       "id": "admin-open-data-publication-controls",
-      "title": "Admin open-data, DCAT, and STAC publication controls",
+      "title": "Admin open-data, DCAT, and Console STAC publication controls",
       "status": "implemented",
       "category": "admin-control-plane-metadata-read",
       "capabilities": [
@@ -486,15 +486,15 @@
         "PUT /api/v1/admin/stac/publications/{collectionId}",
         "DELETE /api/v1/admin/stac/publications/{collectionId}"
       ],
-      "audience": "Console Share, admin SDKs, and operator automation managing server-owned open-data page state, DCAT validation, and STAC publication controls.",
+      "audience": "Console Share, admin SDKs, and operator automation managing server-owned open-data page state, DCAT validation, and Console STAC publication controls.",
       "authPosture": "Admin authorization required.",
       "sdkTargets": {
-        "dotnet": "Admin Console Share client for eligibility, page state, DCAT validation, and STAC publication status",
-        "javascript": "Console Share admin client helpers for open-data/DCAT/STAC publication workflows",
+        "dotnet": "Admin Console Share client for eligibility, page state, DCAT validation, and Console STAC publication status",
+        "javascript": "Console Share admin client helpers for open-data/DCAT/Console STAC publication workflows",
         "python": "Admin open-data publication client where Console automation needs parity"
       },
-      "responseKind": "Admin ApiResponse envelopes for reads/writes, 201 Created plus Location on STAC publish, and 204 No Content on STAC unpublish.",
-      "paginationFiltering": "No admin paging in the current contract. Eligibility and validation responses preserve all blocking reasons and documented validation exceptions.",
+      "responseKind": "Admin ApiResponse envelopes for reads/writes, 201 Created plus Location on STAC publish, and 204 No Content on STAC unpublish. STAC publication responses are Console status readbacks, not public STAC Collection documents.",
+      "paginationFiltering": "No admin paging in the current contract. GET /api/v1/admin/open-data/{itemId} synthesizes an unpublished default page when no page record exists. Eligibility and validation responses preserve all blocking reasons and documented validation exceptions.",
       "testExpectation": "Open-data publication tests cover eligibility reasons, merge update/readback, denied public reads, DCAT validation/status, and STAC publish/update/unpublish readback."
     },
     {

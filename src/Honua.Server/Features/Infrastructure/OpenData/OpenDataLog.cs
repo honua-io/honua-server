@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.OpenData.Domain;
 
-namespace Honua.Server.Features.OpenData;
+namespace Honua.Server.Features.Infrastructure.OpenData;
 
 /// <summary>
 /// Source-generated log messages for open-data publication APIs.

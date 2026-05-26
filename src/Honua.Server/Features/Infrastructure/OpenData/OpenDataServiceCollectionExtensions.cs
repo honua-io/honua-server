@@ -2,10 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.OpenData.Abstractions;
-using Honua.Server.Features.OpenData.Services;
+using Honua.Server.Features.Infrastructure.OpenData.Services;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Honua.Server.Features.OpenData;
+namespace Honua.Server.Features.Infrastructure.OpenData;
 
 /// <summary>
 /// Dependency registration for the open-data publication slice.

@@ -2826,7 +2826,7 @@
         },
         {
           "proofClass": "contract-governance",
-          "proofMechanism": "Console open-data publication documentation defines the public page/list contract, DCAT/data.json projection, Schema.org preview, eligibility rules, cache invalidation, and STAC publication control semantics.",
+          "proofMechanism": "Console open-data publication documentation defines the public page/list contract, DCAT/data.json projection, Schema.org preview, eligibility rules, cache invalidation, and Console-side STAC publication control semantics.",
           "executionLane": "repo-docs",
           "evidenceLocations": [
             "docs/contributor/open-data-publication-api.md",

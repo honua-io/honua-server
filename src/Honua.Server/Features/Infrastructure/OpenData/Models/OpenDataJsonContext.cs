@@ -6,7 +6,7 @@ using Honua.Core.Features.Console.Domain;
 using Honua.Core.Features.OpenData.Domain;
 using Honua.Server.Features.Infrastructure.Models;
 
-namespace Honua.Server.Features.OpenData.Models;
+namespace Honua.Server.Features.Infrastructure.OpenData.Models;
 
 /// <summary>
 /// JSON source-generation context for open-data, DCAT, Schema.org, and STAC publication API models.

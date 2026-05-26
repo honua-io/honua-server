@@ -29,7 +29,7 @@ using Honua.Server.Features.Protocols.GeoServices.MapServer;
 using Honua.Server.Features.Protocols.GeoServices.NAServer;
 using Honua.Server.Features.Protocols.Mcp;
 using Honua.Server.Features.NlQuery;
-using Honua.Server.Features.OpenData;
+using Honua.Server.Features.Infrastructure.OpenData;
 using Honua.Server.Features.Protocols.OpenData;
 using Honua.Server.Features.Protocols.OData;
 using Honua.Server.Features.Protocols.Ogc.Api.Coverages;

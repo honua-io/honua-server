@@ -5,7 +5,7 @@ using System.Collections.Concurrent;
 using Honua.Core.Features.OpenData.Abstractions;
 using Honua.Core.Features.OpenData.Domain;
 
-namespace Honua.Server.Features.OpenData.Services;
+namespace Honua.Server.Features.Infrastructure.OpenData.Services;
 
 /// <summary>
 /// Baseline in-memory open-data store. This matches the current Console content

@@ -190,6 +190,12 @@ Share publication workflows
 - Console operators manage page metadata, DCAT validation preview, and STAC
   publication status through the admin endpoints documented in
   [Console open-data publication API](../contributor/open-data-publication-api.md).
+- The DCAT catalog currently uses the same bounded public-list projection and
+  emits up to 200 visible records; large-catalog streaming/export expansion is
+  a follow-on.
+- STAC publication admin responses are Console status/readback documents. The
+  public STAC API remains under `/stac` and returns STAC Catalog, Collection,
+  and Item JSON from the Metadata v2-backed STAC route family.
 
 **Typical use cases:**
 - Publishing curated open-data landing pages

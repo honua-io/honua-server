@@ -4,7 +4,7 @@
 using System.Diagnostics;
 using Honua.ServiceDefaults;
 
-namespace Honua.Server.Features.OpenData;
+namespace Honua.Server.Features.Infrastructure.OpenData;
 
 /// <summary>
 /// Activity helpers for open-data publication flows.

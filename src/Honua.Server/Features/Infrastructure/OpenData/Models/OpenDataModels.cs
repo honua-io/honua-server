@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 using Honua.Core.Features.Console.Domain;
 using Honua.Core.Features.OpenData.Domain;
 
-namespace Honua.Server.Features.OpenData.Models;
+namespace Honua.Server.Features.Infrastructure.OpenData.Models;
 
 /// <summary>
 /// Request body for updating server-owned open-data page metadata.

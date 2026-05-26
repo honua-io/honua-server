@@ -113,7 +113,7 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 > the Studio package lifecycle contract is maintained in
 > [Studio Package Lifecycle API](../../admin-api/studio-package-lifecycle.md),
 > until dedicated Console and Studio OpenAPI documents are published.
-> Console open-data, DCAT, and STAC publication controls are maintained in
+> Console open-data, DCAT, and Console STAC publication controls are maintained in
 > [Console Open-Data Publication API](../../contributor/open-data-publication-api.md)
 > while the curated admin OpenAPI snapshot catches up to that Console Share
 > contract.
@@ -133,7 +133,7 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 - Scan GeoServer REST and ArcGIS GeoServices REST FeatureServer/MapServer service roots into deterministic migration inventory artifacts with compatibility rollups
 - Monitor system health and observability
 - Render Console GP/ETL workflow palettes and manage workflow package versions through the sibling `/api/v1/console/workflow-*` surface
-- Manage Console open-data page state, DCAT/data.json validation, and STAC publication status through the documented open-data publication surface
+- Manage Console open-data page state, DCAT/data.json validation, and Console STAC publication status through the documented open-data publication surface
 - Inspect durable background jobs, structured logs, artifacts, control actions, and Operate event correlations
 - Validate packages and request read-only preview plans before publish or execute decisions
 - Access recent errors and telemetry status

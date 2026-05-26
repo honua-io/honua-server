@@ -155,7 +155,7 @@ The source-backed feature map is maintained in [docs/features/README.md](docs/fe
 
 **Catalog discovery** — STAC catalog, collections, items, and item-search with extension-aware metadata, collection license defaults, cross-protocol links to OGC API Features, and conditional GET support on catalog metadata routes.
 
-**Open-data publication** — Console-managed open-data page metadata, anonymous `/open-data` reads, DCAT/data.json catalog export, Schema.org Dataset previews, and STAC publication controls are documented in [Console open-data publication API](docs/contributor/open-data-publication-api.md).
+**Open-data publication** — Console-managed open-data page metadata, anonymous `/open-data` reads, DCAT/data.json catalog export, Schema.org Dataset previews, and Console STAC publication controls are documented in [Console open-data publication API](docs/contributor/open-data-publication-api.md).
 
 **Vector tiles** — PostGIS-native `ST_AsMVT` generation with TileJSON metadata and auto-generated MapLibre styles.
 

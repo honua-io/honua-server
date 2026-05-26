@@ -10,10 +10,10 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.OpenData.Abstractions;
 using Honua.Core.Features.OpenData.Domain;
 using Honua.Server.Features.Console;
-using Honua.Server.Features.OpenData;
-using Honua.Server.Features.OpenData.Models;
+using Honua.Server.Features.Infrastructure.OpenData;
+using Honua.Server.Features.Infrastructure.OpenData.Models;
 
-namespace Honua.Server.Features.OpenData.Services;
+namespace Honua.Server.Features.Infrastructure.OpenData.Services;
 
 /// <summary>
 /// Shared open-data, DCAT, Schema.org, and STAC publication application service.

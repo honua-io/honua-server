@@ -9,7 +9,7 @@ using Honua.Core.Features.Console.Domain;
 using Honua.Core.Features.OpenData.Domain;
 using Honua.Server.Features.Console.Models;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.OpenData.Models;
+using Honua.Server.Features.Infrastructure.OpenData.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Hosting;
