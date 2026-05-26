@@ -5,6 +5,7 @@ using System.Collections.Frozen;
 using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
@@ -586,6 +587,26 @@ internal static class ODataUtilityService
         };
     }
 
+    /// <summary>
+    /// Metadata v2 overload of <see cref="BuildLayerPayload(LayerDefinition)"/>.
+    /// Projects the OData Layer entity directly off the canonical resource and the
+    /// publication's layer index, without going through the v1 LayerDefinition shape.
+    /// </summary>
+    public static Dictionary<string, object?> BuildLayerPayload(
+        MetadataV2Resource resource,
+        int layerIndex)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Id"] = layerIndex,
+            ["Name"] = resource.Metadata.Name,
+            ["Description"] = resource.Metadata.Description,
+            ["GeometryType"] = resource.ReadGeometryType().ToString(),
+            ["Srid"] = resource.ReadSrid() ?? 0
+        };
+    }
+
     public static HashSet<string>? ParseSelect(string? select)
     {
         if (string.IsNullOrWhiteSpace(select))
@@ -699,6 +720,18 @@ internal static class ODataUtilityService
     {
         var sanitized = SanitizeIdentifier(relationshipName);
         return $"{sanitized}_r{relationshipId}";
+    }
+
+    /// <summary>
+    /// V2 overload of <see cref="BuildRelationshipMetadataName(string, int)"/> where the
+    /// relationship identifier is the canonical string id from
+    /// <see cref="MetadataV2Relationship.Id"/> rather than the v1 integer id.
+    /// </summary>
+    public static string BuildRelationshipMetadataNameForV2(string relationshipName, string relationshipId)
+    {
+        var sanitizedName = SanitizeIdentifier(relationshipName);
+        var sanitizedId = SanitizeIdentifier(relationshipId);
+        return $"{sanitizedName}_r{sanitizedId}";
     }
 
     private static string MapODataCode(int statusCode) => statusCode switch

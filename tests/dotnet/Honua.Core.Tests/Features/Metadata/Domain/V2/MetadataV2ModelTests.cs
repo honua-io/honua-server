@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -27,17 +28,11 @@ public sealed class MetadataV2ModelTests
         graph.Environment.Should().BeEmpty();
         graph.GeneratedAt.Should().Be(DateTimeOffset.UnixEpoch);
         graph.Namespaces.Should().BeEmpty();
-        graph.Catalogs.Should().BeEmpty();
         graph.Resources.Should().BeEmpty();
         graph.Connections.Should().BeEmpty();
         graph.StorageBindings.Should().BeEmpty();
         graph.Services.Should().BeEmpty();
         graph.Publications.Should().BeEmpty();
-        graph.ProjectionProfiles.Should().BeEmpty();
-        graph.Policies.Should().BeEmpty();
-        graph.Roles.Should().BeEmpty();
-        graph.Runtime.Should().NotBeNull();
-        graph.ExtensionPoints.Should().BeEmpty();
         graph.Extensions.Should().BeEmpty();
     }
 
@@ -67,16 +62,12 @@ public sealed class MetadataV2ModelTests
                 new MetadataV2Field
                 {
                     Name = "shape",
-                    Type = "geometry",
+                    Type = MetadataV2FieldType.Geometry,
                     SemanticRoles =
                     [
                         "geometry.primary"
                     ]
                 }
-            ],
-            PolicyIds =
-            [
-                "policy.internal"
             ]
         };
 
@@ -94,7 +85,6 @@ public sealed class MetadataV2ModelTests
         updated.Metadata.Labels.Should().Contain("domain", "cadastre");
         updated.StorageBindingIds.Should().HaveCount(2);
         updated.SchemaFields.Single().SemanticRoles.Should().Contain("geometry.primary");
-        updated.PolicyIds.Should().Contain("policy.internal");
     }
 
     [UnitTest]
@@ -116,7 +106,7 @@ public sealed class MetadataV2ModelTests
             {
                 Id = "service.public"
             },
-            ServiceType = MetadataV2ServiceType.OgcApiFeatures
+            Protocols = [ServiceProtocols.OgcFeatures]
         };
 
         var publication = new MetadataV2Publication
@@ -129,15 +119,11 @@ public sealed class MetadataV2ModelTests
             ServiceId = service.Metadata.Id,
             StorageBindingId = "storage.parcels.postgis",
             PublicationType = MetadataV2PublicationType.OgcCollection,
-            Path = "/collections/parcels",
-            LayerIndex = 0,
-            SupportedFormats =
-            [
-                "application/geo+json"
-            ],
-            FieldAliases = new Dictionary<string, string>
+            Identifier = new MetadataV2PublicationIdentifier
             {
-                ["shape"] = "Geometry"
+                Value = "0",
+                IsNumeric = true,
+                PathOverride = "/collections/parcels",
             }
         };
 
@@ -152,7 +138,6 @@ public sealed class MetadataV2ModelTests
         graph.Publications.Single().ServiceId.Should().Be("service.public");
         graph.Publications.Single().PublicationType.Should().Be(MetadataV2PublicationType.OgcCollection);
         graph.Publications.Single().Path.Should().Be("/collections/parcels");
-        graph.Publications.Single().FieldAliases.Should().Contain("shape", "Geometry");
     }
 
     [UnitTest]
@@ -171,7 +156,7 @@ public sealed class MetadataV2ModelTests
                 new MetadataV2Field
                 {
                     Name = "parcel_id",
-                    Type = "string",
+                    Type = MetadataV2FieldType.String,
                     SemanticRoles =
                     [
                         "identifier.primary"
@@ -192,7 +177,7 @@ public sealed class MetadataV2ModelTests
                 new MetadataV2Field
                 {
                     Name = "hydrant_id",
-                    Type = "string",
+                    Type = MetadataV2FieldType.String,
                     SemanticRoles =
                     [
                         "identifier.primary"
@@ -211,9 +196,12 @@ public sealed class MetadataV2ModelTests
             ResourceId = parcels.Metadata.Id,
             ServiceId = "service.public-works-feature-server",
             PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
-            LayerIndex = 0,
-            Path = "/PublicWorks/FeatureServer/0",
-            ServiceLocalId = "0"
+            Identifier = new MetadataV2PublicationIdentifier
+            {
+                Value = "0",
+                IsNumeric = true,
+                PathOverride = "/PublicWorks/FeatureServer/0",
+            }
         };
 
         var hydrantsPublication = new MetadataV2Publication
@@ -226,9 +214,12 @@ public sealed class MetadataV2ModelTests
             ResourceId = hydrants.Metadata.Id,
             ServiceId = "service.public-works-feature-server",
             PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
-            LayerIndex = 1,
-            Path = "/PublicWorks/FeatureServer/1",
-            ServiceLocalId = "1"
+            Identifier = new MetadataV2PublicationIdentifier
+            {
+                Value = "1",
+                IsNumeric = true,
+                PathOverride = "/PublicWorks/FeatureServer/1",
+            }
         };
 
         var service = new MetadataV2Service
@@ -238,13 +229,8 @@ public sealed class MetadataV2ModelTests
                 Id = "service.public-works-feature-server",
                 Name = "Public Works FeatureServer"
             },
-            ServiceType = MetadataV2ServiceType.EsriFeatureService,
-            Route = "/PublicWorks/FeatureServer",
-            PublicationIds =
-            [
-                parcelsPublication.Metadata.Id,
-                hydrantsPublication.Metadata.Id
-            ]
+            Protocols = [ServiceProtocols.FeatureServer],
+            Route = "/PublicWorks/FeatureServer"
         };
 
         var graph = new MetadataV2Graph
@@ -262,10 +248,13 @@ public sealed class MetadataV2ModelTests
             ]
         };
 
-        graph.Services.Single().PublicationIds.Should().BeEquivalentTo(
-            "publication.public-works.0",
-            "publication.public-works.1");
-        graph.Services.Single().ServiceType.Should().Be(MetadataV2ServiceType.EsriFeatureService);
+        graph.Publications
+            .Where(p => p.ServiceId == "service.public-works-feature-server")
+            .Select(p => p.Metadata.Id)
+            .Should().BeEquivalentTo(
+                "publication.public-works.0",
+                "publication.public-works.1");
+        graph.Services.Single().PrimaryProtocol.Should().Be(ServiceProtocols.FeatureServer);
         graph.Publications.Should().OnlyContain(publication =>
             publication.ServiceId == "service.public-works-feature-server" &&
             publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
@@ -306,15 +295,13 @@ public sealed class MetadataV2ModelTests
 
     [UnitTest]
     [Operation(Operations.Query)]
-    public void StorageTypes_AreSeparateFromServiceAndPublicationTypes()
+    public void StorageTypes_AreSeparateFromPublicationTypes()
     {
         var storageNames = Enum.GetNames<MetadataV2StorageType>();
-        var serviceNames = Enum.GetNames<MetadataV2ServiceType>();
         var publicationNames = Enum.GetNames<MetadataV2PublicationType>();
 
         storageNames.Should().Contain(nameof(MetadataV2StorageType.GeoParquet));
         storageNames.Should().Contain(nameof(MetadataV2StorageType.CloudOptimizedGeoTiff));
-        serviceNames.Intersect(storageNames).Should().BeEmpty();
         publicationNames.Intersect(storageNames).Should().BeEmpty();
     }
 
@@ -325,7 +312,6 @@ public sealed class MetadataV2ModelTests
         Enum.GetNames<MetadataV2ResourceType>().Should().BeEquivalentTo(
             nameof(MetadataV2ResourceType.FeatureDataset),
             nameof(MetadataV2ResourceType.RasterDataset),
-            nameof(MetadataV2ResourceType.Table),
             nameof(MetadataV2ResourceType.TileDataset),
             nameof(MetadataV2ResourceType.Process),
             nameof(MetadataV2ResourceType.Style),
@@ -483,8 +469,7 @@ public sealed class MetadataV2ModelTests
                     StorageBindingIds =
                     [
                         "storage.hydrants.postgis"
-                    ],
-                    PrimaryStorageBindingId = "storage.parcels.postgis"
+                    ]
                 }
             ],
             StorageBindings =
@@ -524,11 +509,7 @@ public sealed class MetadataV2ModelTests
                     Metadata = new MetadataV2ObjectMetadata
                     {
                         Id = "service.parcels"
-                    },
-                    PublicationIds =
-                    [
-                        "publication.parcels"
-                    ]
+                    }
                 }
             ],
             Publications =
@@ -550,8 +531,6 @@ public sealed class MetadataV2ModelTests
 
         result.IsValid.Should().BeFalse();
         result.Errors.Should().Contain("publication 'publication.parcels' references missing service 'service.other'.");
-        result.Errors.Should().Contain(
-            "service 'service.parcels' references publication 'publication.parcels' owned by service 'service.other'.");
     }
 
     private static MetadataV2Graph CreateValidGraph()
@@ -569,8 +548,7 @@ public sealed class MetadataV2ModelTests
                     StorageBindingIds =
                     [
                         "storage.parcels.postgis"
-                    ],
-                    PrimaryStorageBindingId = "storage.parcels.postgis"
+                    ]
                 }
             ],
             Connections =
@@ -602,11 +580,7 @@ public sealed class MetadataV2ModelTests
                     Metadata = new MetadataV2ObjectMetadata
                     {
                         Id = "service.parcels"
-                    },
-                    PublicationIds =
-                    [
-                        "publication.parcels"
-                    ]
+                    }
                 }
             ],
             Publications =

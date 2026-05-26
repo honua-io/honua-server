@@ -4,9 +4,9 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Rendering;
@@ -23,7 +23,8 @@ internal static partial class WmsRequestHandlers
 {
     private static async Task<IResult> HandleWmsGetFeatureInfo(
         HttpContext context,
-        ServiceDefinition service,
+        MetadataV2Service service,
+        WmsLayer[] accessibleLayers,
         string serviceId,
         ILogger logger)
     {
@@ -105,22 +106,22 @@ internal static partial class WmsRequestHandlers
             return CreateWmsServiceException(context, "InvalidPoint", $"{pointParameters} must be within the request image dimensions.");
         }
 
-        if (!TryResolveWmsRequestedLayers(service, context, mapLayerTokens, out var mapLayers, out var unresolvedMapLayer))
+        if (!TryResolveWmsRequestedLayers(accessibleLayers, mapLayerTokens, out var mapLayers, out var unresolvedMapLayer))
         {
             var layerLabel = string.IsNullOrWhiteSpace(unresolvedMapLayer) ? "requested layer" : unresolvedMapLayer;
             return CreateWmsServiceException(context, "LayerNotDefined", $"Layer '{layerLabel}' is not defined.");
         }
 
-        if (!TryResolveWmsRequestedLayers(service, context, queryLayerTokens, out var queryLayers, out var unresolvedQueryLayer))
+        if (!TryResolveWmsRequestedLayers(accessibleLayers, queryLayerTokens, out var queryLayers, out var unresolvedQueryLayer))
         {
             var layerLabel = string.IsNullOrWhiteSpace(unresolvedQueryLayer) ? "requested layer" : unresolvedQueryLayer;
             return CreateWmsServiceException(context, "LayerNotDefined", $"Layer '{layerLabel}' is not defined.");
         }
 
-        var mapLayerIds = new HashSet<int>(mapLayers.Select(layer => layer.Id));
+        var mapLayerStorageIds = new HashSet<int>(mapLayers.Select(layer => layer.StorageLayerId));
         foreach (var layer in queryLayers)
         {
-            if (!mapLayerIds.Contains(layer.Id))
+            if (!mapLayerStorageIds.Contains(layer.StorageLayerId))
             {
                 return CreateWmsServiceException(context, "LayerNotDefined", "QUERY_LAYERS must be a subset of LAYERS.");
             }
@@ -136,12 +137,12 @@ internal static partial class WmsRequestHandlers
         {
             return filterResult.Error;
         }
-        var filtersByLayerId = filterResult.Filters is null
+        var filtersByStorageLayerId = filterResult.Filters is null
             ? null
             : mapLayers
-                .Select((layer, index) => (layer.Id, Filter: filterResult.Filters[index]))
+                .Select((layer, index) => (layer.StorageLayerId, Filter: filterResult.Filters[index]))
                 .Where(item => item.Filter is not null)
-                .ToDictionary(item => item.Id, item => item.Filter);
+                .ToDictionary(item => item.StorageLayerId, item => item.Filter);
 
         var featureCount = DefaultFeatureInfoCount;
         var featureCountRaw = GetQueryValue(query, "FEATURE_COUNT");
@@ -151,23 +152,6 @@ internal static partial class WmsRequestHandlers
             {
                 return CreateWmsServiceException(context, "InvalidParameterValue", "FEATURE_COUNT must be a positive integer.");
             }
-        }
-
-        var queryExtent = requestedExtent;
-        if (requestSrid != service.SpatialReference.Srid)
-        {
-            var extentTransformResult = await TryTransformExtentAsync(
-                context,
-                requestedExtent,
-                requestSrid,
-                service.SpatialReference.Srid,
-                cancellationToken);
-            if (!extentTransformResult.IsSuccess)
-            {
-                return CreateWmsServiceException(context, "InvalidCRS", extentTransformResult.Error ?? "Invalid spatial reference.");
-            }
-
-            queryExtent = extentTransformResult.Extent;
         }
 
         var mapWidth = requestedExtent.MaxX - requestedExtent.MinX;
@@ -183,24 +167,7 @@ internal static partial class WmsRequestHandlers
             mapX + toleranceX,
             mapY + toleranceY);
 
-        if (requestSrid != service.SpatialReference.Srid)
-        {
-            var clickExtentTransform = await TryTransformExtentAsync(
-                context,
-                clickExtent,
-                requestSrid,
-                service.SpatialReference.Srid,
-                cancellationToken);
-            if (!clickExtentTransform.IsSuccess)
-            {
-                return CreateWmsServiceException(context, "InvalidCRS", clickExtentTransform.Error ?? "Invalid spatial reference.");
-            }
-
-            clickExtent = clickExtentTransform.Extent;
-        }
-
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var spatialFilter = CreateBboxSpatialFilter(clickExtent, service.SpatialReference.Srid);
         var remaining = Math.Min(featureCount, 1000);
 
         var plainText = new StringBuilder();
@@ -213,18 +180,45 @@ internal static partial class WmsRequestHandlers
                 break;
             }
 
+            // Per-layer source SRID — see ResolveServiceSrid for the resolution order.
+            var serviceSrid = ResolveServiceSrid(service, layer.Resource);
+
+            var layerClickExtent = clickExtent;
+            if (requestSrid != serviceSrid)
+            {
+                var clickExtentTransform = await TryTransformExtentAsync(
+                    context,
+                    clickExtent,
+                    requestSrid,
+                    serviceSrid,
+                    cancellationToken);
+                if (!clickExtentTransform.IsSuccess)
+                {
+                    return CreateWmsServiceException(context, "InvalidCRS", clickExtentTransform.Error ?? "Invalid spatial reference.");
+                }
+
+                layerClickExtent = clickExtentTransform.Extent;
+            }
+
+            var spatialFilter = CreateBboxSpatialFilter(layerClickExtent, serviceSrid);
+
             var featureQuery = new FeatureQuery
             {
                 SpatialFilter = spatialFilter,
-                SqlFilter = filtersByLayerId != null && filtersByLayerId.TryGetValue(layer.Id, out var sqlFilter)
+                SqlFilter = filtersByStorageLayerId != null && filtersByStorageLayerId.TryGetValue(layer.StorageLayerId, out var sqlFilter)
                     ? sqlFilter
                     : null,
-                SpatialReferenceSrid = service.SpatialReference.Srid,
+                SpatialReferenceSrid = serviceSrid,
                 OutputSrid = requestSrid,
                 Limit = remaining
             };
 
-            var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, cancellationToken);
+            // IFeatureReader.QueryAsync is keyed by the int storage layer handle. V2
+            // resolves that off the publication; passing publication.LayerIndex here
+            // would address the wrong table when the protocol-facing index differs
+            // from the storage handle (the common case once a graph has migrated its
+            // bindings). Matches the resolution order the WMTS V2 port uses.
+            var queryResult = await featureReader.QueryAsync(layer.StorageLayerId, featureQuery, cancellationToken);
             if (queryResult.Items.Length == 0)
             {
                 continue;
@@ -238,7 +232,7 @@ internal static partial class WmsRequestHandlers
                 }
 
                 remaining--;
-                var layerName = GetWmsLayerName(layer);
+                var layerName = GetWmsLayerDisplayName(layer);
                 var attributes = BuildVisibleFeatureInfoAttributes(item);
 
                 if (string.Equals(infoFormat, JsonMimeType, StringComparison.OrdinalIgnoreCase))

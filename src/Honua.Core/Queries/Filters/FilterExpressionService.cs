@@ -148,6 +148,16 @@ public interface IFilterExpressionService
     /// expression.
     /// </summary>
     FilterExpression Normalize(FilterExpression expression, MetadataV2Resource resource);
+
+    /// <summary>
+    /// V2 overload that normalises an expression and produces a SQL fragment using
+    /// the resource's schema fields and spatial reference. Returns success with no
+    /// SQL filter when <paramref name="expression"/> is null.
+    /// </summary>
+    /// <param name="expression">Filter expression to translate.</param>
+    /// <param name="resource">Metadata v2 resource for validation and coercion.</param>
+    /// <returns>Translation result with SQL fragment or error.</returns>
+    FilterTranslationResult Translate(FilterExpression? expression, MetadataV2Resource resource);
 }
 
 /// <summary>
@@ -257,5 +267,30 @@ public sealed class FilterExpressionService : IFilterExpressionService
     {
         ArgumentNullException.ThrowIfNull(resource);
         return _translator.Normalize(expression, resource);
+    }
+
+    /// <inheritdoc />
+    public FilterTranslationResult Translate(FilterExpression? expression, MetadataV2Resource resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+
+        if (expression == null)
+        {
+            return FilterTranslationResult.Success(null, null);
+        }
+
+        try
+        {
+            var sqlFilter = _translator.Translate(expression, resource);
+            return FilterTranslationResult.Success(expression, sqlFilter);
+        }
+        catch (ArgumentException ex)
+        {
+            return FilterTranslationResult.Failure(ex.Message);
+        }
+        catch (NotSupportedException ex)
+        {
+            return FilterTranslationResult.Failure(ex.Message);
+        }
     }
 }

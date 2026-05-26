@@ -6,7 +6,6 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Server.Features.Protocols.Ogc.Common;
 using Honua.Server.Features.Protocols.Ogc.Api.Tiles.Models;
@@ -462,16 +461,15 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
         definition!.TileMatrices.Should().NotBeEmpty();
     }
 
-    private async Task UpdateServiceProtocolsAsync()
+    private Task UpdateServiceProtocolsAsync()
     {
-        var updater = _fixture.GetService<IServiceMetadataUpdater>();
-        await updater.UpdateServiceMetadataAsync(
+        // V2 cutover (#1035 72/N): protocol gating reads MetadataV2Service.Protocols.
+        // Seed the in-memory test graph directly via the fixture helper.
+        _fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
-            new CatalogMetadata
-            {
-                EnabledProtocols = ServiceProtocols.All
-                    .Where(protocol => !string.Equals(protocol, ServiceProtocols.OgcApiTiles, StringComparison.Ordinal))
-                    .ToArray()
-            });
+            enabledProtocols: ServiceProtocols.All
+                .Where(protocol => !string.Equals(protocol, ServiceProtocols.OgcApiTiles, StringComparison.Ordinal))
+                .ToArray());
+        return Task.CompletedTask;
     }
 }

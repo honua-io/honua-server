@@ -3,13 +3,12 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
-using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Protocols.Ogc.Api.Records.Models;
 using Honua.Server.Features.Protocols.Ogc.Common;
 using Microsoft.AspNetCore.Mvc;
@@ -212,7 +211,7 @@ internal static class OgcRecordsEndpoints
         string? ids,
         string? type,
         string? externalIds,
-        [FromServices] ILayerCatalog layerCatalog)
+        [FromServices] IMetadataV2GraphProvider graphProvider)
     {
         if (!IsCatalogCollection(collectionId))
         {
@@ -246,7 +245,7 @@ internal static class OgcRecordsEndpoints
         }
 
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var records = await BuildVisibleRecordsAsync(context, layerCatalog, cancellationToken).ConfigureAwait(false);
+        var records = await BuildVisibleRecordsAsync(context, graphProvider, cancellationToken).ConfigureAwait(false);
         var filtered = ApplyFilters(records, bboxFilter, datetimeFilter, q, ids, type, externalIds).ToArray();
         var page = filtered.Skip(pageOffset).Take(pageLimit).Select(record => record.Feature).ToImmutableArray();
 
@@ -268,7 +267,7 @@ internal static class OgcRecordsEndpoints
         string recordId,
         HttpContext context,
         string? f,
-        [FromServices] ILayerCatalog layerCatalog)
+        [FromServices] IMetadataV2GraphProvider graphProvider)
     {
         if (!IsCatalogCollection(collectionId))
         {
@@ -287,7 +286,7 @@ internal static class OgcRecordsEndpoints
         }
 
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var records = await BuildVisibleRecordsAsync(context, layerCatalog, cancellationToken).ConfigureAwait(false);
+        var records = await BuildVisibleRecordsAsync(context, graphProvider, cancellationToken).ConfigureAwait(false);
         var record = records.FirstOrDefault(candidate =>
             string.Equals(candidate.Feature.Id, recordId, StringComparison.OrdinalIgnoreCase));
         if (record is null)
@@ -311,81 +310,94 @@ internal static class OgcRecordsEndpoints
 
     private static async Task<List<CatalogRecord>> BuildVisibleRecordsAsync(
         HttpContext context,
-        ILayerCatalog layerCatalog,
+        IMetadataV2GraphProvider graphProvider,
         CancellationToken cancellationToken)
     {
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-        var layers = await layerCatalog.ListLayersAsync(cancellationToken).ConfigureAwait(false);
-        var services = await layerCatalog.ListServicesAsync(cancellationToken).ConfigureAwait(false);
-        var layerById = layers.ToDictionary(layer => layer.Id);
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var records = new List<CatalogRecord>();
 
-        foreach (var service in services.OrderBy(service => service.Name, StringComparer.OrdinalIgnoreCase))
+        // Service-level records: one per service that has at least one publication for
+        // an accessible resource.
+        foreach (var service in snapshot.Graph.Services.OrderBy(s => s.Metadata.Name, StringComparer.OrdinalIgnoreCase))
         {
-            var visibleLayers = service.Layers
-                .Where(layer => layerById.ContainsKey(layer.Id))
-                .Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer, service))
-                .OrderBy(layer => layer.Id)
+            var visiblePublications = snapshot.Index.PublicationsByService[service.Metadata.Id]
+                .Select(p => (Publication: p, Resource: snapshot.ResolveResource(p)))
+                .Where(t => t.Resource is not null)
+                .Where(t => AccessPolicyHelpers.IsResourceAccessible(context, t.Resource!, service))
+                .OrderBy(t => snapshot.ResolveStorageLayerId(t.Publication) ?? int.MaxValue)
                 .ToArray();
-            if (visibleLayers.Length == 0)
+            if (visiblePublications.Length == 0)
             {
                 continue;
             }
 
-            records.Add(CreateServiceRecord(service, visibleLayers, baseUrl));
+            records.Add(CreateServiceRecord(service, visiblePublications!, snapshot, baseUrl));
         }
 
-        var layerToService = LayerValidationHelpers.BuildPrimaryServiceMap(services);
-        foreach (var layer in layers.OrderBy(layer => layer.Id))
+        // Resource-level records: one per resource, attributed to its primary publication's service.
+        foreach (var resource in snapshot.Graph.Resources.OrderBy(r => r.Metadata.Id, StringComparer.OrdinalIgnoreCase))
         {
-            if (layerToService.TryGetValue(layer.Id, out var service))
-            {
-                if (!AccessPolicyHelpers.IsLayerAccessible(context, layer, service))
-                {
-                    continue;
-                }
-            }
-            else if (!AccessPolicyHelpers.IsLayerAccessible(context, layer))
+            // Pick the primary publication if any (prefer IsPrimary, else first).
+            var publications = snapshot.Index.PublicationsByResource[resource.Metadata.Id].ToArray();
+            MetadataV2Publication? primary = publications.FirstOrDefault(p => p.IsPrimary) ?? publications.FirstOrDefault();
+            MetadataV2Service? primaryService = primary is not null && snapshot.Index.ServicesById.TryGetValue(primary.ServiceId, out var svc)
+                ? svc
+                : null;
+
+            if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, primaryService))
             {
                 continue;
             }
 
-            records.Add(CreateLayerRecord(layer, service, baseUrl));
+            records.Add(CreateResourceRecord(resource, primary, primaryService, snapshot, baseUrl));
         }
 
         return records;
     }
 
-    private static CatalogRecord CreateServiceRecord(ServiceDefinition service, LayerDefinition[] visibleLayers, string baseUrl)
+    private static CatalogRecord CreateServiceRecord(
+        MetadataV2Service service,
+        (MetadataV2Publication Publication, MetadataV2Resource? Resource)[] visiblePublications,
+        MetadataV2GraphSnapshot snapshot,
+        string baseUrl)
     {
-        var bbox = ToBbox(service.EffectiveExtent ?? CombineExtents(visibleLayers));
-        var servicePath = $"{baseUrl}/rest/services/{Uri.EscapeDataString(service.Name)}";
+        // Combine bboxes of visible resources; project into WGS84 only if the resource declares 4326.
+        var bbox = CombineResourceBboxes(visiblePublications.Select(p => p.Resource!));
+        var servicePath = $"{baseUrl}/rest/services/{Uri.EscapeDataString(service.Metadata.Name)}";
         var links = ImmutableArray.CreateBuilder<Link>();
-        links.Add(Link.Create($"{baseUrl}/ogc/records/collections/{CatalogCollectionId}/items/{Uri.EscapeDataString($"service:{service.Name}")}", RelationTypes.Self, MediaTypes.GeoJson, service.Name));
-        if (ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.FeatureServer))
+        links.Add(Link.Create($"{baseUrl}/ogc/records/collections/{CatalogCollectionId}/items/{Uri.EscapeDataString($"service:{service.Metadata.Name}")}", RelationTypes.Self, MediaTypes.GeoJson, service.Metadata.Name));
+        if (ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.FeatureServer))
         {
             links.Add(Link.Create($"{servicePath}/FeatureServer", RelationTypes.Alternate, MediaTypes.Json, "FeatureServer"));
         }
 
-        if (ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.MapServer))
+        if (ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.MapServer))
         {
             links.Add(Link.Create($"{servicePath}/MapServer", RelationTypes.Alternate, MediaTypes.Json, "MapServer"));
         }
 
+        // External-facing layer ids are the storage layer ids (the v1 catalog's layer.Id).
+        var layerIds = visiblePublications
+            .Select(p => snapshot.ResolveStorageLayerId(p.Publication))
+            .Where(id => id.HasValue)
+            .Select(id => id!.Value)
+            .ToImmutableArray();
+
         var properties = new OgcRecordProperties
         {
-            Title = service.Name,
-            Description = service.Description,
+            Title = service.Metadata.Title ?? service.Metadata.Name,
+            Description = service.Metadata.Description,
             Type = "service",
             ResourceType = "Service",
-            ExternalIds = ImmutableArray.Create(service.Name),
-            LayerIds = visibleLayers.Select(layer => layer.Id).ToImmutableArray()
+            ExternalIds = ImmutableArray.Create(service.Metadata.Name),
+            LayerIds = layerIds
         };
 
         return new CatalogRecord(
             new OgcRecordFeature
             {
-                Id = $"service:{service.Name}",
+                Id = $"service:{service.Metadata.Name}",
                 Geometry = null,
                 Bbox = bbox,
                 Properties = properties,
@@ -393,47 +405,60 @@ internal static class OgcRecordsEndpoints
             },
             bbox,
             Modified: null,
-            ExternalIds: [service.Name],
-            SearchText: $"{service.Name} {service.Description}");
+            ExternalIds: [service.Metadata.Name],
+            SearchText: $"{service.Metadata.Name} {service.Metadata.Description}");
     }
 
-    private static CatalogRecord CreateLayerRecord(LayerDefinition layer, ServiceDefinition? service, string baseUrl)
+    private static CatalogRecord CreateResourceRecord(
+        MetadataV2Resource resource,
+        MetadataV2Publication? publication,
+        MetadataV2Service? service,
+        MetadataV2GraphSnapshot snapshot,
+        string baseUrl)
     {
-        var bbox = ToBbox(layer.Extent);
-        var layerId = layer.Id.ToString(CultureInfo.InvariantCulture);
+        var bbox = ToBbox(resource);
+        // Use the storage layer id as the externally-facing v1-compatible identifier
+        // when available; otherwise fall back to the resource id.
+        var storageLayerId = publication is not null
+            ? snapshot.ResolveStorageLayerId(publication)
+            : snapshot.ResolveStorageLayerId(resource);
+        var layerIdString = storageLayerId.HasValue
+            ? storageLayerId.Value.ToString(CultureInfo.InvariantCulture)
+            : resource.Metadata.Id;
+
         var links = ImmutableArray.CreateBuilder<Link>();
-        links.Add(Link.Create($"{baseUrl}/ogc/records/collections/{CatalogCollectionId}/items/{Uri.EscapeDataString($"layer:{layerId}")}", RelationTypes.Self, MediaTypes.GeoJson, layer.Name));
+        links.Add(Link.Create($"{baseUrl}/ogc/records/collections/{CatalogCollectionId}/items/{Uri.EscapeDataString($"layer:{layerIdString}")}", RelationTypes.Self, MediaTypes.GeoJson, resource.Metadata.Name));
 
-        if (IsProtocolEnabled(layer, service, ServiceProtocols.OgcFeatures))
+        if (ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.OgcFeatures))
         {
-            links.Add(Link.Create($"{baseUrl}/ogc/features/collections/{layerId}", RelationTypes.Alternate, MediaTypes.Json, "OGC API Features collection"));
-            links.Add(Link.Create($"{baseUrl}/ogc/features/collections/{layerId}/items", RelationTypes.Data, MediaTypes.GeoJson, "OGC API Features items"));
+            links.Add(Link.Create($"{baseUrl}/ogc/features/collections/{layerIdString}", RelationTypes.Alternate, MediaTypes.Json, "OGC API Features collection"));
+            links.Add(Link.Create($"{baseUrl}/ogc/features/collections/{layerIdString}/items", RelationTypes.Data, MediaTypes.GeoJson, "OGC API Features items"));
         }
 
-        if (IsProtocolEnabled(layer, service, ServiceProtocols.Stac))
+        if (ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.Stac))
         {
-            links.Add(Link.Create($"{baseUrl}/stac/collections/{layerId}", RelationTypes.Alternate, MediaTypes.Json, "STAC collection"));
+            links.Add(Link.Create($"{baseUrl}/stac/collections/{layerIdString}", RelationTypes.Alternate, MediaTypes.Json, "STAC collection"));
         }
 
-        if (service is not null && IsProtocolEnabled(layer, service, ServiceProtocols.FeatureServer))
+        if (service is not null && ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.FeatureServer))
         {
-            links.Add(Link.Create($"{baseUrl}/rest/services/{Uri.EscapeDataString(service.Name)}/FeatureServer/{layerId}", RelationTypes.Alternate, MediaTypes.Json, "FeatureServer layer"));
+            links.Add(Link.Create($"{baseUrl}/rest/services/{Uri.EscapeDataString(service.Metadata.Name)}/FeatureServer/{layerIdString}", RelationTypes.Alternate, MediaTypes.Json, "FeatureServer layer"));
         }
 
         var properties = new OgcRecordProperties
         {
-            Title = layer.Name,
-            Description = layer.Description,
+            Title = resource.Metadata.Title ?? resource.Metadata.Name,
+            Description = resource.Metadata.Description,
             Type = "dataset",
             ResourceType = "Layer",
-            GeometryType = layer.GeometryType.ToString(),
-            ExternalIds = ImmutableArray.Create(layerId, layer.Name)
+            GeometryType = resource.ReadGeometryType().ToString(),
+            ExternalIds = ImmutableArray.Create(layerIdString, resource.Metadata.Name)
         };
 
         return new CatalogRecord(
             new OgcRecordFeature
             {
-                Id = $"layer:{layerId}",
+                Id = $"layer:{layerIdString}",
                 Geometry = null,
                 Bbox = bbox,
                 Properties = properties,
@@ -441,8 +466,8 @@ internal static class OgcRecordsEndpoints
             },
             bbox,
             Modified: null,
-            ExternalIds: [layerId, layer.Name],
-            SearchText: $"{layerId} {layer.Name} {layer.Description}");
+            ExternalIds: [layerIdString, resource.Metadata.Name],
+            SearchText: $"{layerIdString} {resource.Metadata.Name} {resource.Metadata.Description}");
     }
 
     private static IEnumerable<CatalogRecord> ApplyFilters(
@@ -667,22 +692,31 @@ internal static class OgcRecordsEndpoints
         return false;
     }
 
-    private static ImmutableArray<double>? ToBbox(FeatureExtent? extent)
-        => extent is null
-            ? null
-            : ImmutableArray.Create(extent.Value.MinX, extent.Value.MinY, extent.Value.MaxX, extent.Value.MaxY);
-
-    private static FeatureExtent? CombineExtents(IEnumerable<LayerDefinition> layers)
+    private static ImmutableArray<double>? ToBbox(MetadataV2Resource resource)
     {
-        var extents = layers.Select(layer => layer.Extent).OfType<FeatureExtent>().ToArray();
-        return extents.Length == 0
+        var bbox = resource.ReadBbox();
+        return bbox is null
             ? null
-            : FeatureExtent.Create(
-                extents.Min(extent => extent.MinX),
-                extents.Min(extent => extent.MinY),
-                extents.Max(extent => extent.MaxX),
-                extents.Max(extent => extent.MaxY),
-                extents[0].SpatialReference);
+            : ImmutableArray.Create(bbox.West, bbox.South, bbox.East, bbox.North);
+    }
+
+    private static ImmutableArray<double>? CombineResourceBboxes(IEnumerable<MetadataV2Resource> resources)
+    {
+        var bboxes = resources
+            .Select(r => r.ReadBbox())
+            .Where(b => b is not null)
+            .Select(b => b!)
+            .ToArray();
+        if (bboxes.Length == 0)
+        {
+            return null;
+        }
+
+        return ImmutableArray.Create(
+            bboxes.Min(b => b.West),
+            bboxes.Min(b => b.South),
+            bboxes.Max(b => b.East),
+            bboxes.Max(b => b.North));
     }
 
     private static bool Intersects(ImmutableArray<double> recordBbox, BboxFilter filter)
@@ -700,11 +734,6 @@ internal static class OgcRecordsEndpoints
 
     private static bool IsCatalogCollection(string collectionId)
         => string.Equals(collectionId, CatalogCollectionId, StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsProtocolEnabled(LayerDefinition layer, ServiceDefinition? service, string protocol)
-        => service is null
-            ? ServiceProtocols.IsProtocolEnabled(layer.Metadata, protocol)
-            : ServiceProtocols.IsProtocolEnabled(service.Metadata, protocol);
 
     private sealed record CatalogRecord(
         OgcRecordFeature Feature,

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -131,11 +132,11 @@ public sealed class MetadataV2GraphSnapshotTests
                     Metadata = new MetadataV2ObjectMetadata { Id = "resource.parcels", Name = "parcels" },
                     Type = MetadataV2ResourceType.FeatureDataset,
                     StorageBindingIds = ["storage.parcels.postgis"],
-                    PrimaryStorageBindingId = "storage.parcels.postgis",
+                    
                     SchemaFields =
                     [
-                        new MetadataV2Field { Name = "parcel_id", Type = "string", SemanticRoles = ["id.primary"] },
-                        new MetadataV2Field { Name = "shape", Type = "geometry", SemanticRoles = ["geometry.primary"] },
+                        new MetadataV2Field { Name = "parcel_id", Type = MetadataV2FieldType.String, SemanticRoles = ["id.primary"] },
+                        new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, SemanticRoles = ["geometry.primary"] },
                     ],
                 }
             ],
@@ -155,9 +156,8 @@ public sealed class MetadataV2GraphSnapshotTests
                 new MetadataV2Service
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "service.features", Name = "Features" },
-                    ServiceType = MetadataV2ServiceType.OgcApiFeatures,
+                    Protocols = [ServiceProtocols.OgcFeatures],
                     Route = "/ogc/features",
-                    PublicationIds = ["pub.parcels.features"],
                 }
             ],
             Publications =
@@ -169,9 +169,12 @@ public sealed class MetadataV2GraphSnapshotTests
                     ServiceId = "service.features",
                     StorageBindingId = "storage.parcels.postgis",
                     PublicationType = MetadataV2PublicationType.OgcCollection,
-                    Path = "/collections/parcels",
-                    LayerIndex = 0,
-                    ServiceLocalId = "parcels",
+                    Identifier = new MetadataV2PublicationIdentifier
+                    {
+                        Value = "0",
+                        IsNumeric = true,
+                        PathOverride = "/collections/parcels",
+                    },
                 }
             ],
         };

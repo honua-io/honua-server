@@ -77,15 +77,12 @@ internal static class ImageServerV2Lookups
     public static (string? StartTimeField, string? EndTimeField, string? TrackIdField) ReadTimeFieldHints(
         MetadataV2Resource? resource)
     {
-        if (resource?.Temporal is not { ValueKind: JsonValueKind.Object } temporal)
+        var t = resource?.Temporal;
+        if (t is null)
         {
             return (null, null, null);
         }
-
-        return (
-            ReadStringProperty(temporal, "startTimeField"),
-            ReadStringProperty(temporal, "endTimeField"),
-            ReadStringProperty(temporal, "trackIdField"));
+        return (t.StartTimeField, t.EndTimeField, t.TrackIdField);
     }
 
     /// <summary>

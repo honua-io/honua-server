@@ -93,17 +93,9 @@ public static class ServiceProtocols
         => metadata?.EnabledProtocols is null || metadata.EnabledProtocols.Contains(protocol);
 
     /// <summary>
-    /// Checks whether a V2 service has <paramref name="protocol"/> enabled. The lookup
-    /// order is:
-    /// <list type="number">
-    /// <item><see cref="MetadataV2Service.EnabledProtocols"/> — explicit set; if non-null,
-    /// only protocols listed here are enabled.</item>
-    /// <item><see cref="MetadataV2Service.ServiceType"/> — when the protocol maps onto a
-    /// known V2 <see cref="MetadataV2ServiceType"/>, the service-type itself implies the
-    /// canonical protocol identifier (e.g. <see cref="MetadataV2ServiceType.OgcApiFeatures"/>
-    /// implies <c>OgcFeatures</c>).</item>
-    /// </list>
-    /// Returns true when no protocol is specified.
+    /// Checks whether a V2 service exposes <paramref name="protocol"/>. The service's
+    /// <see cref="MetadataV2Service.Protocols"/> list is the single source of truth —
+    /// no implicit defaults. Empty <c>Protocols</c> means "exposes nothing".
     /// </summary>
     public static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)
     {
@@ -116,22 +108,13 @@ public static class ServiceProtocols
             return true;
         }
 
-        // Explicit enablement set wins. Mirrors the v1 EnabledProtocols semantics: when the
-        // operator pinned a specific set, only those are enabled.
-        if (service.EnabledProtocols is not null)
+        foreach (var enabled in service.Protocols)
         {
-            foreach (var enabled in service.EnabledProtocols)
+            if (string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase))
             {
-                if (string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
+                return true;
             }
-            return false;
         }
-
-        // Fall back to the implicit service-type → protocol mapping.
-        var requested = MetadataV2ServiceTypeMapping.Map(protocol);
-        return requested.HasValue && service.ServiceType == requested.Value;
+        return false;
     }
 }

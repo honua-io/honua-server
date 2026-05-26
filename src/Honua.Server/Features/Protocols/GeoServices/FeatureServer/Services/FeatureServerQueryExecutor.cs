@@ -9,6 +9,7 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Npgsql;
@@ -18,24 +19,27 @@ namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
 /// <summary>
 /// Executes FeatureServer queries and handles streaming responses.
 /// </summary>
-internal sealed class FeatureServerQueryExecutor
+internal sealed partial class FeatureServerQueryExecutor
 {
     private const int FlushInterval = 64;
     private readonly IFeatureReader _featureReader;
     private readonly IStreamingFeatureStore _streamingFeatureStore;
     private readonly StreamingQueryFormatter _streamingFormatter;
     private readonly FeatureProviderQueryRouter? _providerQueryRouter;
+    private readonly IMetadataV2GraphProvider? _metadataGraphProvider;
 
     public FeatureServerQueryExecutor(
         IFeatureReader featureReader,
         IStreamingFeatureStore streamingFeatureStore,
         StreamingQueryFormatter streamingFormatter,
-        FeatureProviderQueryRouter? providerQueryRouter = null)
+        FeatureProviderQueryRouter? providerQueryRouter = null,
+        IMetadataV2GraphProvider? metadataGraphProvider = null)
     {
         _featureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
         _streamingFeatureStore = streamingFeatureStore ?? throw new ArgumentNullException(nameof(streamingFeatureStore));
         _streamingFormatter = streamingFormatter ?? throw new ArgumentNullException(nameof(streamingFormatter));
         _providerQueryRouter = providerQueryRouter;
+        _metadataGraphProvider = metadataGraphProvider;
     }
 
     public bool SupportsGeobufOutput => _featureReader is IGeobufFeatureStore;

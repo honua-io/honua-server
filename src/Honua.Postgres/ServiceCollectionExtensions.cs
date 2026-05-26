@@ -148,8 +148,6 @@ internal static class ServiceCollectionExtensions
         // Register layer catalog implementation
         services.AddScoped<ILayerCatalog, PostgresLayerCatalog>();
         services.AddScoped<ILayerFieldConfigurationStore, PostgresLayerFieldConfigurationStore>();
-        services.AddScoped<IServiceMetadataUpdater, PostgresServiceMetadataUpdater>();
-        services.AddScoped<ILayerMetadataUpdater, PostgresLayerMetadataUpdater>();
 
         // Register FieldCollection mobile sync store (#894)
         services.AddScoped<IFieldCollectionSyncStore, PostgresFieldCollectionSyncStore>();

@@ -2,8 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.Infrastructure.Response;
@@ -18,13 +18,13 @@ public interface IResponseBuilder
     /// Builds a feature collection response with standardized metadata and pagination.
     /// </summary>
     /// <param name="queryResult">Query result containing features and metadata</param>
-    /// <param name="layer">Layer definition for schema information</param>
+    /// <param name="resource">Canonical resource for schema information</param>
     /// <param name="options">Response building options</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Unified response data ready for protocol serialization</returns>
     ValueTask<ResponseData> BuildFeatureCollectionAsync(
         QueryResult<Feature> queryResult,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         ResponseBuildOptions options,
         CancellationToken cancellationToken = default);
 
@@ -32,13 +32,13 @@ public interface IResponseBuilder
     /// Builds a single feature response with appropriate metadata.
     /// </summary>
     /// <param name="feature">Feature to include in response</param>
-    /// <param name="layer">Layer definition for schema information</param>
+    /// <param name="resource">Canonical resource for schema information</param>
     /// <param name="options">Response building options</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Unified response data ready for protocol serialization</returns>
     ValueTask<ResponseData> BuildSingleFeatureAsync(
         Feature feature,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         ResponseBuildOptions options,
         CancellationToken cancellationToken = default);
 
@@ -56,14 +56,14 @@ public interface IResponseBuilder
     /// Builds streaming response data for large result sets.
     /// </summary>
     /// <param name="features">Async enumerable of features</param>
-    /// <param name="layer">Layer definition for schema information</param>
+    /// <param name="resource">Canonical resource for schema information</param>
     /// <param name="metadata">Response metadata including counts and pagination</param>
     /// <param name="options">Response building options</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Unified streaming response data</returns>
     IAsyncEnumerable<StreamingResponseChunk> BuildStreamingResponseAsync(
         IAsyncEnumerable<Feature> features,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         ResponseMetadata metadata,
         ResponseBuildOptions options,
         CancellationToken cancellationToken = default);

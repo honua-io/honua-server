@@ -7,6 +7,7 @@ using System.Text.Json;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -311,9 +312,8 @@ public sealed class WebAppFixture : IAsyncLifetime
             .AddService(
                 "svc-test",
                 "test",
-                MetadataV2ServiceType.OgcApiFeatures,
                 route: "/ogc/features",
-                enabledProtocols: allProtocols);
+                protocols: allProtocols);
 
         // Cover the layer ids inserted by server.yaml (0..2 and the spatial-reference fixtures
         // at 101..104). Any test that needs a different id range can extend or replace the graph.
@@ -326,9 +326,7 @@ public sealed class WebAppFixture : IAsyncLifetime
                     resourceId,
                     $"layer-{layerIndex}",
                     MetadataV2ResourceType.FeatureDataset,
-                    fields: BuildDefaultFeatureSchemaFields(),
-                    spatial: BuildDefaultSpatialMetadata(layerIndex),
-                    temporal: layerIndex == TestLayerId ? BuildDefaultTemporalMetadata() : null)
+                    fields: GetSeededLayerSchemaFields(layerIndex))
                 .AddPublication(
                     id: $"pub-layer-{layerIndex}",
                     serviceId: "svc-test",
@@ -341,7 +339,7 @@ public sealed class WebAppFixture : IAsyncLifetime
         // ImageServer handler tests resolve their layer index against this snapshot.
         builder
             .AddResource("res-image-test", "test-layer", MetadataV2ResourceType.RasterDataset)
-            .AddService("svc-image-test", TestServiceId, MetadataV2ServiceType.EsriImageService)
+            .AddService("svc-image-test", TestServiceId, protocols: [ServiceProtocols.ImageServer])
             .AddPublication(
                 id: "pub-image-test",
                 serviceId: "svc-image-test",
@@ -357,9 +355,9 @@ public sealed class WebAppFixture : IAsyncLifetime
         // layer ids that server.yaml seeds so /rest/services has services to return and
         // downstream FeatureServer/MapServer handler ports can resolve them by layer id.
         builder
-            .AddService("svc-test-feature", "test", MetadataV2ServiceType.EsriFeatureService)
-            .AddService("svc-test-map", "test", MetadataV2ServiceType.EsriMapService)
-            .AddService("svc-test-stac", "test", MetadataV2ServiceType.StacApi, route: "/stac");
+            .AddService("svc-test-feature", "test", protocols: [ServiceProtocols.FeatureServer])
+            .AddService("svc-test-map", "test", protocols: [ServiceProtocols.MapServer])
+            .AddService("svc-test-stac", "test", route: "/stac", protocols: [ServiceProtocols.Stac]);
         foreach (var layerIndex in seededLayerIndices)
         {
             var resourceId = $"res-layer-{layerIndex}";
@@ -390,79 +388,6 @@ public sealed class WebAppFixture : IAsyncLifetime
         return builder.Build();
     }
 
-    private static MetadataV2Field[] BuildDefaultFeatureSchemaFields()
-    {
-        return
-        [
-            new MetadataV2Field
-            {
-                Name = "objectid",
-                Type = "integer",
-                Title = "Object ID",
-                Nullable = false,
-                SemanticRoles = ["id.primary"]
-            },
-            new MetadataV2Field
-            {
-                Name = "name",
-                Type = "string",
-                Title = "Name",
-                Nullable = true
-            },
-            new MetadataV2Field
-            {
-                Name = "geometry",
-                Type = "geometry",
-                Title = "Geometry",
-                Nullable = true,
-                SemanticRoles = ["geometry.primary"]
-            },
-            new MetadataV2Field
-            {
-                Name = "timestamp",
-                Type = "datetime",
-                Title = "Timestamp",
-                Nullable = true
-            },
-            new MetadataV2Field
-            {
-                Name = "event_date",
-                Type = "datetime",
-                Title = "Event date",
-                Nullable = true
-            }
-        ];
-    }
-
-    private static JsonElement BuildDefaultSpatialMetadata(int layerIndex)
-    {
-        var srid = layerIndex is 101 or 102 or 103 or 104
-            ? SpatialReferenceTestLayerCatalog.LayerSrid
-            : 4326;
-        var geometryType = layerIndex switch
-        {
-            102 => "LineString",
-            103 => "Polygon",
-            _ => "Point"
-        };
-
-        return JsonSerializer.SerializeToElement(new
-        {
-            srid,
-            crs = $"EPSG:{srid}",
-            geometryType
-        });
-    }
-
-    private static JsonElement BuildDefaultTemporalMetadata()
-    {
-        return JsonSerializer.SerializeToElement(new
-        {
-            startTimeField = "timestamp",
-            endTimeField = "event_date"
-        });
-    }
-
     private static void RegisterDefaultMetadataV2Graph(IServiceCollection services)
     {
         services.RemoveAll<IMetadataV2GraphProvider>();
@@ -471,16 +396,149 @@ public sealed class WebAppFixture : IAsyncLifetime
     }
 
     /// <summary>
-    /// V2-aware helper for STAC tests: looks up the test V2 graph provider, locates the
-    /// resource by the publication's layer index, and writes <c>stac</c> + <c>temporal</c>
-    /// extension JSON onto it. Mirrors the v1 <c>UpdateLayerMetadataAsync</c> call surface
-    /// the STAC tests used to seed CatalogMetadata.Stac.
+    /// Returns the V2 schema fields for the layers the Postgres test seed
+    /// (tests/seed/server.yaml) populates via the v1 layer_fields table. OGC API
+    /// Features queryables, OData $metadata, STAC properties, and other
+    /// schema-driven endpoints all read this from the V2 resource graph after the
+    /// metadata-v2 cutover. Layers without seeded fields (everything but 0/1/2)
+    /// return an empty list — matching the v1 fixture behavior where those layers
+    /// have no layer_fields rows.
+    /// </summary>
+    private static IEnumerable<MetadataV2Field>? GetSeededLayerSchemaFields(int layerIndex)
+        => layerIndex switch
+        {
+            0 =>
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Description = "Object ID" },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Description = "Name" },
+                new MetadataV2Field { Name = "description", Type = MetadataV2FieldType.String, Nullable = true, Description = "Description" },
+                new MetadataV2Field { Name = "category", Type = MetadataV2FieldType.String, Nullable = true, Description = "Category" },
+                new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime, Nullable = true, Description = "Timestamp" },
+                new MetadataV2Field { Name = "event_date", Type = MetadataV2FieldType.DateTime, Nullable = true, Description = "Event date" },
+                new MetadataV2Field { Name = "created_date", Type = MetadataV2FieldType.Date, Nullable = true, Description = "Created date" },
+                new MetadataV2Field
+                {
+                    Name = "shape",
+                    Type = MetadataV2FieldType.Geometry,
+                    Nullable = true,
+                    Description = "Geometry",
+                    SemanticRoles = ["geometry"],
+                },
+            ],
+            1 =>
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Description = "Object ID" },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Description = "Name field" },
+                new MetadataV2Field { Name = "related_id", Type = MetadataV2FieldType.Integer, Nullable = true, Description = "Foreign key to origin layer" },
+                new MetadataV2Field { Name = "description", Type = MetadataV2FieldType.String, Nullable = true, Description = "Description" },
+                new MetadataV2Field { Name = "category", Type = MetadataV2FieldType.String, Nullable = true, Description = "Category" },
+                new MetadataV2Field
+                {
+                    Name = "shape",
+                    Type = MetadataV2FieldType.Geometry,
+                    Nullable = true,
+                    Description = "Geometry",
+                    SemanticRoles = ["geometry"],
+                },
+            ],
+            2 =>
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Description = "Object ID" },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Description = "Name field" },
+                new MetadataV2Field { Name = "secondary_id", Type = MetadataV2FieldType.Integer, Nullable = true, Description = "Foreign key to origin layer" },
+                new MetadataV2Field { Name = "type", Type = MetadataV2FieldType.String, Nullable = true, Description = "Type field" },
+                new MetadataV2Field
+                {
+                    Name = "shape",
+                    Type = MetadataV2FieldType.Geometry,
+                    Nullable = true,
+                    Description = "Geometry",
+                    SemanticRoles = ["geometry"],
+                },
+            ],
+            _ => null,
+        };
+
+    /// <summary>
+    /// During the v1→v2 cutover several protocol handlers (WMS/WMTS GetCapabilities,
+    /// FeatureServer temporal extent, etc.) still read TimeInfo / AccessPolicy from the
+    /// v1 Postgres catalog instead of the V2 graph. The Postgres test seed pre-populates
+    /// honua.layers.metadata with a non-empty TimeInfo for the canonical test layer, so
+    /// tests that need to clear or change those slots must also update the v1 jsonb
+    /// column until those handlers migrate. This helper bridges that write to the
+    /// shared honua.layers row (Database:Schema defaults to "honua" in test config
+    /// and the seed seeds the shared honua schema, so all tests already read/write
+    /// the same row — preserving the v1 coupling intentionally during cutover).
+    /// </summary>
+    private void WriteV1LayerCatalogBridge(int layerId, CatalogMetadata? metadata)
+    {
+        var json = metadata is null
+            ? "null"
+            : System.Text.Json.JsonSerializer.Serialize(
+                metadata,
+                Honua.Core.Features.Catalog.Domain.CatalogJsonContext.Default.CatalogMetadata);
+
+        using var connection = Postgres.GetConnectionAsync().GetAwaiter().GetResult();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE honua.layers SET metadata = @metadata::jsonb WHERE layer_id = @layerId";
+        var metadataParam = command.CreateParameter();
+        metadataParam.ParameterName = "@metadata";
+        metadataParam.Value = (object?)json ?? DBNull.Value;
+        command.Parameters.Add(metadataParam);
+        var idParam = command.CreateParameter();
+        idParam.ParameterName = "@layerId";
+        idParam.Value = layerId;
+        command.Parameters.Add(idParam);
+        _ = command.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Bridging counterpart to <see cref="WriteV1LayerCatalogBridge"/> for service-level
+    /// CatalogMetadata (EnabledProtocols, AccessPolicy). Same rationale: WMS/WMTS
+    /// GetCapabilities, FeatureServer protocol gating, etc. still consult
+    /// ServiceDefinition.Metadata from Postgres until those handlers move to V2.
+    /// </summary>
+    private void WriteV1ServiceCatalogBridge(string serviceName, CatalogMetadata? metadata)
+    {
+        var json = metadata is null
+            ? "null"
+            : System.Text.Json.JsonSerializer.Serialize(
+                metadata,
+                Honua.Core.Features.Catalog.Domain.CatalogJsonContext.Default.CatalogMetadata);
+
+        using var connection = Postgres.GetConnectionAsync().GetAwaiter().GetResult();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE honua.services SET metadata = @metadata::jsonb, updated_at = NOW() WHERE LOWER(service_name) = LOWER(@serviceName)";
+        var metadataParam = command.CreateParameter();
+        metadataParam.ParameterName = "@metadata";
+        metadataParam.Value = (object?)json ?? DBNull.Value;
+        command.Parameters.Add(metadataParam);
+        var nameParam = command.CreateParameter();
+        nameParam.ParameterName = "@serviceName";
+        nameParam.Value = serviceName;
+        command.Parameters.Add(nameParam);
+        _ = command.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// V2-aware helper that mirrors the v1 <c>ILayerMetadataUpdater</c> seed surface used
+    /// by classic-protocol and STAC tests. Looks up the resource bound to the publication
+    /// with <paramref name="layerIndex"/> and applies the supplied access policy, temporal
+    /// metadata, spatial metadata, permanent filter, and/or STAC extension payload.
+    /// Passing a value writes it; omitting an argument leaves that slot untouched. The
+    /// <c>clear*</c> flags explicitly clear the corresponding slot (mirroring the v1
+    /// "PUT empty CatalogMetadata" semantics).
     /// </summary>
     public void UpdateV2ResourceMetadata(
         int layerIndex,
+        AccessPolicy? accessPolicy = null,
+        MetadataV2ResourceTemporal? temporal = null,
+        MetadataV2ResourceSpatial? spatial = null,
+        MetadataV2PermanentFilter? permanentFilter = null,
         JsonElement? stacExtension = null,
-        JsonElement? temporal = null,
-        JsonElement? spatial = null)
+        bool clearAccessPolicy = false,
+        bool clearTemporal = false,
+        bool clearPermanentFilter = false)
     {
         var provider = GetService<IMetadataV2GraphProvider>() as Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider
             ?? throw new InvalidOperationException(
@@ -494,36 +552,65 @@ public sealed class WebAppFixture : IAsyncLifetime
                 $"No publication for layer {layerIndex} in the test V2 graph.");
         }
 
-        var resourceIndex = -1;
-        for (var i = 0; i < snapshot.Graph.Resources.Count; i++)
-        {
-            if (string.Equals(snapshot.Graph.Resources[i].Metadata.Id, pub.ResourceId, StringComparison.Ordinal))
-            {
-                resourceIndex = i;
-                break;
-            }
-        }
-        if (resourceIndex < 0)
-        {
-            throw new InvalidOperationException(
-                $"Publication {pub.Metadata.Id} references missing resource {pub.ResourceId}.");
-        }
-
         var resources = snapshot.Graph.Resources.ToArray();
-        var resource = resources[resourceIndex];
-
-        var extensions = new Dictionary<string, JsonElement>(resource.Extensions, StringComparer.Ordinal);
-        if (stacExtension.HasValue)
+        var mutated = false;
+        for (var i = 0; i < resources.Length; i++)
         {
-            extensions["stac"] = stacExtension.Value;
+            if (!string.Equals(resources[i].Metadata.Id, pub.ResourceId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var next = resources[i];
+            if (clearAccessPolicy)
+            {
+                next = next with { AccessPolicy = null };
+            }
+            else if (accessPolicy is not null)
+            {
+                next = next with { AccessPolicy = accessPolicy };
+            }
+
+            if (clearTemporal)
+            {
+                next = next with { Temporal = null };
+            }
+            else if (temporal is not null)
+            {
+                next = next with { Temporal = temporal };
+            }
+
+            if (spatial is not null)
+            {
+                next = next with { Spatial = spatial };
+            }
+
+            if (clearPermanentFilter)
+            {
+                next = next with { PermanentFilter = null };
+            }
+            else if (permanentFilter is not null)
+            {
+                next = next with { PermanentFilter = permanentFilter };
+            }
+
+            if (stacExtension.HasValue)
+            {
+                var extensions = new Dictionary<string, JsonElement>(next.Extensions, StringComparer.Ordinal)
+                {
+                    ["stac"] = stacExtension.Value,
+                };
+                next = next with { Extensions = extensions };
+            }
+
+            resources[i] = next;
+            mutated = true;
         }
 
-        resources[resourceIndex] = resource with
+        if (!mutated)
         {
-            Extensions = extensions,
-            Temporal = temporal ?? resource.Temporal,
-            Spatial = spatial ?? resource.Spatial,
-        };
+            return;
+        }
 
         var updatedGraph = snapshot.Graph with
         {
@@ -531,6 +618,153 @@ public sealed class WebAppFixture : IAsyncLifetime
             Revision = snapshot.Graph.Revision + 1,
         };
         provider.SetGraph(updatedGraph);
+
+        // Cutover bridge: until WMS/WMTS/FeatureServer-temporal handlers migrate off
+        // the v1 catalog, mirror the relevant CatalogMetadata fields onto the v1
+        // honua.layers.metadata JSONB column so v1 reads agree with V2 writes.
+        var bridge = new CatalogMetadata
+        {
+            AccessPolicy = clearAccessPolicy ? null : accessPolicy,
+            TimeInfo = clearTemporal
+                ? null
+                : (temporal is null
+                    ? null
+                    : new LayerTimeInfo
+                    {
+                        StartTimeField = temporal.StartTimeField,
+                        EndTimeField = temporal.EndTimeField,
+                        TrackIdField = temporal.TrackIdField,
+                    }),
+            PermanentFilter = clearPermanentFilter
+                ? null
+                : (permanentFilter is null
+                    ? null
+                    : new LayerPermanentFilter
+                    {
+                        Expression = permanentFilter.Expression,
+                        Language = permanentFilter.Language,
+                    }),
+        };
+        WriteV1LayerCatalogBridge(layerIndex, bridge);
+    }
+
+    /// <summary>
+    /// V2-aware helper that renames the canonical resource bound to the publication
+    /// with <paramref name="layerIndex"/>. The CITE-conformance WMS tests rename the
+    /// v1 <c>honua.layers.layer_name</c> column to drive conformance behaviour keyed on
+    /// the layer's display name (e.g. <c>cite:Autos</c>); once a handler reads its layer
+    /// names from the V2 graph instead of <see cref="ILayerCatalog"/>, the same tests
+    /// must update the V2 resource's <see cref="MetadataV2ObjectMetadata.Name"/> for the
+    /// rename to be visible.
+    /// </summary>
+    public void UpdateV2ResourceName(int layerIndex, string newName)
+    {
+        var provider = GetService<IMetadataV2GraphProvider>() as Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider
+            ?? throw new InvalidOperationException(
+                "Test V2 graph provider not registered as TestMetadataV2GraphProvider.");
+
+        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
+        var pub = snapshot.Graph.Publications.FirstOrDefault(p => p.LayerIndex == layerIndex);
+        if (pub is null)
+        {
+            throw new InvalidOperationException(
+                $"No publication for layer {layerIndex} in the test V2 graph.");
+        }
+
+        var resources = snapshot.Graph.Resources.ToArray();
+        var mutated = false;
+        for (var i = 0; i < resources.Length; i++)
+        {
+            if (!string.Equals(resources[i].Metadata.Id, pub.ResourceId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            resources[i] = resources[i] with
+            {
+                Metadata = resources[i].Metadata with { Name = newName }
+            };
+            mutated = true;
+        }
+
+        if (!mutated)
+        {
+            return;
+        }
+
+        var updatedGraph = snapshot.Graph with
+        {
+            Resources = resources,
+            Revision = snapshot.Graph.Revision + 1,
+        };
+        provider.SetGraph(updatedGraph);
+    }
+
+    /// <summary>
+    /// V2-aware helper that mirrors the v1 <c>IServiceMetadataUpdater</c> seed surface
+    /// for service-level toggles (enabled protocols, access policy). Updates every V2
+    /// service that shares the supplied name (case-insensitive) — the test graph
+    /// registers one service per protocol cluster, all keyed off the same logical name,
+    /// so the v1 "one row per service" admin shape collapses onto fan-out at write time.
+    /// </summary>
+    public void UpdateV2ServiceMetadata(
+        string serviceName,
+        IReadOnlyList<string>? enabledProtocols = null,
+        AccessPolicy? accessPolicy = null,
+        bool clearAccessPolicy = false)
+    {
+        var provider = GetService<IMetadataV2GraphProvider>() as Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider
+            ?? throw new InvalidOperationException(
+                "Test V2 graph provider not registered as TestMetadataV2GraphProvider.");
+
+        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
+        var services = snapshot.Graph.Services.ToArray();
+        var mutated = false;
+        for (var i = 0; i < services.Length; i++)
+        {
+            if (!string.Equals(services[i].Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var next = services[i];
+            if (enabledProtocols is not null)
+            {
+                next = next with { Protocols = enabledProtocols };
+            }
+            if (clearAccessPolicy)
+            {
+                next = next with { AccessPolicy = null };
+            }
+            else if (accessPolicy is not null)
+            {
+                next = next with { AccessPolicy = accessPolicy };
+            }
+
+            services[i] = next;
+            mutated = true;
+        }
+
+        if (!mutated)
+        {
+            return;
+        }
+
+        var updatedGraph = snapshot.Graph with
+        {
+            Services = services,
+            Revision = snapshot.Graph.Revision + 1,
+        };
+        provider.SetGraph(updatedGraph);
+
+        // Cutover bridge: mirror EnabledProtocols / AccessPolicy onto the v1 services
+        // row until protocol gating finishes migrating off the v1 catalog.
+        var bridge = new CatalogMetadata
+        {
+            AccessPolicy = clearAccessPolicy ? null : accessPolicy,
+            EnabledProtocols = enabledProtocols?.ToArray() ?? ServiceProtocols.All,
+        };
+        WriteV1ServiceCatalogBridge(serviceName, bridge);
     }
 
     /// <summary>

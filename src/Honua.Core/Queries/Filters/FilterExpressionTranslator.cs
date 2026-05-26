@@ -31,17 +31,17 @@ public interface IFilterExpressionTranslator
     /// V2 overload of <c>Normalize</c>. Resolves field types from
     /// <c>MetadataV2Resource.SchemaFields</c>.
     /// </summary>
-    /// <remarks>
-    /// A V2 <see cref="Translate(FilterExpression, LayerDefinition)"/> overload is
-    /// intentionally not exposed yet — final SQL translation still goes through the
-    /// provider-specific v1 path (<see cref="ISqlFilterTranslator"/>) which requires a
-    /// <see cref="LayerDefinition"/>. Consumers that just need to validate / coerce a
-    /// filter against a V2 schema use this overload; consumers that need the
-    /// final SQL fragment still feed a <see cref="LayerDefinition"/> through the v1
-    /// <see cref="Translate(FilterExpression, LayerDefinition)"/> path until the SQL
-    /// backends gain V2 overloads.
-    /// </remarks>
     FilterExpression Normalize(FilterExpression expression, MetadataV2Resource resource);
+
+    /// <summary>
+    /// V2 overload that normalises and translates a filter expression to a
+    /// parameterized SQL fragment, using a Metadata v2 resource for field
+    /// validation and spatial-reference resolution.
+    /// </summary>
+    /// <param name="expression">Filter expression to translate.</param>
+    /// <param name="resource">Metadata v2 resource.</param>
+    /// <returns>SQL fragment with parameters.</returns>
+    SqlFragment Translate(FilterExpression expression, MetadataV2Resource resource);
 }
 
 /// <summary>
@@ -74,4 +74,12 @@ public sealed class FilterExpressionTranslator : IFilterExpressionTranslator
     /// <inheritdoc />
     public FilterExpression Normalize(FilterExpression expression, MetadataV2Resource resource)
         => FilterExpressionNormalizer.Normalize(expression, resource);
+
+    /// <inheritdoc />
+    public SqlFragment Translate(FilterExpression expression, MetadataV2Resource resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        var normalized = FilterExpressionNormalizer.Normalize(expression, resource);
+        return _sqlFilterTranslator.Translate(normalized, resource);
+    }
 }

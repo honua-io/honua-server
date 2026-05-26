@@ -104,7 +104,7 @@ public readonly struct FilterFieldSchema
             {
                 if (string.Equals(schemaField.Name, fieldName, StringComparison.OrdinalIgnoreCase))
                 {
-                    fieldType = ParseV2FieldType(schemaField.Type);
+                    fieldType = MapV2FieldType(schemaField.Type);
                     return true;
                 }
             }
@@ -114,38 +114,22 @@ public readonly struct FilterFieldSchema
         return false;
     }
 
-    private static FieldType ParseV2FieldType(string? typeName)
+    private static FieldType MapV2FieldType(MetadataV2FieldType type) => type switch
     {
-        var normalized = typeName?.Trim().ToLowerInvariant();
-        return normalized switch
-        {
-            "string" or "text" => FieldType.String,
-            "integer" or "int32" or "int" => FieldType.Integer,
-            "biginteger" or "int64" or "long" => FieldType.BigInteger,
-            "double" => FieldType.Double,
-            "float" or "real" or "single" => FieldType.Float,
-            "boolean" or "bool" => FieldType.Boolean,
-            "datetime" or "timestamp" => FieldType.DateTime,
-            "date" => FieldType.Date,
-            "time" => FieldType.Time,
-            "json" or "object" => FieldType.Json,
-            "binary" or "bytes" or "wkb" => FieldType.Binary,
-            "uuid" or "guid" => FieldType.Uuid,
-            "geometry" or "geography" => FieldType.Geometry,
-            _ => FieldType.String,
-        };
-    }
+        MetadataV2FieldType.String => FieldType.String,
+        MetadataV2FieldType.Integer => FieldType.Integer,
+        MetadataV2FieldType.BigInteger => FieldType.BigInteger,
+        MetadataV2FieldType.Double => FieldType.Double,
+        MetadataV2FieldType.Float => FieldType.Float,
+        MetadataV2FieldType.Boolean => FieldType.Boolean,
+        MetadataV2FieldType.DateTime => FieldType.DateTime,
+        MetadataV2FieldType.Date => FieldType.Date,
+        MetadataV2FieldType.Time => FieldType.Time,
+        MetadataV2FieldType.Json => FieldType.Json,
+        MetadataV2FieldType.Binary => FieldType.Binary,
+        MetadataV2FieldType.Uuid => FieldType.Uuid,
+        MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography => FieldType.Geometry,
+        _ => FieldType.String,
+    };
 
-    /// <summary>
-    /// Returns the wrapped v1 layer when this schema came from a <see cref="LayerDefinition"/>;
-    /// otherwise null. Use to call legacy v1-only translators that still need the full
-    /// <see cref="LayerDefinition"/> shape.
-    /// </summary>
-    public LayerDefinition? V1Layer => _layer;
-
-    /// <summary>
-    /// Returns the wrapped V2 resource when this schema came from a
-    /// <see cref="MetadataV2Resource"/>; otherwise null.
-    /// </summary>
-    public MetadataV2Resource? V2Resource => _resource;
 }

@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Server.Features.Protocols.GeoServices;
@@ -13,6 +14,49 @@ internal static class GeoServicesObjectIdFieldResolver
 {
     public static string ResolveObjectIdFieldName(LayerDefinition layer)
         => ResolveObjectIdField(layer)?.Name ?? FieldNames.ObjectId;
+
+    /// <summary>
+    /// V2 overload of <see cref="ResolveObjectIdFieldName(LayerDefinition)"/>.
+    /// Resolves the object-id field name from a Metadata v2 canonical resource. Prefers
+    /// fields tagged with the <c>id.primary</c> semantic role, then falls back to the
+    /// first integer/big-integer field named <c>objectid</c>, <c>id</c>, or <c>fid</c>
+    /// (case-insensitive), and finally to any integer field. When none match, the default
+    /// <see cref="FieldNames.ObjectId"/> constant is returned.
+    /// </summary>
+    public static string ResolveObjectIdFieldName(MetadataV2Resource resource)
+        => ResolveObjectIdField(resource)?.Name ?? FieldNames.ObjectId;
+
+    /// <summary>
+    /// V2 overload of <see cref="ResolveObjectIdField(LayerDefinition)"/>.
+    /// </summary>
+    public static MetadataV2Field? ResolveObjectIdField(MetadataV2Resource resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+
+        var candidate = FindNumericV2Field(resource, FieldNames.ObjectId)
+                        ?? FindNumericV2Field(resource, "id")
+                        ?? FindNumericV2Field(resource, "fid");
+        if (candidate is not null)
+        {
+            return candidate;
+        }
+
+        var primary = resource.FindPrimaryIdField();
+        if (primary is not null && IsObjectIdCompatible(primary))
+        {
+            return primary;
+        }
+
+        return resource.SchemaFields.FirstOrDefault(IsObjectIdCompatible);
+    }
+
+    private static MetadataV2Field? FindNumericV2Field(MetadataV2Resource resource, string fieldName)
+        => resource.SchemaFields.FirstOrDefault(field =>
+            field.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase) &&
+            IsObjectIdCompatible(field));
+
+    private static bool IsObjectIdCompatible(MetadataV2Field field)
+        => field.Type is MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger;
 
     public static string ResolveServiceObjectIdFieldName(ServiceDefinition service)
     {

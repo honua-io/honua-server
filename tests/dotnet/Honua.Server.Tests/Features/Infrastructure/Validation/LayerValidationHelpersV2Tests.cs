@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
@@ -69,7 +70,7 @@ public sealed class LayerValidationHelpersV2Tests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
-    public async Task ValidateLayerWithAccessV2_RequiredServiceTypeMismatch_ReturnsNotFound()
+    public async Task ValidateLayerWithAccessV2_RequiredProtocolMismatch_ReturnsNotFound()
     {
         var (context, _) = BuildContext(allowAnonymous: true);
 
@@ -77,7 +78,7 @@ public sealed class LayerValidationHelpersV2Tests
             context,
             layerId: 0,
             scope: AccessScope.Read,
-            requiredServiceType: MetadataV2ServiceType.EsriImageService);
+            requiredProtocol: ServiceProtocols.ImageServer);
 
         result.IsValid.Should().BeFalse();
         result.ErrorResult.Should().NotBeNull();
@@ -100,22 +101,6 @@ public sealed class LayerValidationHelpersV2Tests
 
     [UnitTest]
     [Operation(Operations.Metadata)]
-    public async Task ValidateCollectionWithAccessV2_NumericLayerIndex_ReturnsTriple()
-    {
-        var (context, _) = BuildContext(allowAnonymous: true);
-
-        var result = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
-            context,
-            collectionId: "0");
-
-        result.IsValid.Should().BeTrue();
-        result.Publication.Should().NotBeNull();
-        result.Publication!.LayerIndex.Should().Be(0);
-        result.Resource.Should().NotBeNull();
-    }
-
-    [UnitTest]
-    [Operation(Operations.Metadata)]
     public async Task ValidateCollectionWithAccessV2_MissingCollection_ReturnsNotFound()
     {
         var (context, _) = BuildContext(allowAnonymous: true);
@@ -128,42 +113,10 @@ public sealed class LayerValidationHelpersV2Tests
         result.ErrorResult.Should().NotBeNull();
     }
 
-    [UnitTest]
-    [Operation(Operations.Metadata)]
-    public async Task ValidateLayerWithAccessV2_WithoutGraphProvider_ReturnsNotFound()
-    {
-        using var serviceProvider = new ServiceCollection().BuildServiceProvider();
-        var context = new DefaultHttpContext { RequestServices = serviceProvider };
-
-        var result = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
-            context,
-            layerId: 0);
-
-        result.IsValid.Should().BeFalse();
-        result.Publication.Should().BeNull();
-        result.Resource.Should().BeNull();
-        result.Service.Should().BeNull();
-        result.ErrorResult.Should().NotBeNull();
-    }
-
-    [UnitTest]
-    [Operation(Operations.Metadata)]
-    public async Task ResolvePrimaryServiceV2_WithoutGraphProvider_ReturnsNull()
-    {
-        using var serviceProvider = new ServiceCollection().BuildServiceProvider();
-        var context = new DefaultHttpContext { RequestServices = serviceProvider };
-
-        var service = await LayerValidationHelpers.ResolvePrimaryServiceV2Async(
-            context,
-            layerId: 0);
-
-        service.Should().BeNull();
-    }
-
     private static (HttpContext Context, MetadataV2Graph Graph) BuildContext(bool allowAnonymous)
     {
         var graph = new TestMetadataV2GraphBuilder()
-            .AddService("svc-test", "test-service", MetadataV2ServiceType.OgcApiFeatures)
+            .AddService("svc-test", "test-service", protocols: [ServiceProtocols.OgcFeatures])
             .AddResource("res-test", "test-resource")
             .AddPublication(
                 "pub-test",

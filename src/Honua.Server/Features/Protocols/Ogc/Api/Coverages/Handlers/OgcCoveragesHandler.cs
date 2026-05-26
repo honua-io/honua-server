@@ -3,9 +3,10 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Shared.Models;
@@ -63,7 +64,7 @@ internal sealed class OgcCoveragesHandler
             CreateEpsgUri(SpatialReference.WGS84.Wkid),
             CreateEpsgUri(3857));
 
-    private readonly ILayerCatalog _layerCatalog;
+    private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
     private readonly ICoordinateTransformService _coordinateTransformService;
     private readonly ICrsRegistry _crsRegistry;
@@ -75,7 +76,7 @@ internal sealed class OgcCoveragesHandler
     {
         ArgumentNullException.ThrowIfNull(dependencies);
 
-        _layerCatalog = dependencies.LayerCatalog;
+        _graphProvider = dependencies.GraphProvider;
         _rasterStore = dependencies.RasterStore;
         _coordinateTransformService = dependencies.CoordinateTransformService;
         _crsRegistry = dependencies.CrsRegistry;
@@ -222,31 +223,57 @@ internal sealed class OgcCoveragesHandler
             }
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-            var layers = await _layerCatalog.ListLayersAsync(cancellationToken).ConfigureAwait(false);
-            var services = await _layerCatalog.ListServicesAsync(cancellationToken).ConfigureAwait(false);
-            var layerToService = LayerValidationHelpers.BuildPrimaryServiceMap(services, CoveragesProtocol);
-            var visibleLayers = layers
-                .Where(layer =>
-                    layerToService.TryGetValue(layer.Id, out var service)
-                        ? ServiceProtocols.IsProtocolEnabled(service.Metadata, CoveragesProtocol) &&
-                          AccessPolicyHelpers.IsLayerAccessible(context, layer, service)
-                        : ServiceProtocols.IsProtocolEnabled(layer.Metadata, CoveragesProtocol) &&
-                          AccessPolicyHelpers.IsLayerAccessible(context, layer))
-                .OrderBy(static layer => layer.Id)
+            var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+
+            // Walk OGC API Coverages publications: each is a (resource, service) pair gated
+            // on protocol enablement + access policy. Dedupe to one publication per resource
+            // (prefer IsPrimary), since coverage routes use a single storage layer id key.
+            var byResource = new Dictionary<string, (MetadataV2Publication Publication, MetadataV2Service Service, MetadataV2Resource Resource)>(StringComparer.Ordinal);
+            foreach (var publication in snapshot.Graph.Publications)
+            {
+                if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service))
+                {
+                    continue;
+                }
+                if (!ServiceProtocols.IsProtocolEnabled(service, CoveragesProtocol))
+                {
+                    continue;
+                }
+                var resource = snapshot.ResolveResource(publication);
+                if (resource is null)
+                {
+                    continue;
+                }
+                if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, service))
+                {
+                    continue;
+                }
+                if (!byResource.TryGetValue(resource.Metadata.Id, out var existing) ||
+                    (publication.IsPrimary && !existing.Publication.IsPrimary))
+                {
+                    byResource[resource.Metadata.Id] = (publication, service, resource);
+                }
+            }
+
+            var visible = byResource.Values
+                .OrderBy(t => snapshot.ResolveStorageLayerId(t.Publication) ?? int.MaxValue)
                 .ToArray();
 
             var projected = await ProjectWithLimitedConcurrencyAsync(
-                visibleLayers,
-                async (layer, ct) =>
+                visible,
+                async (entry, ct) =>
                 {
-                    var raster = await GetPrimaryRasterWithExtentAsync(layer.Id, ct).ConfigureAwait(false);
+                    var storageLayerId = snapshot.ResolveStorageLayerId(entry.Publication);
+                    if (!storageLayerId.HasValue)
+                    {
+                        return null;
+                    }
+                    var raster = await GetPrimaryRasterWithExtentAsync(storageLayerId.Value, ct).ConfigureAwait(false);
                     if (raster is null)
                     {
                         return null;
                     }
-
-                    layerToService.TryGetValue(layer.Id, out var service);
-                    return await CreateCollectionAsync(layer, service, raster.Value, baseUrl, ct)
+                    return await CreateCollectionAsync(entry.Resource, entry.Service, storageLayerId.Value, raster.Value, baseUrl, ct)
                         .ConfigureAwait(false);
                 },
                 cancellationToken).ConfigureAwait(false);
@@ -317,8 +344,9 @@ internal sealed class OgcCoveragesHandler
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var collection = await CreateCollectionAsync(
-                    resolution.Layer!,
+                    resolution.Resource!,
                     resolution.Service,
+                    resolution.StorageLayerId!.Value,
                     resolution.Raster!.Value,
                     baseUrl,
                     cancellationToken)
@@ -370,7 +398,8 @@ internal sealed class OgcCoveragesHandler
             }
 
             var schema = await CreateSchemaAsync(
-                    resolution.Layer!,
+                    resolution.Resource!,
+                    resolution.StorageLayerId!.Value,
                     resolution.Raster!.Value,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -426,7 +455,7 @@ internal sealed class OgcCoveragesHandler
                 return resolution.Error;
             }
 
-            var storageSrid = ResolveStorageSrid(resolution.Layer!, resolution.Raster!.Value);
+            var storageSrid = ResolveStorageSrid(resolution.Resource!, resolution.Raster!.Value);
             var supportedCrs = await GetSupportedCoverageCrsDefinitionsAsync(storageSrid, cancellationToken)
                 .ConfigureAwait(false);
             if (!TryCreateCoverageQuery(
@@ -464,14 +493,14 @@ internal sealed class OgcCoveragesHandler
             rasterQuery = scalingResult.Query;
 
             telemetry
-                .WithTag(HonuaTelemetry.Tags.LayerId, resolution.Layer!.Id)
+                .WithTag(HonuaTelemetry.Tags.LayerId, resolution.StorageLayerId!.Value)
                 .WithTag("honua.coverage.id", collectionId)
                 .WithTag("honua.output.format", negotiatedFormat.ContentType)
                 .WithTag("honua.coverage.bbox", rasterQuery.ClipRegion.HasValue)
                 .WithTag("honua.coverage.field_count", selectedBandCount ?? resolution.Raster.Value.BandCount);
 
             var result = await _rasterStore.ExportImageAsync(
-                    resolution.Layer.Id,
+                    resolution.StorageLayerId.Value,
                     resolution.Raster.Value.Id,
                     rasterQuery,
                     cancellationToken)
@@ -515,35 +544,44 @@ internal sealed class OgcCoveragesHandler
         string collectionId,
         CancellationToken cancellationToken)
     {
-        var layerValidation = await LayerValidationHelpers.ValidateCollectionWithAccessAsync(
+        var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
                 context,
                 collectionId,
                 requiredProtocol: CoveragesProtocol,
                 cancellationToken: cancellationToken)
             .ConfigureAwait(false);
-        if (!layerValidation.IsValid)
+        if (!validation.IsValid)
         {
-            return new CoverageResolution(null, null, null, layerValidation.ErrorResult);
+            return new CoverageResolution(null, null, null, null, validation.ErrorResult);
         }
 
-        var layer = layerValidation.Layer!;
-        var service = await LayerValidationHelpers.ResolvePrimaryServiceAsync(
-                context,
-                layer.Id,
-                CoveragesProtocol,
-                cancellationToken)
-            .ConfigureAwait(false);
-        var raster = await GetPrimaryRasterWithExtentAsync(layer.Id, cancellationToken).ConfigureAwait(false);
-        if (raster is null)
+        var resource = validation.Resource!;
+        var publication = validation.Publication!;
+        var service = validation.Service;
+        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var storageLayerId = snapshot.ResolveStorageLayerId(publication);
+        if (!storageLayerId.HasValue)
         {
             return new CoverageResolution(
+                null,
                 null,
                 null,
                 null,
                 StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' does not expose a raster coverage."));
         }
 
-        return new CoverageResolution(layer, service, raster.Value, null);
+        var raster = await GetPrimaryRasterWithExtentAsync(storageLayerId.Value, cancellationToken).ConfigureAwait(false);
+        if (raster is null)
+        {
+            return new CoverageResolution(
+                null,
+                null,
+                null,
+                null,
+                StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' does not expose a raster coverage."));
+        }
+
+        return new CoverageResolution(resource, service, storageLayerId.Value, raster.Value, null);
     }
 
     private async Task<RasterInfo?> GetPrimaryRasterWithExtentAsync(int layerId, CancellationToken cancellationToken)
@@ -567,21 +605,23 @@ internal sealed class OgcCoveragesHandler
     }
 
     private async Task<OgcCoverageCollection> CreateCollectionAsync(
-        LayerDefinition layer,
-        ServiceDefinition? service,
+        MetadataV2Resource resource,
+        MetadataV2Service? service,
+        int storageLayerId,
         RasterInfo raster,
         string baseUrl,
         CancellationToken cancellationToken)
     {
-        var collectionId = layer.Id.ToString(CultureInfo.InvariantCulture);
+        var collectionId = storageLayerId.ToString(CultureInfo.InvariantCulture);
         var escapedCollectionId = Uri.EscapeDataString(collectionId);
         var basePath = $"{baseUrl}/ogc/coverages/collections/{escapedCollectionId}";
+        var displayName = resource.Metadata.Title ?? resource.Metadata.Name;
         var links = ImmutableArray.CreateBuilder<Link>();
         links.Add(Link.Create(
             href: basePath,
             rel: RelationTypes.Self,
             type: MediaTypes.Json,
-            title: layer.Name));
+            title: displayName));
         links.Add(Link.Create(
             href: $"{baseUrl}/ogc/coverages/collections",
             rel: "parent",
@@ -606,13 +646,13 @@ internal sealed class OgcCoveragesHandler
         if (service is not null)
         {
             links.Add(Link.Create(
-                href: $"{baseUrl}/rest/services/{Uri.EscapeDataString(service.Name)}/ImageServer",
+                href: $"{baseUrl}/rest/services/{Uri.EscapeDataString(service.Metadata.Name)}/ImageServer",
                 rel: RelationTypes.DescribedBy,
                 type: MediaTypes.Json,
                 title: "GeoServices ImageServer metadata"));
         }
 
-        var storageSrid = ResolveStorageSrid(layer, raster);
+        var storageSrid = ResolveStorageSrid(resource, raster);
         var storageCrs = CreateEpsgUri(storageSrid);
         var supportedCrs = await GetSupportedCoverageCrsDefinitionsAsync(storageSrid, cancellationToken)
             .ConfigureAwait(false);
@@ -626,8 +666,8 @@ internal sealed class OgcCoveragesHandler
         return new OgcCoverageCollection
         {
             Id = collectionId,
-            Title = layer.Name,
-            Description = layer.Description,
+            Title = displayName,
+            Description = resource.Metadata.Description,
             ItemType = CoverageItemType,
             Extent = extent,
             Links = links.ToImmutable(),
@@ -782,18 +822,19 @@ internal sealed class OgcCoveragesHandler
     }
 
     private async Task<CoverageSchema> CreateSchemaAsync(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        int storageLayerId,
         RasterInfo raster,
         CancellationToken cancellationToken)
     {
         RasterStatistics[] statistics = [];
         try
         {
-            statistics = await _rasterStore.GetStatisticsAsync(layer.Id, raster.Id, null, cancellationToken).ConfigureAwait(false);
+            statistics = await _rasterStore.GetStatisticsAsync(storageLayerId, raster.Id, null, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {
-            OgcCoveragesLog.RequestFailed(_logger, ex, "schema-statistics", layer.Id.ToString(CultureInfo.InvariantCulture));
+            OgcCoveragesLog.RequestFailed(_logger, ex, "schema-statistics", storageLayerId.ToString(CultureInfo.InvariantCulture));
         }
 
         var statisticsByBand = statistics.ToDictionary(static stat => stat.Band);
@@ -814,10 +855,11 @@ internal sealed class OgcCoveragesHandler
             };
         }
 
+        var displayName = resource.Metadata.Title ?? resource.Metadata.Name;
         return new CoverageSchema
         {
-            Title = "Coverage schema for " + layer.Name,
-            Description = "Field selection schema for OGC API Coverages collection " + layer.Id.ToString(CultureInfo.InvariantCulture),
+            Title = "Coverage schema for " + displayName,
+            Description = "Field selection schema for OGC API Coverages collection " + storageLayerId.ToString(CultureInfo.InvariantCulture),
             Properties = properties.ToImmutable()
         };
     }
@@ -1663,8 +1705,8 @@ internal sealed class OgcCoveragesHandler
     private static string FormatContentCrsHeader(int srid)
         => FormattableString.Invariant($"<https://www.opengis.net/def/crs/EPSG/0/{srid}>");
 
-    private static int ResolveStorageSrid(LayerDefinition layer, RasterInfo raster)
-        => raster.Extent?.Srid ?? raster.Srid ?? layer.SpatialReference.Wkid;
+    private static int ResolveStorageSrid(MetadataV2Resource resource, RasterInfo raster)
+        => raster.Extent?.Srid ?? raster.Srid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
 
     private static string FormatDouble(double value)
         => value.ToString("G17", CultureInfo.InvariantCulture);
@@ -1722,8 +1764,9 @@ internal sealed class OgcCoveragesHandler
     private readonly record struct CoverageFormat(RasterFormat Format, string ContentType, string QueryValue);
 
     private readonly record struct CoverageResolution(
-        LayerDefinition? Layer,
-        ServiceDefinition? Service,
+        MetadataV2Resource? Resource,
+        MetadataV2Service? Service,
+        int? StorageLayerId,
         RasterInfo? Raster,
         IResult? Error);
 }

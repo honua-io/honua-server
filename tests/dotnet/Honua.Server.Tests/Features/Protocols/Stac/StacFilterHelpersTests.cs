@@ -81,8 +81,7 @@ public sealed class StacFilterHelpersTests
             .AddService(
                 "svc-stac",
                 "stac",
-                MetadataV2ServiceType.StacApi,
-                enabledProtocols: [ServiceProtocols.FeatureServer])
+                protocols: [ServiceProtocols.FeatureServer])
             .AddResource("res-stac", "stac-resource")
             .AddPublication(
                 "pub-stac",

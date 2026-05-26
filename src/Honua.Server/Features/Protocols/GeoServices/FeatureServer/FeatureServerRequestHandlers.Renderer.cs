@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -41,7 +41,7 @@ internal static partial class FeatureServerEndpoints
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerV2Async(
             resourceValidator,
             serviceId,
             layerId,
@@ -54,8 +54,8 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = validationResult.Service!;
-        var layer = validationResult.Layer!;
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+        var resource = validationResult.Resource!;
+        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
         if (accessError != null)
         {
             return accessError;
@@ -71,7 +71,14 @@ internal static partial class FeatureServerEndpoints
                 [jsonError ?? InvalidRendererJsonMessage]);
         }
 
-        if (!layer.HasGeometry)
+        var geometryType = resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None;
+        // V2 canonical sources may carry geometry on Spatial OR via a
+        // Geometry/Geography schema field (the typed Spatial section is
+        // optional; pre-typed test fixtures still surface geometry only
+        // through the schema). Treat either as "layer supports renderers".
+        var hasGeometry = geometryType != MetadataV2GeometryType.None
+            || resource.SchemaFields.Any(f => f.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography);
+        if (!hasGeometry)
         {
             return StandardErrorHelpers.CreateBadRequest(context, "Layer does not support renderers");
         }
@@ -85,7 +92,7 @@ internal static partial class FeatureServerEndpoints
                 ["classBreaksDef and uniqueValueDef classification types are not yet implemented. Omit classificationDef to generate a simple renderer."]);
         }
 
-        var symbol = BuildSimpleSymbol(layer.GeometryType);
+        var symbol = BuildSimpleSymbol(geometryType);
         if (symbol == null)
         {
             return StandardErrorHelpers.CreateBadRequest(context, "Layer geometry type is not supported");
@@ -100,7 +107,7 @@ internal static partial class FeatureServerEndpoints
         return Results.Json(renderer, FeatureServerJsonContext.Default.DictionaryStringObject, contentType: "application/json");
     }
 
-    private static Dictionary<string, object?>? BuildSimpleSymbol(GeometryType geometryType)
+    private static Dictionary<string, object?>? BuildSimpleSymbol(MetadataV2GeometryType geometryType)
     {
         var strokeColor = new[] { 45, 105, 165, 255 };
         var fillColor = new[] { 45, 105, 165, 64 };
@@ -114,7 +121,7 @@ internal static partial class FeatureServerEndpoints
 
         return geometryType switch
         {
-            GeometryType.Point or GeometryType.MultiPoint => new Dictionary<string, object?>
+            MetadataV2GeometryType.Point or MetadataV2GeometryType.MultiPoint => new Dictionary<string, object?>
             {
                 ["type"] = "esriSMS",
                 ["style"] = "esriSMSCircle",
@@ -122,14 +129,14 @@ internal static partial class FeatureServerEndpoints
                 ["size"] = 6,
                 ["outline"] = outline
             },
-            GeometryType.LineString or GeometryType.MultiLineString => new Dictionary<string, object?>
+            MetadataV2GeometryType.LineString or MetadataV2GeometryType.MultiLineString => new Dictionary<string, object?>
             {
                 ["type"] = "esriSLS",
                 ["style"] = "esriSLSSolid",
                 ["color"] = strokeColor,
                 ["width"] = 2
             },
-            GeometryType.Polygon or GeometryType.MultiPolygon => new Dictionary<string, object?>
+            MetadataV2GeometryType.Polygon or MetadataV2GeometryType.MultiPolygon => new Dictionary<string, object?>
             {
                 ["type"] = "esriSFS",
                 ["style"] = "esriSFSSolid",

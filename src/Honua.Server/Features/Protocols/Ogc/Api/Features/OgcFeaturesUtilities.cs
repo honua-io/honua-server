@@ -145,6 +145,59 @@ internal static class OgcFeaturesUtilities
     }
 
     /// <summary>
+    /// Metadata v2 overload of
+    /// <see cref="GetSupportedCrsDefinitionsAsync(LayerDefinition, ICrsRegistry, CancellationToken)"/>.
+    /// Resolves the storage CRS from <see cref="MetadataV2SpatialExtensions.ReadSrid"/> on the
+    /// V2 resource and unions it with the default CRS list.
+    /// </summary>
+    public static async Task<IReadOnlyDictionary<string, CrsDefinition>> GetSupportedCrsDefinitionsAsync(
+        MetadataV2Resource resource,
+        ICrsRegistry crsRegistry,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        ArgumentNullException.ThrowIfNull(crsRegistry);
+
+        var definitions = new Dictionary<string, CrsDefinition>(StringComparer.OrdinalIgnoreCase);
+        foreach (var crsIdentifier in _defaultCrsIdentifiers)
+        {
+            var definition = await crsRegistry.ResolveAsync(crsIdentifier, cancellationToken).ConfigureAwait(false);
+            if (definition.HasValue)
+            {
+                definitions[definition.Value.Uri] = definition.Value;
+            }
+        }
+
+        var srid = resource.ReadSrid();
+        if (srid.HasValue)
+        {
+            var storageCrs = srid.Value.ToOgcCrs();
+            var storageDefinition = await crsRegistry.ResolveAsync(storageCrs, cancellationToken).ConfigureAwait(false);
+            if (storageDefinition.HasValue)
+            {
+                definitions[storageDefinition.Value.Uri] = storageDefinition.Value;
+            }
+        }
+
+        return definitions;
+    }
+
+    /// <summary>
+    /// Metadata v2 overload of
+    /// <see cref="GetSupportedCrsUrisAsync(LayerDefinition, ICrsRegistry, CancellationToken)"/>.
+    /// </summary>
+    public static async Task<ImmutableArray<string>> GetSupportedCrsUrisAsync(
+        MetadataV2Resource resource,
+        ICrsRegistry crsRegistry,
+        CancellationToken cancellationToken)
+    {
+        var definitions = await GetSupportedCrsDefinitionsAsync(resource, crsRegistry, cancellationToken).ConfigureAwait(false);
+        return definitions.Keys
+            .OrderBy(static uri => uri, StringComparer.OrdinalIgnoreCase)
+            .ToImmutableArray();
+    }
+
+    /// <summary>
     /// Normalizes CRS inputs to canonical URI forms (e.g. EPSG:4326 -> http://www.opengis.net/def/crs/EPSG/0/4326).
     /// </summary>
     public static string NormalizeCrsUri(string crs)
@@ -242,6 +295,54 @@ internal static class OgcFeaturesUtilities
             or FieldType.Date
             or FieldType.Time
             or FieldType.Uuid;
+
+    /// <summary>
+    /// Metadata v2 overload of <see cref="IsSimpleQueryableField(FieldDefinition)"/>.
+    /// </summary>
+    public static bool IsSimpleQueryableField(MetadataV2Field field)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+        return field.Type is MetadataV2FieldType.String
+            or MetadataV2FieldType.Integer
+            or MetadataV2FieldType.BigInteger
+            or MetadataV2FieldType.Double
+            or MetadataV2FieldType.Float
+            or MetadataV2FieldType.Boolean
+            or MetadataV2FieldType.DateTime
+            or MetadataV2FieldType.Date
+            or MetadataV2FieldType.Time
+            or MetadataV2FieldType.Uuid;
+    }
+
+    /// <summary>
+    /// Metadata v2 overload of <see cref="ValidateItemsQueryParameters(HttpRequest, LayerDefinition)"/>.
+    /// Builds the allowed query-parameter set from <see cref="MetadataV2Resource.SchemaFields"/>
+    /// instead of the v1 <c>VisibleAttributeFields</c>.
+    /// </summary>
+    public static BadRequest<string>? ValidateItemsQueryParameters(
+        HttpRequest request,
+        MetadataV2Resource resource)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(resource);
+
+        var allowed = new HashSet<string>(AllowedQueryParameters.Items, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var field in resource.SchemaFields)
+        {
+            if (IsSimpleQueryableField(field))
+            {
+                allowed.Add(field.Name);
+            }
+        }
+
+        var validator = request.HttpContext.RequestServices.GetRequiredService<ICommonQueryValidator>();
+        var error = QueryParameterValidationHelpers.GetValidationError(
+            validator,
+            request.Query.Keys.ToArray(),
+            allowed);
+        return error == null ? null : TypedResults.BadRequest(error);
+    }
 
     public static async Task<TemporalExtent?> BuildTemporalExtentAsync(
         LayerDefinition layer,
@@ -406,14 +507,12 @@ internal static class OgcFeaturesUtilities
                 continue;
             }
 
-            switch (field.Type?.Trim().ToLowerInvariant())
+            switch (field.Type)
             {
-                case "datetime":
-                case "date-time":
-                case "timestamp":
+                case MetadataV2FieldType.DateTime:
                     type = FieldType.DateTime;
                     return true;
-                case "date":
+                case MetadataV2FieldType.Date:
                     type = FieldType.Date;
                     return true;
             }

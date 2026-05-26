@@ -13,6 +13,8 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Geometry.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Protocols.Ogc.Api.Features;
@@ -558,6 +560,13 @@ public sealed class OgcFeaturesStringIdentifierEndpointTests
                 services.AddSingleton<ICoordinateTransformService, IdentityCoordinateTransformService>();
                 services.AddSingleton<IGeometryTopologyValidator, NoOpGeometryTopologyValidator>();
                 services.AddScoped<ISqlFilterTranslator, StringIdSqlFilterTranslator>();
+
+                // V2-ported OGC API Features endpoints resolve collections through
+                // IMetadataV2GraphProvider; mirror the v1 StringIdLayerCatalog content
+                // on the V2 graph so the V2 ValidateCollectionWithAccessV2Async + storage
+                // layer id resolution match the layers this fixture exposes.
+                services.RemoveAll<IMetadataV2GraphProvider>();
+                services.AddSingleton<IMetadataV2GraphProvider>(_ => BuildStringIdGraphProvider());
             });
         });
     }
@@ -565,6 +574,12 @@ public sealed class OgcFeaturesStringIdentifierEndpointTests
     private sealed class StringIdSqlFilterTranslator : ISqlFilterTranslator
     {
         public SqlFragment Translate(FilterExpression filter, LayerDefinition layer)
+            => TranslateCore(filter);
+
+        public SqlFragment Translate(FilterExpression filter, MetadataV2Resource resource)
+            => TranslateCore(filter);
+
+        private static SqlFragment TranslateCore(FilterExpression filter)
         {
             if (filter is BinaryExpression
                 {
@@ -729,5 +744,64 @@ public sealed class OgcFeaturesStringIdentifierEndpointTests
 
         public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
             => Task.FromResult(Array.Empty<Relationship>());
+    }
+
+    private static TestMetadataV2GraphProvider BuildStringIdGraphProvider()
+    {
+        // Mirror the v1 StringIdLayerCatalog content (StringIdLayerId=99 + 100).
+        // Both layers carry a string-typed public id field plus an integer object id
+        // so the V2 OGC API Features routes can resolve string/feature-id lookups.
+        var openAccessPolicy = new Honua.Core.Features.Security.Domain.AccessPolicy
+        {
+            AllowAnonymous = true,
+            AllowAnonymousWrite = true,
+        };
+        MetadataV2Field[] fields =
+        [
+            new()
+            {
+                Name = "id",
+                Type = MetadataV2FieldType.String,
+                Nullable = false,
+                Length = 64,
+                SemanticRoles = new[] { "id.primary" },
+            },
+            new() { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+            new() { Name = "name", Type = MetadataV2FieldType.String, Length = 255 },
+        ];
+
+        return new TestMetadataV2GraphBuilder()
+            .AddService(
+                "svc-string-ids",
+                "string-ids",
+                route: "/ogc/features",
+                protocols: new[] { ServiceProtocols.OgcFeatures },
+                accessPolicy: openAccessPolicy)
+            .AddResource(
+                "res-string-id-layer",
+                "String ID Layer",
+                MetadataV2ResourceType.FeatureDataset,
+                fields: fields,
+                accessPolicy: openAccessPolicy)
+            .AddResource(
+                "res-numeric-name-layer",
+                "123",
+                MetadataV2ResourceType.FeatureDataset,
+                fields: fields,
+                accessPolicy: openAccessPolicy)
+            .AddPublication(
+                id: "pub-string-id-layer",
+                serviceId: "svc-string-ids",
+                resourceId: "res-string-id-layer",
+                layerIndex: StringIdLayerId,
+                path: "String ID Layer",
+                serviceLocalId: StringIdLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture))
+            .AddPublication(
+                id: "pub-numeric-name-layer",
+                serviceId: "svc-string-ids",
+                resourceId: "res-numeric-name-layer",
+                layerIndex: 100,
+                serviceLocalId: "123")
+            .BuildProvider();
     }
 }

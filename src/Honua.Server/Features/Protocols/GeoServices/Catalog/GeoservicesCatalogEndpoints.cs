@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
@@ -68,7 +69,7 @@ internal static class GeoservicesCatalogEndpoints
 
         foreach (var service in snapshot.Graph.Services.OrderBy(static s => s.Metadata.Name, StringComparer.OrdinalIgnoreCase))
         {
-            if (!TryMapServiceType(service.ServiceType, out var directoryType))
+            if (!TryMapServiceType(service.PrimaryProtocol, out var directoryType))
             {
                 continue;
             }
@@ -170,21 +171,21 @@ internal static class GeoservicesCatalogEndpoints
     }
 
     /// <summary>
-    /// Maps an Esri-family V2 service type to the directory-entry "type" string the
-    /// GeoServices REST catalog exposes. Returns false for non-Esri service types
+    /// Maps an Esri-family primary protocol to the directory-entry "type" string the
+    /// GeoServices REST catalog exposes. Returns false for non-Esri protocols
     /// (OGC API Features, STAC, etc.) which are surfaced through other catalogs.
     /// </summary>
-    private static bool TryMapServiceType(MetadataV2ServiceType serviceType, out string directoryType)
+    private static bool TryMapServiceType(string? primaryProtocol, out string directoryType)
     {
-        switch (serviceType)
+        switch (primaryProtocol)
         {
-            case MetadataV2ServiceType.EsriFeatureService:
+            case ServiceProtocols.FeatureServer:
                 directoryType = "FeatureServer";
                 return true;
-            case MetadataV2ServiceType.EsriMapService:
+            case ServiceProtocols.MapServer:
                 directoryType = "MapServer";
                 return true;
-            case MetadataV2ServiceType.EsriImageService:
+            case ServiceProtocols.ImageServer:
                 directoryType = "ImageServer";
                 return true;
             default:

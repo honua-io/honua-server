@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Query;
 
@@ -62,6 +63,30 @@ public interface IQueryProcessor
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Estimated result count</returns>
     Task<long> EstimateResultCountAsync(UnifiedQuery query, LayerDefinition layer, CancellationToken cancellationToken);
+
+    /// <summary>V2 overload of <c>ValidateQuery</c>.</summary>
+    QueryValidationResult ValidateQuery(UnifiedQuery query, MetadataV2Resource resource)
+        => throw new NotSupportedException($"{GetType().Name} does not yet implement the Metadata v2 ValidateQuery overload.");
+
+    /// <summary>V2 overload of <c>OptimizeQuery</c>.</summary>
+    UnifiedQuery OptimizeQuery(UnifiedQuery query, MetadataV2Resource resource)
+        => throw new NotSupportedException($"{GetType().Name} does not yet implement the Metadata v2 OptimizeQuery overload.");
+
+    /// <summary>V2 overload of <c>ToFeatureQuery</c>.</summary>
+    FeatureQuery ToFeatureQuery(UnifiedQuery query, MetadataV2Resource resource)
+        => throw new NotSupportedException($"{GetType().Name} does not yet implement the Metadata v2 ToFeatureQuery overload.");
+
+    /// <summary>V2 overload of <c>BuildCacheKey</c>.</summary>
+    string BuildCacheKey(UnifiedQuery query, MetadataV2Resource resource, string protocol)
+        => throw new NotSupportedException($"{GetType().Name} does not yet implement the Metadata v2 BuildCacheKey overload.");
+
+    /// <summary>V2 overload of <c>ShouldUseStreaming</c>.</summary>
+    bool ShouldUseStreaming(UnifiedQuery query, MetadataV2Resource resource, string outputFormat)
+        => throw new NotSupportedException($"{GetType().Name} does not yet implement the Metadata v2 ShouldUseStreaming overload.");
+
+    /// <summary>V2 overload of <c>EstimateResultCountAsync</c>.</summary>
+    Task<long> EstimateResultCountAsync(UnifiedQuery query, MetadataV2Resource resource, CancellationToken cancellationToken)
+        => throw new NotSupportedException($"{GetType().Name} does not yet implement the Metadata v2 EstimateResultCountAsync overload.");
 }
 
 /// <summary>

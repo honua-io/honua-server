@@ -48,20 +48,10 @@ internal static class TileJsonEndpoints
         [FromServices] IOptions<LimitsOptions> limitsOptions,
         CancellationToken cancellationToken)
     {
-        var backingLayer = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context,
-            layerId,
-            requiredProtocol: ServiceProtocols.FeatureServer,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
-        if (!backingLayer.IsValid)
-        {
-            return backingLayer.ErrorResult!;
-        }
-
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
             context,
             layerId,
-            requiredServiceType: MetadataV2ServiceType.EsriFeatureService,
+            requiredProtocol: ServiceProtocols.FeatureServer,
             cancellationToken: cancellationToken);
         if (!layerValidation.IsValid)
         {
@@ -129,9 +119,9 @@ internal static class TileJsonEndpoints
         }
 
         var bbox = resource.ReadBbox();
-        if (bbox.HasValue && srid == SpatialReference.WGS84.Wkid)
+        if (bbox is not null && srid == SpatialReference.WGS84.Wkid)
         {
-            return FeatureExtent.Create(bbox.Value.West, bbox.Value.South, bbox.Value.East, bbox.Value.North, SpatialReference.WGS84.Wkid);
+            return FeatureExtent.Create(bbox.West, bbox.South, bbox.East, bbox.North, SpatialReference.WGS84.Wkid);
         }
 
         return null;
@@ -170,23 +160,18 @@ internal static class TileJsonEndpoints
         };
     }
 
-    private static string MapFieldTypeName(string typeName)
+    private static string MapFieldTypeName(MetadataV2FieldType typeName)
     {
-        if (string.IsNullOrWhiteSpace(typeName))
+        return typeName switch
         {
-            return "string";
-        }
-        var lower = typeName.ToLowerInvariant();
-        return lower switch
-        {
-            "string" or "text" => "string",
-            "integer" or "int32" or "int" or "int64" or "biginteger" or "long" => "integer",
-            "double" or "float" or "number" or "decimal" or "real" => "number",
-            "boolean" or "bool" => "boolean",
-            "datetime" or "date" or "time" or "timestamp" => "string",
-            "json" or "object" => "object",
-            "binary" or "bytes" => "binary",
-            "uuid" or "guid" => "string",
+            MetadataV2FieldType.String => "string",
+            MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger => "integer",
+            MetadataV2FieldType.Double or MetadataV2FieldType.Float => "number",
+            MetadataV2FieldType.Boolean => "boolean",
+            MetadataV2FieldType.DateTime or MetadataV2FieldType.Date or MetadataV2FieldType.Time => "string",
+            MetadataV2FieldType.Json => "object",
+            MetadataV2FieldType.Binary => "binary",
+            MetadataV2FieldType.Uuid => "string",
             _ => "string",
         };
     }

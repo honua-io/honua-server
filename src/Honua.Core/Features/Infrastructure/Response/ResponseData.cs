@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Infrastructure.Response;
 
@@ -33,9 +33,9 @@ public sealed record ResponseData
     public ResponseError? Error { get; init; }
 
     /// <summary>
-    /// Layer definition for schema information.
+    /// Canonical resource for schema information.
     /// </summary>
-    public LayerDefinition? Layer { get; init; }
+    public MetadataV2Resource? Resource { get; init; }
 
     /// <summary>
     /// Pagination information for large result sets.
@@ -57,7 +57,7 @@ public sealed record ResponseData
     /// </summary>
     public static ResponseData FeatureCollection(
         IEnumerable<ResponseFeature> features,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         ResponseMetadata? metadata = null,
         PaginationInfo? pagination = null,
         IEnumerable<ResponseLink>? links = null,
@@ -65,7 +65,7 @@ public sealed record ResponseData
         {
             Type = ResponseType.FeatureCollection,
             Features = features.ToImmutableArray(),
-            Layer = layer,
+            Resource = resource,
             Metadata = metadata ?? new(),
             Pagination = pagination,
             Links = links?.ToImmutableArray() ?? ImmutableArray<ResponseLink>.Empty,
@@ -77,14 +77,14 @@ public sealed record ResponseData
     /// </summary>
     public static ResponseData SingleFeature(
         ResponseFeature feature,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         ResponseMetadata? metadata = null,
         IEnumerable<ResponseLink>? links = null,
         IReadOnlyDictionary<string, object?>? protocolMetadata = null) => new()
         {
             Type = ResponseType.SingleFeature,
             Features = ImmutableArray.Create(feature),
-            Layer = layer,
+            Resource = resource,
             Metadata = metadata ?? new(),
             Links = links?.ToImmutableArray() ?? ImmutableArray<ResponseLink>.Empty,
             ProtocolMetadata = protocolMetadata

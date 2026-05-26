@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.FeatureStore;
@@ -49,16 +50,29 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
     /// <param name="layer">Layer definition for field validation</param>
     /// <returns>SQL fragment with parameters</returns>
     public SqlFragment Translate(FilterExpression filter, LayerDefinition layer)
+        => TranslateCore(filter, FilterTranslationContext.FromLayer(layer));
+
+    /// <summary>
+    /// Translates a filter expression to SQL using a Metadata v2 resource for
+    /// field validation and spatial-reference resolution.
+    /// </summary>
+    /// <param name="filter">Filter expression to translate.</param>
+    /// <param name="resource">Metadata v2 resource.</param>
+    /// <returns>SQL fragment with parameters.</returns>
+    public SqlFragment Translate(FilterExpression filter, MetadataV2Resource resource)
+        => TranslateCore(filter, FilterTranslationContext.FromResource(resource));
+
+    private SqlFragment TranslateCore(FilterExpression filter, FilterTranslationContext context)
     {
         _paramIndex = 0;
         _depth = 0;
         _parameters.Clear();
 
-        var sql = TranslateExpression(filter, layer);
+        var sql = TranslateExpression(filter, context);
         return new SqlFragment(sql, _parameters);
     }
 
-    private string TranslateExpression(FilterExpression filter, LayerDefinition layer)
+    private string TranslateExpression(FilterExpression filter, FilterTranslationContext context)
     {
         try
         {
@@ -70,18 +84,18 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
 
             return filter switch
             {
-                BinaryExpression bin => TranslateBinary(bin, layer),
-                UnaryExpression un => TranslateUnary(un, layer),
-                PropertyReference prop => TranslateProperty(prop, layer),
+                BinaryExpression bin => TranslateBinary(bin, context),
+                UnaryExpression un => TranslateUnary(un, context),
+                PropertyReference prop => TranslateProperty(prop, context),
                 Literal lit => TranslateLiteral(lit),
-                SpatialPredicate spatial => TranslateSpatial(spatial, layer),
-                SpatialDistancePredicate spatialDistance => TranslateSpatialDistance(spatialDistance, layer),
-                TemporalPredicate temporal => TranslateTemporal(temporal, layer),
-                ArrayPredicate array => TranslateArrayPredicate(array, layer),
-                FunctionCall func => TranslateFunction(func, layer),
+                SpatialPredicate spatial => TranslateSpatial(spatial, context),
+                SpatialDistancePredicate spatialDistance => TranslateSpatialDistance(spatialDistance, context),
+                TemporalPredicate temporal => TranslateTemporal(temporal, context),
+                ArrayPredicate array => TranslateArrayPredicate(array, context),
+                FunctionCall func => TranslateFunction(func, context),
                 IntervalLiteral interval => TranslateIntervalLiteral(interval),
                 ArrayLiteral arrayLiteral => TranslateArrayLiteral(arrayLiteral),
-                ValueList list => TranslateValueList(list, layer),
+                ValueList list => TranslateValueList(list, context),
                 _ => throw new NotSupportedException($"Unknown filter type: {filter.GetType()}")
             };
         }
@@ -91,7 +105,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         }
     }
 
-    private string TranslateBinary(BinaryExpression binary, LayerDefinition layer)
+    private string TranslateBinary(BinaryExpression binary, FilterTranslationContext context)
     {
         if (binary.Right is ValueList valueList && valueList.Values.Count == 0)
         {
@@ -99,17 +113,17 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
             {
                 BinaryOperator.In => "FALSE",
                 BinaryOperator.NotIn => "TRUE",
-                _ => TranslateBinaryWithValues(binary, layer)
+                _ => TranslateBinaryWithValues(binary, context)
             };
         }
 
-        return TranslateBinaryWithValues(binary, layer);
+        return TranslateBinaryWithValues(binary, context);
     }
 
-    private string TranslateBinaryWithValues(BinaryExpression binary, LayerDefinition layer)
+    private string TranslateBinaryWithValues(BinaryExpression binary, FilterTranslationContext context)
     {
-        var left = TranslateExpression(binary.Left, layer);
-        var right = TranslateExpression(binary.Right, layer);
+        var left = TranslateExpression(binary.Left, context);
+        var right = TranslateExpression(binary.Right, context);
 
         var op = binary.Operator switch
         {
@@ -160,9 +174,9 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         return $"{left} {op} {right}";
     }
 
-    private string TranslateUnary(UnaryExpression unary, LayerDefinition layer)
+    private string TranslateUnary(UnaryExpression unary, FilterTranslationContext context)
     {
-        var operand = TranslateExpression(unary.Operand, layer);
+        var operand = TranslateExpression(unary.Operand, context);
 
         return unary.Operator switch
         {
@@ -174,16 +188,16 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         };
     }
 
-    private string TranslateProperty(PropertyReference property, LayerDefinition layer)
+    private string TranslateProperty(PropertyReference property, FilterTranslationContext context)
     {
-        if (_useJsonAttributes && TryMapCoreField(property.PropertyName, layer, out var coreExpression))
+        if (_useJsonAttributes && TryMapCoreField(property.PropertyName, context, out var coreExpression))
         {
             return coreExpression;
         }
 
-        // Validate field exists in layer
-        var field = layer.Fields.FirstOrDefault(f => f.Name.Equals(property.PropertyName, StringComparison.OrdinalIgnoreCase)) ??
-            throw new ArgumentException(ErrorMessages.NotFound.FormatField(property.PropertyName, layer.Name));
+        // Validate field exists in the resource schema
+        var field = context.TryGetField(property.PropertyName) ??
+            throw new ArgumentException(ErrorMessages.NotFound.FormatField(property.PropertyName, context.ResourceName));
 
         if (!_useJsonAttributes)
         {
@@ -194,11 +208,10 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
 
         if (field.IsGeometry)
         {
-            return GetGeometryColumnExpression(layer);
+            return GetGeometryColumnExpression(context);
         }
 
-        if (layer.PrimaryKeyField != null &&
-            field.Name.Equals(layer.PrimaryKeyField.Name, StringComparison.OrdinalIgnoreCase))
+        if (field.IsPrimaryKey)
         {
             return QuoteIdentifier(_primaryKeyColumn);
         }
@@ -224,10 +237,10 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         return paramName;
     }
 
-    private string TranslateSpatial(SpatialPredicate spatial, LayerDefinition layer)
+    private string TranslateSpatial(SpatialPredicate spatial, FilterTranslationContext context)
     {
-        var left = TranslateGeometryExpression(spatial.Left, layer);
-        var right = TranslateGeometryExpression(spatial.Right, layer);
+        var left = TranslateGeometryExpression(spatial.Left, context);
+        var right = TranslateGeometryExpression(spatial.Right, context);
         var function = spatial.Operator switch
         {
             SpatialOperator.Intersects => "ST_Intersects",
@@ -244,16 +257,16 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         return $"{function}({left}, {right})";
     }
 
-    private string TranslateSpatialDistance(SpatialDistancePredicate spatial, LayerDefinition layer)
+    private string TranslateSpatialDistance(SpatialDistancePredicate spatial, FilterTranslationContext context)
     {
-        var useGeography = IsGeographicLayer(layer);
+        var useGeography = IsGeographicContext(context);
         var left = useGeography
-            ? TranslateGeographyExpression(spatial.Left, layer)
-            : TranslateGeometryExpression(spatial.Left, layer);
+            ? TranslateGeographyExpression(spatial.Left, context)
+            : TranslateGeometryExpression(spatial.Left, context);
         var right = useGeography
-            ? TranslateGeographyExpression(spatial.Right, layer)
-            : TranslateGeometryExpression(spatial.Right, layer);
-        var distance = TranslateExpression(spatial.Distance, layer);
+            ? TranslateGeographyExpression(spatial.Right, context)
+            : TranslateGeometryExpression(spatial.Right, context);
+        var distance = TranslateExpression(spatial.Distance, context);
 
         return spatial.Operator switch
         {
@@ -263,14 +276,14 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         };
     }
 
-    private static bool IsGeographicLayer(LayerDefinition layer)
+    private static bool IsGeographicContext(FilterTranslationContext context)
     {
-        if (layer.SpatialReference.IsGeographic)
+        if (context.IsGeographic)
         {
             return true;
         }
 
-        return IsLikelyGeographicSrid(layer.SpatialReference.Wkid);
+        return IsLikelyGeographicSrid(context.Wkid);
     }
 
     private static bool IsLikelyGeographicSrid(int srid)
@@ -279,7 +292,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
            srid == 4267 ||
            srid is >= 4000 and <= 4999;
 
-    private string TranslateGeometryExpression(FilterExpression expression, LayerDefinition layer)
+    private string TranslateGeometryExpression(FilterExpression expression, FilterTranslationContext context)
     {
         switch (expression)
         {
@@ -291,48 +304,48 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
                     _parameters.Add(geometry.Srid);
 
                     var geometryExpression = $"ST_GeomFromWKB({wkbParam}, {sridParam})";
-                    if (geometry.Srid != layer.SpatialReference.Wkid)
+                    if (geometry.Srid != context.Wkid)
                     {
-                        geometryExpression = $"ST_Transform({geometryExpression}, {layer.SpatialReference.Wkid})";
+                        geometryExpression = $"ST_Transform({geometryExpression}, {context.Wkid})";
                     }
 
                     return geometryExpression;
                 }
             case PropertyReference property:
                 {
-                    var field = layer.Fields.FirstOrDefault(f => f.Name.Equals(property.PropertyName, StringComparison.OrdinalIgnoreCase));
-                    if (field == null)
+                    var field = context.TryGetField(property.PropertyName);
+                    if (field is null)
                     {
                         if (IsGeometryAlias(property.PropertyName))
                         {
-                            return GetGeometryColumnExpression(layer);
+                            return GetGeometryColumnExpression(context);
                         }
 
                         throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
                     }
 
-                    if (!field.IsGeometry)
+                    if (!field.Value.IsGeometry)
                     {
                         throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
                     }
 
-                    return GetGeometryColumnExpression(layer);
+                    return GetGeometryColumnExpression(context);
                 }
             case FunctionCall functionCall:
-                return TranslateFunction(functionCall, layer);
+                return TranslateFunction(functionCall, context);
             default:
                 throw new NotSupportedException($"Unsupported geometry expression: {expression.GetType()}");
         }
     }
 
-    private string TranslateTemporal(TemporalPredicate temporal, LayerDefinition layer)
+    private string TranslateTemporal(TemporalPredicate temporal, FilterTranslationContext context)
     {
         if (temporal.Operator == TemporalOperator.Before)
         {
             return TranslateTemporalBoundaryComparison(
                 temporal.Left,
                 temporal.Right,
-                layer,
+                context,
                 TemporalBoundary.End,
                 TemporalBoundary.Start,
                 "<");
@@ -343,7 +356,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
             return TranslateTemporalBoundaryComparison(
                 temporal.Left,
                 temporal.Right,
-                layer,
+                context,
                 TemporalBoundary.Start,
                 TemporalBoundary.End,
                 ">");
@@ -354,7 +367,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
             return TranslateTemporalBoundaryComparison(
                 temporal.Left,
                 temporal.Right,
-                layer,
+                context,
                 TemporalBoundary.End,
                 TemporalBoundary.Start,
                 "=");
@@ -365,14 +378,14 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
             return TranslateTemporalBoundaryComparison(
                 temporal.Left,
                 temporal.Right,
-                layer,
+                context,
                 TemporalBoundary.Start,
                 TemporalBoundary.End,
                 "=");
         }
 
-        var left = TranslateTemporalExpression(temporal.Left, layer);
-        var right = TranslateTemporalExpression(temporal.Right, layer);
+        var left = TranslateTemporalExpression(temporal.Left, context);
+        var right = TranslateTemporalExpression(temporal.Right, context);
 
         EnsureTemporalCompatibility(temporal.Operator, left, right);
 
@@ -409,13 +422,13 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
     private string TranslateTemporalBoundaryComparison(
         FilterExpression leftExpression,
         FilterExpression rightExpression,
-        LayerDefinition layer,
+        FilterTranslationContext context,
         TemporalBoundary leftBoundary,
         TemporalBoundary rightBoundary,
         string sqlOperator)
     {
-        var left = TranslateTemporalBoundary(leftExpression, layer, leftBoundary);
-        var right = TranslateTemporalBoundary(rightExpression, layer, rightBoundary);
+        var left = TranslateTemporalBoundary(leftExpression, context, leftBoundary);
+        var right = TranslateTemporalBoundary(rightExpression, context, rightBoundary);
 
         var leftSql = left.Sql;
         var rightSql = right.Sql;
@@ -428,10 +441,10 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         return $"{leftSql} {sqlOperator} {rightSql}";
     }
 
-    private string TranslateArrayPredicate(ArrayPredicate array, LayerDefinition layer)
+    private string TranslateArrayPredicate(ArrayPredicate array, FilterTranslationContext context)
     {
-        var left = TranslateArrayExpression(array.Left, layer);
-        var right = TranslateArrayExpression(array.Right, layer);
+        var left = TranslateArrayExpression(array.Left, context);
+        var right = TranslateArrayExpression(array.Right, context);
 
         return array.Operator switch
         {
@@ -443,14 +456,14 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         };
     }
 
-    private string TranslateFunction(FunctionCall function, LayerDefinition layer)
+    private string TranslateFunction(FunctionCall function, FilterTranslationContext context)
     {
         if (string.Equals(function.FunctionName, "GEODISTANCE", StringComparison.OrdinalIgnoreCase))
         {
-            return TranslateGeoDistance(function, layer);
+            return TranslateGeoDistance(function, context);
         }
 
-        var args = function.Arguments.Select(arg => TranslateExpression(arg, layer)).ToArray();
+        var args = function.Arguments.Select(arg => TranslateExpression(arg, context)).ToArray();
         var argString = string.Join(", ", args);
 
         return function.FunctionName.ToUpperInvariant() switch
@@ -607,19 +620,19 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         };
     }
 
-    private string TranslateGeoDistance(FunctionCall function, LayerDefinition layer)
+    private string TranslateGeoDistance(FunctionCall function, FilterTranslationContext context)
     {
         if (function.Arguments.Count != 2)
         {
             throw new ArgumentException("GEODISTANCE requires two arguments");
         }
 
-        var left = TranslateGeographyExpression(function.Arguments[0], layer);
-        var right = TranslateGeographyExpression(function.Arguments[1], layer);
+        var left = TranslateGeographyExpression(function.Arguments[0], context);
+        var right = TranslateGeographyExpression(function.Arguments[1], context);
         return $"ST_Distance({left}, {right})";
     }
 
-    private string TranslateGeographyExpression(FilterExpression expression, LayerDefinition layer)
+    private string TranslateGeographyExpression(FilterExpression expression, FilterTranslationContext context)
     {
         switch (expression)
         {
@@ -641,20 +654,20 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
                 }
             case PropertyReference property:
                 {
-                    var field = layer.Fields.FirstOrDefault(f => f.Name.Equals(property.PropertyName, StringComparison.OrdinalIgnoreCase));
-                    if (field == null && !IsGeometryAlias(property.PropertyName))
+                    var field = context.TryGetField(property.PropertyName);
+                    if (field is null && !IsGeometryAlias(property.PropertyName))
                     {
                         throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
                     }
 
-                    if (field != null && !field.IsGeometry)
+                    if (field is not null && !field.Value.IsGeometry)
                     {
                         throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
                     }
 
-                    var geometryExpression = GetGeometryColumnExpression(layer);
+                    var geometryExpression = GetGeometryColumnExpression(context);
                     var wgs84Srid = SpatialReference.WGS84.Wkid;
-                    if (layer.SpatialReference.Wkid != wgs84Srid)
+                    if (context.Wkid != wgs84Srid)
                     {
                         geometryExpression = $"ST_Transform({geometryExpression}, {wgs84Srid})";
                     }
@@ -748,9 +761,9 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         return geometry.OriginalFormat;
     }
 
-    private string TranslateValueList(ValueList valueList, LayerDefinition layer)
+    private string TranslateValueList(ValueList valueList, FilterTranslationContext context)
     {
-        var values = valueList.Values.Select(v => TranslateExpression(v, layer));
+        var values = valueList.Values.Select(v => TranslateExpression(v, context));
         return $"({string.Join(", ", values)})";
     }
 
@@ -766,17 +779,17 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
     private static string CastInteger(string sql)
         => $"({sql})::int";
 
-    private string GetGeometryColumnExpression(LayerDefinition layer)
+    private string GetGeometryColumnExpression(FilterTranslationContext context)
     {
-        var geomColumnName = _useJsonAttributes ? _geometryColumn : layer.GeometryField?.Name ?? _geometryColumn;
+        var geomColumnName = _useJsonAttributes ? _geometryColumn : context.GeometryColumnName ?? _geometryColumn;
         var quoted = QuoteIdentifier(geomColumnName);
         return $"{quoted}::geometry";
     }
 
-    private bool TryMapCoreField(string propertyName, LayerDefinition layer, out string expression)
+    private bool TryMapCoreField(string propertyName, FilterTranslationContext context, out string expression)
     {
         if (propertyName.Equals("id", StringComparison.OrdinalIgnoreCase) &&
-            layer.PrimaryKeyField != null)
+            context.PrimaryKeyName is not null)
         {
             expression = QuoteIdentifier(_primaryKeyColumn);
             return true;
@@ -798,7 +811,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
 
         if (IsGeometryAlias(propertyName))
         {
-            expression = GetGeometryColumnExpression(layer);
+            expression = GetGeometryColumnExpression(context);
             return true;
         }
 
@@ -818,7 +831,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
            propertyName.Equals("shape", StringComparison.OrdinalIgnoreCase) ||
            propertyName.Equals("geometry", StringComparison.OrdinalIgnoreCase);
 
-    private string TranslateArrayExpression(FilterExpression expression, LayerDefinition layer)
+    private string TranslateArrayExpression(FilterExpression expression, FilterTranslationContext context)
     {
         if (expression is ArrayLiteral arrayLiteral)
         {
@@ -827,21 +840,21 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
 
         if (expression is PropertyReference propertyReference)
         {
-            var field = layer.Fields.FirstOrDefault(f => f.Name.Equals(propertyReference.PropertyName, StringComparison.OrdinalIgnoreCase));
-            if (field == null || field.Type != FieldType.Json)
+            var field = context.TryGetField(propertyReference.PropertyName);
+            if (field is null || field.Value.Type != FieldType.Json)
             {
                 throw new ArgumentException($"Array predicates require JSON array fields. '{propertyReference.PropertyName}' is not JSON.");
             }
 
             var attributesColumn = QuoteIdentifier(_attributesColumn);
-            var key = EscapeSqlLiteral(field.Name);
+            var key = EscapeSqlLiteral(field.Value.Name);
             return $"{attributesColumn} -> '{key}'";
         }
 
         throw new NotSupportedException($"Unsupported array expression: {expression.GetType()}");
     }
 
-    private TemporalBounds TranslateTemporalExpression(FilterExpression expression, LayerDefinition layer)
+    private TemporalBounds TranslateTemporalExpression(FilterExpression expression, FilterTranslationContext context)
     {
         switch (expression)
         {
@@ -870,7 +883,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
                 }
             case PropertyReference property:
                 {
-                    var field = layer.Fields.FirstOrDefault(f => f.Name.Equals(property.PropertyName, StringComparison.OrdinalIgnoreCase));
+                    var field = context.TryGetField(property.PropertyName);
                     if (field?.Type == FieldType.Time)
                     {
                         throw new ArgumentException(
@@ -878,12 +891,12 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
                     }
 
                     var kind = field?.Type == FieldType.Date ? TemporalKind.Date : TemporalKind.Timestamp;
-                    var sql = TranslateProperty(property, layer);
+                    var sql = TranslateProperty(property, context);
                     return new TemporalBounds(sql, sql, kind, false, false, false);
                 }
             case FunctionCall functionCall:
                 {
-                    var sql = TranslateFunction(functionCall, layer);
+                    var sql = TranslateFunction(functionCall, context);
                     return new TemporalBounds(sql, sql, TemporalKind.Timestamp, false, false, false);
                 }
             default:
@@ -893,7 +906,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
 
     private TemporalBound TranslateTemporalBoundary(
         FilterExpression expression,
-        LayerDefinition layer,
+        FilterTranslationContext context,
         TemporalBoundary boundary)
     {
         if (expression is IntervalLiteral interval)
@@ -909,7 +922,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
             return new TemporalBound(sql, kind);
         }
 
-        var bounds = TranslateTemporalExpression(expression, layer);
+        var bounds = TranslateTemporalExpression(expression, context);
         return new TemporalBound(
             boundary == TemporalBoundary.Start
                 ? NormalizeTemporalStart(bounds)

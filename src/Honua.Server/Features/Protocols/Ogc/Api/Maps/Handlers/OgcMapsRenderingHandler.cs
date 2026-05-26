@@ -3,11 +3,12 @@
 
 using System.Globalization;
 using System.Text.RegularExpressions;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Licensing;
@@ -54,16 +55,16 @@ internal sealed class OgcMapsRenderingHandler
         "image/tiff"
     ];
 
-    private readonly ILayerCatalog _layerCatalog;
+    private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterMapRenderer _mapRenderer;
     private readonly ILogger<OgcMapsRenderingHandler> _logger;
 
     public OgcMapsRenderingHandler(
-        ILayerCatalog layerCatalog,
+        IMetadataV2GraphProvider graphProvider,
         IRasterMapRenderer mapRenderer,
         ILogger<OgcMapsRenderingHandler> logger)
     {
-        _layerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
+        _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _mapRenderer = mapRenderer ?? throw new ArgumentNullException(nameof(mapRenderer));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -85,23 +86,22 @@ internal sealed class OgcMapsRenderingHandler
 
         try
         {
-            // Validate layer exists
-            var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer == null)
+            var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var (resource, service) = ResolveResourceAndService(snapshot, layerId);
+            if (resource is null)
             {
                 OgcMapsLog.CollectionNotFound(_logger, layerId);
                 return CreateNotFoundResult(context, $"Collection {layerId} not found");
             }
 
-            var service = await ResolvePrimaryServiceAsync(layerId, cancellationToken);
-            if (!IsOgcApiMapsEnabled(layer, service))
+            if (!IsOgcApiMapsEnabled(service))
             {
                 return CreateNotFoundResult(context, $"Collection {layerId} not found");
             }
 
             if (context is not null)
             {
-                var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+                var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
                 if (accessError != null)
                 {
                     return accessError;
@@ -109,7 +109,7 @@ internal sealed class OgcMapsRenderingHandler
             }
 
             // Create map render request
-            var (renderRequest, validationError) = CreateMapRenderRequest(request, layer, context);
+            var (renderRequest, validationError) = CreateMapRenderRequest(request, resource, layerId, context);
             if (renderRequest == null)
             {
                 OgcMapsLog.InvalidMapParameters(_logger, layerId, validationError!);
@@ -174,20 +174,24 @@ internal sealed class OgcMapsRenderingHandler
         var resolvedLayerCount = layerIds.Length;
         try
         {
-            var primaryServices = context is not null
-                ? await GetPrimaryServicesAsync(cancellationToken)
-                : null;
+            var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var requiresAuth = false;
             var hasDeniedEnabledLayer = false;
 
-            // Resolve dataset layers from explicit selection or all accessible layers.
-            var layers = new List<Core.Features.Catalog.Domain.LayerDefinition>();
+            // Resolve dataset entries (storage layer id + V2 resource + service) from explicit
+            // selection or all accessible V2 resources that expose OGC API Maps.
+            var entries = new List<(int LayerId, MetadataV2Resource Resource, MetadataV2Service? Service)>();
             int[] resolvedLayerIds;
 
             if (layerIds.Length == 0)
             {
-                var allLayers = await _layerCatalog.ListLayersAsync(cancellationToken);
-                if (allLayers.Length == 0)
+                var allEntries = new List<(int LayerId, MetadataV2Resource Resource, MetadataV2Service? Service)>();
+                foreach (var (id, resource) in snapshot.Index.ResourcesByStorageLayerId)
+                {
+                    var svc = ResolveOgcApiMapsService(snapshot, resource);
+                    allEntries.Add((id, resource, svc));
+                }
+                if (allEntries.Count == 0)
                 {
                     return CreateNotFoundResult(context, "No collections available for dataset map rendering.");
                 }
@@ -195,10 +199,9 @@ internal sealed class OgcMapsRenderingHandler
                 if (context is not null)
                 {
                     var sawEnabledLayer = false;
-                    foreach (var layer in allLayers)
+                    foreach (var entry in allEntries.OrderBy(e => e.LayerId))
                     {
-                        var service = GetPrimaryService(layer.Id, primaryServices);
-                        if (!IsOgcApiMapsEnabled(layer, service))
+                        if (!IsOgcApiMapsEnabled(entry.Service))
                         {
                             continue;
                         }
@@ -206,13 +209,13 @@ internal sealed class OgcMapsRenderingHandler
                         sawEnabledLayer = true;
                         var decision = AccessPolicyHelpers.EvaluateAccess(
                             context,
-                            layer.Metadata?.AccessPolicy,
-                            service?.Metadata?.AccessPolicy);
+                            entry.Resource.AccessPolicy,
+                            entry.Service?.AccessPolicy);
 
                         if (decision.IsAllowed)
                         {
-                            layers.Add(layer);
-                            if (layers.Count > OgcMapsLimits.MaxCollectionsPerDatasetMapRequest)
+                            entries.Add(entry);
+                            if (entries.Count > OgcMapsLimits.MaxCollectionsPerDatasetMapRequest)
                             {
                                 return CreateBadRequestResult(
                                     context,
@@ -237,7 +240,7 @@ internal sealed class OgcMapsRenderingHandler
                 }
                 else
                 {
-                    if (allLayers.Length > OgcMapsLimits.MaxCollectionsPerDatasetMapRequest)
+                    if (allEntries.Count > OgcMapsLimits.MaxCollectionsPerDatasetMapRequest)
                     {
                         return CreateBadRequestResult(
                             context,
@@ -245,17 +248,16 @@ internal sealed class OgcMapsRenderingHandler
                             "Specify the collections parameter to narrow the request.");
                     }
 
-                    foreach (var layer in allLayers)
+                    foreach (var entry in allEntries.OrderBy(e => e.LayerId))
                     {
-                        var service = GetPrimaryService(layer.Id, primaryServices);
-                        if (IsOgcApiMapsEnabled(layer, service))
+                        if (IsOgcApiMapsEnabled(entry.Service))
                         {
-                            layers.Add(layer);
+                            entries.Add(entry);
                         }
                     }
                 }
 
-                if (layers.Count == 0)
+                if (entries.Count == 0)
                 {
                     if (context is not null)
                     {
@@ -270,46 +272,41 @@ internal sealed class OgcMapsRenderingHandler
                     return CreateNotFoundResult(context, "No collections available for dataset map rendering.");
                 }
 
-                if (layers.Count > OgcMapsLimits.MaxCollectionsPerDatasetMapRequest)
+                if (entries.Count > OgcMapsLimits.MaxCollectionsPerDatasetMapRequest)
                 {
                     return CreateBadRequestResult(
                         context,
                         $"A maximum of {OgcMapsLimits.MaxCollectionsPerDatasetMapRequest} collections can be rendered in a dataset map request.");
                 }
 
-                resolvedLayerIds = new int[layers.Count];
-                for (var i = 0; i < layers.Count; i++)
-                {
-                    resolvedLayerIds[i] = layers[i].Id;
-                }
+                resolvedLayerIds = entries.Select(e => e.LayerId).ToArray();
             }
             else
             {
                 foreach (var layerId in layerIds)
                 {
-                    var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
-                    if (layer == null)
+                    var (resource, service) = ResolveResourceAndService(snapshot, layerId);
+                    if (resource is null)
                     {
                         OgcMapsLog.CollectionNotFound(_logger, layerId);
                         return CreateNotFoundResult(context, $"Collection {layerId} not found");
                     }
 
-                    var service = GetPrimaryService(layerId, primaryServices);
-                    if (!IsOgcApiMapsEnabled(layer, service))
+                    if (!IsOgcApiMapsEnabled(service))
                     {
                         return CreateNotFoundResult(context, $"Collection {layerId} not found");
                     }
 
                     if (context is not null)
                     {
-                        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+                        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
                         if (accessError != null)
                         {
                             return accessError;
                         }
                     }
 
-                    layers.Add(layer);
+                    entries.Add((layerId, resource, service));
                 }
 
                 resolvedLayerIds = layerIds;
@@ -318,14 +315,16 @@ internal sealed class OgcMapsRenderingHandler
             resolvedLayerCount = resolvedLayerIds.Length;
             scope.WithTag("layer_count", resolvedLayerCount);
 
-            var defaultExtentLayer = layers[0];
-            var datasetExtent = BuildDatasetExtent(layers);
-            if (datasetExtent.HasValue)
-            {
-                defaultExtentLayer = defaultExtentLayer with { Extent = datasetExtent.Value };
-            }
+            var defaultExtentResource = entries[0].Resource;
+            var defaultExtentLayerId = entries[0].LayerId;
+            var datasetExtent = BuildDatasetExtent(entries.Select(e => e.Resource));
 
-            var (renderRequest, validationError) = CreateMapRenderRequest(request, defaultExtentLayer, context);
+            var (renderRequest, validationError) = CreateMapRenderRequest(
+                request,
+                defaultExtentResource,
+                defaultExtentLayerId,
+                context,
+                datasetExtentOverride: datasetExtent);
             if (renderRequest == null)
             {
                 OgcMapsLog.InvalidMapParameters(_logger, 0, validationError!);
@@ -365,30 +364,34 @@ internal sealed class OgcMapsRenderingHandler
         }
     }
 
-    private async Task<IReadOnlyDictionary<int, ServiceDefinition>> GetPrimaryServicesAsync(
-        CancellationToken cancellationToken)
+    private static bool IsOgcApiMapsEnabled(MetadataV2Service? service)
+        => ServiceProtocols.IsProtocolEnabled(service, OgcApiMapsProtocol);
+
+    private static (MetadataV2Resource? Resource, MetadataV2Service? Service) ResolveResourceAndService(
+        MetadataV2GraphSnapshot snapshot,
+        int storageLayerId)
     {
-        var services = await _layerCatalog.ListServicesAsync(cancellationToken);
-        return LayerValidationHelpers.BuildPrimaryServiceMap(services, OgcApiMapsProtocol);
+        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(storageLayerId, out var resource))
+        {
+            return (null, null);
+        }
+        return (resource, ResolveOgcApiMapsService(snapshot, resource));
     }
 
-    private async Task<ServiceDefinition?> ResolvePrimaryServiceAsync(int layerId, CancellationToken cancellationToken)
+    private static MetadataV2Service? ResolveOgcApiMapsService(MetadataV2GraphSnapshot snapshot, MetadataV2Resource resource)
     {
-        var primaryServices = await GetPrimaryServicesAsync(cancellationToken);
-        return GetPrimaryService(layerId, primaryServices);
-    }
-
-    private static ServiceDefinition? GetPrimaryService(
-        int layerId,
-        IReadOnlyDictionary<int, ServiceDefinition>? primaryServices)
-        => primaryServices != null && primaryServices.TryGetValue(layerId, out var service)
-            ? service
-            : null;
-
-    private static bool IsOgcApiMapsEnabled(LayerDefinition layer, ServiceDefinition? service)
-    {
-        var metadata = service?.Metadata ?? layer.Metadata;
-        return ServiceProtocols.IsProtocolEnabled(metadata, OgcApiMapsProtocol);
+        foreach (var publication in snapshot.Index.PublicationsByResource[resource.Metadata.Id])
+        {
+            if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var candidate))
+            {
+                continue;
+            }
+            if (ServiceProtocols.IsProtocolEnabled(candidate, OgcApiMapsProtocol))
+            {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     /// <summary>
@@ -410,23 +413,22 @@ internal sealed class OgcMapsRenderingHandler
 
         try
         {
-            // Validate layer exists
-            var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer == null)
+            var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var (resource, service) = ResolveResourceAndService(snapshot, layerId);
+            if (resource is null)
             {
                 OgcMapsLog.CollectionNotFound(_logger, layerId);
                 return CreateNotFoundResult(context, $"Collection {layerId} not found");
             }
 
-            var service = await ResolvePrimaryServiceAsync(layerId, cancellationToken);
-            if (!IsOgcApiMapsEnabled(layer, service))
+            if (!IsOgcApiMapsEnabled(service))
             {
                 return CreateNotFoundResult(context, $"Collection {layerId} not found");
             }
 
             if (context is not null)
             {
-                var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+                var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
                 if (accessError != null)
                 {
                     return accessError;
@@ -434,7 +436,7 @@ internal sealed class OgcMapsRenderingHandler
             }
 
             // Create map render request
-            var (renderRequest, validationError) = CreateMapRenderRequest(request, layer, context);
+            var (renderRequest, validationError) = CreateMapRenderRequest(request, resource, layerId, context);
             if (renderRequest == null)
             {
                 OgcMapsLog.InvalidMapParameters(_logger, layerId, validationError!);
@@ -626,17 +628,20 @@ internal sealed class OgcMapsRenderingHandler
     private static string FormatContentBboxHeader(double[] bbox)
         => FormattableString.Invariant($"{bbox[0]},{bbox[1]},{bbox[2]},{bbox[3]}");
 
-    private static FeatureExtent? BuildDatasetExtent(IReadOnlyList<Core.Features.Catalog.Domain.LayerDefinition> layers)
+    private static FeatureExtent? BuildDatasetExtent(IEnumerable<MetadataV2Resource> resources)
     {
         FeatureExtent? combined = null;
-        foreach (var layer in layers)
+        foreach (var resource in resources)
         {
-            if (!layer.Extent.HasValue)
+            var bbox = resource.ReadBbox();
+            if (bbox is null)
             {
                 continue;
             }
 
-            var extent = layer.Extent.Value;
+            var srid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
+            var extent = FeatureExtent.Create(bbox.West, bbox.South, bbox.East, bbox.North, srid);
+
             if (!combined.HasValue)
             {
                 combined = extent;
@@ -729,8 +734,10 @@ internal sealed class OgcMapsRenderingHandler
 
     private (MapRenderRequest?, string?) CreateMapRenderRequest(
         OgcMapRequest request,
-        Core.Features.Catalog.Domain.LayerDefinition layer,
-        HttpContext? context = null)
+        MetadataV2Resource resource,
+        int layerId,
+        HttpContext? context = null,
+        FeatureExtent? datasetExtentOverride = null)
     {
         try
         {
@@ -792,15 +799,30 @@ internal sealed class OgcMapsRenderingHandler
             }
             else
             {
-                // Use layer extent as default - validate extent exists
-                if (layer.Extent == null)
+                FeatureExtent? defaultExtent = datasetExtentOverride;
+                if (!defaultExtent.HasValue)
+                {
+                    var resourceBbox = resource.ReadBbox();
+                    if (resourceBbox is not null)
+                    {
+                        var srid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
+                        defaultExtent = FeatureExtent.Create(
+                            resourceBbox.West,
+                            resourceBbox.South,
+                            resourceBbox.East,
+                            resourceBbox.North,
+                            srid);
+                    }
+                }
+
+                if (!defaultExtent.HasValue)
                 {
                     return (null, "No bbox provided and the collection has no default extent.");
                 }
-                var extent = layer.Extent.Value;
+                var extent = defaultExtent.Value;
                 bbox = [extent.MinX, extent.MinY, extent.MaxX, extent.MaxY];
                 bboxCrs = extent.SpatialReference;
-                OgcMapsLog.UsingDefaultBounds(_logger, layer.Id, extent.MinX, extent.MinY, extent.MaxX, extent.MaxY);
+                OgcMapsLog.UsingDefaultBounds(_logger, layerId, extent.MinX, extent.MinY, extent.MaxX, extent.MaxY);
             }
 
             // Resolve format from f parameter and/or Accept header

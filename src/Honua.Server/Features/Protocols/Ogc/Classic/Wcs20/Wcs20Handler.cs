@@ -5,8 +5,9 @@ using System.Globalization;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Security.Domain;
@@ -68,16 +69,16 @@ internal sealed class Wcs20Handler
         "TIME",
     };
 
-    private readonly ILayerCatalog _layerCatalog;
+    private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
     private readonly ILogger<Wcs20Handler> _logger;
 
     public Wcs20Handler(
-        ILayerCatalog layerCatalog,
+        IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
         ILogger<Wcs20Handler> logger)
     {
-        _layerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
+        _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -330,12 +331,12 @@ internal sealed class Wcs20Handler
         }
 
         telemetry
-            .WithTag(HonuaTelemetry.Tags.LayerId, coverage.Coverage.Value.Layer.Id)
+            .WithTag(HonuaTelemetry.Tags.LayerId, coverage.Coverage.Value.LayerId)
             .WithTag("honua.coverage.id", coverageId.Raw)
             .WithTag("honua.output.format", formatContentType);
 
         var result = await _rasterStore.ExportImageAsync(
-            coverage.Coverage.Value.Layer.Id,
+            coverage.Coverage.Value.LayerId,
             coverage.Coverage.Value.Raster.Id,
             query,
             cancellationToken).ConfigureAwait(false);
@@ -359,9 +360,16 @@ internal sealed class Wcs20Handler
         Wcs20RouteScope scope,
         CancellationToken cancellationToken)
     {
+        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+
         if (scope.IsLayerScoped)
         {
-            var coverage = await ResolveLayerScopedCoverageAsync(context, scope.LayerId!.Value, failOnAccessDenied: true, cancellationToken)
+            var coverage = await ResolveLayerScopedCoverageAsync(
+                    context,
+                    snapshot,
+                    scope.LayerId!.Value,
+                    failOnAccessDenied: true,
+                    cancellationToken)
                 .ConfigureAwait(false);
             if (coverage.Error is not null)
             {
@@ -378,28 +386,55 @@ internal sealed class Wcs20Handler
                 : new CoverageListResult([coverage.Coverage.Value], null);
         }
 
-        var service = await ResolveServiceAsync(context, scope, cancellationToken).ConfigureAwait(false);
+        var service = ResolveService(context, snapshot, scope);
         if (service.Error is not null)
         {
             return new CoverageListResult([], service.Error);
         }
 
         var coverages = new List<WcsCoverage>();
-        foreach (var layer in service.Service!.Layers.OrderBy(static layer => layer.Id))
+        // Walk publications on the WCS-enabled service, dedupe by resource (prefer
+        // IsPrimary) so a resource exposed through multiple publications is listed once,
+        // then keep only those backed by a raster the IRasterStore can serve.
+        var byResource = new Dictionary<string, (MetadataV2Publication Publication, MetadataV2Resource Resource, int StorageLayerId)>(StringComparer.Ordinal);
+        foreach (var publication in snapshot.Index.PublicationsByService[service.Service!.Metadata.Id])
         {
-            if (!IsLayerWcsEnabled(layer) ||
-                !AccessPolicyHelpers.IsLayerAccessible(context, layer, service.Service))
+            var resource = snapshot.ResolveResource(publication);
+            if (resource is null)
             {
                 continue;
             }
 
-            var raster = await GetPrimaryRasterWithExtentAsync(layer.Id, cancellationToken).ConfigureAwait(false);
+            if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, service.Service))
+            {
+                continue;
+            }
+
+            // Prefer publication.LayerIndex (the protocol-facing handle) and fall
+            // back to the storage binding's StorageLayerId; matches the canonical
+            // V2 resolution order used by the FeatureServer ports.
+            var storageLayerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication);
+            if (!storageLayerId.HasValue)
+            {
+                continue;
+            }
+
+            if (!byResource.TryGetValue(resource.Metadata.Id, out var existing) ||
+                (publication.IsPrimary && !existing.Publication.IsPrimary))
+            {
+                byResource[resource.Metadata.Id] = (publication, resource, storageLayerId.Value);
+            }
+        }
+
+        foreach (var entry in byResource.Values.OrderBy(t => t.StorageLayerId))
+        {
+            var raster = await GetPrimaryRasterWithExtentAsync(entry.StorageLayerId, cancellationToken).ConfigureAwait(false);
             if (raster is null)
             {
                 continue;
             }
 
-            coverages.Add(new WcsCoverage(layer, raster.Value, service.Service));
+            coverages.Add(new WcsCoverage(entry.Resource, entry.StorageLayerId, raster.Value, service.Service));
         }
 
         return new CoverageListResult(coverages, null);
@@ -416,6 +451,7 @@ internal sealed class Wcs20Handler
             return new CoverageResolutionResult(null, null);
         }
 
+        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var layerId = coverageId.LayerId.Value;
         if (scope.IsLayerScoped)
         {
@@ -424,12 +460,17 @@ internal sealed class Wcs20Handler
                 return new CoverageResolutionResult(null, null);
             }
 
-            var result = await ResolveLayerScopedCoverageAsync(context, layerId, failOnAccessDenied: false, cancellationToken)
+            var result = await ResolveLayerScopedCoverageAsync(
+                    context,
+                    snapshot,
+                    layerId,
+                    failOnAccessDenied: false,
+                    cancellationToken)
                 .ConfigureAwait(false);
             return new CoverageResolutionResult(result.Coverage, result.Error);
         }
 
-        var service = await ResolveServiceAsync(context, scope, cancellationToken).ConfigureAwait(false);
+        var service = ResolveService(context, snapshot, scope);
         if (service.Error is not null)
         {
             return new CoverageResolutionResult(null, service.Error);
@@ -440,33 +481,49 @@ internal sealed class Wcs20Handler
             return new CoverageResolutionResult(null, null);
         }
 
-        var layer = service.Service.GetLayer(layerId);
-        if (layer is null ||
-            !IsLayerWcsEnabled(layer) ||
-            !AccessPolicyHelpers.IsLayerAccessible(context, layer, service.Service))
+        var publication = snapshot.FindPublicationByLayerIndex(service.Service.Metadata.Id, layerId);
+        if (publication is null)
         {
             return new CoverageResolutionResult(null, null);
         }
 
-        var raster = await GetPrimaryRasterWithExtentAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var resource = snapshot.ResolveResource(publication);
+        if (resource is null ||
+            !AccessPolicyHelpers.IsResourceAccessible(context, resource, service.Service))
+        {
+            return new CoverageResolutionResult(null, null);
+        }
+
+        var storageLayerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication);
+        if (!storageLayerId.HasValue)
+        {
+            return new CoverageResolutionResult(null, null);
+        }
+
+        var raster = await GetPrimaryRasterWithExtentAsync(storageLayerId.Value, cancellationToken).ConfigureAwait(false);
         return raster is null
             ? new CoverageResolutionResult(null, null)
-            : new CoverageResolutionResult(new WcsCoverage(layer, raster.Value, service.Service), null);
+            : new CoverageResolutionResult(new WcsCoverage(resource, storageLayerId.Value, raster.Value, service.Service), null);
     }
 
     private async Task<LayerCoverageResult> ResolveLayerScopedCoverageAsync(
         HttpContext context,
+        MetadataV2GraphSnapshot snapshot,
         int layerId,
         bool failOnAccessDenied,
         CancellationToken cancellationToken)
     {
-        var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        if (layer is null || !IsLayerWcsEnabled(layer))
+        // Layer-scoped /rest/services/{id:int}/ImageServer/WCS routes don't carry a
+        // logical V2 service — they're keyed by the int storage layer handle. Resolve
+        // the resource directly from the storage-layer index, with a fallback to
+        // publication.LayerIndex for fixtures/graphs that haven't migrated their
+        // storage bindings (matches the resolution order used elsewhere in the V2 ports).
+        if (!TryResolveResourceForLayer(snapshot, layerId, out var resource))
         {
             return new LayerCoverageResult(null, null);
         }
 
-        var accessDecision = AccessPolicyHelpers.EvaluateAccess(context, layer.Metadata?.AccessPolicy, servicePolicy: null);
+        var accessDecision = AccessPolicyHelpers.EvaluateAccess(context, resource.AccessPolicy, servicePolicy: null);
         if (!accessDecision.IsAllowed)
         {
             return failOnAccessDenied
@@ -477,13 +534,38 @@ internal sealed class Wcs20Handler
         var raster = await GetPrimaryRasterWithExtentAsync(layerId, cancellationToken).ConfigureAwait(false);
         return raster is null
             ? new LayerCoverageResult(null, null)
-            : new LayerCoverageResult(new WcsCoverage(layer, raster.Value, null), null);
+            : new LayerCoverageResult(new WcsCoverage(resource, layerId, raster.Value, null), null);
     }
 
-    private async Task<ServiceResolutionResult> ResolveServiceAsync(
+    private static bool TryResolveResourceForLayer(MetadataV2GraphSnapshot snapshot, int layerId, out MetadataV2Resource resource)
+    {
+        if (snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var byBinding))
+        {
+            resource = byBinding;
+            return true;
+        }
+
+        foreach (var publication in snapshot.Graph.Publications)
+        {
+            if (publication.LayerIndex == layerId)
+            {
+                var resolved = snapshot.ResolveResource(publication);
+                if (resolved is not null)
+                {
+                    resource = resolved;
+                    return true;
+                }
+            }
+        }
+
+        resource = default!;
+        return false;
+    }
+
+    private static ServiceResolutionResult ResolveService(
         HttpContext context,
-        Wcs20RouteScope scope,
-        CancellationToken cancellationToken)
+        MetadataV2GraphSnapshot snapshot,
+        Wcs20RouteScope scope)
     {
         var serviceId = scope.ServiceId;
         if (string.IsNullOrWhiteSpace(serviceId))
@@ -495,7 +577,13 @@ internal sealed class Wcs20Handler
                     "Service was not found."));
         }
 
-        var service = await _layerCatalog.GetServiceAsync(serviceId, cancellationToken).ConfigureAwait(false);
+        // Resolve by id first (canonical), then by display name to cover the
+        // ServiceId-as-name routing used by /ogc/services/{serviceId}/...
+        if (!snapshot.Index.ServicesById.TryGetValue(serviceId, out var service))
+        {
+            service = snapshot.FindService(serviceId);
+        }
+
         if (service is null)
         {
             return new ServiceResolutionResult(
@@ -505,7 +593,7 @@ internal sealed class Wcs20Handler
                     $"Service '{serviceId}' was not found."));
         }
 
-        if (!ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.Wcs))
+        if (!ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.Wcs))
         {
             return new ServiceResolutionResult(
                 null,
@@ -514,7 +602,7 @@ internal sealed class Wcs20Handler
                     "WCS is not enabled for this service."));
         }
 
-        var serviceAccess = AccessPolicyHelpers.EvaluateAccess(context, null, service.Metadata?.AccessPolicy);
+        var serviceAccess = AccessPolicyHelpers.EvaluateAccess(context, layerPolicy: null, service.AccessPolicy);
         if (!serviceAccess.IsAllowed)
         {
             return new ServiceResolutionResult(null, CreateAccessDeniedResult(serviceAccess));
@@ -603,9 +691,6 @@ internal sealed class Wcs20Handler
         => decision.RequiresAuthentication
             ? Wcs20ErrorResults.CreateUnauthorized(AccessPolicyHelpers.AuthRequiredMessage)
             : Wcs20ErrorResults.CreateForbidden(AccessPolicyHelpers.AccessForbiddenMessage);
-
-    private static bool IsLayerWcsEnabled(LayerDefinition layer)
-        => ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.Wcs);
 
     private static XDocument BuildCapabilitiesDocument(
         HttpContext context,
@@ -708,46 +793,29 @@ internal sealed class Wcs20Handler
             new XAttribute("name", name),
             new XElement(Ows + "AnyValue"));
 
-    private static int? ResolveCoverageDescriptionSrid(WcsCoverage coverage)
-    {
-        if (coverage.Raster.Srid is { } rasterSrid && rasterSrid > 0)
-        {
-            return rasterSrid;
-        }
-
-        if (coverage.Raster.Extent is { } extent &&
-            extent.Srid is { } extentSrid &&
-            extentSrid > 0)
-        {
-            return extentSrid;
-        }
-
-        return coverage.Layer.SpatialReference.Wkid > 0
-            ? coverage.Layer.SpatialReference.Wkid
-            : null;
-    }
-
     private static XElement BuildCoverageSummary(WcsCoverage coverage)
     {
+        var title = coverage.Resource.Metadata.Title ?? coverage.Resource.Metadata.Name;
         var children = new List<object>
         {
-            new XElement(Ows + "Title", coverage.Layer.Name)
+            new XElement(Ows + "Title", title)
         };
 
-        if (!string.IsNullOrWhiteSpace(coverage.Layer.Description))
+        if (!string.IsNullOrWhiteSpace(coverage.Resource.Metadata.Description))
         {
-            children.Add(new XElement(Ows + "Abstract", coverage.Layer.Description));
+            children.Add(new XElement(Ows + "Abstract", coverage.Resource.Metadata.Description));
         }
 
+        var resourceSrid = coverage.Resource.ReadSrid();
         if (TryResolveExtent(coverage.Raster, out var extent) &&
-            (extent.Srid ?? coverage.Raster.Srid ?? coverage.Layer.SpatialReference.Wkid) == 4326)
+            (extent.Srid ?? coverage.Raster.Srid ?? resourceSrid) == 4326)
         {
             children.Add(new XElement(Ows + "WGS84BoundingBox",
                 new XElement(Ows + "LowerCorner", FormatPosition(extent.XMin, extent.YMin)),
                 new XElement(Ows + "UpperCorner", FormatPosition(extent.XMax, extent.YMax))));
         }
 
-        children.Add(new XElement(Wcs + "CoverageId", FormatCoverageId(coverage.Layer.Id)));
+        children.Add(new XElement(Wcs + "CoverageId", FormatCoverageId(coverage.LayerId)));
         children.Add(new XElement(Wcs + "CoverageSubtype", "gmlcov:RectifiedGridCoverage"));
 
         return new XElement(Wcs + "CoverageSummary", children);
@@ -767,7 +835,7 @@ internal sealed class Wcs20Handler
             return false;
         }
 
-        var srid = coverage.Raster.Srid ?? extent.Srid ?? coverage.Layer.SpatialReference.Wkid;
+        var srid = coverage.Raster.Srid ?? extent.Srid ?? coverage.Resource.ReadSrid() ?? 0;
         if (srid <= 0)
         {
             error = "Coverage CRS is not available.";
@@ -780,7 +848,7 @@ internal sealed class Wcs20Handler
             return false;
         }
 
-        var coverageId = FormatCoverageId(coverage.Layer.Id);
+        var coverageId = FormatCoverageId(coverage.LayerId);
         var srsName = CreateEpsgUri(srid);
         description = new XElement(Wcs + "CoverageDescription",
             new XAttribute(Gml + "id", coverageId),
@@ -1572,9 +1640,9 @@ internal sealed class Wcs20Handler
 
     private readonly record struct LayerCoverageResult(WcsCoverage? Coverage, IResult? Error);
 
-    private readonly record struct ServiceResolutionResult(ServiceDefinition? Service, IResult? Error);
+    private readonly record struct ServiceResolutionResult(MetadataV2Service? Service, IResult? Error);
 
-    private readonly record struct WcsCoverage(LayerDefinition Layer, RasterInfo Raster, ServiceDefinition? Service);
+    private readonly record struct WcsCoverage(MetadataV2Resource Resource, int LayerId, RasterInfo Raster, MetadataV2Service? Service);
 
     private readonly record struct WcsCoverageIdentifier(string Raw, int? LayerId);
 

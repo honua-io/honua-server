@@ -75,6 +75,42 @@ public static class MetadataV2GraphSnapshotExtensions
     }
 
     /// <summary>
+    /// Resolves the integer storage-layer handle for a publication's backing binding.
+    /// This is the value that <c>IFeatureReader</c>, <c>ILayerStyleCatalog</c>,
+    /// and <c>OutputCacheInvalidationService</c> expect as their "layer id" argument.
+    /// Distinct from <see cref="MetadataV2Publication.LayerIndex"/> (the service-local
+    /// /protocol-facing index). Returns <c>null</c> when the resource type does not
+    /// require an integer storage handle (documents, external resources, …) or the
+    /// graph is misconfigured.
+    /// </summary>
+    public static int? ResolveStorageLayerId(
+        this MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication publication)
+    {
+        var binding = snapshot.ResolveStorageBinding(publication);
+        return binding?.StorageLayerId;
+    }
+
+    /// <summary>
+    /// Resolves the integer storage-layer handle for a resource via its primary
+    /// storage binding. Use when you have a resource but not a specific publication.
+    /// </summary>
+    public static int? ResolveStorageLayerId(
+        this MetadataV2GraphSnapshot snapshot,
+        MetadataV2Resource resource)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(resource);
+        if (!string.IsNullOrEmpty(resource.PrimaryStorageBindingId)
+            && snapshot.Index.StorageBindingsById.TryGetValue(resource.PrimaryStorageBindingId, out var primary))
+        {
+            return primary.StorageLayerId;
+        }
+        var any = snapshot.Index.StorageBindingsByResource[resource.Metadata.Id].FirstOrDefault();
+        return any?.StorageLayerId;
+    }
+
+    /// <summary>
     /// Returns the connection backing a storage binding, if any.
     /// </summary>
     public static MetadataV2Connection? ResolveConnection(

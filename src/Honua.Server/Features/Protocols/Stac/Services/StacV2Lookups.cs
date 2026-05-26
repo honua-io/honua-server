@@ -37,8 +37,8 @@ internal static class StacV2Lookups
 
     /// <summary>
     /// Enumerates the STAC publications visible to the caller. A publication is visible
-    /// when it lives on a service of type <see cref="MetadataV2ServiceType.StacApi"/> and
-    /// the access policy on the resource (and the service it is published through)
+    /// when it lives on a service exposing the <see cref="ServiceProtocols.Stac"/> protocol
+    /// and the access policy on the resource (and the service it is published through)
     /// allows the current principal to read it.
     /// </summary>
     public static async Task<ResolvedStacPublication[]> ResolveVisibleStacPublicationsAsync(
@@ -50,7 +50,7 @@ internal static class StacV2Lookups
         var snapshot = await GetSnapshotAsync(context, cancellationToken).ConfigureAwait(false);
 
         var stacServiceIds = snapshot.Graph.Services
-            .Where(IsStacServiceEnabled)
+            .Where(s => ServiceProtocols.IsProtocolEnabled(s, ServiceProtocols.Stac))
             .Select(s => s.Metadata.Id)
             .ToHashSet(StringComparer.Ordinal);
 
@@ -134,7 +134,7 @@ internal static class StacV2Lookups
             {
                 continue;
             }
-            if (!IsStacServiceEnabled(service))
+            if (!ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.Stac))
             {
                 continue;
             }
@@ -168,10 +168,6 @@ internal static class StacV2Lookups
 
         return numericId.HasValue && publication.LayerIndex == numericId.Value;
     }
-
-    private static bool IsStacServiceEnabled(MetadataV2Service service)
-        => service.ServiceType == MetadataV2ServiceType.StacApi &&
-           ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.Stac);
 
     private static async Task<MetadataV2GraphSnapshot> GetSnapshotAsync(
         HttpContext context,

@@ -1,9 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text.Json;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Domain;
 
 namespace Honua.TestKit.Infrastructure;
 
@@ -90,18 +90,14 @@ public sealed class TestMetadataV2GraphBuilder
         string name,
         MetadataV2ResourceType type = MetadataV2ResourceType.FeatureDataset,
         IEnumerable<MetadataV2Field>? fields = null,
-        JsonElement? spatial = null,
-        JsonElement? temporal = null,
-        IReadOnlyDictionary<string, JsonElement>? extensions = null)
+        AccessPolicy? accessPolicy = null)
     {
         _resources.Add(new MetadataV2Resource
         {
             Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
             Type = type,
             SchemaFields = fields?.ToArray() ?? Array.Empty<MetadataV2Field>(),
-            Spatial = spatial,
-            Temporal = temporal,
-            Extensions = extensions ?? new Dictionary<string, JsonElement>(),
+            AccessPolicy = accessPolicy,
         });
         return this;
     }
@@ -111,7 +107,8 @@ public sealed class TestMetadataV2GraphBuilder
         string resourceId,
         string locator,
         string? connectionId = null,
-        MetadataV2StorageType storageType = MetadataV2StorageType.RelationalTable)
+        MetadataV2StorageType storageType = MetadataV2StorageType.RelationalTable,
+        int? storageLayerId = null)
     {
         _bindings.Add(new MetadataV2StorageBinding
         {
@@ -120,6 +117,7 @@ public sealed class TestMetadataV2GraphBuilder
             ConnectionId = connectionId,
             StorageType = storageType,
             Locator = locator,
+            StorageLayerId = storageLayerId,
         });
 
         // Attach to the resource's binding list so the graph is internally consistent.
@@ -129,8 +127,8 @@ public sealed class TestMetadataV2GraphBuilder
             var existing = _resources[resourceIndex];
             var updated = existing with
             {
+                // StorageBindingIds[0] is primary by convention (design slice 56/N).
                 StorageBindingIds = existing.StorageBindingIds.Append(id).Distinct(StringComparer.Ordinal).ToArray(),
-                PrimaryStorageBindingId = existing.PrimaryStorageBindingId ?? id,
             };
             _resources[resourceIndex] = updated;
         }
@@ -140,16 +138,16 @@ public sealed class TestMetadataV2GraphBuilder
     public TestMetadataV2GraphBuilder AddService(
         string id,
         string name,
-        MetadataV2ServiceType serviceType = MetadataV2ServiceType.OgcApiFeatures,
         string? route = null,
-        IReadOnlyList<string>? enabledProtocols = null)
+        IReadOnlyList<string>? protocols = null,
+        AccessPolicy? accessPolicy = null)
     {
         _services.Add(new MetadataV2Service
         {
             Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
-            ServiceType = serviceType,
             Route = route,
-            EnabledProtocols = enabledProtocols,
+            Protocols = protocols ?? Array.Empty<string>(),
+            AccessPolicy = accessPolicy,
         });
         return this;
     }
@@ -164,29 +162,41 @@ public sealed class TestMetadataV2GraphBuilder
         string? serviceLocalId = null,
         MetadataV2PublicationType publicationType = MetadataV2PublicationType.OgcCollection)
     {
+        // The three legacy publication-identification slots collapsed onto one
+        // typed MetadataV2PublicationIdentifier in design slice 61/N. Builder
+        // resolution: layerIndex (numeric) > serviceLocalId (name-based) > "".
+        // path is now passed through Identifier.PathOverride.
+        string idValue;
+        bool isNumeric;
+        if (layerIndex is int idx)
+        {
+            idValue = idx.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            isNumeric = true;
+        }
+        else
+        {
+            idValue = serviceLocalId ?? string.Empty;
+            isNumeric = false;
+        }
+
         _publications.Add(new MetadataV2Publication
         {
             Metadata = new MetadataV2ObjectMetadata { Id = id, Name = serviceLocalId ?? id },
             ServiceId = serviceId,
             ResourceId = resourceId,
             StorageBindingId = storageBindingId,
-            Path = path,
-            LayerIndex = layerIndex,
-            ServiceLocalId = serviceLocalId,
+            Identifier = new MetadataV2PublicationIdentifier
+            {
+                Value = idValue,
+                IsNumeric = isNumeric,
+                PathOverride = path,
+            },
             PublicationType = publicationType,
         });
 
-        // Attach to the service's publication list.
-        var serviceIndex = _services.FindIndex(s => s.Metadata.Id == serviceId);
-        if (serviceIndex >= 0)
-        {
-            var existing = _services[serviceIndex];
-            var updated = existing with
-            {
-                PublicationIds = existing.PublicationIds.Append(id).Distinct(StringComparer.Ordinal).ToArray(),
-            };
-            _services[serviceIndex] = updated;
-        }
+        // Service→publication membership is derived from publication.ServiceId
+        // (the redundant Service.PublicationIds slot was removed in design slice 55/N),
+        // so no service-side update is needed.
         return this;
     }
 

@@ -4,11 +4,12 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Protocols.OData.Models;
@@ -787,27 +788,41 @@ internal sealed class ODataCrudHandler(
         HttpContext context,
         CancellationToken cancellationToken)
     {
-        var layerCatalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
-        var services = await layerCatalog.ListServicesAsync(cancellationToken);
-        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMap(services, ServiceProtocols.OData);
+        // V2 path: walk the metadata-v2 graph snapshot, pick the OData-enabled
+        // publications via the BuildPrimaryServiceMapV2 tie-break, and run the V2
+        // resource-data-editor RBAC check. Mirrors the v1 RequireLayerDataEditorAsync
+        // walk but stays entirely on MetadataV2Resource / MetadataV2Service.
+        var provider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMapV2(snapshot, ServiceProtocols.OData);
         IResult? firstError = null;
 
-        foreach (var layer in services
-                     .SelectMany(static service => service.Layers)
-                     .DistinctBy(static layer => layer.Id)
-                     .OrderBy(static layer => layer.Id))
+        // Iterate publications in a deterministic order (LayerIndex asc) so the
+        // first encountered authorized publication wins, matching the v1 walk.
+        var publications = snapshot.Graph.Publications
+            .Where(static p => p.LayerIndex.HasValue)
+            .OrderBy(static p => p.LayerIndex!.Value)
+            .ToArray();
+
+        foreach (var publication in publications)
         {
-            if (!primaryServices.TryGetValue(layer.Id, out var service) ||
-                !ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.OData))
+            if (!primaryServices.TryGetValue(publication.LayerIndex!.Value, out var service) ||
+                !ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.OData))
             {
                 continue;
             }
 
-            var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
+            var resource = snapshot.ResolveResource(publication);
+            if (resource is null)
+            {
+                continue;
+            }
+
+            var rbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
                 context,
-                layer,
+                resource,
                 service,
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
             if (rbacError == null)
             {
                 return null;

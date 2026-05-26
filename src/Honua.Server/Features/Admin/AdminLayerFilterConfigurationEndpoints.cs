@@ -1,8 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
@@ -50,12 +51,12 @@ internal static class AdminLayerFilterConfigurationEndpoints
         CancellationToken cancellationToken)
     {
         var layerResult = await ValidateLayerAsync(layerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
-        if (layerResult.Problem != null || layerResult.Layer == null)
+        if (layerResult.Problem != null || layerResult.Resource == null)
         {
             return layerResult.Problem!;
         }
 
-        var response = BuildResponse(layerResult.Layer);
+        var response = BuildResponse(layerId, layerResult.Resource.PermanentFilter);
         return Results.Json(
             ApiResponse<LayerFilterConfigurationResponse>.CreateSuccess(response),
             LayerFieldConfigurationJsonContext.Default.ApiResponseLayerFilterConfigurationResponse);
@@ -66,19 +67,19 @@ internal static class AdminLayerFilterConfigurationEndpoints
         LayerFilterConfigurationUpdateRequest request,
         HttpContext context,
         [FromServices] IResourceValidator resourceValidator,
-        [FromServices] ILayerMetadataUpdater layerMetadataUpdater,
+        [FromServices] IMetadataV2GraphStore graphStore,
         [FromServices] IFilterExpressionService filterExpressionService,
         [FromServices] OutputCacheInvalidationService cacheInvalidator,
         CancellationToken cancellationToken)
     {
         var layerResult = await ValidateLayerAsync(layerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
-        if (layerResult.Problem != null || layerResult.Layer == null)
+        if (layerResult.Problem != null || layerResult.Resource == null)
         {
             return layerResult.Problem!;
         }
 
         var validationResult = ValidateAndBuildPermanentFilter(
-            layerResult.Layer,
+            layerResult.Resource,
             request.PermanentFilter,
             filterExpressionService);
         if (validationResult.Error != null)
@@ -90,22 +91,74 @@ internal static class AdminLayerFilterConfigurationEndpoints
                 validationResult.Error);
         }
 
-        var metadata = (layerResult.Layer.Metadata ?? new CatalogMetadata()) with
-        {
-            PermanentFilter = validationResult.Filter
-        };
-
-        await layerMetadataUpdater.UpdateLayerMetadataAsync(layerId, metadata, cancellationToken).ConfigureAwait(false);
+        await WriteResourcePermanentFilterAsync(
+            graphStore,
+            layerId,
+            validationResult.Filter,
+            cancellationToken).ConfigureAwait(false);
         await cacheInvalidator.InvalidateServiceCatalogAsync(null, [layerId], cancellationToken).ConfigureAwait(false);
 
-        var response = BuildResponse(layerResult.Layer with { Metadata = metadata });
+        var response = BuildResponse(layerId, validationResult.Filter);
         return Results.Json(
             ApiResponse<LayerFilterConfigurationResponse>.CreateSuccess(response),
             LayerFieldConfigurationJsonContext.Default.ApiResponseLayerFilterConfigurationResponse);
     }
 
+    /// <summary>
+    /// Writes the per-layer permanent filter onto every V2 resource that this layer id
+    /// publishes through. Slice 51/N moved <c>LayerMetadata.PermanentFilter</c> to
+    /// <see cref="MetadataV2Resource.PermanentFilter"/>; this endpoint is the migrated
+    /// admin write-path. Passing <c>null</c> clears the filter.
+    /// </summary>
+    private static async Task WriteResourcePermanentFilterAsync(
+        IMetadataV2GraphStore graphStore,
+        int layerId,
+        LayerPermanentFilter? filter,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+
+        // Resolve every resource id that this layer id publishes through. The admin
+        // permanent-filter endpoint is service-agnostic (it operates on layer ids only),
+        // so we walk all publications whose numeric identifier equals layerId and apply
+        // the change to each unique backing resource.
+        var targetResourceIds = snapshot.Graph.Publications
+            .Where(p => p.Identifier.IsNumeric && p.LayerIndex == layerId)
+            .Select(p => p.ResourceId)
+            .ToHashSet(StringComparer.Ordinal);
+
+        if (targetResourceIds.Count == 0)
+        {
+            return;
+        }
+
+        var v2Filter = filter is null
+            ? null
+            : new MetadataV2PermanentFilter
+            {
+                Expression = filter.Expression,
+                Language = filter.Language,
+            };
+
+        var resources = snapshot.Graph.Resources.ToArray();
+        for (var i = 0; i < resources.Length; i++)
+        {
+            if (targetResourceIds.Contains(resources[i].Metadata.Id))
+            {
+                resources[i] = resources[i] with { PermanentFilter = v2Filter };
+            }
+        }
+
+        var updated = snapshot.Graph with
+        {
+            Resources = resources,
+            Revision = snapshot.Graph.Revision + 1,
+        };
+        _ = await graphStore.SaveAsync(updated, snapshot.Etag, cancellationToken).ConfigureAwait(false);
+    }
+
     private static (LayerPermanentFilter? Filter, string? Error) ValidateAndBuildPermanentFilter(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         LayerPermanentFilterConfiguration? configuration,
         IFilterExpressionService filterExpressionService)
     {
@@ -130,7 +183,17 @@ internal static class AdminLayerFilterConfigurationEndpoints
             return (null, $"Unsupported permanent filter language '{configuration.Language}'. Supported values are arcgis-sql, cql2-text, and cql2-json.");
         }
 
-        var translationResult = filterExpressionService.Translate(filterLanguage, expression, layer);
+        // V2 cutover: validate the candidate filter against the resource's V2 schema fields
+        // via ParseAndNormalize + Translate(expression, resource). The v1 path used the
+        // LayerDefinition-typed overload; the V2 overload resolves field types from
+        // MetadataV2Resource.SchemaFields, which is the canonical post-cutover schema source.
+        var parseResult = filterExpressionService.ParseAndNormalize(filterLanguage, expression, resource);
+        if (!parseResult.IsSuccess)
+        {
+            return (null, $"Permanent filter is invalid: {parseResult.ErrorMessage ?? "Invalid filter."}");
+        }
+
+        var translationResult = filterExpressionService.Translate(parseResult.Expression, resource);
         if (!translationResult.IsSuccess)
         {
             return (null, $"Permanent filter is invalid: {translationResult.ErrorMessage ?? "Invalid filter."}");
@@ -176,13 +239,13 @@ internal static class AdminLayerFilterConfigurationEndpoints
         }
     }
 
-    private static async Task<(LayerDefinition? Layer, IResult? Problem)> ValidateLayerAsync(
+    private static async Task<(MetadataV2Resource? Resource, IResult? Problem)> ValidateLayerAsync(
         int layerId,
         HttpContext context,
         IResourceValidator resourceValidator,
         CancellationToken cancellationToken)
     {
-        var layerResult = await resourceValidator.ValidateLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var layerResult = await resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
         if (!layerResult.IsValid || layerResult.Resource == null)
         {
             var statusCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier
@@ -195,14 +258,27 @@ internal static class AdminLayerFilterConfigurationEndpoints
         return (layerResult.Resource, null);
     }
 
-    private static LayerFilterConfigurationResponse BuildResponse(LayerDefinition layer)
+    private static LayerFilterConfigurationResponse BuildResponse(int layerId, MetadataV2PermanentFilter? filter)
         => new()
         {
-            LayerId = layer.Id,
-            PermanentFilter = BuildPermanentFilterConfiguration(layer.Metadata?.PermanentFilter)
+            LayerId = layerId,
+            PermanentFilter = BuildPermanentFilterConfiguration(filter)
         };
 
-    private static LayerPermanentFilterConfiguration? BuildPermanentFilterConfiguration(LayerPermanentFilter? filter)
+    private static LayerFilterConfigurationResponse BuildResponse(int layerId, LayerPermanentFilter? filter)
+        => new()
+        {
+            LayerId = layerId,
+            PermanentFilter = filter == null
+                ? null
+                : new LayerPermanentFilterConfiguration
+                {
+                    Expression = filter.Expression,
+                    Language = filter.Language
+                }
+        };
+
+    private static LayerPermanentFilterConfiguration? BuildPermanentFilterConfiguration(MetadataV2PermanentFilter? filter)
         => filter == null
             ? null
             : new LayerPermanentFilterConfiguration
