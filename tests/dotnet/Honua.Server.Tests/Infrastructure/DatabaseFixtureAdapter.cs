@@ -21,6 +21,8 @@ public sealed class DatabaseFixtureAdapter : IDatabaseFixture
 
     public NpgsqlDataSource DataSource => _postgresFixture.DataSource;
 
+    public string ConnectionString => _postgresFixture.ConnectionString;
+
     public async Task InitializeAsync()
     {
         await _postgresFixture.InitializeAsync();

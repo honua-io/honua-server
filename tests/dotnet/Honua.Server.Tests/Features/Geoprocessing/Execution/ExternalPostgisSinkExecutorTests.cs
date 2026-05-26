@@ -67,7 +67,7 @@ public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
 
         var record = Record(
             ("input", input),
-            ("connectionString", _fixture.DataSource.ConnectionString),
+            ("connectionString", _fixture.ConnectionString),
             ("schema", _schemaName),
             ("table", "external_out"),
             ("targetSrid", "4326"),
