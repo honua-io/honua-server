@@ -430,11 +430,12 @@ internal sealed class OpenDataPublicationService
         }
 
         var page = await _openDataStore.GetPageRecordAsync(record.ItemId, cancellationToken).ConfigureAwait(false);
-        if (!EvaluateEligibility(item, page).IsEligible)
+        if (!IsAnonymousReadable(item, page))
         {
             return null;
         }
-        if (page is not null && !ValidateDcat(item, page).IsValid)
+
+        if (!ValidateDcat(item, page!).IsValid)
         {
             return null;
         }

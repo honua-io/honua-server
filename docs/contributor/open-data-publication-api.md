@@ -87,8 +87,10 @@ The STAC publication response is a Console control-plane readback:
 `collectionId`, `itemId`, `status`, `publicStacCollectionUrl`, optional
 title/description overrides, current eligibility when the source item still
 exists, and `updatedAt`. `GET /stac/collections/{collectionId}` returns the
-standards-shaped STAC Collection projection for published, eligible records and
-returns `404` after the record is unpublished or becomes ineligible. STAC
+standards-shaped STAC Collection projection for published, eligible records
+whose backing open-data page remains anonymous-readable and returns `404` after
+the record is unpublished, the page is unpublished, or the source becomes
+ineligible. STAC
 collection `license` values are emitted as STAC-compatible identifiers: known
 open-data license URLs such as Creative Commons BY 4.0 are normalized to SPDX
 identifiers like `CC-BY-4.0`; unrecognized absolute license URLs fall back to

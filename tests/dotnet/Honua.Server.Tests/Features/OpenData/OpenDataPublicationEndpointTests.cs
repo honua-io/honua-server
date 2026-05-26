@@ -365,6 +365,28 @@ public sealed class OpenDataPublicationEndpointTests : IAsyncLifetime
             JsonOptions)!;
         Assert.Contains(publicCollections.Collections, collection => collection.Id == "stac-life");
 
+        var pageUnpublishResponse = await _adminClient.PutAsJsonAsync(
+            $"/api/v1/admin/open-data/{item.Id}",
+            new OpenDataPageUpdateRequest { IsPublished = false },
+            JsonOptions);
+        Assert.Equal(HttpStatusCode.OK, pageUnpublishResponse.StatusCode);
+
+        var publicAfterPageUnpublishResponse = await _publicClient.GetAsync("/stac/collections/stac-life");
+        Assert.Equal(HttpStatusCode.NotFound, publicAfterPageUnpublishResponse.StatusCode);
+
+        var publicCollectionsAfterPageUnpublishResponse = await _publicClient.GetAsync("/stac/collections");
+        Assert.Equal(HttpStatusCode.OK, publicCollectionsAfterPageUnpublishResponse.StatusCode);
+        var publicCollectionsAfterPageUnpublish = JsonSerializer.Deserialize<StacCollectionsResponse>(
+            await publicCollectionsAfterPageUnpublishResponse.Content.ReadAsStringAsync(),
+            JsonOptions)!;
+        Assert.DoesNotContain(publicCollectionsAfterPageUnpublish.Collections, collection => collection.Id == "stac-life");
+
+        var pageRepublishResponse = await _adminClient.PutAsJsonAsync(
+            $"/api/v1/admin/open-data/{item.Id}",
+            new OpenDataPageUpdateRequest { IsPublished = true },
+            JsonOptions);
+        Assert.Equal(HttpStatusCode.OK, pageRepublishResponse.StatusCode);
+
         var statusResponse = await _adminClient.GetAsync("/api/v1/admin/stac/publications/stac-life");
         Assert.Equal(HttpStatusCode.OK, statusResponse.StatusCode);
 
