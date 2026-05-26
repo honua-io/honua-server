@@ -29,7 +29,20 @@ public static class TileStyleSpecWriter
     /// <c>show</c> expressions are present only when the symbology declares
     /// rules that affect them.
     /// </summary>
-    public static TileStyleSpec Build(Symbology3D? symbology)
+    /// <param name="symbology">The authoring-side symbology to translate.</param>
+    /// <param name="attributeSchemas">
+    /// Optional metadata-schema entries produced by the publish executor. When
+    /// supplied, the emitted <c>${...}</c> property references are rewritten
+    /// from each rule's raw authoring attribute name to the sanitized /
+    /// de-duplicated <see cref="SceneAttributeSchema.PropertyId"/> that is
+    /// actually written into the tile's <c>EXT_structural_metadata</c> schema,
+    /// so the runtime expression resolves against a property that exists. When
+    /// null (or a rule's attribute has no matching schema entry), the raw
+    /// attribute name is emitted unchanged.
+    /// </param>
+    public static TileStyleSpec Build(
+        Symbology3D? symbology,
+        IReadOnlyList<SceneAttributeSchema>? attributeSchemas = null)
     {
         var defaultColor = symbology?.DefaultColor ?? Symbology3DColor.White;
         var defaultOpacity = ClampOpacity(symbology?.DefaultOpacity ?? 1.0);
@@ -49,6 +62,8 @@ public static class TileStyleSpecWriter
             return spec;
         }
 
+        var propertyIdByFieldName = BuildPropertyIdMap(attributeSchemas);
+
         var colorConditions = new List<string[]>();
         var showConditions = new List<string[]>();
         var hasColorRule = false;
@@ -56,8 +71,17 @@ public static class TileStyleSpecWriter
 
         foreach (var rule in rules)
         {
-            var test = BuildTestExpression(rule);
+            var test = BuildTestExpression(rule, propertyIdByFieldName);
 
+            // Color conditions must replicate Symbology3DResolver's
+            // first-match-wins exactly: the resolver stops at the FIRST matching
+            // rule regardless of which fields it sets, then keeps the default
+            // color for any field that rule leaves unset. So EVERY rule must
+            // terminate color evaluation here — emitting the color that rule
+            // actually produces — otherwise a colorless rule that matches first
+            // (e.g. visibility-only) would be skipped and a later color rule
+            // would erroneously recolor the feature, diverging from the baked
+            // GLB color the resolver computed.
             if (rule.Color is { } ruleColor)
             {
                 hasColorRule = true;
@@ -71,6 +95,14 @@ public static class TileStyleSpecWriter
                 hasColorRule = true;
                 colorConditions.Add([test, BuildColorExpression(defaultColor, ClampOpacity(ruleOpacity))]);
             }
+            else
+            {
+                // Rule sets neither color nor opacity (e.g. visibility-only). It
+                // still wins the resolver's first-match, leaving the feature at
+                // the default color, so the emitted branch must yield the same
+                // default to terminate color evaluation at this rule.
+                colorConditions.Add([test, BuildColorExpression(defaultColor, defaultOpacity)]);
+            }
 
             if (rule.Visible is { } ruleVisible)
             {
@@ -79,6 +111,11 @@ public static class TileStyleSpecWriter
             }
         }
 
+        // Only emit a color expression when at least one rule actually changes
+        // the color or opacity. When every rule is visibility-only, the resolver
+        // always yields the default color, so the placeholder default branches
+        // accumulated above are dropped and the client falls back to the
+        // default material — matching the resolver without redundant output.
         if (hasColorRule)
         {
             colorConditions.Add(["true", BuildColorExpression(defaultColor, defaultOpacity)]);
@@ -95,6 +132,29 @@ public static class TileStyleSpecWriter
     }
 
     /// <summary>
+    /// Builds a case-insensitive map from a source field name to the sanitized
+    /// metadata property id the publish executor emitted for it. Returns null
+    /// when no schema mapping is supplied so the caller emits raw names.
+    /// </summary>
+    private static Dictionary<string, string>? BuildPropertyIdMap(
+        IReadOnlyList<SceneAttributeSchema>? attributeSchemas)
+    {
+        if (attributeSchemas is not { Count: > 0 })
+        {
+            return null;
+        }
+
+        var map = new Dictionary<string, string>(attributeSchemas.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var schema in attributeSchemas)
+        {
+            // First-writer wins on a casing collision, mirroring the executor's
+            // declaration-order de-duplication so the reference stays stable.
+            map.TryAdd(schema.FieldName, schema.PropertyId);
+        }
+        return map;
+    }
+
+    /// <summary>
     /// Serializes the style-metadata contract to a deterministic UTF-8 byte
     /// sequence using the source-generated context.
     /// </summary>
@@ -104,10 +164,23 @@ public static class TileStyleSpecWriter
         return JsonSerializer.SerializeToUtf8Bytes(spec, TileStyleSpecJsonContext.Default.TileStyleSpec);
     }
 
-    private static string BuildTestExpression(Symbology3DRule rule)
+    private static string BuildTestExpression(
+        Symbology3DRule rule,
+        Dictionary<string, string>? propertyIdByFieldName)
     {
-        // 3D Tiles Styling references a feature property as ${propertyName}.
-        var lhs = "${" + rule.Attribute + "}";
+        // 3D Tiles Styling references a feature property as ${propertyId}. The
+        // property id is the sanitized/de-duplicated name actually written into
+        // the tile metadata schema, which may differ from the raw authoring
+        // attribute (e.g. "road-class" -> "road_class"); fall back to the raw
+        // name when no schema mapping is available.
+        var propertyName = rule.Attribute;
+        if (propertyIdByFieldName is not null
+            && propertyIdByFieldName.TryGetValue(rule.Attribute, out var mapped))
+        {
+            propertyName = mapped;
+        }
+
+        var lhs = "${" + propertyName + "}";
         var op = rule.Comparison switch
         {
             Symbology3DComparison.Equals => "===",

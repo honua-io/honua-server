@@ -270,7 +270,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                 TilesetStyleReference? styleReference = null;
                 if (symbology is not null)
                 {
-                    var styleSpec = TileStyleSpecWriter.Build(symbology);
+                    var styleSpec = TileStyleSpecWriter.Build(symbology, attributeSchemas);
                     var styleBytes = TileStyleSpecWriter.Serialize(styleSpec);
                     await File.WriteAllBytesAsync(
                         Path.Combine(stagingDirectory, TileStyleSpecDefaults.FileName),
