@@ -78,9 +78,19 @@ public sealed class SceneAnalysisService : ISceneAnalysisService
             mergeStrategy,
             cancellationToken).ConfigureAwait(false);
 
-        var observerGround = groundProfile.Samples.Length > 0
-            ? groundProfile.Samples[0].Elevation ?? 0.0
-            : 0.0;
+        // The observer ground elevation anchors the entire shadow cast. If the
+        // observer lands on a no-data pixel or outside raster coverage, there is
+        // no surface to anchor to: coercing it to 0.0 would fabricate an
+        // observer/shadow that does not exist. Fail explicitly instead, matching
+        // how the elevation API signals an unusable sampling location.
+        if (groundProfile.Samples.Length == 0
+            || groundProfile.Samples[0].Elevation is not { } observerGround)
+        {
+            throw new ElevationQueryException(
+                ElevationFailureKind.InvalidGeometry,
+                "The observer location has no elevation data (it lands on a no-data pixel or outside raster coverage); a sun/shadow cannot be computed there.");
+        }
+
         var observerTop = observerGround + observer.HeightMeters;
 
         if (!solar.IsAboveHorizon)

@@ -224,6 +224,78 @@ public sealed class SceneAnalysisServiceTests
         await act.Should().ThrowAsync<ElevationQueryException>();
     }
 
+    [UnitTest]
+    public async Task ComputeSunShadowAsync_ObserverOnNoData_ThrowsAndFabricatesNothing()
+    {
+        // The observer point itself lands on a no-data pixel / outside coverage.
+        // The whole shadow is anchored on the observer ground elevation, so the
+        // request must fail explicitly rather than coerce the missing elevation
+        // to 0.0 and fabricate an observer top + shadow.
+        var service = new SceneAnalysisService(new ObserverNoDataElevationService(terrainElevation: 50));
+
+        var act = async () => await service.ComputeSunShadowAsync(
+            LayerId,
+            new ShadowObserver { Longitude = 0, Latitude = 0, HeightMeters = 10 },
+            new SunShadowOptions
+            {
+                // Late afternoon equinox: sun is up, so a shadow *would* be cast
+                // if the observer had a valid ground elevation.
+                InstantUtc = new DateTimeOffset(2026, 3, 20, 17, 30, 0, TimeSpan.Zero),
+                MaxShadowLengthMeters = 5000,
+                SampleCount = 256
+            },
+            RasterMergeStrategy.Newest);
+
+        var exception = await act.Should().ThrowAsync<ElevationQueryException>();
+        exception.Which.FailureKind.Should().Be(ElevationFailureKind.InvalidGeometry);
+    }
+
+    [UnitTest]
+    public async Task ComputeSunShadowAsync_ObserverOnNoDataAtNight_ThrowsBeforeFabricatingResult()
+    {
+        // Even when the sun is below the horizon (the early no-shadow return
+        // path), a no-data observer must not fabricate an observer ground/top
+        // elevation in the result.
+        var service = new SceneAnalysisService(new ObserverNoDataElevationService(terrainElevation: 50));
+
+        var act = async () => await service.ComputeSunShadowAsync(
+            LayerId,
+            new ShadowObserver { Longitude = 0, Latitude = 51.5, HeightMeters = 10 },
+            new SunShadowOptions
+            {
+                InstantUtc = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                MaxShadowLengthMeters = 1000
+            },
+            RasterMergeStrategy.Newest);
+
+        var exception = await act.Should().ThrowAsync<ElevationQueryException>();
+        exception.Which.FailureKind.Should().Be(ElevationFailureKind.InvalidGeometry);
+    }
+
+    [UnitTest]
+    public async Task ComputeSliceAsync_StartOnNoData_FlagsNoDataWithoutFabrication()
+    {
+        // The slice path must not fabricate elevation when the start (or any)
+        // sample is no-data: the missing sample stays null and is flagged.
+        var service = new SceneAnalysisService(new ObserverNoDataElevationService(terrainElevation: 50));
+
+        var result = await service.ComputeSliceAsync(
+            LayerId,
+            new SlicePlane
+            {
+                StartLongitude = 0,
+                StartLatitude = 0,
+                EndLongitude = 0.1,
+                EndLatitude = 0
+            },
+            sampleCount: 64,
+            RasterMergeStrategy.Newest);
+
+        result.HasNoDataSamples.Should().BeTrue();
+        // The first sample (the no-data start) is preserved as null, never 0.0.
+        result.Samples[0].Elevation.Should().BeNull();
+    }
+
     // ---- Slice / volumetric -------------------------------------------------
 
     [UnitTest]
@@ -407,6 +479,16 @@ public sealed class SceneAnalysisServiceTests
             var fraction = Math.Clamp(lon / 0.1, 0.0, 1.0);
             return startElevation + (endElevation - startElevation) * fraction;
         }
+    }
+
+    private sealed class ObserverNoDataElevationService(double terrainElevation)
+        : TerrainElevationServiceBase
+    {
+        // The first sample (the observer / slice start at distance 0) is
+        // no-data; the remaining terrain has a valid elevation. This models the
+        // observer landing on a no-data pixel or outside raster coverage.
+        protected override double? ElevationAt(double lon, double lat, double distanceFromStartMeters)
+            => distanceFromStartMeters <= 0 ? null : terrainElevation;
     }
 
     private sealed class HoleTerrainElevationService(
