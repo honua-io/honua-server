@@ -6,10 +6,14 @@ controls. The implementation is intentionally bounded to the current Console
 content-store baseline: page and STAC publication state are persisted through
 `IOpenDataStore`. The normal PostgreSQL provider stores those records in
 dedicated `honua.open_data_pages` and
-`honua.open_data_stac_publications` tables; `InMemoryOpenDataStore` is only an
-explicit development/test fallback. The STAC controls create and update
-Console-side publication state and the public `/stac` collection/catalog routes
-project eligible published records alongside Metadata v2-backed STAC
+`honua.open_data_stac_publications` tables; `InMemoryOpenDataStore` is an opt-in
+development/test fallback for hosts that do not register the PostgreSQL provider,
+selected with `OpenData:UseInMemoryStore=true`. Anonymous Open Data/DCAT/STAC
+publication projection is controlled by the explicit deployment capability flag
+`OpenData:Enabled=true`; the default is disabled, and eligibility responses
+include `OpenDataDisabled` when the flag is off. The STAC controls create and
+update Console-side publication state and the public `/stac` collection/catalog
+routes project eligible published records alongside Metadata v2-backed STAC
 publications.
 
 ## Surface
@@ -19,7 +23,7 @@ Public anonymous endpoints:
 | Method | Route | Response | Purpose |
 |---|---|---|
 | `GET` | `/open-data?cursor=&limit=` | `OpenDataListResponse` | Lists anonymously readable open-data pages. `limit` defaults to `25` and is capped at `200`; `nextCursor` is an opaque server cursor. |
-| `GET` | `/open-data/{itemId}` | `OpenDataItemResponse` or empty `404` | Reads one anonymous open-data page projection. |
+| `GET` | `/open-data/{itemId}` | `OpenDataItemResponse`, `SchemaOrgDatasetResponse`, or empty `404` | Reads one anonymous open-data page projection. Use `Accept: application/ld+json` for the Schema.org Dataset JSON-LD projection; normal JSON returns the full page response. |
 | `GET` | `/open-data/catalog.json` | `DcatCatalogResponse` | Emits a DCAT/data.json-compatible catalog for up to the first 200 visible items in stable item-id order. |
 
 Admin endpoints:
@@ -42,6 +46,12 @@ client errors, except `DELETE /api/v1/admin/stac/publications/{collectionId}`,
 which returns `204 No Content` on success. Internal failures use RFC 7807
 `ProblemDetails` with generic messages. Public anonymous routes return bare
 protocol JSON, not the admin envelope.
+
+STAC publish, update, and unpublish routes also run through
+`OperatorApprovalGate` with `OperatorResourceType.Catalog` and
+`OperatorOperation.Publish` before changing publication state. Unpublish is
+marked destructive so deployments with destructive-action approval policies can
+gate it independently.
 
 `PUT /api/v1/admin/open-data/{itemId}` is a merge update over the stored page
 or the synthesized default page: omitted fields keep their existing value,
@@ -82,6 +92,7 @@ codes are:
 | Code | Meaning |
 |---|---|
 | `ItemNotFound` | The Console content item does not exist. |
+| `OpenDataDisabled` | The deployment has not enabled anonymous Open Data publication with `OpenData:Enabled=true`. |
 | `MissingTitle` | Neither page metadata nor the source item supplies a title. |
 | `LifecycleBlocked` | The source item is archived or retired. |
 | `PolicyBlocked` | The source item is not `public`, so anonymous reads are not allowed. |
@@ -107,6 +118,7 @@ use the admin eligibility endpoint to diagnose why a page is not visible.
 
 Anonymous reads require all of the following:
 
+- `OpenData:Enabled=true` is configured for the deployment;
 - the stored page has `isPublished: true`;
 - the source Console item has `visibility: "public"`;
 - the source item is not archived or retired;
@@ -117,6 +129,9 @@ Documented DCAT exceptions for sparse but intentional metadata, such as missing
 description, keyword, publisher, contact, license, or distribution, do not block
 publication by themselves. Missing title, invalid spatial coverage, unsupported
 spatial CRS, and temporal start-after-end remain blocking validation issues.
+When the deployment capability is disabled, eligibility includes the
+`OpenDataDisabled` reason with field `openData.enabled`, and public list, item,
+DCAT, and Console-managed STAC projections omit those records.
 
 ## Field Mapping
 
@@ -160,8 +175,9 @@ and STAC publication mutations evict the `open-data`, `metadata`, and
   currently includes at most 200 visible records.
 - Invalid or stale list cursors are treated as the first page instead of a
   client error.
-- Public Schema.org data is embedded under `schemaOrg` in the JSON response;
-  there is no `application/ld+json` content-negotiated variant yet.
+- Public Schema.org data is embedded under `schemaOrg` in the normal JSON
+  response and is also available as `application/ld+json` from the same item
+  route.
 - Console-managed public STAC collections expose collection metadata and links;
   item search remains backed by the existing Metadata v2 STAC publication data
   path until Console content items carry canonical feature/raster bindings.

@@ -20,7 +20,11 @@ internal static class OpenDataServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(configuration);
 
-        if (configuration.GetValue<bool>("OpenData:UseInMemoryStore"))
+        services.Configure<OpenDataPublicationOptions>(
+            configuration.GetSection(OpenDataPublicationOptions.SectionName));
+
+        if (configuration.GetValue<bool>(
+                $"{OpenDataPublicationOptions.SectionName}:{nameof(OpenDataPublicationOptions.UseInMemoryStore)}"))
         {
             services.TryAddSingleton<IOpenDataStore, InMemoryOpenDataStore>();
         }

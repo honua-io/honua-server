@@ -14,6 +14,10 @@ namespace Honua.Server.Features.Protocols.OpenData;
 /// </summary>
 internal static class OpenDataEndpoints
 {
+    private const string JsonContentType = "application/json";
+    private const string JsonLdContentType = "application/ld+json";
+    private static readonly string[] ItemContentTypes = [JsonContentType, JsonLdContentType];
+
     /// <summary>
     /// Maps public open-data endpoints.
     /// </summary>
@@ -45,6 +49,7 @@ internal static class OpenDataEndpoints
             .WithTags("Open Data")
             .CacheOutput("OpenDataItem")
             .Produces<OpenDataItemResponse>(StatusCodes.Status200OK, "application/json")
+            .Produces<SchemaOrgDatasetResponse>(StatusCodes.Status200OK, "application/ld+json")
             .Produces(StatusCodes.Status404NotFound);
 
         return endpoints;
@@ -100,7 +105,18 @@ internal static class OpenDataEndpoints
             }
 
             OpenDataTelemetry.SetResult(activity, 1);
-            return Results.Json(response, OpenDataJsonContext.Default.OpenDataItemResponse);
+            if (WantsJsonLd(context))
+            {
+                return Results.Json(
+                    response.SchemaOrg,
+                    OpenDataJsonContext.Default.SchemaOrgDatasetResponse,
+                    contentType: JsonLdContentType);
+            }
+
+            return Results.Json(
+                response,
+                OpenDataJsonContext.Default.OpenDataItemResponse,
+                contentType: JsonContentType);
         }
         catch (OperationCanceledException)
         {
@@ -144,5 +160,14 @@ internal static class OpenDataEndpoints
                 detail: "An internal error occurred while generating the open-data catalog.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
+    }
+
+    private static bool WantsJsonLd(HttpContext context)
+    {
+        return ContentNegotiationHelpers.TrySelectBestMediaType(
+                   ItemContentTypes,
+                   context.Request.Headers.Accept,
+                   out var selectedMediaType)
+               && string.Equals(selectedMediaType, JsonLdContentType, StringComparison.OrdinalIgnoreCase);
     }
 }

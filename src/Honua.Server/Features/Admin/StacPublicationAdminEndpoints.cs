@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.OpenData.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
@@ -58,6 +59,13 @@ internal static class StacPublicationAdminEndpoints
             "/api/v1/admin/stac/publications",
             HttpMethods.Post,
             request.ItemId);
+        var approvalResult = EvaluatePublicationApproval(context, request.ItemId);
+        if (approvalResult is not null)
+        {
+            OpenDataTelemetry.SetFailed(activity, "approval_required");
+            return approvalResult;
+        }
+
         try
         {
             var result = await service.PublishStacAsync(request, BaseUrlResolver.GetBaseUrl(context), context.RequestAborted)
@@ -98,6 +106,13 @@ internal static class StacPublicationAdminEndpoints
             "/api/v1/admin/stac/publications/{collectionId}",
             HttpMethods.Put,
             collectionId);
+        var approvalResult = EvaluatePublicationApproval(context, collectionId);
+        if (approvalResult is not null)
+        {
+            OpenDataTelemetry.SetFailed(activity, "approval_required");
+            return approvalResult;
+        }
+
         try
         {
             var result = await service.UpdateStacAsync(collectionId, request, context.RequestAborted)
@@ -137,6 +152,13 @@ internal static class StacPublicationAdminEndpoints
             "/api/v1/admin/stac/publications/{collectionId}",
             HttpMethods.Delete,
             collectionId);
+        var approvalResult = EvaluatePublicationApproval(context, collectionId, isDestructive: true);
+        if (approvalResult is not null)
+        {
+            OpenDataTelemetry.SetFailed(activity, "approval_required");
+            return approvalResult;
+        }
+
         try
         {
             var result = await service.UnpublishStacAsync(collectionId, context.RequestAborted).ConfigureAwait(false);
@@ -256,5 +278,19 @@ internal static class StacPublicationAdminEndpoints
                 response.PublicStacCollectionUrl,
                 envelope)
             : Results.Json(envelope, OpenDataJsonContext.Default.ApiResponseStacPublicationStatusResponse);
+    }
+
+    private static IResult? EvaluatePublicationApproval(
+        HttpContext context,
+        string? resourceId,
+        bool isDestructive = false)
+    {
+        var gate = context.RequestServices.GetRequiredService<OperatorApprovalGate>();
+        return gate.EvaluateApproval(
+            context,
+            OperatorResourceType.Catalog,
+            OperatorOperation.Publish,
+            resourceId,
+            isDestructive);
     }
 }

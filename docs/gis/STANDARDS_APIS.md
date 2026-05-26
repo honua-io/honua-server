@@ -178,18 +178,22 @@ Share publication workflows
 - Public pages and lists: `json`
 - Catalog export: DCAT/data.json-compatible `json`
 - Item projection includes a Schema.org Dataset JSON-LD preview under
-  `schemaOrg`
+  `schemaOrg`; the item route also returns that projection directly with
+  `Accept: application/ld+json`
 
 **Contract notes:**
 - Anonymous item reads return an empty `404 Not Found` for missing, private,
   unpublished, ineligible, and validation-blocked items so the public surface
   does not reveal private item existence.
-- Public visibility requires the Console page to be published, the source item
-  to be public, eligibility to pass, and DCAT validation to have no blocking
-  issues.
+- Public visibility requires `OpenData:Enabled=true`, the Console page to be
+  published, the source item to be public, eligibility to pass, and DCAT
+  validation to have no blocking issues. Disabled deployments report the
+  `OpenDataDisabled` eligibility reason on admin readback.
 - Console operators manage page metadata, DCAT validation preview, and STAC
   publication status through the admin endpoints documented in
   [Console open-data publication API](../contributor/open-data-publication-api.md).
+  STAC publish/update/unpublish mutations run through `OperatorApprovalGate`
+  before publication state changes.
 - The DCAT catalog currently uses the same bounded public-list projection and
   emits up to 200 visible records; large-catalog streaming/export expansion is
   a follow-on.

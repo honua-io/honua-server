@@ -12,6 +12,7 @@ using Honua.Core.Features.OpenData.Domain;
 using Honua.Server.Features.Console;
 using Honua.Server.Features.Infrastructure.OpenData;
 using Honua.Server.Features.Infrastructure.OpenData.Models;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.OpenData.Services;
 
@@ -27,17 +28,20 @@ internal sealed class OpenDataPublicationService
     private readonly IOpenDataStore _openDataStore;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<OpenDataPublicationService> _logger;
+    private readonly OpenDataPublicationOptions _options;
 
     public OpenDataPublicationService(
         IConsoleContentStore contentStore,
         IOpenDataStore openDataStore,
         TimeProvider timeProvider,
-        ILogger<OpenDataPublicationService> logger)
+        ILogger<OpenDataPublicationService> logger,
+        IOptions<OpenDataPublicationOptions> options)
     {
         _contentStore = contentStore;
         _openDataStore = openDataStore;
         _timeProvider = timeProvider;
         _logger = logger;
+        _options = options.Value;
     }
 
     public async Task<OpenDataEligibility> EvaluateEligibilityAsync(
@@ -439,10 +443,18 @@ internal sealed class OpenDataPublicationService
         };
     }
 
-    private static OpenDataEligibility EvaluateEligibility(ConsoleContentItem item, OpenDataPageRecord? page)
+    private OpenDataEligibility EvaluateEligibility(ConsoleContentItem item, OpenDataPageRecord? page)
     {
         var reasons = new List<OpenDataIssue>();
         var warnings = new List<OpenDataIssue>();
+
+        if (!_options.Enabled)
+        {
+            reasons.Add(Issue(
+                "OpenDataDisabled",
+                "Open-data publication is disabled for this deployment.",
+                "openData.enabled"));
+        }
 
         var title = ResolveTitle(item, page);
         if (string.IsNullOrWhiteSpace(title))
@@ -558,7 +570,7 @@ internal sealed class OpenDataPublicationService
         }
     }
 
-    private static bool IsAnonymousReadable(ConsoleContentItem item, OpenDataPageRecord? page)
+    private bool IsAnonymousReadable(ConsoleContentItem item, OpenDataPageRecord? page)
     {
         return page is { IsPublished: true } && EvaluateEligibility(item, page).IsEligible;
     }

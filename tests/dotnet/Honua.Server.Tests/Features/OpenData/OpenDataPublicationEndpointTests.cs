@@ -1,10 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
-using System.Globalization;
+using System.Security.Claims;
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Console.Domain;
 using Honua.Core.Features.OpenData.Domain;
 using Honua.Server.Features.Console.Models;
@@ -14,6 +17,8 @@ using Honua.Server.Features.Protocols.Stac.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.OpenData;
 
@@ -47,6 +52,7 @@ public sealed class OpenDataPublicationEndpointTests : IAsyncLifetime
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                builder.UseSetting("OpenData:Enabled", "true");
             });
     }
 
@@ -93,12 +99,84 @@ public sealed class OpenDataPublicationEndpointTests : IAsyncLifetime
         Assert.Equal("Dataset", publicItem.SchemaOrg.Type);
         Assert.Single(publicItem.Distributions);
 
+        using var jsonLdRequest = new HttpRequestMessage(HttpMethod.Get, $"/open-data/{item.Id}");
+        jsonLdRequest.Headers.Accept.ParseAdd("application/ld+json");
+        var jsonLdResponse = await _publicClient.SendAsync(jsonLdRequest);
+        Assert.Equal(HttpStatusCode.OK, jsonLdResponse.StatusCode);
+        Assert.Equal("application/ld+json", jsonLdResponse.Content.Headers.ContentType?.MediaType);
+        var schemaOrg = JsonSerializer.Deserialize<SchemaOrgDatasetResponse>(
+            await jsonLdResponse.Content.ReadAsStringAsync(),
+            JsonOptions)!;
+        Assert.Equal("https://schema.org", schemaOrg.Context);
+        Assert.Equal("Dataset", schemaOrg.Type);
+        Assert.Equal("Published Layer", schemaOrg.Name);
+
         var listResponse = await _publicClient.GetAsync("/open-data");
         Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
         var list = JsonSerializer.Deserialize<OpenDataListResponse>(
             await listResponse.Content.ReadAsStringAsync(),
             JsonOptions)!;
         Assert.Contains(list.Items, listed => listed.ItemId == item.Id);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/content")]
+    [Endpoint("PUT /api/v1/admin/open-data/{itemId}")]
+    [Endpoint("GET /api/v1/admin/open-data/{itemId}/eligibility")]
+    [Endpoint("GET /open-data/{itemId}")]
+    [Endpoint("GET /open-data")]
+    public async Task UpdatePage_WithOpenDataCapabilityDisabled_ReturnsDisabledEligibilityAndHidesAnonymousRead()
+    {
+        var disabledFixture = new WebAppFixture()
+            .UseSeed("tests/seed/server.yaml")
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            });
+
+        try
+        {
+            await disabledFixture.InitializeAsync();
+            var adminClient = disabledFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+            var publicClient = disabledFixture.CreateClient();
+
+            var item = await CreateContentAsync(
+                adminClient,
+                name: "disabled-capability-layer",
+                visibility: ConsoleVisibility.Public,
+                title: "Disabled Capability Layer",
+                description: "A public layer blocked by the deployment capability.");
+
+            var updateResponse = await adminClient.PutAsJsonAsync(
+                $"/api/v1/admin/open-data/{item.Id}",
+                CompleteOpenDataPage("Capability Disabled"),
+                JsonOptions);
+            Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
+            var adminPage = await ReadEnvelopeAsync<OpenDataPageAdminResponse>(updateResponse);
+            Assert.False(adminPage.Data!.Eligibility.IsEligible);
+            Assert.Contains(adminPage.Data.Eligibility.Reasons, reason => reason.Code == "OpenDataDisabled");
+
+            var eligibilityResponse = await adminClient.GetAsync($"/api/v1/admin/open-data/{item.Id}/eligibility");
+            Assert.Equal(HttpStatusCode.OK, eligibilityResponse.StatusCode);
+            var eligibility = await ReadEnvelopeAsync<OpenDataEligibility>(eligibilityResponse);
+            Assert.Contains(eligibility.Data!.Reasons, reason => reason.Code == "OpenDataDisabled");
+
+            var publicRead = await publicClient.GetAsync($"/open-data/{item.Id}");
+            Assert.Equal(HttpStatusCode.NotFound, publicRead.StatusCode);
+
+            var listResponse = await publicClient.GetAsync("/open-data");
+            Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+            var list = JsonSerializer.Deserialize<OpenDataListResponse>(
+                await listResponse.Content.ReadAsStringAsync(),
+                JsonOptions)!;
+            Assert.DoesNotContain(list.Items, listed => listed.ItemId == item.Id);
+        }
+        finally
+        {
+            await disabledFixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -292,6 +370,56 @@ public sealed class OpenDataPublicationEndpointTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.NotFound, publicAfterDeleteResponse.StatusCode);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/stac/publications")]
+    [Endpoint("PUT /api/v1/admin/stac/publications/{collectionId}")]
+    [Endpoint("DELETE /api/v1/admin/stac/publications/{collectionId}")]
+    public async Task StacPublicationMutation_WhenApprovalRequired_ReturnsForbidden()
+    {
+        var approvalFixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                builder.UseSetting("OpenData:Enabled", "true");
+            })
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IOperatorApprovalEvaluator>();
+                services.AddSingleton<IOperatorApprovalEvaluator>(new AlwaysRequiresApprovalEvaluator());
+            });
+
+        try
+        {
+            await approvalFixture.InitializeAsync();
+            var adminClient = approvalFixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+
+            var publishResponse = await adminClient.PostAsJsonAsync(
+                "/api/v1/admin/stac/publications",
+                new StacPublicationPublishRequest
+                {
+                    ItemId = "approval-source",
+                    CollectionId = "approval-gated"
+                },
+                JsonOptions);
+            Assert.Equal(HttpStatusCode.Forbidden, publishResponse.StatusCode);
+
+            var updateResponse = await adminClient.PutAsJsonAsync(
+                "/api/v1/admin/stac/publications/approval-gated",
+                new StacPublicationUpdateRequest { Title = "Blocked update" },
+                JsonOptions);
+            Assert.Equal(HttpStatusCode.Forbidden, updateResponse.StatusCode);
+
+            var deleteResponse = await adminClient.DeleteAsync("/api/v1/admin/stac/publications/approval-gated");
+            Assert.Equal(HttpStatusCode.Forbidden, deleteResponse.StatusCode);
+        }
+        finally
+        {
+            await approvalFixture.DisposeAsync();
+        }
+    }
+
     private static OpenDataPageUpdateRequest CompleteOpenDataPage(string title)
     {
         return new OpenDataPageUpdateRequest
@@ -335,8 +463,17 @@ public sealed class OpenDataPublicationEndpointTests : IAsyncLifetime
         string? title,
         string? description,
         IReadOnlyDictionary<string, string>? labels = null)
+        => await CreateContentAsync(_adminClient, name, visibility, title, description, labels).ConfigureAwait(false);
+
+    private static async Task<ConsoleContentItem> CreateContentAsync(
+        HttpClient adminClient,
+        string name,
+        ConsoleVisibility visibility,
+        string? title,
+        string? description,
+        IReadOnlyDictionary<string, string>? labels = null)
     {
-        var response = await _adminClient.PostAsJsonAsync("/api/v1/console/content", new CreateConsoleContentItemRequest
+        var response = await adminClient.PostAsJsonAsync("/api/v1/console/content", new CreateConsoleContentItemRequest
         {
             Name = name,
             ItemType = ConsoleContentItemType.Layer,
@@ -358,5 +495,15 @@ public sealed class OpenDataPublicationEndpointTests : IAsyncLifetime
         Assert.True(envelope!.Success, envelope.Message);
         Assert.NotNull(envelope.Data);
         return envelope;
+    }
+
+    private sealed class AlwaysRequiresApprovalEvaluator : IOperatorApprovalEvaluator
+    {
+        public ApprovalRequirement Evaluate(
+            ClaimsPrincipal principal,
+            OperatorAuthorizationRequest request)
+            => ApprovalRequirement.Required(
+                "operator.test-policy",
+                "test-approval-required");
     }
 }
