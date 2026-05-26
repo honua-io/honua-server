@@ -148,6 +148,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapSceneEndpoints();
         endpoints.MapSceneDatasetEndpoints();
         endpoints.MapElevationEndpoints();
+        endpoints.MapSceneAnalysisEndpoints();
         endpoints.MapSceneGenerationEndpoints();
         endpoints.MapPMTilesProxyEndpoints();
         endpoints.MapStyleEndpoints();

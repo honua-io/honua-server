@@ -174,6 +174,10 @@ public static class FeatureCatalog
             HonuaEdition.Pro, "Buffer features by a fixed distance and dissolve or aggregate per group."),
         new("analytics.density", "Density Binning", Categories.Analytics,
             HonuaEdition.Pro, "Hex or square grid density (heatmap) binning over a filtered subset."),
+        new("analytics.sun-shadow", "Sun/Shadow Analysis", Categories.Analytics,
+            HonuaEdition.Pro, "Compute solar position from date/time/location and cast the shadow extent against the elevation surface."),
+        new("analytics.slice", "Slice/Volumetric Analysis", Categories.Analytics,
+            HonuaEdition.Pro, "Intersect a vertical slice plane with the elevation surface and return cross-section metadata."),
 
         // Temporal — Community (basic discovery)
         new("temporal.filtering", "Temporal Query Filtering", Categories.Temporal,

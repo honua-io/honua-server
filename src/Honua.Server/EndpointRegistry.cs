@@ -576,6 +576,10 @@ public static class EndpointRegistry
         new("GET", "/elevation/{datasetId}/value"),
         new("GET", "/elevation/{datasetId}/profile"),
 
+        // Scene analysis on the elevation surface (#1204).
+        new("POST", "/elevation/{datasetId}/sun-shadow"),
+        new("POST", "/elevation/{datasetId}/slice"),
+
         new("GET", "/api/styles/{layerId}.json"),
 
         // Durable PMTiles publish range proxy (#845).
