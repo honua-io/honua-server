@@ -183,6 +183,48 @@ Release evidence:
   collection rejection, omitted collection normalization, and rollback readiness
   outcomes.
 
+## GitOps Release Operation Lifecycle and Rollback (#1165)
+
+Derived from:
+
+- [#1164](https://github.com/honua-io/honua-server/issues/1164)
+- [#1165](https://github.com/honua-io/honua-server/issues/1165)
+
+Release evidence:
+
+- `/api/v1/admin/metadata/releases/{packageId}/operation` is documented in
+  [Metadata Prevalidation Admin API](../../admin-api/metadata-prevalidation.md)
+  and [Server Management API](../../operator/CONTROL_PLANE_API.md), and is listed
+  in `EndpointRegistry.All`.
+- The endpoint returns the deploy-control `DeployOperationResponse` directly
+  (no `ApiResponse<T>` envelope) with `kind: "MetadataRelease"` and the release
+  lifecycle context in `metadataRelease`. The same shape is served by
+  `/api/v1/admin/deploy/operations/{operationId}`, so Console can read a release
+  by package ID or by stable operation ID.
+- Package-ID lookup returns the most recent operation for a release package;
+  retried attempts remain addressable by their stable operation ID for the
+  configured retention window. Records and their package-ID index entries use
+  `ControlPlane:MetadataRelease:OperationRetention`, which defaults to 30 days.
+- `metadataRelease` exposes Git refs (`gitOperationId`, `prUrl`, `commitSha`,
+  `desiredRevision`), `targetEnvironment`, linked `deployOperationId` and
+  `jobIds`, `evidenceRefs`, the fine-grained `currentStage`, `blockers`,
+  `warnings`, and the precomputed `rollbackPlan`. The rollback plan is available
+  before execution and retained after failure when known.
+- Metadata-only rollback (`class: "MetadataOnly"`) reports
+  `isDataAffecting: false` and uses the non-destructive path. All other rollback
+  classes are data-affecting, report `requiresExplicitApproval: true`, and route
+  through the existing operator destructive-approval gate. Rollback requests
+  reuse `POST /api/v1/admin/deploy/operations/{operationId}/rollback`; on accept
+  the workflow status and `metadataRelease.currentStage` move to
+  `RollbackRequested`, and a rejected destructive check returns `403` without
+  mutating the stored operation.
+- The admin endpoint has tests for package-ID timeline state with rollback plan,
+  operation-ID failure state with rollback plan, the metadata-only
+  non-destructive path, data-affecting approval gating, and unknown-package
+  `404`. Redis store integration tests cover the package-ID index returning the
+  latest operation while a prior attempt stays addressable by operation ID, and
+  the stale-index miss returning null.
+
 ## Review Output
 
 For a Metadata v2 release candidate, capture:

@@ -160,6 +160,43 @@ public sealed class MetadataReleaseOperationEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/deploy/operations/{operationId}/rollback")]
+    public async Task RollbackDeployOperation_WhenRollbackPlanChangesAfterApproval_ReturnsConflictWithoutMutation()
+    {
+        var packageId = $"metadata-package-{Guid.NewGuid():N}";
+        var operation = CreateMetadataReleaseOperation(
+            packageId,
+            MetadataRollbackClass.MetadataOnly,
+            status: WorkflowOperationStatus.Failed,
+            stage: MetadataReleaseStage.Failed);
+        (await _workflowStore.TryCreateAsync(operation)).Should().BeTrue();
+        _workflowStore.MutateAfterGet(operation.OperationId, getNumber: 1, current => current with
+        {
+            MetadataRelease = current.MetadataRelease! with
+            {
+                RollbackPlan = new MetadataRollbackPlan
+                {
+                    Class = MetadataRollbackClass.SnapshotRestore,
+                    RequiresExplicitApproval = true,
+                    Steps = ["Restore snapshot."],
+                    EvidenceRequired = ["snapshot-id", "operator-approval"],
+                    ApprovalPolicyRef = "operator.destructive.deployment"
+                }
+            }
+        });
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/v1/admin/deploy/operations/{operation.OperationId}/rollback",
+            new { reason = "metadata-only rollback" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        _approvalEvaluator.DestructiveFlags.Should().ContainSingle().Which.Should().BeFalse();
+        var stored = await _workflowStore.GetAsync(operation.OperationId);
+        stored!.Status.Should().Be(WorkflowOperationStatus.Failed);
+        stored.MetadataRelease!.RollbackPlan!.Class.Should().Be(MetadataRollbackClass.SnapshotRestore);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/metadata/releases/{packageId}/operation")]
     public async Task GetMetadataReleaseOperation_UnknownPackageId_ReturnsNotFound()
     {
@@ -232,6 +269,8 @@ public sealed class MetadataReleaseOperationEndpointsTests : IAsyncLifetime
     {
         private readonly ConcurrentDictionary<string, WorkflowOperationRecord> _operations = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, string> _metadataPackageIndex = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, int> _getCounts = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<(string OperationId, int GetNumber), Func<WorkflowOperationRecord, WorkflowOperationRecord>> _afterGetMutations = new();
 
         public Task<bool> TryAcquireLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
             => Task.FromResult(true);
@@ -247,14 +286,29 @@ public sealed class MetadataReleaseOperationEndpointsTests : IAsyncLifetime
             var created = _operations.TryAdd(operation.OperationId, operation);
             if (created)
             {
-                IndexMetadataReleaseOperation(operation);
+                IndexMetadataReleaseOperation(operation, createOnly: true);
             }
 
             return Task.FromResult(created);
         }
 
         public Task<WorkflowOperationRecord?> GetAsync(string operationId, CancellationToken cancellationToken = default)
-            => Task.FromResult(_operations.TryGetValue(operationId, out var operation) ? operation : null);
+        {
+            if (!_operations.TryGetValue(operationId, out var operation))
+            {
+                return Task.FromResult<WorkflowOperationRecord?>(null);
+            }
+
+            var getNumber = _getCounts.AddOrUpdate(operationId, 1, (_, current) => current + 1);
+            if (_afterGetMutations.TryRemove((operationId, getNumber), out var mutate))
+            {
+                var updated = mutate(operation);
+                _operations[operationId] = updated;
+                IndexMetadataReleaseOperation(updated, createOnly: false);
+            }
+
+            return Task.FromResult<WorkflowOperationRecord?>(operation);
+        }
 
         public Task<WorkflowOperationRecord?> GetByMetadataPackageIdAsync(string packageId, CancellationToken cancellationToken = default)
             => Task.FromResult(
@@ -266,7 +320,7 @@ public sealed class MetadataReleaseOperationEndpointsTests : IAsyncLifetime
         public Task SetAsync(WorkflowOperationRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
         {
             _operations[operation.OperationId] = operation;
-            IndexMetadataReleaseOperation(operation);
+            IndexMetadataReleaseOperation(operation, createOnly: false);
             return Task.CompletedTask;
         }
 
@@ -278,12 +332,24 @@ public sealed class MetadataReleaseOperationEndpointsTests : IAsyncLifetime
             return Task.FromResult<IReadOnlyList<WorkflowOperationRecord>>(operations);
         }
 
-        private void IndexMetadataReleaseOperation(WorkflowOperationRecord operation)
+        public void MutateAfterGet(
+            string operationId,
+            int getNumber,
+            Func<WorkflowOperationRecord, WorkflowOperationRecord> mutate)
+            => _afterGetMutations[(operationId, getNumber)] = mutate;
+
+        private void IndexMetadataReleaseOperation(WorkflowOperationRecord operation, bool createOnly)
         {
             if (operation.Kind == WorkflowOperationKind.MetadataRelease &&
                 !string.IsNullOrWhiteSpace(operation.MetadataRelease?.PackageId))
             {
-                _metadataPackageIndex[operation.MetadataRelease.PackageId] = operation.OperationId;
+                var packageId = operation.MetadataRelease.PackageId;
+                if (createOnly ||
+                    (_metadataPackageIndex.TryGetValue(packageId, out var currentOperationId) &&
+                     string.Equals(currentOperationId, operation.OperationId, StringComparison.Ordinal)))
+                {
+                    _metadataPackageIndex[packageId] = operation.OperationId;
+                }
             }
         }
     }

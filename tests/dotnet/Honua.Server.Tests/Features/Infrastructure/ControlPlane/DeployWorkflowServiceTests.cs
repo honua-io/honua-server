@@ -690,7 +690,7 @@ public sealed class DeployWorkflowServiceTests
             var created = _operations.TryAdd(operation.OperationId, operation);
             if (created)
             {
-                IndexMetadataReleaseOperation(operation);
+                IndexMetadataReleaseOperation(operation, createOnly: true);
             }
 
             return Task.FromResult(created);
@@ -709,7 +709,7 @@ public sealed class DeployWorkflowServiceTests
         public Task SetAsync(WorkflowOperationRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
         {
             _operations[operation.OperationId] = operation;
-            IndexMetadataReleaseOperation(operation);
+            IndexMetadataReleaseOperation(operation, createOnly: false);
             return Task.CompletedTask;
         }
 
@@ -721,12 +721,18 @@ public sealed class DeployWorkflowServiceTests
             return Task.FromResult<IReadOnlyList<WorkflowOperationRecord>>(operations);
         }
 
-        private void IndexMetadataReleaseOperation(WorkflowOperationRecord operation)
+        private void IndexMetadataReleaseOperation(WorkflowOperationRecord operation, bool createOnly)
         {
             if (operation.Kind == WorkflowOperationKind.MetadataRelease &&
                 !string.IsNullOrWhiteSpace(operation.MetadataRelease?.PackageId))
             {
-                _metadataPackageIndex[operation.MetadataRelease.PackageId] = operation.OperationId;
+                var packageId = operation.MetadataRelease.PackageId;
+                if (createOnly ||
+                    (_metadataPackageIndex.TryGetValue(packageId, out var currentOperationId) &&
+                     string.Equals(currentOperationId, operation.OperationId, StringComparison.Ordinal)))
+                {
+                    _metadataPackageIndex[packageId] = operation.OperationId;
+                }
             }
         }
     }

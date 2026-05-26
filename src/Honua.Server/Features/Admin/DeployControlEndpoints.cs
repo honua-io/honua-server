@@ -341,7 +341,8 @@ internal static class DeployControlEndpoints
                     operationId,
                     ResolveRequestedBy(context),
                     request?.Reason,
-                    context.RequestAborted)
+                    approvedMetadataReleaseIsDataAffecting: isDestructive,
+                    cancellationToken: context.RequestAborted)
                 .ConfigureAwait(false);
 
             if (operation == null)
@@ -353,6 +354,13 @@ internal static class DeployControlEndpoints
             }
 
             return Results.Json(MapOperationResponse(operation), DeployControlJsonContext.Default.DeployOperationResponse);
+        }
+        catch (ResourceConflictException)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status409Conflict,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status409Conflict),
+                DeployConflictMessage);
         }
         catch (InvalidOperationException)
         {

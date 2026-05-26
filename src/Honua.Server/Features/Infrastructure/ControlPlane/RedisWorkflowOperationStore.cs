@@ -18,6 +18,15 @@ internal sealed partial class RedisWorkflowOperationStore(
     IOptions<MetadataReleaseOperationOptions>? metadataReleaseOptions = null) : IWorkflowOperationStore
 {
     private static readonly TimeSpan DefaultRetention = TimeSpan.FromDays(7);
+    private const string RefreshMetadataPackageIndexScript = """
+        local current = redis.call('GET', KEYS[1])
+        if current == ARGV[1] then
+            redis.call('SET', KEYS[1], ARGV[1], 'PX', tonumber(ARGV[2]))
+            return 1
+        end
+        return 0
+        """;
+
     private readonly IDatabase _database = redis.GetDatabase();
     private readonly MetadataReleaseOperationOptions _metadataReleaseOptions =
         metadataReleaseOptions?.Value ?? new MetadataReleaseOperationOptions();
@@ -178,7 +187,7 @@ internal sealed partial class RedisWorkflowOperationStore(
 
         var payload = JsonSerializer.Serialize(operation, ControlPlaneJsonContext.Default.WorkflowOperationRecord);
         var writeTask = transaction.StringSetAsync(operationKey, payload, retention);
-        QueueMetadataPackageIndexUpdate(transaction, operation, retention);
+        QueueMetadataPackageIndexUpdate(transaction, operation, retention, createOnly);
         QueueActiveIndexUpdates(transaction, operation);
 
         var committed = await transaction.ExecuteAsync().ConfigureAwait(false);
@@ -208,7 +217,8 @@ internal sealed partial class RedisWorkflowOperationStore(
     private static void QueueMetadataPackageIndexUpdate(
         ITransaction transaction,
         WorkflowOperationRecord operation,
-        TimeSpan retention)
+        TimeSpan retention,
+        bool createOnly)
     {
         var packageId = operation.MetadataRelease?.PackageId;
         if (operation.Kind != WorkflowOperationKind.MetadataRelease || string.IsNullOrWhiteSpace(packageId))
@@ -216,10 +226,17 @@ internal sealed partial class RedisWorkflowOperationStore(
             return;
         }
 
-        transaction.StringSetAsync(
-            GetMetadataPackageIndexKey(packageId.Trim()),
-            operation.OperationId,
-            retention);
+        var indexKey = GetMetadataPackageIndexKey(packageId.Trim());
+        if (createOnly)
+        {
+            transaction.StringSetAsync(indexKey, operation.OperationId, retention);
+            return;
+        }
+
+        transaction.ScriptEvaluateAsync(
+            RefreshMetadataPackageIndexScript,
+            [(RedisKey)indexKey],
+            [(RedisValue)operation.OperationId, (RedisValue)(long)retention.TotalMilliseconds]);
     }
 
     private async Task RemoveStaleMembersAsync(string activeKey, IReadOnlyList<RedisValue> staleIds)

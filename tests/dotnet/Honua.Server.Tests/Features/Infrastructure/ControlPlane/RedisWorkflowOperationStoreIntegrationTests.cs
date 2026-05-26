@@ -94,6 +94,64 @@ public sealed class RedisWorkflowOperationStoreIntegrationTests(RedisFixture red
     }
 
     [Fact]
+    public async Task WorkflowStore_MetadataReleasePackageLookup_OlderRetryUpdate_DoesNotReplaceLatestIndex()
+    {
+        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var database = multiplexer.GetDatabase();
+        var store = new RedisWorkflowOperationStore(multiplexer, NullLogger<RedisWorkflowOperationStore>.Instance);
+        var packageId = $"metadata-package-{Guid.NewGuid():N}";
+        var first = CreateMetadataReleaseOperationRecord(packageId, "metadata-op-a");
+        var second = CreateMetadataReleaseOperationRecord(packageId, "metadata-op-b");
+        var retention = TimeSpan.FromHours(6);
+
+        (await store.TryCreateAsync(first, retention)).Should().BeTrue();
+        (await store.TryCreateAsync(second, retention)).Should().BeTrue();
+
+        var firstFailed = first with
+        {
+            Status = WorkflowOperationStatus.Failed,
+            UpdatedAt = first.UpdatedAt.AddMinutes(10),
+            CompletedAt = first.UpdatedAt.AddMinutes(10),
+            CurrentPhase = "Older retry failed after a newer retry was created.",
+            MetadataRelease = first.MetadataRelease! with
+            {
+                CurrentStage = MetadataReleaseStage.Failed
+            }
+        };
+        await store.SetAsync(firstFailed, retention);
+
+        var byPackage = await store.GetByMetadataPackageIdAsync(packageId);
+        byPackage.Should().NotBeNull();
+        byPackage!.OperationId.Should().Be(second.OperationId);
+
+        var byFirstOperationId = await store.GetAsync(first.OperationId);
+        byFirstOperationId.Should().NotBeNull();
+        byFirstOperationId!.Status.Should().Be(WorkflowOperationStatus.Failed);
+
+        var refreshRetention = TimeSpan.FromHours(12);
+        var secondUpdated = second with
+        {
+            UpdatedAt = second.UpdatedAt.AddMinutes(15),
+            CurrentPhase = "Latest retry moved to smoke verification.",
+            MetadataRelease = second.MetadataRelease! with
+            {
+                CurrentStage = MetadataReleaseStage.Smoke
+            }
+        };
+        await store.SetAsync(secondUpdated, refreshRetention);
+
+        var refreshedByPackage = await store.GetByMetadataPackageIdAsync(packageId);
+        refreshedByPackage.Should().NotBeNull();
+        refreshedByPackage!.OperationId.Should().Be(second.OperationId);
+
+        var refreshedOperationTtl = await database.KeyTimeToLiveAsync($"controlplane:workflow:{second.OperationId}");
+        var refreshedIndexTtl = await database.KeyTimeToLiveAsync($"controlplane:workflow:metapkg:{packageId}");
+        refreshedOperationTtl.Should().NotBeNull();
+        refreshedIndexTtl.Should().NotBeNull();
+        Math.Abs((refreshedOperationTtl!.Value - refreshedIndexTtl!.Value).TotalSeconds).Should().BeLessThan(5);
+    }
+
+    [Fact]
     public async Task WorkflowStore_MetadataReleasePackageLookup_WithStaleIndex_ReturnsNull()
     {
         await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);

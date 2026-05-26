@@ -339,6 +339,7 @@ internal sealed partial class DeployWorkflowService
         string operationId,
         string? requestedBy,
         string? reason,
+        bool? approvedMetadataReleaseIsDataAffecting = null,
         CancellationToken cancellationToken = default)
     {
         EnsureDurableStoreConfigured();
@@ -351,6 +352,7 @@ internal sealed partial class DeployWorkflowService
 
         if (operation.Kind == WorkflowOperationKind.MetadataRelease)
         {
+            EnsureMetadataReleaseRollbackApprovalStillMatches(operation, approvedMetadataReleaseIsDataAffecting);
             return await RequestMetadataReleaseRollbackAsync(operation, requestedBy, reason, cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -477,6 +479,25 @@ internal sealed partial class DeployWorkflowService
 
         await _workflowStore!.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
         return updated;
+    }
+
+    private static void EnsureMetadataReleaseRollbackApprovalStillMatches(
+        WorkflowOperationRecord operation,
+        bool? approvedIsDataAffecting)
+    {
+        if (!approvedIsDataAffecting.HasValue)
+        {
+            return;
+        }
+
+        var currentIsDataAffecting = operation.MetadataRelease?.RollbackPlan?.IsDataAffecting ?? true;
+        if (currentIsDataAffecting == approvedIsDataAffecting.Value)
+        {
+            return;
+        }
+
+        throw new ResourceConflictException(
+            "Metadata release rollback plan changed before rollback could be requested. Re-read the operation and retry approval.");
     }
 
     private static WorkflowOperationStatus DeterminePersistedStatus(DeployPlan plan)
