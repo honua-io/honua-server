@@ -151,11 +151,7 @@ internal static partial class FeatureServerEndpoints
             Type = "Feature Layer",
             GeometryType = MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None),
             SpatialReference = spatialReference,
-            // V2 resources don't carry an extent on the canonical model; the spatial bbox
-            // is the closest equivalent and is reported separately via temporal/spatial
-            // extent endpoints. Returning null preserves byte-for-byte compatibility with
-            // the v1 path for resources without an extent.
-            Extent = null,
+            Extent = MapExtentV2(resource.Spatial?.Bbox, spatialReference),
             TimeInfo = timeInfo,
             ExtrusionInfo = extrusionInfo,
             Fields = [.. ResolveVisibleFieldsV2(resource).Select(MapFieldInfoV2)],
@@ -184,6 +180,23 @@ internal static partial class FeatureServerEndpoints
             EditingInfo = supportsEditing ? new EditingInfo() : null,
             Templates = [],
             AdvancedQueryCapabilities = advancedQueryCapabilities
+        };
+    }
+
+    private static ExtentInfo? MapExtentV2(MetadataV2Bbox? bbox, SpatialReferenceInfo spatialReference)
+    {
+        if (bbox is null)
+        {
+            return null;
+        }
+
+        return new ExtentInfo
+        {
+            Xmin = bbox.West,
+            Ymin = bbox.South,
+            Xmax = bbox.East,
+            Ymax = bbox.North,
+            SpatialReference = spatialReference
         };
     }
 

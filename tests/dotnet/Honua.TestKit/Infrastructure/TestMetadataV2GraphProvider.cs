@@ -90,7 +90,9 @@ public sealed class TestMetadataV2GraphBuilder
         string name,
         MetadataV2ResourceType type = MetadataV2ResourceType.FeatureDataset,
         IEnumerable<MetadataV2Field>? fields = null,
-        AccessPolicy? accessPolicy = null)
+        AccessPolicy? accessPolicy = null,
+        MetadataV2ResourceSpatial? spatial = null,
+        MetadataV2ResourceTemporal? temporal = null)
     {
         _resources.Add(new MetadataV2Resource
         {
@@ -98,6 +100,8 @@ public sealed class TestMetadataV2GraphBuilder
             Type = type,
             SchemaFields = fields?.ToArray() ?? Array.Empty<MetadataV2Field>(),
             AccessPolicy = accessPolicy,
+            Spatial = spatial,
+            Temporal = temporal,
         });
         return this;
     }

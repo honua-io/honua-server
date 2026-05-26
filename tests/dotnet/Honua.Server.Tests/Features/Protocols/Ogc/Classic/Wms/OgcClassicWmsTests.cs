@@ -112,7 +112,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         content.Should().Contain("<Format>application/vnd.ogc.wms_xml</Format>");
         content.Should().Contain("<SRS>EPSG:4326</SRS>");
         content.Should().Contain("<LatLonBoundingBox");
-        content.Should().Contain("<BoundingBox SRS=\"EPSG:4326\" minx=\"-180.000000\" miny=\"-90.000000\" maxx=\"180.000000\" maxy=\"90.000000\"");
+        content.Should().Contain("<BoundingBox SRS=\"EPSG:4326\" minx=\"-123.000000\" miny=\"37.000000\" maxx=\"-122.000000\" maxy=\"38.000000\"");
         content.Should().NotContain("<WMS_Capabilities");
     }
 
@@ -173,7 +173,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        content.Should().Contain("<BoundingBox CRS=\"EPSG:4326\" minx=\"-90.000000\" miny=\"-180.000000\" maxx=\"90.000000\" maxy=\"180.000000\"");
+        content.Should().Contain("<BoundingBox CRS=\"EPSG:4326\" minx=\"37.000000\" miny=\"-123.000000\" maxx=\"38.000000\" maxy=\"-122.000000\"");
     }
 
     [IntegrationTest]

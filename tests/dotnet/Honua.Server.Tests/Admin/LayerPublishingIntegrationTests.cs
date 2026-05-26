@@ -3,12 +3,16 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Globalization;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
@@ -17,6 +21,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
@@ -181,6 +186,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         publishApi.Should().NotBeNull();
         publishApi!.Data.Should().NotBeNull();
         _layerId = publishApi.Data!.LayerId;
+        await MirrorPublishedLayerMetadataV2Async(_layerId.Value, _serviceName);
 
         using (var scope = _fixture.Services.CreateScope())
         {
@@ -235,14 +241,17 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         geometry.GetProperty("x").GetDouble().Should().Be(1d);
         geometry.GetProperty("y").GetDouble().Should().Be(1d);
 
-        var ogcItemsResponse = await _client.GetAsync(
+        using var ogcClient = _fixture.CreateClient(client =>
+            client.DefaultRequestHeaders.Remove("X-Honua-Test-Schema"));
+
+        var ogcItemsResponse = await ogcClient.GetAsync(
             $"/ogc/features/collections/{_layerId}/items?f=json&limit=10");
 
         var ogcItemsPayload = await ogcItemsResponse.Content.ReadAsStringAsync();
         ogcItemsResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {ogcItemsPayload}");
         using var ogcItemsDocument = JsonDocument.Parse(ogcItemsPayload);
         var ogcFeatures = ogcItemsDocument.RootElement.GetProperty("features");
-        ogcFeatures.GetArrayLength().Should().Be(1);
+        ogcFeatures.GetArrayLength().Should().Be(1, $"response: {ogcItemsPayload}");
 
         var ogcFeature = ogcFeatures[0];
         ogcFeature.GetProperty("id").GetInt64().Should().Be(1);
@@ -252,7 +261,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         coordinates[0].GetDouble().Should().Be(1d);
         coordinates[1].GetDouble().Should().Be(1d);
 
-        var ogcItemResponse = await _client.GetAsync(
+        var ogcItemResponse = await ogcClient.GetAsync(
             $"/ogc/features/collections/{_layerId}/items/1?f=json");
 
         var ogcItemPayload = await ogcItemResponse.Content.ReadAsStringAsync();
@@ -462,6 +471,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         publishApi!.Success.Should().BeTrue();
         publishApi.Data.Should().NotBeNull();
         _layerId = publishApi.Data!.LayerId;
+        await MirrorPublishedLayerMetadataV2Async(_layerId.Value, _serviceName);
 
         await using (var connection = await _fixture.Postgres.GetConnectionAsync())
         await using (var command = connection.CreateCommand())
@@ -618,6 +628,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             refreshApi.Data.LayersWithExtent.Should().Be(1);
             refreshApi.Data.Layers.Single().ExtentSrid.Should().Be(4326);
 
+            await MirrorPublishedLayerMetadataV2Async(_layerId.Value, _serviceName);
             await AssertPersistedExtentAsync(secondLon, firstLat, firstLon, secondLat, tolerance);
             await AssertFeatureServerExtentAsync(secondLon, firstLat, firstLon, secondLat, tolerance);
             await AssertFeatureServerQueryExtentAsync(secondLon, firstLat, firstLon, secondLat, tolerance);
@@ -1283,7 +1294,283 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         api.Should().NotBeNull();
         api!.Success.Should().BeTrue();
         api.Data.Should().NotBeNull();
+        await MirrorPublishedLayerMetadataV2Async(api.Data!.LayerId, api.Data.ServiceName);
         return api.Data!;
+    }
+
+    private async Task MirrorPublishedLayerMetadataV2Async(int layerId, string serviceName)
+    {
+        var provider = _fixture.GetService<IMetadataV2GraphProvider>() as TestMetadataV2GraphProvider
+            ?? throw new InvalidOperationException("Test V2 graph provider was not registered.");
+
+        var (layerName, description, primaryKey, geometryColumn, geometryType, srid, storageSrid, bbox) =
+            await ReadLayerMetadataForV2MirrorAsync(layerId);
+        var fields = await ReadLayerFieldsForV2MirrorAsync(layerId, primaryKey);
+
+        var snapshot = await provider.GetCurrentAsync();
+        var graph = snapshot.Graph;
+        var serviceId = $"svc-published-{serviceName}";
+        var resourceId = $"res-published-layer-{layerId}";
+        var bindingId = $"binding-published-layer-{layerId}";
+        var publicationId = $"pub-published-layer-{layerId}";
+        var replacedResourceIds = graph.Publications
+            .Where(publication => publication.LayerIndex == layerId)
+            .Select(publication => publication.ResourceId)
+            .Concat(graph.StorageBindings
+                .Where(binding => binding.StorageLayerId == layerId)
+                .Select(binding => binding.ResourceId))
+            .Append(resourceId)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var resources = graph.Resources.Where(resource =>
+                !replacedResourceIds.Contains(resource.Metadata.Id))
+            .Append(new MetadataV2Resource
+            {
+                Metadata = new MetadataV2ObjectMetadata
+                {
+                    Id = resourceId,
+                    Name = layerName,
+                    Description = description
+                },
+                Type = MetadataV2ResourceType.FeatureDataset,
+                Status = ReadyMetadataV2Status(),
+                StorageBindingIds = [bindingId],
+                PrimaryStorageBindingId = bindingId,
+                SchemaFields = fields,
+                Spatial = new MetadataV2ResourceSpatial
+                {
+                    SpatialReference = ToSpatialReference(srid),
+                    StorageCrs = storageSrid > 0 && storageSrid != srid ? ToSpatialReference(storageSrid) : null,
+                    GeometryType = ToMetadataV2GeometryType(geometryType),
+                    PrimaryGeometryField = geometryColumn,
+                    Bbox = bbox,
+                    SupportedCrs = storageSrid > 0 && storageSrid != srid
+                        ? [ToSpatialReference(srid), ToSpatialReference(storageSrid)]
+                        : [ToSpatialReference(srid)]
+                },
+            })
+            .ToArray();
+
+        var storageBindings = graph.StorageBindings.Where(binding =>
+                !string.Equals(binding.Metadata.Id, bindingId, StringComparison.Ordinal) &&
+                binding.StorageLayerId != layerId)
+            .Append(new MetadataV2StorageBinding
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = bindingId, Name = bindingId },
+                ResourceId = resourceId,
+                StorageType = MetadataV2StorageType.RelationalTable,
+                Locator = $"features:{layerId}",
+                StorageLayerId = layerId,
+            })
+            .ToArray();
+
+        var publications = graph.Publications.Where(publication =>
+                !string.Equals(publication.Metadata.Id, publicationId, StringComparison.Ordinal) &&
+                publication.LayerIndex != layerId)
+            .Append(new MetadataV2Publication
+            {
+                Metadata = new MetadataV2ObjectMetadata
+                {
+                    Id = publicationId,
+                    Name = layerId.ToString(CultureInfo.InvariantCulture)
+                },
+                ServiceId = serviceId,
+                ResourceId = resourceId,
+                PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+                Status = ReadyMetadataV2Status(),
+                Identifier = new MetadataV2PublicationIdentifier
+                {
+                    Value = layerId.ToString(CultureInfo.InvariantCulture),
+                    IsNumeric = true,
+                },
+                IsPrimary = true,
+            })
+            .ToArray();
+
+        var publicationIds = publications
+            .Where(publication => string.Equals(publication.ServiceId, serviceId, StringComparison.Ordinal))
+            .Select(publication => publication.Metadata.Id)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var services = graph.Services.Where(service =>
+                !string.Equals(service.Metadata.Id, serviceId, StringComparison.Ordinal))
+            .Append(new MetadataV2Service
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = serviceId, Name = serviceName },
+                ServiceType = MetadataV2ServiceType.EsriFeatureService,
+                Protocols = [ServiceProtocols.FeatureServer, ServiceProtocols.OgcFeatures],
+                PublicationIds = publicationIds,
+                Status = ReadyMetadataV2Status(),
+                SpatialReference = ToSpatialReference(srid),
+            })
+            .ToArray();
+
+        provider.SetGraph(graph with
+        {
+            Resources = resources,
+            StorageBindings = storageBindings,
+            Services = services,
+            Publications = publications,
+            Revision = graph.Revision + 1,
+            GeneratedAt = DateTimeOffset.UtcNow,
+        });
+    }
+
+    private async Task<(
+        string LayerName,
+        string? Description,
+        string PrimaryKey,
+        string GeometryColumn,
+        string GeometryType,
+        int Srid,
+        int StorageSrid,
+        MetadataV2Bbox? Bbox)> ReadLayerMetadataForV2MirrorAsync(int layerId)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                layer_name,
+                description,
+                primary_key_column,
+                geometry_column,
+                geometry_type,
+                srid,
+                COALESCE(storage_srid, srid),
+                ST_XMin(extent),
+                ST_YMin(extent),
+                ST_XMax(extent),
+                ST_YMax(extent)
+            FROM honua.layers
+            WHERE layer_id = @layerId;
+            """;
+        command.Parameters.AddWithValue("layerId", layerId);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+
+        var bbox = reader.IsDBNull(7)
+            ? null
+            : new MetadataV2Bbox
+            {
+                West = reader.GetDouble(7),
+                South = reader.GetDouble(8),
+                East = reader.GetDouble(9),
+                North = reader.GetDouble(10),
+            };
+
+        return (
+            reader.GetString(0),
+            reader.IsDBNull(1) ? null : reader.GetString(1),
+            reader.GetString(2),
+            reader.GetString(3),
+            reader.GetString(4),
+            reader.GetInt32(5),
+            reader.GetInt32(6),
+            bbox);
+    }
+
+    private async Task<IReadOnlyList<MetadataV2Field>> ReadLayerFieldsForV2MirrorAsync(
+        int layerId,
+        string primaryKey)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT field_name, field_type, nullable, max_length, description
+            FROM honua.layer_fields
+            WHERE layer_id = @layerId
+            ORDER BY field_order;
+            """;
+        command.Parameters.AddWithValue("layerId", layerId);
+
+        var fields = new List<MetadataV2Field>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var fieldName = reader.GetString(0);
+            var fieldType = ToMetadataV2FieldType(reader.GetString(1));
+            var semanticRoles = new List<string>();
+            if (string.Equals(fieldName, primaryKey, StringComparison.OrdinalIgnoreCase))
+            {
+                semanticRoles.Add("id.primary");
+            }
+            if (fieldType is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)
+            {
+                semanticRoles.Add("geometry.primary");
+            }
+
+            fields.Add(new MetadataV2Field
+            {
+                Name = fieldName,
+                Type = fieldType,
+                Nullable = reader.GetBoolean(2),
+                Length = reader.IsDBNull(3) ? null : reader.GetInt32(3),
+                Description = reader.IsDBNull(4) ? null : reader.GetString(4),
+                Editable = fieldType is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography),
+                SemanticRoles = semanticRoles,
+            });
+        }
+
+        return fields;
+    }
+
+    private static MetadataV2Status ReadyMetadataV2Status()
+        => new()
+        {
+            Lifecycle = MetadataV2LifecycleStatus.Active,
+            State = MetadataV2OperationalState.Ready,
+        };
+
+    private static MetadataV2SpatialReference ToSpatialReference(int srid)
+        => new()
+        {
+            Srid = srid,
+            Crs = $"EPSG:{srid}",
+            IsGeographic = srid == 4326,
+        };
+
+    private static MetadataV2GeometryType ToMetadataV2GeometryType(string geometryType)
+    {
+        var normalized = geometryType.Replace("_", string.Empty, StringComparison.Ordinal)
+            .Replace("-", string.Empty, StringComparison.Ordinal)
+            .ToLowerInvariant();
+        return normalized switch
+        {
+            "point" => MetadataV2GeometryType.Point,
+            "multipoint" => MetadataV2GeometryType.MultiPoint,
+            "linestring" or "line" or "polyline" => MetadataV2GeometryType.LineString,
+            "multilinestring" or "multiline" or "multipolyline" => MetadataV2GeometryType.MultiLineString,
+            "polygon" => MetadataV2GeometryType.Polygon,
+            "multipolygon" => MetadataV2GeometryType.MultiPolygon,
+            "geometrycollection" => MetadataV2GeometryType.GeometryCollection,
+            _ => MetadataV2GeometryType.Mixed,
+        };
+    }
+
+    private static MetadataV2FieldType ToMetadataV2FieldType(string fieldType)
+    {
+        var normalized = fieldType.Replace("_", string.Empty, StringComparison.Ordinal)
+            .Replace("-", string.Empty, StringComparison.Ordinal)
+            .ToLowerInvariant();
+        return normalized switch
+        {
+            "string" or "text" => MetadataV2FieldType.String,
+            "integer" or "int" or "int32" => MetadataV2FieldType.Integer,
+            "biginteger" or "long" or "bigint" or "int64" => MetadataV2FieldType.BigInteger,
+            "double" or "float64" => MetadataV2FieldType.Double,
+            "float" or "single" => MetadataV2FieldType.Float,
+            "boolean" or "bool" => MetadataV2FieldType.Boolean,
+            "datetime" or "timestamp" => MetadataV2FieldType.DateTime,
+            "date" => MetadataV2FieldType.Date,
+            "time" => MetadataV2FieldType.Time,
+            "json" or "jsonb" => MetadataV2FieldType.Json,
+            "binary" or "bytes" => MetadataV2FieldType.Binary,
+            "uuid" or "guid" => MetadataV2FieldType.Uuid,
+            "geometry" => MetadataV2FieldType.Geometry,
+            "geography" => MetadataV2FieldType.Geography,
+            _ => MetadataV2FieldType.Unknown,
+        };
     }
 
     private async Task AssertPersistedExtentAsync(
