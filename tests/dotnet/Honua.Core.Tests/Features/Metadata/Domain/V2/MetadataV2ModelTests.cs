@@ -423,6 +423,104 @@ public sealed class MetadataV2ModelTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public void Validate_WithInvalidNewGraphEntityFamilyIds_ReturnsErrors()
+    {
+        var graph = CreateValidGraph() with
+        {
+            Catalogs =
+            [
+                new MetadataV2Catalog
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource.parcels" }
+                }
+            ],
+            ProjectionProfiles =
+            [
+                new MetadataV2ProjectionProfile
+                {
+                    Metadata = new MetadataV2ObjectMetadata()
+                }
+            ],
+            Policies =
+            [
+                new MetadataV2Policy
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "policy.shared" }
+                },
+                new MetadataV2Policy
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "policy.shared" }
+                }
+            ],
+            Roles =
+            [
+                new MetadataV2Role
+                {
+                    Metadata = new MetadataV2ObjectMetadata()
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain("metadata id 'resource.parcels' is duplicated.");
+        result.Errors.Should().Contain("projection profile metadata id is required.");
+        result.Errors.Should().Contain("metadata id 'policy.shared' is duplicated.");
+        result.Errors.Should().Contain("role metadata id is required.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Validate_WithInvalidNewGraphEntityFamilyMetadata_ReturnsErrors()
+    {
+        var graph = CreateValidGraph() with
+        {
+            Catalogs =
+            [
+                new MetadataV2Catalog
+                {
+                    Metadata = MetadataWithInvalidEmail("catalog.discovery")
+                }
+            ],
+            ProjectionProfiles =
+            [
+                new MetadataV2ProjectionProfile
+                {
+                    Metadata = MetadataWithInvalidEmail("projection.dcat")
+                }
+            ],
+            Policies =
+            [
+                new MetadataV2Policy
+                {
+                    Metadata = MetadataWithInvalidEmail("policy.public")
+                }
+            ],
+            Roles =
+            [
+                new MetadataV2Role
+                {
+                    Metadata = MetadataWithInvalidEmail("role.publisher")
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(
+            "catalog 'catalog.discovery' metadata.contactPoint.email 'invalid-email' must contain '@'.");
+        result.Errors.Should().Contain(
+            "projection profile 'projection.dcat' metadata.contactPoint.email 'invalid-email' must contain '@'.");
+        result.Errors.Should().Contain(
+            "policy 'policy.public' metadata.contactPoint.email 'invalid-email' must contain '@'.");
+        result.Errors.Should().Contain(
+            "role 'role.publisher' metadata.contactPoint.email 'invalid-email' must contain '@'.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public void Validate_WithDanglingPublicationReferences_ReturnsResourceAndServiceErrors()
     {
         var graph = CreateValidGraph() with
@@ -534,6 +632,18 @@ public sealed class MetadataV2ModelTests
 
         result.IsValid.Should().BeFalse();
         result.Errors.Should().Contain("publication 'publication.parcels' references missing service 'service.other'.");
+    }
+
+    private static MetadataV2ObjectMetadata MetadataWithInvalidEmail(string id)
+    {
+        return new MetadataV2ObjectMetadata
+        {
+            Id = id,
+            ContactPoint = new MetadataV2ContactPoint
+            {
+                Email = "invalid-email"
+            }
+        };
     }
 
     private static MetadataV2Graph CreateValidGraph()

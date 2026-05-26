@@ -20,6 +20,7 @@ public static class MetadataV2GraphValidator
         var errors = new List<string>();
         var entityIds = new HashSet<string>(StringComparer.Ordinal);
 
+        AddEntityIds(errors, entityIds, "catalog", graph.Catalogs.Select(catalog => catalog.Metadata.Id));
         AddEntityIds(errors, entityIds, "resource", graph.Resources.Select(resource => resource.Metadata.Id));
         AddEntityIds(errors, entityIds, "connection", graph.Connections.Select(connection => connection.Metadata.Id));
         AddEntityIds(
@@ -29,6 +30,13 @@ public static class MetadataV2GraphValidator
             graph.StorageBindings.Select(storageBinding => storageBinding.Metadata.Id));
         AddEntityIds(errors, entityIds, "service", graph.Services.Select(service => service.Metadata.Id));
         AddEntityIds(errors, entityIds, "publication", graph.Publications.Select(publication => publication.Metadata.Id));
+        AddEntityIds(
+            errors,
+            entityIds,
+            "projection profile",
+            graph.ProjectionProfiles.Select(projectionProfile => projectionProfile.Metadata.Id));
+        AddEntityIds(errors, entityIds, "policy", graph.Policies.Select(policy => policy.Metadata.Id));
+        AddEntityIds(errors, entityIds, "role", graph.Roles.Select(role => role.Metadata.Id));
 
         var resourceIds = graph.Resources.Select(resource => resource.Metadata.Id).ToHashSet(StringComparer.Ordinal);
         var connectionIds = graph.Connections.Select(connection => connection.Metadata.Id).ToHashSet(StringComparer.Ordinal);
@@ -482,6 +490,10 @@ public static class MetadataV2GraphValidator
     private static void ValidateObjectMetadataUniversals(List<string> errors, MetadataV2Graph graph)
     {
         ValidateOneMetadata(errors, "graph", graph.Metadata);
+        foreach (var c in graph.Catalogs)
+        {
+            ValidateOneMetadata(errors, $"catalog '{c.Metadata.Id}'", c.Metadata);
+        }
         foreach (var r in graph.Resources)
         {
             ValidateOneMetadata(errors, $"resource '{r.Metadata.Id}'", r.Metadata);
@@ -501,6 +513,18 @@ public static class MetadataV2GraphValidator
         foreach (var p in graph.Publications)
         {
             ValidateOneMetadata(errors, $"publication '{p.Metadata.Id}'", p.Metadata);
+        }
+        foreach (var p in graph.ProjectionProfiles)
+        {
+            ValidateOneMetadata(errors, $"projection profile '{p.Metadata.Id}'", p.Metadata);
+        }
+        foreach (var p in graph.Policies)
+        {
+            ValidateOneMetadata(errors, $"policy '{p.Metadata.Id}'", p.Metadata);
+        }
+        foreach (var r in graph.Roles)
+        {
+            ValidateOneMetadata(errors, $"role '{r.Metadata.Id}'", r.Metadata);
         }
     }
 
