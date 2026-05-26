@@ -29,6 +29,14 @@ public static class MetadataV2GraphValidator
             graph.StorageBindings.Select(storageBinding => storageBinding.Metadata.Id));
         AddEntityIds(errors, entityIds, "service", graph.Services.Select(service => service.Metadata.Id));
         AddEntityIds(errors, entityIds, "publication", graph.Publications.Select(publication => publication.Metadata.Id));
+        AddEntityIds(errors, entityIds, "catalog", graph.Catalogs.Select(catalog => catalog.Metadata.Id));
+        AddEntityIds(errors, entityIds, "policy", graph.Policies.Select(policy => policy.Metadata.Id));
+        AddEntityIds(errors, entityIds, "role", graph.Roles.Select(role => role.Metadata.Id));
+        AddEntityIds(
+            errors,
+            entityIds,
+            "projection profile",
+            graph.ProjectionProfiles.Select(profile => profile.Metadata.Id));
 
         var resourceIds = graph.Resources.Select(resource => resource.Metadata.Id).ToHashSet(StringComparer.Ordinal);
         var connectionIds = graph.Connections.Select(connection => connection.Metadata.Id).ToHashSet(StringComparer.Ordinal);
@@ -39,11 +47,17 @@ public static class MetadataV2GraphValidator
         var publicationsById = ToUniqueDictionary(
             graph.Publications,
             publication => publication.Metadata.Id);
+        var catalogsById = ToUniqueDictionary(
+            graph.Catalogs,
+            catalog => catalog.Metadata.Id);
+        var policyIds = graph.Policies.Select(policy => policy.Metadata.Id).ToHashSet(StringComparer.Ordinal);
 
         ValidateStorageBindings(errors, graph.StorageBindings, resourceIds, connectionIds);
-        ValidateResources(errors, graph.Resources, storageBindingsById);
+        ValidateResources(errors, graph.Resources, storageBindingsById, policyIds);
         ValidatePublications(errors, graph.Publications, resourceIds, storageBindingsById, serviceIds);
         ValidateServices(errors, graph.Services, publicationsById);
+        ValidateCatalogs(errors, graph.Catalogs, catalogsById, resourceIds, publicationsById);
+        ValidateRoles(errors, graph.Roles, policyIds);
         ValidatePublicationPrimary(errors, graph.Publications);
         ValidateObjectMetadataUniversals(errors, graph);
         ValidateStyleResources(errors, graph);
@@ -117,7 +131,8 @@ public static class MetadataV2GraphValidator
     private static void ValidateResources(
         List<string> errors,
         IEnumerable<MetadataV2Resource> resources,
-        Dictionary<string, MetadataV2StorageBinding> storageBindingsById)
+        Dictionary<string, MetadataV2StorageBinding> storageBindingsById,
+        HashSet<string> policyIds)
     {
         foreach (var resource in resources)
         {
@@ -146,6 +161,7 @@ public static class MetadataV2GraphValidator
             ValidateResourceTemporal(errors, resource);
             ValidateResourceSchemaFields(errors, resource);
             ValidateResourceDisplayEditing(errors, resource);
+            ValidateResourcePolicies(errors, resource, policyIds);
         }
     }
 
@@ -378,6 +394,71 @@ public static class MetadataV2GraphValidator
         }
     }
 
+    private static void ValidateResourcePolicies(
+        List<string> errors,
+        MetadataV2Resource resource,
+        HashSet<string> policyIds)
+    {
+        foreach (var policyId in resource.PolicyIds ?? Array.Empty<string>())
+        {
+            if (!policyIds.Contains(policyId))
+            {
+                errors.Add($"resource '{resource.Metadata.Id}' references missing policy '{policyId}'.");
+            }
+        }
+    }
+
+    private static void ValidateCatalogs(
+        List<string> errors,
+        IEnumerable<MetadataV2Catalog> catalogs,
+        Dictionary<string, MetadataV2Catalog> catalogsById,
+        HashSet<string> resourceIds,
+        Dictionary<string, MetadataV2Publication> publicationsById)
+    {
+        foreach (var catalog in catalogs)
+        {
+            if (catalog.ParentCatalogId is { } parentCatalogId && !catalogsById.ContainsKey(parentCatalogId))
+            {
+                errors.Add(
+                    $"catalog '{catalog.Metadata.Id}' references missing parent catalog '{parentCatalogId}'.");
+            }
+
+            foreach (var resourceId in catalog.ResourceIds ?? Array.Empty<string>())
+            {
+                if (!resourceIds.Contains(resourceId))
+                {
+                    errors.Add($"catalog '{catalog.Metadata.Id}' references missing resource '{resourceId}'.");
+                }
+            }
+
+            foreach (var publicationId in catalog.PublicationIds ?? Array.Empty<string>())
+            {
+                if (!publicationsById.ContainsKey(publicationId))
+                {
+                    errors.Add(
+                        $"catalog '{catalog.Metadata.Id}' references missing publication '{publicationId}'.");
+                }
+            }
+        }
+    }
+
+    private static void ValidateRoles(
+        List<string> errors,
+        IEnumerable<MetadataV2Role> roles,
+        HashSet<string> policyIds)
+    {
+        foreach (var role in roles)
+        {
+            foreach (var policyId in role.PolicyIds ?? Array.Empty<string>())
+            {
+                if (!policyIds.Contains(policyId))
+                {
+                    errors.Add($"role '{role.Metadata.Id}' references missing policy '{policyId}'.");
+                }
+            }
+        }
+    }
+
     private static void ValidatePublications(
         List<string> errors,
         IEnumerable<MetadataV2Publication> publications,
@@ -431,9 +512,9 @@ public static class MetadataV2GraphValidator
 
     private static void ValidateStyleResources(List<string> errors, MetadataV2Graph graph)
     {
-        var styleResources = graph.Resources
-            .Where(r => r.Type == MetadataV2ResourceType.Style)
-            .ToDictionary(r => r.Metadata.Id, StringComparer.Ordinal);
+        var styleResources = ToUniqueDictionary(
+            graph.Resources.Where(r => r.Type == MetadataV2ResourceType.Style),
+            resource => resource.Metadata.Id);
 
         foreach (var resource in graph.Resources)
         {
@@ -514,6 +595,22 @@ public static class MetadataV2GraphValidator
         foreach (var p in graph.Publications)
         {
             ValidateOneMetadata(errors, $"publication '{p.Metadata.Id}'", p.Metadata);
+        }
+        foreach (var c in graph.Catalogs)
+        {
+            ValidateOneMetadata(errors, $"catalog '{c.Metadata.Id}'", c.Metadata);
+        }
+        foreach (var p in graph.Policies)
+        {
+            ValidateOneMetadata(errors, $"policy '{p.Metadata.Id}'", p.Metadata);
+        }
+        foreach (var r in graph.Roles)
+        {
+            ValidateOneMetadata(errors, $"role '{r.Metadata.Id}'", r.Metadata);
+        }
+        foreach (var p in graph.ProjectionProfiles)
+        {
+            ValidateOneMetadata(errors, $"projection profile '{p.Metadata.Id}'", p.Metadata);
         }
     }
 

@@ -36,9 +36,17 @@ The operation response includes:
 | `operationId` | Stable workflow operation ID. Use this for retry history and rollback requests. |
 | `kind` | `MetadataRelease` for metadata release lifecycle records. |
 | `status` | Workflow status such as `Planned`, `AwaitingApproval`, `Submitted`, `Reconciling`, `Succeeded`, `Failed`, `RollbackRequested`, `RolledBack`, or `ManualInterventionRequired`. |
+| `priority` | Workflow priority (`Low`, `Normal`, `High`, or `Critical`). |
+| `target` | Deploy target details for deploy operations; normally `null` on metadata release lifecycle records because release-specific target state is carried in `metadataRelease`. |
+| `providerOperationId`, `currentPhase`, `observedState`, `errorMessage` | Provider/reconciler status details when available. |
 | `warnings`, `blockingReasons` | Operation-level advisories and blockers. |
+| `requestedBy`, `reason`, `correlationId` | Audit and tracing fields captured from the operation request or rollback request when supplied. |
 | `metadataRelease` | Metadata release lifecycle context described below. |
 | `createdAt`, `updatedAt`, `completedAt` | Durable operation timestamps. |
+
+Both package-ID and operation-ID reads may run the workflow reconciler before
+returning when the operation is `Submitted`, `Reconciling`, or
+`RollbackRequested`.
 
 `metadataRelease` fields:
 

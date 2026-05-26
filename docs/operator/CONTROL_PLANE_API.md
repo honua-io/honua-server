@@ -670,15 +670,17 @@ for run lifecycle, scheduler semantics, and tuning details.
 For metadata release operations, rollback requests reuse
 `/api/v1/admin/deploy/operations/{operationId}/rollback` with an optional
 `reason`. Accepted requests set the workflow status and
-`metadataRelease.currentStage` to `RollbackRequested`; rejected destructive
-approval checks return `403` without mutating the stored operation. The approval
-decision is taken from the rollback plan's `isDataAffecting` and
-`requiresExplicitApproval` values; the server then re-reads the stored operation
-before writing the state change and returns `409 Conflict` without mutation if
-either approval-affecting classification changed between the approval check and
-the write (mitigating a TOCTOU race where a recomputed plan would otherwise roll
-back under a stale approval). Callers should re-read the operation and re-approve
-against the current plan.
+`metadataRelease.currentStage` to `RollbackRequested`; rejected approval checks
+return `403` without mutating the stored operation. The approval decision is
+taken from the rollback plan's `isDataAffecting` and
+`requiresExplicitApproval` values: metadata-only plans can still require
+explicit approval without being treated as data-affecting, while data-affecting
+plans use the destructive approval gate. The server then re-reads the stored
+operation before writing the state change and returns `409 Conflict` without
+mutation if either approval-affecting classification changed between the
+approval check and the write (mitigating a TOCTOU race where a recomputed plan
+would otherwise roll back under a stale approval). Callers should re-read the
+operation and re-approve against the current plan.
 
 ### **Alert Management Endpoints**
 
