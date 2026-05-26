@@ -122,6 +122,14 @@ public static class MetadataV2GraphValidator
         foreach (var resource in resources)
         {
             var storageBindingIds = resource.StorageBindingIds ?? Array.Empty<string>();
+            var primaryStorageBindingId = resource.PrimaryStorageBindingId;
+
+            if (!string.IsNullOrWhiteSpace(primaryStorageBindingId) &&
+                !storageBindingIds.Contains(primaryStorageBindingId, StringComparer.Ordinal))
+            {
+                errors.Add(
+                    $"resource '{resource.Metadata.Id}' primary storage binding '{primaryStorageBindingId}' must be listed in storageBindingIds.");
+            }
 
             foreach (var storageBindingId in storageBindingIds)
             {

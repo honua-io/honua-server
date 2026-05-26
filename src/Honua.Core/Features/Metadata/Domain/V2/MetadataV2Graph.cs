@@ -165,7 +165,7 @@ public sealed record MetadataV2Resource
     [JsonPropertyName("primaryStorageBindingId")]
     public string? PrimaryStorageBindingId
     {
-        get => _primaryStorageBindingId ?? (StorageBindingIds.Count == 0 ? null : StorageBindingIds[0]);
+        get => _primaryStorageBindingId ?? (StorageBindingIds is { Count: > 0 } ? StorageBindingIds[0] : null);
         init => _primaryStorageBindingId = value;
     }
 
