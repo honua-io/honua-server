@@ -37,11 +37,24 @@ public interface IJobQueue
     /// Optional filter for job kinds this worker can execute.
     /// Null accepts all kinds.
     /// </param>
+    /// <param name="acceptedRuntimeProfiles">
+    /// Runtime-profile claim fence: the set of runtime profiles this worker can
+    /// execute. A job is only claimable when its effective profile is in this set,
+    /// where a job whose <see cref="ExecutionJobSpec.RuntimeProfile"/> is null or empty
+    /// is treated as the managed/default profile (see
+    /// <see cref="Domain.RuntimeProfiles.Normalize(string?)"/>). A <c>null</c> set is
+    /// treated as <see cref="Domain.RuntimeProfiles.DefaultAccepted"/>
+    /// (managed/default only) — NOT "accept any" — so a worker that declares no
+    /// profile constraint can never claim a <see cref="Domain.RuntimeProfiles.Native"/>
+    /// job. This is the load-bearing guard that keeps the lean (GDAL-free) worker from
+    /// claiming a native GDAL job, and the native worker from claiming managed jobs.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The claimed job identifier, or null if the queue is empty.</returns>
     Task<string?> TryClaimAsync(
         string workerId,
         IReadOnlySet<ExecutionJobKind>? acceptedKinds = null,
+        IReadOnlySet<string>? acceptedRuntimeProfiles = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

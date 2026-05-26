@@ -87,6 +87,7 @@ internal sealed partial class RedisJobQueue(
     public async Task<string?> TryClaimAsync(
         string workerId,
         IReadOnlySet<ExecutionJobKind>? acceptedKinds = null,
+        IReadOnlySet<string>? acceptedRuntimeProfiles = null,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -150,6 +151,17 @@ internal sealed partial class RedisJobQueue(
                 }
 
                 if (acceptedKinds != null && !acceptedKinds.Contains(job.Spec.Kind))
+                {
+                    totalSkipped++;
+                    continue;
+                }
+
+                // Runtime-profile claim fence. A job whose RuntimeProfile is null or
+                // empty is treated as the managed/default profile; a null accepted set
+                // is treated as managed/default-only (NOT "accept any"). This guarantees
+                // the lean (GDAL-free) worker never claims a native job and the native
+                // worker never claims a managed job. See RuntimeProfiles.CanClaim.
+                if (!RuntimeProfiles.CanClaim(acceptedRuntimeProfiles, job.Spec.RuntimeProfile))
                 {
                     totalSkipped++;
                     continue;

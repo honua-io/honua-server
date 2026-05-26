@@ -574,6 +574,7 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
         public Task<string?> TryClaimAsync(
             string workerId,
             IReadOnlySet<ExecutionJobKind>? acceptedKinds = null,
+            IReadOnlySet<string>? acceptedRuntimeProfiles = null,
             CancellationToken cancellationToken = default)
             => Task.FromResult<string?>(null);
 
