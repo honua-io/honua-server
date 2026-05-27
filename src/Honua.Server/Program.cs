@@ -437,6 +437,11 @@ builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleS
 builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleDependencyClosureValidator,
     Honua.Server.Features.Console.Services.ConsoleDependencyClosureValidator>();
 
+// Content publication registry for Studio-generated maps/dashboards/reports/apps (#1183).
+// In-memory store is the default; Postgres registration (AddPostgreSqlServices) overrides
+// it with durable storage when Postgres is active.
+Honua.Core.Features.Publishing.Content.ContentPublishingServiceCollectionExtensions.AddContentPublishingServices(builder.Services);
+
 // Register shared Infrastructure services
 builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.IGeometryConverter,
     Honua.Server.Features.Infrastructure.Services.GeometryConverter>();
@@ -561,6 +566,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.ServiceSettingsJsonContext.Default,
         Honua.Core.Features.Metadata.Domain.V2.MetadataReleaseJsonContext.Default,
         Honua.Server.Features.Admin.Models.MetadataPrevalidationJsonContext.Default,
+        Honua.Core.Features.Publishing.Content.Domain.ContentPublicationJsonContext.Default,
         Honua.Server.Features.Admin.Models.DeployControlJsonContext.Default,
         Honua.Server.Features.Infrastructure.Monitoring.MetricsJsonContext.Default,
         Honua.Server.Features.Import.ImportJsonContext.Default,
@@ -1031,6 +1037,8 @@ app.MapConsoleShareEndpoints();
 app.MapConsoleSharePublicEndpoints();
 app.MapStudioPackageEndpoints();
 app.MapWorkflowPackageEndpoints();
+Honua.Server.Features.Console.Publications.ContentPublicationEndpoints.MapContentPublicationEndpoints(app);
+Honua.Server.Features.Console.Publications.PublishedRouteEndpoints.MapPublishedRouteEndpoints(app);
 app.MapAdminApiKeyEndpoints();
 app.MapPackageReviewEndpoints();
 

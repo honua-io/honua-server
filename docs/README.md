@@ -168,6 +168,7 @@ How to build against Honua's APIs, SDKs, and protocols.
 - [Operate Observability Fixtures](admin-api/operate-observability-fixtures.md) — Development/Test seed endpoint for Console Testcontainers to hydrate Operate events, logs, alerts, jobs, artifacts, and investigations from a real honua-server plus PostgreSQL runtime (#1209).
 - [Metadata Prevalidation Admin API](admin-api/metadata-prevalidation.md) — Metadata v2 release-package compatibility reports plus release operation lifecycle and rollback contract notes for Console (#1164/#1165).
 - [Studio Package Lifecycle](admin-api/studio-package-lifecycle.md) — Server-owned draft, validation, preview, immutable version, publish, reopen, compare, and rollback endpoints under `/api/v1/studio/**` (#1180).
+- [Content Publication Registry](admin-api/content-publication-registry.md) — Durable map/dashboard/report/generated-app publication records, active route pointers, public route resolution, share/embed/public-link policy, and rollback under `/api/v1/console/publications/**` and `/api/v1/published/**` (#1183).
 - [Analysis Content](admin-api/analysis-content.md) — Durable saved-query and analysis-package content items, immutable versions, preview artifacts, run/rerun provenance, artifact binding lookup, and failed-job diagnostics under `/api/v1/analysis/**` (#1182).
 - [Scene Dataset Registry](admin-api/scene-dataset-registry.md)
 

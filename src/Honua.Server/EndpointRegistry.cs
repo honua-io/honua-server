@@ -246,6 +246,15 @@ public static class EndpointRegistry
         new("POST", "/api/v1/studio/content-items/{itemId}/versions/{versionId}/reopen"),
         new("POST", "/api/v1/studio/content-items/{itemId}/rollback-requests"),
 
+        // v1 content publication registry for Studio-generated artifacts (#1183)
+        new("POST", "/api/v1/console/publications"),
+        new("GET", "/api/v1/console/publications/{publicationId}"),
+        new("GET", "/api/v1/console/publications/{publicationId}/versions/{versionSelector}"),
+        new("POST", "/api/v1/console/publications/{publicationId}/republish"),
+        new("POST", "/api/v1/console/publications/{publicationId}/rollback"),
+        new("PATCH", "/api/v1/console/publications/{publicationId}/policy"),
+        new("GET", "/api/v1/published/{*routeSlug}"),
+
         // v1 admin metadata resource CRUD endpoints removed in #1035 cutover.
         // (Layer-style/fields/filter/validation endpoints below still serve v1 layer ids.)
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/style"),

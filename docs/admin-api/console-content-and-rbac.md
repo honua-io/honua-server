@@ -10,7 +10,12 @@ the `Honua.Server.Features.Console` vertical slice and source-generated through
 
 Tracked by issues **#1162** (content/RBAC baseline) and **#1215** (Share
 access, public-link, and embed API). Subsequent tickets (#1163 — persistent
-store, #1164/#1165 — release lifecycle) build on this surface.
+store, #1164/#1165 — release lifecycle) build on this surface. Published
+map/dashboard/report/generated-app route state is documented separately in the
+[Content Publication Registry API](content-publication-registry.md) (#1183);
+Console content items may link to those publications through sidecars and
+provenance, but the publication route pointer and share/embed/public-link policy
+are owned by that registry.
 
 ## Surface
 
@@ -58,6 +63,11 @@ Error contract (matching the established admin endpoint pattern):
 | `GET` | `/share/content/{id}` | Anonymous-safe read of a `public-indexed` content item. Private/missing items return the same non-leaking 404 shape. |
 | `GET` | `/share/link/{token}` | Anonymous-safe public-link token resolution. Invalid, expired, revoked, or no-longer-covered tokens return the same 404 shape. |
 | `POST` | `/share/embed/{token}/redeem` | Anonymous-safe embed token redemption. Expired tokens or disabled embedding return the same 404 shape. |
+
+Publication management endpoints under `/api/v1/console/publications/**` share
+the Console control-plane namespace but do not use the `ApiResponse<T>` envelope;
+see [Content Publication Registry API](content-publication-registry.md) for the
+publication response contract.
 
 ## Content item shape
 

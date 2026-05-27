@@ -118,6 +118,7 @@ Please use these forms instead of blank issues so reports include enough detail 
 | Admin API | `/api/v1/admin` | Standalone Admin UI, automation scripts |
 | Studio Package Lifecycle | `/api/v1/studio` | Honua Console, SDKs, generated apps |
 | Form Package API | `/api/v1/admin/forms/packages`, `/api/v1/forms/packages` | Console Form Builder, field clients, mobile/offline SDKs |
+| Content Publication Registry | `/api/v1/console/publications`, `/api/v1/published` | Honua Console, SDKs, generated maps/dashboards/reports/apps |
 | STAC Ops Demo | `/samples/stac-ops` or `/samples/stac-ops/` | Browser *(Development/Test or `HONUA_SERVE_STAC_DEMO=true`; custom images also need demo assets)* |
 | OpenAPI (OGC Features) | `/openapi.json` | Any HTTP client |
 | OpenAPI (OGC Tiles) | `/ogc/tiles/openapi.json` | Any HTTP client |
@@ -147,6 +148,8 @@ The source-backed feature map is maintained in [docs/features/README.md](docs/fe
 **Async geoprocessing** — OGC API Processes landing/conformance, process discovery, async execution, job polling, dismiss, and job results over the canonical geoprocessing runtime. `/ogc/processes/jobs/{jobId}/results` returns `200 OK` with a document-mode JSON body on success (empty `{}` until the canonical process declares value-typed outputs and result storage is wired).
 
 **Durable analysis content** — Saved-query and analysis-package content items persist immutable versions, run/rerun provenance, preview artifacts, artifact binding metadata, and safe failed-job diagnostics under `/api/v1/analysis/**`.
+
+**Content publication registry** — Studio-generated maps, dashboards, reports, and generated apps publish through server-owned immutable versions, active route pointers, rollback handles, dependency/provenance references, and share/embed/public-link policy under `/api/v1/console/publications/**`. Runtime clients resolve the active or requested immutable version through `/api/v1/published/**`.
 
 **AI operator workflows** — MCP JSON-RPC on `/mcp` exposes plan validation, dry runs, execution submission, cancellation, and job/result resource reads over the same canonical geoprocessing runtime used by gRPC and GPServer. Natural-language grounding and clarification (`honua_ground_candidates`, `honua_clarify_intent`) are functional over the built-in process and layer catalogs; remaining planning, workspace, and catalog contracts are discoverable as authenticated `not_implemented` placeholders so clients can bind before the upstream services land.
 

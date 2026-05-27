@@ -75,6 +75,19 @@ internal static class ObservabilityServiceCollectionExtensions
                 policy.Tag("service-metadata", "metadata");
             });
 
+            // Content publication public route reads (#1183). The anonymous-only base
+            // policy applies; ContentPublishedRouteCachePolicy disables caching for
+            // link/embed reads and tags responses for invalidation on route pointer or
+            // policy changes.
+            options.AddPolicy("ContentPublishedRoute", policy =>
+            {
+                policy.Expire(ttl.LayerMetadata);
+                policy.SetVaryByRouteValue("routeSlug");
+                policy.SetVaryByQuery("version", "expand");
+                policy.SetVaryByHeader("Accept");
+                policy.AddPolicy<ContentPublishedRouteCachePolicy>();
+            });
+
             // MapServer legend caching policy
             options.AddPolicy("MapServerLegend", policy =>
             {
