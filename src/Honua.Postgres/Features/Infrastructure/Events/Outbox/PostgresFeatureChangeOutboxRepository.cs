@@ -16,7 +16,7 @@ namespace Honua.Postgres.Features.Infrastructure.Events.Outbox;
 /// partial indexes (defined in migration 024) to keep the dispatcher hot path
 /// off the dispatched-row tail.
 /// </summary>
-internal sealed class PostgresFeatureChangeOutboxRepository : IFeatureChangeOutboxRepository
+internal sealed class PostgresFeatureChangeOutboxRepository : IFeatureChangeOutboxRepository, IFeatureChangeOutboxWriter
 {
     private const string TableName = "honua.feature_change_outbox";
 

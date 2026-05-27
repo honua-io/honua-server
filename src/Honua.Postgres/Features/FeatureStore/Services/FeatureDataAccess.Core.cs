@@ -26,7 +26,7 @@ internal sealed record FeatureDataAccessDependencies(
     IOptions<LimitsOptions>? LimitsOptions,
     IPerformanceMonitor? PerformanceMonitor,
     string? SchemaName,
-    Honua.Core.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxRepository? OutboxRepository = null);
+    Honua.Postgres.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxWriter? OutboxRepository = null);
 
 /// <summary>
 /// Handles database data access operations for PostgreSQL feature store
@@ -40,7 +40,7 @@ internal sealed partial class FeatureDataAccess : IFeatureDataAccess
     private readonly PreparedStatementCache? _statementCache;
     private readonly IPerformanceMonitor? _performanceMonitor;
     private readonly ILogger<FeatureDataAccess> _logger;
-    private readonly Honua.Core.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxRepository? _outboxRepository;
+    private readonly Honua.Postgres.Features.Infrastructure.Events.Outbox.IFeatureChangeOutboxWriter? _outboxRepository;
     private readonly double _slowQueryThresholdMs;
     private readonly int _queryTimeoutSeconds;
     private readonly int _tileTimeoutSeconds;

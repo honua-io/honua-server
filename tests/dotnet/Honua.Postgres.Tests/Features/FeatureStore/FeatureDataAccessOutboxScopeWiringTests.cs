@@ -1,12 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Data.Common;
 using System.Reflection;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 using Honua.Postgres.Features.FeatureStore.Services;
+using Honua.Postgres.Features.Infrastructure.Events.Outbox;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
 using NSubstitute;
@@ -22,7 +24,7 @@ public sealed class FeatureDataAccessOutboxScopeWiringTests
     public void TryUseTransactionalOutbox_WithScopeButNoRepository_ThrowsToPreventSilentCdcLoss()
     {
         // Outbox wiring guard (#692): if the protocol layer opens an outbox scope but the
-        // data access has no IFeatureChangeOutboxRepository injected, the mutation must not
+        // data access has no IFeatureChangeOutboxWriter injected, the mutation must not
         // silently fall through to the autocommit fast path — that would commit the feature
         // without recording its CDC envelope, which is the exact gap the transactional
         // outbox is meant to close. The helper must surface the wiring error as a mutation
@@ -39,7 +41,7 @@ public sealed class FeatureDataAccessOutboxScopeWiringTests
         var act = () => InvokeTryUseTransactionalOutbox(dataAccess);
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*outbox scope is active but no IFeatureChangeOutboxRepository*");
+            .WithMessage("*outbox scope is active but no IFeatureChangeOutboxWriter*");
     }
 
     [Fact]
@@ -63,7 +65,7 @@ public sealed class FeatureDataAccessOutboxScopeWiringTests
     {
         // Happy path: when both pieces are wired up the helper returns true and surfaces
         // the active scope so the caller can hand its EntryFactory to the writer.
-        var repository = Substitute.For<IFeatureChangeOutboxRepository>();
+        var repository = new StubOutboxWriter();
         var dataAccess = BuildMinimalDataAccess(outboxRepository: repository);
         var scopeData = new FeatureMutationOutboxScopeData
         {
@@ -78,7 +80,7 @@ public sealed class FeatureDataAccessOutboxScopeWiringTests
         scope.Should().BeSameAs(scopeData);
     }
 
-    private static FeatureDataAccess BuildMinimalDataAccess(IFeatureChangeOutboxRepository? outboxRepository)
+    private static FeatureDataAccess BuildMinimalDataAccess(IFeatureChangeOutboxWriter? outboxRepository)
     {
         // Use the concrete GeometryProcessor (and a real ObjectPool) to avoid
         // Castle DynamicProxy access checks on the internal IGeometryProcessor — this
@@ -138,5 +140,18 @@ public sealed class FeatureDataAccessOutboxScopeWiringTests
         }
 
         return (result, (FeatureMutationOutboxScopeData?)args[0]);
+    }
+
+    // IFeatureChangeOutboxWriter is internal to Honua.Postgres, which does not grant
+    // DynamicProxyGenAssembly2 access, so Castle DynamicProxy cannot mock it. Use a concrete
+    // stub — consistent with the GeometryProcessor approach above. The write path is never
+    // invoked here; this test only verifies the wiring helper recognizes a present writer.
+    private sealed class StubOutboxWriter : IFeatureChangeOutboxWriter
+    {
+        public Task WriteOutboxRowAsync(
+            DbConnection connection,
+            DbTransaction transaction,
+            FeatureChangeOutboxEntry entry,
+            CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }
