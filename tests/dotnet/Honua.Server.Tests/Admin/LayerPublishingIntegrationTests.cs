@@ -1376,6 +1376,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
                 },
                 ServiceId = serviceId,
                 ResourceId = resourceId,
+                StorageBindingId = bindingId,
                 PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
                 Status = ReadyMetadataV2Status(),
                 Identifier = new MetadataV2PublicationIdentifier
