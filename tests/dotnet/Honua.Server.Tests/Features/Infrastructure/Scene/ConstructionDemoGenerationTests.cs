@@ -26,7 +26,6 @@ namespace Honua.Server.Tests.Features.Infrastructure.Scene;
 public sealed class ConstructionDemoGenerationTests : IDisposable
 {
     private readonly string _outputRoot;
-    private readonly StubLayerCatalog _catalog;
     private readonly StubFeatureSource _featureSource;
     private readonly StubRegistrationService _registration;
     private readonly TestMetadataV2GraphProvider _metadataProvider;
@@ -35,7 +34,6 @@ public sealed class ConstructionDemoGenerationTests : IDisposable
     public ConstructionDemoGenerationTests()
     {
         _outputRoot = Path.Combine(Path.GetTempPath(), $"honua-scene-899-{Guid.NewGuid():N}");
-        _catalog = new StubLayerCatalog { Layer = ConstructionDemoFixture.BuildLayer() };
         _featureSource = new StubFeatureSource { Features = ConstructionDemoFixture.Features };
         _registration = new StubRegistrationService();
         _metadataProvider = new TestMetadataV2GraphProvider(ConstructionDemoFixture.BuildMetadataGraph());

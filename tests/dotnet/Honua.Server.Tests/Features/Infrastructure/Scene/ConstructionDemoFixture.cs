@@ -57,17 +57,6 @@ internal static class ConstructionDemoFixture
     /// <summary>Field name driving extrusion height.</summary>
     public const string HeightField = "height_m";
 
-    /// <summary>Layer attribute fields surfaced into the catalog and metadata schema.</summary>
-    public static FieldDefinition[] BuildFields() =>
-    [
-        new FieldDefinition("objectid", FieldType.Integer, Length: null, Nullable: false),
-        new FieldDefinition("shape", FieldType.Geometry, Length: null, Nullable: false),
-        new FieldDefinition("name", FieldType.String, Length: 64, Nullable: false),
-        new FieldDefinition("height_m", FieldType.Double, Length: null, Nullable: false),
-        new FieldDefinition("phase", FieldType.String, Length: 32, Nullable: false),
-        new FieldDefinition("work_package_id", FieldType.String, Length: 32, Nullable: false)
-    ];
-
     /// <summary>Metadata v2 extrusion configuration matching the layer's <c>height_m</c> field.</summary>
     public static MetadataV2ExtrusionInfo Extrusion { get; } = new()
     {
@@ -75,15 +64,6 @@ internal static class ConstructionDemoFixture
         Unit = MetadataV2VerticalUnits.Meters,
         DefaultHeight = 10.0
     };
-
-    /// <summary>Layer definition for the demo source layer.</summary>
-    public static LayerDefinition BuildLayer() => new(
-        LayerId,
-        LayerName,
-        Description: "Demo-grade NVIDIA construction site footprints for #899.",
-        GeometryType.Polygon,
-        SpatialReference.Create(4326, 4326),
-        BuildFields());
 
     /// <summary>Metadata v2 graph carrying the demo resource extrusion metadata.</summary>
     public static MetadataV2Graph BuildMetadataGraph(bool includeExtrusion = true)

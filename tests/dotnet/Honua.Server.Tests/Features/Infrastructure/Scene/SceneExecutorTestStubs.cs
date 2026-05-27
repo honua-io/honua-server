@@ -2,8 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Runtime.CompilerServices;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
@@ -11,35 +9,6 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Scene;
-
-internal sealed class StubLayerCatalog : ILayerCatalog
-{
-    public LayerDefinition? Layer { get; set; }
-
-    public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
-        => Task.FromResult(Layer);
-
-    public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
-        => Task.FromResult(Layer is null ? Array.Empty<LayerDefinition>() : new[] { Layer });
-
-    public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-        => Task.FromResult<ServiceDefinition?>(null);
-
-    public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
-        => Task.FromResult(Array.Empty<ServiceDefinition>());
-
-    public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
-        => Task.FromResult(Layer is not null);
-
-    public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
-        => Task.FromResult(false);
-
-    public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
-        => Task.FromResult<Relationship?>(null);
-
-    public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
-        => Task.FromResult(Array.Empty<Relationship>());
-}
 
 internal sealed class StubFeatureSource : ISceneFeatureSource
 {

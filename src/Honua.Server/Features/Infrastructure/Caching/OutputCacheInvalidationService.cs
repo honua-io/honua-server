@@ -265,27 +265,27 @@ internal sealed partial class OutputCacheInvalidationService
 
         var keys = new List<string>
         {
-            CachingLayerCatalog.ServiceListKey,
-            CachingLayerCatalog.LayerListKey
+            CatalogCacheKeys.ServiceListKey,
+            CatalogCacheKeys.LayerListKey
         };
 
         if (!string.IsNullOrWhiteSpace(serviceId))
         {
-            keys.Add($"{CachingLayerCatalog.ServiceKeyPrefix}{serviceId}");
-            keys.Add($"{CachingLayerCatalog.ServiceExistsKeyPrefix}{serviceId}");
+            keys.Add($"{CatalogCacheKeys.ServiceKeyPrefix}{serviceId}");
+            keys.Add($"{CatalogCacheKeys.ServiceExistsKeyPrefix}{serviceId}");
         }
 
         foreach (var layerId in layerIds)
         {
-            keys.Add($"{CachingLayerCatalog.LayerKeyPrefix}{layerId}");
-            keys.Add($"{CachingLayerCatalog.LayerExistsKeyPrefix}{layerId}");
+            keys.Add($"{CatalogCacheKeys.LayerKeyPrefix}{layerId}");
+            keys.Add($"{CatalogCacheKeys.LayerExistsKeyPrefix}{layerId}");
         }
 
         string? currentSchema = SchemaContext.AmbientCurrentSchema;
 
         foreach (var key in keys.Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            string scopedKey = await CachingLayerCatalog.ScopeKeyAsync(
+            string scopedKey = await CatalogCacheKeys.ScopeKeyAsync(
                 _metadataCache,
                 key,
                 currentSchema,

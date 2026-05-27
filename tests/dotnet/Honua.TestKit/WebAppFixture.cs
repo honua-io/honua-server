@@ -6,7 +6,6 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Attachments.Abstractions;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -189,7 +188,6 @@ public sealed class WebAppFixture : IAsyncLifetime
                     services.RemoveAll<IRelationshipStore>();
                     services.RemoveAll<IStreamingFeatureStore>();
                     services.RemoveAll<IAttachmentStore>();
-                    services.RemoveAll<ILayerCatalog>();
                     services.RemoveAll<ITableDiscoveryService>();
                     services.RemoveAll<IDatabaseHealthChecker>();
                     services.RemoveAll<IDatabaseConnectionProvider>();
@@ -222,12 +220,8 @@ public sealed class WebAppFixture : IAsyncLifetime
                         return dataSourceBuilder.Build();
                     });
 
-                    // Override specific services for testing
-                    services.RemoveAll<ILayerCatalog>();
-                    services.AddScoped<ILayerCatalog, Honua.Postgres.Features.Catalog.PostgresLayerCatalog>();
-
                     // Replace the Postgres-backed Metadata v2 provider with an in-memory fixture
-                    // so endpoints that have migrated off ILayerCatalog can read a snapshot without
+                    // so endpoints read the seeded snapshot without
                     // a migrated snapshot row being present in the test database.
                     RegisterDefaultMetadataV2Graph(services);
 
@@ -319,9 +313,9 @@ public sealed class WebAppFixture : IAsyncLifetime
 
     /// <summary>
     /// Builds the default Metadata v2 graph snapshot registered into the test DI container so
-    /// that endpoints which have migrated off <see cref="ILayerCatalog"/> have something to read
-    /// from. Mirrors the layer ids seeded by <c>tests/seed/server.yaml</c> so existence probes
-    /// keyed on the v1 layer id continue to find a matching publication. Tests that need a richer
+    /// that endpoints have a graph to read from. Mirrors the layer ids seeded by
+    /// <c>tests/seed/server.yaml</c> so existence probes keyed on the layer id continue to find a
+    /// matching publication. Tests that need a richer
     /// graph can replace the registration through <see cref="ConfigureServices"/>.
     /// </summary>
     private static MetadataV2Graph BuildDefaultTestGraph()
@@ -1214,8 +1208,8 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// V2-aware helper that renames the canonical resource bound to the publication
     /// with <paramref name="layerIndex"/>. The CITE-conformance WMS tests rename the
     /// v1 <c>honua.layers.layer_name</c> column to drive conformance behaviour keyed on
-    /// the layer's display name (e.g. <c>cite:Autos</c>); once a handler reads its layer
-    /// names from the V2 graph instead of <see cref="ILayerCatalog"/>, the same tests
+    /// the layer's display name (e.g. <c>cite:Autos</c>); since handlers read their layer
+    /// names from the V2 graph, the same tests
     /// must update the V2 resource's <see cref="MetadataV2ObjectMetadata.Name"/> for the
     /// rename to be visible.
     /// </summary>
@@ -1491,7 +1485,6 @@ public sealed class WebAppFixture : IAsyncLifetime
                             services.RemoveAll<IRelationshipStore>();
                             services.RemoveAll<IStreamingFeatureStore>();
                             services.RemoveAll<IAttachmentStore>();
-                            services.RemoveAll<ILayerCatalog>();
                             services.RemoveAll<ITableDiscoveryService>();
                             services.RemoveAll<IDatabaseHealthChecker>();
                             services.RemoveAll<IDatabaseConnectionProvider>();
@@ -1521,13 +1514,9 @@ public sealed class WebAppFixture : IAsyncLifetime
                                 return dataSourceBuilder.Build();
                             });
 
-                            services.RemoveAll<ILayerCatalog>();
-                            services.AddScoped<ILayerCatalog, Honua.Postgres.Features.Catalog.PostgresLayerCatalog>();
-
                             // Replace the Postgres-backed Metadata v2 provider with an in-memory
-                            // fixture so endpoints that have migrated off ILayerCatalog can read a
-                            // snapshot without a migrated snapshot row being present in the test
-                            // database.
+                            // fixture so endpoints read the seeded snapshot without a migrated
+                            // snapshot row being present in the test database.
                             RegisterDefaultMetadataV2Graph(services);
                         });
                     });

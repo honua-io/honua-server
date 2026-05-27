@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Catalog;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -113,21 +112,6 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IStreamingFeatureStore>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
         services.AddScoped<ITileProvider>(_ => new ReadOnlyTileProvider("DuckDB"));
         services.AddScoped<IGmlFeatureStore>(_ => new ReadOnlyGmlFeatureStore("DuckDB"));
-
-        // Register catalog (scoped, from configuration + discovered column types).
-        // Uses the shared Core ConfigurationLayerCatalog; the provider-specific
-        // initialization log message is emitted via the onInitialized callback so the
-        // log category, event id, and wording stay DuckDB-specific.
-        services.AddScoped<ILayerCatalog>(sp =>
-        {
-            var registry = sp.GetRequiredService<DuckDBLayerRegistry>();
-            var (layers, serviceDefs) = BuildCatalogEntries(options, registry.Mappings);
-            var logger = sp.GetRequiredService<ILogger<ConfigurationLayerCatalog>>();
-            return new ConfigurationLayerCatalog(
-                layers,
-                serviceDefs,
-                (layerCount, serviceCount) => DuckDbLog.LayerCatalogInitialized(logger, layerCount, serviceCount));
-        });
 
         // Capability provider for the feature-change transactional outbox (#692). DuckDB is
         // read-only so it reports SupportsTransactionalOutbox = false. The dispatcher will
@@ -251,126 +235,4 @@ internal static class ServiceCollectionExtensions
         cmd.ExecuteNonQuery();
     }
 
-    private static (List<LayerDefinition> Layers, List<ServiceDefinition> Services) BuildCatalogEntries(
-        DuckDBOptions options, IEnumerable<DuckDBLayerMapping> mappings)
-    {
-        var mappingsByLayerId = mappings.ToDictionary(m => m.LayerId);
-        var layers = new List<LayerDefinition>(options.Layers.Length);
-        var layerMap = new Dictionary<int, LayerDefinition>();
-
-        foreach (var layerOpt in options.Layers)
-        {
-            var geometryType = Enum.TryParse<GeometryType>(layerOpt.GeometryType, ignoreCase: true, out var gt)
-                ? gt
-                : GeometryType.Point;
-
-            var srs = SpatialReference.Create(layerOpt.Srid);
-
-            var fields = new List<FieldDefinition>
-            {
-                new(Core.Features.Shared.Models.FieldNames.ObjectId, FieldType.Integer, Nullable: false, Description: "Unique object identifier")
-            };
-
-            if (geometryType != GeometryType.None)
-            {
-                fields.Add(new("shape", FieldType.Geometry, Nullable: false, Description: "Geometry field"));
-            }
-
-            // Add attribute column fields from discovered/configured column metadata
-            if (mappingsByLayerId.TryGetValue(layerOpt.Id, out var mapping))
-            {
-                foreach (var attrCol in mapping.AttributeColumns)
-                {
-                    var fieldType = mapping.AttributeColumnTypes.TryGetValue(attrCol, out var duckDbType)
-                        ? MapDuckDBType(duckDbType)
-                        : FieldType.String;
-                    fields.Add(new(attrCol, fieldType));
-                }
-            }
-
-            var layer = new LayerDefinition(
-                layerOpt.Id,
-                layerOpt.Name,
-                layerOpt.Description,
-                geometryType,
-                srs,
-                fields.ToArray(),
-                SupportsAttachments: false,
-                StorageMapping: new LayerStorageMapping(
-                    layerOpt.Table,
-                    PrimaryKeyColumn: layerOpt.ObjectIdColumn,
-                    GeometryColumn: geometryType == GeometryType.None ? null : layerOpt.GeometryColumn,
-                    StorageSrid: layerOpt.Srid));
-
-            layers.Add(layer);
-            layerMap[layerOpt.Id] = layer;
-        }
-
-        var services = new List<ServiceDefinition>(options.Services.Length);
-        foreach (var svcOpt in options.Services)
-        {
-            var svcLayers = svcOpt.LayerIds
-                .Where(id => layerMap.ContainsKey(id))
-                .Select(id => layerMap[id])
-                .ToArray();
-
-            if (svcLayers.Length == 0)
-            {
-                continue;
-            }
-
-            var service = new ServiceDefinition(
-                svcOpt.Name,
-                svcOpt.Description ?? $"DuckDB feature service: {svcOpt.Name}",
-                svcLayers,
-                svcLayers[0].SpatialReference,
-                Capabilities: svcOpt.Capabilities);
-
-            services.Add(service);
-        }
-
-        return (layers, services);
-    }
-
-    /// <summary>
-    /// Maps a DuckDB column type string (from PRAGMA table_info) to a <see cref="FieldType"/>.
-    /// </summary>
-    internal static FieldType MapDuckDBType(string duckDbType)
-    {
-        // Strip precision/scale suffix, e.g. "DECIMAL(10,2)" → "DECIMAL"
-        var parenIndex = duckDbType.IndexOf('(');
-        var baseType = (parenIndex >= 0 ? duckDbType[..parenIndex] : duckDbType).Trim();
-
-        return baseType.ToUpperInvariant() switch
-        {
-            "INTEGER" or "INT" or "INT4" or "SIGNED"
-                or "SMALLINT" or "INT2" or "SHORT"
-                or "TINYINT" or "INT1"
-                or "UTINYINT" or "USMALLINT" => FieldType.Integer,
-
-            "BIGINT" or "INT8" or "LONG" or "HUGEINT"
-                or "UINTEGER" or "UBIGINT" => FieldType.BigInteger,
-
-            "FLOAT" or "REAL" or "FLOAT4" => FieldType.Float,
-            "DOUBLE" or "FLOAT8" or "DECIMAL" or "NUMERIC" => FieldType.Double,
-            "BOOLEAN" or "BOOL" or "LOGICAL" => FieldType.Boolean,
-
-            "VARCHAR" or "TEXT" or "STRING"
-                or "CHAR" or "BPCHAR" or "NVARCHAR" => FieldType.String,
-
-            "DATE" => FieldType.Date,
-            "TIME" or "TIMETZ" or "TIME WITH TIME ZONE" => FieldType.Time,
-
-            "TIMESTAMP" or "TIMESTAMPTZ" or "TIMESTAMP WITH TIME ZONE"
-                or "TIMESTAMP_S" or "TIMESTAMP_MS" or "TIMESTAMP_NS"
-                or "DATETIME" => FieldType.DateTime,
-
-            "UUID" => FieldType.Uuid,
-            "BLOB" or "BYTEA" or "VARBINARY" => FieldType.Binary,
-            "JSON" => FieldType.Json,
-            "GEOMETRY" => FieldType.Geometry,
-
-            _ => FieldType.String,
-        };
-    }
 }

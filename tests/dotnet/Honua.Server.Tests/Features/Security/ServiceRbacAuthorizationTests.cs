@@ -9,8 +9,6 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Geometry.Domain;
@@ -1346,7 +1344,7 @@ internal static class ServiceRbacTestFixture
     public const int BetaLayerId = 1;
 
     public static WebApplicationFactory<Program> CreateFactory(
-        Func<ILayerCatalog>? layerCatalogFactory = null,
+        Func<RbacTestLayerCatalog>? layerCatalogFactory = null,
         Action<IServiceCollection>? configureServices = null)
     {
         layerCatalogFactory ??= static () => new RbacTestLayerCatalog();
@@ -1371,11 +1369,9 @@ internal static class ServiceRbacTestFixture
 
                 builder.ConfigureTestServices(services =>
                 {
-                    services.RemoveAll<ILayerCatalog>();
-                    services.AddScoped<ILayerCatalog>(_ => layerCatalogFactory());
                     services.RemoveAll<IMetadataV2GraphProvider>();
                     services.RemoveAll<IMetadataV2GraphStore>();
-                    services.AddSingleton(_ => CreateMetadataV2Provider(layerCatalogFactory()));
+                    services.AddSingleton(_ => layerCatalogFactory().BuildProvider());
                     services.AddSingleton<IMetadataV2GraphProvider>(sp =>
                         sp.GetRequiredService<TestMetadataV2GraphProvider>());
                     services.AddSingleton<IMetadataV2GraphStore>(sp =>
@@ -1397,140 +1393,6 @@ internal static class ServiceRbacTestFixture
                 });
             });
     }
-
-    private static TestMetadataV2GraphProvider CreateMetadataV2Provider(ILayerCatalog layerCatalog)
-    {
-        var layers = layerCatalog.ListLayersAsync().GetAwaiter().GetResult()
-            .OrderBy(static layer => layer.Id)
-            .ToArray();
-        var services = layerCatalog.ListServicesAsync().GetAwaiter().GetResult();
-        var policySeed = layerCatalog as IAccessPolicyCatalogSeed;
-
-        var builder = new TestMetadataV2GraphBuilder();
-        foreach (var layer in layers)
-        {
-            var resourceId = BuildResourceId(layer.Id);
-            var bindingId = BuildBindingId(layer.Id);
-            builder
-                .AddResource(
-                    resourceId,
-                    layer.Name,
-                    MetadataV2ResourceType.FeatureDataset,
-                    fields: layer.Fields.Select(MapField),
-                    accessPolicy: policySeed?.GetLayerAccessPolicy(layer.Id),
-                    annotations: BuildResourceAnnotations(layer))
-                .AddStorageBinding(
-                    bindingId,
-                    resourceId,
-                    $"test.layers.{layer.Id.ToString(CultureInfo.InvariantCulture)}",
-                    storageLayerId: layer.Id);
-        }
-
-        foreach (var service in services)
-        {
-            var serviceId = BuildServiceId(service.Name);
-            builder.AddService(
-                serviceId,
-                service.Name,
-                protocols: MetadataV2ServiceProtocols.All,
-                accessPolicy: policySeed?.GetServiceAccessPolicy(service.Name),
-                options: BuildServiceOptions(service));
-
-            foreach (var layer in service.Layers.OrderBy(static layer => layer.Id))
-            {
-                builder.AddPublication(
-                    $"{serviceId}-layer-{layer.Id.ToString(CultureInfo.InvariantCulture)}",
-                    serviceId,
-                    BuildResourceId(layer.Id),
-                    layerIndex: layer.Id,
-                    storageBindingId: BuildBindingId(layer.Id),
-                    publicationType: MetadataV2PublicationType.ODataEntitySet);
-            }
-        }
-
-        return builder.BuildProvider();
-    }
-
-    private static string BuildResourceId(int layerId)
-        => $"res-layer-{layerId.ToString(CultureInfo.InvariantCulture)}";
-
-    private static string BuildBindingId(int layerId)
-        => $"binding-layer-{layerId.ToString(CultureInfo.InvariantCulture)}";
-
-    private static string BuildServiceId(string serviceName)
-        => $"svc-{serviceName}";
-
-    private static MetadataV2Field MapField(FieldDefinition field)
-        => new()
-        {
-            Name = field.Name,
-            Type = MapFieldType(field.Type),
-            Nullable = field.Nullable,
-            Description = field.Description,
-            Alias = field.DisplayName,
-            Length = field.Length,
-            Domain = MapDomain(field.Domain),
-            Hidden = field.IsHidden
-        };
-
-    private static MetadataV2FieldDomain? MapDomain(FieldDomainDefinition? domain)
-        => domain is null
-            ? null
-            : new MetadataV2FieldDomain
-            {
-                Name = domain.Name,
-                Type = domain.Type,
-                CodedValues = domain.CodedValues?
-                    .Select(static codedValue => new MetadataV2CodedValue
-                    {
-                        Code = JsonSerializer.SerializeToElement(codedValue.Code),
-                        Name = codedValue.Name
-                    })
-                    .ToArray() ?? Array.Empty<MetadataV2CodedValue>(),
-                Range = domain.Range is null
-                    ? null
-                    :
-                    [
-                        JsonSerializer.SerializeToElement(domain.Range.MinValue),
-                        JsonSerializer.SerializeToElement(domain.Range.MaxValue)
-                    ],
-                MergePolicy = domain.MergePolicy,
-                SplitPolicy = domain.SplitPolicy
-            };
-
-    private static Dictionary<string, string>? BuildResourceAnnotations(LayerDefinition layer)
-        => layer.SupportsAttachments
-            ? new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["honua.io/attachments"] = bool.TrueString
-            }
-            : null;
-
-    private static Dictionary<string, JsonElement> BuildServiceOptions(ServiceDefinition service)
-        => new(StringComparer.Ordinal)
-        {
-            ["capabilities"] = JsonSerializer.SerializeToElement(service.Capabilities),
-            ["supportedFormats"] = JsonSerializer.SerializeToElement(service.SupportedFormats)
-        };
-
-    private static MetadataV2FieldType MapFieldType(FieldType fieldType)
-        => fieldType switch
-        {
-            FieldType.String => MetadataV2FieldType.String,
-            FieldType.Integer => MetadataV2FieldType.Integer,
-            FieldType.BigInteger => MetadataV2FieldType.BigInteger,
-            FieldType.Double => MetadataV2FieldType.Double,
-            FieldType.Float => MetadataV2FieldType.Float,
-            FieldType.Boolean => MetadataV2FieldType.Boolean,
-            FieldType.DateTime => MetadataV2FieldType.DateTime,
-            FieldType.Date => MetadataV2FieldType.Date,
-            FieldType.Time => MetadataV2FieldType.Time,
-            FieldType.Json => MetadataV2FieldType.Json,
-            FieldType.Binary => MetadataV2FieldType.Binary,
-            FieldType.Uuid => MetadataV2FieldType.Uuid,
-            FieldType.Geometry => MetadataV2FieldType.Geometry,
-            _ => MetadataV2FieldType.String,
-        };
 
     public static HttpClient CreateClient(WebApplicationFactory<Program> factory, params string[] roles)
     {
@@ -1691,16 +1553,15 @@ internal interface IAccessPolicyCatalogSeed
     AccessPolicy? GetServiceAccessPolicy(string serviceName);
 }
 
-internal sealed class RbacTestLayerCatalog : ILayerCatalog, IAccessPolicyCatalogSeed
+internal sealed class RbacTestLayerCatalog
 {
     private static readonly string[] _supportedFormats = ["JSON", "GeoJSON"];
     private static readonly string[] _capabilities = ["Query", "Create", "Update", "Delete"];
 
-    private readonly ServiceDefinition _alphaService;
-    private readonly ServiceDefinition _betaService;
-    private readonly ServiceDefinition[] _services;
-    private readonly LayerDefinition _alphaLayer;
-    private readonly LayerDefinition _betaLayer;
+    private readonly string _alphaServiceName;
+    private readonly string _betaServiceName;
+    private readonly bool _betaAlsoIncludesAlphaLayer;
+    private readonly bool _reverseServiceOrder;
     private readonly AccessPolicy? _alphaServiceAccessPolicy;
     private readonly AccessPolicy? _betaServiceAccessPolicy;
     private readonly AccessPolicy? _alphaLayerAccessPolicy;
@@ -1716,137 +1577,87 @@ internal sealed class RbacTestLayerCatalog : ILayerCatalog, IAccessPolicyCatalog
         string? alphaServiceName = null,
         string? betaServiceName = null)
     {
-        alphaServiceName ??= ServiceRbacTestFixture.AlphaService;
-        betaServiceName ??= ServiceRbacTestFixture.BetaService;
-
-        var spatialRef = SpatialReference.Create(4326);
-        var extent = FeatureExtent.Create(-180, -90, 180, 90, 4326);
-
+        _alphaServiceName = alphaServiceName ?? ServiceRbacTestFixture.AlphaService;
+        _betaServiceName = betaServiceName ?? ServiceRbacTestFixture.BetaService;
         _alphaServiceAccessPolicy = alphaServiceMetadata;
         _betaServiceAccessPolicy = betaServiceMetadata;
         _alphaLayerAccessPolicy = alphaLayerMetadata;
         _betaLayerAccessPolicy = betaLayerMetadata;
-
-        _alphaLayer = CreateLayer(ServiceRbacTestFixture.AlphaLayerId, "Alpha Layer", spatialRef, extent);
-        _betaLayer = CreateLayer(ServiceRbacTestFixture.BetaLayerId, "Beta Layer", spatialRef, extent);
-        var alphaLayers = new[] { _alphaLayer };
-        var betaLayers = betaAlsoIncludesAlphaLayer
-            ? new[] { _alphaLayer, _betaLayer }
-            : new[] { _betaLayer };
-
-        _alphaService = new ServiceDefinition(
-            Name: alphaServiceName,
-            Description: "Alpha service for RBAC tests",
-            Layers: alphaLayers,
-            SpatialReference: spatialRef,
-            SupportedFormats: _supportedFormats,
-            Capabilities: _capabilities,
-            ServiceExtent: extent);
-
-        _betaService = new ServiceDefinition(
-            Name: betaServiceName,
-            Description: "Beta service for RBAC tests",
-            Layers: betaLayers,
-            SpatialReference: spatialRef,
-            SupportedFormats: _supportedFormats,
-            Capabilities: _capabilities,
-            ServiceExtent: extent);
-
-        _services = reverseServiceOrder
-            ? [_betaService, _alphaService]
-            : [_alphaService, _betaService];
+        _betaAlsoIncludesAlphaLayer = betaAlsoIncludesAlphaLayer;
+        _reverseServiceOrder = reverseServiceOrder;
     }
 
-    public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Builds the Metadata v2 graph for the configured RBAC scenario (two layers, two services,
+    /// optional shared alpha layer / reversed service order, with per-service and per-layer
+    /// access policies seeded onto services and resources respectively).
+    /// </summary>
+    public TestMetadataV2GraphProvider BuildProvider()
     {
-        return Task.FromResult(layerId switch
-        {
-            ServiceRbacTestFixture.AlphaLayerId => _alphaLayer,
-            ServiceRbacTestFixture.BetaLayerId => _betaLayer,
-            _ => null
-        });
-    }
+        var builder = new TestMetadataV2GraphBuilder();
+        AddLayer(builder, ServiceRbacTestFixture.AlphaLayerId, "Alpha Layer", _alphaLayerAccessPolicy);
+        AddLayer(builder, ServiceRbacTestFixture.BetaLayerId, "Beta Layer", _betaLayerAccessPolicy);
 
-    public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
-        => Task.FromResult(new[] { _alphaLayer, _betaLayer });
+        var alpha = (Name: _alphaServiceName, Policy: _alphaServiceAccessPolicy,
+            LayerIds: new[] { ServiceRbacTestFixture.AlphaLayerId });
+        var beta = (Name: _betaServiceName, Policy: _betaServiceAccessPolicy,
+            LayerIds: _betaAlsoIncludesAlphaLayer
+                ? new[] { ServiceRbacTestFixture.AlphaLayerId, ServiceRbacTestFixture.BetaLayerId }
+                : new[] { ServiceRbacTestFixture.BetaLayerId });
 
-    public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-    {
-        if (string.Equals(serviceName, _alphaService.Name, StringComparison.OrdinalIgnoreCase))
+        foreach (var svc in _reverseServiceOrder ? new[] { beta, alpha } : new[] { alpha, beta })
         {
-            return Task.FromResult<ServiceDefinition?>(_alphaService);
+            var serviceId = $"svc-{svc.Name}";
+            builder.AddService(
+                serviceId,
+                svc.Name,
+                protocols: MetadataV2ServiceProtocols.All,
+                accessPolicy: svc.Policy,
+                options: BuildServiceOptions());
+
+            foreach (var layerId in svc.LayerIds.OrderBy(static id => id))
+            {
+                builder.AddPublication(
+                    $"{serviceId}-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
+                    serviceId,
+                    $"res-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
+                    layerIndex: layerId,
+                    storageBindingId: $"binding-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
+                    publicationType: MetadataV2PublicationType.ODataEntitySet);
+            }
         }
 
-        if (string.Equals(serviceName, _betaService.Name, StringComparison.OrdinalIgnoreCase))
-        {
-            return Task.FromResult<ServiceDefinition?>(_betaService);
-        }
-
-        return Task.FromResult<ServiceDefinition?>(null);
+        return builder.BuildProvider();
     }
 
-    public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
-        => Task.FromResult(_services);
+    private static void AddLayer(TestMetadataV2GraphBuilder builder, int layerId, string name, AccessPolicy? accessPolicy)
+    {
+        var resourceId = $"res-layer-{layerId.ToString(CultureInfo.InvariantCulture)}";
+        builder
+            .AddResource(
+                resourceId,
+                name,
+                MetadataV2ResourceType.FeatureDataset,
+                fields:
+                [
+                    new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Description = "Object ID" },
+                    new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Length = 255, Description = "Name field" }
+                ],
+                accessPolicy: accessPolicy)
+            .AddStorageBinding(
+                $"binding-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
+                resourceId,
+                $"test.layers.{layerId.ToString(CultureInfo.InvariantCulture)}",
+                storageLayerId: layerId);
+    }
 
-    public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
-        => Task.FromResult(layerId == ServiceRbacTestFixture.AlphaLayerId || layerId == ServiceRbacTestFixture.BetaLayerId);
-
-    public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
-        => Task.FromResult(
-            string.Equals(serviceName, _alphaService.Name, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(serviceName, _betaService.Name, StringComparison.OrdinalIgnoreCase));
-
-    public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
-        => Task.FromResult<Relationship?>(null);
-
-    public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
-        => Task.FromResult(Array.Empty<Relationship>());
-
-    public AccessPolicy? GetLayerAccessPolicy(int layerId)
-        => layerId switch
+    private static Dictionary<string, JsonElement> BuildServiceOptions()
+        => new(StringComparer.Ordinal)
         {
-            ServiceRbacTestFixture.AlphaLayerId => _alphaLayerAccessPolicy,
-            ServiceRbacTestFixture.BetaLayerId => _betaLayerAccessPolicy,
-            _ => null
+            ["capabilities"] = JsonSerializer.SerializeToElement(_capabilities),
+            ["supportedFormats"] = JsonSerializer.SerializeToElement(_supportedFormats)
         };
 
-    public AccessPolicy? GetServiceAccessPolicy(string serviceName)
-    {
-        if (string.Equals(serviceName, _alphaService.Name, StringComparison.OrdinalIgnoreCase))
-        {
-            return _alphaServiceAccessPolicy;
-        }
-
-        if (string.Equals(serviceName, _betaService.Name, StringComparison.OrdinalIgnoreCase))
-        {
-            return _betaServiceAccessPolicy;
-        }
-
-        return null;
-    }
-
-    private static LayerDefinition CreateLayer(
-        int layerId,
-        string name,
-        SpatialReference spatialRef,
-        FeatureExtent extent)
-    {
-        var fields = new[]
-        {
-            new FieldDefinition("objectid", FieldType.Integer, null, false, null, "Object ID"),
-            new FieldDefinition("name", FieldType.String, 255, true, null, "Name field")
-        };
-
-        return new LayerDefinition(
-            Id: layerId,
-            Name: name,
-            Description: "RBAC test layer",
-            GeometryType: GeometryType.Point,
-            SpatialReference: spatialRef,
-            Fields: fields,
-            Extent: extent,
-            DefaultVisibility: true);
-    }
 }
 
 internal sealed class TestCrsRegistry : ICrsRegistry

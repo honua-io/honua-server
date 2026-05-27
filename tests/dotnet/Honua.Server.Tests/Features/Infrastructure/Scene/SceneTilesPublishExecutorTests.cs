@@ -29,7 +29,6 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
 {
     private const int LayerId = 7;
     private readonly string _outputRoot;
-    private readonly StubLayerCatalog _catalog;
     private readonly StubFeatureSource _featureSource;
     private readonly StubRegistrationService _registration;
     private readonly TestMetadataV2GraphProvider _metadataProvider;
@@ -38,7 +37,6 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     public SceneTilesPublishExecutorTests()
     {
         _outputRoot = Path.Combine(Path.GetTempPath(), $"honua-scene-{Guid.NewGuid():N}");
-        _catalog = new StubLayerCatalog();
         _featureSource = new StubFeatureSource();
         _registration = new StubRegistrationService();
         _metadataProvider = new TestMetadataV2GraphProvider(BuildSceneGraph());
@@ -71,7 +69,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_ProducesDeterministicByteIdenticalOutput()
     {
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
 
         var intent1 = BuildIntent(sceneId: "deterministic-a");
@@ -92,7 +90,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_PreservesAttributesInGlbStructuralMetadata()
     {
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
 
         var outcome = await _executor.RunDirectAsync(BuildIntent(), CancellationToken.None);
@@ -126,7 +124,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
                 }
             ]
         };
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         SetResourceSymbology(symbology);
         _featureSource.Features = SamplePolygons();
 
@@ -165,7 +163,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_NoSymbology_OmitsStyleSidecarAndExtras()
     {
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
 
         var outcome = await _executor.RunDirectAsync(BuildIntent(), CancellationToken.None);
@@ -181,7 +179,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_RegistersSceneWithBoundsCoveringAllFeatures()
     {
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
 
         var outcome = await _executor.RunDirectAsync(BuildIntent(), CancellationToken.None);
@@ -199,7 +197,6 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_UnknownLayer_ReturnsLayerNotFoundCode()
     {
-        _catalog.Layer = null;
         _metadataProvider.SetGraph(new MetadataV2Graph
         {
             Revision = 2,
@@ -217,7 +214,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_LayerWithoutCrs_ReturnsCrsUnknownCode()
     {
-        _catalog.Layer = BuildLayer(spatialReference: new SpatialReference { Wkid = 0 });
+        BuildLayer(spatialReference: new SpatialReference { Wkid = 0 });
         _featureSource.Features = SamplePolygons();
 
         var act = () => _executor.RunDirectAsync(BuildIntent(), CancellationToken.None);
@@ -229,7 +226,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_ExceedingFeatureLimit_ReturnsFeatureLimitCode()
     {
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
 
         var intent = BuildIntent();
@@ -253,7 +250,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         // pre-check the build phase throws ArgumentException, which the
         // catch-all wrapped in ServiceUnavailableException → 503. The
         // documented contract is SCENE_UNSUPPORTED_GEOMETRY_TYPE → 400.
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = MixedKindFeatures();
 
         var act = () => _executor.RunDirectAsync(
@@ -272,7 +269,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         // InvalidOperationException("No vertices produced for tile.").
         // The executor's degeneracy pre-check must surface this as
         // SCENE_OPTIONS_INVALID / 400 instead of letting it 503.
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = DegeneratePolygons();
 
         var act = () => _executor.RunDirectAsync(
@@ -289,7 +286,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         // Sibling case: lines need at least 2 vertices to emit an edge.
         // Single-vertex line features collapse to no output and would
         // 503 at build time without the pre-check.
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = DegenerateLineStrings();
 
         var act = () => _executor.RunDirectAsync(
@@ -303,7 +300,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_AppliesExtrusionOverrideToProduceVerticalGeometry()
     {
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         SetResourceExtrusion(new MetadataV2ExtrusionInfo
         {
             HeightField = "height",
@@ -331,7 +328,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_RejectsCollidingSceneIdAsValidation()
     {
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
         _registration.RejectNextRegistration = true;
 
@@ -345,7 +342,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_RejectsSceneIdWithPathTraversal()
     {
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
 
         var act = () => _executor.RunDirectAsync(BuildIntent(sceneId: "../etc/escape"), CancellationToken.None);
@@ -359,7 +356,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_BoundingRegionMaxHeight_AccountsForBaseHeightField()
     {
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         SetResourceExtrusion(new MetadataV2ExtrusionInfo
         {
             HeightField = "height",
@@ -402,7 +399,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         // signed-min/max fix, region.maxHeight would be capped at the
         // negative topZ (~-25m) instead of the actual surface baseHeight (0m),
         // causing CesiumJS to cull the tile prematurely above ground level.
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         SetResourceExtrusion(new MetadataV2ExtrusionInfo
         {
             HeightField = "height",
@@ -455,7 +452,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         await File.WriteAllBytesAsync(Path.Combine(existingDir, "tile_0000.glb"), existingTileBytes);
         await File.WriteAllBytesAsync(Path.Combine(existingDir, "tileset.json"), existingTilesetBytes);
 
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
 
         var act = () => _executor.RunDirectAsync(BuildIntent(sceneId: "existing-scene"), CancellationToken.None);
@@ -474,7 +471,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_RejectsExplicitSceneIdLongerThanLimit()
     {
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
 
         var tooLong = new string('a', 65);
@@ -489,7 +486,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_RejectsExplicitSceneIdWithTrailingHyphen()
     {
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
 
         var act = () => _executor.RunDirectAsync(BuildIntent(sceneId: "scene-"), CancellationToken.None);
@@ -501,7 +498,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_RejectsCacheMaxAgeAboveLimit()
     {
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
 
         var act = () => _executor.RunDirectAsync(
@@ -517,7 +514,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_RejectsInvalidEditionGate()
     {
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
 
         var act = () => _executor.RunDirectAsync(
@@ -531,7 +528,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_RejectsDisplayNameLongerThanLimit()
     {
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
 
         var longName = new string('a', 129);
@@ -553,9 +550,6 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
             new FieldDefinition("name", FieldType.String, Length: 64, Nullable: true),
             new FieldDefinition("height", FieldType.Integer, Length: null, Nullable: true)
         };
-        _catalog.Layer = new LayerDefinition(
-            LayerId, "Bâtiments-2026", null, GeometryType.Polygon,
-            SpatialReference.Create(4326, 4326), fields);
         _metadataProvider.SetGraph(BuildSceneGraph(resourceName: "Bâtiments-2026", fields: fields));
         _featureSource.Features = SamplePolygons();
 
@@ -570,7 +564,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_AcceptsCacheMaxAgeAtBoundary()
     {
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
 
         var outcome = await _executor.RunDirectAsync(
@@ -600,7 +594,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         // throws — this is the case the staging-then-promote path is meant to
         // close.
         _registration.RejectNextRegistration = true;
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
 
         var act = () => _executor.RunDirectAsync(BuildIntent(sceneId: "concurrent-loser"), CancellationToken.None);
@@ -634,7 +628,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         await File.WriteAllBytesAsync(Path.Combine(finalDir, "leftover.txt"),
             Encoding.UTF8.GetBytes("orphaned"));
 
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
 
         var outcome = await _executor.RunDirectAsync(
@@ -650,7 +644,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_SuccessfulGeneration_LeavesNoStagingDirectory()
     {
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
 
         var outcome = await _executor.RunDirectAsync(
@@ -671,7 +665,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         // Postgres scene source previously wrapped geometry in ST_Force3D
         // (Z=0 for every 2D vertex), which masked this branch — the warning
         // only fires when no vertex carries a Height value.
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygonsWithoutZ();
 
         var outcome = await _executor.RunDirectAsync(
@@ -695,7 +689,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         var finalPath = Path.Combine(_outputRoot, "promo-fail");
         await File.WriteAllTextAsync(finalPath, "blocks-move");
 
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
 
         var act = () => _executor.RunDirectAsync(
@@ -725,7 +719,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         // Two generations of the same layer with different sceneIds must
         // produce different default display names so the registry's name
         // uniqueness constraint does not surface as an id-only conflict.
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
 
         var first = await _executor.RunDirectAsync(
@@ -749,7 +743,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     {
         // Explicit displayName is preserved as-is; the auto suffix only
         // applies when the operator omits the field.
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
 
         await _executor.RunDirectAsync(
@@ -774,7 +768,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
             AllowAnonymous = false,
             AllowedRoles = allowedRoles
         };
-        _catalog.Layer = BuildLayer(accessPolicy: protectedPolicy);
+        BuildLayer(accessPolicy: protectedPolicy);
         _featureSource.Features = SamplePolygons();
 
         await _executor.RunDirectAsync(
@@ -794,7 +788,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         // AllowAnonymous=true on the source layer means anonymous reads
         // are accepted, so the scene tileset stays public.
         var anonymousPolicy = new AccessPolicy { AllowAnonymous = true };
-        _catalog.Layer = BuildLayer(accessPolicy: anonymousPolicy);
+        BuildLayer(accessPolicy: anonymousPolicy);
         _featureSource.Features = SamplePolygons();
 
         await _executor.RunDirectAsync(
@@ -811,7 +805,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     {
         // Layers with no AccessPolicy keep the historic public-scene
         // default; only an explicit AllowAnonymous=false flips the bit.
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
 
         await _executor.RunDirectAsync(
@@ -830,7 +824,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         // 50 000-feature page through PostGIS first. Pre-seed the registry
         // with the target sceneId, then verify the executor refuses
         // before the StubFeatureSource records a single Stream call.
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
         _registration.Records.Add(new SceneDatasetRecord
         {
@@ -863,7 +857,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     {
         // Mirror of the duplicate-id case for invalid sceneId values:
         // an unparseable slug must be rejected before any DB streaming.
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
 
         var act = () => _executor.RunDirectAsync(
@@ -888,9 +882,6 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
             new FieldDefinition("a-b", FieldType.String, Length: 64, Nullable: true),
             new FieldDefinition("a_b", FieldType.String, Length: 64, Nullable: true)
         };
-        _catalog.Layer = new LayerDefinition(
-            LayerId, "Buildings", null, GeometryType.Polygon,
-            SpatialReference.Create(4326, 4326), fields);
         _metadataProvider.SetGraph(BuildSceneGraph(fields: fields));
 
         var basePolygons = SamplePolygons();
@@ -925,7 +916,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_NegativeCacheMaxAgeSeconds_ReturnsOptionsInvalid()
     {
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
 
         var intent = BuildIntent(sceneId: "negative-cache");
@@ -945,7 +936,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_NonNumericCacheMaxAgeSeconds_ReturnsOptionsInvalid()
     {
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
 
         var intent = BuildIntent(sceneId: "nan-cache");
@@ -964,7 +955,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_NonPositiveMaxFeatureCount_ReturnsOptionsInvalid()
     {
-        _catalog.Layer = BuildLayer();
+        BuildLayer();
         _featureSource.Features = SamplePolygons();
 
         var intent = BuildIntent(sceneId: "zero-cap");
@@ -991,9 +982,6 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
             new FieldDefinition("height", FieldType.Integer, Length: null, Nullable: true),
             new FieldDefinition("big_id", FieldType.BigInteger, Length: null, Nullable: true)
         };
-        _catalog.Layer = new LayerDefinition(
-            LayerId, "Buildings", null, GeometryType.Polygon,
-            SpatialReference.Create(4326, 4326), fields);
         _metadataProvider.SetGraph(BuildSceneGraph(fields: fields));
 
         var basePolygons = SamplePolygons();
@@ -1016,7 +1004,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
             && w.Contains("clamped", StringComparison.Ordinal));
     }
 
-    private LayerDefinition BuildLayer(
+    private void BuildLayer(
         SpatialReference? spatialReference = null,
         AccessPolicy? accessPolicy = null)
     {
@@ -1029,13 +1017,6 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
             new FieldDefinition("height", FieldType.Integer, Length: null, Nullable: true)
         };
         _metadataProvider.SetGraph(BuildSceneGraph(srid: sr.Wkid, accessPolicy: accessPolicy, fields: fields));
-        return new LayerDefinition(
-            LayerId,
-            "Buildings",
-            null,
-            GeometryType.Polygon,
-            sr,
-            fields);
     }
 
     private void SetResourceExtrusion(MetadataV2ExtrusionInfo extrusion)
