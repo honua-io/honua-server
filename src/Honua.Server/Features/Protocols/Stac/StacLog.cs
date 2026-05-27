@@ -63,6 +63,10 @@ internal static partial class StacLog
         Message = "STAC search returned {Count} items")]
     public static partial void SearchReturned(ILogger logger, int count);
 
+    [LoggerMessage(EventId = 5972, Level = LogLevel.Warning,
+        Message = "STAC search skipped publication for layer {LayerId} after a storage query error (e.g. the request bbox could not be transformed into the publication's CRS)")]
+    public static partial void SearchPublicationSkipped(ILogger logger, int layerId, Exception exception);
+
     // 5980: Errors
 
     [LoggerMessage(EventId = 5980, Level = LogLevel.Error,

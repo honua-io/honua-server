@@ -67,7 +67,7 @@ public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
 
         var record = Record(
             ("input", input),
-            ("connectionString", _fixture.DataSource.ConnectionString),
+            ("connectionString", _fixture.ConnectionString),
             ("schema", _schemaName),
             ("table", "external_out"),
             ("targetSrid", "4326"),
@@ -75,7 +75,9 @@ public sealed class ExternalPostgisSinkExecutorTests : IAsyncLifetime
 
         var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
 
-        Assert.Equal(ExecutionJobStatus.Succeeded, result.Status);
+        Assert.True(
+            result.Status == ExecutionJobStatus.Succeeded,
+            result.ErrorMessage ?? "External PostGIS sink executor failed without an error message.");
         Assert.NotNull(publishedUri);
 
         await using var connection = await _fixture.DataSource.OpenConnectionAsync();

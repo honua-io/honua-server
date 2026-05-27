@@ -103,11 +103,11 @@ public sealed class OgcFeaturesCollectionsExceptionMappingTests
 
     private static WebAppFixture CreateFixtureThatThrows(Func<Exception> exceptionFactory)
     {
-        var validator = Substitute.For<IResourceValidator>();
-        validator.ValidateCollectionV2Async(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        var resourceValidator = Substitute.For<IResourceValidator>();
+        resourceValidator.ValidateCollectionV2Async(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_ => Task.FromException<ResourceValidationResult<MetadataV2Resource>>(exceptionFactory()));
 
         return new WebAppFixture()
-            .ReplaceService<IResourceValidator>(validator);
+            .ReplaceService<IResourceValidator>(resourceValidator);
     }
 }

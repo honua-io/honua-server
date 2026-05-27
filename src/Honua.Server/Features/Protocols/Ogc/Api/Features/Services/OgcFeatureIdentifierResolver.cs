@@ -364,6 +364,18 @@ internal static class OgcFeatureIdentifierResolver
             }
         }
 
+        if (CanUseVerifiedObjectIdFallback(idField) &&
+            TryParseCanonicalPositiveObjectId(featureId, out var fallbackObjectId) &&
+            storageLayerId is { } fallbackLayerId)
+        {
+            var direct = await featureReader.GetAsync(fallbackLayerId, fallbackObjectId, cancellationToken).ConfigureAwait(false);
+            if (direct.HasValue &&
+                string.Equals(FormatPublicId(direct.Value, resource), featureId, StringComparison.Ordinal))
+            {
+                return new ResolvedFeature(direct.Value.Id, direct.Value);
+            }
+        }
+
         return null;
     }
 
@@ -444,6 +456,10 @@ internal static class OgcFeatureIdentifierResolver
 
     private static bool CanUseObjectIdFastPath(FieldDefinition idField)
         => idField.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) &&
+           idField.Type is FieldType.Integer or FieldType.BigInteger;
+
+    private static bool CanUseVerifiedObjectIdFallback(FieldDefinition idField)
+        => !idField.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) &&
            idField.Type is FieldType.Integer or FieldType.BigInteger;
 
     private static bool TryParseCanonicalPositiveObjectId(string value, out long objectId)

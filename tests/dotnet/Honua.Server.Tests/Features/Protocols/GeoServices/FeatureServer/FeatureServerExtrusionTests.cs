@@ -48,7 +48,7 @@ public sealed class FeatureServerExtrusionTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task LayerMetadata_WithExtrusionConfigured_SurfacesExtrusionInfo()
     {
-        SetLayerExtrusionMetadata(new LayerExtrusionInfo
+        await SetLayerExtrusionMetadataAsync(new LayerExtrusionInfo
         {
             HeightField = "objectid",
             Unit = VerticalUnits.Meters,
@@ -79,7 +79,7 @@ public sealed class FeatureServerExtrusionTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task LayerMetadata_WithBaseHeightField_SurfacesBaseHeightField()
     {
-        SetLayerExtrusionMetadata(new LayerExtrusionInfo
+        await SetLayerExtrusionMetadataAsync(new LayerExtrusionInfo
         {
             HeightField = "objectid",
             BaseHeightField = "objectid",
@@ -106,10 +106,7 @@ public sealed class FeatureServerExtrusionTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task LayerMetadata_HeightFieldMissing_Returns422WithErrorCode()
     {
-        SetLayerExtrusionMetadata(new LayerExtrusionInfo
-        {
-            Unit = VerticalUnits.Meters
-        });
+        await SetRawMetadataJsonAsync("""{"extrusion":{"unit":"meters"}}""");
 
         var client = _fixture.CreateClient();
 
@@ -126,7 +123,7 @@ public sealed class FeatureServerExtrusionTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task LayerMetadata_HeightFieldNotFound_Returns422WithErrorCode()
     {
-        SetLayerExtrusionMetadata(new LayerExtrusionInfo
+        await SetLayerExtrusionMetadataAsync(new LayerExtrusionInfo
         {
             HeightField = "ghost_field"
         });
@@ -146,7 +143,7 @@ public sealed class FeatureServerExtrusionTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task LayerMetadata_HeightFieldNonNumeric_Returns422WithErrorCode()
     {
-        SetLayerExtrusionMetadata(new LayerExtrusionInfo
+        await SetLayerExtrusionMetadataAsync(new LayerExtrusionInfo
         {
             HeightField = "name"
         });
@@ -169,11 +166,7 @@ public sealed class FeatureServerExtrusionTests : IAsyncLifetime
         // Unknown unit tokens in raw catalog metadata must surface through
         // the validator as EXTRUSION_UNIT_UNRECOGNIZED rather than throw
         // during catalog deserialization.
-        SetLayerExtrusionMetadata(new LayerExtrusionInfo
-        {
-            HeightField = "objectid",
-            Unit = "yards"
-        });
+        await SetRawMetadataJsonAsync("""{"extrusion":{"heightField":"objectid","unit":"yards"}}""");
 
         var client = _fixture.CreateClient();
 
@@ -190,7 +183,7 @@ public sealed class FeatureServerExtrusionTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task LayerMetadata_NegativeDefaultHeight_Returns422WithErrorCode()
     {
-        SetLayerExtrusionMetadata(new LayerExtrusionInfo
+        await SetLayerExtrusionMetadataAsync(new LayerExtrusionInfo
         {
             HeightField = "objectid",
             DefaultHeight = -1.0
@@ -211,7 +204,7 @@ public sealed class FeatureServerExtrusionTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task LayerQuery_WithExtrusionConfigured_DoesNotAffect2DResponse()
     {
-        SetLayerExtrusionMetadata(new LayerExtrusionInfo
+        await SetLayerExtrusionMetadataAsync(new LayerExtrusionInfo
         {
             HeightField = "objectid",
             Unit = VerticalUnits.Meters
@@ -233,6 +226,21 @@ public sealed class FeatureServerExtrusionTests : IAsyncLifetime
             "extrusionInfo must not leak into query payloads");
     }
 
-    private void SetLayerExtrusionMetadata(LayerExtrusionInfo extrusion)
-        => _fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, extrusion: extrusion);
+    private async Task SetLayerExtrusionMetadataAsync(LayerExtrusionInfo extrusion)
+    {
+        var metadata = new CatalogMetadata { Extrusion = extrusion };
+        var json = JsonSerializer.Serialize(metadata, CatalogJsonContext.Default.CatalogMetadata);
+        await SetRawMetadataJsonAsync(json);
+    }
+
+    private Task SetRawMetadataJsonAsync(string metadataJson)
+    {
+        var metadata = JsonSerializer.Deserialize(metadataJson, CatalogJsonContext.Default.CatalogMetadata)
+            ?? new CatalogMetadata();
+        _fixture.UpdateV2ResourceMetadata(
+            WebAppFixture.TestLayerId,
+            extrusion: metadata.Extrusion,
+            clearExtrusion: metadata.Extrusion is null);
+        return Task.CompletedTask;
+    }
 }

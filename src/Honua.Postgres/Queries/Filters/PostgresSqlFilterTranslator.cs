@@ -211,7 +211,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
             return GetGeometryColumnExpression(context);
         }
 
-        if (field.IsPrimaryKey)
+        if (field.IsPrimaryKey && IsCoreObjectIdField(field.Name))
         {
             return QuoteIdentifier(_primaryKeyColumn);
         }
@@ -791,6 +791,13 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         if (propertyName.Equals("id", StringComparison.OrdinalIgnoreCase) &&
             context.PrimaryKeyName is not null)
         {
+            var declaredField = context.TryGetField(propertyName);
+            if (declaredField is not null && !IsCoreObjectIdField(declaredField.Value.Name))
+            {
+                expression = string.Empty;
+                return false;
+            }
+
             expression = QuoteIdentifier(_primaryKeyColumn);
             return true;
         }
@@ -825,6 +832,10 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         expression = string.Empty;
         return false;
     }
+
+    private static bool IsCoreObjectIdField(string fieldName)
+        => fieldName.Equals(DatabaseSchema.ObjectIdColumn, StringComparison.OrdinalIgnoreCase) ||
+           fieldName.Equals(DatabaseSchema.ObjectIdColumnAlt, StringComparison.OrdinalIgnoreCase);
 
     private static bool IsGeometryAlias(string propertyName)
         => propertyName.Equals(DatabaseSchema.GeometryColumn, StringComparison.OrdinalIgnoreCase) ||

@@ -3,12 +3,9 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Caching.Abstractions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -17,6 +14,7 @@ using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using ServiceProtocols = Honua.Core.Features.Catalog.Domain.ServiceProtocols;
 
 namespace Honua.Server.Tests.Features.Caching;
 
@@ -138,9 +136,7 @@ public sealed class OutputCacheInvalidationServiceTests
     {
         var outputCacheStore = Substitute.For<IOutputCacheStore>();
         var responseCache = Substitute.For<IResponseCache>();
-        var services = new ServiceCollection();
-        services.AddSingleton<IMetadataV2GraphProvider>(CreateNamedLayerGraphProvider());
-        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+        var scopeFactory = CreateScopeFactory(CreateFeatureServerGraph(("alpha", [42])));
         var logger = NullLogger<OutputCacheInvalidationService>.Instance;
         var sut = new OutputCacheInvalidationService(outputCacheStore, responseCache, null, scopeFactory, null, logger);
 
@@ -156,9 +152,7 @@ public sealed class OutputCacheInvalidationServiceTests
     {
         var outputCacheStore = Substitute.For<IOutputCacheStore>();
         var responseCache = Substitute.For<IResponseCache>();
-        var services = new ServiceCollection();
-        services.AddSingleton<IMetadataV2GraphProvider>(CreateNamedLayerGraphProvider());
-        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+        var scopeFactory = CreateScopeFactory(CreateFeatureServerGraph(("alpha", [42])));
         var logger = NullLogger<OutputCacheInvalidationService>.Instance;
         var sut = new OutputCacheInvalidationService(outputCacheStore, responseCache, null, scopeFactory, null, logger);
 
@@ -204,9 +198,10 @@ public sealed class OutputCacheInvalidationServiceTests
         var outputCacheStore = Substitute.For<IOutputCacheStore>();
         var responseCache = Substitute.For<IResponseCache>();
         var metadataCache = Substitute.For<ICacheService>();
-        var services = new ServiceCollection();
-        services.AddSingleton<IMetadataV2GraphProvider>(CreateOwningServicesGraphProvider());
-        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+        var scopeFactory = CreateScopeFactory(CreateFeatureServerGraph(
+            ("alpha", [7]),
+            ("beta", [7, 9]),
+            ("gamma", [9])));
         var logger = NullLogger<OutputCacheInvalidationService>.Instance;
         var sut = new OutputCacheInvalidationService(outputCacheStore, responseCache, metadataCache, scopeFactory, null, logger);
 
@@ -255,42 +250,65 @@ public sealed class OutputCacheInvalidationServiceTests
             Arg.Any<CancellationToken>());
     }
 
-    private static TestMetadataV2GraphProvider CreateNamedLayerGraphProvider()
-        => new TestMetadataV2GraphBuilder()
-            .AddResource("res-named-layer", "Named Layer", MetadataV2ResourceType.FeatureDataset)
-            .AddService("svc-ogc", "ogc", protocols: [ServiceProtocols.OgcFeatures])
-            .AddPublication(
-                "pub-named-layer",
-                "svc-ogc",
-                "res-named-layer",
-                layerIndex: 42,
-                serviceLocalId: "42",
-                publicationType: MetadataV2PublicationType.OgcCollection)
-            .BuildProvider();
-
-    private static TestMetadataV2GraphProvider CreateOwningServicesGraphProvider()
-        => new TestMetadataV2GraphBuilder()
-            .AddResource("res-layer-7", "Layer 7", MetadataV2ResourceType.FeatureDataset)
-            .AddResource("res-layer-9", "Layer 9", MetadataV2ResourceType.FeatureDataset)
-            .AddService("svc-alpha", "alpha", protocols: [ServiceProtocols.FeatureServer])
-            .AddService("svc-beta", "beta", protocols: [ServiceProtocols.FeatureServer])
-            .AddService("svc-gamma", "gamma", protocols: [ServiceProtocols.FeatureServer])
-            .AddPublication("pub-alpha-layer-7", "svc-alpha", "res-layer-7", layerIndex: 7, serviceLocalId: "7")
-            .AddPublication("pub-beta-layer-7", "svc-beta", "res-layer-7", layerIndex: 7, serviceLocalId: "7")
-            .AddPublication("pub-beta-layer-9", "svc-beta", "res-layer-9", layerIndex: 9, serviceLocalId: "9")
-            .AddPublication("pub-gamma-layer-9", "svc-gamma", "res-layer-9", layerIndex: 9, serviceLocalId: "9")
-            .BuildProvider();
-
-    private static ServiceDefinition CreateService(string name, params int[] layerIds)
+    private static IServiceScopeFactory CreateScopeFactory(MetadataV2Graph graph)
     {
-        var layers = layerIds
-            .Select(layerId => LayerDefinition.CreateBasic(layerId, $"Layer {layerId}", GeometryType.Point))
-            .ToArray();
+        var services = new ServiceCollection();
+        services.AddSingleton(new TestMetadataV2GraphProvider(graph));
+        services.AddSingleton<IMetadataV2GraphProvider>(sp =>
+            sp.GetRequiredService<TestMetadataV2GraphProvider>());
+        return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+    }
 
-        return new ServiceDefinition(
-            name,
-            $"Service {name}",
-            layers,
-            SpatialReference.Create(4326));
+    private static MetadataV2Graph CreateFeatureServerGraph(
+        params (string ServiceName, int[] LayerIds)[] serviceDefinitions)
+    {
+        var builder = new TestMetadataV2GraphBuilder();
+        foreach (var layerId in serviceDefinitions
+                     .SelectMany(static definition => definition.LayerIds)
+                     .Distinct()
+                     .OrderBy(static layerId => layerId))
+        {
+            var resourceId = $"res-layer-{layerId}";
+            var bindingId = $"binding-layer-{layerId}";
+            builder
+                .AddResource(
+                    resourceId,
+                    layerId == 42 ? "Named Layer" : $"Layer {layerId}",
+                    MetadataV2ResourceType.FeatureDataset,
+                    spatial: new MetadataV2ResourceSpatial
+                    {
+                        SpatialReference = MetadataV2SpatialReference.Wgs84,
+                        GeometryType = MetadataV2GeometryType.Point,
+                        PrimaryGeometryField = "shape",
+                        SupportedCrs = [MetadataV2SpatialReference.Wgs84],
+                    })
+                .AddStorageBinding(
+                    bindingId,
+                    resourceId,
+                    $"features:{layerId}",
+                    storageLayerId: layerId);
+        }
+
+        foreach (var (serviceName, layerIds) in serviceDefinitions)
+        {
+            var serviceId = $"svc-{serviceName.ToLowerInvariant()}";
+            builder.AddService(
+                serviceId,
+                serviceName,
+                protocols: [ServiceProtocols.FeatureServer]);
+
+            foreach (var layerId in layerIds)
+            {
+                builder.AddPublication(
+                    id: $"pub-{serviceName.ToLowerInvariant()}-{layerId}",
+                    serviceId: serviceId,
+                    resourceId: $"res-layer-{layerId}",
+                    layerIndex: layerId,
+                    serviceLocalId: layerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+            }
+        }
+
+        return builder.Build();
     }
 }
