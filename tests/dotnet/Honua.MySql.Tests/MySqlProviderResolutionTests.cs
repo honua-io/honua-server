@@ -20,7 +20,7 @@ namespace Honua.MySql.Tests;
 /// Verifies that the canonical "mysql" name and the "mariadb" alias both resolve to
 /// the MySQL/MariaDB feature provider through <see cref="IFeatureDataProviderRegistry"/>.
 /// </summary>
-public class MySqlProviderResolutionTests
+public sealed class MySqlProviderResolutionTests
 {
     [Fact]
     public void DataProviderNames_MariadbAlias_NormalisesToMysql()

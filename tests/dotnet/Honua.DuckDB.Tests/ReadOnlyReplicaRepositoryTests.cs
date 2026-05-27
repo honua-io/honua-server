@@ -12,7 +12,7 @@ namespace Honua.DuckDB.Tests;
 /// should not normally reach this repository; the no-op upsert is a defensive
 /// guarantee that the caching write-through path does not throw if it does.
 /// </summary>
-public class ReadOnlyReplicaRepositoryTests
+public sealed class ReadOnlyReplicaRepositoryTests
 {
     private readonly NoOpReplicaRepository _repo = new();
 
