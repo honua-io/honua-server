@@ -110,9 +110,9 @@ internal sealed partial class FeatureDataAccess
         if (_outboxRepository is null)
         {
             throw new InvalidOperationException(
-                "Feature mutation outbox scope is active but no IFeatureChangeOutboxRepository " +
+                "Feature mutation outbox scope is active but no IFeatureChangeOutboxWriter " +
                 "is registered. The Postgres feature-store DI must register both the outbox " +
-                "repository and the capability provider together so an opened scope can durably " +
+                "writer and the capability provider together so an opened scope can durably " +
                 "commit its CDC envelope.");
         }
 

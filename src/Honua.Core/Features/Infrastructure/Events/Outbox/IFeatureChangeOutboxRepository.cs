@@ -1,28 +1,22 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Data.Common;
-
 namespace Honua.Core.Features.Infrastructure.Events.Outbox;
 
 /// <summary>
 /// Provider-specific persistence for the feature-change transactional outbox.
 /// All multi-node-safe operations (claim, recover, mark) are atomic at the SQL layer.
 /// </summary>
+/// <remarks>
+/// The atomic write path that inserts an outbox row inside the feature-mutation
+/// transaction is intentionally not part of this contract: it requires an ambient
+/// ADO.NET connection/transaction and is therefore a provider-internal concern
+/// (see the provider's feature data-access layer). This abstraction stays
+/// transport-agnostic so the outbox dispatcher can consume it without taking a
+/// dependency on <see cref="System.Data.Common"/>.
+/// </remarks>
 public interface IFeatureChangeOutboxRepository
 {
-    /// <summary>
-    /// Inserts an outbox row inside an existing connection + transaction so the outbox
-    /// row commits atomically with the feature mutation. This is the only supported
-    /// write path: the dispatcher's atomic-write contract requires the row to be
-    /// committed in the same transaction as the mutation, with no auto-commit fallback.
-    /// </summary>
-    Task WriteOutboxRowAsync(
-        DbConnection connection,
-        DbTransaction transaction,
-        FeatureChangeOutboxEntry entry,
-        CancellationToken cancellationToken);
-
     /// <summary>
     /// Atomically claim up to <paramref name="batchSize"/> rows for dispatch.
     /// Implementations must use a single-claim primitive (Postgres: <c>FOR UPDATE SKIP LOCKED</c>;
