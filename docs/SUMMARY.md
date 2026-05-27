@@ -72,7 +72,7 @@
 - [Capability Manifest](developer/capability-manifest.md)
 - [Metadata and Catalog Parity Matrix](developer/metadata-catalog-parity-matrix.md)
 - [NVIDIA Construction Demo Fixture](demo/nvidia-construction.md)
-- [Console Content and RBAC (Admin API)](admin-api/console-content-and-rbac.md)
+- [Console Content, Share, and RBAC (Admin API)](admin-api/console-content-and-rbac.md)
 - [Console Workflow Packages (Admin API)](admin-api/console-workflow-packages.md)
 - [Console Job Observability (Admin API)](admin-api/console-job-observability.md)
 - [Share Export and Traffic API](developer/share-export-traffic-api.md)

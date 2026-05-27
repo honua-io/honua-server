@@ -124,7 +124,7 @@ Release evidence:
   validation warnings, migration blockers, or admin UI limitations.
 - Follow-up issues are linked for deferred Metadata v2 work.
 
-## Console Content and RBAC Baseline (#1162)
+## Console Content, Share, and RBAC Baseline (#1162, #1215)
 
 Derived from:
 
@@ -136,9 +136,10 @@ Derived from:
 
 Release evidence:
 
-- The Console content item, session bootstrap, action-check, and provenance
-  endpoints under `/api/v1/console/**` are documented in
-  [Console Content and RBAC (Admin API)](../../admin-api/console-content-and-rbac.md)
+- The Console content item, session bootstrap, action-check, provenance,
+  Share, public-link, and embed endpoints under `/api/v1/console/**` are
+  documented in
+  [Console Content, Share, and RBAC (Admin API)](../../admin-api/console-content-and-rbac.md)
   and listed in `EndpointRegistry.All`.
 - `ConsoleContentItem.itemType` covers `service`, `layer`, `saved-map`,
   `dashboard`, `report`, `generated-app`, and `open-data`; sidecar shapes per

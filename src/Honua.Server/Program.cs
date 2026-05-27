@@ -428,6 +428,14 @@ builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleC
         sp.GetService<TimeProvider>() ?? TimeProvider.System));
 builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleActionEvaluator,
     Honua.Server.Features.Console.Services.ConsoleActionEvaluator>();
+// Console Share access: public-link + embed state (#1215). In-memory store
+// shares the persistent-store follow-on (#1163); validator depends on the
+// content + share stores to walk the provenance closure.
+builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleShareStore>(sp =>
+    new Honua.Server.Features.Console.Services.InMemoryConsoleShareStore(
+        sp.GetService<TimeProvider>() ?? TimeProvider.System));
+builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleDependencyClosureValidator,
+    Honua.Server.Features.Console.Services.ConsoleDependencyClosureValidator>();
 
 // Content publication registry for Studio-generated maps/dashboards/reports/apps (#1183).
 // In-memory store is the default; Postgres registration (AddPostgreSqlServices) overrides
@@ -1024,6 +1032,9 @@ app.MapRoleEndpoints();
 app.MapConsoleSessionEndpoints();
 app.MapConsoleContentEndpoints();
 app.MapConsoleActionEndpoints();
+// Console Share access public-link + embed API (#1215)
+app.MapConsoleShareEndpoints();
+app.MapConsoleSharePublicEndpoints();
 app.MapStudioPackageEndpoints();
 app.MapWorkflowPackageEndpoints();
 Honua.Server.Features.Console.Publications.ContentPublicationEndpoints.MapContentPublicationEndpoints(app);

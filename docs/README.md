@@ -161,7 +161,7 @@ How to build against Honua's APIs, SDKs, and protocols.
 
 ### Admin API
 
-- [Console Content and RBAC (Baseline)](admin-api/console-content-and-rbac.md) — Metadata v2 content item, session bootstrap, action-check, and provenance endpoints under `/api/v1/console/**` (#1162).
+- [Console Content, Share, and RBAC (Baseline)](admin-api/console-content-and-rbac.md) — Metadata v2 content item, session bootstrap, action-check, provenance, Share access, public-link, and embed endpoints under `/api/v1/console/**` (#1162, #1215).
 - [Console Workflow Packages](admin-api/console-workflow-packages.md) — Server-owned node registry, mutable workflow package drafts, immutable versions, validation, dry-run, publication, runs, and provenance under `/api/v1/console/workflow-*` (#1185).
 - [Console Job Observability](admin-api/console-job-observability.md) — Durable execution job list, detail, logs, artifacts, action, cancel, retry, and Operate event correlation endpoints under `/api/v1/admin/jobs/**` (#1170).
 - [Share Export and Traffic API](developer/share-export-traffic-api.md) — Scheduled Share export definitions, run history with nullable `jobRunId`, and aggregate Share traffic panels under `/api/v1/admin/share/**`, plus per-item traffic under `/api/v1/admin/services/{serviceName}/layers/{layerId}/share/**` (#1216).

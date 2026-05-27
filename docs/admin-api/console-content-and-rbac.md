@@ -1,4 +1,4 @@
-# Console Content And RBAC API (Baseline)
+# Console Content, Share, And RBAC API (Baseline)
 
 Honua Console consolidates Portal, Admin, and Studio into a single deployment
 surface. The endpoints in this document are the shared server-side baseline
@@ -8,8 +8,9 @@ reintroducing separate Portal/Admin metadata models. The shapes are owned by
 the `Honua.Server.Features.Console` vertical slice and source-generated through
 `ConsoleJsonContext` so AOT publish stays clean.
 
-Tracked by issue **#1162**. Subsequent tickets (#1163 — persistent store,
-#1164/#1165 — release lifecycle) build on this surface. Published
+Tracked by issues **#1162** (content/RBAC baseline) and **#1215** (Share
+access, public-link, and embed API). Subsequent tickets (#1163 — persistent
+store, #1164/#1165 — release lifecycle) build on this surface. Published
 map/dashboard/report/generated-app route state is documented separately in the
 [Content Publication Registry API](content-publication-registry.md) (#1183);
 Console content items may link to those publications through sidecars and
@@ -51,6 +52,17 @@ Error contract (matching the established admin endpoint pattern):
 | `DELETE` | `/content/{id}` | Delete the item. |
 | `GET` | `/content/{id}/provenance?depth=` | Resolve the transitive provenance chain anchored on the item (`depth` defaults to 5; values are clamped to `[1, 5]`). |
 | `POST` | `/actions/check` | Bulk evaluate Console verbs over a set of item ids and/or route keys. |
+| `GET` | `/content/{id}/share` | Read the server-owned Share projection for the item. |
+| `PUT` | `/content/{id}/share/access` | Set the Share access tier (`private`, `organization`, `public-link`, `public-indexed`). |
+| `GET` | `/content/{id}/share/dependencies?targetTier=` | Preview dependency-closure compatibility for a target tier. |
+| `GET` | `/content/{id}/share/link` | List public-link token metadata. Token values are not returned. |
+| `POST` | `/content/{id}/share/link` | Mint a public-link token. The opaque token value is returned once. |
+| `DELETE` | `/content/{id}/share/link/{tokenId}` | Revoke a public-link token by stable id. |
+| `PUT` | `/content/{id}/share/embed` | Enable or disable embed authorization for `map` or `content` audience. |
+| `POST` | `/content/{id}/share/embed` | Mint an embed token with TTL and audience. The opaque token value is returned once. |
+| `GET` | `/share/content/{id}` | Anonymous-safe read of a `public-indexed` content item. Private/missing items return the same non-leaking 404 shape. |
+| `GET` | `/share/link/{token}` | Anonymous-safe public-link token resolution. Invalid, expired, revoked, or no-longer-covered tokens return the same 404 shape. |
+| `POST` | `/share/embed/{token}/redeem` | Anonymous-safe embed token redemption. Expired tokens or disabled embedding return the same 404 shape. |
 
 Publication management endpoints under `/api/v1/console/publications/**` share
 the Console control-plane namespace but do not use the `ApiResponse<T>` envelope;
@@ -248,6 +260,122 @@ provenance edges with a null reference or null/whitespace `itemId`, so legacy
 or future-store data cannot break reads even when the create/PUT validator did
 not yet reject them.
 
+## Share access
+
+`ConsoleVisibility` remains the membership scope on `ConsoleContentItem`.
+`ConsoleShareAccessTier` is the separate Share facet:
+
+| Tier | Meaning |
+| --- | --- |
+| `private` | No public-link or public-indexed Share state; access follows membership visibility. |
+| `organization` | Organization-wide Share state. |
+| `public-link` | Opaque public-link tokens can resolve the item without changing membership visibility. |
+| `public-indexed` | The item is public, anonymous-readable, and eligible for future catalog/open-data indexing. |
+
+When no explicit Share state exists, the projection computes the effective
+tier from current visibility for backward compatibility: `public` maps to
+`public-indexed`, `organization` maps to `organization`, and all other
+visibility values map to `private`. Public-link and embed remain disabled
+until explicitly configured. Setting `/share/access` to `public-indexed`
+also patches `ConsoleContentItem.visibility` to `public`; other tier changes
+do not modify membership visibility.
+
+`GET /content/{id}/share` returns `ConsoleShareProjection`:
+
+```json
+{
+  "itemId": "5966...",
+  "itemName": "parcels",
+  "itemTitle": "Parcels",
+  "itemType": "layer",
+  "ownerId": "u-1",
+  "accessTier": "public-link",
+  "publicLinkEnabled": true,
+  "publicLinkTokens": [
+    {
+      "tokenId": "f7c1...",
+      "itemId": "5966...",
+      "createdAt": "2026-05-25T18:00:00Z",
+      "expiresAt": "2026-06-01T18:00:00Z",
+      "createdById": "u-1",
+      "isExpired": false
+    }
+  ],
+  "embedEnabled": true,
+  "embedAudience": "map",
+  "openDataEligible": false,
+  "callerPermissions": ["view", "share", "embed", "administer"],
+  "anonymousEligible": true,
+  "endpoints": { "self": "/api/v1/console/content/5966..." },
+  "updatedAt": "2026-05-25T18:00:00Z",
+  "updatedById": "u-1"
+}
+```
+
+The token value is intentionally omitted from projections and list responses.
+`POST /content/{id}/share/link` returns a `ConsolePublicLinkToken` with
+`token` populated once; later reads only expose `tokenId`, metadata, and
+effective `isExpired`. `DELETE /content/{id}/share/link/{tokenId}` revokes
+the token as a soft-delete for audit purposes. Expiry is evaluated lazily at
+resolution time and in token lists.
+
+`PUT /content/{id}/share/embed` configures whether embed tokens may be minted
+for `map` or `content` audience. `POST /content/{id}/share/embed` returns a
+`ConsoleEmbedToken` with `token` populated once and a bounded TTL (default
+3600 seconds, max 86400 seconds). Embed tokens are TTL-based and replayable
+within the TTL for this MVP; disabling embed revokes outstanding tokens.
+
+### Dependency closure
+
+Public sharing and embed enablement validate the item's transitive provenance
+closure before committing. The validator walks Console-owned provenance
+references up to a depth of 10 and reports dependencies that are not shareable
+by the target audience. A conflict response uses
+`ApiResponse<ConsoleShareDependencyClosureResponse>` with status `409`:
+
+```json
+{
+  "success": false,
+  "message": "Dependency closure is not shareable by the target audience.",
+  "data": {
+    "itemId": "root",
+    "targetTier": "public-link",
+    "isCompatible": false,
+    "conflicts": [
+      {
+        "itemId": "private-source",
+        "itemType": "layer",
+        "itemName": "private-source",
+        "blockingReason": "dependency visibility is 'personal' and it has no public-link access"
+      }
+    ]
+  }
+}
+```
+
+`allowDependencyConflicts: true` allows the write to proceed and emits a
+distinct telemetry event in addition to the tier/configuration change event.
+
+### Anonymous reads
+
+Anonymous Share endpoints are intentionally separate from authenticated
+management endpoints:
+
+- `GET /api/v1/console/share/content/{id}` returns the same minimal
+  presentation projection as a link resolve only when the effective tier is
+  `public-indexed`.
+- `GET /api/v1/console/share/link/{token}` resolves active public-link tokens
+  for `public-link` or `public-indexed` items.
+- `POST /api/v1/console/share/embed/{token}/redeem` redeems active embed
+  tokens when embedding remains enabled.
+
+Successful anonymous responses may include item id, item type, safe title,
+summary, access tier/audience, expiry, and endpoints. They never include owner
+ids, provenance, caller permissions, internal metadata, or the opaque token.
+All denial paths for missing, private, expired, revoked, invalid, or
+no-longer-covered tokens return `404` with a generic `ApiResponse<object>`
+message and do not include the private item id, title, or existence hint.
+
 ## Bootstrap response
 
 `GET /api/v1/console/session` returns user profile, capability strings, route
@@ -260,14 +388,21 @@ response degrades — `content.items` is empty, `content.total = 0`,
 
 Endpoints carry `WithTags("Console")`, summaries, and source-generated DTOs.
 `honua-sdk-js` generation should consume `Console` as a new tag group and
-produce typed helpers per `itemType` for the `typeMetadata` sidecar. No
+produce typed helpers per `itemType` for the `typeMetadata` sidecar.
+`honua-sdk-dotnet` should project the Share DTOs directly from
+`ConsoleJsonContext` names (`ConsoleShareProjection`,
+`ConsolePublicLinkToken`, `ConsoleEmbedToken`,
+`ConsoleShareDependencyClosureResponse`,
+`ConsolePublicLinkResolutionResponse`, and `ConsoleEmbedRedeemResponse`). No
 frontend-specific DTO forks.
 
 ## Known follow-ons
 
 - **Persistent store (#1163)** — `IConsoleContentStore` is currently backed by
-  the baseline in-memory store registered in `Program.cs`. A Postgres-backed
-  implementation, schema migration, and snapshot test live in the follow-on.
+  the baseline in-memory store registered in `Program.cs`; `IConsoleShareStore`
+  is also in-memory for #1215. A Postgres-backed implementation, schema
+  migration, and snapshot test live in the follow-on. Persistent Share tokens
+  must store SHA-256 token hashes rather than plaintext token values.
 - **Release lifecycle (#1164, #1165)** — operation lifecycle, compatibility
   prevalidation, rollback workflow APIs.
 - **OGC alignment** — sidecar shapes for `service` map onto Metadata v2

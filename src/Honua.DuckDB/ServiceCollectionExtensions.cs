@@ -1,13 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Catalog;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
-using Honua.DuckDB.Features.Catalog;
 using Honua.DuckDB.Features.FeatureStore;
 using Honua.DuckDB.Features.FeatureStore.Services;
 using DuckDB.NET.Data;
@@ -105,20 +106,27 @@ internal static class ServiceCollectionExtensions
         // Register segregated interfaces
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
         services.AddScoped<IFeatureReader>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
-        services.AddScoped<IFeatureWriter>(_ => new ReadOnlyFeatureWriter());
-        services.AddScoped<IReplicaRepository>(_ => new ReadOnlyReplicaRepository());
-        services.AddScoped<IChangeTracker>(_ => new ReadOnlyChangeTracker());
+        services.AddScoped<IFeatureWriter>(_ => new ReadOnlyFeatureWriter("DuckDB"));
+        services.AddScoped<IReplicaRepository>(_ => new NoOpReplicaRepository());
+        services.AddScoped<IChangeTracker>(_ => new NoOpChangeTracker());
         services.AddScoped<IGeoJsonFeatureStore>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
         services.AddScoped<IStreamingFeatureStore>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
-        services.AddScoped<ITileProvider>(_ => new ReadOnlyTileProvider());
-        services.AddScoped<IGmlFeatureStore>(_ => new ReadOnlyGmlFeatureStore());
+        services.AddScoped<ITileProvider>(_ => new ReadOnlyTileProvider("DuckDB"));
+        services.AddScoped<IGmlFeatureStore>(_ => new ReadOnlyGmlFeatureStore("DuckDB"));
 
-        // Register catalog (scoped, from configuration + discovered column types)
+        // Register catalog (scoped, from configuration + discovered column types).
+        // Uses the shared Core ConfigurationLayerCatalog; the provider-specific
+        // initialization log message is emitted via the onInitialized callback so the
+        // log category, event id, and wording stay DuckDB-specific.
         services.AddScoped<ILayerCatalog>(sp =>
         {
             var registry = sp.GetRequiredService<DuckDBLayerRegistry>();
             var (layers, serviceDefs) = BuildCatalogEntries(options, registry.Mappings);
-            return new DuckDBLayerCatalog(layers, serviceDefs, sp.GetRequiredService<ILogger<DuckDBLayerCatalog>>());
+            var logger = sp.GetRequiredService<ILogger<ConfigurationLayerCatalog>>();
+            return new ConfigurationLayerCatalog(
+                layers,
+                serviceDefs,
+                (layerCount, serviceCount) => DuckDbLog.LayerCatalogInitialized(logger, layerCount, serviceCount));
         });
 
         // Capability provider for the feature-change transactional outbox (#692). DuckDB is
