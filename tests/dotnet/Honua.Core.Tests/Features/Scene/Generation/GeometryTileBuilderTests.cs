@@ -423,6 +423,91 @@ public sealed class GeometryTileBuilderTests
     }
 
     [UnitTest]
+    public void BuildGlb_WithSymbology_BakesPerFeatureColor0Attribute()
+    {
+        var features = NumericFeaturePair(
+            new Dictionary<string, object?>(StringComparer.Ordinal) { ["name"] = "a" },
+            new Dictionary<string, object?>(StringComparer.Ordinal) { ["name"] = "b" });
+
+        var schemas = new[]
+        {
+            new SceneAttributeSchema { PropertyId = "name", FieldName = "name", SchemaType = "STRING", SchemaComponentType = string.Empty }
+        };
+
+        // Feature 0 = opaque red, feature 1 = half-opacity blue.
+        var symbology = new[]
+        {
+            new ResolvedSymbology(new Symbology3DColor(255, 0, 0), 1.0, true),
+            new ResolvedSymbology(new Symbology3DColor(0, 0, 255), 0.5, true)
+        };
+
+        var glb = GeometryTileBuilder.BuildGlb(features, schemas, extrusion: null, perFeatureSymbology: symbology);
+        var json = ExtractJsonChunk(glb);
+
+        using var doc = JsonDocument.Parse(json);
+
+        // The primitive must reference the COLOR_0 attribute (accessor 2).
+        var primitive = doc.RootElement.GetProperty("meshes")[0].GetProperty("primitives")[0];
+        primitive.GetProperty("attributes").GetProperty("COLOR_0").GetInt32().Should().Be(2);
+
+        // The COLOR_0 accessor is a normalized UNSIGNED_BYTE VEC4.
+        var colorAccessor = doc.RootElement.GetProperty("accessors")[2];
+        colorAccessor.GetProperty("componentType").GetInt32().Should().Be(5121);
+        colorAccessor.GetProperty("normalized").GetBoolean().Should().BeTrue();
+        colorAccessor.GetProperty("type").GetString().Should().Be("VEC4");
+
+        // The material switches to PBR with BLEND so vertex alpha is honored.
+        var material = doc.RootElement.GetProperty("materials")[0];
+        material.GetProperty("alphaMode").GetString().Should().Be("BLEND");
+        material.GetProperty("pbrMetallicRoughness").GetProperty("baseColorFactor")
+            .EnumerateArray().Select(e => e.GetDouble()).Should().Equal(1.0, 1.0, 1.0, 1.0);
+
+        // Read the baked RGBA bytes for the first vertex of each feature.
+        var colorView = colorAccessor.GetProperty("bufferView").GetInt32();
+        var byteOffset = doc.RootElement.GetProperty("bufferViews")[colorView].GetProperty("byteOffset").GetInt32();
+        var bin = ExtractBinChunk(glb);
+
+        // Vertex 0 belongs to feature 0 (red, opaque).
+        bin[byteOffset + 0].Should().Be(255);
+        bin[byteOffset + 1].Should().Be(0);
+        bin[byteOffset + 2].Should().Be(0);
+        bin[byteOffset + 3].Should().Be(255);
+    }
+
+    [UnitTest]
+    public void BuildGlb_WithoutSymbology_OmitsColor0AndKeepsLegacyMaterial()
+    {
+        var glb = BuildSimpleSquare();
+        var json = ExtractJsonChunk(glb);
+
+        using var doc = JsonDocument.Parse(json);
+        var primitive = doc.RootElement.GetProperty("meshes")[0].GetProperty("primitives")[0];
+        primitive.GetProperty("attributes").TryGetProperty("COLOR_0", out _).Should().BeFalse();
+
+        var material = doc.RootElement.GetProperty("materials")[0];
+        material.TryGetProperty("alphaMode", out _).Should().BeFalse(
+            "the legacy white double-sided material has no alphaMode override.");
+        material.GetProperty("doubleSided").GetBoolean().Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void BuildGlb_SymbologyCountMismatch_Throws()
+    {
+        var features = NumericFeaturePair(
+            new Dictionary<string, object?>(StringComparer.Ordinal),
+            new Dictionary<string, object?>(StringComparer.Ordinal));
+        var symbology = new[] { ResolvedSymbology.Default };
+
+        var act = () => GeometryTileBuilder.BuildGlb(
+            features,
+            metadataAttributes: Array.Empty<SceneAttributeSchema>(),
+            extrusion: null,
+            perFeatureSymbology: symbology);
+
+        act.Should().Throw<ArgumentException>().WithMessage("*one entry per feature*");
+    }
+
+    [UnitTest]
     public void BuildGlb_Int32Column_DecimalMaxValueClampsWithoutThrowing()
     {
         // Companion fix: (int)decimal cast also throws on out-of-range

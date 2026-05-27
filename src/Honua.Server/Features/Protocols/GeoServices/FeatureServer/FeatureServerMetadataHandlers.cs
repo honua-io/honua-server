@@ -1,32 +1,26 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Collections.Frozen;
-using System.Globalization;
-using System.Text;
-using System.Text.Json;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Tiles;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Styling;
 using Honua.Server.Features.Infrastructure.Validation;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
-using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
 
 /// <summary>
-/// Metadata handlers for FeatureServer endpoints
+/// Metadata handlers for FeatureServer endpoints. Ported to V2 metadata (issue #1035
+/// cutover 92/N): the canonical (service, publication, resource) triple is resolved
+/// through the V2 graph and responses are built via the V2 overloads on
+/// <see cref="FeatureServerEndpoints"/> (see <c>FeatureServerUtilities.V2.cs</c>).
 /// </summary>
 internal static partial class FeatureServerEndpoints
 {
@@ -65,40 +59,57 @@ internal static partial class FeatureServerEndpoints
         ILogger logger = loggerFactory.CreateLogger("Honua.Server.FeatureServerEndpoints");
 
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceAsync(
+        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceV2Async(
             resourceValidator,
-            serviceId,
+            serviceId!,
             context,
             logger,
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
         if (!serviceValidationResult.IsValid)
         {
             return serviceValidationResult.ErrorResult!;
         }
 
         var service = serviceValidationResult.Service!;
-        if (RequiresDefaultMetadataAuthentication(context, service.Metadata?.AccessPolicy is not null, service.Layers.Any(layer => layer.Metadata?.AccessPolicy is not null)))
+
+        // Materialize the visible publications/resources for this service. We need both
+        // the policy-aware filter (deny anonymous/forbidden callers) and the metadata
+        // builder's view to operate on the same set.
+        var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+
+        var allPairs = snapshot.Index.PublicationsByService[service.Metadata.Id]
+            .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
+            .Where(pair => pair.Resource is not null)
+            .Select(pair => (pair.Publication, Resource: pair.Resource!))
+            .ToArray();
+
+        if (RequiresDefaultMetadataAuthenticationV2(
+                context,
+                service.AccessPolicy is not null,
+                allPairs.Any(pair => pair.Resource.AccessPolicy is not null)))
         {
             return StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage);
         }
 
-        var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, service.Layers, service);
+        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+            context,
+            allPairs.Select(pair => pair.Resource),
+            service);
         if (accessError != null)
         {
             return accessError;
         }
 
-        var visibleLayers = service.Layers
-            .Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer, service))
-            .ToArray();
-
-        var filteredService = service with { Layers = visibleLayers };
+        var visiblePairs = FilterAccessibleLayersV2(context, service, allPairs);
 
         return await GetServiceMetadataAsync(
             context,
-            filteredService,
+            service,
+            visiblePairs,
+            snapshot,
             limitsOptions.Value.Query,
-            logger);
+            logger).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -106,30 +117,34 @@ internal static partial class FeatureServerEndpoints
     /// </summary>
     private static Task<IResult> GetServiceMetadataAsync(
         HttpContext context,
-        ServiceDefinition service,
+        MetadataV2Service service,
+        IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,
+        MetadataV2GraphSnapshot snapshot,
         QueryLimits limits,
         ILogger logger)
     {
         try
         {
-            FeatureServerLog.ServiceMetadataRequested(logger, service.Name);
+            FeatureServerLog.ServiceMetadataRequested(logger, service.Metadata.Name);
 
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
             var supportsAttachmentUploads = HasAttachmentSurface(context.RequestServices);
-            FeatureServerResponse response = MapServiceToResponse(
+            FeatureServerResponse response = MapServiceToResponseV2(
                 service,
+                publications,
+                snapshot,
                 limits,
                 supportsGeobufOutput: featureReader is IGeobufFeatureStore,
                 supportsAttachmentUploads: supportsAttachmentUploads);
 
-            FeatureServerLog.ServiceMetadataReturned(logger, service.Name, response.Layers.Length);
+            FeatureServerLog.ServiceMetadataReturned(logger, service.Metadata.Name, response.Layers.Length);
 
             return Task.FromResult(Results.Json(response, FeatureServerJsonContext.Default.FeatureServerResponse,
                 contentType: "application/json"));
         }
         catch (Exception ex)
         {
-            FeatureServerLog.ServiceMetadataFailed(logger, service.Name, ex.Message, ex);
+            FeatureServerLog.ServiceMetadataFailed(logger, service.Metadata.Name, ex.Message, ex);
             return Task.FromResult(StandardErrorHelpers.CreateInternalServerError(
                 context,
                 "Service metadata retrieval failed"));
@@ -177,42 +192,48 @@ internal static partial class FeatureServerEndpoints
         ILogger logger = loggerFactory.CreateLogger("Honua.Server.FeatureServerEndpoints");
 
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerV2Async(
             resourceValidator,
-            serviceId,
+            serviceId!,
             layerId,
             context,
             logger,
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
         if (!validationResult.IsValid)
         {
             return validationResult.ErrorResult!;
         }
 
         var service = validationResult.Service!;
-        var layer = validationResult.Layer!;
-        if (RequiresDefaultMetadataAuthentication(
+        var publication = validationResult.Publication!;
+        var resource = validationResult.Resource!;
+        if (RequiresDefaultMetadataAuthenticationV2(
                 context,
-                service.Metadata?.AccessPolicy is not null,
-                layer.Metadata?.AccessPolicy is not null))
+                service.AccessPolicy is not null,
+                resource.AccessPolicy is not null))
         {
             return StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage);
         }
 
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
         if (accessError != null)
         {
             return accessError;
         }
 
+        var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+
         return await FetchLayerMetadataAsync(
             context,
-            serviceId,
+            serviceId!,
             service,
-            layer,
+            publication,
+            resource,
+            snapshot,
             limitsOptions.Value.Query,
             logger,
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -221,41 +242,44 @@ internal static partial class FeatureServerEndpoints
     private static async Task<IResult> FetchLayerMetadataAsync(
         HttpContext context,
         string serviceId,
-        ServiceDefinition service,
-        LayerDefinition layer,
+        MetadataV2Service service,
+        MetadataV2Publication publication,
+        MetadataV2Resource resource,
+        MetadataV2GraphSnapshot snapshot,
         QueryLimits limits,
         ILogger logger,
         CancellationToken cancellationToken)
     {
         try
         {
-            FeatureServerLog.LayerMetadataRequested(logger, serviceId, layer.Id);
-
-            if (layer.Metadata?.Extrusion is { } extrusion)
-            {
-                var extrusionErrors = ExtrusionValidator.Validate(extrusion, layer.Fields);
-                if (extrusionErrors.Count > 0)
-                {
-                    return StandardErrorHelpers.CreateUnprocessableEntity(
-                        context,
-                        "Layer extrusion configuration is invalid.",
-                        [.. extrusionErrors]);
-                }
-            }
+            var resolvedLayerId = publication.LayerIndex
+                ?? snapshot.ResolveStorageLayerId(resource)
+                ?? -1;
+            FeatureServerLog.LayerMetadataRequested(logger, serviceId, resolvedLayerId);
 
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
             var supportsAttachmentUploads = HasAttachmentSurface(context.RequestServices);
-            var timeInfo = await BuildTimeInfoAsync(layer, featureReader, cancellationToken).ConfigureAwait(false);
-            var drawingInfo = await LayerStyleMetadataResolver.TryGetDrawingInfoAsync(
-                context.RequestServices,
-                layer,
-                logger,
+            var timeInfo = await BuildTimeInfoV2Async(
+                resource,
+                publication,
+                snapshot,
+                featureReader,
                 cancellationToken).ConfigureAwait(false);
-            var extrusionInfo = BuildExtrusionInfo(layer);
+            var extrusionInfo = BuildExtrusionInfoV2(resource, out var extrusionErrors);
+            if (extrusionErrors.Count > 0)
+            {
+                return StandardErrorHelpers.CreateUnprocessableEntity(
+                    context,
+                    "Invalid extrusion metadata.",
+                    extrusionErrors);
+            }
 
-            LayerResponse response = MapLayerToResponse(
+            var drawingInfo = ResolveDrawingInfoV2(resource, snapshot);
+            LayerResponse response = MapLayerToResponseV2(
                 service,
-                layer,
+                resource,
+                publication,
+                snapshot,
                 limits,
                 timeInfo,
                 drawingInfo,
@@ -263,21 +287,31 @@ internal static partial class FeatureServerEndpoints
                 supportsGeobufOutput: featureReader is IGeobufFeatureStore,
                 supportsAttachmentUploads: supportsAttachmentUploads);
 
-            FeatureServerLog.LayerMetadataReturned(logger, serviceId, layer.Id, layer.Name);
+            FeatureServerLog.LayerMetadataReturned(logger, serviceId, resolvedLayerId, resource.Metadata.Name);
 
             return Results.Json(response, FeatureServerJsonContext.Default.LayerResponse,
                 contentType: "application/json");
         }
         catch (Exception ex)
         {
-            FeatureServerLog.LayerMetadataFailed(logger, serviceId, layer.Id, ex.Message, ex);
+            var resolvedLayerId = publication.LayerIndex
+                ?? snapshot.ResolveStorageLayerId(resource)
+                ?? -1;
+            FeatureServerLog.LayerMetadataFailed(logger, serviceId, resolvedLayerId, ex.Message, ex);
             return StandardErrorHelpers.CreateInternalServerError(
                 context,
                 "Layer metadata retrieval failed");
         }
     }
 
-    private static bool RequiresDefaultMetadataAuthentication(
+    /// <summary>
+    /// V2 variant of <c>RequiresDefaultMetadataAuthentication</c>. Identical contract:
+    /// in production, require authentication when neither the service nor any layer
+    /// declares an explicit access policy (so unconfigured services don't leak metadata
+    /// to anonymous callers). In non-production environments, anonymous access is
+    /// allowed so dev/test loops can hit metadata without setting up identity.
+    /// </summary>
+    private static bool RequiresDefaultMetadataAuthenticationV2(
         HttpContext context,
         bool hasServicePolicy,
         bool hasLayerPolicy)

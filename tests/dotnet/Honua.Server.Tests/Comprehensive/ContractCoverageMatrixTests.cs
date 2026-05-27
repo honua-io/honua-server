@@ -21,8 +21,6 @@ namespace Honua.Server.Tests.Comprehensive;
 /// <item><term>GET  /api/v1/admin/openapi.json</term><description>happy, 401</description></item>
 /// <item><term>GET  /api/v1/admin/version</term><description>happy, 401</description></item>
 /// <item><term>GET  /api/v1/admin/capabilities</term><description>happy, 401</description></item>
-/// <item><term>GET  /api/v1/admin/manifest</term><description>happy, 401</description></item>
-/// <item><term>POST /api/v1/admin/manifest/apply</term><description>happy, 401</description></item>
 /// <item><term>GET  /api/v1/admin/services</term><description>happy, 401</description></item>
 /// <item><term>GET  /api/v1/admin/services/{name}/settings</term><description>happy, 401</description></item>
 /// <item><term>PUT  /api/v1/admin/services/{name}/protocols</term><description>happy, 401</description></item>
@@ -51,8 +49,6 @@ namespace Honua.Server.Tests.Comprehensive;
 /// <item><term>PUT  /api/v1/admin/connections/{id}/layers/enabled</term><description>happy (bulk)</description></item>
 /// <item><term>GET  /api/v1/admin/metadata/layers/{lid}/style</term><description>happy, 401</description></item>
 /// <item><term>PUT  /api/v1/admin/metadata/layers/{lid}/style</term><description>happy, 401</description></item>
-/// <item><term>GET  /api/v1/admin/metadata/resources</term><description>happy, 401</description></item>
-/// <item><term>POST /api/v1/admin/metadata/resources</term><description>happy, 401</description></item>
 /// <item><term>GET  /api/v1/admin/operations/{id}</term><description>happy, 404, 401</description></item>
 /// <item><term>POST /api/v1/admin/operations/{id}/cancel</term><description>happy, already-cancelled, completed</description></item>
 /// <item><term>GET  /api/v1/admin/operations/active</term><description>happy (filter), empty, 401</description></item>
@@ -65,11 +61,16 @@ namespace Honua.Server.Tests.Comprehensive;
 /// <item><term>POST /api/v1/admin/tile-operations/jobs/{id}/retry</term><description>happy (failed)</description></item>
 /// <item><term>GET  /api/v1/admin/alerts/zones</term><description>happy, 401</description></item>
 /// <item><term>POST /api/v1/admin/alerts/zones</term><description>happy, bad-wkt, 401</description></item>
+/// <item><term>GET  /api/v1/admin/alerts/zones/{id}</term><description>happy</description></item>
 /// <item><term>PUT  /api/v1/admin/alerts/zones/{id}</term><description>happy, 404</description></item>
 /// <item><term>DELETE /api/v1/admin/alerts/zones/{id}</term><description>happy, 404</description></item>
 /// <item><term>GET  /api/v1/admin/alerts/rules</term><description>happy, 401</description></item>
 /// <item><term>POST /api/v1/admin/alerts/rules</term><description>happy, unconfigured-channel, 401</description></item>
+/// <item><term>POST /api/v1/admin/alerts/rules/test</term><description>draft-zone, invalid-threshold</description></item>
+/// <item><term>GET  /api/v1/admin/alerts/rules/{id}</term><description>happy</description></item>
 /// <item><term>PUT  /api/v1/admin/alerts/rules/{id}</term><description>happy, 404</description></item>
+/// <item><term>PUT  /api/v1/admin/alerts/rules/{id}/enabled</term><description>happy</description></item>
+/// <item><term>GET  /api/v1/admin/alerts/rules/{id}/health</term><description>active-incidents, recent-trigger, rate-limited delivery</description></item>
 /// <item><term>DELETE /api/v1/admin/alerts/rules/{id}</term><description>happy, 404</description></item>
 /// </list>
 /// <para>Endpoint-to-Scenario Matrix (Geocoding REST):</para>

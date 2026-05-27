@@ -93,6 +93,82 @@ public sealed record OgcApiFeaturesImportResult
     /// See <see cref="OgcApiFeaturesSchemaMappingDiagnostic"/> for the classification taxonomy.
     /// </summary>
     public IReadOnlyList<OgcApiFeaturesSchemaMappingDiagnostic> MappingDiagnostics { get; init; } = [];
+
+    /// <summary>
+    /// Source-advertised feature count taken from <c>numberMatched</c> on the first items page.
+    /// <c>null</c> when the source did not advertise a total (in which case the inline feature
+    /// count parity probe reports a <see cref="OgcApiFeaturesFeatureCountParityStates.NotApplicable"/>
+    /// state).
+    /// </summary>
+    public long? SourceFeatureCountReported { get; init; }
+
+    /// <summary>
+    /// Inline feature-count parity probe comparing the source-advertised <c>numberMatched</c>
+    /// against the number of features the importer successfully wrote to the sink during this run.
+    /// This is the lightweight per-import parity signal — heavier per-feature parity probes
+    /// (sampled geometry, attribute hashing) belong on a separate parity-runner slice.
+    /// </summary>
+    public OgcApiFeaturesFeatureCountParity? FeatureCountParity { get; init; }
+}
+
+/// <summary>
+/// Stable values for the inline OGC API Features feature-count parity probe state.
+/// </summary>
+public static class OgcApiFeaturesFeatureCountParityStates
+{
+    /// <summary>The source-advertised count matches the imported count exactly.</summary>
+    public const string Pass = "pass";
+
+    /// <summary>The source-advertised count diverges from the imported count.</summary>
+    public const string Fail = "fail";
+
+    /// <summary>
+    /// The probe could not produce a deterministic verdict — for example, the source did not
+    /// advertise a <c>numberMatched</c> total, the importer truncated early at the operator's cap,
+    /// or filter-pushdown made the source total non-comparable to the imported subset.
+    /// </summary>
+    public const string NotApplicable = "not-applicable";
+}
+
+/// <summary>
+/// Inline feature-count parity probe emitted by the OGC API Features collection importer. The
+/// probe compares the source-advertised total feature count (<c>numberMatched</c>) against the
+/// number of features successfully written to the sink for the same run. It deliberately stays
+/// scoped to the importer's view of the world so operators get a fast, deterministic post-import
+/// parity signal without requiring a separate parity runner pass.
+/// </summary>
+public sealed record OgcApiFeaturesFeatureCountParity
+{
+    /// <summary>
+    /// Stable probe identifier. Matches the parity-stage naming convention used elsewhere in the
+    /// migration pipeline so downstream evidence aggregators can dedupe by id.
+    /// </summary>
+    public string ProbeId { get; init; } = "feature-count";
+
+    /// <summary>
+    /// Probe state: <see cref="OgcApiFeaturesFeatureCountParityStates.Pass"/>,
+    /// <see cref="OgcApiFeaturesFeatureCountParityStates.Fail"/>, or
+    /// <see cref="OgcApiFeaturesFeatureCountParityStates.NotApplicable"/>.
+    /// </summary>
+    public required string State { get; init; }
+
+    /// <summary>
+    /// Source-advertised feature count when known. Lifted from <c>numberMatched</c> on the first
+    /// items page.
+    /// </summary>
+    public long? Expected { get; init; }
+
+    /// <summary>
+    /// Number of features successfully written to the sink during this run.
+    /// </summary>
+    public long Observed { get; init; }
+
+    /// <summary>
+    /// Operator-facing summary describing why the probe was assigned its state. Must not contain
+    /// credentials or other secrets — the importer constructs the summary from numeric counts and
+    /// known scope-truncation reasons only.
+    /// </summary>
+    public required string Summary { get; init; }
 }
 
 /// <summary>

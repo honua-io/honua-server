@@ -5,13 +5,12 @@ using System.Collections.Immutable;
 using FluentAssertions;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Alerts;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -28,7 +27,7 @@ public sealed class AlertPipelineTests
         var eventStore = Substitute.For<IAlertEventStore>();
         var dispatchStore = Substitute.For<IAlertDispatchStore>();
         var featureReader = Substitute.For<IFeatureReader>();
-        var layerCatalog = Substitute.For<ILayerCatalog>();
+        var graphProvider = CreateGraphProviderWithService("svc-7", layerId: 7);
         var evaluator = Substitute.For<IAlertEvaluator>();
         var editionPolicy = Substitute.For<IAlertEditionPolicy>();
         var changes = new[]
@@ -37,17 +36,15 @@ public sealed class AlertPipelineTests
             new AlertChange { Generation = 2, LayerId = 7, ObjectId = 101, Operation = AlertChangeOperation.Update, ChangedAt = DateTimeOffset.UtcNow }
         };
         var rule = CreateRule();
-        var service = CreateService(rule.LayerId);
+        const string serviceName = "svc-7";
         var zone = CreateZone(rule.ZoneId!.Value);
 
         changeReader.GetChangesAfterAsync(0, 10, Arg.Any<CancellationToken>())
             .Returns(changes);
-        layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>())
-            .Returns([service]);
         ruleRepository.GetActiveRulesAsync(Arg.Any<IReadOnlyCollection<AlertRuleLookupKey>>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<AlertRuleLookupKey, IReadOnlyList<AlertRuleDefinition>>
             {
-                [new AlertRuleLookupKey(service.Name, rule.LayerId)] = [rule]
+                [new AlertRuleLookupKey(serviceName, rule.LayerId)] = [rule]
             });
         ruleRepository.GetZonesAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<long, AlertZoneDefinition> { [zone.ZoneId] = zone });
@@ -68,7 +65,7 @@ public sealed class AlertPipelineTests
             eventStore,
             dispatchStore,
             featureReader,
-            layerCatalog,
+            graphProvider,
             evaluator,
             editionPolicy,
             NullLogger<AlertPipeline>.Instance);
@@ -79,7 +76,7 @@ public sealed class AlertPipelineTests
         await ruleRepository.Received(1).GetActiveRulesAsync(
             Arg.Is<IReadOnlyCollection<AlertRuleLookupKey>>(keys =>
                 keys.Count == 1 &&
-                keys.Single() == new AlertRuleLookupKey(service.Name, rule.LayerId)),
+                keys.Single() == new AlertRuleLookupKey(serviceName, rule.LayerId)),
             Arg.Any<CancellationToken>());
         await stateStore.Received(1).GetManyAsync(
             Arg.Is<IReadOnlyCollection<AlertStateLookupKey>>(keys =>
@@ -101,7 +98,7 @@ public sealed class AlertPipelineTests
         var eventStore = Substitute.For<IAlertEventStore>();
         var dispatchStore = Substitute.For<IAlertDispatchStore>();
         var featureReader = Substitute.For<IFeatureReader>();
-        var layerCatalog = Substitute.For<ILayerCatalog>();
+        var graphProvider = CreateGraphProviderWithService("svc-7", layerId: 7);
         var evaluator = Substitute.For<IAlertEvaluator>();
         var editionPolicy = Substitute.For<IAlertEditionPolicy>();
         var rule = CreateRule(triggerType: AlertTriggerType.Dwell);
@@ -133,7 +130,7 @@ public sealed class AlertPipelineTests
             eventStore,
             dispatchStore,
             featureReader,
-            layerCatalog,
+            graphProvider,
             evaluator,
             editionPolicy,
             NullLogger<AlertPipeline>.Instance);
@@ -158,12 +155,12 @@ public sealed class AlertPipelineTests
         var eventStore = Substitute.For<IAlertEventStore>();
         var dispatchStore = Substitute.For<IAlertDispatchStore>();
         var featureReader = Substitute.For<IFeatureReader>();
-        var layerCatalog = Substitute.For<ILayerCatalog>();
+        var graphProvider = CreateGraphProviderWithService("svc-7", layerId: 7);
         var evaluator = Substitute.For<IAlertEvaluator>();
         var editionPolicy = Substitute.For<IAlertEditionPolicy>();
         var ruleOne = CreateRule();
         var ruleTwo = CreateRule();
-        var service = CreateService(ruleOne.LayerId);
+        const string serviceName = "svc-7";
         var zone = CreateZone(ruleOne.ZoneId!.Value);
         var change = new AlertChange
         {
@@ -178,12 +175,10 @@ public sealed class AlertPipelineTests
 
         changeReader.GetChangesAfterAsync(0, 10, Arg.Any<CancellationToken>())
             .Returns([change]);
-        layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>())
-            .Returns([service]);
         ruleRepository.GetActiveRulesAsync(Arg.Any<IReadOnlyCollection<AlertRuleLookupKey>>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<AlertRuleLookupKey, IReadOnlyList<AlertRuleDefinition>>
             {
-                [new AlertRuleLookupKey(service.Name, ruleOne.LayerId)] = [ruleOne, ruleTwo]
+                [new AlertRuleLookupKey(serviceName, ruleOne.LayerId)] = [ruleOne, ruleTwo]
             });
         ruleRepository.GetZonesAsync(Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<long, AlertZoneDefinition> { [zone.ZoneId] = zone });
@@ -210,7 +205,7 @@ public sealed class AlertPipelineTests
             eventStore,
             dispatchStore,
             featureReader,
-            layerCatalog,
+            graphProvider,
             evaluator,
             editionPolicy,
             NullLogger<AlertPipeline>.Instance);
@@ -235,7 +230,7 @@ public sealed class AlertPipelineTests
         var eventStore = Substitute.For<IAlertEventStore>();
         var dispatchStore = Substitute.For<IAlertDispatchStore>();
         var featureReader = Substitute.For<IFeatureReader>();
-        var layerCatalog = Substitute.For<ILayerCatalog>();
+        var graphProvider = CreateGraphProviderWithService("svc-7", layerId: 7);
         var evaluator = Substitute.For<IAlertEvaluator>();
         var editionPolicy = Substitute.For<IAlertEditionPolicy>();
         var rule = CreateRule(triggerType: AlertTriggerType.Dwell);
@@ -269,7 +264,7 @@ public sealed class AlertPipelineTests
             eventStore,
             dispatchStore,
             featureReader,
-            layerCatalog,
+            graphProvider,
             evaluator,
             editionPolicy,
             NullLogger<AlertPipeline>.Instance);
@@ -309,12 +304,19 @@ public sealed class AlertPipelineTests
             IsActive = true
         };
 
-    private static ServiceDefinition CreateService(int layerId)
-        => new(
-            "svc-7",
-            "Service 7",
-            [LayerDefinition.CreateBasic(layerId, "layer-7", GeometryType.None)],
-            SpatialReference.WGS84);
+    private static TestMetadataV2GraphProvider CreateGraphProviderWithService(string serviceName, int layerId)
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("resource.alerts", $"layer-{layerId}")
+            .AddService($"service.{serviceName}", serviceName)
+            .AddPublication(
+                $"pub.{serviceName}.{layerId}",
+                $"service.{serviceName}",
+                "resource.alerts",
+                layerIndex: layerId)
+            .Build();
+        return new TestMetadataV2GraphProvider(graph);
+    }
 
     private static Feature CreateFeature(long objectId)
         => Feature.Create(objectId, geometry: null, ImmutableDictionary<string, object?>.Empty);

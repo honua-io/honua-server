@@ -19,7 +19,7 @@ namespace Honua.Server.Features.Infrastructure.ControlPlane;
 /// <summary>
 /// Server-side control-plane service for durable deploy workflow operations.
 /// </summary>
-internal sealed class DeployWorkflowService
+internal sealed partial class DeployWorkflowService
 {
     private static readonly Regex UnsafeOperationIdCharacters = new("[^a-z0-9]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private readonly IDeployTargetRegistry _targetRegistry;
@@ -339,6 +339,8 @@ internal sealed class DeployWorkflowService
         string operationId,
         string? requestedBy,
         string? reason,
+        bool? approvedMetadataReleaseIsDataAffecting = null,
+        bool? approvedMetadataReleaseRequiresApproval = null,
         CancellationToken cancellationToken = default)
     {
         EnsureDurableStoreConfigured();
@@ -347,6 +349,16 @@ internal sealed class DeployWorkflowService
         if (operation == null)
         {
             return null;
+        }
+
+        if (operation.Kind == WorkflowOperationKind.MetadataRelease)
+        {
+            EnsureMetadataReleaseRollbackApprovalStillMatches(
+                operation,
+                approvedMetadataReleaseIsDataAffecting,
+                approvedMetadataReleaseRequiresApproval);
+            return await RequestMetadataReleaseRollbackAsync(operation, requestedBy, reason, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         if (operation.Kind != WorkflowOperationKind.Deploy || operation.Deploy == null)
@@ -421,6 +433,79 @@ internal sealed class DeployWorkflowService
 
         await _workflowStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
         return updated;
+    }
+
+    private async Task<WorkflowOperationRecord> RequestMetadataReleaseRollbackAsync(
+        WorkflowOperationRecord operation,
+        string? requestedBy,
+        string? reason,
+        CancellationToken cancellationToken)
+    {
+        if (operation.MetadataRelease == null)
+        {
+            throw new InvalidOperationException("Metadata release rollback requires metadata release context.");
+        }
+
+        if (operation.Status is WorkflowOperationStatus.RollbackRequested or WorkflowOperationStatus.RolledBack)
+        {
+            return operation;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var rollbackPlan = operation.MetadataRelease.RollbackPlan;
+        var updatedMetadataRelease = operation.MetadataRelease with
+        {
+            CurrentStage = MetadataReleaseStage.RollbackRequested
+        };
+        var updated = operation with
+        {
+            Status = WorkflowOperationStatus.RollbackRequested,
+            UpdatedAt = now,
+            CompletedAt = null,
+            CurrentPhase = rollbackPlan == null
+                ? "Metadata release rollback requested; rollback class was not precomputed."
+                : $"Metadata release rollback requested using {rollbackPlan.Class} plan.",
+            ErrorMessage = null,
+            MetadataRelease = updatedMetadataRelease,
+            Audit = operation.Audit with
+            {
+                RequestedBy = requestedBy ?? operation.Audit.RequestedBy,
+                Reason = reason ?? operation.Audit.Reason
+            }
+        };
+
+        Log.MetadataReleaseRollbackRequested(
+            _logger,
+            operation.OperationId,
+            operation.MetadataRelease.PackageId,
+            rollbackPlan?.Class.ToString() ?? "Unspecified",
+            rollbackPlan?.IsDataAffecting ?? true);
+
+        await _workflowStore!.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return updated;
+    }
+
+    private static void EnsureMetadataReleaseRollbackApprovalStillMatches(
+        WorkflowOperationRecord operation,
+        bool? approvedIsDataAffecting,
+        bool? approvedRequiresApproval)
+    {
+        if (!approvedIsDataAffecting.HasValue && !approvedRequiresApproval.HasValue)
+        {
+            return;
+        }
+
+        var currentPlan = operation.MetadataRelease?.RollbackPlan;
+        var currentIsDataAffecting = currentPlan?.IsDataAffecting ?? true;
+        var currentRequiresApproval = currentIsDataAffecting || currentPlan?.RequiresExplicitApproval == true;
+        if ((!approvedIsDataAffecting.HasValue || currentIsDataAffecting == approvedIsDataAffecting.Value) &&
+            (!approvedRequiresApproval.HasValue || currentRequiresApproval == approvedRequiresApproval.Value))
+        {
+            return;
+        }
+
+        throw new ResourceConflictException(
+            "Metadata release rollback plan changed before rollback could be requested. Re-read the operation and retry approval.");
     }
 
     private static WorkflowOperationStatus DeterminePersistedStatus(DeployPlan plan)
@@ -545,6 +630,17 @@ internal sealed class DeployWorkflowService
                     ? reason
                     : $"{audit.Reason} | submit: {reason}"
         };
+
+    private static partial class Log
+    {
+        [LoggerMessage(9100, LogLevel.Information, "Metadata release rollback requested for operation {OperationId}, package {PackageId}, class {RollbackClass}, data affecting {IsDataAffecting}")]
+        public static partial void MetadataReleaseRollbackRequested(
+            ILogger logger,
+            string operationId,
+            string packageId,
+            string rollbackClass,
+            bool isDataAffecting);
+    }
 
     private static DeployOperationSpec BuildSpec(
         DeployTargetDefinition target,

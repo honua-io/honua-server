@@ -86,6 +86,20 @@ jobs:
             github_token=${{ secrets.GITHUB_TOKEN }}
           cache-from: type=gha,scope=cite-${{ inputs.suite }}
           cache-to: type=gha,mode=max,scope=cite-${{ inputs.suite }}
+          provenance: true
+          sbom: true
+
+      # Archive an SPDX SBOM for the CITE-tested image so conformance evidence
+      # bundles record the exact bill of materials behind each pass/fail.
+      - name: Generate SBOM (SPDX JSON) for honua-server:latest
+        uses: anchore/sbom-action@v0
+        with:
+          image: honua-server:latest
+          format: spdx-json
+          output-file: sbom-honua-server-cite-${{ inputs.suite }}.spdx.json
+          artifact-name: sbom-honua-server-cite-${{ inputs.suite }}.spdx.json
+          upload-artifact: true
+          upload-release-assets: false
 
       - name: Install dependencies
         run: |

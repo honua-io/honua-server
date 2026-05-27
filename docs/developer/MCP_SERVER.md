@@ -384,19 +384,18 @@ List parameterized resource URIs:
 |------|--------|-----------------|-----------------|
 | `honua_validate_plan` | functional | `IGeoprocessingJobService.ValidatePlan` | `planning` |
 | `honua_dry_run_plan` | functional | `IGeoprocessingJobService.DryRunPlan` | `planning` |
+| `honua_validate_package` | functional | `IPackageReviewService.ReviewAsync` | `planning` |
+| `honua_preview_package` | functional | `IPackageReviewService.ReviewAsync` | `planning` |
 | `honua_execute_plan` | functional | `IGeoprocessingJobService.SubmitJobAsync` | `execution` |
 | `honua_cancel_job` | functional | `IGeoprocessingJobService.CancelJobAsync` | `lifecycle` |
-| `honua_plan_analysis` | contract stub | blocked by `honua.planner.service` | `planning` |
+| `honua_plan_analysis` | functional | `IPlanAnalysisService.PlanAsync` (fixture replay by default; host-replaceable live planner) | `planning` |
 | `honua_ground_candidates` | functional | `IGroundingService.GroundAsync` | `planning` |
 | `honua_clarify_intent` | functional | `IGroundingService.GroundAsync` | `planning` |
 
-Stub tools still enforce authentication and the same operator-grant
-authorization as their functional counterparts (via
-`IGeoprocessingJobService.EnsureCallerAuthorized`) before returning a
-structured `not_implemented` envelope with `blockedBy`, `contract`, and
-`nextSteps` fields so operators can bind today and pick up behavior when
-the upstream service lands. Authenticated callers without the required
-grant receive a `permission_denied` error, matching the functional tools.
+All registered MCP tools enforce authentication and the relevant
+operator-grant authorization before invoking their domain delegates.
+Authenticated callers without the required grant receive a
+`permission_denied` error.
 The grounding tools delegate to `IGroundingService`, which layers
 catalog discovery on top of the same authorization graph via
 `IOperatorAuthorizationEvaluator` — see
@@ -427,14 +426,37 @@ catalog discovery on top of the same authorization graph via
   `{ isExecutable, requiresApproval, violations, warnings }`.
 - `honua_dry_run_plan` returns
   `{ estimatedDurationSeconds, estimatedArtifacts, sideEffects }`.
+- `honua_validate_package` and `honua_preview_package` accept the shared
+  package-review request documented in
+  [Package Review API](package-review-api.md). Both tools return the canonical
+  `PackageReviewResponse`; `honua_preview_package` forces read-only preview
+  planning on the server side, while `honua_validate_package` forces
+  `includePreviewPlan: false`. Like `honua_validate_plan`, the published schema
+  for these tools intentionally does not mark `packageFamily` as required or
+  enum-limit it: missing or unknown families come back as structured
+  `missing_package_family` / `unsupported_package_family` findings, so a
+  stricter schema would let schema-driven clients block the very inputs these
+  tools exist to inspect. Package-review tools require the same
+  authenticated operator flow as other planning tools and authorize with the
+  process read grant before calling `IPackageReviewService`.
+  Clients should disable execute and publish controls from `canExecute` and
+  `canPublish`; unresolved `blocker` findings are already scoped to
+  `execute`, `publish`, `both`, or `review`. `review`-scoped blockers keep the
+  response `status` blocked without disabling execute or publish gates by
+  themselves.
 - `honua_execute_plan` accepts an optional `idempotencyKey`. Blank or
   whitespace keys are normalized to `null` before delegation. Success returns
   `{ jobId, status, createdAt, resourceUri }`.
 - `honua_cancel_job` accepts `{ jobId }`. Blank job ids fail with
   `invalid_argument`. Success returns
   `{ jobId, status: "cancellation_requested", cancellationRequested: true }`.
-- `honua_plan_analysis` accepts `{}` and returns
-  `{ status: "not_implemented", tool, blockedBy, contract, nextSteps }`.
+- `honua_plan_analysis` accepts `{ intent, context? }` and delegates to
+  `IPlanAnalysisService`. The default server registration uses deterministic
+  AI Builder fixture replay, including `context.fixtureCase` and
+  `context.fixtureScenarioId` overrides. Responses use `status` values such as
+  `planned`, `rejected`, `clarification_required`, and `unsupported`, with the
+  matching `plan` or `specDraft`, optional `appPackage`, `warnings`, `cache`,
+  `capabilityState`, `clarification`, `estimate`, and echoed `context` fields.
 - `honua_ground_candidates` accepts
   `{ goal, workflowFamilyHint?, constraints?, explicitInputs?, assumptionPolicy?, context?, intentId? }`
   and returns
@@ -493,8 +515,8 @@ catalog discovery on top of the same authorization graph via
 | `honua://jobs/{jobId}` | `resources/templates/list` | functional | Job lifecycle record — status, phase, percent complete, warnings, link to results |
 | `honua://jobs/{jobId}/results` | `resources/templates/list` | functional | Delegates to `IGeoprocessingJobService.GetJobResultsAsync`. Enforces auth and terminal-state preconditions, and returns the `AnalysisResultPackage` envelope when a stored package exists. |
 | `honua://jobs/{jobId}/report` | `resources/templates/list` | functional | Delegates to `IAnalysisReportService.GetReportAsync`. Builds the structured `AnalysisReport` envelope from the persisted result package, inheriting auth and terminal-state semantics from the underlying job-results path. Gated by `Reporting:Enabled` (default `true`). |
-| `honua://workspaces/{workspaceId}` | `resources/templates/list` | contract stub | Stable template pending workspace store |
-| `honua://catalog/processes` | `resources/list` | contract stub | Stable URI pending catalog service |
+| `honua://workspaces/{workspaceId}` | `resources/templates/list` | functional (degrades) | Projects `IWorkspaceLifecycleService.GetWorkspaceAsync` into a lifecycle envelope. Missing workspaces surface as `not_found`. When the lifecycle service is not registered the resource still reads, returning a stable `status: "degraded"` envelope so clients can bind. |
+| `honua://catalog/processes` | `resources/list` | functional | Projects the registered `IProcessCatalog` (defaults to `BuiltInProcessCatalog`) into the inspection envelope with `processId`, `name`, `family`, `description`, and `parameters`. An empty catalog reports `status: "degraded"` rather than failing. |
 | `honua://published-services` | `resources/list` | gated (opt-in) | Reads `IPublishedServiceStore`. Not advertised by the default composition; gated behind `AddMcpPromotionSurface` and canonical persistence. |
 | `honua://published-services/{serviceId}` | `resources/templates/list` | gated (opt-in) | Reads `IPublishedServiceStore`; returns `not_found` when the record is absent. Payload shape is stable so clients can bind once the surface is wired. |
 | `honua://deployments` | `resources/list` | gated (opt-in) | Reads `IDeploymentStore`. Not advertised by the default composition; gated behind `AddMcpPromotionSurface` and canonical persistence. |
@@ -506,11 +528,12 @@ catalog discovery on top of the same authorization graph via
 
 The promotion-surface resources are functional handlers — they do not implement
 `IStubMcpResource`, and when advertised the dispatcher tags successful reads as
-`status=ok` on `honua.mcp.resource.read`, distinct from the
-`status=not_implemented` emitted by true contract stubs such as
-`honua://workspaces/{workspaceId}` and `honua://catalog/processes`. Handler
-code, URIs, payload shapes, and authorization are fixed so agents and
-`honua-devops-29` can integrate against the wire contract. The handlers are
+`status=ok` on `honua.mcp.resource.read`. `honua://catalog/processes` and
+`honua://workspaces/{workspaceId}` are also functional and tag successful reads
+as `status=ok`; they emit `status=error` only when the backing service throws,
+and never `status=not_implemented`. Handler code, URIs, payload shapes, and
+authorization are fixed so agents and `honua-devops-29` can integrate against
+the wire contract. The handlers are
 not wired into the default composition today, because canonical
 `IPublishedServiceStore` and `IDeploymentStore` persistence has not shipped
 yet — wiring them against empty process-local state would advertise a URI
@@ -588,11 +611,31 @@ guide and referenced from the resource via `renderUris`.
   the same `not_found`, `failed_precondition`, `permission_denied`, and
   `unauthenticated` error codes when the underlying job rejects the request.
 - `honua://workspaces/{workspaceId}` returns
-  `{ workspaceId, kind, label, status: "not_implemented", notImplementedReason }`
-  with nullable fields such as `uri` and `expiresAt` omitted until the
-  workspace store lands.
+  `{ workspaceId, kind, label, uri?, expiresAt?, status, cleanupScheduledAt?, resultsUri? }`
+  when a workspace store and `IWorkspaceLifecycleService` are registered.
+  `status` is one of `active`, `sealed`, or `cleanup_pending` when a payload is returned;
+  `kind` is the wire form (`scratch`, `persistent`, `temp_layer`,
+  `saved_layer`, `result_collection`). `cleanupScheduledAt` is populated when
+  the workspace has expired and is awaiting cleanup. `resultsUri` is back-derived
+  to `honua://jobs/{jobId}/results` when the workspace's artifact metadata
+  carries a `jobId` (also matched as `job.id`, `honua.jobId`, or
+  `sourceJobId`). Missing or deleted workspaces surface as a `not_found` JSON-RPC
+  error rather than a stub envelope. When the lifecycle service is not
+  registered the resource returns
+  `{ workspaceId, kind: "", label: "", status: "degraded", notImplementedReason }`
+  so clients can still bind the URI template.
 - `honua://catalog/processes` returns
-  `{ catalogVersion, status: "not_implemented", processes: [], notImplementedReason }`.
+  `{ catalogVersion, status, processes, notImplementedReason? }`. `status` is
+  `ok` when the backing `IProcessCatalog` yields at least one process and
+  `degraded` (with `notImplementedReason`) when the catalog is empty.
+  `catalogVersion` is `honua.process_catalog.builtin.v1` when the default
+  `BuiltInProcessCatalog` is registered and `honua.process_catalog.custom.v1`
+  for host-provided catalogs. Each `processes[*]` entry carries
+  `{ processId, name, displayName, family, description, parameters }`, and each
+  parameter carries `{ name, displayName, description, valueType, required,
+  defaultValue? }` with `valueType` projected to the canonical wire forms
+  (`text`, `whole_number`, `floating_point`, `flag`, `wkb`, `wkb_array`,
+  `srid`, `layer_id`).
 
 #### Promotion-surface payload notes
 

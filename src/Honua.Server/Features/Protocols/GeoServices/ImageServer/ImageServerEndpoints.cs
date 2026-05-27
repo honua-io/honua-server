@@ -1,5 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
+//
+// Read-only Esri-compatible ImageServer surface; anonymous by design. POST
+// variants of exportImage/identify/query/computeStatistics mirror the GET form
+// and perform no server-side mutation. Each route group opts into
+// AllowAnonymous explicitly so authorization-policy tooling can see the intent
+// rather than treating it as an accidental gap.
 
 using System.Globalization;
 using System.Text.Json;
@@ -31,7 +37,10 @@ internal static class ImageServerEndpoints
     public static void MapImageServerEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/rest/services/{id:int}/ImageServer")
-            .WithTags("ImageServer");
+            .WithTags("ImageServer")
+            // Read-only Esri ImageServer surface; access is enforced by the
+            // handlers via the layer access policy.
+            .AllowAnonymous();
 
         // Service metadata endpoint
         group.MapGet("", GetServiceInfo)
@@ -169,7 +178,10 @@ internal static class ImageServerEndpoints
             .Produces(501);
 
         var serviceGroup = app.MapGroup("/rest/services/{serviceId:regex(^(?!\\d+$).+$)}/ImageServer")
-            .WithTags("ImageServer");
+            .WithTags("ImageServer")
+            // Read-only Esri ImageServer surface; access is enforced by the
+            // handlers via the layer access policy.
+            .AllowAnonymous();
 
         serviceGroup.MapGet("", GetServiceInfoByService)
             .WithDisplayName("Get Image Service Info by Service")

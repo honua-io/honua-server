@@ -6,6 +6,7 @@ using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Validation;
 using NetTopologySuite.Geometries;
@@ -334,6 +335,116 @@ internal static class StacFilterHelpers
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// V2 overload of <see cref="ParseDatetime(string, LayerDefinition)"/>. Reads the
+    /// configured temporal field name from <see cref="MetadataV2Resource.Temporal"/>; falls
+    /// back to checking <see cref="MetadataV2Resource.SchemaFields"/> for canonical
+    /// date/datetime field names.
+    /// </summary>
+    public static TemporalFilter? ParseDatetime(string datetime, MetadataV2Resource resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        var timeField = ResolveTemporalField(resource);
+        if (string.IsNullOrWhiteSpace(timeField))
+        {
+            return null;
+        }
+
+        return ParseDatetimeWithField(datetime, timeField);
+    }
+
+    private static string? ResolveTemporalField(MetadataV2Resource resource)
+    {
+        var configured = resource.ReadTemporalFields().StartTimeField;
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return configured;
+        }
+
+        ReadOnlySpan<string> fallbackCandidates =
+        [
+            "datetime", "created_at", "updated_at", "start_datetime",
+            "end_datetime", "timestamp", "event_date", "date"
+        ];
+
+        foreach (var candidate in fallbackCandidates)
+        {
+            foreach (var field in resource.SchemaFields)
+            {
+                if (string.Equals(field.Name, candidate, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (field.Type is MetadataV2FieldType.Date
+                        or MetadataV2FieldType.DateTime
+                        or MetadataV2FieldType.Time)
+                    {
+                        return candidate;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static TemporalFilter? ParseDatetimeWithField(string datetime, string timeField)
+    {
+        var parts = datetime.Split('/');
+        DateTimeOffset? start = null;
+        DateTimeOffset? end = null;
+
+        if (parts.Length == 1)
+        {
+            if (TryParseRfc3339DateTime(parts[0], out var instant))
+            {
+                start = instant;
+                end = instant;
+            }
+            else
+            {
+                return null;
+            }
+        }
+        else if (parts.Length == 2)
+        {
+            if (!IsOpenIntervalBound(parts[0]))
+            {
+                if (!TryParseRfc3339DateTime(parts[0], out var s))
+                {
+                    return null;
+                }
+                start = s;
+            }
+            if (!IsOpenIntervalBound(parts[1]))
+            {
+                if (!TryParseRfc3339DateTime(parts[1], out var e))
+                {
+                    return null;
+                }
+                end = e;
+            }
+        }
+        else
+        {
+            return null;
+        }
+
+        if (start is null && end is null)
+        {
+            return null;
+        }
+        if (start > end)
+        {
+            return null;
+        }
+
+        return new TemporalFilter
+        {
+            PropertyName = timeField,
+            PropertyType = TemporalPropertyType.DateTime,
+            Start = start,
+            End = end,
+        };
     }
 
     private static bool IsOpenIntervalBound(string value)

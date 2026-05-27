@@ -269,22 +269,31 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
 
     private async void RenewLeaseAsync(object? state)
     {
-        if (_disposed || !_isLeader)
-        {
-            return;
-        }
-
+        // async void timer callback: NO exception may escape (no managed handler -> crash).
+        // Outer try/catch is the last line of defense even for the disposed/leader checks.
         try
         {
-            var renewed = await HeartbeatAsync();
-            if (!renewed)
+            if (_disposed || !_isLeader)
             {
-                Log.LeaseRenewalFailed(_logger, _leaderKey, _instanceId);
+                return;
+            }
+
+            try
+            {
+                var renewed = await HeartbeatAsync();
+                if (!renewed)
+                {
+                    Log.LeaseRenewalFailed(_logger, _leaderKey, _instanceId);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.LeaseRenewalError(_logger, _leaderKey, _instanceId, ex);
             }
         }
         catch (Exception ex)
         {
-            Log.LeaseRenewalError(_logger, _leaderKey, _instanceId, ex);
+            Log.UnhandledTimerException(_logger, nameof(RenewLeaseAsync), ex);
         }
     }
 
@@ -388,5 +397,8 @@ internal sealed partial class RedisDistributedLeaderElection : IDistributedLeade
 
         [LoggerMessage(1213, LogLevel.Warning, "Timed out waiting {Timeout} to release leadership for {LeaderKey} by instance {InstanceId} during dispose")]
         public static partial void DisposeReleaseTimedOut(ILogger logger, string leaderKey, string instanceId, TimeSpan timeout);
+
+        [LoggerMessage(1214, LogLevel.Error, "Unhandled exception escaped timer callback {Callback}")]
+        public static partial void UnhandledTimerException(ILogger logger, string callback, Exception exception);
     }
 }

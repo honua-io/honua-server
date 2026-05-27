@@ -7,9 +7,9 @@ namespace Honua.Core.Features.Spec.Abstractions;
 
 /// <summary>
 /// Lightweight snapshot of a catalog that the spec validator consults to
-/// resolve <c>@</c>-references against external services/layers. Kept
+/// resolve <c>@</c>-references against external services/resources. Kept
 /// deliberately narrow so that external tools (CLIs, CI lint) can supply a
-/// static fixture rather than the full <c>ILayerCatalog</c> runtime.
+/// static fixture rather than the full Metadata v2 graph runtime.
 /// </summary>
 public interface ISpecCatalogSnapshot
 {
@@ -22,8 +22,8 @@ public interface ISpecCatalogSnapshot
 
     /// <summary>
     /// Resolves a <c>sources[*]</c> binding against the external catalog.
-    /// The implementation typically consults <c>ILayerCatalog</c> for layer
-    /// refs or a STAC/COG/Parquet lookup for others.
+    /// The implementation typically consults the Metadata v2 graph for
+    /// resource refs or a STAC/COG/Parquet lookup for others.
     /// </summary>
     /// <param name="source">Parsed source binding from the spec.</param>
     /// <returns>Resolved type (with catalog-supplied columns/bands) or <c>null</c> when the target cannot be found.</returns>

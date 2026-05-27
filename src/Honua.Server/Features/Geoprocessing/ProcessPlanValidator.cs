@@ -301,6 +301,9 @@ internal static partial class ProcessPlanValidator
                 ValidateSpatialJoinSemantics(step, analyticsLimits, violations);
                 ApplySharedAnalyticsFilterSemantics(step, violations);
                 break;
+            case "analytics.spatial-join-managed":
+                ValidateManagedSpatialJoinSemantics(step, violations);
+                break;
             case "analytics.density":
                 ValidateDensitySemantics(step, analyticsLimits, violations);
                 ApplySharedAnalyticsFilterSemantics(step, violations);
@@ -326,6 +329,309 @@ internal static partial class ProcessPlanValidator
             case "data-management.calculate-field":
                 ValidateCalculateFieldSemantics(step, violations);
                 break;
+            case "transform.attribute-rename":
+                // from/to are declared-required Text; no extra enum semantics.
+                break;
+            case "transform.attribute-cast":
+                ValidateAttributeCastSemantics(step, violations);
+                break;
+            case "transform.computed-field":
+                ValidateComputedFieldSemantics(step, violations);
+                break;
+            case "transform.attribute-filter":
+                ValidateAttributeFilterSemantics(step, violations);
+                break;
+            case "transform.spatial-filter":
+                ValidateSpatialFilterSemantics(step, violations);
+                break;
+            case "transform.clip":
+                ValidateClipTransformSemantics(step, violations);
+                break;
+            case "transform.dedup":
+                ValidateDedupTransformSemantics(step, violations);
+                break;
+            case "transform.reproject":
+                // fromSrid/toSrid are declared-required Srid; the type validator
+                // enforces positive SRIDs. Unsupported datum-shift pairs are
+                // rejected at execution time by the managed transform path.
+                break;
+            case "source.geojson":
+                ValidateGeoJsonSourceSemantics(step, violations);
+                break;
+            case "source.csv":
+                // 'inline' is declared-required Text; the base validator enforces it.
+                break;
+            case "sink.geojson-file":
+            case "sink.quarantine":
+                // input/path are declared-required Text; the base validator enforces them.
+                break;
+            case "sink.external-postgis":
+                ValidateExternalPostgisSinkSemantics(step, violations);
+                break;
+        }
+    }
+
+    private static void ValidateExternalPostgisSinkSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        // Identifiers cannot be parameterized in DDL/DML, so the executor rejects any
+        // value outside ^[A-Za-z_][A-Za-z0-9_]*$. Mirror that here for table/schema/
+        // geometryColumn so the validator does not admit plans the executor will refuse.
+        ValidatePostgisIdentifier(step, "table", violations);
+        ValidatePostgisIdentifier(step, "schema", violations);
+        ValidatePostgisIdentifier(step, "geometryColumn", violations);
+    }
+
+    private static void ValidatePostgisIdentifier(
+        AnalysisPlanStep step,
+        string parameter,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (step.Inputs.TryGetValue(parameter, out var value)
+            && !string.IsNullOrWhiteSpace(value)
+            && !IsSimpleIdentifier(value))
+        {
+            AddRangeViolationIfNew(step, parameter,
+                $"expected an identifier matching ^[A-Za-z_][A-Za-z0-9_]*$, got '{value}'", violations);
+        }
+    }
+
+    private static void ValidateGeoJsonSourceSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        var hasInline = step.Inputs.TryGetValue("inline", out var inline) && !string.IsNullOrWhiteSpace(inline);
+        var hasInput = step.Inputs.TryGetValue("input", out var input) && !string.IsNullOrWhiteSpace(input);
+
+        if (!hasInline && !hasInput)
+        {
+            violations.Add(new GeoprocessingValidationFailure
+            {
+                Code = "MISSING_REQUIRED_PARAMETER",
+                Message = $"Step '{step.StepId}' requires an 'inline' GeoJSON document or an 'input' data URI for process '{step.ProcessId}'.",
+                FieldPath = $"steps[{step.StepId}].inputs.inline"
+            });
+        }
+    }
+
+    private static readonly HashSet<string> SpatialFilterPredicateValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "intersects", "within"
+    };
+
+    // Managed spatial-join (analytics.spatial-join-managed) allow-lists mirror the
+    // ManagedSpatialJoinExecutor body so the validator rejects the same predicate /
+    // statistic spellings the executor refuses at runtime. Distinct from the
+    // PostGIS-protocol analytics.spatial-join (which also has 'contains') because
+    // this managed join has no 'dwithin'/distance support.
+    private static readonly HashSet<string> ManagedSpatialJoinPredicateValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "intersects", "contains", "within"
+    };
+
+    private static readonly HashSet<string> ManagedSpatialJoinStatValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "count", "sum", "mean", "avg", "average", "min", "max"
+    };
+
+    // analytics.spatial-join-managed reads two inline FeatureCollection data URIs
+    // (input target + join reference), an optional predicate, and a 'statistics'
+    // spec of semicolon-separated 'field:stat' pairs. input/join are declared-
+    // required Text (the base validator enforces presence); here we mirror the
+    // executor's predicate enum and the statistic spec shape so plans accepted at
+    // validation are also accepted by the executor.
+    private static void ValidateManagedSpatialJoinSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (step.Inputs.TryGetValue("predicate", out var predicateRaw)
+            && !string.IsNullOrWhiteSpace(predicateRaw)
+            && !ManagedSpatialJoinPredicateValues.Contains(predicateRaw.Trim()))
+        {
+            AddEnumViolation(step, "predicate", predicateRaw, "intersects, contains, within", violations);
+        }
+
+        if (!step.Inputs.TryGetValue("statistics", out var statsRaw)
+            || string.IsNullOrWhiteSpace(statsRaw))
+        {
+            return;
+        }
+
+        foreach (var token in statsRaw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = token.Split(':', StringSplitOptions.TrimEntries);
+            var statName = parts.Length >= 2 ? parts[1] : parts[0];
+            var field = parts.Length >= 2 ? parts[0] : string.Empty;
+
+            if (!ManagedSpatialJoinStatValues.Contains(statName))
+            {
+                AddRangeViolationIfNew(step, "statistics",
+                    $"unsupported statistic '{statName}' in '{token}' (allowed: count, sum, mean, min, max)", violations);
+                return;
+            }
+
+            // Every stat except count summarizes a numeric join field, so the
+            // 'field:stat' form is required; the executor throws otherwise.
+            if (!string.Equals(statName, "count", StringComparison.OrdinalIgnoreCase)
+                && string.IsNullOrWhiteSpace(field))
+            {
+                AddRangeViolationIfNew(step, "statistics",
+                    $"statistic '{statName}' requires a join field, e.g. 'fieldName:{statName}'", violations);
+                return;
+            }
+        }
+    }
+
+    private static void ValidateSpatialFilterSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        RequireRegion(step, violations);
+
+        if (step.Inputs.TryGetValue("predicate", out var predicateRaw)
+            && !string.IsNullOrWhiteSpace(predicateRaw)
+            && !SpatialFilterPredicateValues.Contains(predicateRaw.Trim()))
+        {
+            AddEnumViolation(step, "predicate", predicateRaw, "intersects, within", violations);
+        }
+    }
+
+    private static void ValidateClipTransformSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+        => RequireRegion(step, violations);
+
+    // Both spatial-filter and clip require exactly a region — one of bbox/wkt —
+    // mirroring the executor's ReadRegion contract.
+    private static void RequireRegion(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        var hasBbox = step.Inputs.TryGetValue("bbox", out var bbox) && !string.IsNullOrWhiteSpace(bbox);
+        var hasWkt = step.Inputs.TryGetValue("wkt", out var wkt) && !string.IsNullOrWhiteSpace(wkt);
+
+        if (!hasBbox && !hasWkt)
+        {
+            violations.Add(new GeoprocessingValidationFailure
+            {
+                Code = "MISSING_REQUIRED_PARAMETER",
+                Message = $"Step '{step.StepId}' requires a 'bbox' or 'wkt' region for process '{step.ProcessId}'.",
+                FieldPath = $"steps[{step.StepId}].inputs.bbox"
+            });
+        }
+        else if (hasBbox)
+        {
+            var parts = bbox!.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            var ok = parts.Length == 4
+                && parts.All(p => double.TryParse(p, NumberStyles.Float, CultureInfo.InvariantCulture, out _));
+            if (!ok)
+            {
+                AddRangeViolationIfNew(step, "bbox",
+                    $"expected 'minX,minY,maxX,maxY' with four numeric values, got '{bbox}'", violations);
+            }
+        }
+    }
+
+    private static void ValidateDedupTransformSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        var hasKeys = step.Inputs.TryGetValue("keys", out var keys) && !string.IsNullOrWhiteSpace(keys);
+        var useGeometry = step.Inputs.TryGetValue("geometry", out var geom)
+            && !string.IsNullOrWhiteSpace(geom)
+            && bool.TryParse(geom, out var parsed) && parsed;
+
+        if (!hasKeys && !useGeometry)
+        {
+            violations.Add(new GeoprocessingValidationFailure
+            {
+                Code = "MISSING_REQUIRED_PARAMETER",
+                Message = $"Step '{step.StepId}' requires a 'keys' attribute list, 'geometry=true', or both for process '{step.ProcessId}'.",
+                FieldPath = $"steps[{step.StepId}].inputs.keys"
+            });
+        }
+    }
+
+    // GeoETL transform enum allow-lists mirror the executor bodies reconciled from
+    // feat/geoetl-baseline so the validator rejects the same values the executors
+    // would refuse at runtime.
+    private static readonly HashSet<string> AttributeCastTargetTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "int", "long", "double", "bool", "string"
+    };
+
+    private static readonly HashSet<string> AttributeCastOnErrorValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "drop", "null", "keep"
+    };
+
+    private static readonly HashSet<string> ComputedFieldOps = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "concat", "add", "subtract", "multiply", "divide", "const"
+    };
+
+    private static readonly HashSet<string> AttributeFilterOps = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "eq", "neq", "gt", "gte", "lt", "lte", "contains", "exists"
+    };
+
+    private static void ValidateAttributeCastSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (step.Inputs.TryGetValue("to", out var toRaw)
+            && !string.IsNullOrWhiteSpace(toRaw)
+            && !AttributeCastTargetTypes.Contains(toRaw.Trim()))
+        {
+            AddEnumViolation(step, "to", toRaw, "int, long, double, bool, string", violations);
+        }
+
+        if (step.Inputs.TryGetValue("onError", out var onErrorRaw)
+            && !string.IsNullOrWhiteSpace(onErrorRaw)
+            && !AttributeCastOnErrorValues.Contains(onErrorRaw.Trim()))
+        {
+            AddEnumViolation(step, "onError", onErrorRaw, "drop, null, keep", violations);
+        }
+    }
+
+    private static void ValidateComputedFieldSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (!step.Inputs.TryGetValue("op", out var opRaw) || string.IsNullOrWhiteSpace(opRaw))
+        {
+            return;
+        }
+
+        var op = opRaw.Trim();
+        if (!ComputedFieldOps.Contains(op))
+        {
+            AddEnumViolation(step, "op", op, "concat, add, subtract, multiply, divide, const", violations);
+            return;
+        }
+
+        // Conditional requiredness mirrors the executor's RequireOption calls.
+        if (string.Equals(op, "concat", StringComparison.OrdinalIgnoreCase))
+        {
+            RequireConditionalParameter(step, "fields", "op=concat", violations);
+        }
+        else if (!string.Equals(op, "const", StringComparison.OrdinalIgnoreCase))
+        {
+            RequireConditionalParameter(step, "left", $"op={op}", violations);
+            RequireConditionalParameter(step, "right", $"op={op}", violations);
+        }
+    }
+
+    private static void ValidateAttributeFilterSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (step.Inputs.TryGetValue("op", out var opRaw)
+            && !string.IsNullOrWhiteSpace(opRaw)
+            && !AttributeFilterOps.Contains(opRaw.Trim()))
+        {
+            AddEnumViolation(step, "op", opRaw, "eq, neq, gt, gte, lt, lte, contains, exists", violations);
         }
     }
 

@@ -113,13 +113,23 @@ between `postgres` becoming healthy and `honua` starting. It applies:
 - `tests/seed/client-compat-v1.sql` — schema + `test_service` (layer `0`)
   used by the `pyqgis` and `gdal` lanes (the gdal lane points at the same
   `(test_service, 0)` pair via `HONUA_GDAL_SERVICE_ID` /
-  `HONUA_GDAL_COLLECTION_ID`)
+  `HONUA_GDAL_COLLECTION_ID`). This file also owns the Metadata v2
+  compatibility snapshot tables (`honua.metadata_v2_snapshots`,
+  `honua.metadata_v2_current`) and the
+  `honua.seed_metadata_v2_compat_snapshot()` helper that the next step
+  calls — that helper lives only in `tests/seed/base-schema.sql` for the
+  browser CI path, so this Docker path keeps a parallel definition here
+  rather than applying `base-schema.sql`.
 - `tests/seed/browser-compat.yaml`  — `browser_compat` service (layers
-  `2000`-`2002`) used by the `cesium`, `openlayers`, and `arcgis-stub` lanes
+  `2000`-`2002`) used by the `cesium`, `openlayers`, and `arcgis-stub` lanes.
+  The file's final statement calls
+  `SELECT honua.seed_metadata_v2_compat_snapshot();` so the snapshot tables
+  populated by the previous step include the freshly-inserted browser layers
+  before `honua` starts reading them.
 
 `honua` waits for `seed` via `service_completed_successfully`, so lane
 services that depend on `honua: service_healthy` always observe a populated
-database.
+database with a current Metadata v2 snapshot.
 
 ## Adding a new client lane
 

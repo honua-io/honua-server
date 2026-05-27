@@ -24,6 +24,18 @@ internal static class GeoprocessingProtocolMetadataKeys
     public const string GPServerContext = "gpserver.context";
 
     /// <summary>
+    /// Job spec parameter key storing the GP <c>env:outSR</c> output spatial
+    /// reference requested by the caller (WKID).
+    /// </summary>
+    public const string GPServerOutSr = "gpserver.env.outSR";
+
+    /// <summary>
+    /// Job spec parameter key storing the GP <c>env:processSR</c> processing
+    /// spatial reference requested by the caller (WKID).
+    /// </summary>
+    public const string GPServerProcessSr = "gpserver.env.processSR";
+
+    /// <summary>
     /// Prefix for stable protocol output parameter names stored on the job spec.
     /// </summary>
     public const string OutputNamePrefix = "process.output.";

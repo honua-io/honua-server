@@ -4,7 +4,6 @@
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Metadata.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Styling.Domain;
 
@@ -23,7 +22,6 @@ namespace Honua.Server.Features.Infrastructure.Caching;
 [JsonSerializable(typeof(FeatureExtent))]
 [JsonSerializable(typeof(Relationship))]
 [JsonSerializable(typeof(Relationship[]))]
-[JsonSerializable(typeof(CompiledMetadataArtifact))]
 [JsonSerializable(typeof(LayerStyleDefinition))]
 [JsonSerializable(typeof(CachedExistenceResult))]
 [JsonSerializable(typeof(CachedLayerList))]

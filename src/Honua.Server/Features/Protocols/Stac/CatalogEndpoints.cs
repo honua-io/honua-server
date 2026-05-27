@@ -3,7 +3,6 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
@@ -11,7 +10,6 @@ using Honua.Server.Features.Protocols.Ogc.Api.Features;
 using Honua.Server.Features.Protocols.Ogc.Common;
 using Honua.Server.Features.Protocols.Stac.Models;
 using Honua.Server.Features.Protocols.Stac.Services;
-using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Protocols.Stac;
 
@@ -61,8 +59,7 @@ internal static class CatalogEndpoints
 
     private static async Task<IResult> HandleGetCatalog(
         HttpContext context,
-        [FromServices] ILayerCatalog layerCatalog,
-        [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
+        ILogger<StacEndpoints.StacEndpointsLog> logger)
     {
         using var activity = StacTelemetry.StartActivity(
             StacTelemetry.Operations.Catalog,
@@ -84,8 +81,8 @@ internal static class CatalogEndpoints
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var stacBase = $"{baseUrl}/stac";
 
-            var visibleLayers = await StacFilterHelpers.ResolveStacVisibleLayersAsync(
-                context, layerCatalog, cancellationToken);
+            var visible = await StacV2Lookups.ResolveVisibleStacPublicationsAsync(context, cancellationToken)
+                .ConfigureAwait(false);
 
             var links = ImmutableArray.CreateBuilder<Link>();
 
@@ -138,14 +135,15 @@ internal static class CatalogEndpoints
                 title: "STAC Search"));
 
             // Child collection links
-            foreach (var layer in visibleLayers)
+            foreach (var resolved in visible)
             {
-                var collectionId = layer.Id.ToString(CultureInfo.InvariantCulture);
+                var collectionId = resolved.LayerIndex.ToString(CultureInfo.InvariantCulture);
+                var title = ResolveDisplayName(resolved);
                 links.Add(Link.Create(
                     href: $"{stacBase}/collections/{collectionId}",
                     rel: StacConstants.StacRelations.Child,
                     type: MediaTypes.Json,
-                    title: layer.Name));
+                    title: title));
             }
 
             var catalog = new StacCatalog
@@ -157,8 +155,8 @@ internal static class CatalogEndpoints
                 Links = links.ToImmutable()
             };
 
-            StacLog.CatalogReturned(logger, visibleLayers.Length);
-            StacTelemetry.SetResultCount(activity, visibleLayers.Length);
+            StacLog.CatalogReturned(logger, visible.Length);
+            StacTelemetry.SetResultCount(activity, visible.Length);
             return Results.Json(catalog, StacJsonContext.Default.StacCatalog, MediaTypes.Json);
         }
         catch (OperationCanceledException ex)
@@ -345,6 +343,16 @@ internal static class CatalogEndpoints
             """;
 
         return Results.Content(openApi, MediaTypes.OpenApi);
+    }
+
+    private static string ResolveDisplayName(StacV2Lookups.ResolvedStacPublication resolved)
+    {
+        return resolved.Publication.TitleOverride
+            ?? resolved.Publication.Metadata.Title
+            ?? (string.IsNullOrEmpty(resolved.Publication.Metadata.Name) ? null : resolved.Publication.Metadata.Name)
+            ?? resolved.Resource.Metadata.Title
+            ?? (string.IsNullOrEmpty(resolved.Resource.Metadata.Name) ? null : resolved.Resource.Metadata.Name)
+            ?? resolved.LayerIndex.ToString(CultureInfo.InvariantCulture);
     }
 
     private static ImmutableArray<string> GetConformanceClasses()

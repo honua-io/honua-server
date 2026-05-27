@@ -1,0 +1,43 @@
+name: OpenAPI Drift Check
+
+on:
+  pull_request:
+    branches:
+      - trunk
+      - main
+    paths:
+      - 'src/Honua.Server/openapi.json'
+      - 'src/Honua.Server/ogc-tiles-openapi.json'
+      - 'src/Honua.Server/ogc-maps-openapi.json'
+      - 'src/Honua.Server/ogc-processes-openapi.json'
+      - 'src/Honua.Server/ogc-coverages-openapi.json'
+      - 'src/Honua.Server/EndpointRegistry.cs'
+      - 'src/Honua.Server/Features/Protocols/**'
+      - 'scripts/ci/openapi-drift-check.py'
+      - '.github/workflows/openapi-drift.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openapi-drift-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drift-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Run OpenAPI <-> EndpointRegistry drift check
+        run: |
+          python3 scripts/ci/openapi-drift-check.py

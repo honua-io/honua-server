@@ -58,8 +58,6 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             services.AddScoped<ISecureConnectionResolver, NullSecureConnectionResolver>();
             services.AddScoped<ILayerPublishingService, NullLayerPublishingService>();
             services.AddSingleton<IDatabaseMigrationRunner, NullDatabaseMigrationRunner>();
-            services.AddSingleton<IMetadataResourceStore, InMemoryMetadataResourceStore>();
-            services.AddSingleton<IManifestVersionStore, InMemoryManifestVersionStore>();
             services.AddSingleton<IDatabaseConnectionStringBuilder, TestDatabaseConnectionStringBuilder>();
             services.AddSingleton<ILeaderElectionStrategy, NoOpLeaderElectionStrategy>();
             services.AddScoped<IAlertAdminStore, NullAlertAdminStore>();
@@ -220,6 +218,9 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
         public Task<IReadOnlyList<AlertRuleDefinition>> ListRulesAsync(string? serviceId, int? layerId, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<AlertRuleDefinition>>(Array.Empty<AlertRuleDefinition>());
 
+        public Task<AlertRuleDefinition?> GetRuleAsync(long ruleId, CancellationToken cancellationToken = default)
+            => Task.FromResult<AlertRuleDefinition?>(null);
+
         public Task<AlertRuleDefinition> CreateRuleAsync(AlertRuleDefinition rule, CancellationToken cancellationToken = default)
             => Task.FromException<AlertRuleDefinition>(new NotSupportedException("Alerts are not available in this test fixture."));
 
@@ -228,6 +229,9 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 
         public Task<bool> DeleteRuleAsync(long ruleId, CancellationToken cancellationToken = default)
             => Task.FromResult(false);
+
+        public Task<AlertRuleHealthSnapshot?> GetRuleHealthAsync(long ruleId, int recentTriggerLimit, CancellationToken cancellationToken = default)
+            => Task.FromResult<AlertRuleHealthSnapshot?>(null);
     }
 
     private sealed class InMemoryChangeTracker : IChangeTracker

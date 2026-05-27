@@ -4,6 +4,7 @@
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Shared.Models;
 
 namespace Honua.TestKit.Infrastructure;

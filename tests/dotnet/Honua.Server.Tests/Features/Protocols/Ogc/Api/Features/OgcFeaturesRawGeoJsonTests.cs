@@ -4,12 +4,11 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Protocols.Ogc.Api.Features;
 using Honua.Server.Features.Protocols.Ogc.Common;
-using CatalogGeometryType = Honua.Core.Features.Catalog.Domain.GeometryType;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
@@ -18,7 +17,8 @@ public sealed class OgcFeaturesRawGeoJsonTests
     [Fact]
     public void CreateRawFeatureCollectionPayload_UsesConfiguredIdAttribute()
     {
-        var layer = CreateLayer(new FieldDefinition("id", FieldType.Integer, Nullable: false));
+        var resource = CreateResource(
+            new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.Integer, Nullable = false });
         var feature = RawGeoJsonFeature.Create(
             id: 987,
             geometryGeoJson: "{\"type\":\"Point\",\"coordinates\":[1,2]}",
@@ -26,7 +26,7 @@ public sealed class OgcFeaturesRawGeoJsonTests
 
         var payload = OgcFeaturesQueryHandler.CreateRawFeatureCollectionPayload(
             [feature],
-            layer,
+            resource,
             ImmutableArray<Link>.Empty,
             numberMatched: null);
 
@@ -40,7 +40,8 @@ public sealed class OgcFeaturesRawGeoJsonTests
     [Fact]
     public void CreateRawFeatureCollectionPayload_UsesProjectedRawPublicIdAndFiltersProperties()
     {
-        var layer = CreateLayer(new FieldDefinition("id", FieldType.Integer, Nullable: false));
+        var resource = CreateResource(
+            new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.Integer, Nullable = false });
         var feature = RawGeoJsonFeature.Create(
             id: 987,
             geometryGeoJson: "{\"type\":\"Point\",\"coordinates\":[1,2]}",
@@ -49,7 +50,7 @@ public sealed class OgcFeaturesRawGeoJsonTests
 
         var payload = OgcFeaturesQueryHandler.CreateRawFeatureCollectionPayload(
             [feature],
-            layer,
+            resource,
             ImmutableArray<Link>.Empty,
             numberMatched: null);
 
@@ -64,7 +65,8 @@ public sealed class OgcFeaturesRawGeoJsonTests
     [Fact]
     public void CreateRawFeatureCollectionPayload_FallsBackToObjectIdWhenPublicIdAttributeMissing()
     {
-        var layer = CreateLayer(new FieldDefinition("id", FieldType.Integer, Nullable: false));
+        var resource = CreateResource(
+            new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.Integer, Nullable = false });
         var feature = RawGeoJsonFeature.Create(
             id: 987,
             geometryGeoJson: "{\"type\":\"Point\",\"coordinates\":[1,2]}",
@@ -72,7 +74,7 @@ public sealed class OgcFeaturesRawGeoJsonTests
 
         var payload = OgcFeaturesQueryHandler.CreateRawFeatureCollectionPayload(
             [feature],
-            layer,
+            resource,
             ImmutableArray<Link>.Empty,
             numberMatched: null);
 
@@ -84,7 +86,8 @@ public sealed class OgcFeaturesRawGeoJsonTests
     [Fact]
     public void CreateRawPointFeatureCollectionPayload_WritesPointGeometryWithoutGeoJsonParsing()
     {
-        var layer = CreateLayer(new FieldDefinition("id", FieldType.Integer, Nullable: false));
+        var resource = CreateResource(
+            new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.Integer, Nullable = false });
         var feature = RawGeoServicesFeature.Create(
             id: 987,
             attributesJson: "{\"id\":123,\"category\":\"park\"}",
@@ -93,7 +96,7 @@ public sealed class OgcFeaturesRawGeoJsonTests
 
         var payload = OgcFeaturesQueryHandler.CreateRawPointFeatureCollectionPayload(
             [feature],
-            layer,
+            resource,
             ImmutableArray<Link>.Empty,
             numberMatched: null);
 
@@ -111,7 +114,8 @@ public sealed class OgcFeaturesRawGeoJsonTests
     [Fact]
     public void CreateRawPointFeatureCollectionPayload_UsesProjectedRawPublicIdAndFiltersAttributes()
     {
-        var layer = CreateLayer(new FieldDefinition("id", FieldType.Integer, Nullable: false));
+        var resource = CreateResource(
+            new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.Integer, Nullable = false });
         var feature = RawGeoServicesFeature.Create(
             id: 987,
             publicIdJson: "123",
@@ -121,7 +125,7 @@ public sealed class OgcFeaturesRawGeoJsonTests
 
         var payload = OgcFeaturesQueryHandler.CreateRawPointFeatureCollectionPayload(
             [feature],
-            layer,
+            resource,
             ImmutableArray<Link>.Empty,
             numberMatched: null);
 
@@ -133,15 +137,25 @@ public sealed class OgcFeaturesRawGeoJsonTests
         rawFeature.GetProperty("properties").TryGetProperty("internal_secret", out _).Should().BeFalse();
     }
 
-    private static LayerDefinition CreateLayer(params FieldDefinition[] fields)
-        => new(
-            1,
-            "bench_points",
-            "Benchmark points",
-            CatalogGeometryType.Point,
-            SpatialReference.WGS84,
+    private static MetadataV2Resource CreateResource(params MetadataV2Field[] fields)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "bench_points", Name = "bench_points" },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            SchemaFields =
             [
                 .. fields,
-                new FieldDefinition("category", FieldType.String)
-            ]);
+                new MetadataV2Field { Name = "category", Type = MetadataV2FieldType.String },
+            ],
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                GeometryType = MetadataV2GeometryType.Point,
+                SpatialReference = new MetadataV2SpatialReference
+                {
+                    Srid = 4326,
+                    Crs = "EPSG:4326",
+                    IsGeographic = true,
+                },
+            },
+        };
 }

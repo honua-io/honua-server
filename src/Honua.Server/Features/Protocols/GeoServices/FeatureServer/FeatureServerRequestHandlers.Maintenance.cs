@@ -8,6 +8,8 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
@@ -448,7 +450,7 @@ internal static partial class FeatureServerEndpoints
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceAsync(
+        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceV2Async(
             resourceValidator,
             serviceId,
             context,
@@ -460,25 +462,31 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = serviceValidationResult.Service!;
+        var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+
         var values = ToCaseInsensitiveDictionary(context.Request.Query);
-        if (!TryResolveRequestedServiceLayers(service, values, out var selectedLayers, out _, out var selectionError))
+        if (!TryResolveRequestedServiceLayersV2(service, snapshot, values, out var selectedLayers, out _, out var selectionError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid query parameters",
                 [selectionError ?? "Invalid layer selection."]);
         }
 
-        var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, selectedLayers, service);
+        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+            context,
+            selectedLayers.Select(pair => pair.Resource),
+            service);
         if (accessError != null)
         {
             return accessError;
         }
 
-        var domains = FilterAccessibleLayers(context, service, selectedLayers)
-            .SelectMany(static layer => layer.VisibleAttributeFields
-                .Select(field => MapQueryDomainInfo(layer, field))
-                .Where(static domain => domain != null)!
-                .Cast<DomainInfo>())
+        var domains = FilterAccessibleLayersV2(context, service, selectedLayers)
+            .SelectMany(pair => ResolveVisibleFieldsV2(pair.Resource)
+                .Select(field => MapQueryDomainInfoV2(pair.Publication, pair.Resource, field, snapshot)))
+            .Where(domain => domain is not null)
+            .Select(domain => domain!)
             .ToArray();
 
         var response = new QueryDomainsResponse
@@ -521,7 +529,7 @@ internal static partial class FeatureServerEndpoints
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceAsync(
+        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceV2Async(
             resourceValidator,
             serviceId,
             context,
@@ -533,37 +541,71 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = serviceValidationResult.Service!;
-        var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, service.Layers, service);
+        var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+
+        var allPairs = snapshot.Index.PublicationsByService[service.Metadata.Id]
+            .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
+            .Where(pair => pair.Resource is not null)
+            .Select(pair => (pair.Publication, Resource: pair.Resource!))
+            .ToArray();
+
+        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+            context,
+            allPairs.Select(pair => pair.Resource),
+            service);
         if (accessError != null)
         {
             return accessError;
         }
 
-        var accessibleLayers = FilterAccessibleLayers(context, service, service.Layers);
-        var accessibleLayerIds = accessibleLayers
-            .Select(static layer => layer.Id)
-            .ToHashSet();
+        var accessibleLayers = FilterAccessibleLayersV2(context, service, allPairs);
+
+        // Layer ids of accessible publications. Relationships pointing at non-accessible
+        // resources are filtered out (matching the v1 path which gated on layer access).
+        var layerIdByResourceId = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (publication, resource) in accessibleLayers)
+        {
+            var id = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(resource) ?? -1;
+            if (id < 0) continue;
+            // First (primary) publication wins for the resource id mapping.
+            layerIdByResourceId.TryAdd(resource.Metadata.Id, id);
+        }
+
+        var relationships = new List<ServiceRelationshipInfo>();
+        foreach (var (publication, resource) in accessibleLayers)
+        {
+            if (!layerIdByResourceId.TryGetValue(resource.Metadata.Id, out var originLayerId))
+            {
+                continue;
+            }
+
+            foreach (var relationship in resource.Relationships)
+            {
+                if (!layerIdByResourceId.TryGetValue(relationship.RelatedResourceId, out var relatedLayerId))
+                {
+                    continue;
+                }
+
+                var relationshipId = relationship.EsriRelationshipId ?? StableStringHash(relationship.Id);
+                relationships.Add(new ServiceRelationshipInfo
+                {
+                    Id = relationshipId,
+                    Name = relationship.Name,
+                    LayerId = originLayerId,
+                    RelatedTableId = relatedLayerId,
+                    Role = relationship.Role,
+                    KeyField = relationship.DestinationField,
+                    OriginKeyField = relationship.OriginField,
+                    DestinationKeyField = relationship.DestinationField,
+                    Description = relationship.Description
+                });
+            }
+        }
 
         var response = new QueryRelationshipsResponse
         {
-            Relationships =
-            [
-                ..accessibleLayers.SelectMany(layer =>
-                    layer.LayerRelationships
-                        .Where(relationship => accessibleLayerIds.Contains(relationship.RelatedLayerId))
-                        .Select(relationship => new ServiceRelationshipInfo
-                    {
-                        Id = relationship.RelationshipId,
-                        Name = relationship.Name,
-                        LayerId = layer.Id,
-                        RelatedTableId = relationship.RelatedLayerId,
-                        Role = relationship.RelationshipType,
-                        KeyField = relationship.DestinationForeignKeyField,
-                        OriginKeyField = relationship.OriginForeignKeyField,
-                        DestinationKeyField = relationship.DestinationForeignKeyField,
-                        Description = relationship.Description
-                    }))
-            ]
+            Relationships = [.. relationships]
         };
 
         scope.SetSuccess(response.Relationships?.Length ?? 0);

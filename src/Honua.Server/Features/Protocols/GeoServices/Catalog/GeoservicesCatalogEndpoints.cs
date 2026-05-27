@@ -1,8 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
@@ -50,7 +51,7 @@ internal static class GeoservicesCatalogEndpoints
     private static async Task<IResult> HandleGetServicesDirectory(
         HttpContext context,
         string? f,
-        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
         [FromServices] IRasterStore rasterStore,
         [FromServices] ILogger<GeoservicesCatalogLog> logger)
     {
@@ -61,59 +62,87 @@ internal static class GeoservicesCatalogEndpoints
 
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-        var services = await layerCatalog.ListServicesAsync(cancellationToken);
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+
         var entries = new List<ServiceDirectoryEntry>();
+        var deniedPublications = new List<MetadataV2Resource>();
 
-        foreach (var service in services.OrderBy(static s => s.Name, StringComparer.OrdinalIgnoreCase))
+        foreach (var service in snapshot.Graph.Services.OrderBy(static s => s.Metadata.Name, StringComparer.OrdinalIgnoreCase))
         {
-            var visibleLayers = service.Layers
-                .Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer, service))
-                .ToArray();
-
-            // Hide services when no layers are visible to the current caller.
-            if (visibleLayers.Length == 0)
+            if (!TryMapServiceType(service.PrimaryProtocol, out var directoryType))
             {
                 continue;
             }
 
-            var escapedName = Uri.EscapeDataString(service.Name);
-            entries.Add(new ServiceDirectoryEntry
+            // Project publications -> resources, filtering by access.
+            var visibleResources = new List<MetadataV2Resource>();
+            foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id))
             {
-                Name = service.Name,
-                Type = "FeatureServer",
-                Url = $"{baseUrl}/rest/services/{escapedName}/FeatureServer"
-            });
-            entries.Add(new ServiceDirectoryEntry
-            {
-                Name = service.Name,
-                Type = "MapServer",
-                Url = $"{baseUrl}/rest/services/{escapedName}/MapServer"
-            });
-
-            try
-            {
-                var imageServerLayerId = await GetImageServerLayerIdAsync(visibleLayers, rasterStore, cancellationToken);
-                if (imageServerLayerId.HasValue)
+                var resource = snapshot.ResolveResource(publication);
+                if (resource is null)
                 {
-                    entries.Add(new ServiceDirectoryEntry
-                    {
-                        Name = service.Name,
-                        Type = "ImageServer",
-                        Url = $"{baseUrl}/rest/services/{imageServerLayerId.Value}/ImageServer"
-                    });
+                    continue;
+                }
+
+                if (AccessPolicyHelpers.IsResourceAccessible(context, resource, service))
+                {
+                    visibleResources.Add(resource);
+                }
+                else
+                {
+                    deniedPublications.Add(resource);
                 }
             }
-            catch (Exception ex)
+
+            if (visibleResources.Count == 0)
             {
-                GeoservicesCatalogEndpointLogging.LogRasterProbeFailed(logger, service.Name, ex);
+                continue;
+            }
+
+            if (string.Equals(directoryType, "ImageServer", StringComparison.Ordinal))
+            {
+                // ImageServer entries use the layer id in the URL (not the service name);
+                // probe the raster store to find the first publication that actually has
+                // raster data registered, mirroring the v1 behaviour.
+                try
+                {
+                    var imageServerLayerId = await GetImageServerLayerIdAsync(
+                        snapshot,
+                        service,
+                        rasterStore,
+                        cancellationToken).ConfigureAwait(false);
+                    if (imageServerLayerId.HasValue)
+                    {
+                        entries.Add(new ServiceDirectoryEntry
+                        {
+                            Name = service.Metadata.Name,
+                            Type = "ImageServer",
+                            Url = $"{baseUrl}/rest/services/{imageServerLayerId.Value}/ImageServer"
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    GeoservicesCatalogEndpointLogging.LogRasterProbeFailed(logger, service.Metadata.Name, ex);
+                }
+            }
+            else
+            {
+                var escapedName = Uri.EscapeDataString(service.Metadata.Name);
+                entries.Add(new ServiceDirectoryEntry
+                {
+                    Name = service.Metadata.Name,
+                    Type = directoryType,
+                    Url = $"{baseUrl}/rest/services/{escapedName}/{directoryType}"
+                });
             }
         }
 
-        if (entries.Count == 0 && services.Length > 0)
+        // If nothing was emitted but there were publications the caller could not see,
+        // surface the standard 401/403 access decision instead of an empty directory.
+        if (entries.Count == 0 && deniedPublications.Count > 0)
         {
-            var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(
-                context,
-                services.SelectMany(static service => service.Layers));
+            var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(context, deniedPublications);
             if (accessError != null)
             {
                 return accessError;
@@ -141,17 +170,53 @@ internal static class GeoservicesCatalogEndpoints
         return Results.Json(response, GeoservicesCatalogJsonContext.Default.RestInfoResponse, contentType: JsonContentType);
     }
 
+    /// <summary>
+    /// Maps an Esri-family primary protocol to the directory-entry "type" string the
+    /// GeoServices REST catalog exposes. Returns false for non-Esri protocols
+    /// (OGC API Features, STAC, etc.) which are surfaced through other catalogs.
+    /// </summary>
+    private static bool TryMapServiceType(string? primaryProtocol, out string directoryType)
+    {
+        switch (primaryProtocol)
+        {
+            case ServiceProtocols.FeatureServer:
+                directoryType = "FeatureServer";
+                return true;
+            case ServiceProtocols.MapServer:
+                directoryType = "MapServer";
+                return true;
+            case ServiceProtocols.ImageServer:
+                directoryType = "ImageServer";
+                return true;
+            default:
+                directoryType = string.Empty;
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// Finds the first publication on the given image service whose layer index
+    /// has at least one raster registered in the raster store. The catalog uses
+    /// the layer index (not the service name) as the route segment for
+    /// ImageServer entries.
+    /// </summary>
     private static async Task<int?> GetImageServerLayerIdAsync(
-        IReadOnlyList<LayerDefinition> layers,
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Service service,
         IRasterStore rasterStore,
         CancellationToken cancellationToken)
     {
-        foreach (var layer in layers)
+        foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id))
         {
-            var rasters = await rasterStore.ListRastersAsync(layer.Id, cancellationToken);
+            if (publication.LayerIndex is not { } layerIndex)
+            {
+                continue;
+            }
+
+            var rasters = await rasterStore.ListRastersAsync(layerIndex, cancellationToken).ConfigureAwait(false);
             if (rasters.Length > 0)
             {
-                return layer.Id;
+                return layerIndex;
             }
         }
 

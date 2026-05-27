@@ -4,8 +4,9 @@
 using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Attachments.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -113,7 +114,7 @@ internal static class AttachmentEndpoints
         if (resource == null)
             return;
 
-        var layerId = resource.Value.Layer.Id;
+        var layerId = resource.Value.StorageLayerId;
         var cancellationToken = context.RequestAborted;
 
         IReadOnlyDictionary<string, StringValues> values;
@@ -189,7 +190,7 @@ internal static class AttachmentEndpoints
         if (resource == null)
             return;
 
-        var layerId = resource.Value.Layer.Id;
+        var layerId = resource.Value.StorageLayerId;
         var form = await TryReadAttachmentFormAsync(context);
         if (form == null)
         {
@@ -278,7 +279,7 @@ internal static class AttachmentEndpoints
         if (resource == null)
             return;
 
-        var layerId = resource.Value.Layer.Id;
+        var layerId = resource.Value.StorageLayerId;
         var form = await TryReadAttachmentFormAsync(context);
         if (form == null)
         {
@@ -362,7 +363,7 @@ internal static class AttachmentEndpoints
         if (resource == null)
             return;
 
-        var layerId = resource.Value.Layer.Id;
+        var layerId = resource.Value.StorageLayerId;
         var routeFeatureId = TryGetRouteLongValue(context, "featureId", out var routeFeatureIdError);
         if (routeFeatureIdError != null)
         {
@@ -481,7 +482,7 @@ internal static class AttachmentEndpoints
         }
 
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var feature = await featureReader.GetAsync(resource.Value.Layer.Id, featureId, context.RequestAborted);
+        var feature = await featureReader.GetAsync(resource.Value.StorageLayerId, featureId, context.RequestAborted);
         if (feature == null)
         {
             await StandardErrorHelpers.CreateNotFound(context, $"Feature {featureId} not found").ExecuteAsync(context);
@@ -493,7 +494,7 @@ internal static class AttachmentEndpoints
 
         var result = await AttachmentHandler.GetAttachmentInfosAsync(
             context,
-            resource.Value.Layer.Id,
+            resource.Value.StorageLayerId,
             featureId,
             attachmentStore,
             logger,
@@ -511,7 +512,7 @@ internal static class AttachmentEndpoints
         if (resource == null)
             return;
 
-        var layerId = resource.Value.Layer.Id;
+        var layerId = resource.Value.StorageLayerId;
 
         if (!context.Request.RouteValues.TryGetValue("featureId", out var featureIdObj) ||
             !long.TryParse(featureIdObj?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var featureId))
@@ -560,7 +561,16 @@ internal static class AttachmentEndpoints
         return null;
     }
 
-    private static async Task<(ServiceDefinition Service, LayerDefinition Layer)?> TryValidateLayerAccessAsync(
+    /// <summary>
+    /// Resolved V2 attachment-access context: the canonical resource, the publishing service,
+    /// and the integer storage-layer handle the attachment store expects.
+    /// </summary>
+    internal readonly record struct AttachmentAccessContext(
+        MetadataV2Service Service,
+        MetadataV2Resource Resource,
+        int StorageLayerId);
+
+    private static async Task<AttachmentAccessContext?> TryValidateLayerAccessAsync(
         HttpContext context,
         AccessScope scope = AccessScope.Read)
     {
@@ -588,7 +598,7 @@ internal static class AttachmentEndpoints
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
-        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerV2Async(
             resourceValidator,
             serviceId,
             layerId,
@@ -601,7 +611,11 @@ internal static class AttachmentEndpoints
             return null;
         }
 
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, validationResult.Layer!, validationResult.Service!, scope);
+        var service = validationResult.Service!;
+        var publication = validationResult.Publication!;
+        var resource = validationResult.Resource!;
+
+        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service, scope);
         if (accessError != null)
         {
             await accessError.ExecuteAsync(context);
@@ -610,10 +624,10 @@ internal static class AttachmentEndpoints
 
         if (scope == AccessScope.Write)
         {
-            var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
+            var rbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
                 context,
-                validationResult.Service!,
-                validationResult.Layer!,
+                resource,
+                service,
                 context.RequestAborted);
             if (rbacError != null)
             {
@@ -622,7 +636,18 @@ internal static class AttachmentEndpoints
             }
         }
 
-        return (validationResult.Service!, validationResult.Layer!);
+        var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await snapshotProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+        var storageLayerId = snapshot.ResolveStorageLayerId(publication);
+        if (storageLayerId is null)
+        {
+            await StandardErrorHelpers.CreateNotFound(
+                context,
+                $"Layer '{resource.Metadata.Name ?? layerId.ToString(CultureInfo.InvariantCulture)}' is not bound to a storage layer.").ExecuteAsync(context);
+            return null;
+        }
+
+        return new AttachmentAccessContext(service, resource, storageLayerId.Value);
     }
 
     private static bool TryParseObjectIds(

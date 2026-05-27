@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Security.Domain;
 
 namespace Honua.Server.Features.Infrastructure.Scene;
 

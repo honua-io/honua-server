@@ -4,8 +4,8 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -225,23 +225,16 @@ public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
 
     private Task ConfigureLayerAsTimeAwareAsync()
     {
-        // The seeded "timestamp" DateTime field is registered in honua.layer_fields
-        // for the shared test layer; the helper resolves an extent only when the
-        // configured field is a real attribute.
-        var updater = _fixture.GetService<ILayerMetadataUpdater>();
-        return updater.UpdateLayerMetadataAsync(
+        // V2 cutover (#1035 72/N): TimeInfo now lives on MetadataV2Resource.Temporal.
+        _fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
-            new CatalogMetadata
-            {
-                TimeInfo = new LayerTimeInfo { StartTimeField = "timestamp" }
-            });
+            temporal: new MetadataV2ResourceTemporal { StartTimeField = "timestamp" });
+        return Task.CompletedTask;
     }
 
     private Task ClearLayerTimeInfoAsync()
     {
-        var updater = _fixture.GetService<ILayerMetadataUpdater>();
-        return updater.UpdateLayerMetadataAsync(
-            WebAppFixture.TestLayerId,
-            new CatalogMetadata());
+        _fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, clearTemporal: true);
+        return Task.CompletedTask;
     }
 }

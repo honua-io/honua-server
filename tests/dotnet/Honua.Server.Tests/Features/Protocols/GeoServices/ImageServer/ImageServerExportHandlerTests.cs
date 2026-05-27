@@ -2,8 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer.Handlers;
@@ -27,7 +28,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerExportHandlerTests
 {
-    private readonly ILayerCatalog _layerCatalog = Substitute.For<ILayerCatalog>();
+    private readonly TestMetadataV2GraphProvider _graphProvider = BuildGraphWithLayer(1);
     private readonly IRasterStore _rasterStore = Substitute.For<IRasterStore>();
     private readonly ITemporaryFileService _temporaryFileService = Substitute.For<ITemporaryFileService>();
     private readonly ImageServerExportHandler _handler;
@@ -35,7 +36,7 @@ public class ImageServerExportHandlerTests
     public ImageServerExportHandlerTests()
     {
         _handler = new ImageServerExportHandler(
-            _layerCatalog,
+            _graphProvider,
             _rasterStore,
             _temporaryFileService,
             NullLogger<ImageServerExportHandler>.Instance);
@@ -45,8 +46,6 @@ public class ImageServerExportHandlerTests
     [Operation(Operations.Export)]
     public async Task ExportImageAsync_LayerNotFound_ReturnsNotFound()
     {
-        _layerCatalog.GetLayerAsync(99, Arg.Any<CancellationToken>())
-            .Returns((LayerDefinition?)null);
 
         var context = CreateImageServerContext();
         var request = CreateRequest();
@@ -60,8 +59,6 @@ public class ImageServerExportHandlerTests
     [Operation(Operations.Export)]
     public async Task ExportImageAsync_NoRasters_ReturnsNotFound()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs(Array.Empty<RasterInfo>());
 
@@ -229,8 +226,6 @@ public class ImageServerExportHandlerTests
     [Operation(Operations.Export)]
     public async Task ExportImageAsync_WithMosaicRule_ExportsMosaic()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs(
             [
@@ -284,8 +279,6 @@ public class ImageServerExportHandlerTests
     [Operation(Operations.Export)]
     public async Task ExportImageAsync_WithMosaicRuleAndSingleRaster_AllowsExport()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs([CreateTestRasterInfo() with { Width = 100, Height = 20000 }]);
         _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
@@ -634,8 +627,6 @@ public class ImageServerExportHandlerTests
 
     private void SetupLayerAndRasters()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs([CreateTestRasterInfo()]);
     }
@@ -687,8 +678,18 @@ public class ImageServerExportHandlerTests
             MosaicRule = mosaicRule,
         };
 
-    private static LayerDefinition CreateTestLayer()
-        => LayerDefinition.CreateBasic(1, "test-layer", GeometryType.Point);
+    private static TestMetadataV2GraphProvider BuildGraphWithLayer(int layerIndex)
+        => new TestMetadataV2GraphBuilder()
+            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ResourceType.RasterDataset)
+            .AddService($"service-{layerIndex}", $"image-svc-{layerIndex}", protocols: [ServiceProtocols.ImageServer])
+            .AddPublication(
+                $"publication-{layerIndex}",
+                $"service-{layerIndex}",
+                $"resource-{layerIndex}",
+                layerIndex: layerIndex,
+                serviceLocalId: "test-layer",
+                publicationType: MetadataV2PublicationType.EsriImageLayer)
+            .BuildProvider();
 
     private static RasterInfo CreateTestRasterInfo() => new()
     {

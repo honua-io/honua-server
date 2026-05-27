@@ -117,8 +117,8 @@ jobs:
           restore-keys: |
             client-compat-${{ matrix.lane }}-
 
-      - name: Build honua + lane image and run
-        id: run
+      - name: Build honua base image (pre-lane)
+        id: prebuild
         shell: bash
         env:
           GITHUB_ACTOR: ${{ github.actor }}
@@ -133,6 +133,36 @@ jobs:
             -t honua-server:client-compat \
             .
           build_exit=$?
+          echo "build_exit=${build_exit}" >> "$GITHUB_OUTPUT"
+          # Don't fail the step here so the SBOM step below still runs and
+          # the lane-run step can record the build failure in lane evidence.
+          exit 0
+
+      # Generate an SPDX SBOM for the client-compat image immediately after
+      # the docker build so nightly client interop runs always publish a
+      # bill of materials artifact (audit gate A -> A+).
+      - name: Generate SBOM (SPDX JSON) for honua-server:client-compat
+        if: steps.prebuild.outputs.build_exit == '0'
+        continue-on-error: true
+        uses: anchore/sbom-action@v0
+        with:
+          image: honua-server:client-compat
+          format: spdx-json
+          output-file: sbom-honua-server-client-compat-${{ matrix.lane }}.spdx.json
+          artifact-name: sbom-honua-server-client-compat-${{ matrix.lane }}.spdx.json
+          upload-artifact: true
+          upload-release-assets: false
+
+      - name: Run lane against pre-built image
+        id: run
+        shell: bash
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ github.token }}
+          PREBUILD_EXIT: ${{ steps.prebuild.outputs.build_exit }}
+        run: |
+          set +e
+          build_exit="${PREBUILD_EXIT:-1}"
 
           if [[ "$build_exit" -eq 0 ]]; then
             docker compose -f docker/client-compat/compose.yml \
@@ -145,9 +175,17 @@ jobs:
             exit_code="$build_exit"
           else
             lane_log="docker/client-compat/output/${{ matrix.lane }}/lane.log"
+            # NOTE: do not pass --no-build to `docker compose run`. The flag was
+            # rejected by the docker compose plugin shipped on ubuntu-24.04
+            # runners ("unknown flag: --no-build"), causing every lane to exit
+            # before the honua container could start. Both the honua image
+            # (built above via `docker build -t honua-server:client-compat`) and
+            # the lane image (built via `docker compose build seed <lane>`)
+            # already exist by this point, so compose reuses them without
+            # rebuilding.
             docker compose -f docker/client-compat/compose.yml \
               --profile ${{ matrix.lane }} \
-              run --no-build --rm \
+              run --rm \
               ${{ matrix.lane }} 2>&1 | tee "$lane_log"
             exit_code=${PIPESTATUS[0]}
             if [[ "$exit_code" -eq 0 ]]; then

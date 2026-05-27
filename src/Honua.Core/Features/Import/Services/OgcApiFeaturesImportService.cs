@@ -254,6 +254,7 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
             var featuresImported = 0;
             var featuresSkipped = 0;
             var truncated = false;
+            long? sourceFeatureCountReported = null;
             Uri? nextUri = itemsUri;
             var visited = new HashSet<string>(StringComparer.Ordinal);
 
@@ -300,6 +301,8 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
                             warnings,
                             timeout.Token)
                         .ConfigureAwait(false);
+
+                    sourceFeatureCountReported = TryReadNonNegativeLong(root, "numberMatched");
                 }
 
                 var batch = new List<OgcApiFeaturesSinkFeature>(featuresElement.GetArrayLength());
@@ -343,6 +346,15 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
                 nextUri = nextLink != null ? ResolveUri(nextLink.Href, nextUri) : null;
             }
 
+            var featureCountParity = BuildFeatureCountParity(
+                sourceFeatureCountReported,
+                featuresImported,
+                featuresSkipped,
+                truncated,
+                normalizedFilter,
+                normalizedBbox,
+                normalizedDatetime);
+
             return new OgcApiFeaturesImportResult
             {
                 Success = true,
@@ -356,7 +368,9 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
                 Duration = stopwatch.Elapsed,
                 ScopeDriftDetected = scopeDriftDetected,
                 ManualReviewReason = manualReviewReason,
-                MappingDiagnostics = mappingDiagnostics
+                MappingDiagnostics = mappingDiagnostics,
+                SourceFeatureCountReported = sourceFeatureCountReported,
+                FeatureCountParity = featureCountParity
             };
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -562,6 +576,96 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
         }
 
         return Math.Min(request.PageSize, 10_000);
+    }
+
+    private static long? TryReadNonNegativeLong(JsonElement root, string propertyName)
+    {
+        if (root.ValueKind != JsonValueKind.Object ||
+            !root.TryGetProperty(propertyName, out var element) ||
+            element.ValueKind != JsonValueKind.Number)
+        {
+            return null;
+        }
+
+        if (!element.TryGetInt64(out var value) || value < 0)
+        {
+            return null;
+        }
+
+        return value;
+    }
+
+    private static OgcApiFeaturesFeatureCountParity BuildFeatureCountParity(
+        long? sourceFeatureCountReported,
+        int featuresImported,
+        int featuresSkipped,
+        bool truncated,
+        string? normalizedFilter,
+        string? normalizedBbox,
+        string? normalizedDatetime)
+    {
+        // When the operator pushed a filter/bbox/datetime to the source we cannot compare the
+        // source-advertised numberMatched (which already reflects the filtered subset on the page
+        // we read) against the importer's accumulated count if subsequent pages would have
+        // produced different counts on the source. The source numberMatched is page-stable for
+        // OGC API Features, but truncation by the operator (MaxFeatures/MaxPages) makes the probe
+        // not comparable in either case. Treat both situations as not-applicable so operators
+        // don't see spurious failures.
+        if (truncated)
+        {
+            return new OgcApiFeaturesFeatureCountParity
+            {
+                State = OgcApiFeaturesFeatureCountParityStates.NotApplicable,
+                Expected = sourceFeatureCountReported,
+                Observed = featuresImported,
+                Summary = "Feature-count parity probe skipped: import was truncated by an operator-imposed MaxFeatures or MaxPages cap.",
+            };
+        }
+
+        if (sourceFeatureCountReported is null)
+        {
+            return new OgcApiFeaturesFeatureCountParity
+            {
+                State = OgcApiFeaturesFeatureCountParityStates.NotApplicable,
+                Expected = null,
+                Observed = featuresImported,
+                Summary = "Feature-count parity probe skipped: source did not advertise a numberMatched total on the first items page.",
+            };
+        }
+
+        // featuresSkipped accumulates features the importer could not project (missing identifier,
+        // invalid geometry). Those still count against the source numberMatched, so they belong on
+        // the observed side of the probe even though the sink never saw them.
+        var observedFromSource = (long)featuresImported + featuresSkipped;
+        if (observedFromSource == sourceFeatureCountReported.Value)
+        {
+            var skippedSuffix = featuresSkipped > 0
+                ? $" ({featuresSkipped} feature(s) skipped due to projection errors and excluded from the sink count)."
+                : ".";
+            return new OgcApiFeaturesFeatureCountParity
+            {
+                State = OgcApiFeaturesFeatureCountParityStates.Pass,
+                Expected = sourceFeatureCountReported,
+                Observed = featuresImported,
+                Summary =
+                    $"Source advertised {sourceFeatureCountReported.Value} feature(s); importer accounted for the same number{skippedSuffix}",
+            };
+        }
+
+        var scopeNote = (normalizedFilter, normalizedBbox, normalizedDatetime) switch
+        {
+            (null, null, null) => string.Empty,
+            _ => " Note: a filter/bbox/datetime was pushed to the source — review the scope before treating the mismatch as a defect."
+        };
+
+        return new OgcApiFeaturesFeatureCountParity
+        {
+            State = OgcApiFeaturesFeatureCountParityStates.Fail,
+            Expected = sourceFeatureCountReported,
+            Observed = featuresImported,
+            Summary =
+                $"Source advertised {sourceFeatureCountReported.Value} feature(s) but importer accounted for {observedFromSource} ({featuresImported} written, {featuresSkipped} skipped).{scopeNote}",
+        };
     }
 
     private static OgcApiFeaturesSinkFeature? TryProjectFeature(

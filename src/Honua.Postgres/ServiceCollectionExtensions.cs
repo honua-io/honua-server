@@ -4,9 +4,13 @@
 using System.Globalization;
 using System.Net.Http;
 using Honua.Core.Features.Alerts.Abstractions;
+using Honua.Core.Features.AnalysisContent.Abstractions;
+using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Forms.Packages;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.AutoDocs;
 using Honua.Core.Features.Import;
@@ -25,10 +29,14 @@ using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Mobile.FieldCollection.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Share.Abstractions;
+using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.Admin;
 using Honua.Postgres.Features.Alerts;
+using Honua.Postgres.Features.AnalysisContent;
+using Honua.Postgres.Features.AuditLog;
 using Honua.Postgres.Features.Attachments;
 using Honua.Postgres.Features.Catalog;
 using Honua.Postgres.Features.FeatureStore;
@@ -45,9 +53,13 @@ using Honua.Postgres.Features.Infrastructure.Monitoring;
 using Honua.Postgres.Features.Styling;
 using Honua.Postgres.Features.Metadata;
 using Honua.Postgres.Features.FeatureStore.Services;
+using Honua.Postgres.Features.Forms;
 using Honua.Postgres.Features.Mobile.FieldCollection;
+using Honua.Postgres.Features.Observability;
 using Honua.Postgres.Features.Raster;
 using Honua.Postgres.Features.Security;
+using Honua.Postgres.Features.Share;
+using Honua.Postgres.Features.Studio;
 using Honua.Postgres.Queries.Filters;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -111,6 +123,20 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IAlertDispatchStore, PostgresAlertDispatchStore>();
         services.AddScoped<IAlertCheckpointStore, PostgresAlertCheckpointStore>();
         services.AddScoped<IAlertAdminStore, PostgresAlertAdminStore>();
+        services.AddScoped<IAlertEventQuery, PostgresAlertEventQuery>();
+        services.AddScoped<IAlertLifecycleStore, PostgresAlertLifecycleStore>();
+
+        // Console Operate read APIs (#1168)
+        services.AddScoped<IAuditLogReader, PostgresAuditLogReader>();
+        services.AddScoped<IInvestigationStore, PostgresInvestigationStore>();
+        services.AddScoped<IShareExportStore>(serviceProvider =>
+            new PostgresShareExportStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+        services.AddScoped<IShareTrafficStore>(serviceProvider =>
+            new PostgresShareTrafficStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
 
         // Register database performance metrics provider
         services.AddScoped<IDatabasePerformanceMetricsProvider, PostgresDatabasePerformanceMetricsProvider>();
@@ -132,34 +158,34 @@ internal static class ServiceCollectionExtensions
         // Register layer catalog implementation
         services.AddScoped<ILayerCatalog, PostgresLayerCatalog>();
         services.AddScoped<ILayerFieldConfigurationStore, PostgresLayerFieldConfigurationStore>();
-        services.AddScoped<IServiceMetadataUpdater, PostgresServiceMetadataUpdater>();
-        services.AddScoped<ILayerMetadataUpdater, PostgresLayerMetadataUpdater>();
 
         // Register FieldCollection mobile sync store (#894)
         services.AddScoped<IFieldCollectionSyncStore, PostgresFieldCollectionSyncStore>();
 
-        // Register metadata resource store (ADR-0023)
-        services.AddScoped<IMetadataResourceStore>(serviceProvider =>
-            new PostgresMetadataResourceStore(
-                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
-                serviceProvider.GetService<Honua.Core.Features.Caching.Abstractions.ICacheService>(),
-                configuration["Database:Schema"]));
+        // Register Forms package store (#1184)
+        services.AddScoped<IFormPackageStore, PostgresFormPackageStore>();
 
-        // Register manifest version store for GitOps drift detection (#515)
-        services.AddScoped<IManifestVersionStore>(serviceProvider =>
-            new PostgresManifestVersionStore(
+        // Register Metadata v2 graph store (Postgres-backed JSONB + sidecar indexes)
+        services.AddScoped<IMetadataV2GraphStore>(serviceProvider =>
+            new Features.Metadata.PostgresMetadataV2GraphStore(
                 serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Metadata:Environment"] ?? configuration["Environment"] ?? "default",
                 configuration["Database:Schema"]));
-
-        // Register manifest pending change store for approval workflows
-        services.AddScoped<IManifestPendingChangeStore>(serviceProvider =>
-            new PostgresManifestPendingChangeStore(
+        services.AddScoped<IMetadataV2GraphProvider>(sp => sp.GetRequiredService<IMetadataV2GraphStore>());
+        services.AddScoped<IMetadataV2EnvironmentSnapshotReader>(serviceProvider =>
+            new Features.Metadata.PostgresMetadataV2EnvironmentSnapshotReader(
                 serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
-
-        // Register GitOps watch store for git repository watching (#518)
-        services.AddScoped<IGitOpsWatchStore>(serviceProvider =>
-            new PostgresGitOpsWatchStore(
+        services.AddScoped<IMetadataReleasePackageStore>(serviceProvider =>
+            new Features.Metadata.PostgresMetadataReleasePackageStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+        services.AddScoped<IStudioPackageStore>(serviceProvider =>
+            new PostgresStudioPackageStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+        services.AddScoped<IAnalysisContentStore>(serviceProvider =>
+            new PostgresAnalysisContentStore(
                 serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
@@ -425,6 +451,30 @@ internal static class ServiceCollectionExtensions
                 httpClientFactory.CreateClient(OgcWfsImportService.HttpClientName),
                 serviceProvider.GetRequiredService<ILogger<OgcWfsImportService>>(),
                 serviceProvider.GetService<PostgresSchemaConfiguration>());
+        });
+
+        // Register OGC WMTS tile-cache export service (#1016 slice 4). Reuses the OGC service
+        // migration scanner for inventory/manifest resolution; the dedicated HTTP client is
+        // tuned for short-lived tile fetches; the sink is the Postgres-backed tile catalog.
+        services.AddResilientHttpClient(
+            OgcTileCacheExportService.HttpClientName,
+            "ogc-tile-cache-export",
+            HttpResiliencePolicies.SlowServiceDefaults,
+            configureClient: client =>
+            {
+                client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
+                client.Timeout = TimeSpan.FromMinutes(2);
+            },
+            configureHandler: static () => OgcServiceMigrationScanner.CreatePinnedDnsHttpMessageHandler());
+        services.AddScoped<IOgcTileCacheSink, PostgresOgcTileCacheSink>();
+        services.AddScoped<IOgcTileCacheExportService>(serviceProvider =>
+        {
+            var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
+            return new OgcTileCacheExportService(
+                serviceProvider.GetRequiredService<IOgcServiceMigrationScanner>(),
+                serviceProvider.GetRequiredService<IOgcTileCacheSink>(),
+                httpClientFactory.CreateClient(OgcTileCacheExportService.HttpClientName),
+                serviceProvider.GetRequiredService<ILogger<OgcTileCacheExportService>>());
         });
 
         // Register secure connection management services

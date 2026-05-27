@@ -8,7 +8,8 @@ using System.Globalization;
 using System.Text.Json;
 using System.Threading.Channels;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -263,17 +264,17 @@ internal sealed partial class TileOperationJobService(
                         schemaContext.CurrentSchema = cachedRequest.Value.SchemaName;
                     }
 
-                    var layerCatalog = scope.ServiceProvider.GetRequiredService<ILayerCatalog>();
+                    var graphProvider = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphProvider>();
                     var tileProvider = scope.ServiceProvider.GetRequiredService<ITileProvider>();
 
                     finalProgress = request.Operation switch
                     {
-                        "seed" => await ExecuteSeedOrWarmAsync(started, request, warmMode: false, layerCatalog, tileProvider, linkedCts.Token).ConfigureAwait(false),
-                        "warm" => await ExecuteSeedOrWarmAsync(started, request, warmMode: true, layerCatalog, tileProvider, linkedCts.Token).ConfigureAwait(false),
-                        "invalidate" => await ExecuteInvalidationAsync(started, request, layerCatalog, linkedCts.Token).ConfigureAwait(false),
-                        "purge" => await ExecuteInvalidationAsync(started, request, layerCatalog, linkedCts.Token).ConfigureAwait(false),
-                        "archive" => await ExecuteArchiveAsync(started, request, layerCatalog, tileProvider, scope.ServiceProvider, linkedCts.Token).ConfigureAwait(false),
-                        "publish" => await ExecutePublishAsync(started, request, layerCatalog, tileProvider, scope.ServiceProvider, linkedCts.Token).ConfigureAwait(false),
+                        "seed" => await ExecuteSeedOrWarmAsync(started, request, warmMode: false, graphProvider, tileProvider, linkedCts.Token).ConfigureAwait(false),
+                        "warm" => await ExecuteSeedOrWarmAsync(started, request, warmMode: true, graphProvider, tileProvider, linkedCts.Token).ConfigureAwait(false),
+                        "invalidate" => await ExecuteInvalidationAsync(started, request, graphProvider, linkedCts.Token).ConfigureAwait(false),
+                        "purge" => await ExecuteInvalidationAsync(started, request, graphProvider, linkedCts.Token).ConfigureAwait(false),
+                        "archive" => await ExecuteArchiveAsync(started, request, tileProvider, scope.ServiceProvider, linkedCts.Token).ConfigureAwait(false),
+                        "publish" => await ExecutePublishAsync(started, request, tileProvider, scope.ServiceProvider, linkedCts.Token).ConfigureAwait(false),
                         _ => started with
                         {
                             Status = OperationStatus.Failed,
@@ -368,7 +369,7 @@ internal sealed partial class TileOperationJobService(
     private async Task<TileOperationProgress> ExecuteInvalidationAsync(
         TileOperationProgress progress,
         TileOperationStartRequest request,
-        ILayerCatalog layerCatalog,
+        IMetadataV2GraphProvider graphProvider,
         CancellationToken cancellationToken)
     {
         if (request.LayerId.HasValue)
@@ -377,8 +378,7 @@ internal sealed partial class TileOperationJobService(
         }
         else if (!string.IsNullOrWhiteSpace(request.ServiceId))
         {
-            var service = await layerCatalog.GetServiceAsync(request.ServiceId, cancellationToken).ConfigureAwait(false);
-            var layerIds = service?.Layers.Select(static layer => layer.Id) ?? [];
+            var layerIds = await ResolveServiceLayerIdsAsync(graphProvider, request.ServiceId, cancellationToken).ConfigureAwait(false);
             await _cacheInvalidationService.InvalidateServiceCatalogAsync(request.ServiceId, layerIds, cancellationToken).ConfigureAwait(false);
         }
         else
@@ -402,7 +402,7 @@ internal sealed partial class TileOperationJobService(
         TileOperationProgress progress,
         TileOperationStartRequest request,
         bool warmMode,
-        ILayerCatalog layerCatalog,
+        IMetadataV2GraphProvider graphProvider,
         ITileProvider tileProvider,
         CancellationToken cancellationToken)
     {
@@ -411,7 +411,7 @@ internal sealed partial class TileOperationJobService(
             throw new NotSupportedException("Only TileMatrixSetId 'WebMercatorQuad' is currently supported.");
         }
 
-        var layerIds = await ResolveLayerIdsAsync(request, layerCatalog, cancellationToken).ConfigureAwait(false);
+        var layerIds = await ResolveLayerIdsAsync(request, graphProvider, cancellationToken).ConfigureAwait(false);
         if (layerIds.Count == 0)
         {
             throw new InvalidOperationException("Unable to resolve a target layer for tile operation.");
@@ -503,7 +503,6 @@ internal sealed partial class TileOperationJobService(
     private async Task<TileOperationProgress> ExecuteArchiveAsync(
         TileOperationProgress progress,
         TileOperationStartRequest request,
-        ILayerCatalog layerCatalog,
         ITileProvider tileProvider,
         IServiceProvider serviceProvider,
         CancellationToken cancellationToken)
@@ -606,7 +605,6 @@ internal sealed partial class TileOperationJobService(
     private async Task<TileOperationProgress> ExecutePublishAsync(
         TileOperationProgress progress,
         TileOperationStartRequest request,
-        ILayerCatalog layerCatalog,
         ITileProvider tileProvider,
         IServiceProvider serviceProvider,
         CancellationToken cancellationToken)
@@ -1088,7 +1086,7 @@ internal sealed partial class TileOperationJobService(
 
     private static async Task<IReadOnlyList<int>> ResolveLayerIdsAsync(
         TileOperationStartRequest request,
-        ILayerCatalog layerCatalog,
+        IMetadataV2GraphProvider graphProvider,
         CancellationToken cancellationToken)
     {
         if (request.LayerId.HasValue)
@@ -1101,13 +1099,26 @@ internal sealed partial class TileOperationJobService(
             return [];
         }
 
-        var service = await layerCatalog.GetServiceAsync(request.ServiceId, cancellationToken).ConfigureAwait(false);
-        if (service is null || service.Layers.Length == 0)
+        return await ResolveServiceLayerIdsAsync(graphProvider, request.ServiceId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<int[]> ResolveServiceLayerIdsAsync(
+        IMetadataV2GraphProvider graphProvider,
+        string serviceId,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var service = snapshot.FindService(serviceId);
+        if (service is null)
         {
             return [];
         }
 
-        return service.Layers.Select(static layer => layer.Id).Distinct().ToArray();
+        return snapshot.PublicationsForService(service.Metadata.Id)
+            .Where(static p => p.LayerIndex.HasValue)
+            .Select(static p => p.LayerIndex!.Value)
+            .Distinct()
+            .ToArray();
     }
 
     private List<TileCoordinate> BuildTileCoordinates(TileOperationStartRequest request)

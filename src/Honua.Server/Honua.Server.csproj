@@ -19,6 +19,16 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Server.Tests" />
+    <InternalsVisibleTo Include="Honua.Benchmarks" />
+    <!--
+      The heavyweight GDAL worker (src/Honua.Worker.Gdal) reuses the internal
+      durable job-execution substrate (JobExecutionService, RedisJobQueue, the
+      Redis-backed stores, JobReconciliationService) rather than forking a
+      parallel runtime. This grant exposes those internals to the worker host
+      ONLY; it introduces NO GDAL dependency into the serving image — the worker
+      is a standalone host that references Honua.Server, not the reverse.
+    -->
+    <InternalsVisibleTo Include="Honua.Worker.Gdal" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 

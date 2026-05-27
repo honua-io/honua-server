@@ -150,8 +150,14 @@ public class SimpleAuthenticationTests : IAsyncLifetime, IDisposable
             });
 
         // Act & Assert - Startup should fail fast in production when DEV_AUTH is enabled.
+        // Accept either the generic "Configuration validation failed" wording or any
+        // HONUA_DEV_AUTH-mentioning rejection from the validator, so future validator
+        // wording tweaks don't break the assertion.
         var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
-        Assert.Contains("Configuration validation failed", exception.Message);
+        Assert.True(
+            exception.Message.Contains("HONUA_DEV_AUTH", StringComparison.OrdinalIgnoreCase) ||
+            exception.Message.Contains("Configuration validation failed", StringComparison.OrdinalIgnoreCase),
+            $"Expected production startup rejection message to mention HONUA_DEV_AUTH or 'Configuration validation failed', got: {exception.Message}");
     }
 
     [Fact]

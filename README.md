@@ -10,6 +10,30 @@
 
 **Cloud-native geospatial feature server.** Publish, query, edit, and render spatial data through industry-standard protocols — GeoServices REST (catalog + FeatureServer + MapServer + ImageServer + Geometry Service + GPServer), classic OGC WMS/WFS/WCS/WMTS, STAC API, OGC API (Features, Maps, Tiles, Processes), OData v4, vector tiles, and Terrain-RGB elevation tiles — backed by PostGIS, with an embedded DuckDB provider for read-only analytical and reference workloads, a read-only SQL Server provider for `geometry`/`geography` tables, and a read/query-only MySQL/MariaDB provider for serving spatial data already in MySQL 8.0.11+ or MariaDB 10.6+ tables.
 
+## Documentation
+
+The full table of contents for everything under `docs/` lives at **[docs/README.md](docs/README.md)**. Start there if you're looking for any guide, runbook, evidence artifact, ADR, or protocol coverage page.
+
+Frequent destinations:
+
+- [Operator Guide](docs/operator/README.md) — deploy, configure, monitor
+- [GIS User Guide](docs/gis/README.md) — connect QGIS, ArcGIS Pro, Power BI, Excel
+- [Developer Guide](docs/developer/README.md) — APIs, SDKs, integration patterns
+- [Contributor Guide](docs/contributor/README.md) — architecture, testing, ADRs
+- [Standards & APIs Overview](docs/gis/STANDARDS_APIS.md) — every protocol Honua speaks
+- [Evidence Index](docs/evidence/README.md) — conformance, certification, parity artifacts
+- [AGENTS.md](AGENTS.md) — repo guide for human and AI agents
+- [Security Policy](SECURITY.md) — supported versions and vulnerability reporting
+
+Full hosted documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io/honuaio/)**.
+
+## Compliance
+
+- **OGC CITE:** 952 / 952 passing across 11 conformance suites (OGC API Features 1.0, OGC API Tiles 1.0, GeoPackage 1.2, GML 3.2, KML 2.2, WFS 1.0/1.1/2.0, WCS 2.0, WMS 1.3, WMTS 1.0) on `trunk` — see [docs/cite-status.md](docs/cite-status.md) for the authoritative snapshot and [docs/contributor/ogc-cite-conformance-evidence.md](docs/contributor/ogc-cite-conformance-evidence.md) for evidence links.
+- **gRPC stability:** versioning, deprecation, and stability guarantees for the `Geospatial.V1` surface are defined in [docs/grpc-versioning-policy.md](docs/grpc-versioning-policy.md).
+- **Control plane stability:** admin / control-plane API versioning is governed by [docs/developer/CONTROL_PLANE_VERSIONING_POLICY.md](docs/developer/CONTROL_PLANE_VERSIONING_POLICY.md).
+- **Client compatibility:** the supported client x protocol matrix is the [MVP Compatibility Contract](docs/gis/MVP_COMPATIBILITY_CONTRACT.md).
+
 ## Why Honua
 
 - **Multi-protocol** — one server speaks GeoServices REST (catalog, FeatureServer, MapServer, ImageServer, Geometry Service, GPServer), classic OGC WMS/WFS/WCS/WMTS compatibility, STAC API, OGC API Features/Maps/Tiles/Processes, OData v4, MVT, and Terrain-RGB. Connect ArcGIS Pro, QGIS, MapLibre, STAC tooling, Power BI, and Excel to the same data.
@@ -90,7 +114,10 @@ Please use these forms instead of blank issues so reports include enough detail 
 | Terrain-RGB Elevation Tiles | `/terrain/{datasetId}/tile.json`, `/terrain/{datasetId}/{z}/{x}/{y}.png` | MapLibre/Mapbox `raster-dem` clients |
 | Elevation Query / Profile API | `/elevation/{datasetId}/value`, `/elevation/{datasetId}/profile` | Field workflows, route planning, utility inspection, no-code dashboards |
 | MapLibre Styles | `/api/styles/{layerId}.json` | MapLibre |
+| Capability Manifest | `/api/v1/capabilities/manifest` | Console, MCP, QGIS plugins, native hosts, SDK clients |
 | Admin API | `/api/v1/admin` | Standalone Admin UI, automation scripts |
+| Studio Package Lifecycle | `/api/v1/studio` | Honua Console, SDKs, generated apps |
+| Form Package API | `/api/v1/admin/forms/packages`, `/api/v1/forms/packages` | Console Form Builder, field clients, mobile/offline SDKs |
 | STAC Ops Demo | `/samples/stac-ops` or `/samples/stac-ops/` | Browser *(Development/Test or `HONUA_SERVE_STAC_DEMO=true`; custom images also need demo assets)* |
 | OpenAPI (OGC Features) | `/openapi.json` | Any HTTP client |
 | OpenAPI (OGC Tiles) | `/ogc/tiles/openapi.json` | Any HTTP client |
@@ -105,6 +132,8 @@ The source-backed feature map is maintained in [docs/features/README.md](docs/fe
 
 **Query and edit** — FeatureServer query, applyEdits, attachments, and related records. OGC transactions (POST/PUT/DELETE). OData CRUD with spatial functions. Query output in JSON, GeoJSON, PBF, FlatGeobuf, GeoParquet, and GeoArrow (Arrow IPC) formats, plus GeoBuf when the configured feature store supports native GeoBuf output, with Accept-header content negotiation.
 
+**Field forms** — Server-owned form packages under `/api/v1/admin/forms/packages` support draft validation, immutable publishing, reopened drafts, offline policy discovery, and idempotent JSON-compatible or multipart submissions through the shared edit and attachment pipelines.
+
 **Map rendering** — MapServer (export/identify/legend/find/query) plus OGC API Maps endpoints for rendered map images.
 
 **Raster and coverage access** — ImageServer export/identify/tile/catalog/statistics/legend routes, WCS 2.0.1 `GetCapabilities`, `DescribeCoverage`, and `GetCoverage`, plus OGC API Coverages discovery/schema/coverage retrieval over enabled raster layers.
@@ -116,6 +145,8 @@ The source-backed feature map is maintained in [docs/features/README.md](docs/fe
 **Geometry operations** — GeoServices Geometry Service endpoints for buffer, simplify, project, intersect, union, clip, difference, area, and length.
 
 **Async geoprocessing** — OGC API Processes landing/conformance, process discovery, async execution, job polling, dismiss, and job results over the canonical geoprocessing runtime. `/ogc/processes/jobs/{jobId}/results` returns `200 OK` with a document-mode JSON body on success (empty `{}` until the canonical process declares value-typed outputs and result storage is wired).
+
+**Durable analysis content** — Saved-query and analysis-package content items persist immutable versions, run/rerun provenance, preview artifacts, artifact binding metadata, and safe failed-job diagnostics under `/api/v1/analysis/**`.
 
 **AI operator workflows** — MCP JSON-RPC on `/mcp` exposes plan validation, dry runs, execution submission, cancellation, and job/result resource reads over the same canonical geoprocessing runtime used by gRPC and GPServer. Natural-language grounding and clarification (`honua_ground_candidates`, `honua_clarify_intent`) are functional over the built-in process and layer catalogs; remaining planning, workspace, and catalog contracts are discoverable as authenticated `not_implemented` placeholders so clients can bind before the upstream services land.
 
@@ -131,11 +162,13 @@ The source-backed feature map is maintained in [docs/features/README.md](docs/fe
 
 **Admin** — REST API for managing connections, services, layers, relationships, styles (with auto-cartographic suggestions), and import jobs. The Blazor admin UI lives in the separate `honua-server-admin` repo and is deployed as a standalone static app.
 
+**Runtime capability discovery** — `GET /api/v1/capabilities/manifest` exposes a public, neutral manifest for Console, MCP, QGIS plugins, native hosts, and SDK clients. The manifest reports package family support, temporal/sync/realtime/jobs/GitOps/transport/mTLS states, runtime limits, caller policy hints, license/entitlement decisions, and no-store cache headers. It is informational only; operation endpoints still enforce authorization and resource checks.
+
 **Runtime licensing** — Offline Ed25519-signed JSON license files can be loaded from `Licensing:LicensePath` or uploaded through the admin API when enabled. Missing or invalid configured files fall back to Community mode; paid features are activated only by active entitlement keys and return HTTP `402 Payment Required` or gRPC `FAILED_PRECONDITION` when missing.
 
 **Caching** — Multi-layer: output cache, Redis, in-memory fallback.
 
-**Auth** — API key authentication, OIDC (server-side plumbing), and optional Redis metadata cache.
+**Auth** — API key authentication, OIDC for browser/admin flows, and optional client-certificate authentication for native/admin mTLS with per-environment trust profiles.
 
 **Observability** — OpenTelemetry traces and metrics, structured logging, health endpoints.
 
@@ -234,16 +267,9 @@ Honua's admin UI and admin API are intended to become the foundation of a Honua-
 - Change management, deploy coordination, and instance lifecycle workflows are expected to live in the Honua control plane.
 - The public admin API is the substrate for those workflows; operator-grade AI DevOps/copilot tooling may be delivered through private enterprise surfaces on top of it rather than through the open-core server repository.
 
-## Documentation
+## More Documentation
 
-Full documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io/honuaio/)**
-
-| I am a... | Start here |
-|---|---|
-| **Server Operator** | [Operator Guide](docs/operator/README.md) — deploy, configure, monitor |
-| **GIS Professional** | [GIS User Guide](docs/gis/README.md) — connect desktop apps, consume services |
-| **Developer** | [Developer Guide](docs/developer/README.md) — APIs, SDKs, integrations |
-| **Contributor** | [Contributor Guide](docs/contributor/README.md) — architecture, testing, PRs |
+See **[docs/README.md](docs/README.md)** for the full table of contents. Common task-based jumps:
 
 | I want to... | Go to |
 |---|---|
@@ -252,6 +278,7 @@ Full documentation: **[honua.gitbook.io/honuaio](https://honua.gitbook.io/honuai
 | See protocol coverage | [Protocols Overview](docs/gis/STANDARDS_APIS.md) |
 | Use the admin API | [Control Plane API](docs/operator/CONTROL_PLANE_API.md) |
 | Check compatibility | [MVP Compatibility Contract](docs/gis/MVP_COMPATIBILITY_CONTRACT.md) |
+| Prevalidate Metadata v2 release packages | [Metadata Prevalidation Admin API](docs/admin-api/metadata-prevalidation.md) |
 | Run the STAC ops sample | [STAC Ops Demo](samples/Honua.StacOpsDemo/README.md) |
 | Contribute code | [Contributing](docs/contributor/development/contributing.md) |
 

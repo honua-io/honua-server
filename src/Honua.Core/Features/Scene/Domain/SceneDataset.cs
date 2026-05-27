@@ -13,10 +13,10 @@ namespace Honua.Core.Features.Scene.Domain;
 /// </summary>
 /// <remarks>
 /// Hosted 3D Tiles datasets are structurally distinct from vector or raster
-/// <see cref="LayerDefinition"/> values: they reference a tree of opaque tile
-/// payloads (b3dm, i3dm, pnts, glTF) rather than queryable features or pixel
-/// arrays. Keeping a dedicated model lets the registry seam evolve without
-/// distorting the shared catalog model.
+/// catalog resources: they reference a tree of opaque tile payloads (b3dm,
+/// i3dm, pnts, glTF) rather than queryable features or pixel arrays. Keeping
+/// a dedicated model lets the registry seam evolve without distorting the
+/// shared catalog model.
 /// </remarks>
 public sealed record SceneDataset
 {

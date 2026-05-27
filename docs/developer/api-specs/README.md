@@ -75,6 +75,15 @@ See the [OGC API Coverages Coverage](../../gis/specifications/ogc-api-coverages-
 
 ---
 
+## Runtime Capability Manifest
+
+**Protocol**: Honua runtime capability discovery
+**Endpoint**: `/api/v1/capabilities/manifest`
+**Authentication**: Optional; anonymous callers receive the public/default tenant view
+**Response Types**: `application/json`, `application/vnd.honua.capability-manifest+json`
+
+Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SDK clients need to decide whether package families, temporal features, offline sync, realtime streams, jobs, GitOps, native transports, gRPC, mTLS, uploads, edits, or analysis controls should be enabled for the current request scope. The response is generated per request, is marked `no-store`, and is informational only; operation endpoints remain the source of truth for authorization. See [Capability Manifest](../capability-manifest.md) for the field contract and stable capability ids.
+
 ## Server Management API
 
 **Protocol**: REST API
@@ -85,23 +94,49 @@ See the [OGC API Coverages Coverage](../../gis/specifications/ogc-api-coverages-
 
 > **Note**: The runtime admin OpenAPI endpoint serves this bundled `admin-api.json` contract snapshot.
 > Use the [Server Management API guide](../../operator/CONTROL_PLANE_API.md) and `/api/v1/admin/config` for operational guidance.
+> The saved-query and analysis-package content surface lives beside the admin
+> API under `/api/v1/analysis/**`; its current markdown contract is
+> [Analysis Content](../../admin-api/analysis-content.md) until it is promoted
+> into the generated control-plane OpenAPI snapshot.
 >
 > **Migration scanner note**: `POST /api/v1/admin/import/scan` returns the inventory artifact itself, not the usual admin envelope, and a `200` response can still carry `scanCompleteness.status = "failed"`.
 > Request aliases normalize `sourceKind` to `geoserver-rest` or `arcgis-geoservices-rest`, and dependency addresses plus secret-like metadata are sanitized for planning-safe export.
 > Stable IDs cross-link `resources[*].styleIds`, `styles[*].resourceIds`, and `externalDependencies[*].resourceId` so review tooling can traverse the artifact without guessing by display name.
 >
 > **Control-plane direction**: this API is intended to back a Honua-managed control plane. Honua is not positioning Flux or Argo CD as the primary rollout controller.
+>
+> **Sibling control-plane surfaces**: Console (`/api/v1/console/**`) and Studio
+> (`/api/v1/studio/**`) require the same admin authorization posture but are not
+> part of this `/api/v1/admin` OpenAPI snapshot. Console workflow package
+> contracts are maintained in
+> [Console Workflow Packages](../../admin-api/console-workflow-packages.md), and
+> the Studio package lifecycle contract is maintained in
+> [Studio Package Lifecycle API](../../admin-api/studio-package-lifecycle.md),
+> until dedicated Console and Studio OpenAPI documents are published.
+>
+> **Runtime capability discovery**: `GET /api/v1/capabilities/manifest` is a
+> public, request-scoped discovery contract outside the admin OpenAPI snapshot.
+> It accepts optional `environment` and `workspaceId` hints and returns package,
+> transport, policy, entitlement, and limit state for Console, SDK, MCP, QGIS,
+> and native-host clients. See [Capability Manifest](../capability-manifest.md).
 
 **What you can do**:
 - Manage database connections (create, test, list)
 - Publish and configure layers from database tables
 - Control layer enabling/disabling and protocol settings
 - Manage map styles and layer styling
+- Create Metadata v2 release packages and prevalidate release compatibility against target environments before GitOps promotion
 - Scan GeoServer REST and ArcGIS GeoServices REST FeatureServer/MapServer service roots into deterministic migration inventory artifacts with compatibility rollups
 - Monitor system health and observability
+- Render Console GP/ETL workflow palettes and manage workflow package versions through the sibling `/api/v1/console/workflow-*` surface
+- Inspect durable background jobs, structured logs, artifacts, control actions, and Operate event correlations
+- Validate packages and request read-only preview plans before publish or execute decisions
 - Access recent errors and telemetry status
 - Inspect deploy preflight and upgrade-readiness state per Honua instance
+- Manage geofence alert zones, realtime alert rules, draft validation, enable/disable state, and delivery health for Console Operate workflows
 - Inspect runtime license status, upload signed license files when enabled, and read the active feature/entitlement inventory
+- Save and reopen analysis content under `/api/v1/analysis/**` using the
+  markdown contract while the OpenAPI snapshot catches up
 
 {% swagger src="admin-api.json" %}
 {% endswagger %}
@@ -140,6 +175,21 @@ See the [OGC API Coverages Coverage](../../gis/specifications/ogc-api-coverages-
 > [FieldCollection Mobile Sync API](../fieldcollection-mobile-sync-api.md) and
 > registered in the [public interface proof](../../gis/data/public-interface-proof.json)
 > under the `fieldcollection-mobile-sync` surface.
+
+## Form Package API
+
+**Protocol**: REST API
+**Base URLs**: `/api/v1/admin/forms/packages`, `/api/v1/forms/packages`
+**Authentication**: Admin route authorization for the shipped slice; submissions also require target layer data-editor authorization.
+
+> **Note**: The Forms contract covers versioned package drafts, validation,
+> immutable publish, reopened drafts, published-package readback, offline-policy
+> discovery, and idempotent JSON-compatible or multipart submissions with attachment outcomes. The
+> bundled `admin-api.json` snapshot does not yet include the Forms routes or schemas, so the
+> response and usage contract is documented in
+> [Form Package API](../form-package-api.md). Offline-policy responses point to
+> the existing FeatureServer replica and FieldCollection mobile sync routes
+> instead of defining a separate form-only sync protocol.
 
 ## Testing the APIs
 
@@ -187,6 +237,8 @@ Control-plane SDK governance and contract diff checks:
 
 - [**Geospatial Data APIs**](../../gis/STANDARDS_APIS.md) - Protocol overview and selection guide
 - [**Server Management API**](../../operator/CONTROL_PLANE_API.md) - Admin API guide and key workflows
+- [**Console Job Observability**](../../admin-api/console-job-observability.md) - Durable job viewer contract for Console and admin integrations
+- [**Analysis Content**](../../admin-api/analysis-content.md) - Saved-query and analysis-package versions, preview artifacts, runs/reruns, artifact bindings, and safe failed-job diagnostics
 - [**Control Plane Versioning Policy**](../CONTROL_PLANE_VERSIONING_POLICY.md) - Breaking-change and deprecation lifecycle
 - [**Control Plane Migration Guide**](../CONTROL_PLANE_MIGRATION_GUIDE.md) - SDK quickstart and upgrade steps
 - [**API Examples**](../API_EXAMPLES.md) - Code examples for the major shipped protocols

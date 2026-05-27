@@ -3,8 +3,7 @@
 
 using System.Diagnostics;
 using System.Globalization;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer.Models;
@@ -40,16 +39,16 @@ internal sealed class ImageServerMetadataHandler
     /// <summary>Maximum number of records returned in catalog queries.</summary>
     private const int MaxRecordCount = 1000;
 
-    private readonly ILayerCatalog _layerCatalog;
+    private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
     private readonly ILogger<ImageServerMetadataHandler> _logger;
 
     public ImageServerMetadataHandler(
-        ILayerCatalog layerCatalog,
+        IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
         ILogger<ImageServerMetadataHandler> logger)
     {
-        _layerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
+        _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -66,9 +65,9 @@ internal sealed class ImageServerMetadataHandler
 
         try
         {
-            // Get layer definition
-            var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer == null)
+            // Get layer definition from the Metadata v2 graph
+            var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
@@ -91,7 +90,7 @@ internal sealed class ImageServerMetadataHandler
 
             var aggregateExtent = ImageServerMosaicHelpers.ComputeAggregateExtent(rasters);
             var referenceRaster = CreateMosaicReferenceRaster(rasters, aggregateExtent);
-            var mergeStrategy = ImageServerMosaicHelpers.ResolveMergeStrategy(layer.Metadata, mosaicRule: null);
+            var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null);
 
             // Get raster statistics for the layer mosaic.
             var statistics = rasters.Length == 1
@@ -114,9 +113,9 @@ internal sealed class ImageServerMetadataHandler
             var serviceInfo = new ImageServerServiceInfo
             {
                 CurrentVersion = ArcGisVersion,
-                ServiceDescription = layer.Description ?? $"Image service for {layer.Name}",
-                Name = layer.Name,
-                Description = layer.Description,
+                ServiceDescription = resolved.Description ?? $"Image service for {resolved.DisplayName}",
+                Name = resolved.DisplayName,
+                Description = resolved.Description,
                 Extent = new ImageServerExtent
                 {
                     XMin = extent.Value.XMin,
@@ -132,7 +131,7 @@ internal sealed class ImageServerMetadataHandler
                 PixelType = MapPixelType(referenceRaster.PixelType),
                 MinPixelSize = MinPixelSize,
                 MaxPixelSize = MaxPixelSize,
-                CopyrightText = layer.Description ?? "",
+                CopyrightText = resolved.Description ?? "",
                 ServiceDataType = "esriImageServiceDataTypeGeneric",
                 MinValues = statistics.Select(s => s.MinValue ?? 0).ToArray(),
                 MaxValues = statistics.Select(s => s.MaxValue ?? 0).ToArray(),
@@ -149,7 +148,7 @@ internal sealed class ImageServerMetadataHandler
                 CacheType = null,
                 TileInfo = null,
                 HasHistograms = true,
-                TimeInfo = BuildTimeInfo(layer.Metadata?.TimeInfo, rasters)
+                TimeInfo = BuildTimeInfo(ImageServerV2Lookups.ReadTimeFieldHints(resolved.Resource), rasters)
             };
 
             ImageServerLog.ServiceInfoGenerated(_logger, layerId, referenceRaster.BandCount, statistics.Length);
@@ -217,16 +216,18 @@ internal sealed class ImageServerMetadataHandler
     }
 
     /// <summary>
-    /// Builds the Esri-conformant <c>timeInfo</c> block when the layer declares
+    /// Builds the Esri-conformant <c>timeInfo</c> block when the V2 resource declares
     /// temporal fields or when the raster catalog carries acquisition timestamps.
     /// </summary>
-    private static ImageServerTimeInfo? BuildTimeInfo(LayerTimeInfo? layerTimeInfo, IReadOnlyList<RasterInfo> rasters)
+    private static ImageServerTimeInfo? BuildTimeInfo(
+        (string? StartTimeField, string? EndTimeField, string? TrackIdField) timeHints,
+        IReadOnlyList<RasterInfo> rasters)
     {
         var hasAcquisitionDates = rasters.Any(r => r.AcquisitionDate.HasValue);
         var timeExtent = hasAcquisitionDates ? ImageServerMosaicHelpers.CreateTimeExtent(rasters) : null;
-        var hasDeclaredFields = !string.IsNullOrWhiteSpace(layerTimeInfo?.StartTimeField) ||
-                                !string.IsNullOrWhiteSpace(layerTimeInfo?.EndTimeField) ||
-                                !string.IsNullOrWhiteSpace(layerTimeInfo?.TrackIdField);
+        var hasDeclaredFields = !string.IsNullOrWhiteSpace(timeHints.StartTimeField) ||
+                                !string.IsNullOrWhiteSpace(timeHints.EndTimeField) ||
+                                !string.IsNullOrWhiteSpace(timeHints.TrackIdField);
         if (!hasDeclaredFields && timeExtent is null)
         {
             return null;
@@ -234,9 +235,9 @@ internal sealed class ImageServerMetadataHandler
 
         return new ImageServerTimeInfo
         {
-            StartTimeField = layerTimeInfo?.StartTimeField ?? (timeExtent is null ? null : "AcquisitionDate"),
-            EndTimeField = layerTimeInfo?.EndTimeField,
-            TrackIdField = layerTimeInfo?.TrackIdField,
+            StartTimeField = timeHints.StartTimeField ?? (timeExtent is null ? null : "AcquisitionDate"),
+            EndTimeField = timeHints.EndTimeField,
+            TrackIdField = timeHints.TrackIdField,
             TimeExtent = timeExtent,
             TimeReference = new ImageServerTimeReference()
         };

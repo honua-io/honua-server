@@ -43,8 +43,9 @@ internal sealed class SecurityHeadersMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
-        // Apply security headers to all responses
-        ApplySecurityHeaders(context.Response.Headers);
+        // Apply security headers to all responses, respecting HTTPS gating,
+        // HEAD/OPTIONS shortcuts, and per-route CSP overrides.
+        ApplySecurityHeaders(context);
 
         // Log security headers application for debugging in development
         if (_logger.IsEnabled(LogLevel.Debug))
@@ -59,13 +60,23 @@ internal sealed class SecurityHeadersMiddleware
     }
 
     /// <summary>
-    /// Applies comprehensive security headers to the HTTP response.
+    /// Applies comprehensive security headers to the HTTP response, taking into
+    /// account HTTPS gating for HSTS, HEAD/OPTIONS short-circuits, and route-prefix
+    /// CSP overrides defined in <see cref="SecurityHeadersOptions.RouteOverrides"/>.
     /// </summary>
-    /// <param name="headers">The response headers collection</param>
-    private void ApplySecurityHeaders(IHeaderDictionary headers)
+    /// <param name="context">The HTTP context for the current request.</param>
+    private void ApplySecurityHeaders(HttpContext context)
     {
-        // Strict-Transport-Security (HSTS) - Force HTTPS for specified duration
-        if (_options.EnableHsts)
+        var headers = context.Response.Headers;
+        var method = context.Request.Method;
+        var isPreflightLike = HttpMethods.IsHead(method) || HttpMethods.IsOptions(method);
+        var skipBodyRelevantHeaders = _options.SkipHeadersForPreflight && isPreflightLike;
+
+        // Strict-Transport-Security (HSTS) - Force HTTPS for specified duration.
+        // Per RFC 6797, HSTS MUST only be sent over a secure transport. We gate it
+        // accordingly so HTTP responses (e.g. behind a reverse proxy that already
+        // terminates TLS but forwards as HTTP) don't ship a meaningless header.
+        if (_options.EnableHsts && (!_options.HstsHttpsOnly || context.Request.IsHttps))
         {
             var hstsValue = $"max-age={_options.HstsMaxAge}";
             if (_options.HstsIncludeSubdomains)
@@ -76,11 +87,17 @@ internal sealed class SecurityHeadersMiddleware
             headers["Strict-Transport-Security"] = hstsValue;
         }
 
-        // Content-Security-Policy - Prevent XSS and injection attacks
-        var cspHeader = BuildContentSecurityPolicy();
-        if (!string.IsNullOrEmpty(cspHeader.policy))
+        // Content-Security-Policy - Prevent XSS and injection attacks. CSP, COEP,
+        // and Permissions-Policy are only meaningful for resource-bearing responses,
+        // so we skip them for HEAD/OPTIONS where the body is empty by definition.
+        if (!skipBodyRelevantHeaders)
         {
-            headers[cspHeader.headerName] = cspHeader.policy;
+            var routeOverride = ResolveRouteOverride(context.Request.Path);
+            var cspHeader = BuildContentSecurityPolicy(routeOverride);
+            if (!string.IsNullOrEmpty(cspHeader.policy))
+            {
+                headers[cspHeader.headerName] = cspHeader.policy;
+            }
         }
 
         // X-Frame-Options - Prevent clickjacking attacks
@@ -105,13 +122,13 @@ internal sealed class SecurityHeadersMiddleware
         }
 
         // Cross-Origin-Embedder-Policy - Control cross-origin resource loading
-        if (!string.IsNullOrEmpty(_options.CrossOriginEmbedderPolicy))
+        if (!skipBodyRelevantHeaders && !string.IsNullOrEmpty(_options.CrossOriginEmbedderPolicy))
         {
             headers["Cross-Origin-Embedder-Policy"] = _options.CrossOriginEmbedderPolicy;
         }
 
         // Permissions-Policy - Restrict access to browser features
-        if (!string.IsNullOrEmpty(_options.PermissionsPolicy))
+        if (!skipBodyRelevantHeaders && !string.IsNullOrEmpty(_options.PermissionsPolicy))
         {
             headers["Permissions-Policy"] = _options.PermissionsPolicy;
         }
@@ -127,11 +144,55 @@ internal sealed class SecurityHeadersMiddleware
     }
 
     /// <summary>
-    /// Builds the Content Security Policy header based on configuration.
+    /// Resolves the most-specific route override (by longest path-prefix match)
+    /// for the supplied request path. Returns <c>null</c> when no override applies.
     /// </summary>
-    /// <returns>A tuple containing the header name and policy value</returns>
-    private (string headerName, string policy) BuildContentSecurityPolicy()
+    private SecurityHeadersRouteOverride? ResolveRouteOverride(PathString path)
     {
+        if (_options.RouteOverrides == null || _options.RouteOverrides.Count == 0 || !path.HasValue)
+        {
+            return null;
+        }
+
+        SecurityHeadersRouteOverride? match = null;
+        var matchedPrefixLength = -1;
+
+        foreach (var entry in _options.RouteOverrides)
+        {
+            if (string.IsNullOrEmpty(entry.Key))
+            {
+                continue;
+            }
+
+            if (path.StartsWithSegments(new PathString(entry.Key), StringComparison.OrdinalIgnoreCase)
+                && entry.Key.Length > matchedPrefixLength)
+            {
+                match = entry.Value;
+                matchedPrefixLength = entry.Key.Length;
+            }
+        }
+
+        return match;
+    }
+
+    /// <summary>
+    /// Builds the Content Security Policy header based on configuration, optionally
+    /// substituting a route-specific override (e.g. a looser policy for admin/Swagger UI).
+    /// </summary>
+    /// <param name="routeOverride">Optional per-route CSP override.</param>
+    /// <returns>A tuple containing the header name and policy value</returns>
+    private (string headerName, string policy) BuildContentSecurityPolicy(SecurityHeadersRouteOverride? routeOverride = null)
+    {
+        // Route-level override wins, regardless of global settings, so callers can
+        // loosen CSP just for an admin/Swagger sub-tree without rewriting globals.
+        if (routeOverride != null && !string.IsNullOrWhiteSpace(routeOverride.ContentSecurityPolicy))
+        {
+            var overrideHeader = routeOverride.ReportOnly
+                ? "Content-Security-Policy-Report-Only"
+                : "Content-Security-Policy";
+            return (overrideHeader, routeOverride.ContentSecurityPolicy);
+        }
+
         // If CSP config is not provided, use the simple string policy
         if (_options.Csp == null)
         {
@@ -252,9 +313,9 @@ public sealed class SecurityHeadersOptions
 
     /// <summary>
     /// HSTS max-age directive in seconds.
-    /// Default: 31536000 (1 year).
+    /// Default: 63072000 (2 years), matching hstspreload.org submission requirements.
     /// </summary>
-    public int HstsMaxAge { get; set; } = 31536000; // 1 year
+    public int HstsMaxAge { get; set; } = 63072000; // 2 years
 
     /// <summary>
     /// Include subdomains in HSTS policy.
@@ -263,10 +324,28 @@ public sealed class SecurityHeadersOptions
     public bool HstsIncludeSubdomains { get; set; } = true;
 
     /// <summary>
-    /// Enable HSTS preload (requires submission to browser preload lists).
-    /// Default: false (requires manual submission).
+    /// Enable HSTS preload (eligible for browser preload-list submission).
+    /// Default: true. Operators MUST own the apex domain and accept the lock-in
+    /// before enabling preload in production.
     /// </summary>
-    public bool HstsPreload { get; set; }
+    public bool HstsPreload { get; set; } = true;
+
+    /// <summary>
+    /// Restrict HSTS emission to HTTPS requests only, per RFC 6797 §7.2.
+    /// Default: true. Operators behind TLS-terminating proxies that forward HTTP
+    /// internally should keep this enabled and use ForwardedHeaders/UseHttpsRedirection
+    /// so that <c>HttpContext.Request.IsHttps</c> reflects the edge scheme.
+    /// </summary>
+    public bool HstsHttpsOnly { get; set; } = true;
+
+    /// <summary>
+    /// Skip CSP / COEP / Permissions-Policy on HEAD and OPTIONS responses.
+    /// Default: true. These methods carry no body the browser can interpret, so
+    /// emitting body-relevant headers is wasted bytes (notably on CORS preflight).
+    /// Transport-level headers (HSTS, X-Frame-Options, X-Content-Type-Options,
+    /// Referrer-Policy, COOP) are still applied.
+    /// </summary>
+    public bool SkipHeadersForPreflight { get; set; } = true;
 
     /// <summary>
     /// Content Security Policy (CSP) directives.
@@ -309,9 +388,11 @@ public sealed class SecurityHeadersOptions
 
     /// <summary>
     /// Cross-Origin-Embedder-Policy header value.
-    /// Default: "require-corp" (requires explicit cross-origin permissions).
+    /// Default: "unsafe-none". <c>require-corp</c> breaks Scalar / Swagger UI and
+    /// most map tile providers without explicit CORP headers from those origins,
+    /// so we ship the relaxed default and let deployments tighten it as needed.
     /// </summary>
-    public string CrossOriginEmbedderPolicy { get; set; } = "require-corp";
+    public string CrossOriginEmbedderPolicy { get; set; } = "unsafe-none";
 
     /// <summary>
     /// Permissions-Policy header value (restricts browser features).
@@ -327,6 +408,34 @@ public sealed class SecurityHeadersOptions
     /// Key-value pairs of header names and values.
     /// </summary>
     public Dictionary<string, string>? CustomHeaders { get; set; }
+
+    /// <summary>
+    /// Per-route CSP overrides keyed by request path prefix (e.g. <c>/admin</c>,
+    /// <c>/docs</c>). The longest matching prefix wins. Use this to loosen CSP for
+    /// Scalar/Swagger UI or admin HTML sub-trees without weakening the API default.
+    /// </summary>
+    public Dictionary<string, SecurityHeadersRouteOverride>? RouteOverrides { get; set; }
+}
+
+/// <summary>
+/// Route-prefix scoped overrides for security headers. Currently exposes a CSP
+/// substitution; additional per-route knobs can be added without changing the
+/// middleware signature.
+/// </summary>
+public sealed class SecurityHeadersRouteOverride
+{
+    /// <summary>
+    /// CSP value to use for responses matching the parent route prefix.
+    /// When null/empty the global CSP applies unchanged.
+    /// </summary>
+    public string? ContentSecurityPolicy { get; set; }
+
+    /// <summary>
+    /// When true, emits the override as <c>Content-Security-Policy-Report-Only</c>
+    /// so violations are reported without blocking content. Useful when staging a
+    /// stricter policy for a UI sub-tree before enforcing it.
+    /// </summary>
+    public bool ReportOnly { get; set; }
 }
 
 /// <summary>
@@ -478,6 +587,20 @@ public static class SecurityHeadersMiddlewareExtensions
     /// <param name="app">The application builder</param>
     /// <returns>The application builder for method chaining</returns>
     public static IApplicationBuilder UseSecurityHeaders(this IApplicationBuilder app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        return app.UseMiddleware<SecurityHeadersMiddleware>();
+    }
+
+    /// <summary>
+    /// Adds the Honua security headers middleware to the application pipeline.
+    /// This is the canonical entry point for the audit-fix integration (#1144);
+    /// it is functionally identical to <see cref="UseSecurityHeaders"/> but uses
+    /// the Honua-namespaced name so the wiring step is self-documenting.
+    /// </summary>
+    /// <param name="app">The application builder</param>
+    /// <returns>The application builder for method chaining</returns>
+    public static IApplicationBuilder UseHonuaSecurityHeaders(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
         return app.UseMiddleware<SecurityHeadersMiddleware>();

@@ -14,7 +14,11 @@ internal static class CollaborationSessionEndpoints
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/saved-maps/{mapId}/collaboration/sessions")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
-            .WithTags("Saved Maps", "Collaboration");
+            .WithTags("Saved Maps", "Collaboration")
+            // Mutation endpoints — require an authenticated principal up front so
+            // unauthenticated requests are rejected at the middleware boundary,
+            // before reaching the per-session authorizer in the handler.
+            .RequireAuthorization();
 
         group.MapPost("/join", HandleJoin)
             .WithDisplayName("Join Saved Map Collaboration Session")

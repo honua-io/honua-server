@@ -200,6 +200,27 @@ public sealed class DefaultOperatorApprovalEvaluatorTests
     }
 
     [UnitTest]
+    public void Evaluate_ExplicitApproval_RequiresApprovalForNonDestructiveOperation()
+    {
+        var evaluator = CreateEvaluator(destructiveActionsRequireApproval: true);
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Deployment,
+            Operation = OperatorOperation.Execute,
+            IsDestructive = false,
+            RequiresExplicitApproval = true,
+            ApprovalPolicyRef = "operator.metadata.rollback",
+            ApprovalReasonCodes = ["metadata-rollback-explicit-approval"]
+        };
+
+        var result = evaluator.Evaluate(CreatePrincipal(), request);
+
+        result.IsRequired.Should().BeTrue();
+        result.PolicyRef.Should().Be("operator.metadata.rollback");
+        result.ReasonCodes.Should().Contain("metadata-rollback-explicit-approval");
+    }
+
+    [UnitTest]
     public void Evaluate_AdminPrincipal_ExemptByDefault()
     {
         var evaluator = CreateEvaluator(publishRequiresApproval: true);

@@ -34,6 +34,8 @@ The Honua Admin UI is intended to operate as a UI on top of this control-plane A
 | `/api/v1/admin` | Admin API root |
 | `/api/v1/admin/config` | Runtime configuration and env var reference |
 | `/api/v1/admin/openapi.json` | Admin API OpenAPI schema snapshot served by runtime |
+| `/api/v1/capabilities/manifest` | Public neutral runtime capability manifest for Console, MCP, QGIS, native hosts, and SDK clients |
+| `/api/v1/console` | Console control-plane surfaces using the same admin authorization posture |
 | `/openapi.json` | OGC API Features OpenAPI schema |
 | `/healthz/live` | Liveness check |
 | `/healthz/ready` | Readiness check |
@@ -46,7 +48,7 @@ The Honua Admin UI is intended to operate as a UI on top of this control-plane A
 |-- version, capabilities, manifest
 |-- connections/              # Secure connections + table/layer publishing
 |-- services/                 # Service-level protocol and MapServer settings
-|-- metadata/resources/       # Metadata resources
+|-- metadata/                 # Metadata v2 inventory, release packages, prevalidation, and styles
 |-- metadata/layers/{id}/style
 |-- deploy/                   # Deploy preflight, plan, operations, submit, rollback
 |-- import/                   # Import workflows
@@ -58,11 +60,21 @@ The Honua Admin UI is intended to operate as a UI on top of this control-plane A
 |-- roles/                    # Role CRUD and permissions
 |-- users/                    # User management and effective permissions
 |-- oidc/providers/           # OIDC provider CRUD and testing
+|-- security/client-certificates/ # Native/admin mTLS trust profiles, mappings, revocations, validation
 |-- feature-events/           # Feature change event replay
 |-- manifest/drift            # Manifest drift, versions
 |-- manifest/pending/         # Manifest approval workflows
 |-- gitops/                   # Git repository watching and change history
 |-- tile-operations/          # Tile operation jobs
+|-- compliance/               # SOC 2 / FedRAMP readiness dashboard, residency policy + dry-run, key-version posture rotation, report export
+```
+
+Console sibling endpoints:
+```
+/api/v1/console/
+|-- workflow-node-registry    # Server-owned GP/ETL node palette
+|-- workflow-packages          # Drafts, immutable versions, validation, dry-run, publication
+|-- workflow-publications      # Published workflow runs and provenance
 ```
 
 Additional metrics endpoints:
@@ -75,7 +87,7 @@ Additional metrics endpoints:
 |-- memory
 ```
 
-**Note**: Some admin surfaces vary by build. SDK-facing compatibility should not guess. Use `GET /api/v1/admin/capabilities` for the stable runtime handshake, `/api/v1/admin/config` for runtime validation details, and `/api/v1/admin/openapi.json` for the bundled `docs/developer/api-specs/admin-api.json` contract snapshot used for SDK generation.
+**Note**: Some admin and Console surfaces vary by build. SDK-facing compatibility should not guess. Use `GET /api/v1/admin/capabilities` for the authenticated admin runtime handshake, `/api/v1/admin/config` for runtime validation details, `/api/v1/admin/openapi.json` for the bundled `docs/developer/api-specs/admin-api.json` contract snapshot used for SDK generation, and the [Console Workflow Packages](../admin-api/console-workflow-packages.md) contract for the sibling GP/ETL workflow package surface. Use the public `GET /api/v1/capabilities/manifest` when clients need user/environment/workspace-scoped feature availability such as package families, temporal support, sync/realtime, jobs, GitOps, transports, mTLS, runtime limits, and entitlement/policy hints. See [Capability Manifest](../developer/capability-manifest.md) for the public manifest contract.
 
 ## **SDKs and Contract Governance**
 
@@ -83,6 +95,7 @@ Additional metrics endpoints:
 - Use `GET /api/v1/admin/capabilities` as the canonical compatibility document.
 - Treat `data.compatibility` as the stable SDK-facing shape for server version, control-plane major, release channel, deprecation markers, and coarse feature flags.
 - Do not infer feature support from `serverVersion` alone, and do not probe multiple endpoints when `data.compatibility` is present.
+- Use `GET /api/v1/capabilities/manifest` before enabling package, temporal, sync, realtime, native transport, mTLS, GitOps, job, upload, edit, or analysis controls. Its `supported`, `available`, and `reasonCode` fields are informational; operation endpoints still enforce authorization and resource checks.
 
 - Generate control-plane SDK artifacts locally:
 
@@ -112,9 +125,13 @@ Additional metrics endpoints:
 - `X-API-Key` (default)
 - `Authorization: Bearer <jwt>` when OIDC is enabled
 - `Authorization: Basic ...` only when Basic compatibility mode is enabled
+- Valid mapped client certificate when `Authentication:ClientCertificates:Mode`
+  is `Optional`, `RequiredForAdmin`, or `RequiredForEnvironment`
 
 - Precedence:
 - Bearer is evaluated first when OIDC is enabled and a Bearer header is present
+- A valid mapped client certificate can authenticate a native/admin principal;
+  required mTLS modes validate the certificate before normal RBAC
 - Otherwise `X-API-Key` is evaluated
 - Basic compatibility is evaluated only when enabled and no valid `X-API-Key` is present
 
@@ -122,6 +139,29 @@ Additional metrics endpoints:
 - `WWW-Authenticate: ApiKey ...` is always returned for API-key challenges
 - `WWW-Authenticate: Basic ...` is added when Basic compatibility mode is enabled
 - Bearer failures include standard Bearer challenge headers
+- Required mTLS failures return `application/problem+json` with stable
+  `client_certificate_*` codes instead of raw TLS or provider errors
+
+### **Client Certificate Trust Management**
+
+Native/admin mTLS policy is configured under
+`Authentication:ClientCertificates` and administered through the security
+control-plane surface. The Admin API manages public trust metadata only; private
+keys stay in operator/client certificate stores.
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/admin/auth/config` | GET | No API-key/OIDC bootstrap metadata, including non-secret mTLS mode, environment, issuer hints, and required surfaces. Required mTLS prefix enforcement can still apply. |
+| `/api/v1/admin/security/client-certificates/profiles` | GET/POST | List or create trust profiles |
+| `/api/v1/admin/security/client-certificates/profiles/{profileId}` | GET/PUT/DELETE | Read, update, or disable a trust profile |
+| `/api/v1/admin/security/client-certificates/profiles/{profileId}/mappings` | GET/POST | List or create principal mappings |
+| `/api/v1/admin/security/client-certificates/profiles/{profileId}/mappings/{mappingId}` | PUT/DELETE | Update or disable a principal mapping |
+| `/api/v1/admin/security/client-certificates/profiles/{profileId}/revocations` | GET/POST | List or add revocation entries |
+| `/api/v1/admin/security/client-certificates/profiles/{profileId}/revocations/{revocationId}` | DELETE | Remove a revocation entry |
+| `/api/v1/admin/security/client-certificates/validate` | POST | Validate a PEM, URL-encoded PEM, or base64 DER public client certificate without storing it |
+
+For configuration examples and the full response contract, see
+[Client Certificate Authentication](client-certificate-authentication.md).
 
 ---
 
@@ -482,6 +522,13 @@ The public `GET /api/styles/{layerId}.json` endpoint accepts an optional `?theme
 |----------|--------|---------|
 | `/api/v1/admin/version` | GET | Get current control-plane and metadata schema version info |
 | `/api/v1/admin/capabilities` | GET | Get admin metadata capabilities and the SDK compatibility contract |
+| `/api/v1/admin/metadata/environments/{environment}/inventory` | GET | Get revision-stamped Metadata v2 semantic inventory for an environment |
+| `/api/v1/admin/metadata/environment-bindings/query` | POST | Query secret-safe semantic binding summaries across environments |
+| `/api/v1/admin/metadata/release-packages` | POST | Create a persisted Metadata v2 release package for cross-environment promotion |
+| `/api/v1/admin/metadata/release-packages/{packageId}` | GET | Get a persisted Metadata v2 release package |
+| `/api/v1/admin/metadata/release-packages/{packageId}/gitops-manifest` | GET | Export a release package as a GitOps-safe manifest |
+| `/api/v1/admin/metadata/releases/{packageId}/operation` | GET | Get the most recent metadata release operation for a package ID, including lifecycle stage, evidence, linked jobs/deploy operation, and rollback plan |
+| `/api/v1/admin/metadata/prevalidate` | POST | Generate an environment-scoped Metadata v2 compatibility report for a release package |
 | `/api/v1/admin/manifest` | GET | Export metadata manifest |
 | `/api/v1/admin/manifest/apply` | POST | Apply metadata manifest (supports dry-run/prune controls) |
 | `/api/v1/admin/metadata/resources` | GET | List metadata resources |
@@ -494,6 +541,24 @@ The public `GET /api/styles/{layerId}.json` endpoint accepts an optional `?theme
 | `/api/v1/admin/metadata/layers/{layerId}/style/import-sld` | POST | Convert an SLD/SE 1.0 or 1.1 XML document to MapLibre style JSON and store it (admin only, Community edition; 1 MiB body cap). See [SLD Migration Reference](sld-migration.md). |
 | `/api/v1/admin/metadata/layers/{layerId}/style/export-sld` | GET | Export the stored MapLibre style as an `application/xml` SLD 1.0 document. Diagnostic count surfaces in the `X-Sld-Diagnostic-Count` response header. |
 | `/api/styles/{layerId}.json` | GET | Public MapLibre style fetch with optional `?theme=default\|dark\|colorblind-safe\|print` deterministic transform; output cache varies per theme. |
+
+Metadata v2 release prevalidation accepts either `releasePackageId` or an inline
+`releasePackage`, plus a `targetEnvironment` and optional declared
+`dataScripts`. Omit `dataScripts` for no scripts; explicit `null` is rejected.
+Script-level `targetEnvironment` narrows a declaration to a matching target. It
+does not execute scripts. It reports `ready`, `warning`, `blocked`, or `unknown`,
+carries `canCreatePullRequest` / `canPromote` gates, lists affected dependents,
+and classifies rollback readiness. See
+[Metadata Prevalidation Admin API](../admin-api/metadata-prevalidation.md) for
+the full contract.
+
+Metadata release operation reads use the deploy-control operation response
+contract directly. `GET /api/v1/admin/metadata/releases/{packageId}/operation`
+returns the latest operation indexed for that release package, while
+`GET /api/v1/admin/deploy/operations/{operationId}` remains the stable lookup
+for a specific attempt. Metadata release operation records and their package-ID
+index entries use `ControlPlane:MetadataRelease:OperationRetention`, which
+defaults to 30 days.
 
 `Group` and `SourceDescriptor` are stable `honua.io/v1alpha1` metadata resource kinds on the generic CRUD surface. SDKs can list them with `GET /api/v1/admin/metadata/resources?kind=Group` and `GET /api/v1/admin/metadata/resources?kind=SourceDescriptor` instead of probing undocumented catalog endpoints.
 
@@ -521,6 +586,13 @@ Focused guidance and a concrete JSON example:
 | `/api/v1/admin/operations/{operationId}/cancel` | POST | Cancel operation |
 | `/api/v1/admin/operations/active` | GET | List active operations |
 | `/api/v1/admin/operations/type/{operationType}` | GET | List operations by type |
+| `/api/v1/admin/jobs` | GET | List durable execution jobs with cursor pagination and queue/status/resource filters |
+| `/api/v1/admin/jobs/{jobId}` | GET | Get durable execution job detail |
+| `/api/v1/admin/jobs/{jobId}/logs` | GET | Page structured execution logs |
+| `/api/v1/admin/jobs/{jobId}/artifacts` | GET | Page artifact references with availability state |
+| `/api/v1/admin/jobs/{jobId}/actions` | GET | List available job control actions |
+| `/api/v1/admin/jobs/{jobId}/cancel` | POST | Cancel a queued, provisioning, or running job |
+| `/api/v1/admin/jobs/{jobId}/retry` | POST | Retry a failed or cancelled job when policy allows |
 
 Supported `operationType` values: `Upload`, `Import`, `Ingest`, `ExternalImport`,
 `TileCache`, `PMTilesArchive`, `PMTilesPublish`, `Export`, `RasterImport`, `Print`,
@@ -541,10 +613,29 @@ through these same operations endpoints using the
 progress from pluggable batch-compute backends into `IUniversalProgressStore`
 so all jobs — local and remote — appear through the operations surface.
 The substrate tracks additional claim, heartbeat, and retry state internally
-through `IExecutionJobStore`; structured execution logs are stored via
-`IExecutionLogStore` and are not yet exposed through a public API endpoint.
-See [Operations — Job Orchestration](operations.md#job-orchestration) for
+through `IExecutionJobStore`. Console job endpoints expose the same durable
+records for historical query, detail, logs, artifacts, actions, cancellation,
+and retry. Structured execution logs are stored via `IExecutionLogStore` and
+are available through `GET /api/v1/admin/jobs/{jobId}/logs` with cursor
+pagination.
+
+The jobs list accepts filters for `status`, `kind`, `backend`, `queue`,
+`actor`/`requestedBy`, `correlationId`, `traceId`, `definitionId`,
+`resourceRef`, `environment`, `server`, `releaseId`, `changeSetId`, `alertId`,
+`from`, `to`, `limit`, and `cursor`. The `queue` filter matches the same
+resolved value returned in summaries: `honua.job.queue` when present,
+otherwise the job backend. Responses are plain camelCase JSON DTOs with
+`Cache-Control: no-store`; per-job reads also emit `X-Correlation-Id` when
+present. The full response contract, artifact availability states, action
+rules, retry/cancel conflict behavior, and Operate event deep links are
+documented in [Console Job Observability](../admin-api/console-job-observability.md).
+See [Operations - Job Orchestration](operations.md#job-orchestration) for
 lifecycle and tuning details.
+
+Manual retry reuses the same durable job id. Local jobs are requeued through
+`IJobQueue`; remote jobs require a registered backend with retry support and set
+`nextRetryAt` for the execution-job reconciler instead of writing to the local
+queue.
 
 Workflow runs produced by the declarative orchestration layer surface through
 the same endpoints using the `Orchestration` operation type. The progress
@@ -572,9 +663,24 @@ for run lifecycle, scheduler semantics, and tuning details.
 | `/api/v1/admin/deploy/preflight` | GET | Get instance-local deploy preflight and upgrade-readiness state |
 | `/api/v1/admin/deploy/plan` | POST | Plan a deploy operation |
 | `/api/v1/admin/deploy/operations` | POST | Create a deploy operation |
-| `/api/v1/admin/deploy/operations/{operationId}` | GET | Get deploy operation status |
+| `/api/v1/admin/deploy/operations/{operationId}` | GET | Get deploy or metadata release operation status by stable operation ID |
 | `/api/v1/admin/deploy/operations/{operationId}/submit` | POST | Submit a deploy operation for execution |
-| `/api/v1/admin/deploy/operations/{operationId}/rollback` | POST | Rollback a deploy operation |
+| `/api/v1/admin/deploy/operations/{operationId}/rollback` | POST | Request rollback for a deploy or metadata release operation; metadata-only rollback is non-destructive unless the plan sets `requiresExplicitApproval`, while data-affecting rollback classes use the destructive approval gate |
+
+For metadata release operations, rollback requests reuse
+`/api/v1/admin/deploy/operations/{operationId}/rollback` with an optional
+`reason`. Accepted requests set the workflow status and
+`metadataRelease.currentStage` to `RollbackRequested`; rejected approval checks
+return `403` without mutating the stored operation. The approval decision is
+taken from the rollback plan's `isDataAffecting` and
+`requiresExplicitApproval` values: metadata-only plans can still require
+explicit approval without being treated as data-affecting, while data-affecting
+plans use the destructive approval gate. The server then re-reads the stored
+operation before writing the state change and returns `409 Conflict` without
+mutation if either approval-affecting classification changed between the
+approval check and the write (mitigating a TOCTOU race where a recomputed plan
+would otherwise roll back under a stale approval). Callers should re-read the
+operation and re-approve against the current plan.
 
 ### **Alert Management Endpoints**
 
@@ -582,12 +688,131 @@ for run lifecycle, scheduler semantics, and tuning details.
 |----------|--------|---------|
 | `/api/v1/admin/alerts/zones` | GET | List alert zones |
 | `/api/v1/admin/alerts/zones` | POST | Create alert zone |
+| `/api/v1/admin/alerts/zones/{zoneId}` | GET | Read alert zone |
 | `/api/v1/admin/alerts/zones/{zoneId}` | PUT | Update alert zone |
 | `/api/v1/admin/alerts/zones/{zoneId}` | DELETE | Delete alert zone |
 | `/api/v1/admin/alerts/rules` | GET | List alert rules |
 | `/api/v1/admin/alerts/rules` | POST | Create alert rule |
+| `/api/v1/admin/alerts/rules/test` | POST | Validate a draft alert rule and delivery-channel bindings without persisting it |
+| `/api/v1/admin/alerts/rules/{ruleId}` | GET | Read alert rule |
 | `/api/v1/admin/alerts/rules/{ruleId}` | PUT | Update alert rule |
+| `/api/v1/admin/alerts/rules/{ruleId}/enabled` | PUT | Enable or disable alert rule |
+| `/api/v1/admin/alerts/rules/{ruleId}/health` | GET | Inspect rule evaluation state, active incidents, recent triggers, delivery failures, and dead-letter state |
 | `/api/v1/admin/alerts/rules/{ruleId}` | DELETE | Delete alert rule |
+
+Alert management endpoints are admin-only and return the standard
+`ApiResponse<T>` envelope. Successful create, update, enable/disable, test,
+health, and delete operations currently return HTTP `200`. Persisted
+create/update/enable validation failures return `400`; the draft test endpoint
+returns `200` with validation details for invalid drafts. Missing rule/zone
+identifiers return `404`, and unauthenticated or non-admin callers return
+`401`/`403`.
+
+Zone list requests accept `?serviceId=`. Zone create/update payloads use
+camel-case JSON:
+
+```json
+{
+  "serviceId": "harbor-ops",
+  "zoneName": "Honolulu Harbor",
+  "wkt": "POLYGON((-157.88 21.29,-157.88 21.31,-157.85 21.31,-157.85 21.29,-157.88 21.29))",
+  "srid": 4326,
+  "metadata": { "owner": "operations" },
+  "isActive": true
+}
+```
+
+`wkt` is optional for placeholder zones; when supplied it must be `Polygon` or
+`MultiPolygon` WKT. `srid` defaults to `4326`. Polygon inputs are normalized to
+`MULTIPOLYGON` WKT in responses. Zone responses include `zoneId`, `serviceId`,
+`zoneName`, `wkt`, `srid`, `metadata`, and `isActive`.
+
+Rule list requests accept `?serviceId=&layerId=`. Rule create/update payloads
+use this contract:
+
+```json
+{
+  "serviceId": "harbor-ops",
+  "layerId": 1,
+  "zoneId": 12,
+  "ruleName": "Harbor Entry",
+  "triggerType": "enter",
+  "conditionsJson": "{}",
+  "cooldownSeconds": 60,
+  "severity": "warning",
+  "editionRequired": "pro",
+  "channels": ["webhook"],
+  "isActive": true
+}
+```
+
+`triggerType` accepts `enter`, `exit`, `dwell`, or `threshold`; `severity`
+accepts `info`, `warning`, or `critical`; `editionRequired` accepts `pro` or
+`enterprise`; `cooldownSeconds` must be zero or greater. Persisted geofence
+triggers (`enter`, `exit`, `dwell`) require `zoneId`. `zoneId` is only valid for
+those geofence triggers; threshold rules must omit it. `dwell` conditions must
+be a JSON object with positive `dwellSeconds`. `threshold` conditions must be a
+JSON object with non-empty `field`, an `operator` of `>`, `>=`, `<`, `<=`, `==`,
+or `!=`, and a numeric `value`.
+
+Delivery channel names are canonical snake-case tokens: `webhook`,
+`websocket`, `email`, `digest`, `aws_sns`, `azure_eventgrid`, `slack`,
+`microsoft_teams`, `aws_sqs`, and `azure_eventhub`. Some compatibility aliases
+parse on write (`teams`, `awssns`, `awssqs`, `azureeventgrid`,
+`azureeventhub`), but responses always use canonical names. `channels` may be
+omitted or empty for rules that should not dispatch to external sinks. Pro
+alerting allows `enter`/`exit` rules and `webhook`; Enterprise allows all
+implemented trigger types and channels when the channel is configured.
+
+`POST /api/v1/admin/alerts/rules/test` validates a draft without persisting it:
+
+```json
+{
+  "rule": {
+    "serviceId": "harbor-ops",
+    "layerId": 1,
+    "ruleName": "Draft Threshold",
+    "triggerType": "threshold",
+    "conditionsJson": "{\"field\":\"speedKmh\",\"operator\":\">\",\"value\":30}",
+    "cooldownSeconds": 30,
+    "severity": "warning",
+    "editionRequired": "enterprise",
+    "channels": ["webhook"],
+    "isActive": true
+  },
+  "zone": null
+}
+```
+
+The test endpoint always uses the success envelope for draft validation results;
+invalid drafts return `200` with `data.isValid=false`, `errors`, `warnings`,
+per-channel `deliveryChannels`, and `evaluatedAt`. Delivery validation and rule
+health statuses are `configured`, `unconfigured`, `disabled`, and
+`unauthorized`; rule health can additionally report `rate_limited` or `failing`
+for channels with recent delivery errors. Delivery channel `lastError` values are
+sanitized summaries, such as `Delivery rate limited.` or `Delivery failed.`;
+raw provider exception text is not returned. The optional draft `zone` is only
+accepted for `enter`, `exit`, and `dwell` rules, must use the same `serviceId`
+as the rule, and is used for geometry validation without persistence. If both a
+draft `zone` and `zoneId` are supplied on a geofence draft, validation uses the
+draft zone geometry and returns a warning.
+
+`GET /api/v1/admin/alerts/rules/{ruleId}/health` returns the rule state snapshot:
+`lastEvaluatedAt`, `lastTriggeredAt`, `activeIncidentCount`,
+`recentTriggerCount`, `coolingDownFeatureCount`, `nextCooldownExpiresAt`,
+`deliveryFailureCount`, `deadLetterCount`, `linkedEventIds`,
+`deliveryChannels`, and up to 10 `recentTriggers`. Recent trigger summaries use
+`resourceRef` values of the form `alert/{eventId}` so Console Operate can link
+to the normalized alert event. `activeIncidentCount` is derived from the current
+evaluator state, not from historical alert events: `enter` and `dwell` rules
+count state rows where the feature is currently inside the zone, `threshold`
+rules count state rows where the threshold is currently breached, and `exit`
+transition events do not keep an active incident open after the feature has
+left. `recentTriggerCount` counts alert events from the previous 24 hours.
+Alert zone/rule changes write config-change audit events with actions
+`alert_zone.create`, `alert_zone.update`,
+`alert_zone.delete`, `alert_rule.create`, `alert_rule.update`,
+`alert_rule.enable`, `alert_rule.disable`, and `alert_rule.delete`.
 
 ### **License Endpoints**
 
@@ -909,6 +1134,51 @@ Notes:
   match the geoprocessing job-service exception taxonomy
   (`unauthenticated`, `permission_denied`, `not_found`, `failed_precondition`,
   `unavailable`).
+
+### **Analysis Content Endpoints**
+
+These routes also live at `/api/v1/analysis/...` and require admin
+authorization. They persist saved-query and analysis-package content items as
+immutable versions, preview saved queries through the canonical feature-query
+pipeline, submit and rerun analysis packages through the canonical
+geoprocessing runtime, and expose stable artifact bindings for downstream maps,
+dashboards, reports, apps, and workflows. Responses are plain camelCase JSON
+DTOs with shared admin `application/problem+json` errors, not the older admin
+envelope shape.
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/analysis/content/items` | POST | Create a saved-query or analysis-package item plus initial version. |
+| `/api/v1/analysis/content/items/{itemId}` | GET | Open the item and latest version. |
+| `/api/v1/analysis/content/items/{itemId}/versions/latest` | GET | Open the latest immutable version. |
+| `/api/v1/analysis/content/items/{itemId}/versions/{contentVersion}` | GET | Open an explicit immutable version number. |
+| `/api/v1/analysis/content/items/{itemId}/versions` | POST | Create a new immutable version. |
+| `/api/v1/analysis/content/items/{itemId}/versions/{contentVersion}/preview` | POST | Preview a saved-query version and persist a short-lived preview artifact. |
+| `/api/v1/analysis/content/items/{itemId}/versions/{contentVersion}/runs` | POST | Submit an analysis-package version as a durable geoprocessing job. |
+| `/api/v1/analysis/content/items/{itemId}/versions/{contentVersion}/reruns` | POST | Rerun an analysis package with provenance and optional parameter overrides. |
+| `/api/v1/analysis/artifacts/{artifactId}` | GET | Resolve artifact metadata and a downstream binding reference. |
+| `/api/v1/analysis/jobs/{jobId}/logs` | GET | Read bounded, sanitized structured logs. |
+| `/api/v1/analysis/jobs/{jobId}/failure` | GET | Read safe failure classification for failed or cancelled jobs. |
+
+Saved-query previews honor a request `limit` first, then the stored
+`previewLimit`, then the 25-feature default, and clamp at 200. The preview path
+compiles any saved `filterPlan`, validates the canonical query against the
+target layer, and records a one-hour `preview` artifact without exact-response
+caching. Version creation retries bounded store conflicts before returning
+`409`; callers should reopen `versions/latest` before rebasing after a
+conflict. Analysis package run requests stamp the submitted job with
+`analysis.content.*` metadata for source item id, version, version id, source
+SRID, source units, package parameters, runtime parameters, and rerun links.
+Terminal geoprocessing jobs with analysis content source metadata persist
+retained artifact metadata and URIs; artifact bytes remain in the backing
+artifact store. Failed-job diagnostics use bounded log tail reads and redact
+stack traces, provider internals, connection strings, password/secret metadata,
+and long diagnostic values. Analysis content emits `honua.analysis_content.*`
+activities and the `honua.analysis_content.operations_total` metric tagged by
+operation and success/error result.
+
+Full request/response examples and storage notes are documented in
+[Analysis Content](../admin-api/analysis-content.md).
 
 ---
 

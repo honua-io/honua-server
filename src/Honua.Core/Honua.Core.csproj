@@ -9,6 +9,7 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <WarningsNotAsErrors>CA2009;IDE0073</WarningsNotAsErrors>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseExpression>Elastic-2.0</PackageLicenseExpression>
   </PropertyGroup>
 
   <ItemGroup>
@@ -47,6 +48,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Core.Tests" />
     <InternalsVisibleTo Include="Honua.Server.Tests" />
+    <InternalsVisibleTo Include="Honua.Benchmarks" />
     <InternalsVisibleTo Include="Honua.Postgres" />
     <InternalsVisibleTo Include="Honua.Postgres.Tests" />
     <InternalsVisibleTo Include="Honua.DuckDB" />

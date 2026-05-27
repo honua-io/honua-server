@@ -1,8 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Caching.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
@@ -62,7 +63,7 @@ internal static class CacheAdminEndpoints
     private static async Task<IResult> HandleInvalidateCache(
         [FromBody] CacheInvalidationRequest request,
         [FromServices] OutputCacheInvalidationService invalidationService,
-        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
         [FromServices] ILogger<CacheAdminEndpointsLog> logger,
         HttpContext context,
         CancellationToken cancellationToken)
@@ -101,7 +102,7 @@ internal static class CacheAdminEndpoints
                             CacheAdminJsonContext.Default.ApiResponseObject,
                             statusCode: StatusCodes.Status400BadRequest);
                     }
-                    var layerIds = await ResolveServiceLayerIdsAsync(layerCatalog, request.ServiceId, cancellationToken).ConfigureAwait(false);
+                    var layerIds = await ResolveServiceLayerIdsAsync(graphProvider, request.ServiceId, cancellationToken).ConfigureAwait(false);
                     await invalidationService.InvalidateServiceCatalogAsync(
                         request.ServiceId, layerIds, cancellationToken).ConfigureAwait(false);
                     break;
@@ -166,12 +167,21 @@ internal static class CacheAdminEndpoints
         }
     }
 
-    private static async Task<int[]?> ResolveServiceLayerIdsAsync(
-        ILayerCatalog layerCatalog,
+    private static async Task<int[]> ResolveServiceLayerIdsAsync(
+        IMetadataV2GraphProvider graphProvider,
         string serviceId,
         CancellationToken cancellationToken)
     {
-        var service = await layerCatalog.GetServiceAsync(serviceId, cancellationToken).ConfigureAwait(false);
-        return service?.Layers.Select(static layer => layer.Id).ToArray() ?? [];
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var service = snapshot.FindService(serviceId);
+        if (service is null)
+        {
+            return [];
+        }
+
+        return snapshot.PublicationsForService(service.Metadata.Id)
+            .Where(p => p.LayerIndex.HasValue)
+            .Select(p => p.LayerIndex!.Value)
+            .ToArray();
     }
 }

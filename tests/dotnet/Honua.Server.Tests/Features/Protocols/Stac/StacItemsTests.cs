@@ -6,6 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -440,8 +441,26 @@ public sealed class StacItemsTests : IAsyncLifetime
 
     private Task UpdateLayerMetadataAsync(CatalogMetadata metadata)
     {
-        var updater = _fixture.GetService<ILayerMetadataUpdater>();
-        return updater.UpdateLayerMetadataAsync(WebAppFixture.TestLayerId, metadata);
+        // Bridge to the V2 graph (see StacCollectionsTests.UpdateLayerMetadataAsync).
+        JsonElement? stac = null;
+        if (metadata.Stac is not null)
+        {
+            stac = JsonSerializer.SerializeToElement(
+                metadata.Stac,
+                Honua.Core.Features.Catalog.Domain.CatalogJsonContext.Default.StacCatalogMetadata);
+        }
+        MetadataV2ResourceTemporal? temporal = null;
+        if (metadata.TimeInfo is not null)
+        {
+            temporal = new MetadataV2ResourceTemporal
+            {
+                StartTimeField = metadata.TimeInfo.StartTimeField,
+                EndTimeField = metadata.TimeInfo.EndTimeField,
+                TrackIdField = metadata.TimeInfo.TrackIdField,
+            };
+        }
+        _fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, stacExtension: stac, temporal: temporal);
+        return Task.CompletedTask;
     }
 
     private async Task<long> InsertDatelineFeatureAsync(double lon, double lat, string name)

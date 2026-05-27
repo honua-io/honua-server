@@ -22,6 +22,47 @@ public sealed class TilesetDocument
     /// <summary>Root tile.</summary>
     [JsonPropertyName("root")]
     public TileNode Root { get; set; } = new();
+
+    /// <summary>
+    /// Tileset-level non-normative metadata. v1 uses the <c>extras</c> block to
+    /// advertise the attribute-driven 3D symbology style-metadata contract
+    /// (<c>honua_style</c>) so a client can discover and fetch the
+    /// <c>style.json</c> sidecar without sniffing the GLB.
+    /// </summary>
+    [JsonPropertyName("extras")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TilesetExtras? Extras { get; set; }
+}
+
+/// <summary>
+/// Tileset <c>extras</c> block carrying Honua-specific discovery metadata.
+/// </summary>
+public sealed class TilesetExtras
+{
+    /// <summary>
+    /// Reference to the emitted 3D symbology style-metadata contract.
+    /// </summary>
+    [JsonPropertyName("honua_style")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TilesetStyleReference? Style { get; set; }
+}
+
+/// <summary>
+/// Pointer the client uses to locate and version the style-metadata contract.
+/// </summary>
+public sealed class TilesetStyleReference
+{
+    /// <summary>Encoding discriminator, always <c>3d-tiles-styling</c>.</summary>
+    [JsonPropertyName("encoding")]
+    public string Encoding { get; set; } = string.Empty;
+
+    /// <summary>Style-metadata contract version.</summary>
+    [JsonPropertyName("version")]
+    public string Version { get; set; } = string.Empty;
+
+    /// <summary>Relative URI of the style spec sidecar (e.g. <c>style.json</c>).</summary>
+    [JsonPropertyName("uri")]
+    public string Uri { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -103,6 +144,8 @@ public sealed class TileContent
 [JsonSerializable(typeof(BoundingVolume))]
 [JsonSerializable(typeof(TileContent))]
 [JsonSerializable(typeof(TilesetAsset))]
+[JsonSerializable(typeof(TilesetExtras))]
+[JsonSerializable(typeof(TilesetStyleReference))]
 public sealed partial class TilesetJsonContext : JsonSerializerContext
 {
 }

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Validation.Abstractions;
 
@@ -69,7 +70,56 @@ public interface IResourceValidator
         string serviceId,
         int layerId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// V2 overload of <see cref="ValidateLayerAsync(int, CancellationToken)"/>. Looks up
+    /// the canonical resource via the V2 graph using the publication's layer index.
+    /// </summary>
+    Task<ResourceValidationResult<MetadataV2Resource>> ValidateLayerV2Async(
+        int layerId,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException(
+            $"{GetType().Name} does not yet implement Metadata v2 ValidateLayerV2Async.");
+
+    /// <summary>
+    /// V2 overload of <see cref="ValidateCollectionAsync(string, CancellationToken)"/>.
+    /// </summary>
+    Task<ResourceValidationResult<MetadataV2Resource>> ValidateCollectionV2Async(
+        string collectionId,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException(
+            $"{GetType().Name} does not yet implement Metadata v2 ValidateCollectionV2Async.");
+
+    /// <summary>
+    /// V2 overload of <see cref="ValidateServiceAsync(string, CancellationToken)"/>.
+    /// </summary>
+    Task<ResourceValidationResult<MetadataV2Service>> ValidateServiceV2Async(
+        string serviceId,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException(
+            $"{GetType().Name} does not yet implement Metadata v2 ValidateServiceV2Async.");
+
+    /// <summary>
+    /// V2 overload of <see cref="ValidateServiceLayerAsync(string, int, CancellationToken)"/>.
+    /// Returns the resolved (service, publication, resource) triple — publications carry
+    /// the protocol-facing service-local LayerIndex so callers that need it have it.
+    /// </summary>
+    Task<ResourceValidationResult<MetadataV2ServiceLayerTriple>> ValidateServiceLayerV2Async(
+        string serviceId,
+        int layerId,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException(
+            $"{GetType().Name} does not yet implement Metadata v2 ValidateServiceLayerV2Async.");
 }
+
+/// <summary>
+/// Resolved (service, publication, resource) triple returned by
+/// <see cref="IResourceValidator.ValidateServiceLayerV2Async"/>.
+/// </summary>
+public readonly record struct MetadataV2ServiceLayerTriple(
+    MetadataV2Service Service,
+    MetadataV2Publication Publication,
+    MetadataV2Resource Resource);
 
 /// <summary>
 /// Result of resource validation containing either the resource or error details.

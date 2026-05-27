@@ -132,6 +132,25 @@ internal sealed class ObservabilityStatusResponse
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string? LastExportError { get; init; }
+
+    /// <summary>
+    /// Runtime probe state for the configured OTLP endpoint, distinct from
+    /// configuration-derived <see cref="OtlpExporterState"/>. One of
+    /// <c>unknown</c>, <c>disabled</c>, <c>healthy</c>, <c>unreachable</c>,
+    /// <c>authFailure</c>, <c>telemetryDisabled</c>, or <c>exporterMisconfigured</c>.
+    /// </summary>
+    public string OtlpProbeState { get; init; } = "unknown";
+
+    /// <summary>
+    /// Last sanitized error observed by the probe (timeouts, connection refused,
+    /// HTTP 401/403). Null when probe state is <c>healthy</c> or <c>disabled</c>.
+    /// </summary>
+    public string? OtlpLastProbeError { get; init; }
+
+    /// <summary>
+    /// When the OTLP probe last attempted contact. Null when no probe has run yet.
+    /// </summary>
+    public DateTimeOffset? OtlpLastProbedAt { get; init; }
 }
 
 /// <summary>

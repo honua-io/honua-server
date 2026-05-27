@@ -5,7 +5,6 @@ using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
@@ -238,16 +237,14 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
     public async Task GetElevationValue_WhenElevationProtocolDisabled_ReturnsNotFound()
     {
         await SeedFullWorldRasterAsync(1);
-        var updater = _fixture.GetService<IServiceMetadataUpdater>();
-        await updater.UpdateServiceMetadataAsync(
+        // V2 cutover (#1035 72/N): protocol gating reads MetadataV2Service.Protocols.
+        var anonymous = new AccessPolicy { AllowAnonymous = true };
+        _fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
-            new CatalogMetadata
-            {
-                AccessPolicy = new AccessPolicy { AllowAnonymous = true },
-                EnabledProtocols = ServiceProtocols.All
-                    .Where(static protocol => !string.Equals(protocol, ServiceProtocols.Elevation, StringComparison.Ordinal))
-                    .ToArray()
-            });
+            enabledProtocols: ServiceProtocols.All
+                .Where(static protocol => !string.Equals(protocol, ServiceProtocols.Elevation, StringComparison.Ordinal))
+                .ToArray(),
+            accessPolicy: anonymous);
 
         try
         {
@@ -257,12 +254,10 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
         }
         finally
         {
-            await updater.UpdateServiceMetadataAsync(
+            _fixture.UpdateV2ServiceMetadata(
                 WebAppFixture.TestServiceId,
-                new CatalogMetadata
-                {
-                    AccessPolicy = new AccessPolicy { AllowAnonymous = true }
-                });
+                enabledProtocols: ServiceProtocols.All,
+                accessPolicy: anonymous);
         }
     }
 

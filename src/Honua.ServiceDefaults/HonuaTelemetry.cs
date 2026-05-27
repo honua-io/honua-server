@@ -143,6 +143,9 @@ public static class HonuaTelemetry
 
         /// <summary>Operator execution admission evaluation activity.</summary>
         public const string ExecutionAdmission = "honua.execution.admission";
+
+        /// <summary>Share export trigger activity.</summary>
+        public const string ShareExportTrigger = "honua.share.export.trigger";
     }
 
     /// <summary>
@@ -167,6 +170,15 @@ public static class HonuaTelemetry
 
         /// <summary>The durable job identifier.</summary>
         public const string JobId = "honua.job.id";
+
+        /// <summary>The scheduled Share export definition identifier.</summary>
+        public const string ShareExportId = "honua.share.export.id";
+
+        /// <summary>The scheduled Share export run identifier.</summary>
+        public const string ShareRunId = "honua.share.run.id";
+
+        /// <summary>The scheduled Share export destination type.</summary>
+        public const string ShareDestinationType = "honua.share.destination_type";
 
         /// <summary>The named parameter or result identifier.</summary>
         public const string ParameterName = "honua.parameter.name";

@@ -3,7 +3,7 @@
 
 using System.Globalization;
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer.Models;
@@ -25,16 +25,16 @@ internal sealed class ImageServerIdentifyHandler
     private const int MaxGeometryInputLength = 1000;
     private const string SupportedGeometryType = "esriGeometryPoint";
 
-    private readonly ILayerCatalog _layerCatalog;
+    private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
     private readonly ILogger<ImageServerIdentifyHandler> _logger;
 
     public ImageServerIdentifyHandler(
-        ILayerCatalog layerCatalog,
+        IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
         ILogger<ImageServerIdentifyHandler> logger)
     {
-        _layerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
+        _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -56,9 +56,9 @@ internal sealed class ImageServerIdentifyHandler
 
         try
         {
-            // Validate layer exists
-            var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer == null)
+            // Validate layer exists in the Metadata v2 graph
+            var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
@@ -93,7 +93,7 @@ internal sealed class ImageServerIdentifyHandler
                 return editionError;
             }
 
-            var mergeStrategy = ImageServerMosaicHelpers.ResolveMergeStrategy(layer.Metadata, request.MosaicRule);
+            var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, request.MosaicRule);
             var selectionQuery = new RasterSelectionQuery
             {
                 Geometry = ImageServerMosaicHelpers.CreatePointGeometry(x.Value, y.Value),
@@ -125,7 +125,7 @@ internal sealed class ImageServerIdentifyHandler
             var response = new IdentifyResponse
             {
                 ObjectId = selectedRasters.Length == 1 ? selectedRasters[0].Id : null,
-                Name = selectedRasters.Length == 1 ? selectedRasters[0].Name : $"{layer.Name} mosaic",
+                Name = selectedRasters.Length == 1 ? selectedRasters[0].Name : $"{resolved.DisplayName} mosaic",
                 Value = FormatPixelValues(pixelResult.BandValues),
                 Location = new Point
                 {

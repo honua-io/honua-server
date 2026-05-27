@@ -21,6 +21,13 @@ internal static class ObservabilityEndpoints
     private const string ExporterStateDisabled = "disabled";
     private const string ExporterStateMisconfigured = "misconfigured";
     private const string ExporterStateNotConfigured = "notConfigured";
+    private const string ProbeStateUnknown = "unknown";
+    private const string ProbeStateDisabled = "disabled";
+    private const string ProbeStateHealthy = "healthy";
+    private const string ProbeStateUnreachable = "unreachable";
+    private const string ProbeStateAuthFailure = "authFailure";
+    private const string ProbeStateExporterMisconfigured = "exporterMisconfigured";
+    private const string ProbeStateTelemetryDisabled = "telemetryDisabled";
     private const string MigrationPlanUnavailableMessage = "Migration planning is temporarily unavailable.";
 
     public static void MapAdminObservabilityEndpoints(this IEndpointRouteBuilder endpoints)
@@ -61,7 +68,8 @@ internal static class ObservabilityEndpoints
 
     private static IResult HandleGetTelemetryStatus(
         [FromServices] IOptions<TracingOptions> options,
-        [FromServices] IConfiguration configuration)
+        [FromServices] IConfiguration configuration,
+        [FromServices] BackgroundOtlpProbe? probe = null)
     {
         var tracingOptions = options.Value;
         var otlpEndpoint = ResolveOtlpEndpoint(tracingOptions, configuration);
@@ -72,6 +80,8 @@ internal static class ObservabilityEndpoints
         var otlpExporterState = telemetryPipelineConfigured
             ? ResolveOtlpExporterState(otlpConfigured, otlpEndpointValid)
             : ExporterStateDisabled;
+        var probeSnapshot = probe?.Snapshot;
+        var probeState = ResolveProbeState(probeSnapshot, telemetryPipelineConfigured, otlpExporterState);
 
         var response = new ObservabilityStatusResponse
         {
@@ -94,10 +104,43 @@ internal static class ObservabilityEndpoints
             TraceExportState = tracingOptions.Enabled ? otlpExporterState : ExporterStateDisabled,
             MetricsExportState = telemetryPipelineConfigured ? otlpExporterState : ExporterStateDisabled,
             LogExportState = telemetryPipelineConfigured ? otlpExporterState : ExporterStateDisabled,
-            LastExportError = null
+            LastExportError = null,
+            OtlpProbeState = probeState,
+            OtlpLastProbeError = probeSnapshot?.LastError,
+            OtlpLastProbedAt = probeSnapshot?.ProbedAt
         };
 
         return Results.Json(response, MetricsJsonContext.Default.ObservabilityStatusResponse);
+    }
+
+    private static string ResolveProbeState(
+        OtlpProbeSnapshot? snapshot,
+        bool telemetryPipelineConfigured,
+        string otlpExporterState)
+    {
+        if (!telemetryPipelineConfigured)
+        {
+            return ProbeStateTelemetryDisabled;
+        }
+
+        if (otlpExporterState == ExporterStateMisconfigured)
+        {
+            return ProbeStateExporterMisconfigured;
+        }
+
+        if (snapshot is null)
+        {
+            return ProbeStateUnknown;
+        }
+
+        return snapshot.State switch
+        {
+            OtlpProbeState.Disabled => ProbeStateDisabled,
+            OtlpProbeState.Healthy => ProbeStateHealthy,
+            OtlpProbeState.Unreachable => ProbeStateUnreachable,
+            OtlpProbeState.AuthFailure => ProbeStateAuthFailure,
+            _ => ProbeStateUnknown
+        };
     }
 
     private static async Task<IResult> HandleGetMigrationStatus(

@@ -19,14 +19,19 @@ public sealed class VerticalSliceIsolationTests
     private static readonly string[] _featureNames =
     {
         "Admin",
+        "AnalysisContent",
         "AiBuilder",
         "Alerts",
+        "Capabilities",
         "CloudDemo",
         "Collaboration",
+        "Console",
+        "Forms",
         "Geocoding",
         "Geoprocessing",
         "Grounding",
         "Orchestration",
+        "PackageReview",
         "Protocols",
         "Mobile", // Parent container for mobile sub-feature slices (e.g. FieldCollection sync)
         "NlQuery",
@@ -40,7 +45,9 @@ public sealed class VerticalSliceIsolationTests
         "StaticMap",
         "SpatialAnalytics",
         "Spec",
-        "Reporting"
+        "Reporting",
+        "Studio",
+        "WorkflowPackages"
     };
 
     /// <summary>
@@ -55,10 +62,14 @@ public sealed class VerticalSliceIsolationTests
     private static readonly Dictionary<string, IReadOnlyCollection<string>> _allowedCrossFeatureRefs =
         new(StringComparer.Ordinal)
         {
+            ["Capabilities"] = new[] { "Import", "Streaming" },
             ["Mcp"] = new[] { "Geoprocessing", "Grounding", "Reporting" },
             ["Grounding"] = new[] { "Geoprocessing" },
+            ["AnalysisContent"] = new[] { "Geoprocessing" },
             ["NlQuery"] = new[] { "AiBuilder" },
-            ["Reporting"] = new[] { "Geoprocessing" }
+            ["PackageReview"] = new[] { "Geoprocessing" },
+            ["Reporting"] = new[] { "Geoprocessing" },
+            ["WorkflowPackages"] = new[] { "Geoprocessing", "Orchestration" }
         };
 
     private static readonly string[] _protocolAdapterNames =

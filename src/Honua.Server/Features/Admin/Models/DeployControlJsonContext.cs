@@ -25,6 +25,9 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(DeployPlanTargetResponse))]
 [JsonSerializable(typeof(DeployBackendCapabilitiesResponse))]
 [JsonSerializable(typeof(DeployOperationResponse))]
+[JsonSerializable(typeof(MetadataReleaseContextResponse))]
+[JsonSerializable(typeof(MetadataRollbackPlanResponse))]
+[JsonSerializable(typeof(MetadataEvidenceRefResponse))]
 [JsonSerializable(typeof(DeployRequestFingerprintPayload))]
 internal sealed partial class DeployControlJsonContext : JsonSerializerContext
 {

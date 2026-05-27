@@ -33,6 +33,30 @@ public interface IExecutionLogStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Retrieves the most recent structured log entries without reading the full log stream.
+    /// </summary>
+    /// <param name="operationId">Stable job identifier.</param>
+    /// <param name="limit">Maximum number of entries to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Tail entries in append order plus the total number of entries.</returns>
+    Task<ExecutionLogTail> TailAsync(
+        string operationId,
+        int limit,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retrieves a page of structured log entries for the specified job in append order.
+    /// </summary>
+    /// <param name="operationId">Stable job identifier.</param>
+    /// <param name="query">Cursor and page-size criteria.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Log entries in append order plus an optional next cursor.</returns>
+    Task<ExecutionLogPage> QueryAsync(
+        string operationId,
+        ExecutionLogQuery query,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Sets a time-to-live on the log entries for the specified job.
     /// Called when a job reaches terminal state to schedule eventual cleanup.
     /// </summary>

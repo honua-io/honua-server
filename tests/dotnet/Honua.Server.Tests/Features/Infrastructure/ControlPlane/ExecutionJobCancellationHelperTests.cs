@@ -463,6 +463,15 @@ public sealed class ExecutionJobCancellationHelperTests
             return Task.FromResult(true);
         }
 
+        public Task<ExecutionJobPage> QueryAsync(ExecutionJobQuery query, CancellationToken cancellationToken = default)
+            => Task.FromResult(new ExecutionJobPage
+            {
+                Items = _jobs.Values
+                    .OrderByDescending(job => job.CreatedAt)
+                    .Take(query.Limit)
+                    .ToArray()
+            });
+
         public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(_jobs.Values.ToArray());
     }

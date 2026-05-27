@@ -89,13 +89,18 @@ internal static class NAServerEndpoints
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
+        // PUBLIC by design (#1144): minimal NAServer compatibility stubs that
+        // return deterministic envelopes for mobile routing client probes;
+        // no caller state, no data mutation. Marked AllowAnonymous so the
+        // audit guard records the intentional decision.
         endpoints.MapPost($"{RouteBase}/Route/solve", static () => HandleRouteSolve())
             .WithDisplayName("NAServer Route Solve")
             .WithName("NAServerRouteSolve")
             .WithSummary("Solve a minimal NAServer route")
             .WithDescription("Returns a deterministic route and direction envelope for first-party mobile routing integration.")
             .WithTags("NAServer")
-            .Produces<NAServerRouteSolveResponse>(StatusCodes.Status200OK, JsonContentType);
+            .Produces<NAServerRouteSolveResponse>(StatusCodes.Status200OK, JsonContentType)
+            .AllowAnonymous();
 
         endpoints.MapPost($"{RouteBase}/ServiceArea/solveServiceArea", static () => HandleServiceArea())
             .WithDisplayName("NAServer Service Area Solve")
@@ -103,7 +108,8 @@ internal static class NAServerEndpoints
             .WithSummary("Solve a minimal NAServer service area")
             .WithDescription("Returns an empty deterministic service-area envelope for first-party mobile routing integration.")
             .WithTags("NAServer")
-            .Produces<NAServerServiceAreaResponse>(StatusCodes.Status200OK, JsonContentType);
+            .Produces<NAServerServiceAreaResponse>(StatusCodes.Status200OK, JsonContentType)
+            .AllowAnonymous();
 
         endpoints.MapPost($"{RouteBase}/ClosestFacility/solveClosestFacility", static () => HandleClosestFacility())
             .WithDisplayName("NAServer Closest Facility Solve")
@@ -111,7 +117,8 @@ internal static class NAServerEndpoints
             .WithSummary("Solve a minimal NAServer closest facility")
             .WithDescription("Returns a deterministic closest-facility direction envelope for first-party mobile routing integration.")
             .WithTags("NAServer")
-            .Produces<NAServerClosestFacilityResponse>(StatusCodes.Status200OK, JsonContentType);
+            .Produces<NAServerClosestFacilityResponse>(StatusCodes.Status200OK, JsonContentType)
+            .AllowAnonymous();
 
         return endpoints;
     }

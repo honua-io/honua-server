@@ -42,9 +42,41 @@ internal static class VectorTileExecution
         TileLimits tileLimits,
         CancellationToken cancellationToken,
         Activity? activity = null)
+        => await ExecuteAsync(
+            context,
+            tileProvider,
+            layer.Id,
+            tileCol,
+            tileRow,
+            zoomLevel,
+            query,
+            tileOptions,
+            tileLimits,
+            cancellationToken,
+            activity).ConfigureAwait(false);
+
+    /// <summary>
+    /// V2 overload of <see cref="ExecuteAsync(HttpContext, ITileProvider, LayerDefinition, int, int, int, FeatureQuery, TileOptions, TileLimits, CancellationToken, Activity?)"/>
+    /// that takes the storage layer id directly (resolved upstream from a V2
+    /// publication via <c>MetadataV2GraphSnapshot.ResolveStorageLayerId</c>).
+    /// <c>ITileProvider.GetMvtTileAsync</c> consumes <c>int layerId</c> as its
+    /// storage abstraction, so no further V2 plumbing is needed here.
+    /// </summary>
+    internal static async Task<IResult> ExecuteAsync(
+        HttpContext context,
+        ITileProvider tileProvider,
+        int storageLayerId,
+        int tileCol,
+        int tileRow,
+        int zoomLevel,
+        FeatureQuery query,
+        TileOptions tileOptions,
+        TileLimits tileLimits,
+        CancellationToken cancellationToken,
+        Activity? activity = null)
     {
         var tileData = await tileProvider.GetMvtTileAsync(
-            layer.Id,
+            storageLayerId,
             tileCol,
             tileRow,
             zoomLevel,

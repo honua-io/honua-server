@@ -5,8 +5,10 @@ using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using FluentAssertions;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Tiles;
@@ -568,8 +570,12 @@ public sealed class TileOperationJobServicePublishTests
         Action<ITileProvider>? configureTileProvider = null)
     {
         var services = new ServiceCollection();
-        var layerCatalog = Substitute.For<ILayerCatalog>();
-        services.AddSingleton(layerCatalog);
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddService("svc-publish-test", "publish-test")
+            .AddResource("res-publish", "publish-layer")
+            .AddPublication("pub-publish", "svc-publish-test", "res-publish", layerIndex: 7)
+            .Build();
+        services.AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph));
 
         var tileProvider = Substitute.For<ITileProvider>();
         if (configureTileProvider is not null)

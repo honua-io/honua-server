@@ -3,6 +3,8 @@
 
 using System.Text.Json.Serialization;
 using System.Text.Json;
+using Honua.Core.Features.Scene.Domain;
+using Honua.Core.Features.Security.Domain;
 
 namespace Honua.Core.Features.Catalog.Domain;
 
@@ -15,6 +17,8 @@ namespace Honua.Core.Features.Catalog.Domain;
 [JsonSerializable(typeof(LayerTimeInfo))]
 [JsonSerializable(typeof(LayerPermanentFilter))]
 [JsonSerializable(typeof(LayerExtrusionInfo))]
+[JsonSerializable(typeof(Symbology3D))]
+[JsonSerializable(typeof(Symbology3DRule))]
 [JsonSerializable(typeof(MapServerConfig))]
 [JsonSerializable(typeof(RasterMosaicSettings))]
 [JsonSerializable(typeof(StacCatalogMetadata))]

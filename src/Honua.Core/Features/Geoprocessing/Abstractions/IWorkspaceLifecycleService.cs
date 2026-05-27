@@ -12,6 +12,14 @@ namespace Honua.Core.Features.Geoprocessing.Abstractions;
 public interface IWorkspaceLifecycleService
 {
     /// <summary>
+    /// Retrieves a workspace by identifier, or <c>null</c> when the workspace
+    /// does not exist in the lifecycle store.
+    /// </summary>
+    Task<Workspace?> GetWorkspaceAsync(
+        string workspaceId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Creates a workspace with retention policy applied.
     /// </summary>
     Task<Workspace> CreateWorkspaceAsync(

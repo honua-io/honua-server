@@ -7,6 +7,8 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -82,6 +84,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
                         ["Security:ConnectionEncryption:MasterKey"] = TestConnectionEncryptionMasterKey,
                         ["HONUA_ADMIN_PASSWORD"] = builder.GetSetting("HONUA_ADMIN_PASSWORD"),
                         ["HONUA_DEV_AUTH"] = builder.GetSetting("HONUA_DEV_AUTH"),
+                        ["HONUA_DEV_AUTH_ALLOW_BYPASS"] = builder.GetSetting("HONUA_DEV_AUTH_ALLOW_BYPASS"),
                         ["HONUA_ENABLE_BASIC_AUTH_COMPAT"] = builder.GetSetting("HONUA_ENABLE_BASIC_AUTH_COMPAT"),
                         ["HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH"] = builder.GetSetting("HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH"),
                         ["ForwardedHeaders:Enabled"] = builder.GetSetting("ForwardedHeaders:Enabled")
@@ -112,6 +115,60 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
                 ["postgis", "postgis_raster"]));
     }
 
+    private static void AddFeatureServerMetadataV2Graph(IServiceCollection services, bool allowAnonymous)
+    {
+        var accessPolicy = allowAnonymous ? new AccessPolicy { AllowAnonymous = true } : null;
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddService(
+                "svc-test-feature",
+                "test",
+                protocols: [ServiceProtocols.FeatureServer],
+                accessPolicy: accessPolicy)
+            .AddResource(
+                "res-layer-0",
+                "Test Layer",
+                fields:
+                [
+                    new MetadataV2Field
+                    {
+                        Name = "objectid",
+                        Type = MetadataV2FieldType.Integer,
+                        Nullable = false,
+                        SemanticRoles = ["id.primary"],
+                    },
+                    new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true },
+                    new MetadataV2Field
+                    {
+                        Name = "shape",
+                        Type = MetadataV2FieldType.Geometry,
+                        Nullable = true,
+                        Editable = false,
+                        SemanticRoles = ["geometry.primary"],
+                    },
+                ],
+                accessPolicy: accessPolicy,
+                spatial: new MetadataV2ResourceSpatial
+                {
+                    SpatialReference = MetadataV2SpatialReference.Wgs84,
+                    GeometryType = MetadataV2GeometryType.Point,
+                    PrimaryGeometryField = "shape",
+                    SupportedCrs = [MetadataV2SpatialReference.Wgs84],
+                })
+            .AddStorageBinding("binding-layer-0", "res-layer-0", "features:0", storageLayerId: 0)
+            .AddPublication(
+                id: "pub-layer-0",
+                serviceId: "svc-test-feature",
+                resourceId: "res-layer-0",
+                layerIndex: 0,
+                storageBindingId: "binding-layer-0",
+                serviceLocalId: "0",
+                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+            .Build();
+
+        services.RemoveAll<IMetadataV2GraphProvider>();
+        services.AddSingleton<IMetadataV2GraphProvider>(_ => new TestMetadataV2GraphProvider(graph));
+    }
+
     #region Development Bypass Tests
 
     // Note: AdminEndpoint_DevelopmentEnvironment_NoPassword_AllowsAccess test removed
@@ -121,10 +178,11 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
     public async Task AdminEndpoint_DevelopmentBypass_ExplicitlyEnabled_AllowsAccess()
     {
-        // Arrange - Explicitly enable development bypass
+        // Arrange - Explicitly enable development bypass (HONUA_DEV_AUTH + operator ack).
         using var factory = CreateTestFactory(builder =>
         {
             builder.UseSetting("HONUA_DEV_AUTH", "true");
+            builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "true");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", "some-password");
         });
         using var client = factory.CreateClient();
@@ -135,6 +193,28 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         // Assert - Should allow access due to explicit bypass
         Assert.NotEqual(401, (int)response.StatusCode);
         _output.WriteLine($"Response status: {response.StatusCode}");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    public async Task AdminEndpoint_DevelopmentBypass_MissingAcknowledgement_RequiresAuth()
+    {
+        // Arrange - HONUA_DEV_AUTH=true is set but the operator ack flag is absent.
+        // Defence-in-depth: the bypass must not activate without both flags.
+        using var factory = CreateTestFactory(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.UseSetting("HONUA_DEV_AUTH", "true");
+            // Deliberately omit HONUA_DEV_AUTH_ALLOW_BYPASS
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
+        });
+        using var client = factory.CreateClient();
+
+        // Act - Access admin endpoint without API key
+        var response = await client.GetAsync("/api/v1/admin/connections/test/tables");
+
+        // Assert - Bypass must NOT activate; authentication is required.
+        Assert.Equal(401, (int)response.StatusCode);
     }
 
     [IntegrationTest]
@@ -155,6 +235,72 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
         // Assert - Should require authentication
         Assert.Equal(401, (int)response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
+    public void AdminEndpoint_StagingEnvironment_DevAuthSet_StartupValidationRejects()
+    {
+        // SECURITY REGRESSION GUARD (honua-server#1144):
+        // The dev-auth bypass must NEVER be configurable in Staging. Startup
+        // configuration validation (ConfigurationValidationService) is the
+        // first line of defence — setting HONUA_DEV_AUTH=true in a
+        // non-relaxed environment must fail to start, before any request can
+        // arrive. This is stronger than a request-level 401 check because the
+        // misconfiguration never reaches the auth handler at all.
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+        {
+            using var factory = CreateTestFactory(builder =>
+            {
+                builder.UseEnvironment("Staging");
+                builder.UseSetting("HONUA_DEV_AUTH", "true");
+                builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "true");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
+            });
+            _ = factory.CreateClient();
+        });
+        Assert.Contains("Configuration validation failed", exception.Message);
+    }
+
+    [Fact]
+    public void AdminEndpoint_CustomEnvironment_DevAuthSet_StartupValidationRejects()
+    {
+        // SECURITY REGRESSION GUARD (honua-server#1144):
+        // Custom/unknown environment names (e.g. QA, Preview) must default to
+        // enforcing authentication. The dev-auth bypass cannot be configured
+        // in any environment other than Development or Test.
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+        {
+            using var factory = CreateTestFactory(builder =>
+            {
+                builder.UseEnvironment("QA");
+                builder.UseSetting("HONUA_DEV_AUTH", "true");
+                builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "true");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
+            });
+            _ = factory.CreateClient();
+        });
+        Assert.Contains("Configuration validation failed", exception.Message);
+    }
+
+    [Fact]
+    public void AdminEndpoint_DevelopmentEnvironment_DevAuthSet_StartupValidationRejects()
+    {
+        // SECURITY REGRESSION GUARD (honua-server#1144):
+        // The bypass is restricted to the Test environment. In Development,
+        // HONUA_DEV_AUTH=true is REJECTED at startup — operators must
+        // configure HONUA_ADMIN_PASSWORD for development access instead.
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+        {
+            using var factory = CreateTestFactory(builder =>
+            {
+                builder.UseEnvironment("Development");
+                builder.UseSetting("HONUA_DEV_AUTH", "true");
+                builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "true");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", TestAdminPassword);
+            });
+            _ = factory.CreateClient();
+        });
+        Assert.Contains("Configuration validation failed", exception.Message);
     }
 
     #endregion
@@ -485,6 +631,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
                 services.AddScoped<ITileProvider>(provider => provider.GetRequiredService<TestFeatureStore>());
                 services.AddScoped<IRelationshipStore>(provider => provider.GetRequiredService<TestFeatureStore>());
                 services.AddScoped<IStreamingFeatureStore>(provider => provider.GetRequiredService<TestFeatureStore>());
+                AddFeatureServerMetadataV2Graph(services, allowAnonymous: false);
             });
         });
         using var client = factory.CreateClient();
@@ -522,6 +669,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
                 services.AddScoped<ITileProvider>(provider => provider.GetRequiredService<TestFeatureStore>());
                 services.AddScoped<IRelationshipStore>(provider => provider.GetRequiredService<TestFeatureStore>());
                 services.AddScoped<IStreamingFeatureStore>(provider => provider.GetRequiredService<TestFeatureStore>());
+                AddFeatureServerMetadataV2Graph(services, allowAnonymous: true);
             });
         });
         using var client = factory.CreateClient();

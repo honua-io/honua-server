@@ -397,7 +397,12 @@ jobs:
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
     needs: [build, changes]
-    timeout-minutes: 35
+    # Bumped 35→70 to absorb Coverlet XPlat-collector instrumentation
+    # overhead across the per-project test steps (Core 30m, Server Fast 20m,
+    # Architecture 10m, Security 3m). Step-level timeouts still bound each
+    # individual run; this just keeps the orchestrator from cancelling the
+    # job before the steps get to fail naturally (#1144).
+    timeout-minutes: 70
     services:
       postgres:
         image: postgis/postgis:16-3.4
@@ -440,7 +445,11 @@ jobs:
         # it here as well was duplicating ~2 min of test time per PR on the
         # baseline 16-3.4 image. Keep core + loadtests here; defer Postgres
         # coverage entirely to postgres-compat.
-        timeout-minutes: 20
+        # Coverlet XPlat collector emits cobertura.xml per project under
+        # ./coverage; see coverlet.runsettings for exclusions / formats.
+        # Timeout bumped 20→30 to absorb XPlat-collector instrumentation
+        # overhead on the larger Honua.Core assembly (#1144).
+        timeout-minutes: 30
         run: |
           dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj \
             --no-build \
@@ -448,12 +457,19 @@ jobs:
             --configuration Release \
             --logger "trx;LogFileName=core-tests.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
+            --results-directory ./tests/TestResults \
+            --collect:"XPlat Code Coverage" \
+            --settings coverlet.runsettings
 
+          # Per ADR-0037 PR CI executes the LoadTests project's Fast tier only —
+          # the actual NBomber scenarios are exercised by the nightly load-soak
+          # workflow. Any future scenario-runner test marked `[Trait("Tier", "Slow")]`
+          # is skipped here.
           dotnet test tests/dotnet/Honua.LoadTests/Honua.LoadTests.csproj \
             --no-build \
             --no-restore \
             --configuration Release \
+            --filter "Tier!=Slow" \
             --logger "trx;LogFileName=load-tests.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
@@ -465,7 +481,12 @@ jobs:
         # NSubstitute / NullLogger / in-memory caches and do not require the
         # PostgreSQL service. Decoupled from the targeted-shards matrix so a
         # PR with no matching shard still runs the fast server unit tests.
-        timeout-minutes: 10
+        # Coverage collection on this step would add ~20m of Coverlet teardown
+        # overhead on Honua.Server.dll (size + density). Server.Tests coverage
+        # is collected by the sharded server-tests jobs which DO use the
+        # collector. Keeping this step coverage-free preserves the "fast smoke"
+        # intent (#1144).
+        timeout-minutes: 15
         run: |
           dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build \
@@ -495,6 +516,35 @@ jobs:
           name: foundation-test-results
           path: tests/TestResults/
           retention-days: 7
+
+      # Coverlet's XPlat collector drops `coverage.cobertura.xml` into a per-run
+      # GUID subdirectory under TestResults. Surface those files as their own
+      # artifact so downstream coverage tooling (CodeCov, ReportGenerator, etc.)
+      # can pull them without unpacking the full test-results bundle.
+      - name: Upload foundation coverage (cobertura)
+        uses: actions/upload-artifact@v7
+        if: always()
+        timeout-minutes: 3
+        with:
+          name: foundation-coverage
+          path: tests/TestResults/**/coverage.cobertura.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+      # CodeCov upload — only runs when a token is configured in repo secrets.
+      # Without a token the artifact above is still produced so coverage can be
+      # inspected manually from the workflow run.
+      - name: Upload coverage to Codecov
+        if: ${{ always() && env.CODECOV_TOKEN != '' }}
+        uses: codecov/codecov-action@v6
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: tests/TestResults/**/coverage.cobertura.xml
+          flags: foundation
+          name: foundation-tests
+          fail_ci_if_error: false
 
   server-tests:
     name: Server Tests (${{ matrix.shard_name }})
@@ -918,6 +968,7 @@ jobs:
         working-directory: tests/js-browser
         env:
           HONUA_BASE_URL: http://localhost:5000
+          HONUA_API_KEY: "ci-admin-password"
           CI: 'true'
 
       - name: Upload test artifacts
@@ -1159,7 +1210,32 @@ jobs:
           dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
             --configuration Release \
             --no-build \
-            --logger "console;verbosity=detailed"
+            --logger "console;verbosity=detailed" \
+            --results-directory ./tests/TestResults \
+            --collect:"XPlat Code Coverage" \
+            --settings coverlet.runsettings
+
+      - name: Upload Postgres coverage (cobertura)
+        uses: actions/upload-artifact@v7
+        if: always()
+        timeout-minutes: 3
+        with:
+          name: postgres-coverage-${{ strategy.job-index }}
+          path: tests/TestResults/**/coverage.cobertura.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload Postgres coverage to Codecov
+        if: ${{ always() && env.CODECOV_TOKEN != '' }}
+        uses: codecov/codecov-action@v6
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: tests/TestResults/**/coverage.cobertura.xml
+          flags: postgres-${{ strategy.job-index }}
+          name: postgres-compat
+          fail_ci_if_error: false
 
   core-package-compatibility:
     name: Honua.Core Package Compatibility
@@ -1329,6 +1405,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Build Docker image
+        id: docker_build
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -1341,6 +1418,64 @@ jobs:
             github_token=${{ github.token }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # provenance/sbom must be false for `load: true` — the local docker exporter
+          # can't load a manifest list. SBOM is generated separately via Anchore below.
+          provenance: false
+          sbom: false
+
+      # Generate an SPDX JSON SBOM for the freshly built image and upload it
+      # as a workflow artifact so PR reviewers (and downstream supply-chain
+      # tooling) can inspect the bill of materials without having to pull the
+      # image registry attestation. Required by audit gate A -> A+.
+      - name: Generate SBOM (SPDX JSON) for honua-server:test
+        id: sbom
+        uses: anchore/sbom-action@v0
+        with:
+          image: honua-server:test
+          format: spdx-json
+          output-file: sbom-honua-server-test.spdx.json
+          artifact-name: sbom-honua-server-test.spdx.json
+          upload-artifact: true
+          upload-release-assets: false
+
+      # Run Trivy against the image we just built locally (no double-build:
+      # we reuse honua-server:test that the build-push step `load: true`'d
+      # into the docker daemon). Fail the PR gate on any HIGH/CRITICAL CVE
+      # that already has a fix available upstream.
+      - name: Trivy image scan (PR gate, HIGH/CRITICAL, fixed only)
+        id: trivy_image
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: image
+          image-ref: honua-server:test
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+          vuln-type: os,library
+
+      # Filesystem scan catches CVEs introduced by the Dockerfile base image
+      # / package manifests / lockfiles that the image scan may miss when a
+      # vulnerable dependency hasn't shipped to a release artifact yet.
+      - name: Trivy filesystem scan (PR gate, HIGH/CRITICAL, fixed only)
+        id: trivy_fs
+        if: always()
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+          vuln-type: os,library
+
+      - name: Trivy failure guidance
+        if: failure() && (steps.trivy_image.outcome == 'failure' || steps.trivy_fs.outcome == 'failure')
+        run: |
+          echo "::error title=Trivy PR gate failed::One or more HIGH/CRITICAL CVEs with available fixes were detected."
+          echo "::notice::To resolve: review the Trivy output above, then bump the affected dependency / base image to a fixed version. If a CVE is a false positive, add an entry to .trivyignore with a justification and CVE link."
+          exit 1
 
       - name: Run Docker container
         run: |

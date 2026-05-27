@@ -463,40 +463,7 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
         }
     }
 
-    [IntegrationTest]
-    [Operation(Operations.Metadata)]
-    [Endpoint("POST /api/v1/admin/metadata/resources")]
-    public async Task Admin_CreateMetadataResource_ShouldCreateLayerResource()
-    {
-        var resource = new Honua.Core.Features.Metadata.Domain.MetadataResource
-        {
-            ApiVersion = Honua.Core.Features.Metadata.Schema.MetadataSchemaRegistry.CurrentVersion,
-            Kind = Honua.Core.Features.Metadata.Domain.MetadataResourceKinds.Layer,
-            Metadata = new Honua.Core.Features.Metadata.Domain.ResourceMetadata
-            {
-                Name = $"coverage-layer-{Guid.NewGuid():N}",
-                Namespace = "default"
-            },
-            Spec = JsonSerializer.SerializeToElement(new
-            {
-                tableName = "features",
-                schemaName = _fixture.CurrentSchema ?? "public",
-                geometryType = "Polygon",
-                srid = 4326
-            })
-        };
-
-        var payload = JsonSerializer.Serialize(
-            resource,
-            Honua.Server.Features.Admin.Models.MetadataResourceJsonContext.Default.MetadataResource);
-        var content = new StringContent(payload, Encoding.UTF8, "application/json");
-
-        // Act
-        var response = await _client.PostAsync("/api/v1/admin/metadata/resources", content);
-
-        // Assert
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
-    }
+    // v1 admin metadata-resource POST endpoint removed in #1035 cutover; V2 admin UX (epic #1046) tracks the replacement.
 
     #endregion
 

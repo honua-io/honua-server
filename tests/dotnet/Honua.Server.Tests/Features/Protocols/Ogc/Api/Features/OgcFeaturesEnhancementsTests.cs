@@ -30,6 +30,28 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
+
+        // V2 query processor rejects bbox / datetime filters on resources whose Spatial /
+        // Temporal slots are unset. The default test V2 graph (WebAppFixture.BuildDefaultTestGraph)
+        // does not seed those slots; mirror the v1 Postgres seed: layer 0 is a WGS84 point
+        // layer with TimeInfo {start: timestamp, end: event_date}.
+        _fixture.UpdateV2ResourceMetadata(
+            WebAppFixture.TestLayerId,
+            spatial: new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ResourceSpatial
+            {
+                GeometryType = Honua.Core.Features.Metadata.Domain.V2.MetadataV2GeometryType.Point,
+                SpatialReference = new Honua.Core.Features.Metadata.Domain.V2.MetadataV2SpatialReference
+                {
+                    Srid = 4326,
+                    Crs = "EPSG:4326",
+                    IsGeographic = true,
+                },
+            },
+            temporal: new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ResourceTemporal
+            {
+                StartTimeField = "timestamp",
+                EndTimeField = "event_date",
+            });
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();

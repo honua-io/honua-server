@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -42,7 +43,7 @@ internal sealed class FeatureMutationEventService(
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var serviceId = await LayerValidationHelpers.ResolvePrimaryServiceNameAsync(
+        var serviceId = await LayerValidationHelpers.ResolvePrimaryServiceNameByProtocolV2Async(
             context,
             layerId,
             serviceProtocol,

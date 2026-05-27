@@ -363,12 +363,15 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
 
         if (string.Equals(compressor, "zlib", StringComparison.Ordinal))
         {
+            // MemoryStream(byte[]) is a non-copying wrapper; the destination buffer is supplied
+            // by the caller (already pool-friendly), so we decompress straight into it via the
+            // Span<byte> overload, avoiding any intermediate MemoryStream/ToArray() allocation.
             using var input = new MemoryStream(raw);
             using var zlib = new ZLibStream(input, CompressionMode.Decompress);
             var totalRead = 0;
             while (totalRead < destination.Length)
             {
-                var read = zlib.Read(destination, totalRead, destination.Length - totalRead);
+                var read = zlib.Read(destination.AsSpan(totalRead));
                 if (read <= 0)
                 {
                     break;

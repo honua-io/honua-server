@@ -253,6 +253,53 @@ CREATE TABLE IF NOT EXISTS honua.relationships (
     )
 );
 
+CREATE TABLE IF NOT EXISTS honua.feature_change_outbox (
+    outbox_id        uuid        NOT NULL DEFAULT gen_random_uuid(),
+    service_id       text        NOT NULL,
+    layer_id         integer     NOT NULL,
+    object_id        bigint      NOT NULL,
+    operation        text        NOT NULL,
+    protocol         text        NOT NULL,
+    source_id        text,
+    request_id       text        NOT NULL,
+    event_id         text        NOT NULL,
+    event_payload    jsonb       NOT NULL,
+    status           text        NOT NULL DEFAULT 'pending',
+    retry_count      integer     NOT NULL DEFAULT 0,
+    last_error       text,
+    created_at       timestamptz NOT NULL DEFAULT now(),
+    claimed_at       timestamptz,
+    claim_node_id    text,
+    claim_expires_at timestamptz,
+    dispatched_at    timestamptz,
+    CONSTRAINT feature_change_outbox_pkey PRIMARY KEY (outbox_id),
+    CONSTRAINT feature_change_outbox_status_chk CHECK (
+        status IN ('pending', 'claimed', 'dispatched', 'failed', 'dead_lettered')
+    )
+);
+
+CREATE TABLE IF NOT EXISTS honua.metadata_v2_snapshots (
+    environment       TEXT          NOT NULL,
+    revision          BIGINT        NOT NULL,
+    schema_version    TEXT          NOT NULL,
+    api_version       TEXT          NOT NULL,
+    document          JSONB         NOT NULL,
+    etag              TEXT          NOT NULL,
+    generated_at      TIMESTAMPTZ   NOT NULL,
+    created_at        TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (environment, revision)
+);
+
+CREATE TABLE IF NOT EXISTS honua.metadata_v2_current (
+    environment       TEXT          NOT NULL PRIMARY KEY,
+    revision          BIGINT        NOT NULL,
+    etag              TEXT          NOT NULL,
+    activated_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    FOREIGN KEY (environment, revision)
+        REFERENCES honua.metadata_v2_snapshots(environment, revision)
+        ON DELETE RESTRICT
+);
+
 CREATE TABLE IF NOT EXISTS features (
     objectid BIGSERIAL PRIMARY KEY,
     layer_id INT NOT NULL,
@@ -276,6 +323,538 @@ CREATE INDEX IF NOT EXISTS idx_raster_data_acquisition_date ON honua.raster_data
 CREATE INDEX IF NOT EXISTS idx_raster_data_layer_acquisition ON honua.raster_data(layer_id, acquisition_date DESC, created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_raster_statistics_raster_data_id ON honua.raster_statistics(raster_data_id);
 CREATE INDEX IF NOT EXISTS idx_raster_tiles_lookup ON honua.raster_tiles(raster_data_id, zoom_level, tile_x, tile_y);
+CREATE INDEX IF NOT EXISTS ix_fco_dispatch ON honua.feature_change_outbox (created_at) WHERE status IN ('pending', 'failed');
+CREATE INDEX IF NOT EXISTS ix_fco_claim_recovery ON honua.feature_change_outbox (claim_expires_at) WHERE status = 'claimed';
+CREATE INDEX IF NOT EXISTS ix_fco_dead_lettered ON honua.feature_change_outbox (created_at) WHERE status = 'dead_lettered';
+
+CREATE OR REPLACE FUNCTION honua.seed_metadata_v2_compat_snapshot()
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    target_environment text;
+    snapshot_document jsonb;
+    snapshot_etag text;
+BEGIN
+    FOREACH target_environment IN ARRAY ARRAY['default', 'Development', 'Test']
+    LOOP
+        WITH
+        status_doc AS (
+            SELECT jsonb_build_object('lifecycle', 'active', 'state', 'ready') AS value
+        ),
+        protocols AS (
+            SELECT to_jsonb(ARRAY[
+                'FeatureServer',
+                'MapServer',
+                'ImageServer',
+                'GPServer',
+                'OgcFeatures',
+                'OGC-API-Maps',
+                'OGC-API-Coverages',
+                'OGC-API-Tiles',
+                'Wfs20',
+                'Wms',
+                'Wmts',
+                'Wcs',
+                'OData',
+                'Grpc',
+                'Stac',
+                'Terrain',
+                'Elevation'
+            ]::text[]) AS value
+        ),
+        layer_rows AS (
+            SELECT
+                sl.service_name,
+                COALESCE(s.description, '') AS service_description,
+                l.layer_id,
+                l.layer_name,
+                COALESCE(l.description, '') AS layer_description,
+                COALESCE(NULLIF(l.table_schema, ''), 'public') AS table_schema,
+                l.table_name,
+                l.geometry_type,
+                l.srid,
+                ST_XMin(l.extent)::double precision AS west,
+                ST_YMin(l.extent)::double precision AS south,
+                ST_XMax(l.extent)::double precision AS east,
+                ST_YMax(l.extent)::double precision AS north,
+                trim(both '-' from regexp_replace(lower(sl.service_name), '[^a-z0-9]+', '-', 'g')) AS service_part,
+                l.layer_id::text AS layer_part
+            FROM honua.service_layers sl
+            JOIN honua.services s ON s.service_name = sl.service_name
+            JOIN honua.layers l ON l.layer_id = sl.layer_id
+        ),
+        resource_rows AS (
+            SELECT
+                jsonb_build_object(
+                    'metadata', jsonb_build_object(
+                        'id', 'res-layer-' || layer_part,
+                        'name', layer_name,
+                        'title', layer_name,
+                        'description', layer_description,
+                        'labels', '{}'::jsonb,
+                        'annotations', '{}'::jsonb,
+                        'keywords', '[]'::jsonb,
+                        'themes', '[]'::jsonb
+                    ),
+                    'type', 'feature-dataset',
+                    'storageBindingIds', jsonb_build_array('storage-layer-' || layer_part),
+                    'primaryStorageBindingId', 'storage-layer-' || layer_part,
+                    'policyIds', '[]'::jsonb,
+                    'schemaFields', COALESCE((
+                        SELECT jsonb_agg(
+                            jsonb_build_object(
+                                'name', lf.field_name,
+                                'type', CASE regexp_replace(lower(COALESCE(lf.field_type, '')), '[^a-z0-9]+', '', 'g')
+                                    WHEN 'string' THEN 'string'
+                                    WHEN 'text' THEN 'string'
+                                    WHEN 'integer' THEN 'integer'
+                                    WHEN 'int' THEN 'integer'
+                                    WHEN 'int32' THEN 'integer'
+                                    WHEN 'long' THEN 'biginteger'
+                                    WHEN 'bigint' THEN 'biginteger'
+                                    WHEN 'int64' THEN 'biginteger'
+                                    WHEN 'double' THEN 'double'
+                                    WHEN 'float64' THEN 'double'
+                                    WHEN 'float' THEN 'float'
+                                    WHEN 'single' THEN 'float'
+                                    WHEN 'boolean' THEN 'boolean'
+                                    WHEN 'bool' THEN 'boolean'
+                                    WHEN 'datetime' THEN 'datetime'
+                                    WHEN 'timestamp' THEN 'datetime'
+                                    WHEN 'date' THEN 'date'
+                                    WHEN 'time' THEN 'time'
+                                    WHEN 'json' THEN 'json'
+                                    WHEN 'jsonb' THEN 'json'
+                                    WHEN 'binary' THEN 'binary'
+                                    WHEN 'bytes' THEN 'binary'
+                                    WHEN 'uuid' THEN 'uuid'
+                                    WHEN 'guid' THEN 'uuid'
+                                    WHEN 'geometry' THEN 'geometry'
+                                    WHEN 'geography' THEN 'geography'
+                                    ELSE 'unknown'
+                                END,
+                                'description', lf.description,
+                                'nullable', lf.nullable,
+                                'editable', CASE regexp_replace(lower(COALESCE(lf.field_type, '')), '[^a-z0-9]+', '', 'g')
+                                    WHEN 'geometry' THEN false
+                                    WHEN 'geography' THEN false
+                                    ELSE true
+                                END,
+                                'semanticRoles', to_jsonb(array_remove(ARRAY[
+                                    CASE WHEN lf.field_name = 'objectid' THEN 'id.primary' END,
+                                    CASE WHEN lf.field_name IN ('shape', 'geometry') THEN 'geometry.primary' END
+                                ], NULL))
+                            )
+                            ORDER BY lf.field_order
+                        )
+                        FROM honua.layer_fields lf
+                        WHERE lf.layer_id = layer_rows.layer_id
+                    ), '[]'::jsonb),
+                    'relationships', '[]'::jsonb,
+                    'styleResourceIds', '[]'::jsonb,
+                    'spatial', jsonb_build_object(
+                        'spatialReference', jsonb_build_object(
+                            'srid', srid,
+                            'crs', 'EPSG:' || srid::text,
+                            'isGeographic', srid = 4326
+                        ),
+                        'geometryType', CASE regexp_replace(lower(COALESCE(geometry_type, '')), '[^a-z0-9]+', '', 'g')
+                            WHEN '' THEN 'none'
+                            WHEN 'none' THEN 'none'
+                            WHEN 'point' THEN 'point'
+                            WHEN 'multipoint' THEN 'multipoint'
+                            WHEN 'line' THEN 'linestring'
+                            WHEN 'linestring' THEN 'linestring'
+                            WHEN 'polyline' THEN 'linestring'
+                            WHEN 'multiline' THEN 'multilinestring'
+                            WHEN 'multilinestring' THEN 'multilinestring'
+                            WHEN 'polygon' THEN 'polygon'
+                            WHEN 'multipolygon' THEN 'multipolygon'
+                            WHEN 'geometrycollection' THEN 'geometrycollection'
+                            WHEN 'geometry' THEN 'mixed'
+                            WHEN 'mixed' THEN 'mixed'
+                            ELSE 'mixed'
+                        END,
+                        'bbox', jsonb_build_object(
+                            'west', west,
+                            'south', south,
+                            'east', east,
+                            'north', north
+                        )
+                    ),
+                    'accessPolicy', jsonb_build_object('allowAnonymous', true),
+                    'status', (SELECT value FROM status_doc),
+                    'extensions', '{}'::jsonb
+                ) AS value,
+                ('res-layer-' || layer_part) AS sort_key
+            FROM layer_rows
+
+            UNION ALL
+
+            SELECT
+                jsonb_build_object(
+                    'metadata', jsonb_build_object(
+                        'id', 'res-image-layer-' || layer_part,
+                        'name', layer_name || ' imagery',
+                        'title', layer_name,
+                        'description', layer_description,
+                        'labels', '{}'::jsonb,
+                        'annotations', '{}'::jsonb,
+                        'keywords', '[]'::jsonb,
+                        'themes', '[]'::jsonb
+                    ),
+                    'type', 'raster-dataset',
+                    'storageBindingIds', jsonb_build_array('storage-image-layer-' || layer_part),
+                    'primaryStorageBindingId', 'storage-image-layer-' || layer_part,
+                    'policyIds', '[]'::jsonb,
+                    'schemaFields', '[]'::jsonb,
+                    'relationships', '[]'::jsonb,
+                    'styleResourceIds', '[]'::jsonb,
+                    'spatial', jsonb_build_object(
+                        'spatialReference', jsonb_build_object(
+                            'srid', srid,
+                            'crs', 'EPSG:' || srid::text,
+                            'isGeographic', srid = 4326
+                        ),
+                        'geometryType', CASE regexp_replace(lower(COALESCE(geometry_type, '')), '[^a-z0-9]+', '', 'g')
+                            WHEN '' THEN 'none'
+                            WHEN 'none' THEN 'none'
+                            WHEN 'point' THEN 'point'
+                            WHEN 'multipoint' THEN 'multipoint'
+                            WHEN 'line' THEN 'linestring'
+                            WHEN 'linestring' THEN 'linestring'
+                            WHEN 'polyline' THEN 'linestring'
+                            WHEN 'multiline' THEN 'multilinestring'
+                            WHEN 'multilinestring' THEN 'multilinestring'
+                            WHEN 'polygon' THEN 'polygon'
+                            WHEN 'multipolygon' THEN 'multipolygon'
+                            WHEN 'geometrycollection' THEN 'geometrycollection'
+                            WHEN 'geometry' THEN 'mixed'
+                            WHEN 'mixed' THEN 'mixed'
+                            ELSE 'mixed'
+                        END,
+                        'bbox', jsonb_build_object(
+                            'west', west,
+                            'south', south,
+                            'east', east,
+                            'north', north
+                        )
+                    ),
+                    'accessPolicy', jsonb_build_object('allowAnonymous', true),
+                    'status', (SELECT value FROM status_doc),
+                    'extensions', '{}'::jsonb
+                ) AS value,
+                ('res-image-layer-' || layer_part) AS sort_key
+            FROM layer_rows
+        ),
+        storage_rows AS (
+            SELECT
+                jsonb_build_object(
+                    'metadata', jsonb_build_object('id', 'storage-layer-' || layer_part, 'name', 'storage-layer-' || layer_part),
+                    'resourceId', 'res-layer-' || layer_part,
+                    'connectionId', NULL,
+                    'storageType', 'relational-table',
+                    'locator', table_schema || '.' || table_name,
+                    'storageLayerId', layer_id,
+                    'capabilities', to_jsonb(ARRAY['query', 'filter', 'sort', 'aggregate', 'edit', 'transactions', 'render', 'tile', 'search']::text[]),
+                    'options', '{}'::jsonb,
+                    'status', (SELECT value FROM status_doc),
+                    'extensions', '{}'::jsonb
+                ) AS value,
+                ('storage-layer-' || layer_part) AS sort_key
+            FROM layer_rows
+
+            UNION ALL
+
+            SELECT
+                jsonb_build_object(
+                    'metadata', jsonb_build_object('id', 'storage-image-layer-' || layer_part, 'name', 'storage-image-layer-' || layer_part),
+                    'resourceId', 'res-image-layer-' || layer_part,
+                    'connectionId', NULL,
+                    'storageType', 'relational-table',
+                    'locator', 'honua.raster_data',
+                    'capabilities', to_jsonb(ARRAY['query', 'filter', 'render', 'tile', 'download']::text[]),
+                    'options', '{}'::jsonb,
+                    'status', (SELECT value FROM status_doc),
+                    'extensions', '{}'::jsonb
+                ) AS value,
+                ('storage-image-layer-' || layer_part) AS sort_key
+            FROM layer_rows
+        ),
+        service_names AS (
+            SELECT DISTINCT service_name, service_part
+            FROM layer_rows
+        ),
+        service_rows AS (
+            SELECT
+                jsonb_build_object(
+                    'metadata', jsonb_build_object('id', 'svc-' || service_part || '-feature', 'name', service_name, 'title', service_name),
+                    'serviceType', 'esri-feature-service',
+                    'publicationIds', '[]'::jsonb,
+                    'protocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
+                    'enabledProtocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
+                    'options', '{}'::jsonb,
+                    'accessPolicy', jsonb_build_object('allowAnonymous', true),
+                    'status', (SELECT value FROM status_doc),
+                    'extensions', '{}'::jsonb
+                ) AS value,
+                ('svc-' || service_part || '-feature') AS sort_key
+            FROM service_names
+
+            UNION ALL
+
+            SELECT
+                jsonb_build_object(
+                    'metadata', jsonb_build_object('id', 'svc-' || service_part || '-map', 'name', service_name, 'title', service_name),
+                    'serviceType', 'esri-map-service',
+                    'publicationIds', '[]'::jsonb,
+                    'protocols', to_jsonb(ARRAY['MapServer', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
+                    'enabledProtocols', to_jsonb(ARRAY['MapServer', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
+                    'options', '{}'::jsonb,
+                    'accessPolicy', jsonb_build_object('allowAnonymous', true),
+                    'status', (SELECT value FROM status_doc),
+                    'extensions', '{}'::jsonb
+                ) AS value,
+                ('svc-' || service_part || '-map') AS sort_key
+            FROM service_names
+
+            UNION ALL
+
+            SELECT
+                jsonb_build_object(
+                    'metadata', jsonb_build_object('id', 'svc-' || service_part || '-image', 'name', service_name, 'title', service_name),
+                    'serviceType', 'esri-image-service',
+                    'publicationIds', '[]'::jsonb,
+                    'protocols', to_jsonb(ARRAY['ImageServer', 'Wcs', 'OGC-API-Coverages']::text[]),
+                    'enabledProtocols', to_jsonb(ARRAY['ImageServer', 'Wcs', 'OGC-API-Coverages']::text[]),
+                    'options', '{}'::jsonb,
+                    'accessPolicy', jsonb_build_object('allowAnonymous', true),
+                    'status', (SELECT value FROM status_doc),
+                    'extensions', '{}'::jsonb
+                ) AS value,
+                ('svc-' || service_part || '-image') AS sort_key
+            FROM service_names
+
+            UNION ALL
+
+            SELECT
+                jsonb_build_object(
+                    'metadata', jsonb_build_object('id', 'svc-' || service_part || '-ogc', 'name', service_name, 'title', service_name),
+                    'serviceType', 'ogc-api-features',
+                    'route', '/ogc/features',
+                    'publicationIds', '[]'::jsonb,
+                    'protocols', to_jsonb(ARRAY['OgcFeatures', 'Wfs20']::text[]),
+                    'enabledProtocols', to_jsonb(ARRAY['OgcFeatures', 'Wfs20']::text[]),
+                    'options', '{}'::jsonb,
+                    'accessPolicy', jsonb_build_object('allowAnonymous', true),
+                    'status', (SELECT value FROM status_doc),
+                    'extensions', '{}'::jsonb
+                ) AS value,
+                ('svc-' || service_part || '-ogc') AS sort_key
+            FROM service_names
+
+            UNION ALL
+
+            SELECT
+                jsonb_build_object(
+                    'metadata', jsonb_build_object('id', 'svc-' || service_part || '-stac', 'name', service_name, 'title', service_name),
+                    'serviceType', 'stac-api',
+                    'route', '/stac',
+                    'publicationIds', '[]'::jsonb,
+                    'protocols', to_jsonb(ARRAY['Stac']::text[]),
+                    'enabledProtocols', to_jsonb(ARRAY['Stac']::text[]),
+                    'options', '{}'::jsonb,
+                    'accessPolicy', jsonb_build_object('allowAnonymous', true),
+                    'status', (SELECT value FROM status_doc),
+                    'extensions', '{}'::jsonb
+                ) AS value,
+                ('svc-' || service_part || '-stac') AS sort_key
+            FROM service_names
+        ),
+        publication_rows AS (
+            SELECT
+                jsonb_build_object(
+                    'metadata', jsonb_build_object(
+                        'id', 'pub-' || service_part || '-image-' || layer_part,
+                        'name', layer_part,
+                        'title', layer_name,
+                        'description', service_description
+                    ),
+                    'resourceId', 'res-image-layer-' || layer_part,
+                    'serviceId', 'svc-' || service_part || '-image',
+                    'storageBindingId', 'storage-image-layer-' || layer_part,
+                    'publicationType', 'esri-image-layer',
+                    'path', layer_part,
+                    'layerIndex', layer_id,
+                    'serviceLocalId', layer_part,
+                    'supportedFormats', '[]'::jsonb,
+                    'capabilities', '[]'::jsonb,
+                    'status', (SELECT value FROM status_doc),
+                    'options', '{}'::jsonb,
+                    'extensions', '{}'::jsonb
+                ) AS value,
+                service_part,
+                layer_id,
+                0 AS sort_order
+            FROM layer_rows
+
+            UNION ALL
+
+            SELECT
+                jsonb_build_object(
+                    'metadata', jsonb_build_object('id', 'pub-' || service_part || '-ogc-' || layer_part, 'name', layer_part),
+                    'resourceId', 'res-layer-' || layer_part,
+                    'serviceId', 'svc-' || service_part || '-ogc',
+                    'storageBindingId', 'storage-layer-' || layer_part,
+                    'publicationType', 'ogc-collection',
+                    'path', layer_part,
+                    'layerIndex', layer_id,
+                    'serviceLocalId', layer_part,
+                    'supportedFormats', '[]'::jsonb,
+                    'capabilities', '[]'::jsonb,
+                    'status', (SELECT value FROM status_doc),
+                    'options', '{}'::jsonb,
+                    'extensions', '{}'::jsonb
+                ) AS value,
+                service_part,
+                layer_id,
+                1 AS sort_order
+            FROM layer_rows
+
+            UNION ALL
+
+            SELECT
+                jsonb_build_object(
+                    'metadata', jsonb_build_object('id', 'pub-' || service_part || '-feature-' || layer_part, 'name', layer_part),
+                    'resourceId', 'res-layer-' || layer_part,
+                    'serviceId', 'svc-' || service_part || '-feature',
+                    'storageBindingId', 'storage-layer-' || layer_part,
+                    'publicationType', 'esri-feature-layer',
+                    'path', layer_part,
+                    'layerIndex', layer_id,
+                    'serviceLocalId', layer_part,
+                    'supportedFormats', '[]'::jsonb,
+                    'capabilities', '[]'::jsonb,
+                    'status', (SELECT value FROM status_doc),
+                    'options', '{}'::jsonb,
+                    'extensions', '{}'::jsonb
+                ) AS value,
+                service_part,
+                layer_id,
+                2 AS sort_order
+            FROM layer_rows
+
+            UNION ALL
+
+            SELECT
+                jsonb_build_object(
+                    'metadata', jsonb_build_object('id', 'pub-' || service_part || '-map-' || layer_part, 'name', layer_part),
+                    'resourceId', 'res-layer-' || layer_part,
+                    'serviceId', 'svc-' || service_part || '-map',
+                    'storageBindingId', 'storage-layer-' || layer_part,
+                    'publicationType', 'esri-map-layer',
+                    'path', layer_part,
+                    'layerIndex', layer_id,
+                    'serviceLocalId', layer_part,
+                    'supportedFormats', '[]'::jsonb,
+                    'capabilities', '[]'::jsonb,
+                    'status', (SELECT value FROM status_doc),
+                    'options', '{}'::jsonb,
+                    'extensions', '{}'::jsonb
+                ) AS value,
+                service_part,
+                layer_id,
+                3 AS sort_order
+            FROM layer_rows
+
+            UNION ALL
+
+            SELECT
+                jsonb_build_object(
+                    'metadata', jsonb_build_object('id', 'pub-' || service_part || '-stac-' || layer_part, 'name', layer_part),
+                    'resourceId', 'res-layer-' || layer_part,
+                    'serviceId', 'svc-' || service_part || '-stac',
+                    'storageBindingId', 'storage-layer-' || layer_part,
+                    'publicationType', 'stac-collection',
+                    'path', layer_part,
+                    'layerIndex', layer_id,
+                    'serviceLocalId', layer_part,
+                    'supportedFormats', '[]'::jsonb,
+                    'capabilities', '[]'::jsonb,
+                    'status', (SELECT value FROM status_doc),
+                    'options', '{}'::jsonb,
+                    'extensions', '{}'::jsonb
+                ) AS value,
+                service_part,
+                layer_id,
+                4 AS sort_order
+            FROM layer_rows
+        )
+        SELECT jsonb_build_object(
+            'schemaVersion', '2.0.0-alpha.1',
+            'apiVersion', 'metadata.honua.io/v2alpha1',
+            'revision', 1,
+            'environment', target_environment,
+            'generatedAt', '2024-01-01T00:00:00Z',
+            'namespaces', jsonb_build_array('test'),
+            'metadata', jsonb_build_object(
+                'id', 'ci-compatibility-seed',
+                'name', 'ci-compatibility-seed',
+                'title', 'CI compatibility seed'
+            ),
+            'catalogs', '[]'::jsonb,
+            'resources', COALESCE((SELECT jsonb_agg(value ORDER BY sort_key) FROM resource_rows), '[]'::jsonb),
+            'connections', jsonb_build_array(jsonb_build_object(
+                'metadata', jsonb_build_object('id', 'conn-postgres', 'name', 'postgres'),
+                'type', 'managed',
+                'provider', 'postgres',
+                'status', (SELECT value FROM status_doc)
+            )),
+            'storageBindings', COALESCE((SELECT jsonb_agg(value ORDER BY sort_key) FROM storage_rows), '[]'::jsonb),
+            'services', COALESCE((SELECT jsonb_agg(value ORDER BY sort_key) FROM service_rows), '[]'::jsonb),
+            'publications', COALESCE((SELECT jsonb_agg(value ORDER BY service_part, layer_id, sort_order) FROM publication_rows), '[]'::jsonb),
+            'projectionProfiles', '[]'::jsonb,
+            'policies', '[]'::jsonb,
+            'roles', '[]'::jsonb,
+            'extensionPoints', '[]'::jsonb
+        )
+        INTO snapshot_document;
+
+        snapshot_etag := '"' || md5(snapshot_document::text) || '"';
+
+        INSERT INTO honua.metadata_v2_snapshots (
+            environment,
+            revision,
+            schema_version,
+            api_version,
+            document,
+            etag,
+            generated_at
+        )
+        VALUES (
+            target_environment,
+            1,
+            '2.0.0-alpha.1',
+            'metadata.honua.io/v2alpha1',
+            snapshot_document,
+            snapshot_etag,
+            NOW()
+        )
+        ON CONFLICT (environment, revision) DO UPDATE SET
+            document = EXCLUDED.document,
+            etag = EXCLUDED.etag,
+            generated_at = EXCLUDED.generated_at;
+
+        INSERT INTO honua.metadata_v2_current (environment, revision, etag)
+        VALUES (target_environment, 1, snapshot_etag)
+        ON CONFLICT (environment) DO UPDATE SET
+            revision = EXCLUDED.revision,
+            etag = EXCLUDED.etag,
+            activated_at = NOW();
+    END LOOP;
+END;
+$$;
 
 -- Base test service
 INSERT INTO honua.services (
@@ -467,3 +1046,5 @@ ON CONFLICT (raster_data_id, band_number) DO UPDATE SET
     valid_pixel_count = EXCLUDED.valid_pixel_count,
     nodata_pixel_count = EXCLUDED.nodata_pixel_count,
     computed_at = NOW();
+
+SELECT honua.seed_metadata_v2_compat_snapshot();

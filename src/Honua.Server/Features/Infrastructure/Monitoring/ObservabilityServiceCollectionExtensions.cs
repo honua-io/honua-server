@@ -3,6 +3,7 @@
 
 using System.IO.Compression;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Observability.Abstractions;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Compression;
 using Microsoft.AspNetCore.ResponseCompression;
@@ -29,7 +30,25 @@ internal static class ObservabilityServiceCollectionExtensions
         services.AddSingleton<RecentErrorBuffer>();
         ConfigureResponseCompression(services);
 
+        AddOperateObservability(services);
+
         return services;
+    }
+
+    /// <summary>
+    /// Register the Console Operate observability feed (#1168) and its
+    /// background OTLP probe. The probe stays opt-in: when no OTLP endpoint
+    /// is configured it reports <c>disabled</c> without generating outbound
+    /// traffic, so air-gapped deployments are unaffected.
+    /// </summary>
+    private static void AddOperateObservability(IServiceCollection services)
+    {
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddHttpClient(BackgroundOtlpProbe.HttpClientName);
+        services.AddSingleton<BackgroundOtlpProbe>();
+        services.AddHostedService(sp => sp.GetRequiredService<BackgroundOtlpProbe>());
+
+        services.AddScoped<IOperateEventFeed, LocalOperateEventFeed>();
     }
 
     // Configure output caching for metadata endpoints

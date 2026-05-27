@@ -45,7 +45,8 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    // --- AdminEndpoints (config, openapi, version, capabilities, manifest, tables) ---
+    // --- AdminEndpoints (config, openapi, version, capabilities, tables) ---
+    // v1 manifest endpoints were removed in #1035 cutover; their auth tests removed with them.
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/config")]
@@ -76,46 +77,6 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
     public async Task GetCapabilities_WithoutAuth_Returns401()
     {
         var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/capabilities");
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/manifest")]
-    public async Task GetManifest_WithoutAuth_Returns401()
-    {
-        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/manifest");
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/manifest/apply")]
-    public async Task PostManifestApply_WithoutAuth_Returns401()
-    {
-        var response = await _unauthenticatedClient.PostAsJsonAsync("/api/v1/admin/manifest/apply", new { });
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/manifest/drift")]
-    public async Task GetManifestDrift_WithoutAuth_Returns401()
-    {
-        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/manifest/drift");
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/manifest/versions")]
-    public async Task GetManifestVersions_WithoutAuth_Returns401()
-    {
-        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/manifest/versions");
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/manifest/versions/{versionId}")]
-    public async Task GetManifestVersionById_WithoutAuth_Returns401()
-    {
-        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/manifest/versions/test-id");
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
@@ -176,6 +137,14 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
     public async Task GetMigrationStatus_WithoutAuth_Returns401()
     {
         var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/observability/migrations");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs")]
+    public async Task GetConsoleJobs_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/jobs");
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
@@ -307,23 +276,7 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    // --- MetadataResourceEndpoints ---
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/metadata/resources")]
-    public async Task GetMetadataResources_WithoutAuth_Returns401()
-    {
-        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/metadata/resources");
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [IntegrationTest]
-    [Endpoint("POST /api/v1/admin/metadata/resources")]
-    public async Task PostMetadataResource_WithoutAuth_Returns401()
-    {
-        var response = await _unauthenticatedClient.PostAsJsonAsync("/api/v1/admin/metadata/resources", new { });
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
+    // --- MetadataResourceEndpoints removed in #1035 cutover; auth tests removed with them. ---
 
     // --- OperationsProgressEndpoints ---
 
@@ -386,6 +339,42 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
     public async Task PostEncryptionRotateKey_WithoutAuth_Returns401()
     {
         var response = await _unauthenticatedClient.PostAsync("/api/v1/admin/connections/encryption/rotate-key", null);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    // --- ComplianceAdminEndpoints (#352) ---
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/compliance/dashboard")]
+    public async Task GetComplianceDashboard_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/compliance/dashboard");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/compliance/report")]
+    public async Task GetComplianceReport_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/compliance/report?format=csv");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/compliance/residency/evaluate")]
+    public async Task PostComplianceResidencyEvaluate_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.PostAsJsonAsync(
+            "/api/v1/admin/compliance/residency/evaluate",
+            new { region = "us-east-1" });
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/compliance/encryption/rotate-key")]
+    public async Task PostComplianceRotateKey_WithoutAuth_Returns401()
+    {
+        var response = await _unauthenticatedClient.PostAsync("/api/v1/admin/compliance/encryption/rotate-key", null);
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 

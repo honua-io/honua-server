@@ -97,6 +97,37 @@ public sealed class GrpcConversionHelpersTests
     }
 
     [UnitTest]
+    public void ToFeatureQuery_WithOutFieldsWildcard_TreatsAsAllFields()
+    {
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+        };
+        request.OutFields.Add("*");
+
+        var query = GrpcConversionHelpers.ToFeatureQuery(request);
+
+        query.OutFields.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void ToFeatureQuery_WithCommaSeparatedOutFields_SetsOutFields()
+    {
+        var request = new Proto.QueryFeaturesRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+        };
+        request.OutFields.Add("name, population");
+
+        var query = GrpcConversionHelpers.ToFeatureQuery(request);
+
+        query.OutFields.Should().NotBeNull();
+        query.OutFields!.Value.Should().Equal("name", "population");
+    }
+
+    [UnitTest]
     public void ToFeatureQuery_WithOutSr_SetsOutputSrid()
     {
         var request = new Proto.QueryFeaturesRequest

@@ -124,6 +124,136 @@ Release evidence:
   validation warnings, migration blockers, or admin UI limitations.
 - Follow-up issues are linked for deferred Metadata v2 work.
 
+## Console Content and RBAC Baseline (#1162)
+
+Derived from:
+
+- [#1162](https://github.com/honua-io/honua-server/issues/1162)
+- [#1163](https://github.com/honua-io/honua-server/issues/1163) (persistent store follow-on)
+- [#1164](https://github.com/honua-io/honua-server/issues/1164),
+  [#1165](https://github.com/honua-io/honua-server/issues/1165) (release
+  lifecycle follow-ons)
+
+Release evidence:
+
+- The Console content item, session bootstrap, action-check, and provenance
+  endpoints under `/api/v1/console/**` are documented in
+  [Console Content and RBAC (Admin API)](../../admin-api/console-content-and-rbac.md)
+  and listed in `EndpointRegistry.All`.
+- `ConsoleContentItem.itemType` covers `service`, `layer`, `saved-map`,
+  `dashboard`, `report`, `generated-app`, and `open-data`; sidecar shapes per
+  type are tracked through `ConsoleJsonContext` source-generated serializers.
+- Seven Console verbs (`view`, `edit`, `publish`, `share`, `embed`, `operate`,
+  `administer`) map onto the existing policy action set in
+  `IConsoleActionEvaluator`; mappings and visibility rules are test-covered by
+  `ConsoleActionEvaluatorTests`.
+- `IConsoleContentStore` is satisfied at baseline by an in-memory store;
+  persistent backing is tracked under #1163 and is not required to gate this
+  baseline.
+
+## GitOps Release Prevalidation (#1164)
+
+Derived from:
+
+- [#1163](https://github.com/honua-io/honua-server/issues/1163)
+- [#1164](https://github.com/honua-io/honua-server/issues/1164)
+
+Release evidence:
+
+- `/api/v1/admin/metadata/prevalidate` is documented in
+  [Metadata Prevalidation Admin API](../../admin-api/metadata-prevalidation.md)
+  and listed in `EndpointRegistry.All`.
+- The endpoint accepts either a persisted `releasePackageId` or an inline
+  `MetadataReleasePackage`, plus a target environment and optional declared
+  data-script contracts.
+- Reports include deterministic `metadata.compat.*` finding codes, secret-safe
+  expected/actual values, affected semantic ids, required actions, coverage
+  state, affected dependents, and rollback readiness.
+- `canCreatePullRequest` and `canPromote` are false for `blocked` and
+  `unknown`; script-covered errors downgrade the overall status to `warning`
+  while preserving the automation gates.
+- Declared data scripts are never executed by prevalidation. They cover findings
+  only when their before-contract matches target state and their after-contract
+  satisfies the missing requirement; `exists: true` alone does not cover missing
+  resources, services, publications, or storage bindings. Script-level
+  `targetEnvironment` narrows coverage to the matching target environment.
+- Core analysis and the admin endpoint have tests for ready, blocked, warning,
+  unavailable-state, script-covered, exists-only non-coverage,
+  before-contract-mismatch, explicit `dataScripts: null` and nested null
+  collection rejection, omitted collection normalization, and rollback readiness
+  outcomes.
+
+## GitOps Release Operation Lifecycle and Rollback (#1165)
+
+Derived from:
+
+- [#1164](https://github.com/honua-io/honua-server/issues/1164)
+- [#1165](https://github.com/honua-io/honua-server/issues/1165)
+
+Release evidence:
+
+- `/api/v1/admin/metadata/releases/{packageId}/operation` is documented in
+  [Metadata Prevalidation Admin API](../../admin-api/metadata-prevalidation.md)
+  and [Server Management API](../../operator/CONTROL_PLANE_API.md), and is listed
+  in `EndpointRegistry.All`.
+- The endpoint returns the deploy-control `DeployOperationResponse` directly
+  (no `ApiResponse<T>` envelope) with `kind: "MetadataRelease"` and the release
+  lifecycle context in `metadataRelease`. The same shape is served by
+  `/api/v1/admin/deploy/operations/{operationId}`, so Console can read a release
+  by package ID or by stable operation ID.
+- Package-ID lookup returns the most recent operation for a release package;
+  retried attempts remain addressable by their stable operation ID for the
+  configured retention window. Records and their package-ID index entries use
+  `ControlPlane:MetadataRelease:OperationRetention`, which defaults to 30 days.
+  Creating an operation claims the package-ID index unconditionally; in-place
+  updates to an already-stored operation refresh the index entry (value and TTL)
+  only when it still points at that operation, via a compare-and-set Redis
+  script. A late update to a superseded attempt therefore cannot steal the
+  pointer back from the latest operation.
+- `metadataRelease` exposes Git refs (`gitOperationId`, `prUrl`, `commitSha`,
+  `desiredRevision`), `targetEnvironment`, linked `deployOperationId` and
+  `jobIds`, `evidenceRefs`, the fine-grained `currentStage`, `blockers`,
+  `warnings`, and the precomputed `rollbackPlan`. The rollback plan is available
+  before execution and retained after failure when known.
+- Metadata-only rollback (`class: "MetadataOnly"`) reports
+  `isDataAffecting: false` and uses the non-destructive path unless the stored
+  plan sets `requiresExplicitApproval: true`; explicit-approval metadata-only
+  plans are approval-gated without being treated as data-affecting. All other
+  rollback classes are data-affecting, report `requiresExplicitApproval: true`,
+  and route through the existing operator destructive-approval gate. Rollback
+  requests reuse `POST /api/v1/admin/deploy/operations/{operationId}/rollback`;
+  on accept the workflow status and `metadataRelease.currentStage` move to
+  `RollbackRequested`, and a rejected approval check returns `403` without
+  mutating the stored operation.
+- The approval decision is taken from the rollback plan's `isDataAffecting` and
+  `requiresExplicitApproval` values, and the workflow service re-reads the stored
+  operation before writing the rollback transition. If either approval-affecting
+  classification changed between the approval check and the write, the request
+  returns `409` without mutation so the operator re-reads and re-approves against
+  the current plan. This closes a TOCTOU window where a plan recomputed from
+  non-gated `MetadataOnly` to either explicit-approval metadata-only or
+  data-affecting could otherwise roll back under a stale non-destructive
+  approval.
+- Approval-gated rejections use the shared approval-denied problem shape
+  (`403 application/problem+json`, `type: urn:honua:approval-required`) with a
+  `policyRef` and machine-readable `reasonCodes`. A metadata rollback whose plan
+  sets `requiresExplicitApproval: true` (explicit-approval metadata-only and
+  data-affecting classes) reports reason code `metadata-rollback-explicit-approval`
+  and `policyRef` set to the plan's `approvalPolicyRef` or, when absent, the
+  `operator.explicit.deployment` default; a data-affecting rollback with no stored
+  plan falls back to the destructive gate (`operator.destructive.deployment`,
+  `destructive-action-requires-approval`).
+- The admin endpoint has tests for package-ID timeline state with rollback plan,
+  operation-ID failure state with rollback plan, the metadata-only
+  non-destructive path, metadata-only explicit approval gating, data-affecting
+  approval gating, the `409` conflict when the rollback plan's approval-affecting
+  classification changes between approval and the write (asserting the stored
+  operation is not mutated), and unknown-package `404`.
+  Redis store integration tests cover the package-ID index returning the latest
+  operation while a prior attempt stays addressable by operation ID, the
+  stale-index miss returning null, and a late update to an older retry leaving
+  the latest operation's package-ID index entry in place.
+
 ## Review Output
 
 For a Metadata v2 release candidate, capture:

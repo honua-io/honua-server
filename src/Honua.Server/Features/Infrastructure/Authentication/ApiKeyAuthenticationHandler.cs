@@ -210,31 +210,71 @@ internal sealed class ApiKeyAuthenticationHandler(
     }
 
     /// <summary>
-    /// Determines if development authentication bypass is enabled
+    /// Determines if development authentication bypass is enabled.
     /// </summary>
+    /// <remarks>
+    /// SECURITY: The bypass is gated by three independent conditions and is only
+    /// active when all three are satisfied. Any deployment that does not match
+    /// every condition - including Staging, QA, Production, or any other custom
+    /// environment - falls through to normal API-key authentication.
+    /// <list type="number">
+    ///   <item>Resolved ASPNETCORE_ENVIRONMENT is exactly "Test" (the only
+    ///   environment where the in-process test host runs unauthenticated).
+    ///   We deliberately do NOT honour the bypass in "Development" because
+    ///   developers should exercise the same API-key path as production.</item>
+    ///   <item><c>HONUA_DEV_AUTH=true</c> is supplied.</item>
+    ///   <item><c>HONUA_DEV_AUTH_ALLOW_BYPASS=true</c> is supplied as an
+    ///   independent operator acknowledgement so an accidentally-leaked
+    ///   HONUA_DEV_AUTH cannot, on its own, disable authentication.</item>
+    /// </list>
+    /// </remarks>
     private bool IsDevelopmentBypassEnabled()
     {
-        // SECURITY: Never allow bypass in production, regardless of configuration
-        var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
-        if (string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase))
+        // SECURITY: Never allow bypass in production or any non-Test environment.
+        // We rely on the environment name captured at startup via
+        // builder.Environment.EnvironmentName (immutable options binding). Reading
+        // the live process env var was a footgun: ASP.NET hosting can configure
+        // its environment via UseEnvironment(...) without touching the OS env,
+        // so a process-env read would disagree with the captured option in tests.
+        var startupEnvironment = _authOptions.EnvironmentName;
+        if (string.Equals(startupEnvironment, "Production", StringComparison.OrdinalIgnoreCase))
         {
             AuthenticationLog.DevelopmentBypassBlockedInProduction(Logger);
             return false;
         }
 
-        // Check if HONUA_DEV_AUTH is explicitly set to true
-        string? devAuthBypass = _authOptions.DevAuthBypass;
-        if (string.Equals(devAuthBypass, "true", StringComparison.OrdinalIgnoreCase))
+        if (!IsAllowedBypassEnvironment(startupEnvironment))
         {
-            // Only allow in Test environment, not just any non-production environment
-            if (_authOptions.IsTestMode)
-            {
-                AuthenticationLog.DevelopmentBypassEnabled(Logger);
-                return true;
-            }
+            // Staging, QA, custom envs, anything other than Test/Development must fall through.
+            return false;
         }
 
-        return false;
+        // Belt-and-braces: the captured IsTestMode flag must also agree.
+        if (!_authOptions.IsTestMode)
+        {
+            return false;
+        }
+
+        // Require the explicit opt-in token AND the operator acknowledgement.
+        if (!string.Equals(_authOptions.DevAuthBypass, "true", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.Equals(_authOptions.DevAuthBypassAcknowledged, "true", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        AuthenticationLog.DevelopmentBypassEnabled(Logger);
+        return true;
+    }
+
+    private static bool IsAllowedBypassEnvironment(string? environmentName)
+    {
+        // Only "Test" is allowed - Development, Staging, QA, Production, and any
+        // other custom environment fall through to standard API-key auth.
+        return string.Equals(environmentName, "Test", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

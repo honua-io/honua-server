@@ -29,6 +29,29 @@ internal sealed partial class JobExecutionService(
     private readonly HashSet<ExecutionJobKind> _acceptedKinds =
         new(executors.Select(e => e.Kind));
 
+    // Aggregated runtime-profile claim fence. The union of every registered
+    // executor's accepted profiles. Each executor defaults to managed/default only
+    // (RuntimeProfiles.DefaultAccepted), so a lean worker composed entirely of
+    // default executors accepts only managed/default jobs and can never claim a
+    // native job. A worker whose executors declare { "native" } accepts native jobs.
+    // This set is always non-empty for a worker with at least one executor and is
+    // passed to the queue claim so the fence is enforced at the claim boundary.
+    private readonly IReadOnlySet<string> _acceptedRuntimeProfiles = BuildAcceptedProfiles(executors);
+
+    private static HashSet<string> BuildAcceptedProfiles(IEnumerable<IJobExecutor> executors)
+    {
+        var profiles = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var executor in executors)
+        {
+            foreach (var profile in executor.AcceptedRuntimeProfiles)
+            {
+                profiles.Add(profile);
+            }
+        }
+
+        return profiles;
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var workerId = GenerateWorkerId();
@@ -57,7 +80,7 @@ internal sealed partial class JobExecutionService(
             try
             {
                 claimedId = await jobQueue.TryClaimAsync(
-                    workerId, _acceptedKinds, stoppingToken).ConfigureAwait(false);
+                    workerId, _acceptedKinds, _acceptedRuntimeProfiles, stoppingToken).ConfigureAwait(false);
 
                 if (claimedId != null)
                 {

@@ -1,5 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
+//
+// Read-only Esri-compatible MapServer surface; anonymous by design. The POST
+// variants of export/generateKml/identify/find/query operations mirror the GET
+// form (the Esri REST API accepts the same parameters in either an URL query
+// string or a request body) and perform no server-side mutation. Each POST
+// route opts into AllowAnonymous explicitly so authorization-policy tooling
+// can see the intent rather than treating it as an accidental gap.
 
 namespace Honua.Server.Features.Protocols.GeoServices.MapServer;
 
@@ -45,7 +52,8 @@ internal static partial class MapServerEndpoints
             .WithName("MapServerExportPost")
             .WithSummary("Export a map image using POST")
             .WithDescription("Generates a raster map image from layer features with MapLibre styling")
-            .WithTags("MapServer");
+            .WithTags("MapServer")
+            .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/generateKml",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleGenerateKml(context))
@@ -61,7 +69,8 @@ internal static partial class MapServerEndpoints
             .WithName("MapServerGenerateKmlPost")
             .WithSummary("Generate KML or KMZ from map layers using POST")
             .WithDescription("Exports layer features as KML or KMZ")
-            .WithTags("MapServer");
+            .WithTags("MapServer")
+            .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/identify",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleIdentify(context))
@@ -77,7 +86,8 @@ internal static partial class MapServerEndpoints
             .WithName("MapServerIdentifyPost")
             .WithSummary("Identify features at a location using POST")
             .WithDescription("Identifies features at a given point on the map")
-            .WithTags("MapServer");
+            .WithTags("MapServer")
+            .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/legend",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleLegend(context))
@@ -102,7 +112,8 @@ internal static partial class MapServerEndpoints
             .WithName("MapServerFindPost")
             .WithSummary("Find features by text search across layers using POST")
             .WithDescription("Searches for features matching text across multiple layers")
-            .WithTags("MapServer");
+            .WithTags("MapServer")
+            .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/{layerId:int}/query", HandleLayerQueryGet)
             .WithDisplayName("Query MapServer Layer (GET)")
@@ -116,7 +127,8 @@ internal static partial class MapServerEndpoints
             .WithName("MapServerQueryPost")
             .WithSummary("Query features from a MapServer layer using POST")
             .WithDescription("Query features using the FeatureServer query handler")
-            .WithTags("MapServer");
+            .WithTags("MapServer")
+            .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/query", HandleServiceQueryGet)
             .WithDisplayName("Query MapServer Service (GET)")
@@ -130,7 +142,8 @@ internal static partial class MapServerEndpoints
             .WithName("MapServerServiceQueryPost")
             .WithSummary("Query features from a MapServer service using POST")
             .WithDescription("Service-level query endpoint that delegates to a target layer provided by layerId/layers")
-            .WithTags("MapServer");
+            .WithTags("MapServer")
+            .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/tile/{z:int}/{y:int}/{x:int}",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleTile(context))

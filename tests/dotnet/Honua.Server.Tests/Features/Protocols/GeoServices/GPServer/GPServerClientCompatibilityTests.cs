@@ -49,6 +49,10 @@ public sealed class GPServerClientCompatibilityTests : IAsyncLifetime
         service.Tasks.Should().Contain("geometry.buffer");
 
         task.Name.Should().Be("geometry.buffer");
+        // ADVERTISED executionType stays asynchronous (the established contract that
+        // cross-repo integration tests assert). The synchronous execute route is
+        // purely additive and self-gates via GPServerExecutionPolicy; it does not
+        // change advertised task metadata. See #1228.
         task.ExecutionType.Should().Be("esriExecutionTypeAsynchronous");
         task.Parameters.Should().Contain(parameter => parameter.Name == "wkb" && parameter.Direction == "esriGPParameterDirectionInput");
         task.Parameters.Should().Contain(parameter => parameter.Name == "distance" && parameter.DataType == "GPDouble");
@@ -107,17 +111,20 @@ public sealed class GPServerClientCompatibilityTests : IAsyncLifetime
     {
         var client = new GPServerClient(_fixture.Client, ServiceId);
 
+        // The async submitJob contract rejects ALL env:* controls with a clear Esri
+        // 400. env:outSR / env:processSR are honored only on the additive synchronous
+        // execute route (see the dedicated execute outSR tests), not on submitJob.
         var error = await client.SubmitBufferJobExpectingErrorAsync(
             PointWkbBase64,
             4326,
             25.5,
-            new KeyValuePair<string, string>("env:outSR", "4326"));
+            new KeyValuePair<string, string>("env:transferDomains", "true"));
 
         error.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         error.Code.Should().Be(400);
         error.Message.Should().Be("Bad Request");
         error.Details.Should().Contain(detail => detail.Contains("GP environment controls are not yet supported", StringComparison.Ordinal));
-        error.Details.Should().Contain(detail => detail.Contains("env:outSR", StringComparison.Ordinal));
+        error.Details.Should().Contain(detail => detail.Contains("env:transferDomains", StringComparison.Ordinal));
     }
 
     private sealed class GPServerClient(HttpClient httpClient, string serviceId)

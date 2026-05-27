@@ -4,6 +4,7 @@
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Admin.Models;
@@ -54,14 +55,14 @@ internal static class AdminLayerFieldConfigurationEndpoints
         CancellationToken cancellationToken)
     {
         var layerResult = await ValidateLayerAsync(layerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
-        if (layerResult.Problem != null || layerResult.Layer == null)
+        if (layerResult.Problem != null || layerResult.Resource == null)
         {
             return layerResult.Problem!;
         }
 
         var configurations = await fieldConfigurationStore.GetFieldConfigurationsAsync(layerId, cancellationToken)
             .ConfigureAwait(false);
-        var response = BuildResponse(layerResult.Layer, configurations);
+        var response = BuildResponse(layerId, layerResult.Resource, configurations);
         return Results.Json(
             ApiResponse<LayerFieldConfigurationResponse>.CreateSuccess(response),
             LayerFieldConfigurationJsonContext.Default.ApiResponseLayerFieldConfigurationResponse);
@@ -77,12 +78,12 @@ internal static class AdminLayerFieldConfigurationEndpoints
         CancellationToken cancellationToken)
     {
         var layerResult = await ValidateLayerAsync(layerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
-        if (layerResult.Problem != null || layerResult.Layer == null)
+        if (layerResult.Problem != null || layerResult.Resource == null)
         {
             return layerResult.Problem!;
         }
 
-        var validationError = ValidateRequest(layerResult.Layer, request);
+        var validationError = ValidateRequest(layerId, layerResult.Resource, request);
         if (validationError != null)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status400BadRequest, validationError);
@@ -104,19 +105,19 @@ internal static class AdminLayerFieldConfigurationEndpoints
 
         await cacheInvalidator.InvalidateServiceCatalogAsync(null, [layerId], cancellationToken).ConfigureAwait(false);
 
-        var response = BuildResponse(layerResult.Layer, configurations);
+        var response = BuildResponse(layerId, layerResult.Resource, configurations);
         return Results.Json(
             ApiResponse<LayerFieldConfigurationResponse>.CreateSuccess(response),
             LayerFieldConfigurationJsonContext.Default.ApiResponseLayerFieldConfigurationResponse);
     }
 
-    private static async Task<(LayerDefinition? Layer, IResult? Problem)> ValidateLayerAsync(
+    private static async Task<(MetadataV2Resource? Resource, IResult? Problem)> ValidateLayerAsync(
         int layerId,
         HttpContext context,
         IResourceValidator resourceValidator,
         CancellationToken cancellationToken)
     {
-        var layerResult = await resourceValidator.ValidateLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var layerResult = await resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
         if (!layerResult.IsValid || layerResult.Resource == null)
         {
             var statusCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier
@@ -130,7 +131,8 @@ internal static class AdminLayerFieldConfigurationEndpoints
     }
 
     private static string? ValidateRequest(
-        LayerDefinition layer,
+        int layerId,
+        MetadataV2Resource resource,
         LayerFieldConfigurationUpdateRequest request)
     {
         if (request.Fields.Count == 0)
@@ -138,7 +140,8 @@ internal static class AdminLayerFieldConfigurationEndpoints
             return "At least one field configuration update is required.";
         }
 
-        var knownFields = layer.Fields.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
+        var knownFields = resource.SchemaFields.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
+        var primaryIdFieldName = resource.FindPrimaryIdField()?.Name;
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var field in request.Fields)
@@ -151,7 +154,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
             var fieldName = field.Name.Trim();
             if (!knownFields.TryGetValue(fieldName, out var layerField))
             {
-                return $"Field '{fieldName}' does not exist on layer {layer.Id}.";
+                return $"Field '{fieldName}' does not exist on layer {layerId}.";
             }
 
             if (!seen.Add(fieldName))
@@ -164,7 +167,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
                 return $"Alias for field '{fieldName}' must be {MaxFieldAliasLength} characters or fewer.";
             }
 
-            if (field.Hidden == true && IsRequiredProtocolField(layer, layerField))
+            if (field.Hidden == true && IsRequiredProtocolField(layerField, primaryIdFieldName))
             {
                 return $"Field '{fieldName}' cannot be hidden because it is required by public protocol contracts.";
             }
@@ -179,9 +182,18 @@ internal static class AdminLayerFieldConfigurationEndpoints
         return null;
     }
 
-    private static bool IsRequiredProtocolField(LayerDefinition layer, FieldDefinition field)
-        => field.IsGeometry
-           || field.Name.Equals(layer.ObjectIdFieldName, StringComparison.OrdinalIgnoreCase)
+    /// <summary>
+    /// V2 cutover: a field is "required by public protocol contracts" when it is the
+    /// primary geometry column, the resource's primary id field (semantic role
+    /// <c>id.primary</c>, fall-back name-equality on <c>objectid</c>/<c>id</c>), or the
+    /// canonical <c>OBJECTID</c> alias. Mirrors the v1
+    /// <c>IsGeometry || layer.ObjectIdFieldName || FieldNames.ObjectId</c> check using
+    /// V2 field types and the resolved primary-id field name.
+    /// </summary>
+    private static bool IsRequiredProtocolField(MetadataV2Field field, string? primaryIdFieldName)
+        => field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography
+           || (primaryIdFieldName is not null
+               && field.Name.Equals(primaryIdFieldName, StringComparison.OrdinalIgnoreCase))
            || field.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase);
 
     private static string? ValidateDomain(string fieldName, FieldDomainDefinition? domain)
@@ -234,11 +246,16 @@ internal static class AdminLayerFieldConfigurationEndpoints
     }
 
     private static LayerFieldConfigurationResponse BuildResponse(
-        LayerDefinition layer,
+        int layerId,
+        MetadataV2Resource resource,
         IReadOnlyList<LayerFieldConfiguration> configurations)
     {
         var configurationMap = configurations.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
-        var fields = layer.Fields
+        // V2 cutover: MetadataV2Field has no Domain/IsHidden — those are now operator-only
+        // overrides held in the configuration store. When no override row exists the
+        // response falls back to Description for alias, null Domain, and Hidden=false
+        // (the V2 baseline; v1 used to read these off the FieldDefinition itself).
+        var fields = resource.SchemaFields
             .Select(field =>
             {
                 configurationMap.TryGetValue(field.Name, out var configuration);
@@ -247,15 +264,15 @@ internal static class AdminLayerFieldConfigurationEndpoints
                     Name = field.Name,
                     Type = field.Type.ToString(),
                     Alias = configuration is null ? field.Description : configuration.Alias,
-                    Domain = configuration is null ? field.Domain : configuration.Domain,
-                    Hidden = configuration is null ? field.IsHidden : configuration.Hidden
+                    Domain = configuration?.Domain,
+                    Hidden = configuration?.Hidden ?? false
                 };
             })
             .ToArray();
 
         return new LayerFieldConfigurationResponse
         {
-            LayerId = layer.Id,
+            LayerId = layerId,
             Fields = fields
         };
     }

@@ -64,6 +64,9 @@ internal static partial class FeatureServerEndpoints
             .WithDescription("Query features with WHERE clause, spatial filters, and pagination via POST body")
             .WithTags("FeatureServer")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            // Read-only Esri query POST (mirrors the GET form); access is enforced
+            // by the handler via the layer access policy.
+            .AllowAnonymous()
             .Produces<QueryResponse>(200, "application/json")
             .Produces(StatusCodes.Status200OK, contentType: "application/geo+json")
             .Produces(StatusCodes.Status200OK, contentType: "application/x-protobuf")
@@ -168,6 +171,8 @@ internal static partial class FeatureServerEndpoints
             .WithDescription("Returns features from a related layer based on relationship definitions via POST body")
             .WithTags("FeatureServer")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            // Read-only Esri query POST; access is enforced by the handler.
+            .AllowAnonymous()
         .Produces<QueryRelatedRecordsResponse>(200, "application/json")
         .Produces(400)
         .Produces(404);
@@ -326,7 +331,9 @@ internal static partial class FeatureServerEndpoints
             .WithSummary("Query top features per group using POST")
             .WithDescription("Returns top N features per group based on a topFilter specification")
             .WithTags("FeatureServer")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            // Read-only Esri query POST; access is enforced by the handler.
+            .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/queryDateBins", HandleQueryDateBinsGet)
             .WithDisplayName("Query Date Bins (GET)")
@@ -342,7 +349,9 @@ internal static partial class FeatureServerEndpoints
             .WithSummary("Query features binned by date intervals using POST")
             .WithDescription("Groups features into temporal bins and returns aggregate statistics per bin")
             .WithTags("FeatureServer")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            // Read-only Esri query POST; access is enforced by the handler.
+            .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/temporalExtent", (Delegate)HandleTemporalExtent)
             .WithDisplayName("Get Temporal Extent")
@@ -370,7 +379,9 @@ internal static partial class FeatureServerEndpoints
             .WithSummary("Query features binned by numeric or classification intervals using POST")
             .WithDescription("Groups features into bins using various algorithms and returns aggregate statistics per bin")
             .WithTags("FeatureServer")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            // Read-only Esri query POST; access is enforced by the handler.
+            .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/queryDomains", HandleQueryDomains)
             .WithDisplayName("Query Domains")
@@ -413,7 +424,9 @@ internal static partial class FeatureServerEndpoints
             .WithSummary("Query features aggregated by H3 hexagonal grid cells using POST")
             .WithDescription("Groups features into H3 cells at a configurable resolution and returns aggregate statistics per cell")
             .WithTags("FeatureServer")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            // Read-only Esri query POST; access is enforced by the handler.
+            .AllowAnonymous();
 
         endpoints.MapGet("/tiles/{layerId:int}/h3/{z:int}/{x:int}/{y:int}.mvt", HandleH3Tile)
             .WithDisplayName("Get H3 MVT Tile")

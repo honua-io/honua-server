@@ -5,8 +5,10 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Helpers;
@@ -52,7 +54,7 @@ internal static partial class FeatureServerEndpoints
                 $"Invalid tile coordinates: x={x}, y={y}, z={z}");
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
             context,
             layerId,
             requiredProtocol: ServiceProtocols.FeatureServer,
@@ -61,7 +63,22 @@ internal static partial class FeatureServerEndpoints
         {
             return layerValidation.ErrorResult!;
         }
-        var layer = layerValidation.Layer!;
+        var publication = layerValidation.Publication!;
+        var resource = layerValidation.Resource!;
+
+        var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        // Mirror the V2 metadata builders' resolution order
+        // (FeatureServerUtilities.V2.MapLayerInfoV2): integer storage handle is
+        // publication.LayerIndex when the graph doesn't carry an explicit
+        // storage binding for this publication.
+        var storageLayerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication);
+        if (storageLayerId is null)
+        {
+            return StandardErrorHelpers.CreateNotFound(
+                context,
+                $"Layer '{resource.Metadata.Name ?? layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}' is not bound to a storage layer.");
+        }
 
         var queryValues = ToCaseInsensitiveDictionary(context.Request.Query);
         var where = GetValueString(queryValues, "where");
@@ -79,7 +96,7 @@ internal static partial class FeatureServerEndpoints
 
             if (parseResult.Expression != null)
             {
-                var translationResult = filterService.Translate(parseResult.Expression, layer);
+                var translationResult = filterService.Translate(parseResult.Expression, resource);
                 if (!translationResult.IsSuccess)
                 {
                     return StandardErrorHelpers.CreateBadRequest(context,
@@ -98,7 +115,7 @@ internal static partial class FeatureServerEndpoints
             // Parse first so the documented time=null,null no-op behaves like an
             // omitted parameter — neither the Pro gate nor temporal-field
             // resolution should fire when no actual filter is requested.
-            if (!TryBuildTileTemporalFilter(layer, timeParam, out temporalFilter, out var temporalError))
+            if (!TryBuildTileTemporalFilterV2(resource, timeParam, out temporalFilter, out var temporalError))
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
                     "Invalid time parameter",
@@ -116,7 +133,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         var query = VectorTileExecution.CreateQuery(
-            layer.SpatialReference.ToSrid(),
+            resource.ReadSrid() ?? SpatialReference.WGS84.Wkid,
             where,
             sqlFilter,
             temporalFilter);
@@ -127,7 +144,7 @@ internal static partial class FeatureServerEndpoints
             return await VectorTileExecution.ExecuteAsync(
                 context,
                 tileProvider,
-                layer,
+                storageLayerId.Value,
                 x,
                 y,
                 z,
@@ -158,8 +175,14 @@ internal static partial class FeatureServerEndpoints
             "Time-filtered vector tiles");
     }
 
-    private static bool TryBuildTileTemporalFilter(
-        LayerDefinition layer,
+    /// <summary>
+    /// V2 overload of the time-parameter helper. Resolves the opt-in temporal
+    /// fields off <see cref="MetadataV2Resource"/> and infers the property type
+    /// (Date vs DateTime) from the resolved schema field's
+    /// <see cref="MetadataV2FieldType"/> entry.
+    /// </summary>
+    private static bool TryBuildTileTemporalFilterV2(
+        MetadataV2Resource resource,
         string timeParam,
         out TemporalFilter? temporalFilter,
         out string? error)
@@ -181,27 +204,42 @@ internal static partial class FeatureServerEndpoints
         }
 
         // Strict opt-in: a non-empty time= filter requires explicit
-        // TimeInfo.StartTimeField (and any configured EndTimeField) to resolve
-        // against real Date/DateTime attributes. Falling back to the first
-        // Date/DateTime attribute would silently filter on a non-temporal
-        // column (calls out in docs/gis/temporal-animation-api.md and matches
-        // GeoServices REST query?time= rejection on non-time-aware layers).
-        if (!TemporalExtentHelpers.TryResolveOptInTemporalFields(layer, out var selection))
+        // resource.Temporal.StartTimeField (and any configured EndTimeField) to
+        // resolve against real Date/DateTime/Time attributes on the resource
+        // schema. Falling back to the first temporal attribute would silently
+        // filter on a non-temporal column (calls out in
+        // docs/gis/temporal-animation-api.md and matches GeoServices REST
+        // query?time= rejection on non-time-aware layers).
+        if (!TemporalExtentHelpers.TryResolveOptInTemporalFieldsV2(resource, out var selection))
         {
-            error = $"Layer '{layer.Name}' is not configured as time-aware.";
+            error = $"Layer '{resource.Metadata.Name}' is not configured as time-aware.";
             return false;
         }
 
+        var startFieldType = ResolveSchemaFieldType(resource, selection.StartFieldName);
+
         temporalFilter = new TemporalFilter
         {
-            PropertyName = selection.StartField.Name,
-            PropertyType = selection.StartField.Type == FieldType.Date
+            PropertyName = selection.StartFieldName,
+            PropertyType = startFieldType == MetadataV2FieldType.Date
                 ? TemporalPropertyType.Date
                 : TemporalPropertyType.DateTime,
-            EndPropertyName = selection.EndField?.Name,
+            EndPropertyName = selection.EndFieldName,
             Start = start,
             End = end
         };
         return true;
+    }
+
+    private static MetadataV2FieldType ResolveSchemaFieldType(MetadataV2Resource resource, string fieldName)
+    {
+        foreach (var field in resource.SchemaFields)
+        {
+            if (string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
+            {
+                return field.Type;
+            }
+        }
+        return MetadataV2FieldType.DateTime;
     }
 }

@@ -486,7 +486,8 @@ public sealed class RedisJobQueueTests
         string operationId = "job-1",
         OperationPriority priority = OperationPriority.Normal,
         DateTimeOffset? nextRetryAt = null,
-        ExecutionJobKind kind = ExecutionJobKind.Geoprocessing)
+        ExecutionJobKind kind = ExecutionJobKind.Geoprocessing,
+        string? runtimeProfile = null)
     {
         var now = DateTimeOffset.UtcNow;
         return new ExecutionJobRecord
@@ -505,9 +506,128 @@ public sealed class RedisJobQueueTests
                 Kind = kind,
                 TargetKind = BatchComputeTargetKind.KubernetesJob,
                 Backend = "local",
-                WorkloadName = "test"
+                WorkloadName = "test",
+                RuntimeProfile = runtimeProfile
             }
         };
+    }
+
+    /// <summary>
+    /// Builds a substituted Redis + job store so a single queued job (with the given
+    /// runtime profile) can be driven through the real <see cref="RedisJobQueue"/>
+    /// claim path without Redis/Docker.
+    /// </summary>
+    private static RedisJobQueue CreateQueueWithSingleJob(string operationId, string? runtimeProfile)
+    {
+        var database = Substitute.For<IDatabase>();
+        database.SortedSetRangeByRankAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<long>(),
+                Arg.Any<long>(),
+                Arg.Any<Order>(),
+                Arg.Any<CommandFlags>())
+            .Returns(callInfo =>
+            {
+                var start = (long)callInfo[1];
+                // Single entry at rank 0; any non-zero offset is past the end.
+                return Task.FromResult(start == 0
+                    ? new[] { (RedisValue)operationId }
+                    : Array.Empty<RedisValue>());
+            });
+        database.HashGetAllAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(Array.Empty<HashEntry>()));
+        database.HashSetAsync(Arg.Any<RedisKey>(), Arg.Any<HashEntry[]>(), Arg.Any<CommandFlags>())
+            .Returns(Task.CompletedTask);
+        database.ScriptEvaluateAsync(
+                Arg.Any<string>(),
+                Arg.Any<RedisKey[]>(),
+                Arg.Any<RedisValue[]>(),
+                Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(RedisResult.Create((RedisValue)"1")));
+
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(operationId, Arg.Any<CancellationToken>())
+            .Returns(CreateQueuedJob(
+                operationId: operationId,
+                kind: ExecutionJobKind.ExtractTransformLoad,
+                runtimeProfile: runtimeProfile));
+        jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        return new RedisJobQueue(redis, jobStore, NullLogger<RedisJobQueue>.Instance);
+    }
+
+    // ---- Runtime-profile claim fence invariant ----
+    // A worker whose accepted set is null/managed-only must NOT claim a native job;
+    // it MUST claim a managed/null job. A worker accepting { "native" } claims the
+    // native job but NOT the managed one. See RuntimeProfiles.CanClaim.
+
+    [UnitTest]
+    public async Task TryClaimAsync_LeanWorker_DoesNotClaimNativeJob()
+    {
+        var queue = CreateQueueWithSingleJob("native-job", RuntimeProfiles.Native);
+
+        // Null accepted-profiles => managed/default only (the lean worker).
+        var result = await queue.TryClaimAsync("worker-lean", acceptedRuntimeProfiles: null);
+
+        Assert.Null(result);
+    }
+
+    [UnitTest]
+    public async Task TryClaimAsync_LeanWorker_WithExplicitManagedSet_DoesNotClaimNativeJob()
+    {
+        var queue = CreateQueueWithSingleJob("native-job", RuntimeProfiles.Native);
+
+        var result = await queue.TryClaimAsync(
+            "worker-lean",
+            acceptedRuntimeProfiles: RuntimeProfiles.DefaultAccepted);
+
+        Assert.Null(result);
+    }
+
+    [UnitTest]
+    public async Task TryClaimAsync_LeanWorker_ClaimsManagedJob()
+    {
+        var queue = CreateQueueWithSingleJob("managed-job", runtimeProfile: RuntimeProfiles.Managed);
+
+        var result = await queue.TryClaimAsync("worker-lean", acceptedRuntimeProfiles: null);
+
+        Assert.Equal("managed-job", result);
+    }
+
+    [UnitTest]
+    public async Task TryClaimAsync_LeanWorker_ClaimsNullProfileJobAsManaged()
+    {
+        var queue = CreateQueueWithSingleJob("legacy-job", runtimeProfile: null);
+
+        var result = await queue.TryClaimAsync("worker-lean", acceptedRuntimeProfiles: null);
+
+        Assert.Equal("legacy-job", result);
+    }
+
+    [UnitTest]
+    public async Task TryClaimAsync_NativeWorker_ClaimsNativeJob()
+    {
+        var queue = CreateQueueWithSingleJob("native-job", RuntimeProfiles.Native);
+        var nativeAccepted = new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
+
+        var result = await queue.TryClaimAsync("worker-native", acceptedRuntimeProfiles: nativeAccepted);
+
+        Assert.Equal("native-job", result);
+    }
+
+    [UnitTest]
+    public async Task TryClaimAsync_NativeWorker_DoesNotClaimManagedJob()
+    {
+        var queue = CreateQueueWithSingleJob("managed-job", runtimeProfile: null);
+        var nativeAccepted = new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
+
+        var result = await queue.TryClaimAsync("worker-native", acceptedRuntimeProfiles: nativeAccepted);
+
+        Assert.Null(result);
     }
 
     private static int CountCalls(IDatabase database, string methodName)

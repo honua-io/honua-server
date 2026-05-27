@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Authentication.ClientCertificates;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.RateLimiting;
@@ -74,9 +75,12 @@ internal static class AdminAuthEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
     }
 
-    private static Microsoft.AspNetCore.Http.HttpResults.Ok<AdminAuthConfigResponse> HandleGetAuthConfig(
+    private static async Task<Microsoft.AspNetCore.Http.HttpResults.Ok<AdminAuthConfigResponse>> HandleGetAuthConfig(
         [FromServices] IOptions<OidcAuthenticationOptions> oidcOptions,
-        [FromServices] ILogger<AdminAuthEndpointsLog> logger)
+        [FromServices] IOptions<ClientCertificateAuthenticationOptions> clientCertificateOptions,
+        [FromServices] IClientCertificateTrustStore clientCertificateTrustStore,
+        [FromServices] ILogger<AdminAuthEndpointsLog> logger,
+        CancellationToken cancellationToken)
     {
         var providers = oidcOptions.Value.Enabled
             ? OidcProviderCatalog.GetProviders(oidcOptions.Value)
@@ -93,10 +97,56 @@ internal static class AdminAuthEndpoints
         var response = new AdminAuthConfigResponse
         {
             OidcEnabled = oidcOptions.Value.Enabled && providers.Count > 0,
-            Providers = providers
+            Providers = providers,
+            ClientCertificates = await BuildClientCertificateInfoAsync(
+                clientCertificateOptions.Value,
+                clientCertificateTrustStore,
+                cancellationToken).ConfigureAwait(false)
         };
 
         return TypedResults.Ok(response);
+    }
+
+    private static async Task<AdminAuthClientCertificateInfo> BuildClientCertificateInfoAsync(
+        ClientCertificateAuthenticationOptions options,
+        IClientCertificateTrustStore trustStore,
+        CancellationToken cancellationToken)
+    {
+        // Pull from the live trust store so admin-API mutations (profile create/update/disable)
+        // are reflected in the bootstrap hints. Configuration-only profiles are seeded into
+        // the store at startup, so the store is the single source of truth for the active set.
+        var profiles = await trustStore.ListProfilesAsync(options.EnvironmentId, cancellationToken)
+            .ConfigureAwait(false);
+        var enabledProfiles = profiles
+            .Where(static profile => profile.Enabled)
+            .ToArray();
+        var mode = options.Mode.ToString();
+        return new AdminAuthClientCertificateInfo
+        {
+            Mode = mode,
+            EnvironmentId = options.EnvironmentId,
+            RequiredForAdmin = options.Mode is ClientCertificateAuthenticationMode.RequiredForAdmin
+                or ClientCertificateAuthenticationMode.RequiredForEnvironment,
+            RequiredForNative = options.Mode is ClientCertificateAuthenticationMode.RequiredForNative
+                or ClientCertificateAuthenticationMode.RequiredForEnvironment,
+            SupportedTransports = options.Mode == ClientCertificateAuthenticationMode.Disabled
+                ? []
+                : ["https", "grpc-https"],
+            AcceptedIssuerSubjects = enabledProfiles
+                .SelectMany(static profile => profile.AcceptedIssuerSubjects)
+                .Where(static value => !string.IsNullOrWhiteSpace(value))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
+            AcceptedIssuerThumbprints = enabledProfiles
+                .SelectMany(static profile => profile.AcceptedIssuerThumbprints)
+                .Where(static value => !string.IsNullOrWhiteSpace(value))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
+            ExpirationWarningThresholdDays = enabledProfiles.Length == 0
+                ? null
+                : enabledProfiles.Min(static profile => profile.ExpirationWarningThresholdDays),
+            ForwardedCertificateEnabled = options.ForwardedCertificate.Enabled,
+        };
     }
 
     private static async Task<Microsoft.AspNetCore.Http.HttpResults.Ok<AdminAuthSessionResponse>> HandleGetSession(

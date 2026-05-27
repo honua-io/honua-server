@@ -26,6 +26,30 @@ public sealed class OgcFeaturesSpatialReferenceTests : IAsyncLifetime
     {
         _fixture.UseSeed(Path.Combine("tests", "seed", "spatial-reference.yaml"));
         await _fixture.InitializeAsync();
+
+        // V2 query processor rejects bbox queries on resources whose Spatial slot is
+        // unset; the default test V2 graph (WebAppFixture.BuildDefaultTestGraph) does
+        // not seed Spatial on layers 101..103. Mirror the v1 SpatialReferenceTestLayerCatalog
+        // (EPSG:3857 / Web Mercator) so the V2 OGC API Features paths exercised here
+        // can route bbox-crs requests against these layers.
+        var sridSpatial = new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ResourceSpatial
+        {
+            SpatialReference = new Honua.Core.Features.Metadata.Domain.V2.MetadataV2SpatialReference
+            {
+                Srid = SpatialReferenceTestLayerCatalog.LayerSrid,
+                Crs = $"EPSG:{SpatialReferenceTestLayerCatalog.LayerSrid}",
+                IsGeographic = false,
+            },
+        };
+        _fixture.UpdateV2ResourceMetadata(
+            SpatialReferenceTestLayerCatalog.PointLayerId,
+            spatial: sridSpatial with { GeometryType = Honua.Core.Features.Metadata.Domain.V2.MetadataV2GeometryType.Point });
+        _fixture.UpdateV2ResourceMetadata(
+            SpatialReferenceTestLayerCatalog.LineLayerId,
+            spatial: sridSpatial with { GeometryType = Honua.Core.Features.Metadata.Domain.V2.MetadataV2GeometryType.LineString });
+        _fixture.UpdateV2ResourceMetadata(
+            SpatialReferenceTestLayerCatalog.PolygonLayerId,
+            spatial: sridSpatial with { GeometryType = Honua.Core.Features.Metadata.Domain.V2.MetadataV2GeometryType.Polygon });
     }
 
     public async Task DisposeAsync()

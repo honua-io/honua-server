@@ -24,6 +24,55 @@ This guide covers authentication, authorization, edge security, and related oper
 - Optional static signing-key mode for controlled environments/tests:
 - `Oidc__TokenValidation__SymmetricSigningKey=<shared-secret>`
 
+**Client certificates / mTLS**: optional for native operator clients and
+admin/control-plane surfaces.
+- Configure `Authentication__ClientCertificates__Mode` as `Disabled`,
+  `Optional`, `RequiredForNative`, `RequiredForAdmin`, or
+  `RequiredForEnvironment`.
+- Define per-environment trust profiles and principal mappings under
+  `Authentication__ClientCertificates__TrustProfiles`.
+- See [Client Certificate Authentication](client-certificate-authentication.md)
+  for direct Kestrel, ingress/proxy, cloud load balancer, and gRPC transport
+  guidance.
+
+### Development authentication bypass (Test only)
+
+`HONUA_DEV_AUTH=true` exists exclusively so the in-process integration test
+host can short-circuit admin authentication. It is **not** a "non-production"
+shortcut: Staging, QA, Preview, and Development environments all enforce
+API-key authentication regardless of how `HONUA_DEV_AUTH` is set.
+
+To activate the bypass, **every** condition below must hold:
+
+| Condition | Required value |
+|---|---|
+| `ASPNETCORE_ENVIRONMENT` | exactly `Test` (case-insensitive) |
+| `HONUA_DEV_AUTH` | `true` |
+| `HONUA_DEV_AUTH_ALLOW_BYPASS` | `true` (operator acknowledgement) |
+
+If any condition is unmet the bypass is silently inactive and authentication
+proceeds as normal. The two-flag design is intentional: an accidentally
+leaked `HONUA_DEV_AUTH=true` (for example, copied from a CI lane into a
+Staging deployment) cannot, on its own, disable authentication.
+
+**Operational signals**
+
+- When the bypass *is* active you will see warning event `4112` at startup:
+  *"SECURITY WARNING: HONUA_DEV_AUTH bypass is ACTIVE for environment 'Test'."*
+  If you see this warning anywhere other than a disposable Test environment,
+  unset both flags immediately.
+- When `HONUA_DEV_AUTH=true` is configured but the bypass is rejected (for
+  example because the environment is Staging or the ack flag is missing) the
+  server logs warning event `4113` so the misconfiguration is visible.
+- Production deployments additionally surface warning event `4111`
+  ("Development authentication bypass blocked - production environment
+  detected") for every request that attempts the bypass path.
+
+`HONUA_DEV_AUTH` must not be set in Production, Staging, QA, or any other
+shared environment. The startup configuration validator emits a hard error
+in non-relaxed environments if it is present (see
+[`ConfigurationValidationService`](../../src/Honua.Server/Features/Admin/Services/ConfigurationValidationService.cs)).
+
 ---
 
 ## Authorization
@@ -38,9 +87,11 @@ Authentication schemes:
 - **API key** via `X-API-Key` (automation and service access).
 - **HTTP Basic compatibility** (optional) for legacy clients, using the Basic password as the API key.
 - **OIDC** for browser-based Admin UI and token-based access.
+- **Client certificate** (optional or required by configured surface) for native operator clients.
 
 Authentication precedence:
 - If OIDC is enabled and `Authorization: Bearer ...` is present, Bearer auth is evaluated first.
+- If a valid client certificate is presented and accepted by policy, it can authenticate a mapped native principal.
 - Otherwise, `X-API-Key` is evaluated.
 - Basic compatibility is only evaluated when enabled and when no valid `X-API-Key` header is present.
 
@@ -48,6 +99,10 @@ Challenge behavior:
 - API key challenges include `WWW-Authenticate: ApiKey ...`.
 - When Basic compatibility mode is enabled, challenges also include `WWW-Authenticate: Basic ...`.
 - Bearer-token failures return Bearer challenge headers from the JWT handler.
+- Required client-certificate failures return sanitized `application/problem+json`
+  payloads with stable `client_certificate_*` codes. See
+  [Client Certificate Authentication](client-certificate-authentication.md) for
+  the response shape and admin trust-management endpoints.
 
 ---
 
@@ -140,3 +195,13 @@ Rotate these regularly:
 1. Update the secret in your secret manager.
 2. Redeploy or restart services to pick up changes.
 3. Verify access using a known admin endpoint.
+
+Compliance key-version rotation events are exposed through the compliance
+framework admin endpoint
+(`POST /api/v1/admin/compliance/encryption/rotate-key`); each event is recorded
+in the audit log as `encryption.key.rotate`. The endpoint advances an
+auditor-facing posture counter — it does **not** re-encrypt data or rotate the
+cipher material used by `IConnectionEncryptionService`, which lives behind
+`Security:ConnectionEncryption:MasterKey` and requires a redeploy. See
+[Compliance Framework](compliance-framework.md) for the dashboard, residency
+policy surface, and report export.

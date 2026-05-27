@@ -3,7 +3,6 @@
 
 using System.Net;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Tests.Features.Licensing;
@@ -146,8 +145,9 @@ public sealed class MvtTileTemporalEndpointTests : IAsyncLifetime
         // non-empty time= filters with HTTP 400; falling back to the first
         // Date/DateTime attribute would silently filter on a non-temporal
         // column. Strict opt-in matches the WMS/WMTS rejection behavior.
-        var updater = _fixture.GetService<ILayerMetadataUpdater>();
-        await updater.UpdateLayerMetadataAsync(TestLayerId, new CatalogMetadata());
+        // V2 cutover (#1035 72/N): clear the resource temporal so the layer is
+        // unambiguously non-time-aware.
+        _fixture.UpdateV2ResourceMetadata(TestLayerId, clearTemporal: true);
 
         var start = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
         var end = new DateTimeOffset(2024, 12, 31, 23, 59, 59, TimeSpan.Zero).ToUnixTimeMilliseconds();

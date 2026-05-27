@@ -3,19 +3,18 @@
 
 using System.Buffers;
 using System.Collections.Immutable;
+using System.Data.Common;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Filtering;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
-using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Protocols.Ogc.Common;
 using Honua.Server.Features.Protocols.Stac.Models;
 using Honua.Server.Features.Protocols.Stac.Services;
@@ -46,6 +45,10 @@ internal static class SearchEndpoints
             .Produces<StacItemCollection>(200, MediaTypes.GeoJson)
             .Produces(400);
 
+        // Read-only OGC/STAC search surface; anonymous by design. The POST form
+        // mirrors the GET search semantics — the body just carries the same
+        // filter parameters as a JSON document — and is gated downstream by the
+        // per-publication access policy via StacV2Lookups.ResolveVisibleStacPublicationsAsync.
         endpoints.MapPost("/stac/search", HandleSearchPost)
             .WithDisplayName("STAC Search (POST)")
             .WithName("StacSearchPost")
@@ -53,6 +56,7 @@ internal static class SearchEndpoints
             .WithDescription("Searches STAC items across collections with a JSON request body")
             .WithTags("STAC")
             .Accepts<StacSearchRequest>(MediaTypes.Json)
+            .AllowAnonymous()
             .Produces<StacItemCollection>(200, MediaTypes.GeoJson)
             .Produces(400);
 
@@ -114,7 +118,6 @@ internal static class SearchEndpoints
             request,
             effectiveOffset,
             context,
-            deps.LayerCatalog,
             deps.FeatureReader,
             deps.GeometryService,
             deps.FilterProcessor,
@@ -136,7 +139,6 @@ internal static class SearchEndpoints
             request,
             0,
             context,
-            deps.LayerCatalog,
             deps.FeatureReader,
             deps.GeometryService,
             deps.FilterProcessor,
@@ -148,13 +150,14 @@ internal static class SearchEndpoints
         StacSearchRequest request,
         int offset,
         HttpContext context,
-        ILayerCatalog layerCatalog,
         IFeatureReader featureReader,
         IGeometryService geometryService,
         Cql2FilterProcessor filterProcessor,
         bool defaultFilterLangIsText,
         ILogger logger)
     {
+        // TODO(#1144): wire tenant filter — resolve ITenantContext from context.RequestServices
+        // and constrain V2 graph lookups + featureReader queries to the caller's tenant id.
         using var activity = StacTelemetry.StartActivity(
             StacTelemetry.Operations.SearchExecute,
             "/stac/search",
@@ -179,11 +182,21 @@ internal static class SearchEndpoints
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
 
-            // Resolve target layers with STAC protocol gating + access policy
-            var visibleLayers = await StacFilterHelpers.ResolveStacVisibleLayersAsync(
-                context, layerCatalog, cancellationToken);
+            // Resolve target publications with STAC protocol gating + access policy
+            // off the V2 metadata graph.
+            var visible = await StacV2Lookups.ResolveVisibleStacPublicationsAsync(
+                context, cancellationToken).ConfigureAwait(false);
 
-            IEnumerable<Core.Features.Catalog.Domain.LayerDefinition> targetLayers = visibleLayers;
+            // Multiple STAC-enabled publications can resolve to the same storage layer
+            // (e.g. one resource published through two services). The v1 layer-keyed
+            // walk produced a single hit per layer; preserve that contract so feature
+            // counts and result-sets remain stable. Keep the first encountered
+            // publication — ResolveVisibleStacPublicationsAsync already orders by
+            // LayerIndex so this is deterministic.
+            IEnumerable<StacV2Lookups.ResolvedStacPublication> targets = visible
+                .GroupBy(t => t.LayerIndex)
+                .Select(g => g.First())
+                .ToArray();
 
             if (request.Collections is { IsDefault: false } requestedCollections && requestedCollections.Length > 0)
             {
@@ -193,7 +206,7 @@ internal static class SearchEndpoints
                     return StandardErrorHelpers.CreateBadRequest(context, collectionError ?? "Invalid collections parameter.");
                 }
 
-                targetLayers = targetLayers.Where(l => collectionIds.Contains(l.Id));
+                targets = targets.Where(t => collectionIds.Contains(t.LayerIndex));
             }
 
             if (request.Ids is { IsDefault: false } requestedIds && requestedIds.Length > 0)
@@ -204,9 +217,9 @@ internal static class SearchEndpoints
                     return StandardErrorHelpers.CreateBadRequest(context, idsError ?? "Invalid ids parameter.");
                 }
 
-                var layerList = targetLayers.ToArray();
-                StacTelemetry.SetSearchTags(activity, effectiveLimit, offset, collectionCount, layerList.Length);
-                return await ExecuteSearchAcrossLayersAsync(
+                var targetList = targets.ToArray();
+                StacTelemetry.SetSearchTags(activity, effectiveLimit, offset, collectionCount, targetList.Length);
+                return await ExecuteSearchAcrossPublicationsAsync(
                     request,
                     offset,
                     context,
@@ -216,14 +229,14 @@ internal static class SearchEndpoints
                     filterProcessor,
                     defaultFilterLangIsText,
                     logger,
-                    layerList,
+                    targetList,
                     normalizedIds,
                     effectiveLimit);
             }
 
-            var allLayerList = targetLayers.ToArray();
-            StacTelemetry.SetSearchTags(activity, effectiveLimit, offset, collectionCount, allLayerList.Length);
-            return await ExecuteSearchAcrossLayersAsync(
+            var allTargets = targets.ToArray();
+            StacTelemetry.SetSearchTags(activity, effectiveLimit, offset, collectionCount, allTargets.Length);
+            return await ExecuteSearchAcrossPublicationsAsync(
                 request,
                 offset,
                 context,
@@ -233,7 +246,7 @@ internal static class SearchEndpoints
                 filterProcessor,
                 defaultFilterLangIsText,
                 logger,
-                allLayerList,
+                allTargets,
                 null,
                 effectiveLimit);
         }
@@ -252,7 +265,7 @@ internal static class SearchEndpoints
         }
     }
 
-    private static async Task<IResult> ExecuteSearchAcrossLayersAsync(
+    private static async Task<IResult> ExecuteSearchAcrossPublicationsAsync(
         StacSearchRequest request,
         int offset,
         HttpContext context,
@@ -262,7 +275,7 @@ internal static class SearchEndpoints
         Cql2FilterProcessor filterProcessor,
         bool defaultFilterLangIsText,
         ILogger logger,
-        Core.Features.Catalog.Domain.LayerDefinition[] layerList,
+        StacV2Lookups.ResolvedStacPublication[] targets,
         ImmutableArray<string>? requestedItemIds,
         int effectiveLimit)
     {
@@ -275,7 +288,7 @@ internal static class SearchEndpoints
             effectiveLimit,
             offset,
             request.Collections is { IsDefault: false } collections ? collections.Length : 0,
-            layerList.Length);
+            targets.Length);
 
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         try
@@ -284,7 +297,7 @@ internal static class SearchEndpoints
             long totalMatched = 0;
             var remainingSkip = offset;
             var hasEmptyIdFilter = requestedItemIds is { Length: 0 };
-            foreach (var layer in layerList)
+            foreach (var target in targets)
             {
                 if (hasEmptyIdFilter)
                 {
@@ -293,7 +306,7 @@ internal static class SearchEndpoints
 
                 var layerQueryResult = await TryBuildLayerQuery(
                     request,
-                    layer,
+                    target.Resource,
                     requestedItemIds,
                     geometryService,
                     filterProcessor,
@@ -307,54 +320,71 @@ internal static class SearchEndpoints
 
                 var query = layerQueryResult.Query;
                 var projection = layerQueryResult.Projection;
+                var layerId = target.LayerIndex;
 
-                if (remainingSkip > 0)
+                try
                 {
-                    var layerCount = await featureReader.CountAsync(layer.Id, query, cancellationToken);
-                    totalMatched += layerCount;
-
-                    if (remainingSkip >= layerCount)
+                    if (remainingSkip > 0)
                     {
-                        remainingSkip -= (int)Math.Min(layerCount, int.MaxValue);
-                        continue;
+                        var layerCount = await featureReader.CountAsync(layerId, query, cancellationToken);
+                        totalMatched += layerCount;
+
+                        if (remainingSkip >= layerCount)
+                        {
+                            remainingSkip -= (int)Math.Min(layerCount, int.MaxValue);
+                            continue;
+                        }
+
+                        var remaining = effectiveLimit - allItems.Count;
+                        query = query with { Offset = remainingSkip, Limit = remaining };
+                        remainingSkip = 0;
+
+                        var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
+                        allItems.AddRange(result.Features
+                            .Select(f => ApplyFieldProjection(
+                                StacMappingService.MapFeatureToItem(
+                                    f,
+                                    target.Resource,
+                                    target.Publication,
+                                    layerId,
+                                    baseUrl,
+                                    projection?.SelectedProperties,
+                                    geometrySrid: Wgs84Srid),
+                                projection)));
                     }
+                    else if (allItems.Count < effectiveLimit)
+                    {
+                        var remaining = effectiveLimit - allItems.Count;
+                        query = query with { Limit = remaining };
 
-                    var remaining = effectiveLimit - allItems.Count;
-                    query = query with { Offset = remainingSkip, Limit = remaining };
-                    remainingSkip = 0;
+                        var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
+                        totalMatched += result.TotalCount;
 
-                    var result = await featureReader.QueryAsync(layer.Id, query, cancellationToken);
-                    allItems.AddRange(result.Features
-                        .Select(f => ApplyFieldProjection(
-                            StacMappingService.MapFeatureToItem(
-                                f,
-                                layer,
-                                baseUrl,
-                                projection?.SelectedProperties,
-                                geometrySrid: Wgs84Srid),
-                            projection)));
+                        allItems.AddRange(result.Features
+                            .Select(f => ApplyFieldProjection(
+                                StacMappingService.MapFeatureToItem(
+                                    f,
+                                    target.Resource,
+                                    target.Publication,
+                                    layerId,
+                                    baseUrl,
+                                    projection?.SelectedProperties,
+                                    geometrySrid: Wgs84Srid),
+                                projection)));
+                    }
+                    else
+                    {
+                        totalMatched += await featureReader.CountAsync(layerId, query, cancellationToken);
+                    }
                 }
-                else if (allItems.Count < effectiveLimit)
+                catch (DbException ex)
                 {
-                    var remaining = effectiveLimit - allItems.Count;
-                    query = query with { Limit = remaining };
-
-                    var result = await featureReader.QueryAsync(layer.Id, query, cancellationToken);
-                    totalMatched += result.TotalCount;
-
-                    allItems.AddRange(result.Features
-                        .Select(f => ApplyFieldProjection(
-                            StacMappingService.MapFeatureToItem(
-                                f,
-                                layer,
-                                baseUrl,
-                                projection?.SelectedProperties,
-                                geometrySrid: Wgs84Srid),
-                            projection)));
-                }
-                else
-                {
-                    totalMatched += await featureReader.CountAsync(layer.Id, query, cancellationToken);
+                    // A single publication whose request bbox cannot be transformed into its storage
+                    // CRS (e.g. PostGIS "transform: tolerance condition error" for a projected CRS whose
+                    // valid area excludes the bbox) must not fail the whole cross-publication search.
+                    // Skip this publication; it contributes no items.
+                    StacLog.SearchPublicationSkipped(logger, layerId, ex);
+                    continue;
                 }
             }
 
@@ -413,16 +443,17 @@ internal static class SearchEndpoints
 
     private static async Task<(bool IsSuccess, FeatureQuery Query, StacFieldProjection? Projection, string? Error)> TryBuildLayerQuery(
         StacSearchRequest request,
-        Core.Features.Catalog.Domain.LayerDefinition layer,
+        MetadataV2Resource resource,
         ImmutableArray<string>? requestedItemIds,
         IGeometryService geometryService,
         Cql2FilterProcessor filterProcessor,
         bool defaultFilterLangIsText,
         CancellationToken cancellationToken)
     {
+        var resourceSrid = resource.ReadSrid() ?? Wgs84Srid;
         var query = new FeatureQuery
         {
-            SpatialReferenceSrid = layer.SpatialReference.Wkid,
+            SpatialReferenceSrid = resourceSrid,
             OutputSrid = Wgs84Srid
         };
         StacFieldProjection? projection = null;
@@ -474,7 +505,7 @@ internal static class SearchEndpoints
 
         if (!string.IsNullOrWhiteSpace(request.Datetime))
         {
-            var temporalFilter = StacFilterHelpers.ParseDatetime(request.Datetime, layer);
+            var temporalFilter = StacFilterHelpers.ParseDatetime(request.Datetime, resource);
             if (temporalFilter is null)
             {
                 error = "Invalid datetime parameter.";
@@ -486,7 +517,7 @@ internal static class SearchEndpoints
 
         var filterQueryResult = await TryResolveFilterQuery(
             request,
-            layer,
+            resource,
             filterProcessor,
             defaultFilterLangIsText,
             cancellationToken);
@@ -508,7 +539,7 @@ internal static class SearchEndpoints
 
         if (request.Sortby is { IsDefault: false } sortby && sortby.Length > 0)
         {
-            if (!TryBuildSortOrder(layer, sortby, out var orderBy, out var sortError))
+            if (!TryBuildSortOrder(resource, sortby, out var orderBy, out var sortError))
             {
                 error = sortError;
                 return (false, query, projection, error);
@@ -519,7 +550,7 @@ internal static class SearchEndpoints
 
         if (request.Fields is not null)
         {
-            if (!TryBuildFieldSelection(layer, request.Fields, out var outFields, out projection, out var fieldError))
+            if (!TryBuildFieldSelection(resource, request.Fields, out var outFields, out projection, out var fieldError))
             {
                 error = fieldError;
                 return (false, query, projection, error);
@@ -533,13 +564,13 @@ internal static class SearchEndpoints
 
     private static async Task<(bool IsSuccess, SqlFragment? SqlFilter, string? Error)> TryResolveFilterQuery(
         StacSearchRequest request,
-        Core.Features.Catalog.Domain.LayerDefinition layer,
+        MetadataV2Resource resource,
         Cql2FilterProcessor filterProcessor,
         bool defaultFilterLangIsText,
         CancellationToken cancellationToken)
     {
         var result = await filterProcessor.ProcessFilterAsync(
-            layer,
+            resource,
             request.Filter,
             request.FilterLang,
             request.FilterCrs,
@@ -552,12 +583,12 @@ internal static class SearchEndpoints
     }
 
     private static bool TryBuildSortOrder(
-        Core.Features.Catalog.Domain.LayerDefinition layer,
+        MetadataV2Resource resource,
         ImmutableArray<StacSortDefinition> sortby,
         out ImmutableArray<OrderByClause> orderBy,
         out string? error)
     {
-        var availableFields = layer.AttributeFields.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
+        var availableFields = resource.SchemaFields.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
         var orderByBuilder = ImmutableArray.CreateBuilder<OrderByClause>(sortby.Length);
 
         foreach (var sort in sortby)
@@ -606,14 +637,14 @@ internal static class SearchEndpoints
     }
 
     private static bool TryBuildFieldSelection(
-        Core.Features.Catalog.Domain.LayerDefinition layer,
+        MetadataV2Resource resource,
         StacFieldsExtension fields,
         out ImmutableArray<string> outFields,
         out StacFieldProjection? projection,
         out string? error)
     {
-        var availableFields = layer.AttributeFields
-            .Where(field => !field.IsGeometry)
+        var availableFields = resource.SchemaFields
+            .Where(field => field.Type != MetadataV2FieldType.Geometry)
             .ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
 
         var includeAll = false;
@@ -722,13 +753,15 @@ internal static class SearchEndpoints
             return true;
         }
 
-        var timeField = layer.Metadata?.TimeInfo?.StartTimeField;
+        var temporalFields = resource.ReadTemporalFields();
+        var timeField = temporalFields.StartTimeField;
+        var endTimeField = temporalFields.EndTimeField;
         var requiresUnprojectedAttributes = selected.Any(IsReservedAttributeProjectionName);
         var queryFields = requiresUnprojectedAttributes
             ? default
             : selected.Length == 0
                 ? ImmutableArray<string>.Empty
-                : layer.AttributeFields
+                : resource.SchemaFields
                     .Where(field => selected.Contains(field.Name))
                     .Select(field => field.Name)
                     .ToImmutableArray();
@@ -740,7 +773,6 @@ internal static class SearchEndpoints
             queryFields = queryFields.Add(timeField!);
         }
 
-        var endTimeField = layer.Metadata?.TimeInfo?.EndTimeField;
         if (!requiresUnprojectedAttributes &&
             !string.IsNullOrWhiteSpace(endTimeField) &&
             !queryFields.Contains(endTimeField, StringComparer.OrdinalIgnoreCase))
@@ -761,7 +793,9 @@ internal static class SearchEndpoints
             foreach (var candidate in fallbackCandidates)
             {
                 if (availableFields.TryGetValue(candidate, out var field) &&
-                    field.Type is FieldType.Date or FieldType.DateTime &&
+                    field.Type is MetadataV2FieldType.Date
+                        or MetadataV2FieldType.DateTime
+                        or MetadataV2FieldType.Time &&
                     !queryFields.Contains(candidate, StringComparer.OrdinalIgnoreCase))
                 {
                     queryFields = queryFields.Add(candidate);

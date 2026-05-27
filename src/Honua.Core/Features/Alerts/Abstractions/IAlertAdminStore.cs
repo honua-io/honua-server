@@ -73,6 +73,16 @@ public interface IAlertAdminStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gets a rule by identifier.
+    /// </summary>
+    /// <param name="ruleId">Rule identifier</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Rule definition when found; otherwise null</returns>
+    Task<AlertRuleDefinition?> GetRuleAsync(
+        long ruleId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Creates a rule.
     /// </summary>
     /// <param name="rule">Rule definition</param>
@@ -100,5 +110,17 @@ public interface IAlertAdminStore
     /// <returns>True when deleted</returns>
     Task<bool> DeleteRuleAsync(
         long ruleId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets operational health for a rule.
+    /// </summary>
+    /// <param name="ruleId">Rule identifier</param>
+    /// <param name="recentTriggerLimit">Maximum number of linked recent trigger identifiers to return</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Rule health when the rule exists; otherwise null</returns>
+    Task<AlertRuleHealthSnapshot?> GetRuleHealthAsync(
+        long ruleId,
+        int recentTriggerLimit,
         CancellationToken cancellationToken = default);
 }

@@ -3,6 +3,7 @@
 
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.Scene.Domain;
 using Honua.Core.Features.Scene.Generation;
 using Honua.TestKit.Attributes;
 
@@ -76,5 +77,40 @@ public sealed class TilesetDocumentWriterTests
         json.RootElement.GetProperty("geometricError").GetDouble().Should().Be(100.0);
         json.RootElement.GetProperty("root").GetProperty("refine").GetString().Should().Be("ADD");
         json.RootElement.GetProperty("root").GetProperty("children").GetArrayLength().Should().Be(1);
+    }
+
+    [UnitTest]
+    public void Build_NoStyleReference_OmitsExtras()
+    {
+        var doc = TilesetDocumentWriter.Build(
+            [-1, -1, 1, 1], 0.0, 1.0, 100.0, ["tile_0000.glb"], "honua");
+
+        doc.Extras.Should().BeNull();
+
+        var bytes = TilesetDocumentWriter.Serialize(doc);
+        using var json = JsonDocument.Parse(Encoding.UTF8.GetString(bytes));
+        json.RootElement.TryGetProperty("extras", out _).Should().BeFalse(
+            "a tileset without symbology must not emit an empty extras block.");
+    }
+
+    [UnitTest]
+    public void Build_WithStyleReference_AdvertisesStyleMetadataContract()
+    {
+        var styleRef = new TilesetStyleReference
+        {
+            Encoding = "3d-tiles-styling",
+            Version = "1.0",
+            Uri = "style.json"
+        };
+
+        var doc = TilesetDocumentWriter.Build(
+            [-1, -1, 1, 1], 0.0, 1.0, 100.0, ["tile_0000.glb"], "honua", styleRef);
+
+        var bytes = TilesetDocumentWriter.Serialize(doc);
+        using var json = JsonDocument.Parse(Encoding.UTF8.GetString(bytes));
+        var style = json.RootElement.GetProperty("extras").GetProperty("honua_style");
+        style.GetProperty("encoding").GetString().Should().Be("3d-tiles-styling");
+        style.GetProperty("version").GetString().Should().Be("1.0");
+        style.GetProperty("uri").GetString().Should().Be("style.json");
     }
 }

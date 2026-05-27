@@ -337,6 +337,7 @@ def stac_runtime() -> Generator[StacCompatibilityRuntime, None, None]:
     fixture = PostGISFixture()
     fixture.start()
     fixture.apply_sql_file(seed_path)
+    fixture.seed_metadata_v2_snapshot()
 
     worker_id = _get_worker_id()
     port = int(os.getenv("HONUA_STAC_COMPAT_PORT", str(DEFAULT_PORT))) + _get_worker_index(worker_id)

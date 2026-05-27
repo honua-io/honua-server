@@ -13,6 +13,8 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.FeatureStore.Services;
@@ -43,6 +45,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
     private readonly IFeatureDataAccess _dataAccess;
     private readonly IFeatureCacheManager _cacheManager;
     private readonly ILayerCatalog? _layerCatalog;
+    private readonly IMetadataV2GraphProvider? _v2Provider;
     private readonly IDatabaseConnectionProvider? _connectionProvider;
     private readonly ObjectPool<Dictionary<string, object?>>? _dictionaryPool;
     private readonly IConnectionEncryptionService? _connectionEncryptionService;
@@ -81,12 +84,14 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         IDatabaseConnectionProvider? connectionProvider,
         ObjectPool<Dictionary<string, object?>>? dictionaryPool,
         IConnectionEncryptionService? connectionEncryptionService,
-        IFilterExpressionService? filterExpressionService = null)
+        IFilterExpressionService? filterExpressionService = null,
+        IMetadataV2GraphProvider? v2Provider = null)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
         _cacheManager = cacheManager ?? throw new ArgumentNullException(nameof(cacheManager));
         _layerCatalog = layerCatalog;
+        _v2Provider = v2Provider;
         _connectionProvider = connectionProvider;
         _dictionaryPool = dictionaryPool;
         _connectionEncryptionService = connectionEncryptionService;
@@ -847,9 +852,59 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         FeatureQuery query,
         CancellationToken cancellationToken)
     {
-        if (query.EnforcedSqlFilter != null ||
-            _layerCatalog == null ||
-            _filterExpressionService == null)
+        if (query.EnforcedSqlFilter != null || _filterExpressionService == null)
+        {
+            return query;
+        }
+
+        // V2 path: resolve the resource via the storageLayerId→resource index, read
+        // the typed PermanentFilter from the canonical resource. Falls through to the
+        // v1 catalog path when the V2 provider isn't wired in (legacy tests) or the
+        // graph has no entry for this storage layer id (resource hasn't been
+        // migrated yet). The two paths produce identical SqlFragments.
+        if (_v2Provider != null)
+        {
+            var snapshot = await _v2Provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            if (snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource))
+            {
+                var v2Filter = resource.PermanentFilter;
+                if (v2Filter == null || string.IsNullOrWhiteSpace(v2Filter.Expression))
+                {
+                    return query;
+                }
+                if (!TryResolveFilterLanguage(v2Filter.Language, out var v2Language))
+                {
+                    throw new InvalidOperationException(
+                        $"Saved permanent filter for resource '{resource.Metadata.Id}' uses unsupported language '{v2Filter.Language}'.");
+                }
+                var v2ParseAndNormalize = _filterExpressionService.ParseAndNormalize(v2Language, v2Filter.Expression, resource);
+                if (!v2ParseAndNormalize.IsSuccess)
+                {
+                    throw new InvalidOperationException(
+                        $"Saved permanent filter for resource '{resource.Metadata.Id}' is invalid: {v2ParseAndNormalize.ErrorMessage ?? "Invalid filter."}");
+                }
+                // SQL last-mile bridge (#1035): the normalized V2 filter still passes
+                // through the v1 SQL translator until ISqlFilterTranslator V2 lands.
+                if (_layerCatalog == null || v2ParseAndNormalize.Expression == null)
+                {
+                    return query;
+                }
+                var v1Layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+                if (v1Layer == null)
+                {
+                    return query;
+                }
+                var v2Translation = _filterExpressionService.Translate(v2ParseAndNormalize.Expression, v1Layer);
+                if (!v2Translation.IsSuccess)
+                {
+                    throw new InvalidOperationException(
+                        $"Saved permanent filter for resource '{resource.Metadata.Id}' failed SQL translation: {v2Translation.ErrorMessage ?? "Invalid filter."}");
+                }
+                return v2Translation.SqlFilter == null ? query : query with { EnforcedSqlFilter = v2Translation.SqlFilter };
+            }
+        }
+
+        if (_layerCatalog == null)
         {
             return query;
         }

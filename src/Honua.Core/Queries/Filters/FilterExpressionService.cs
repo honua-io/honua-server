@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters.Cql2;
 using Honua.Core.Queries.Filters.GeoServicesSql;
 using Honua.Core.Queries.Filters.OData;
@@ -131,6 +132,32 @@ public interface IFilterExpressionService
     /// <param name="layer">Layer definition for validation and coercion.</param>
     /// <returns>Translation result with SQL fragment or error.</returns>
     FilterTranslationResult Translate(FilterExpression? expression, LayerDefinition layer);
+
+    /// <summary>
+    /// V2 overload of <see cref="Parse"/> + <see cref="Normalize(FilterExpression, MetadataV2Resource)"/>.
+    /// Returns the normalized expression with field types resolved from
+    /// <see cref="MetadataV2Resource.SchemaFields"/>. Does NOT produce a SQL fragment —
+    /// the provider-specific SQL backends still take <see cref="LayerDefinition"/>;
+    /// callers that need a <see cref="SqlFragment"/> route via the v1 overload.
+    /// </summary>
+    FilterParseResult ParseAndNormalize(FilterLanguage language, string? filter, MetadataV2Resource resource);
+
+    /// <summary>
+    /// V2 overload of normalisation. Resolves field types from the resource's
+    /// <see cref="MetadataV2Resource.SchemaFields"/> and returns the normalised
+    /// expression.
+    /// </summary>
+    FilterExpression Normalize(FilterExpression expression, MetadataV2Resource resource);
+
+    /// <summary>
+    /// V2 overload that normalises an expression and produces a SQL fragment using
+    /// the resource's schema fields and spatial reference. Returns success with no
+    /// SQL filter when <paramref name="expression"/> is null.
+    /// </summary>
+    /// <param name="expression">Filter expression to translate.</param>
+    /// <param name="resource">Metadata v2 resource for validation and coercion.</param>
+    /// <returns>Translation result with SQL fragment or error.</returns>
+    FilterTranslationResult Translate(FilterExpression? expression, MetadataV2Resource resource);
 }
 
 /// <summary>
@@ -203,6 +230,58 @@ public sealed class FilterExpressionService : IFilterExpressionService
         try
         {
             var sqlFilter = _translator.Translate(expression, layer);
+            return FilterTranslationResult.Success(expression, sqlFilter);
+        }
+        catch (ArgumentException ex)
+        {
+            return FilterTranslationResult.Failure(ex.Message);
+        }
+        catch (NotSupportedException ex)
+        {
+            return FilterTranslationResult.Failure(ex.Message);
+        }
+    }
+
+    /// <inheritdoc />
+    public FilterParseResult ParseAndNormalize(FilterLanguage language, string? filter, MetadataV2Resource resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        var parseResult = Parse(language, filter);
+        if (!parseResult.IsSuccess || parseResult.Expression is null)
+        {
+            return parseResult;
+        }
+        try
+        {
+            var normalized = _translator.Normalize(parseResult.Expression, resource);
+            return FilterParseResult.Success(normalized);
+        }
+        catch (ArgumentException ex)
+        {
+            return FilterParseResult.Failure(ex.Message);
+        }
+    }
+
+    /// <inheritdoc />
+    public FilterExpression Normalize(FilterExpression expression, MetadataV2Resource resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        return _translator.Normalize(expression, resource);
+    }
+
+    /// <inheritdoc />
+    public FilterTranslationResult Translate(FilterExpression? expression, MetadataV2Resource resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+
+        if (expression == null)
+        {
+            return FilterTranslationResult.Success(null, null);
+        }
+
+        try
+        {
+            var sqlFilter = _translator.Translate(expression, resource);
             return FilterTranslationResult.Success(expression, sqlFilter);
         }
         catch (ArgumentException ex)

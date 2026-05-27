@@ -98,7 +98,8 @@ public sealed partial class OgcWcsImportService : IOgcWcsImportService
             RequestedOutputFormat = negotiatedFormat,
             ResolvedVersion = resolvedVersion,
             ApplyMode = coverageResult.ApplyMode,
-            DryRun = coverageResult.DryRun
+            DryRun = coverageResult.DryRun,
+            StyleDiagnostics = coverageResult.StyleDiagnostics
         };
     }
 

@@ -44,13 +44,18 @@ internal static class GPServerEndpoints
             .WithDescription("Returns metadata about the GPServer service including available tasks")
             .WithTags("GPServer");
 
+        // PUBLIC by design (#1144): GeoServices REST POST mirror of the GET
+        // service-info read; returns the same metadata as the GET form. Marked
+        // AllowAnonymous so the audit architecture guard records the
+        // intentional decision.
         endpoints.MapPost(RouteBase,
                 static (HttpContext context, CancellationToken ct) => HandleServiceInfo(context, ct))
             .WithDisplayName("GPServer Service Info (POST)")
             .WithName("GPServerServiceInfoPost")
             .WithSummary("Get GPServer service metadata")
             .WithDescription("Returns metadata about the GPServer service including available tasks")
-            .WithTags("GPServer");
+            .WithTags("GPServer")
+            .AllowAnonymous();
 
         // Task info
         endpoints.MapGet($"{RouteBase}/{{taskName}}",
@@ -61,22 +66,32 @@ internal static class GPServerEndpoints
             .WithDescription("Returns metadata about a specific GP task including parameters")
             .WithTags("GPServer");
 
+        // PUBLIC by design (#1144): GeoServices REST POST mirror of the GET
+        // task-info read; returns the same metadata as the GET form. Marked
+        // AllowAnonymous so the audit architecture guard records the
+        // intentional decision.
         endpoints.MapPost($"{RouteBase}/{{taskName}}",
                 static (HttpContext context, CancellationToken ct) => HandleTaskInfo(context, ct))
             .WithDisplayName("GPServer Task Info (POST)")
             .WithName("GPServerTaskInfoPost")
             .WithSummary("Get GP task metadata")
             .WithDescription("Returns metadata about a specific GP task including parameters")
-            .WithTags("GPServer");
+            .WithTags("GPServer")
+            .AllowAnonymous();
 
         // Async submit job (POST + GET per Esri GP contract)
+        // HANDLER-AUTHORIZED (#1144): the handler calls
+        // IGeoprocessingJobService.EnsureCallerAuthorized before reading the
+        // request body, so 401/403 are returned ahead of 400 for unauth
+        // callers. Marked AllowAnonymous to record the explicit decision.
         endpoints.MapPost($"{RouteBase}/{{taskName}}/submitJob",
                 static (HttpContext context, CancellationToken ct) => HandleSubmitJob(context, ct))
             .WithDisplayName("GPServer Submit Job")
             .WithName("GPServerSubmitJob")
             .WithSummary("Submit an asynchronous GP job")
             .WithDescription("Queues a GP task for background processing and returns a job ID")
-            .WithTags("GPServer");
+            .WithTags("GPServer")
+            .AllowAnonymous();
 
         endpoints.MapGet($"{RouteBase}/{{taskName}}/submitJob",
                 static (HttpContext context, CancellationToken ct) => HandleSubmitJob(context, ct))
@@ -84,6 +99,31 @@ internal static class GPServerEndpoints
             .WithName("GPServerSubmitJobGet")
             .WithSummary("Submit an asynchronous GP job using GET")
             .WithDescription("Queues a GP task for background processing and returns a job ID")
+            .WithTags("GPServer");
+
+        // Synchronous execute (POST + GET per Esri GP contract). Sync-eligible
+        // tasks (the deterministic geometry.* family) run inline and return
+        // results in the response; async-only tasks return a clear capability
+        // message directing the caller to submitJob.
+        // HANDLER-AUTHORIZED (#1144): the handler calls
+        // IGeoprocessingJobService.EnsureCallerAuthorized before reading the
+        // request body, so 401/403 are returned ahead of 400 for unauth
+        // callers. Marked AllowAnonymous to record the explicit decision.
+        endpoints.MapPost($"{RouteBase}/{{taskName}}/execute",
+                static (HttpContext context, CancellationToken ct) => HandleExecute(context, ct))
+            .WithDisplayName("GPServer Execute")
+            .WithName("GPServerExecute")
+            .WithSummary("Run a synchronous GP task")
+            .WithDescription("Executes a sync-eligible GP task and returns its results inline")
+            .WithTags("GPServer")
+            .AllowAnonymous();
+
+        endpoints.MapGet($"{RouteBase}/{{taskName}}/execute",
+                static (HttpContext context, CancellationToken ct) => HandleExecute(context, ct))
+            .WithDisplayName("GPServer Execute (GET)")
+            .WithName("GPServerExecuteGet")
+            .WithSummary("Run a synchronous GP task using GET")
+            .WithDescription("Executes a sync-eligible GP task and returns its results inline")
             .WithTags("GPServer");
 
         // Job status
@@ -113,13 +153,18 @@ internal static class GPServerEndpoints
             .WithDescription("Cancels an in-flight GP job")
             .WithTags("GPServer");
 
+        // HANDLER-AUTHORIZED (#1144): GetJobAsync/CancelJobAsync resolve
+        // ownership against HttpContext.User; unauthenticated callers receive
+        // GeoprocessingAuthorizationException → 401. Marked AllowAnonymous so
+        // the audit guard records the intentional decision.
         endpoints.MapPost($"{RouteBase}/{{taskName}}/jobs/{{jobId}}/cancel",
                 static (HttpContext context, CancellationToken ct) => HandleCancelJob(context, ct))
             .WithDisplayName("GPServer Cancel Job (POST)")
             .WithName("GPServerCancelJobPost")
             .WithSummary("Cancel a GP job")
             .WithDescription("Cancels an in-flight GP job")
-            .WithTags("GPServer");
+            .WithTags("GPServer")
+            .AllowAnonymous();
 
         return endpoints;
     }
@@ -240,7 +285,10 @@ internal static class GPServerEndpoints
             }
 
             // Reject unsupported GP environment controls (env:outSR, env:processSR, context)
-            // with a clear 400 instead of silently stripping them.
+            // with a clear 400 instead of silently stripping them. This is the
+            // ESTABLISHED async submitJob contract that cross-repo integration tests
+            // assert; env:outSR honoring is an ADDITIVE feature of the sync execute
+            // route only (see HandleExecute / TryParseEnvControls). See #1228.
             var envError = RejectUnsupportedEnvControls(context, logger, parameters);
             if (envError != null)
             {
@@ -259,8 +307,17 @@ internal static class GPServerEndpoints
                     "Task not found");
             }
 
-            var plan = BuildSubmissionPlan(definition, serviceId, parameters);
-            var protocolMetadata = BuildProtocolMetadata(serviceId, taskName, definition, parameters);
+            var planResult = BuildSubmissionPlan(definition, serviceId, parameters);
+            if (planResult.CapabilityError is not null)
+            {
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateBadRequest(context, planResult.CapabilityError),
+                    "FeatureSet requires feature-collection execution");
+            }
+
+            var plan = planResult.Plan!;
+            // submitJob rejects all env:* controls above, so there are none to record.
+            var protocolMetadata = BuildProtocolMetadata(serviceId, taskName, definition, parameters, default);
             var job = await jobService.SubmitJobAsync(
                 plan,
                 idempotencyKey: null,
@@ -283,6 +340,265 @@ internal static class GPServerEndpoints
         {
             return MapExceptionToResult(context, logger, "SubmitJob", ex);
         }
+    }
+
+    private static async Task<IResult> HandleExecute(HttpContext context, CancellationToken ct)
+    {
+        ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? "";
+        var taskName = context.Request.RouteValues["taskName"]?.ToString() ?? "";
+        EnrichActivity("Execute", serviceId, taskName);
+        var logger = ResolveLogger(context);
+
+        var jobService = context.RequestServices.GetRequiredService<IGeoprocessingJobService>();
+
+        try
+        {
+            var serviceValidation = await ValidateServiceAsync(context, serviceId, logger, ct);
+            if (!serviceValidation.IsValid)
+            {
+                return serviceValidation.ErrorResult!;
+            }
+
+            // Auth must precede parameter reading to guarantee 401/403 before 400.
+            jobService.EnsureCallerAuthorized(
+                context.User,
+                OperatorResourceType.Process,
+                OperatorOperation.Execute);
+
+            var contentTypeError = ValidateFormPostContentType(context);
+            if (contentTypeError is not null)
+            {
+                return contentTypeError;
+            }
+
+            var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct);
+            var formatError = ValidateJsonFormat(context, parameters);
+            if (formatError != null)
+            {
+                return formatError;
+            }
+
+            var envError = TryParseEnvControls(context, logger, parameters, out var envControls);
+            if (envError != null)
+            {
+                return envError;
+            }
+
+            var processCatalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
+            var definition = ResolveTaskDefinition(processCatalog, taskName);
+            if (definition == null)
+            {
+                GPServerLog.TaskResolutionUnavailable(logger, serviceId, taskName);
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateNotFound(
+                        context,
+                        $"Task '{taskName}' on service '{serviceId}' was not found."),
+                    "Task not found");
+            }
+
+            // Respect the task's ExecutionType: only sync-eligible tasks may run
+            // inline. Async-only tasks get a clear, correct capability message
+            // pointing at submitJob instead of a faked synchronous result.
+            if (!GPServerExecutionPolicy.IsSynchronous(definition))
+            {
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateBadRequest(context,
+                        $"Task '{definition.ProcessId}' is asynchronous ({GPServerExecutionPolicy.AsynchronousExecutionType}). " +
+                        "Use the submitJob route and poll the job status; the synchronous execute route is only " +
+                        "available for sync-eligible (deterministic single-geometry) tasks."),
+                    "Task is not sync-eligible");
+            }
+
+            var planResult = BuildSubmissionPlan(definition, serviceId, parameters);
+            if (planResult.CapabilityError is not null)
+            {
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateBadRequest(context, planResult.CapabilityError),
+                    "FeatureSet requires feature-collection execution");
+            }
+
+            var protocolMetadata = BuildProtocolMetadata(serviceId, taskName, definition, parameters, envControls);
+            var job = await jobService.SubmitJobAsync(
+                planResult.Plan!,
+                idempotencyKey: null,
+                context.User,
+                protocolMetadata,
+                ct);
+
+            // Synchronous contract: block until the canonical runtime reaches a
+            // terminal state, then return results inline. Execution itself flows
+            // through the same job runtime as submitJob — sync is a protocol
+            // projection, not a separate engine.
+            var terminal = await PollUntilTerminalAsync(jobService, job.OperationId, context.User, ct);
+
+            if (terminal.Status == ExecutionJobStatus.Failed)
+            {
+                return BuildExecuteFailureResponse(terminal, "esriJobFailed");
+            }
+
+            if (terminal.Status == ExecutionJobStatus.Cancelled)
+            {
+                return BuildExecuteFailureResponse(terminal, "esriJobCancelled");
+            }
+
+            var workingSrid = ResolveWorkingSrid(parameters, planResult.InputSpatialReference);
+            return await BuildExecuteSuccessResponseAsync(
+                jobService, terminal, context.User, envControls, workingSrid, ct);
+        }
+        catch (TimeoutException)
+        {
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateRequestTimeout(context,
+                    "Synchronous GP execution did not complete within the request timeout. " +
+                    "Use submitJob for long-running execution."),
+                "Synchronous execution timed out");
+        }
+        catch (Exception ex)
+        {
+            return MapExceptionToResult(context, logger, "Execute", ex);
+        }
+    }
+
+    /// <summary>
+    /// Polls the job service until the job reaches a terminal state. The
+    /// canonical runtime executes the job out-of-band (worker host); the
+    /// synchronous protocol contract blocks the request thread until completion
+    /// or until the request-scoped cancellation token trips.
+    /// </summary>
+    private static async Task<ExecutionJobRecord> PollUntilTerminalAsync(
+        IGeoprocessingJobService jobService,
+        string jobId,
+        System.Security.Claims.ClaimsPrincipal user,
+        CancellationToken ct)
+    {
+        var delay = TimeSpan.FromMilliseconds(50);
+        var maxDelay = TimeSpan.FromMilliseconds(500);
+
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            var job = await jobService.GetJobAsync(jobId, user, ct);
+            if (GeoprocessingJobService.IsTerminal(job.Status))
+            {
+                return job;
+            }
+
+            await Task.Delay(delay, ct);
+            delay = delay < maxDelay ? delay + delay : maxDelay;
+        }
+    }
+
+    private static IResult BuildExecuteFailureResponse(ExecutionJobRecord job, string esriStatus)
+    {
+        var messages = new List<GPJobMessage>();
+        if (job.ErrorMessage != null)
+        {
+            messages.Add(new GPJobMessage
+            {
+                Type = "esriJobMessageTypeError",
+                Description = job.ErrorMessage
+            });
+        }
+
+        var response = new GPExecuteResponse
+        {
+            Results = [],
+            Messages = [.. messages],
+            JobStatus = esriStatus
+        };
+
+        return SetSpanErrorAndReturn(
+            Results.Json(response, GPServerJsonContext.Default.GPExecuteResponse, contentType: "application/json"),
+            $"Synchronous execution {esriStatus}");
+    }
+
+    private static async Task<IResult> BuildExecuteSuccessResponseAsync(
+        IGeoprocessingJobService jobService,
+        ExecutionJobRecord job,
+        System.Security.Claims.ClaimsPrincipal user,
+        EnvControls envControls,
+        int workingSrid,
+        CancellationToken ct)
+    {
+        var results = new List<GPResultResponse>();
+        var messages = new List<GPJobMessage>();
+
+        foreach (var warning in job.Warnings)
+        {
+            messages.Add(new GPJobMessage { Type = "esriJobMessageTypeWarning", Description = warning });
+        }
+
+        AnalysisResultPackage? resultPackage = null;
+        try
+        {
+            resultPackage = await jobService.GetJobResultsAsync(job.OperationId, user, ct);
+        }
+        catch (GeoprocessingNotFoundException)
+        {
+            // No persisted result package — return an empty results envelope with
+            // an informative message rather than a fabricated value.
+            messages.Add(new GPJobMessage
+            {
+                Type = "esriJobMessageTypeInformative",
+                Description = "Job succeeded but no result package was available for inline retrieval."
+            });
+        }
+
+        if (resultPackage != null)
+        {
+            var allKinds = resultPackage.Artifacts.Select(a => a.Kind).ToArray();
+            for (var index = 0; index < resultPackage.Artifacts.Count; index++)
+            {
+                var artifact = resultPackage.Artifacts[index];
+                var paramName = ResolvePublishedOutputParameterName(job, artifact, index, allKinds);
+                var dataType = GPServerParameterTranslation.ToEsriDataType(artifact.Kind);
+                var value = artifact.Uri ?? artifact.Label;
+
+                if (envControls.OutSr is { } outSr && artifact.Kind == ArtifactKind.FeatureLayer)
+                {
+                    var outcome = GPServerOutputReprojection.TryReprojectGeoJsonValue(value, workingSrid, outSr);
+                    if (outcome.Reprojected)
+                    {
+                        value = outcome.Value;
+                    }
+                    else if (outcome.CapabilityMessage is not null)
+                    {
+                        messages.Add(new GPJobMessage
+                        {
+                            Type = "esriJobMessageTypeWarning",
+                            Description = outcome.CapabilityMessage
+                        });
+                    }
+                }
+                else if (envControls.OutSr is { } requestedSr && artifact.Kind != ArtifactKind.FeatureLayer)
+                {
+                    messages.Add(new GPJobMessage
+                    {
+                        Type = "esriJobMessageTypeWarning",
+                        Description =
+                            $"env:outSR={requestedSr} was ignored: output '{paramName}' is a " +
+                            $"{artifact.Kind} and is not a reprojectable geometry."
+                    });
+                }
+
+                results.Add(new GPResultResponse
+                {
+                    ParamName = paramName,
+                    DataType = dataType,
+                    Value = value
+                });
+            }
+        }
+
+        var response = new GPExecuteResponse
+        {
+            Results = [.. results],
+            Messages = messages.Count > 0 ? [.. messages] : null,
+            JobStatus = "esriJobSucceeded"
+        };
+
+        return Results.Json(response, GPServerJsonContext.Default.GPExecuteResponse, contentType: "application/json");
     }
 
     private static async Task<IResult> HandleJobStatus(HttpContext context, CancellationToken ct)
@@ -618,6 +934,12 @@ internal static class GPServerEndpoints
     /// Rejects unsupported GP environment controls (<c>env:outSR</c>, <c>env:processSR</c>)
     /// with a structured 400 error instead of silently stripping them.
     /// Returns null when no unsupported controls are present.
+    /// <para>
+    /// This guard backs the ESTABLISHED async <c>submitJob</c> contract (cross-repo
+    /// integration tests assert env:* → 400). Honoring <c>env:outSR</c> /
+    /// <c>env:processSR</c> is an additive feature of the synchronous <c>execute</c>
+    /// route only, which uses <see cref="TryParseEnvControls"/> instead. See #1228.
+    /// </para>
     /// </summary>
     private static IResult? RejectUnsupportedEnvControls(
         HttpContext context, ILogger logger, IReadOnlyDictionary<string, string> allParams)
@@ -644,6 +966,127 @@ internal static class GPServerEndpoints
                 $"GP environment controls are not yet supported: {names}. " +
                 "Remove these parameters or wait for engine support."),
             $"Unsupported GP env controls: {names}");
+    }
+
+    /// <summary>
+    /// Parsed GP environment controls. <c>env:outSR</c> and <c>env:processSR</c>
+    /// are honored (output reprojection / informational); any other <c>env:*</c>
+    /// control is unsupported and surfaced for a 400 response.
+    /// </summary>
+    private readonly record struct EnvControls(int? OutSr, int? ProcessSr);
+
+    /// <summary>
+    /// Parses GP environment controls. <c>env:outSR</c> and <c>env:processSR</c>
+    /// are recognised and returned (and no longer rejected); any other
+    /// <c>env:*</c> control yields a structured 400. SR values may be a bare
+    /// WKID or a spatial-reference JSON object (<c>{ "wkid": 3857 }</c>).
+    /// </summary>
+    private static IResult? TryParseEnvControls(
+        HttpContext context,
+        ILogger logger,
+        IReadOnlyDictionary<string, string> allParams,
+        out EnvControls controls)
+    {
+        controls = default;
+        int? outSr = null;
+        int? processSr = null;
+        List<string>? unsupported = null;
+
+        foreach (var (key, value) in allParams)
+        {
+            if (!key.StartsWith("env:", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (string.Equals(key, "env:outSR", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!TryParseSpatialReferenceValue(value, out outSr))
+                {
+                    return SetSpanErrorAndReturn(
+                        StandardErrorHelpers.CreateBadRequest(context,
+                            $"env:outSR value '{value}' is not a valid WKID or spatial-reference object."),
+                        "Invalid env:outSR");
+                }
+            }
+            else if (string.Equals(key, "env:processSR", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!TryParseSpatialReferenceValue(value, out processSr))
+                {
+                    return SetSpanErrorAndReturn(
+                        StandardErrorHelpers.CreateBadRequest(context,
+                            $"env:processSR value '{value}' is not a valid WKID or spatial-reference object."),
+                        "Invalid env:processSR");
+                }
+            }
+            else
+            {
+                unsupported ??= [];
+                unsupported.Add(key);
+            }
+        }
+
+        if (unsupported != null)
+        {
+            var names = string.Join(", ", unsupported);
+            GPServerLog.UnsupportedEnvControlsRejected(logger, names);
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateBadRequest(context,
+                    $"GP environment controls are not yet supported: {names}. " +
+                    "Remove these parameters or wait for engine support."),
+                $"Unsupported GP env controls: {names}");
+        }
+
+        controls = new EnvControls(outSr, processSr);
+        return null;
+    }
+
+    private static bool TryParseSpatialReferenceValue(string? value, out int? srid)
+    {
+        srid = null;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        var trimmed = value.Trim();
+        if (int.TryParse(trimmed, System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture, out var bare))
+        {
+            srid = bare;
+            return true;
+        }
+
+        if (trimmed[0] == '{')
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(trimmed);
+                var root = doc.RootElement;
+                if (root.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    if (root.TryGetProperty("wkid", out var wkid) &&
+                        wkid.ValueKind == System.Text.Json.JsonValueKind.Number)
+                    {
+                        srid = wkid.GetInt32();
+                        return true;
+                    }
+
+                    if (root.TryGetProperty("latestWkid", out var latest) &&
+                        latest.ValueKind == System.Text.Json.JsonValueKind.Number)
+                    {
+                        srid = latest.GetInt32();
+                        return true;
+                    }
+                }
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     private static IResult? ValidateFormPostContentType(HttpContext context)
@@ -724,12 +1167,28 @@ internal static class GPServerEndpoints
             Description = definition.Description,
             Category = definition.Category,
             HelpUrl = string.Empty,
+            // ADVERTISED contract stays asynchronous (the value trunk advertised and
+            // that cross-repo integration tests assert). The synchronous `execute`
+            // route is purely additive capability and gates itself via
+            // GPServerExecutionPolicy.IsSynchronous; it does not change advertised
+            // task/service metadata. See #1228.
             ExecutionType = "esriExecutionTypeAsynchronous",
             Parameters = [.. parameters]
         };
     }
 
-    private static AnalysisPlan BuildSubmissionPlan(
+    /// <summary>
+    /// Result of building a submission plan: either an executable
+    /// <see cref="AnalysisPlan"/> (with the working input SRID, when derivable
+    /// from an esriGeometry/FeatureSet) or a capability error explaining why the
+    /// supplied inputs cannot be translated to the canonical contract.
+    /// </summary>
+    private readonly record struct SubmissionPlanResult(
+        AnalysisPlan? Plan,
+        string? CapabilityError,
+        int? InputSpatialReference);
+
+    private static SubmissionPlanResult BuildSubmissionPlan(
         ProcessDefinition definition,
         string serviceId,
         IReadOnlyDictionary<string, string> rawParameters)
@@ -745,10 +1204,20 @@ internal static class GPServerEndpoints
             inputs[key] = value;
         }
 
-        var translatedInputs = GPServerParameterTranslation.TranslateInbound(inputs);
+        // Additive ArcGIS-compatible input translation: rewrite esriGeometry JSON
+        // and single-feature FeatureSet payloads into canonical base64-WKB + srid.
+        // Native string / base64-WKB inputs pass through untouched. Multi-feature
+        // FeatureSets surface a capability error rather than dropping features.
+        var esriResult = GPServerEsriInputTranslation.Translate(inputs);
+        if (esriResult.CapabilityMessage is not null)
+        {
+            return new SubmissionPlanResult(Plan: null, esriResult.CapabilityMessage, esriResult.InputSpatialReference);
+        }
+
+        var translatedInputs = GPServerParameterTranslation.TranslateInbound(esriResult.Inputs);
         var taskSlug = definition.ProcessId.Replace(".", "-", StringComparison.Ordinal);
 
-        return new AnalysisPlan
+        var plan = new AnalysisPlan
         {
             PlanId = $"gpserver-{serviceId}-{taskSlug}-{Guid.NewGuid():N}",
             IntentId = $"gpserver:{serviceId}:{definition.ProcessId}",
@@ -764,13 +1233,39 @@ internal static class GPServerEndpoints
             ],
             Outputs = definition.OutputArtifactKinds
         };
+
+        return new SubmissionPlanResult(plan, CapabilityError: null, esriResult.InputSpatialReference);
+    }
+
+    /// <summary>
+    /// Resolves the working SRID for output reprojection: the explicit canonical
+    /// <c>srid</c>/<c>toSrid</c>/<c>targetSrid</c> input if present, otherwise the
+    /// SRID derived from a translated esriGeometry/FeatureSet input.
+    /// </summary>
+    private static int ResolveWorkingSrid(
+        IReadOnlyDictionary<string, string> rawParameters,
+        int? derivedSrid)
+    {
+        foreach (var key in new[] { "srid", "toSrid", "targetSrid", "outSr" })
+        {
+            if (rawParameters.TryGetValue(key, out var value) &&
+                int.TryParse(value, System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture, out var parsed) &&
+                parsed > 0)
+            {
+                return parsed;
+            }
+        }
+
+        return derivedSrid ?? 0;
     }
 
     private static Dictionary<string, string> BuildProtocolMetadata(
         string serviceId,
         string taskName,
         ProcessDefinition definition,
-        IReadOnlyDictionary<string, string> rawParameters)
+        IReadOnlyDictionary<string, string> rawParameters,
+        EnvControls envControls)
     {
         var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -793,6 +1288,18 @@ internal static class GPServerEndpoints
             !string.IsNullOrWhiteSpace(contextValue))
         {
             metadata[GeoprocessingProtocolMetadataKeys.GPServerContext] = contextValue;
+        }
+
+        if (envControls.OutSr is { } outSr)
+        {
+            metadata[GeoprocessingProtocolMetadataKeys.GPServerOutSr] =
+                outSr.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        if (envControls.ProcessSr is { } processSr)
+        {
+            metadata[GeoprocessingProtocolMetadataKeys.GPServerProcessSr] =
+                processSr.ToString(System.Globalization.CultureInfo.InvariantCulture);
         }
 
         return metadata;

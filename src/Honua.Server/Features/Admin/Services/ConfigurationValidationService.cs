@@ -93,7 +93,7 @@ internal static class ConfigurationValidationService
             if (string.IsNullOrEmpty(adminPassword))
             {
                 warnings.Add(isTest
-                    ? "Test mode with no HONUA_ADMIN_PASSWORD configured. Explicit HONUA_DEV_AUTH=true is required to bypass admin authentication during tests."
+                    ? "Test mode with no HONUA_ADMIN_PASSWORD configured. Both HONUA_DEV_AUTH=true AND HONUA_DEV_AUTH_ALLOW_BYPASS=true are required to bypass admin authentication during tests."
                     : "Development mode with no HONUA_ADMIN_PASSWORD configured. Admin endpoints require explicit credentials and will remain inaccessible until HONUA_ADMIN_PASSWORD is set.");
             }
 

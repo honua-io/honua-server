@@ -1,0 +1,1100 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Globalization;
+using System.Text.Json;
+using Honua.Core.Configuration;
+using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Shared.Models;
+using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
+using Microsoft.Extensions.Primitives;
+
+namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+
+/// <summary>
+/// V2 overloads of the response-builder helpers on
+/// <see cref="FeatureServerEndpoints"/> (issue #1035, FeatureServer cutover 91/N).
+/// These mirror the v1 helper bodies one-for-one, with substitutions:
+/// <list type="bullet">
+///   <item><c>layer.Fields</c>            → <c>resource.SchemaFields</c></item>
+///   <item><c>layer.AttributeFields</c>   → <c>resource.SchemaFields.Where(f => f.Type is not (Geometry or Geography))</c></item>
+///   <item><c>layer.Name</c>              → <c>resource.Metadata.Name</c></item>
+///   <item><c>layer.Id</c>                → <c>publication.LayerIndex ?? snapshot.ResolveStorageLayerId(resource) ?? -1</c></item>
+///   <item><c>layer.GeometryType</c>      → <c>resource.Spatial?.GeometryType</c></item>
+///   <item><c>layer.SpatialReference.Srid</c> → <c>resource.ReadSrid()</c></item>
+///   <item><c>service.Layers</c>          → iterate <c>snapshot.Index.PublicationsByService[serviceId]</c></item>
+///   <item><c>service.SpatialReference</c> → <c>service.SpatialReference?.ResolveSrid()</c></item>
+/// </list>
+/// V1 overloads remain in place so in-flight ports keep compiling.
+/// </summary>
+internal static partial class FeatureServerEndpoints
+{
+    private const string GeoServicesDrawingInfoExtensionKey = "honua.io/geoservices/drawingInfo";
+    private const string GeoServicesLegacyDrawingInfoExtensionKey = "geoservices:drawingInfo";
+    private const string GeoServicesExtrusionExtensionKey = "honua.io/geoservices/extrusion";
+    private const string GeoServicesLegacyExtrusionExtensionKey = "geoservices:extrusion";
+    private const string GeoServicesDomainNameExtensionKey = "honua.io/geoservices/domainName";
+    private const string GeoServicesDomainMergePolicyExtensionKey = "honua.io/geoservices/domainMergePolicy";
+    private const string GeoServicesDomainSplitPolicyExtensionKey = "honua.io/geoservices/domainSplitPolicy";
+    private const string EsriDrawingInfoStyleEncoding = "esri-drawing-info";
+
+    /// <summary>
+    /// V2 overload of
+    /// <see cref="MapServiceToResponse(ServiceDefinition, QueryLimits, bool, bool)"/>.
+    /// </summary>
+    /// <param name="service">V2 service backing the FeatureServer route.</param>
+    /// <param name="publications">Resolved (publication, resource) tuples for the service in
+    /// service-local-id order. Callers typically materialize this from
+    /// <c>snapshot.PublicationsForService(serviceId)</c> + <c>snapshot.ResolveResource(pub)</c>.</param>
+    /// <param name="snapshot">Graph snapshot used to resolve storage layer ids.</param>
+    /// <param name="queryLimits">Query limits for the service.</param>
+    /// <param name="supportsGeobufOutput">Whether the runtime supports geobuf output.</param>
+    /// <param name="supportsAttachmentUploads">Whether attachment uploads are wired up.</param>
+    private static FeatureServerResponse MapServiceToResponseV2(
+        MetadataV2Service service,
+        IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,
+        MetadataV2GraphSnapshot snapshot,
+        QueryLimits queryLimits,
+        bool supportsGeobufOutput,
+        bool supportsAttachmentUploads)
+    {
+        ArgumentNullException.ThrowIfNull(service);
+        ArgumentNullException.ThrowIfNull(publications);
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        var objectIdField = ResolveServiceObjectIdFieldV2(service, snapshot);
+        var supportsStatistics = true;
+        var supportsAdvancedQueries = ServiceSupportsAdvancedQueriesV2(service);
+        var hasGeometry = publications.Any(pair =>
+            pair.Resource.Spatial is { GeometryType: not MetadataV2GeometryType.None });
+
+        var visibleFields = publications
+            .SelectMany(pair => ResolveVisibleFieldsV2(pair.Resource))
+            .Select(MapFieldInfoV2)
+            .ToArray();
+
+        var supportedFormats = ReadServiceSupportedFormatsV2(service);
+        var supportsEditing = ServiceSupportsEditingV2(service);
+        var srid = service.SpatialReference?.ResolveSrid();
+        var spatialReference = srid.HasValue
+            ? SpatialReference.Create(srid.Value).ToSpatialReferenceInfo()
+            : SpatialReference.WGS84.ToSpatialReferenceInfo();
+
+        return new FeatureServerResponse
+        {
+            ServiceName = service.Metadata.Name,
+            ServiceDescription = service.Metadata.Description ?? string.Empty,
+            Layers = [.. publications.Select(pair => MapLayerInfoV2(pair.Resource, pair.Publication, snapshot))],
+            SpatialReference = spatialReference,
+            // V2 services don't carry a service-level extent (EffectiveExtent is a v1 concept).
+            // The catalog/admin UI computes a union from publications when needed; the metadata
+            // endpoint can return null here without breaking Esri clients.
+            InitialExtent = null,
+            FullExtent = null,
+            MaxRecordCount = queryLimits.MaxRecordCount,
+            SupportedQueryFormats = NormalizeSupportedQueryFormats(supportedFormats, supportsGeobufOutput),
+            Capabilities = BuildServiceCapabilitiesV2(service, publications, supportsAttachmentUploads),
+            Fields = visibleFields,
+            ObjectIdField = objectIdField,
+            SupportsAdvancedQueries = supportsAdvancedQueries,
+            SupportsStatistics = supportsStatistics,
+            HasGeometryProperties = hasGeometry,
+            AllowGeometryUpdates = supportsEditing
+        };
+    }
+
+    /// <summary>
+    /// V2 overload of
+    /// <see cref="MapLayerToResponse(ServiceDefinition, LayerDefinition, QueryLimits, FeatureServerTimeInfo?, JsonElement?, FeatureServerExtrusionInfo?, bool, bool)"/>.
+    /// </summary>
+    private static LayerResponse MapLayerToResponseV2(
+        MetadataV2Service service,
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        MetadataV2GraphSnapshot snapshot,
+        QueryLimits queryLimits,
+        FeatureServerTimeInfo? timeInfo,
+        JsonElement? drawingInfo,
+        FeatureServerExtrusionInfo? extrusionInfo,
+        bool supportsGeobufOutput,
+        bool supportsAttachmentUploads)
+    {
+        ArgumentNullException.ThrowIfNull(service);
+        ArgumentNullException.ThrowIfNull(resource);
+        ArgumentNullException.ThrowIfNull(publication);
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+        var displayField = ResolveDisplayFieldFromResource(resource, objectIdField);
+        var supportsStatistics = true;
+        var supportsAdvancedQueries = ServiceSupportsAdvancedQueriesV2(service);
+        var supportsRelated = resource.Relationships.Count > 0;
+        var supportsOrderBy = supportsAdvancedQueries;
+        var supportsDistinct = supportsAdvancedQueries;
+        var supportsPagination = supportsAdvancedQueries;
+        var supportsEditing = ServiceSupportsEditingV2(service);
+        var advancedQueryCapabilities = BuildAdvancedQueryCapabilities(
+            supportsAdvancedQueries,
+            supportsStatistics,
+            supportsOrderBy,
+            supportsDistinct,
+            supportsPagination);
+
+        var srid = resource.ReadSrid();
+        var spatialReference = srid.HasValue
+            ? SpatialReference.Create(srid.Value).ToSpatialReferenceInfo()
+            : SpatialReference.WGS84.ToSpatialReferenceInfo();
+
+        var supportedFormats = ReadServiceSupportedFormatsV2(service);
+        var supportsAttachments = ResourceSupportsAttachmentsV2(resource);
+
+        return new LayerResponse
+        {
+            Id = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(resource) ?? -1,
+            Name = resource.Metadata.Name,
+            Description = resource.Metadata.Description,
+            Type = "Feature Layer",
+            GeometryType = MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None),
+            SpatialReference = spatialReference,
+            Extent = MapExtentV2(resource.Spatial?.Bbox, spatialReference),
+            TimeInfo = timeInfo,
+            ExtrusionInfo = extrusionInfo,
+            Fields = [.. ResolveVisibleFieldsV2(resource).Select(MapFieldInfoV2)],
+            MaxRecordCount = queryLimits.MaxRecordCount,
+            ObjectIdField = objectIdField,
+            DisplayField = displayField,
+            UniqueIdField = new UniqueIdFieldInfo { Name = objectIdField, IsSystemMaintained = true },
+            DrawingInfo = drawingInfo.HasValue ? drawingInfo.Value : null,
+            Capabilities = BuildLayerCapabilitiesV2(service, resource, supportsAttachmentUploads),
+            SupportsAdvancedQueries = supportsAdvancedQueries,
+            SupportsStatistics = supportsStatistics,
+            SupportsCountDistinct = supportsStatistics,
+            SupportsOrderBy = supportsOrderBy,
+            SupportsDistinct = supportsDistinct,
+            SupportsPagination = supportsPagination,
+            SupportsTrueCurve = false,
+            SupportsRollbackOnFailureParameter = supportsEditing,
+            SupportsApplyEditsWithGlobalIds = false,
+            HasAttachments = supportsAttachments && supportsAttachmentUploads,
+            SupportsQueryRelated = supportsRelated,
+            SupportedQueryFormats = NormalizeSupportedQueryFormats(supportedFormats, supportsGeobufOutput),
+            SupportsCoordinatesQuantization = false,
+            Relationships = BuildRelationshipResponseV2(resource, snapshot),
+            AllowGeometryUpdates = supportsEditing,
+            EditFieldsInfo = null,
+            EditingInfo = supportsEditing ? new EditingInfo() : null,
+            Templates = [],
+            AdvancedQueryCapabilities = advancedQueryCapabilities
+        };
+    }
+
+    private static ExtentInfo? MapExtentV2(MetadataV2Bbox? bbox, SpatialReferenceInfo spatialReference)
+    {
+        if (bbox is null)
+        {
+            return null;
+        }
+
+        return new ExtentInfo
+        {
+            Xmin = bbox.West,
+            Ymin = bbox.South,
+            Xmax = bbox.East,
+            Ymax = bbox.North,
+            SpatialReference = spatialReference
+        };
+    }
+
+    /// <summary>
+    /// V2 overload of <see cref="MapLayerInfo(LayerDefinition)"/>. Builds the lightweight
+    /// service-listing entry (id/name/geometry-type) for a (resource, publication) pair.
+    /// </summary>
+    private static LayerInfo MapLayerInfoV2(
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        MetadataV2GraphSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        ArgumentNullException.ThrowIfNull(publication);
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        return new LayerInfo
+        {
+            Id = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(resource) ?? -1,
+            Name = resource.Metadata.Name,
+            DefaultVisibility = resource.Display?.DefaultVisibility ?? true,
+            SubLayerIds = null,
+            MinScale = resource.Display?.MinScale,
+            MaxScale = resource.Display?.MaxScale,
+            GeometryType = MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None)
+        };
+    }
+
+    /// <summary>
+    /// V2 overload of <see cref="MapFieldInfo(FieldDefinition)"/>. Maps a canonical
+    /// <see cref="MetadataV2Field"/> to the Esri-style GeoServices field info shape.
+    /// </summary>
+    private static GeoServicesFieldInfo MapFieldInfoV2(MetadataV2Field field)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+
+        var geoServicesType = MapFieldTypeToGeoServicesV2(field.Type);
+        var sqlType = MapFieldTypeToSqlV2(field.Type);
+        var isGeometry = field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography;
+
+        return new GeoServicesFieldInfo
+        {
+            Name = field.Name,
+            Type = geoServicesType,
+            SqlType = sqlType,
+            Alias = field.Alias ?? field.Title ?? field.Name,
+            Length = field.Length,
+            Nullable = field.Nullable,
+            Editable = field.Editable && !isGeometry,
+            DefaultValue = field.DefaultValue.HasValue ? ConvertJsonElementToObject(field.DefaultValue.Value) : null,
+            Domain = MapFieldDomainInfoV2(field, geoServicesType)
+        };
+    }
+
+    private static JsonElement? ResolveDrawingInfoV2(MetadataV2Resource resource, MetadataV2GraphSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        if (TryReadJsonExtension(resource.Extensions, GeoServicesDrawingInfoExtensionKey, out var drawingInfo) ||
+            TryReadJsonExtension(resource.Extensions, GeoServicesLegacyDrawingInfoExtensionKey, out drawingInfo) ||
+            TryReadJsonExtension(resource.Extensions, "drawingInfo", out drawingInfo))
+        {
+            return drawingInfo;
+        }
+
+        foreach (var styleResourceId in resource.StyleResourceIds)
+        {
+            if (!snapshot.Index.ResourcesById.TryGetValue(styleResourceId, out var styleResource) ||
+                styleResource.Type != MetadataV2ResourceType.Style ||
+                styleResource.Style is null)
+            {
+                continue;
+            }
+
+            foreach (var encoding in styleResource.Style.Encodings)
+            {
+                if (!string.Equals(encoding.Encoding, EsriDrawingInfoStyleEncoding, StringComparison.OrdinalIgnoreCase) ||
+                    string.IsNullOrWhiteSpace(encoding.Body))
+                {
+                    continue;
+                }
+
+                using var document = JsonDocument.Parse(encoding.Body);
+                return document.RootElement.Clone();
+            }
+        }
+
+        return null;
+    }
+
+    private static FeatureServerExtrusionInfo? BuildExtrusionInfoV2(
+        MetadataV2Resource resource,
+        out IReadOnlyList<string> validationErrors)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+
+        var extrusion = ReadLayerExtrusionInfoV2(resource);
+        if (extrusion is null)
+        {
+            validationErrors = Array.Empty<string>();
+            return null;
+        }
+
+        validationErrors = ValidateExtrusionV2(extrusion, resource.SchemaFields);
+        if (validationErrors.Count > 0)
+        {
+            return null;
+        }
+
+        VerticalUnits.TryNormalize(extrusion.Unit, out var unitWire);
+        return new FeatureServerExtrusionInfo
+        {
+            Enabled = true,
+            HeightField = extrusion.HeightField,
+            BaseHeightField = extrusion.BaseHeightField,
+            Unit = unitWire,
+            DefaultHeight = extrusion.DefaultHeight,
+            MaterialHint = extrusion.MaterialHint
+        };
+    }
+
+    private static LayerExtrusionInfo? ReadLayerExtrusionInfoV2(MetadataV2Resource resource)
+    {
+        if (!TryReadJsonExtension(resource.Extensions, GeoServicesExtrusionExtensionKey, out var element) &&
+            !TryReadJsonExtension(resource.Extensions, GeoServicesLegacyExtrusionExtensionKey, out element) &&
+            !TryReadJsonExtension(resource.Extensions, "extrusion", out element))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize(element.GetRawText(), CatalogJsonContext.Default.LayerExtrusionInfo);
+        }
+        catch (JsonException)
+        {
+            return new LayerExtrusionInfo();
+        }
+    }
+
+    /// <summary>
+    /// V2 overload of <see cref="BuildServiceCapabilities(ServiceDefinition, bool)"/>.
+    /// Reads capabilities from the service's <c>Options["capabilities"]</c> JsonElement when
+    /// present; otherwise defaults to <c>"Query"</c>. Emits <c>Create/Update/Delete/Editing</c>
+    /// when any of those edit-capability tokens are present, and <c>Uploads</c> when any
+    /// publication's backing resource declares attachment support and the runtime has
+    /// attachment uploads enabled.
+    /// </summary>
+    private static string BuildServiceCapabilitiesV2(
+        MetadataV2Service service,
+        IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,
+        bool supportsAttachmentUploads)
+    {
+        ArgumentNullException.ThrowIfNull(service);
+        ArgumentNullException.ThrowIfNull(publications);
+
+        var capabilities = new List<string>();
+        var declared = ReadServiceCapabilitiesV2(service);
+
+        if (declared.Any(capability => capability.Equals("Query", StringComparison.OrdinalIgnoreCase)))
+        {
+            capabilities.Add("Query");
+        }
+
+        if (ServiceSupportsEditingV2(service))
+        {
+            capabilities.Add("Create");
+            capabilities.Add("Update");
+            capabilities.Add("Delete");
+            capabilities.Add("Editing");
+        }
+
+        if (declared.Any(capability => capability.Equals("Extract", StringComparison.OrdinalIgnoreCase)))
+        {
+            capabilities.Add("Extract");
+        }
+
+        if (supportsAttachmentUploads && publications.Any(pair => ResourceSupportsAttachmentsV2(pair.Resource)))
+        {
+            capabilities.Add("Uploads");
+        }
+
+        return string.Join(',', capabilities.Distinct(StringComparer.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// V2 overload of <see cref="BuildLayerCapabilities(ServiceDefinition, LayerDefinition, bool)"/>.
+    /// </summary>
+    private static string BuildLayerCapabilitiesV2(
+        MetadataV2Service service,
+        MetadataV2Resource resource,
+        bool supportsAttachmentUploads)
+    {
+        ArgumentNullException.ThrowIfNull(service);
+        ArgumentNullException.ThrowIfNull(resource);
+
+        var capabilities = new List<string>();
+        var declared = ReadServiceCapabilitiesV2(service);
+
+        if (declared.Any(capability => capability.Equals("Query", StringComparison.OrdinalIgnoreCase)))
+        {
+            capabilities.Add("Query");
+        }
+
+        if (ServiceSupportsEditingV2(service))
+        {
+            capabilities.Add("Create");
+            capabilities.Add("Update");
+            capabilities.Add("Delete");
+            capabilities.Add("Editing");
+        }
+
+        if (declared.Any(capability => capability.Equals("Extract", StringComparison.OrdinalIgnoreCase)))
+        {
+            capabilities.Add("Extract");
+        }
+
+        if (supportsAttachmentUploads && ResourceSupportsAttachmentsV2(resource))
+        {
+            capabilities.Add("Uploads");
+        }
+
+        return string.Join(',', capabilities.Distinct(StringComparer.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// V2 overload of <see cref="GeoServicesObjectIdFieldResolver.ResolveServiceObjectIdFieldName(ServiceDefinition)"/>.
+    /// Aggregates the per-resource object-id field across all publications on the service
+    /// and returns the single shared name when all resources agree; otherwise falls back to
+    /// the default <see cref="FieldNames.ObjectId"/> constant.
+    /// </summary>
+    private static string ResolveServiceObjectIdFieldV2(
+        MetadataV2Service service,
+        MetadataV2GraphSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(service);
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        var candidates = snapshot.Index.PublicationsByService[service.Metadata.Id]
+            .Select(pub => snapshot.ResolveResource(pub))
+            .Where(resource => resource is not null)
+            .Select(resource => GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource!))
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return candidates.Length == 1 ? candidates[0] : FieldNames.ObjectId;
+    }
+
+    /// <summary>
+    /// V2 overload of <see cref="ResolveDisplayFieldFromLayer(LayerDefinition, string)"/>.
+    /// Prefers the resource display hint, then a field named "name", then the first string-type
+    /// field, then objectIdField.
+    /// </summary>
+    private static string ResolveDisplayFieldFromResource(MetadataV2Resource resource, string objectIdField)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+
+        var visibleAttributes = ResolveVisibleAttributeFieldsV2(resource).ToArray();
+        if (!string.IsNullOrWhiteSpace(resource.Display?.DisplayField) &&
+            visibleAttributes.Any(field => field.Name.Equals(resource.Display.DisplayField, StringComparison.OrdinalIgnoreCase)))
+        {
+            return resource.Display.DisplayField;
+        }
+
+        var preferredNameField = visibleAttributes.FirstOrDefault(
+            field => field.Name.Equals("name", StringComparison.OrdinalIgnoreCase));
+        if (preferredNameField is not null)
+        {
+            return preferredNameField.Name;
+        }
+
+        var firstStringField = visibleAttributes.FirstOrDefault(
+            field => field.Type == MetadataV2FieldType.String);
+        return firstStringField?.Name ?? objectIdField;
+    }
+
+    /// <summary>
+    /// V2 overload of <c>layer.VisibleFields</c>. Metadata V2 carries protocol-facing
+    /// fields on <see cref="MetadataV2Resource.SchemaFields"/>; admin-only hidden-field
+    /// projections are applied before building the runtime graph.
+    /// </summary>
+    private static IEnumerable<MetadataV2Field> ResolveVisibleFieldsV2(MetadataV2Resource resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        return resource.SchemaFields;
+    }
+
+    /// <summary>
+    /// V2 overload of <c>layer.VisibleAttributeFields</c>. Excludes geometry/geography fields.
+    /// </summary>
+    private static IEnumerable<MetadataV2Field> ResolveVisibleAttributeFieldsV2(MetadataV2Resource resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        return resource.SchemaFields.Where(field =>
+            field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography));
+    }
+
+    /// <summary>
+    /// V2 overload of
+    /// <see cref="BuildTimeInfoAsync(LayerDefinition, IFeatureReader, CancellationToken)"/>.
+    /// Reads the temporal field configuration from <see cref="MetadataV2Resource.Temporal"/>
+    /// and probes the feature store for the range. Returns null when the resource does not
+    /// declare opt-in temporal fields, mirroring the v1 no-fallback contract.
+    /// </summary>
+    private static async Task<FeatureServerTimeInfo?> BuildTimeInfoV2Async(
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        MetadataV2GraphSnapshot snapshot,
+        IFeatureReader featureReader,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        ArgumentNullException.ThrowIfNull(publication);
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(featureReader);
+
+        if (!TemporalExtentHelpers.HasOptInTemporalFields(resource))
+        {
+            return null;
+        }
+
+        var storageLayerId = publication.LayerIndex
+            ?? snapshot.ResolveStorageLayerId(resource)
+            ?? -1;
+        if (storageLayerId < 0)
+        {
+            return null;
+        }
+
+        var temporalRange = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(
+            resource,
+            storageLayerId,
+            featureReader,
+            cancellationToken).ConfigureAwait(false);
+        if (temporalRange is null)
+        {
+            return null;
+        }
+
+        var range = temporalRange.Value;
+        long? minMs = range.Min?.ToUnixTimeMilliseconds();
+        long? maxMs = range.Max?.ToUnixTimeMilliseconds();
+
+        return new FeatureServerTimeInfo
+        {
+            StartTimeField = range.StartFieldName,
+            EndTimeField = range.EndFieldName,
+            TrackIdField = resource.Temporal?.TrackIdField,
+            TimeExtent = new long?[] { minMs, maxMs }
+        };
+    }
+
+    /// <summary>
+    /// V2 overload of
+    /// <see cref="TryResolveRequestedServiceLayers(ServiceDefinition, IReadOnlyDictionary{string, StringValues}, out LayerDefinition[], out bool, out string?)"/>.
+    /// Parses <c>layerId</c>/<c>layers</c> query parameters and returns the matching
+    /// (publication, resource) tuples on the service. <c>selectorSpecified</c> is true when
+    /// either parameter was supplied.
+    /// </summary>
+    internal static bool TryResolveRequestedServiceLayersV2(
+        MetadataV2Service service,
+        MetadataV2GraphSnapshot snapshot,
+        IReadOnlyDictionary<string, StringValues> values,
+        out (MetadataV2Publication Publication, MetadataV2Resource Resource)[] layers,
+        out bool selectorSpecified,
+        out string? error)
+    {
+        ArgumentNullException.ThrowIfNull(service);
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        // Materialize the full publication list once so we can both default-return and filter
+        // against it with stable layer-id resolution.
+        var allPairs = snapshot.Index.PublicationsByService[service.Metadata.Id]
+            .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
+            .Where(pair => pair.Resource is not null)
+            .Select(pair => (pair.Publication, Resource: pair.Resource!))
+            .ToArray();
+
+        layers = allPairs;
+        selectorSpecified = false;
+        error = null;
+
+        HashSet<int>? requestedLayerIds = null;
+
+        if (TryGetValue(values, "layerId", out var layerIdRaw) && !StringValues.IsNullOrEmpty(layerIdRaw))
+        {
+            if (!int.TryParse(layerIdRaw.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
+            {
+                error = "layerId must be an integer.";
+                return false;
+            }
+
+            requestedLayerIds ??= [];
+            requestedLayerIds.Add(layerId);
+        }
+
+        if (TryGetValue(values, "layers", out var layersRaw) && !StringValues.IsNullOrEmpty(layersRaw))
+        {
+            if (!TryParseLayerIdList(layersRaw.ToString(), out var parsedLayerIds, out error))
+            {
+                return false;
+            }
+
+            requestedLayerIds ??= [];
+            foreach (var layerId in parsedLayerIds)
+            {
+                requestedLayerIds.Add(layerId);
+            }
+        }
+
+        if (requestedLayerIds is null or { Count: 0 })
+        {
+            return true;
+        }
+
+        selectorSpecified = true;
+        layers =
+        [
+            ..allPairs.Where(pair =>
+            {
+                var id = pair.Publication.LayerIndex ?? snapshot.ResolveStorageLayerId(pair.Resource) ?? -1;
+                return requestedLayerIds.Contains(id);
+            })
+        ];
+        if (layers.Length != requestedLayerIds.Count)
+        {
+            error = "layers must reference valid layer identifiers in the service.";
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// V2 overload of
+    /// <see cref="FilterAccessibleLayers(HttpContext, ServiceDefinition, IEnumerable{LayerDefinition})"/>.
+    /// Drops (publication, resource) pairs the caller is not authorised to read using the V2
+    /// access-policy resolver (resource policy composed with service policy under deny-wins).
+    /// </summary>
+    internal static (MetadataV2Publication Publication, MetadataV2Resource Resource)[] FilterAccessibleLayersV2(
+        HttpContext context,
+        MetadataV2Service service,
+        IEnumerable<(MetadataV2Publication Publication, MetadataV2Resource Resource)> layers)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(service);
+        ArgumentNullException.ThrowIfNull(layers);
+
+        return
+        [
+            ..layers.Where(pair =>
+                IsRuntimeVisibleV2(service.Status) &&
+                IsRuntimeVisibleV2(pair.Publication.Status) &&
+                IsRuntimeVisibleV2(pair.Resource.Status) &&
+                AccessPolicyHelpers.IsResourceAccessible(context, pair.Resource, service))
+        ];
+    }
+
+    private static bool IsRuntimeVisibleV2(MetadataV2Status? status)
+        => status is null ||
+           (status.Lifecycle is not (MetadataV2LifecycleStatus.Retired or MetadataV2LifecycleStatus.Archived) &&
+            status.State is not MetadataV2OperationalState.Failed);
+
+    /// <summary>
+    /// V2 overload of <see cref="BuildRelationshipResponse(LayerDefinition)"/>.
+    /// Projects <see cref="MetadataV2Resource.Relationships"/> to the Esri-style wire shape.
+    /// The integer <c>RelatedTableId</c> is resolved by looking up the related resource's
+    /// primary publication and reading its <see cref="MetadataV2Publication.LayerIndex"/>; if
+    /// no publication exists on this service for the related resource, the relationship is
+    /// skipped (clients can't address it as an integer layer id anyway).
+    /// </summary>
+    private static LayerRelationshipInfo[] BuildRelationshipResponseV2(
+        MetadataV2Resource resource,
+        MetadataV2GraphSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        if (resource.Relationships.Count == 0)
+        {
+            return [];
+        }
+
+        var result = new List<LayerRelationshipInfo>(resource.Relationships.Count);
+        foreach (var relationship in resource.Relationships)
+        {
+            // Esri clients expect a numeric relationship id; prefer the explicit Esri id on
+            // the V2 relationship, else derive a stable integer from the relationship's
+            // string id hash so it round-trips across requests.
+            var relationshipId = relationship.EsriRelationshipId
+                ?? StableStringHash(relationship.Id);
+
+            var relatedResource = snapshot.Index.ResourcesById.TryGetValue(relationship.RelatedResourceId, out var found)
+                ? found
+                : null;
+            var relatedLayerId = relatedResource is null
+                ? -1
+                : (snapshot.Index.PublicationsByResource[relatedResource.Metadata.Id]
+                       .Select(pub => (int?)pub.LayerIndex)
+                       .FirstOrDefault(idx => idx is not null)
+                   ?? snapshot.ResolveStorageLayerId(relatedResource)
+                   ?? -1);
+
+            result.Add(new LayerRelationshipInfo
+            {
+                Id = relationshipId,
+                Name = relationship.Name,
+                RelatedTableId = relatedLayerId,
+                Role = relationship.Role,
+                KeyField = relationship.DestinationField,
+                OriginKeyField = relationship.OriginField,
+                DestinationKeyField = relationship.DestinationField,
+                Description = relationship.Description
+            });
+        }
+
+        return [.. result];
+    }
+
+    private static int StableStringHash(string value)
+    {
+        // FNV-1a 32-bit hash, then clamped to a non-negative int so the Esri client doesn't
+        // refuse a "negative" relationship id.
+        if (string.IsNullOrEmpty(value))
+        {
+            return 0;
+        }
+        const uint offsetBasis = 2166136261u;
+        const uint prime = 16777619u;
+        var hash = offsetBasis;
+        foreach (var ch in value)
+        {
+            hash ^= ch;
+            hash *= prime;
+        }
+        return (int)(hash & 0x7FFFFFFFu);
+    }
+
+    private static string MapGeometryTypeV2(MetadataV2GeometryType geometryType)
+        => geometryType switch
+        {
+            MetadataV2GeometryType.Point => "esriGeometryPoint",
+            MetadataV2GeometryType.LineString => "esriGeometryPolyline",
+            MetadataV2GeometryType.Polygon => "esriGeometryPolygon",
+            MetadataV2GeometryType.MultiPoint => "esriGeometryMultipoint",
+            MetadataV2GeometryType.MultiLineString => "esriGeometryPolyline",
+            MetadataV2GeometryType.MultiPolygon => "esriGeometryPolygon",
+            MetadataV2GeometryType.GeometryCollection => "esriGeometryNull",
+            MetadataV2GeometryType.Mixed => "esriGeometryNull",
+            MetadataV2GeometryType.None => "esriGeometryNull",
+            _ => "esriGeometryNull"
+        };
+
+    private static string MapFieldTypeToGeoServicesV2(MetadataV2FieldType type)
+        => type switch
+        {
+            MetadataV2FieldType.String => "esriFieldTypeString",
+            MetadataV2FieldType.Integer => "esriFieldTypeInteger",
+            MetadataV2FieldType.BigInteger => "esriFieldTypeInteger64",
+            MetadataV2FieldType.Double => "esriFieldTypeDouble",
+            MetadataV2FieldType.Float => "esriFieldTypeSingle",
+            MetadataV2FieldType.Boolean => "esriFieldTypeSmallInteger",
+            MetadataV2FieldType.DateTime => "esriFieldTypeDate",
+            MetadataV2FieldType.Date => "esriFieldTypeDate",
+            MetadataV2FieldType.Time => "esriFieldTypeString",
+            MetadataV2FieldType.Json => "esriFieldTypeString",
+            MetadataV2FieldType.Binary => "esriFieldTypeBlob",
+            MetadataV2FieldType.Uuid => "esriFieldTypeGUID",
+            MetadataV2FieldType.Geometry => "esriFieldTypeGeometry",
+            MetadataV2FieldType.Geography => "esriFieldTypeGeometry",
+            _ => "esriFieldTypeString"
+        };
+
+    private static string MapFieldTypeToSqlV2(MetadataV2FieldType type)
+        => type switch
+        {
+            MetadataV2FieldType.String => "TEXT",
+            MetadataV2FieldType.Integer => "INTEGER",
+            MetadataV2FieldType.BigInteger => "BIGINT",
+            MetadataV2FieldType.Double => "DOUBLE PRECISION",
+            MetadataV2FieldType.Float => "REAL",
+            MetadataV2FieldType.Boolean => "BOOLEAN",
+            MetadataV2FieldType.DateTime => "TIMESTAMP WITH TIME ZONE",
+            MetadataV2FieldType.Date => "DATE",
+            MetadataV2FieldType.Time => "TIME",
+            MetadataV2FieldType.Json => "JSONB",
+            MetadataV2FieldType.Binary => "BYTEA",
+            MetadataV2FieldType.Uuid => "UUID",
+            MetadataV2FieldType.Geometry => "GEOMETRY",
+            MetadataV2FieldType.Geography => "GEOGRAPHY",
+            _ => "TEXT"
+        };
+
+    private static Dictionary<string, object?>? MapFieldDomainInfoV2(MetadataV2Field field, string fieldType)
+    {
+        if (field.Domain is null)
+        {
+            return null;
+        }
+
+        var fieldDomain = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["type"] = field.Domain.Type,
+            ["name"] = ReadStringExtension(field.Extensions, GeoServicesDomainNameExtensionKey) ?? field.Domain.Type,
+            ["fieldType"] = fieldType
+        };
+
+        if (field.Domain.CodedValues.Count > 0)
+        {
+            fieldDomain["codedValues"] = field.Domain.CodedValues
+                .Select(static codedValue => new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["name"] = codedValue.Name,
+                    ["code"] = ConvertJsonElementToObject(codedValue.Code)
+                })
+                .ToArray();
+        }
+
+        if (field.Domain.Range is { Count: > 0 })
+        {
+            fieldDomain["range"] = field.Domain.Range
+                .Select(ConvertJsonElementToObject)
+                .ToArray();
+        }
+
+        var mergePolicy = ReadStringExtension(field.Extensions, GeoServicesDomainMergePolicyExtensionKey);
+        if (!string.IsNullOrWhiteSpace(mergePolicy))
+        {
+            fieldDomain["mergePolicy"] = mergePolicy;
+        }
+
+        var splitPolicy = ReadStringExtension(field.Extensions, GeoServicesDomainSplitPolicyExtensionKey);
+        if (!string.IsNullOrWhiteSpace(splitPolicy))
+        {
+            fieldDomain["splitPolicy"] = splitPolicy;
+        }
+
+        return fieldDomain;
+    }
+
+    private static DomainInfo? MapQueryDomainInfoV2(
+        MetadataV2Publication publication,
+        MetadataV2Resource resource,
+        MetadataV2Field field,
+        MetadataV2GraphSnapshot snapshot)
+    {
+        if (field.Domain is null)
+        {
+            return null;
+        }
+
+        var layerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(resource) ?? -1;
+        return new DomainInfo
+        {
+            Type = field.Domain.Type,
+            Name = ReadStringExtension(field.Extensions, GeoServicesDomainNameExtensionKey) ?? field.Domain.Type,
+            FieldName = field.Name,
+            FieldType = MapFieldTypeToGeoServicesV2(field.Type),
+            LayerId = layerId,
+            CodedValues = field.Domain.CodedValues.Count == 0
+                ? null
+                :
+                [
+                    .. field.Domain.CodedValues.Select(static codedValue => new DomainCodedValueInfo
+                    {
+                        Name = codedValue.Name,
+                        Code = ConvertJsonElementToObject(codedValue.Code),
+                    })
+                ],
+            Range = field.Domain.Range is { Count: > 0 }
+                ? [.. field.Domain.Range.Select(static value => ConvertJsonElementToObject(value) ?? string.Empty)]
+                : null,
+            MergePolicy = ReadStringExtension(field.Extensions, GeoServicesDomainMergePolicyExtensionKey),
+            SplitPolicy = ReadStringExtension(field.Extensions, GeoServicesDomainSplitPolicyExtensionKey),
+        };
+    }
+
+    private static List<string> ValidateExtrusionV2(
+        LayerExtrusionInfo extrusion,
+        IReadOnlyList<MetadataV2Field> fields)
+    {
+        var errors = new List<string>(capacity: 4);
+
+        if (string.IsNullOrWhiteSpace(extrusion.HeightField))
+        {
+            errors.Add(ExtrusionErrorCodes.HeightFieldMissing);
+        }
+        else
+        {
+            var heightField = FindFieldV2(fields, extrusion.HeightField);
+            if (heightField is null)
+            {
+                errors.Add(ExtrusionErrorCodes.HeightFieldNotFound);
+            }
+            else if (!IsSupportedExtrusionNumericTypeV2(heightField.Type))
+            {
+                errors.Add(ExtrusionErrorCodes.HeightFieldTypeInvalid);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(extrusion.BaseHeightField))
+        {
+            var baseField = FindFieldV2(fields, extrusion.BaseHeightField);
+            if (baseField is null)
+            {
+                errors.Add(ExtrusionErrorCodes.BaseFieldNotFound);
+            }
+            else if (!IsSupportedExtrusionNumericTypeV2(baseField.Type))
+            {
+                errors.Add(ExtrusionErrorCodes.BaseFieldTypeInvalid);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(extrusion.Unit) &&
+            !VerticalUnits.TryNormalize(extrusion.Unit, out _))
+        {
+            errors.Add(ExtrusionErrorCodes.UnitUnrecognized);
+        }
+
+        if (extrusion.DefaultHeight is { } defaultHeight && defaultHeight < 0)
+        {
+            errors.Add(ExtrusionErrorCodes.NegativeDefaultHeight);
+        }
+
+        return errors;
+    }
+
+    private static MetadataV2Field? FindFieldV2(IReadOnlyList<MetadataV2Field> fields, string name)
+    {
+        for (var i = 0; i < fields.Count; i++)
+        {
+            if (string.Equals(fields[i].Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                return fields[i];
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsSupportedExtrusionNumericTypeV2(MetadataV2FieldType type)
+        => type is MetadataV2FieldType.Integer
+            or MetadataV2FieldType.BigInteger
+            or MetadataV2FieldType.Double
+            or MetadataV2FieldType.Float;
+
+    private static bool TryReadJsonExtension(
+        IReadOnlyDictionary<string, JsonElement> extensions,
+        string key,
+        out JsonElement value)
+    {
+        if (extensions.TryGetValue(key, out var element) &&
+            element.ValueKind is not JsonValueKind.Undefined and not JsonValueKind.Null)
+        {
+            value = element.Clone();
+            return true;
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static string? ReadStringExtension(IReadOnlyDictionary<string, JsonElement> extensions, string key)
+    {
+        if (!extensions.TryGetValue(key, out var element) || element.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        return element.GetString();
+    }
+
+    private static object? ConvertJsonElementToObject(JsonElement element)
+        => element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number when element.TryGetInt64(out var integer) => integer,
+            JsonValueKind.Number when element.TryGetDouble(out var number) => number,
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null => null,
+            JsonValueKind.Undefined => null,
+            JsonValueKind.Object or JsonValueKind.Array => JsonSerializer.Deserialize<object>(
+                element.GetRawText(),
+                FeatureServerJsonContext.Default.Object),
+            _ => element.GetRawText()
+        };
+
+    /// <summary>
+    /// Reads the service's declared capability list from <c>service.Options["capabilities"]</c>.
+    /// Defaults to <c>["Query"]</c> when the option is absent or not a string array — matching
+    /// the v1 ServiceDefinition default.
+    /// </summary>
+    private static List<string> ReadServiceCapabilitiesV2(MetadataV2Service service)
+    {
+        if (service.Options.TryGetValue("capabilities", out var element) &&
+            element.ValueKind == JsonValueKind.Array)
+        {
+            var list = new List<string>(element.GetArrayLength());
+            foreach (var item in element.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.String)
+                {
+                    var value = item.GetString();
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        list.Add(value);
+                    }
+                }
+            }
+            if (list.Count > 0)
+            {
+                return list;
+            }
+        }
+        return ["Query"];
+    }
+
+    /// <summary>
+    /// Reads the service's declared output formats from <c>service.Options["supportedFormats"]</c>.
+    /// </summary>
+    private static string[]? ReadServiceSupportedFormatsV2(MetadataV2Service service)
+    {
+        if (service.Options.TryGetValue("supportedFormats", out var element) &&
+            element.ValueKind == JsonValueKind.Array)
+        {
+            var list = new List<string>(element.GetArrayLength());
+            foreach (var item in element.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.String)
+                {
+                    var value = item.GetString();
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        list.Add(value);
+                    }
+                }
+            }
+            return list.Count == 0 ? null : list.ToArray();
+        }
+        return null;
+    }
+
+    private static bool ServiceSupportsEditingV2(MetadataV2Service service)
+    {
+        var capabilities = ReadServiceCapabilitiesV2(service);
+        foreach (var capability in capabilities)
+        {
+            if (capability.Equals("Create", StringComparison.OrdinalIgnoreCase) ||
+                capability.Equals("Update", StringComparison.OrdinalIgnoreCase) ||
+                capability.Equals("Delete", StringComparison.OrdinalIgnoreCase) ||
+                capability.Equals("Editing", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool ServiceSupportsAdvancedQueriesV2(MetadataV2Service service)
+        => ReadServiceCapabilitiesV2(service)
+            .Any(capability => capability.Equals("Query", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// V2 equivalent of <c>layer.SupportsAttachments</c>.
+    /// </summary>
+    private static bool ResourceSupportsAttachmentsV2(MetadataV2Resource resource)
+    {
+        if (resource.Editing?.SupportsAttachments == true)
+        {
+            return true;
+        }
+
+        // Canonical annotation key. Keep the legacy spelling alongside so resources migrated
+        // verbatim from v1 still resolve.
+        return TryReadBoolAnnotation(resource.Metadata.Annotations, "honua.io/attachments") ??
+               TryReadBoolAnnotation(resource.Metadata.Annotations, "supportsAttachments") ??
+               false;
+    }
+
+    private static bool? TryReadBoolAnnotation(IReadOnlyDictionary<string, string> annotations, string key)
+    {
+        if (annotations.TryGetValue(key, out var raw) &&
+            bool.TryParse(raw, out var parsed))
+        {
+            return parsed;
+        }
+        return null;
+    }
+}

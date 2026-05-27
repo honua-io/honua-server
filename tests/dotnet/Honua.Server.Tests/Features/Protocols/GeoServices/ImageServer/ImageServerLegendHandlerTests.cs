@@ -2,8 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer.Handlers;
@@ -26,14 +27,14 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerLegendHandlerTests
 {
-    private readonly ILayerCatalog _layerCatalog = Substitute.For<ILayerCatalog>();
+    private readonly TestMetadataV2GraphProvider _graphProvider = BuildGraphWithLayer(1);
     private readonly IRasterStore _rasterStore = Substitute.For<IRasterStore>();
     private readonly ImageServerLegendHandler _handler;
 
     public ImageServerLegendHandlerTests()
     {
         _handler = new ImageServerLegendHandler(
-            _layerCatalog,
+            _graphProvider,
             _rasterStore,
             new ImageServerLegendSwatchBuilder(),
             NullLogger<ImageServerLegendHandler>.Instance);
@@ -43,8 +44,6 @@ public class ImageServerLegendHandlerTests
     [Operation(Operations.Metadata)]
     public async Task GetLegendAsync_LayerNotFound_ReturnsNotFound()
     {
-        _layerCatalog.GetLayerAsync(99, Arg.Any<CancellationToken>())
-            .Returns((LayerDefinition?)null);
 
         var context = CreateImageServerContext();
         var result = await _handler.GetLegendAsync(context, 99, CancellationToken.None);
@@ -57,8 +56,6 @@ public class ImageServerLegendHandlerTests
     [Operation(Operations.Metadata)]
     public async Task GetLegendAsync_NoRasters_ReturnsNotFound()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.ListRastersAsync(default, default)
             .ReturnsForAnyArgs(Array.Empty<RasterInfo>());
 
@@ -148,8 +145,6 @@ public class ImageServerLegendHandlerTests
     [Operation(Operations.Metadata)]
     public async Task GetLegendAsync_NoStatistics_DefaultsToZeroToTwoFiftyFive()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.ListRastersAsync(default, default)
             .ReturnsForAnyArgs([CreateTestRasterInfo()]);
         _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<CancellationToken>())
@@ -170,8 +165,6 @@ public class ImageServerLegendHandlerTests
     [Operation(Operations.Metadata)]
     public async Task GetLegendAsync_RasterStoreThrows_ReturnsServerError()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.ListRastersAsync(default, default)
             .ReturnsForAnyArgs(_ => Task.FromException<RasterInfo[]>(new InvalidOperationException("boom")));
 
@@ -184,8 +177,6 @@ public class ImageServerLegendHandlerTests
 
     private void SetupSuccessfulLegend(double min, double max)
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.ListRastersAsync(default, default)
             .ReturnsForAnyArgs([CreateTestRasterInfo()]);
         _rasterStore.GetStatisticsAsync(1, 100, null, Arg.Any<CancellationToken>())
@@ -216,8 +207,18 @@ public class ImageServerLegendHandlerTests
         return context;
     }
 
-    private static LayerDefinition CreateTestLayer()
-        => LayerDefinition.CreateBasic(1, "test-layer", GeometryType.Point);
+    private static TestMetadataV2GraphProvider BuildGraphWithLayer(int layerIndex)
+        => new TestMetadataV2GraphBuilder()
+            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ResourceType.RasterDataset)
+            .AddService($"service-{layerIndex}", $"image-svc-{layerIndex}", protocols: [ServiceProtocols.ImageServer])
+            .AddPublication(
+                $"publication-{layerIndex}",
+                $"service-{layerIndex}",
+                $"resource-{layerIndex}",
+                layerIndex: layerIndex,
+                serviceLocalId: "test-layer",
+                publicationType: MetadataV2PublicationType.EsriImageLayer)
+            .BuildProvider();
 
     private static RasterInfo CreateTestRasterInfo() => new()
     {

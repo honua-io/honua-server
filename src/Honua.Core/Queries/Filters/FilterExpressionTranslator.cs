@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Queries.Filters;
 
@@ -25,6 +26,22 @@ public interface IFilterExpressionTranslator
     /// <param name="layer">Layer definition used for field validation.</param>
     /// <returns>SQL fragment with parameters.</returns>
     SqlFragment Translate(FilterExpression expression, LayerDefinition layer);
+
+    /// <summary>
+    /// V2 overload of <c>Normalize</c>. Resolves field types from
+    /// <c>MetadataV2Resource.SchemaFields</c>.
+    /// </summary>
+    FilterExpression Normalize(FilterExpression expression, MetadataV2Resource resource);
+
+    /// <summary>
+    /// V2 overload that normalises and translates a filter expression to a
+    /// parameterized SQL fragment, using a Metadata v2 resource for field
+    /// validation and spatial-reference resolution.
+    /// </summary>
+    /// <param name="expression">Filter expression to translate.</param>
+    /// <param name="resource">Metadata v2 resource.</param>
+    /// <returns>SQL fragment with parameters.</returns>
+    SqlFragment Translate(FilterExpression expression, MetadataV2Resource resource);
 }
 
 /// <summary>
@@ -52,5 +69,17 @@ public sealed class FilterExpressionTranslator : IFilterExpressionTranslator
     {
         var normalized = FilterExpressionNormalizer.Normalize(expression, layer);
         return _sqlFilterTranslator.Translate(normalized, layer);
+    }
+
+    /// <inheritdoc />
+    public FilterExpression Normalize(FilterExpression expression, MetadataV2Resource resource)
+        => FilterExpressionNormalizer.Normalize(expression, resource);
+
+    /// <inheritdoc />
+    public SqlFragment Translate(FilterExpression expression, MetadataV2Resource resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        var normalized = FilterExpressionNormalizer.Normalize(expression, resource);
+        return _sqlFilterTranslator.Translate(normalized, resource);
     }
 }

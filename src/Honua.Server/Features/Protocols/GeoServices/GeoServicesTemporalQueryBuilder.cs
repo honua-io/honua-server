@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Helpers;
 
@@ -44,6 +45,103 @@ internal static class GeoServicesTemporalQueryBuilder
         }
 
         return BuildTemporalExpressionCore(time, timeRelation, layer);
+    }
+
+    /// <summary>
+    /// V2 overload of <see cref="BuildTemporalExpression(string?, string?, LayerDefinition)"/>.
+    /// Builds a temporal filter expression from raw time values against a Metadata v2
+    /// canonical resource. Mirrors the v1 routing logic: the resource must be configured
+    /// as opt-in time-aware (start-time field declared on the temporal extension and
+    /// resolving to a date/datetime schema field) before a non-empty time= filter is
+    /// honored. The <c>time=null,null</c> no-op form returns null without throwing.
+    /// </summary>
+    internal static FilterExpression? BuildTemporalExpression(
+        string? time,
+        string? timeRelation,
+        MetadataV2Resource resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        if (string.IsNullOrWhiteSpace(time))
+        {
+            return null;
+        }
+
+        return BuildTemporalExpressionCoreV2(time, timeRelation, resource);
+    }
+
+    private static FilterExpression? BuildTemporalExpressionCoreV2(
+        string time,
+        string? timeRelation,
+        MetadataV2Resource resource)
+    {
+        if (!TryParseTimeParameter(time, out var startTime, out var endTime))
+        {
+            throw new ArgumentException($"Invalid time parameter format: {time}");
+        }
+
+        if (startTime is null && endTime is null)
+        {
+            return null;
+        }
+
+        if (!TemporalExtentHelpers.TryResolveOptInTemporalFieldsV2(resource, out var selection))
+        {
+            throw new ArgumentException(
+                $"Resource '{resource.Metadata.Name}' is not configured as time-aware.");
+        }
+
+        var startField = FindV2Field(resource, selection.StartFieldName)
+            ?? throw new ArgumentException(
+                $"Resource '{resource.Metadata.Name}' temporal start field '{selection.StartFieldName}' is not present in the schema.");
+        MetadataV2Field? endField = null;
+        if (!string.IsNullOrWhiteSpace(selection.EndFieldName))
+        {
+            endField = FindV2Field(resource, selection.EndFieldName!);
+        }
+
+        var relation = ParseTimeRelation(timeRelation);
+        var queryStart = ToTemporalLiteralV2(startTime, startField.Type);
+        var queryEnd = ToTemporalLiteralV2(endTime, startField.Type);
+
+        var startExpression = new PropertyReference(startField.Name);
+        FilterExpression endExpression = endField == null
+            ? startExpression
+            : new FunctionCall(
+                "COALESCE",
+                new FilterExpression[]
+                {
+                    new PropertyReference(endField.Name),
+                    startExpression
+                });
+
+        return BuildTemporalRelationExpression(relation, startExpression, endExpression, queryStart, queryEnd);
+    }
+
+    private static MetadataV2Field? FindV2Field(MetadataV2Resource resource, string fieldName)
+    {
+        foreach (var field in resource.SchemaFields)
+        {
+            if (string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
+            {
+                return field;
+            }
+        }
+        return null;
+    }
+
+    private static Literal? ToTemporalLiteralV2(DateTimeOffset? value, MetadataV2FieldType fieldType)
+    {
+        if (!value.HasValue)
+        {
+            return null;
+        }
+
+        if (fieldType == MetadataV2FieldType.Date)
+        {
+            return new Literal(DateOnly.FromDateTime(value.Value.UtcDateTime), LiteralType.Date);
+        }
+
+        return new Literal(value.Value, LiteralType.DateTime);
     }
 
     private static FilterExpression? BuildTemporalExpressionCore(string time, string? timeRelation, LayerDefinition layer)

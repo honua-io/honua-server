@@ -1,0 +1,404 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "HTTP error rates classified by protocol. Built on the existing honua_http_request_total counter (emitted by Honua.Core PerformanceMetrics with labels method, endpoint, status_code). Protocol classification is derived from the endpoint label via regex match because the metric does not yet carry a dedicated 'protocol' label; adding one would let these panels group exactly instead of pattern-matching. The OTel ASP.NET Core counterpart (http_server_request_duration_seconds_count, label http_response_status_code) is also exported and can be substituted if route-template granularity is needed. Error-response-shape distribution is a placeholder; see #1144.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "4xx rate per protocol. Protocol is inferred from the endpoint label (e.g. /wms => WMS, /stac => STAC).",
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "req/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(honua_http_request_total{status_code=~\"4..\", endpoint=~\".*/wms.*\"}[5m]))",
+          "legendFormat": "wms",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(honua_http_request_total{status_code=~\"4..\", endpoint=~\".*/wfs.*\"}[5m]))",
+          "legendFormat": "wfs",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(honua_http_request_total{status_code=~\"4..\", endpoint=~\".*/wmts.*\"}[5m]))",
+          "legendFormat": "wmts",
+          "refId": "C"
+        },
+        {
+          "expr": "sum(rate(honua_http_request_total{status_code=~\"4..\", endpoint=~\".*/wcs.*\"}[5m]))",
+          "legendFormat": "wcs",
+          "refId": "D"
+        },
+        {
+          "expr": "sum(rate(honua_http_request_total{status_code=~\"4..\", endpoint=~\".*/stac.*\"}[5m]))",
+          "legendFormat": "stac",
+          "refId": "E"
+        },
+        {
+          "expr": "sum(rate(honua_http_request_total{status_code=~\"4..\", endpoint=~\".*/collections.*\"}[5m]))",
+          "legendFormat": "ogcapi-features",
+          "refId": "F"
+        },
+        {
+          "expr": "sum(rate(honua_http_request_total{status_code=~\"4..\", endpoint=~\".*/tiles.*\"}[5m]))",
+          "legendFormat": "tiles",
+          "refId": "G"
+        },
+        {
+          "expr": "sum(rate(honua_http_request_total{status_code=~\"4..\", endpoint=~\".*/api/.*\"}[5m]))",
+          "legendFormat": "rest-api",
+          "refId": "H"
+        }
+      ],
+      "title": "4xx Rate by Protocol",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "5xx rate per protocol. Sustained non-zero values usually indicate server-side regressions, not client misuse.",
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "req/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(honua_http_request_total{status_code=~\"5..\", endpoint=~\".*/wms.*\"}[5m]))",
+          "legendFormat": "wms",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(honua_http_request_total{status_code=~\"5..\", endpoint=~\".*/wfs.*\"}[5m]))",
+          "legendFormat": "wfs",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(honua_http_request_total{status_code=~\"5..\", endpoint=~\".*/wmts.*\"}[5m]))",
+          "legendFormat": "wmts",
+          "refId": "C"
+        },
+        {
+          "expr": "sum(rate(honua_http_request_total{status_code=~\"5..\", endpoint=~\".*/wcs.*\"}[5m]))",
+          "legendFormat": "wcs",
+          "refId": "D"
+        },
+        {
+          "expr": "sum(rate(honua_http_request_total{status_code=~\"5..\", endpoint=~\".*/stac.*\"}[5m]))",
+          "legendFormat": "stac",
+          "refId": "E"
+        },
+        {
+          "expr": "sum(rate(honua_http_request_total{status_code=~\"5..\", endpoint=~\".*/collections.*\"}[5m]))",
+          "legendFormat": "ogcapi-features",
+          "refId": "F"
+        },
+        {
+          "expr": "sum(rate(honua_http_request_total{status_code=~\"5..\", endpoint=~\".*/tiles.*\"}[5m]))",
+          "legendFormat": "tiles",
+          "refId": "G"
+        },
+        {
+          "expr": "sum(rate(honua_http_request_total{status_code=~\"5..\", endpoint=~\".*/api/.*\"}[5m]))",
+          "legendFormat": "rest-api",
+          "refId": "H"
+        }
+      ],
+      "title": "5xx Rate by Protocol",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Approximation derived from protocol classification: OGC classic (WMS/WFS/WMTS/WCS) emits OWS ExceptionReport XML, OGC API / STAC / REST emit RFC 7807 problem+json. A direct meter tagging the actually-emitted Content-Type on error responses would be more precise; see #1144.",
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "req/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(honua_http_request_total{status_code=~\"[45]..\", endpoint=~\".*/(wms|wfs|wmts|wcs).*\"}[5m]))",
+          "legendFormat": "ows-xml",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(honua_http_request_total{status_code=~\"[45]..\", endpoint=~\".*/(stac|collections|tiles|api/).*\"}[5m]))",
+          "legendFormat": "problem+json",
+          "refId": "B"
+        }
+      ],
+      "title": "Error Response Shape Distribution (inferred)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Top failing endpoints by 4xx+5xx rate over the last 5 minutes.",
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "req/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "expr": "topk(10, sum(rate(honua_http_request_total{status_code=~\"[45]..\"}[5m])) by (endpoint))",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Top Failing Routes (timeseries)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Top failing endpoints aggregated as a table, with 4xx and 5xx broken out.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          },
+          "min": 0,
+          "unit": "req/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "id": 5,
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "expr": "topk(20, sum(rate(honua_http_request_total{status_code=~\"4..\"}[5m])) by (endpoint))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "4xx",
+          "refId": "A"
+        },
+        {
+          "expr": "topk(20, sum(rate(honua_http_request_total{status_code=~\"5..\"}[5m])) by (endpoint))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "5xx",
+          "refId": "B"
+        }
+      ],
+      "title": "Top Failing Routes (table)",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Overall error percentage across all protocols. Helps spot global degradations distinct from per-protocol regressions.",
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 100,
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 26
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "expr": "100 * sum(rate(honua_http_request_total{status_code=~\"4..\"}[5m])) / sum(rate(honua_http_request_total[5m]))",
+          "legendFormat": "4xx %",
+          "refId": "A"
+        },
+        {
+          "expr": "100 * sum(rate(honua_http_request_total{status_code=~\"5..\"}[5m])) / sum(rate(honua_http_request_total[5m]))",
+          "legendFormat": "5xx %",
+          "refId": "B"
+        }
+      ],
+      "title": "Overall Error Percentage",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Same view from the OTel ASP.NET Core instrumentation metric. Useful when route templates rather than raw endpoint strings are preferred.",
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "req/s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 26
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~\"4..\"}[5m]))",
+          "legendFormat": "4xx (otel)",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~\"5..\"}[5m]))",
+          "legendFormat": "5xx (otel)",
+          "refId": "B"
+        }
+      ],
+      "title": "OTel ASP.NET Core Errors (cross-check)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": [
+    "honua",
+    "errors",
+    "protocols"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h"
+    ]
+  },
+  "timezone": "browser",
+  "title": "Honua Errors by Protocol",
+  "uid": "honua-errors-by-protocol",
+  "version": 1
+}

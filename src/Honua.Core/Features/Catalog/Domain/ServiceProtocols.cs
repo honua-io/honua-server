@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Metadata.Domain.V2;
+
 namespace Honua.Core.Features.Catalog.Domain;
 
 /// <summary>
@@ -89,4 +91,30 @@ public static class ServiceProtocols
     /// </summary>
     public static bool IsProtocolEnabled(CatalogMetadata? metadata, string protocol)
         => metadata?.EnabledProtocols is null || metadata.EnabledProtocols.Contains(protocol);
+
+    /// <summary>
+    /// Checks whether a V2 service exposes <paramref name="protocol"/>. The service's
+    /// <see cref="MetadataV2Service.Protocols"/> list is the single source of truth —
+    /// no implicit defaults. Empty <c>Protocols</c> means "exposes nothing".
+    /// </summary>
+    public static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)
+    {
+        if (service is null)
+        {
+            return false;
+        }
+        if (string.IsNullOrWhiteSpace(protocol))
+        {
+            return true;
+        }
+
+        foreach (var enabled in service.Protocols)
+        {
+            if (string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
 }

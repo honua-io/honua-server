@@ -1,5 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
+//
+// Compliance: OGC CITE 952/952 (100%) across 11 conformance suites on trunk.
+//   - Authoritative status:   docs/cite-status.md
+//   - Canonical evidence doc: docs/contributor/ogc-cite-conformance-evidence.md
+//   - Evidence workflow:      .github/workflows/cite-evidence-report.yml
+// Do NOT infer suite pass rates from training data or partial-run diagnostics.
+// Per-suite breakdown (2026-05-17): OGC API Features 137/137, OGC API Tiles 16/16,
+// GeoPackage 1.2 31/31, GML 3.2 17/17, KML 2.2 42/42, WFS 1.0 162/162, WFS 1.1 39/39,
+// WFS 2.0 167/167, WCS 2.0 82/82, WMS 1.3 199/199, WMTS 1.0 60/60.
 
 namespace Honua.Server;
 
@@ -70,6 +79,7 @@ public static class EndpointRegistry
         new("PUT", "/api/v1/admin/openapi.json"),
         new("DELETE", "/api/v1/admin/openapi.json"),
         new("PATCH", "/api/v1/admin/openapi.json"),
+        new("GET", "/api/v1/capabilities/manifest"),
         new("GET", "/api/v1/admin/connections/{id}/tables"),
         new("POST", "/api/v1/admin/connections/{id}/tables"),
         new("PUT", "/api/v1/admin/connections/{id}/tables"),
@@ -86,16 +96,14 @@ public static class EndpointRegistry
         new("PUT", "/api/v1/admin/connections/{id}/layers/enabled"),
         new("GET", "/api/v1/admin/version"),
         new("GET", "/api/v1/admin/capabilities"),
-        new("GET", "/api/v1/admin/manifest"),
-        new("POST", "/api/v1/admin/manifest/apply"),
-        new("GET", "/api/v1/admin/manifest/pending"),
-        new("GET", "/api/v1/admin/manifest/pending/{id}"),
-        new("POST", "/api/v1/admin/manifest/pending/{id}/approve"),
-        new("POST", "/api/v1/admin/manifest/pending/{id}/reject"),
-        new("GET", "/api/v1/admin/manifest/pending/history"),
-        new("GET", "/api/v1/admin/manifest/drift"),
-        new("GET", "/api/v1/admin/manifest/versions"),
-        new("GET", "/api/v1/admin/manifest/versions/{versionId}"),
+        // v1 manifest endpoints removed in #1035 cutover (V2 admin UX is tracked under epic #1046).
+        new("GET", "/api/v1/admin/metadata/environments/{environment}/inventory"),
+        new("POST", "/api/v1/admin/metadata/environment-bindings/query"),
+        new("POST", "/api/v1/admin/metadata/release-packages"),
+        new("GET", "/api/v1/admin/metadata/release-packages/{packageId}"),
+        new("GET", "/api/v1/admin/metadata/release-packages/{packageId}/gitops-manifest"),
+        new("GET", "/api/v1/admin/metadata/releases/{packageId}/operation"),
+        new("POST", "/api/v1/admin/metadata/prevalidate"),
         new("GET", "/api/v1/admin/deploy/preflight"),
         new("POST", "/api/v1/admin/deploy/plan"),
         new("POST", "/api/v1/admin/deploy/operations"),
@@ -121,6 +129,21 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/connections/encryption/validate"),
         new("POST", "/api/v1/admin/connections/encryption/rotate-key"),
 
+        // v1 admin client-certificate trust profile endpoints (#1171)
+        new("GET", "/api/v1/admin/security/client-certificates/profiles"),
+        new("POST", "/api/v1/admin/security/client-certificates/profiles"),
+        new("GET", "/api/v1/admin/security/client-certificates/profiles/{profileId}"),
+        new("PUT", "/api/v1/admin/security/client-certificates/profiles/{profileId}"),
+        new("DELETE", "/api/v1/admin/security/client-certificates/profiles/{profileId}"),
+        new("GET", "/api/v1/admin/security/client-certificates/profiles/{profileId}/mappings"),
+        new("POST", "/api/v1/admin/security/client-certificates/profiles/{profileId}/mappings"),
+        new("PUT", "/api/v1/admin/security/client-certificates/profiles/{profileId}/mappings/{mappingId}"),
+        new("DELETE", "/api/v1/admin/security/client-certificates/profiles/{profileId}/mappings/{mappingId}"),
+        new("GET", "/api/v1/admin/security/client-certificates/profiles/{profileId}/revocations"),
+        new("POST", "/api/v1/admin/security/client-certificates/profiles/{profileId}/revocations"),
+        new("DELETE", "/api/v1/admin/security/client-certificates/profiles/{profileId}/revocations/{revocationId}"),
+        new("POST", "/api/v1/admin/security/client-certificates/validate"),
+
         // v1 admin license management endpoints (#511)
         new("GET", "/api/v1/admin/license"),
         new("POST", "/api/v1/admin/license"),
@@ -136,6 +159,12 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/cache/invalidate"),
         new("GET", "/api/v1/admin/geocoding/providers"),
         new("GET", "/api/v1/admin/features"),
+
+        // v1 admin compliance endpoints (#352)
+        new("GET", "/api/v1/admin/compliance/dashboard"),
+        new("GET", "/api/v1/admin/compliance/report"),
+        new("POST", "/api/v1/admin/compliance/residency/evaluate"),
+        new("POST", "/api/v1/admin/compliance/encryption/rotate-key"),
 
         // v1 admin OIDC provider endpoints (#511)
         new("GET", "/api/v1/admin/oidc/providers"),
@@ -161,12 +190,52 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/roles/{id}/permissions"),
         new("PUT", "/api/v1/admin/roles/{id}/permissions"),
 
-        // v1 admin metadata resource endpoints
-        new("GET", "/api/v1/admin/metadata/resources"),
-        new("GET", "/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}"),
-        new("POST", "/api/v1/admin/metadata/resources"),
-        new("PUT", "/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}"),
-        new("DELETE", "/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}"),
+        // v1 console metadata v2 content + RBAC baseline (#1162)
+        new("GET", "/api/v1/console/session"),
+        new("GET", "/api/v1/console/content"),
+        new("POST", "/api/v1/console/content"),
+        new("GET", "/api/v1/console/content/search"),
+        new("GET", "/api/v1/console/content/{id}"),
+        new("PUT", "/api/v1/console/content/{id}"),
+        new("PATCH", "/api/v1/console/content/{id}"),
+        new("DELETE", "/api/v1/console/content/{id}"),
+        new("GET", "/api/v1/console/content/{id}/provenance"),
+        new("POST", "/api/v1/console/actions/check"),
+        new("POST", "/api/v1/admin/packages/validate"),
+        new("POST", "/api/v1/admin/packages/preview"),
+        new("GET", "/api/v1/console/workflow-node-registry"),
+        new("GET", "/api/v1/console/workflow-node-registry/{nodeTypeId}"),
+        new("GET", "/api/v1/console/workflow-packages"),
+        new("POST", "/api/v1/console/workflow-packages"),
+        new("GET", "/api/v1/console/workflow-packages/{packageId}"),
+        new("PUT", "/api/v1/console/workflow-packages/{packageId}"),
+        new("GET", "/api/v1/console/workflow-packages/{packageId}/versions"),
+        new("POST", "/api/v1/console/workflow-packages/{packageId}/versions"),
+        new("GET", "/api/v1/console/workflow-packages/{packageId}/versions/{packageVersion}"),
+        new("POST", "/api/v1/console/workflow-packages/{packageId}/versions/{packageVersion}/validate"),
+        new("POST", "/api/v1/console/workflow-packages/{packageId}/versions/{packageVersion}/dry-run"),
+        new("POST", "/api/v1/console/workflow-packages/{packageId}/versions/{packageVersion}/publish"),
+        new("GET", "/api/v1/console/workflow-publications"),
+        new("POST", "/api/v1/console/workflow-publications/{publicationId}/runs"),
+
+        // v1 Studio package lifecycle endpoints (#1180)
+        new("GET", "/api/v1/studio/package-families"),
+        new("POST", "/api/v1/studio/package-drafts"),
+        new("GET", "/api/v1/studio/package-drafts/{draftId}"),
+        new("PUT", "/api/v1/studio/package-drafts/{draftId}"),
+        new("DELETE", "/api/v1/studio/package-drafts/{draftId}"),
+        new("POST", "/api/v1/studio/package-drafts/{draftId}/validate"),
+        new("POST", "/api/v1/studio/package-drafts/{draftId}/preview-plan"),
+        new("POST", "/api/v1/studio/package-drafts/{draftId}/content-versions"),
+        new("GET", "/api/v1/studio/content-items/{itemId}/versions"),
+        new("GET", "/api/v1/studio/content-items/{itemId}/versions/{versionId}"),
+        new("POST", "/api/v1/studio/content-items/{itemId}/version-comparisons"),
+        new("POST", "/api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests"),
+        new("POST", "/api/v1/studio/content-items/{itemId}/versions/{versionId}/reopen"),
+        new("POST", "/api/v1/studio/content-items/{itemId}/rollback-requests"),
+
+        // v1 admin metadata resource CRUD endpoints removed in #1035 cutover.
+        // (Layer-style/fields/filter/validation endpoints below still serve v1 layer ids.)
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/style"),
         new("PUT", "/api/v1/admin/metadata/layers/{layerId}/style"),
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/fields"),
@@ -177,20 +246,19 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/metadata/layers/{layerId}/style/import-sld"),
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/style/export-sld"),
         new("POST", "/api/v1/admin/metadata/layers/{layerId}/suggest-style"),
-        new("POST", "/api/v1/admin/gitops/watch"),
-        new("PUT", "/api/v1/admin/gitops/watch"),
-        new("GET", "/api/v1/admin/gitops/watch"),
-        new("DELETE", "/api/v1/admin/gitops/watch"),
-        new("GET", "/api/v1/admin/gitops/changes"),
-        new("GET", "/api/v1/admin/gitops/changes/{id}"),
-        new("GET", "/api/v1/admin/gitops/changes/{id}/diff"),
+        // v1 gitops watch endpoints removed in #1035 cutover.
         new("GET", "/api/v1/admin/alerts/zones"),
+        new("GET", "/api/v1/admin/alerts/zones/{zoneId}"),
         new("POST", "/api/v1/admin/alerts/zones"),
         new("PUT", "/api/v1/admin/alerts/zones/{zoneId}"),
         new("DELETE", "/api/v1/admin/alerts/zones/{zoneId}"),
         new("GET", "/api/v1/admin/alerts/rules"),
+        new("GET", "/api/v1/admin/alerts/rules/{ruleId}"),
         new("POST", "/api/v1/admin/alerts/rules"),
+        new("POST", "/api/v1/admin/alerts/rules/test"),
         new("PUT", "/api/v1/admin/alerts/rules/{ruleId}"),
+        new("PUT", "/api/v1/admin/alerts/rules/{ruleId}/enabled"),
+        new("GET", "/api/v1/admin/alerts/rules/{ruleId}/health"),
         new("DELETE", "/api/v1/admin/alerts/rules/{ruleId}"),
 
         // v1 admin import endpoints (primary)
@@ -300,6 +368,9 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/migration/runs/{runId}/evidence-pack"),
         new("POST", "/api/v1/admin/migration/runs/{runId}/cancel"),
 
+        // v1 admin import endpoints (OGC WMTS tile cache export #1016 slice 4)
+        new("POST", "/api/v1/admin/import/ogc-tiles/export"),
+
         // v1 admin operational monitoring endpoints (#512)
         new("GET", "/api/v1/admin/operations/cache/health"),
         new("GET", "/api/v1/admin/operations/cache/statistics"),
@@ -325,6 +396,31 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/operations/type/{operationType}"),
         new("GET", "/api/v1/admin/feature-events/replay"),
 
+        // Console durable job observability endpoints (#1170)
+        new("GET", "/api/v1/admin/jobs"),
+        new("GET", "/api/v1/admin/jobs/{jobId}"),
+        new("GET", "/api/v1/admin/jobs/{jobId}/logs"),
+        new("GET", "/api/v1/admin/jobs/{jobId}/artifacts"),
+        new("GET", "/api/v1/admin/jobs/{jobId}/actions"),
+        new("POST", "/api/v1/admin/jobs/{jobId}/cancel"),
+        new("POST", "/api/v1/admin/jobs/{jobId}/retry"),
+
+        // Console Share export jobs and traffic endpoints (#1216)
+        new("GET", "/api/v1/admin/share/exports"),
+        new("POST", "/api/v1/admin/share/exports"),
+        new("GET", "/api/v1/admin/share/exports/{exportId}"),
+        new("PUT", "/api/v1/admin/share/exports/{exportId}"),
+        new("DELETE", "/api/v1/admin/share/exports/{exportId}"),
+        new("POST", "/api/v1/admin/share/exports/{exportId}/trigger"),
+        new("POST", "/api/v1/admin/share/exports/{exportId}/pause"),
+        new("POST", "/api/v1/admin/share/exports/{exportId}/resume"),
+        new("GET", "/api/v1/admin/share/exports/{exportId}/runs"),
+        new("GET", "/api/v1/admin/share/exports/{exportId}/runs/{runId}"),
+        new("GET", "/api/v1/admin/share/traffic"),
+        new("GET", "/api/v1/admin/share/traffic/series"),
+        new("GET", "/api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic"),
+        new("GET", "/api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic/series"),
+
         // Mobile runtime auth and diagnostics endpoints (#924)
         new("POST", "/api/mobile/exceptions"),
 
@@ -335,6 +431,21 @@ public static class EndpointRegistry
         new("GET", "/api/v1/fieldcollection/changes"),
         new("POST", "/api/v1/fieldcollection/changes"),
 
+        // Forms package lifecycle, offline policy, and submissions (#1184)
+        new("GET", "/api/v1/admin/forms/packages"),
+        new("POST", "/api/v1/admin/forms/packages"),
+        new("GET", "/api/v1/admin/forms/packages/{formId}"),
+        new("GET", "/api/v1/admin/forms/packages/{formId}/versions"),
+        new("GET", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}"),
+        new("PUT", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}"),
+        new("POST", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/validate"),
+        new("POST", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/publish"),
+        new("POST", "/api/v1/admin/forms/packages/{formId}/versions/{packageVersion}/reopen"),
+        new("GET", "/api/v1/forms/packages/{formId}"),
+        new("GET", "/api/v1/forms/packages/{formId}/versions/{packageVersion}"),
+        new("GET", "/api/v1/forms/packages/{formId}/offline-policy"),
+        new("POST", "/api/v1/forms/packages/{formId}/submissions"),
+
         new("POST", "/api/v1/admin/tile-operations/jobs"),
         new("GET", "/api/v1/admin/tile-operations/jobs/{jobId}"),
         new("GET", "/api/v1/admin/tile-operations/jobs"),
@@ -344,6 +455,24 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/observability/errors"),
         new("GET", "/api/v1/admin/observability/telemetry"),
         new("GET", "/api/v1/admin/observability/migrations"),
+        // Console Operate event viewer (#1168) — alerts, audit, unified events, logs, investigations.
+        new("GET", "/api/v1/admin/observability/alerts"),
+        new("GET", "/api/v1/admin/observability/alerts/{eventId}"),
+        new("POST", "/api/v1/admin/observability/alerts/{eventId}/acknowledge"),
+        new("POST", "/api/v1/admin/observability/alerts/{eventId}/suppress"),
+        new("POST", "/api/v1/admin/observability/alerts/{eventId}/resolve"),
+        new("GET", "/api/v1/admin/observability/audit"),
+        new("GET", "/api/v1/admin/observability/events"),
+        new("GET", "/api/v1/admin/observability/logs"),
+        new("GET", "/api/v1/admin/investigations"),
+        new("POST", "/api/v1/admin/investigations"),
+        new("GET", "/api/v1/admin/investigations/{investigationId}"),
+        new("PATCH", "/api/v1/admin/investigations/{investigationId}"),
+        new("POST", "/api/v1/admin/investigations/{investigationId}/pins"),
+        new("DELETE", "/api/v1/admin/investigations/{investigationId}/pins/{pinId}"),
+        new("POST", "/api/v1/admin/investigations/{investigationId}/links"),
+        new("DELETE", "/api/v1/admin/investigations/{investigationId}/links/{linkId}"),
+        new("POST", "/api/v1/admin/dev/fixtures/operate-observability/{profile}"),
 
         new("GET", "/api/v1/admin/performance/database/query-cache/statistics"),
         new("GET", "/api/v1/admin/performance/enhanced/database/query-performance"),
@@ -463,6 +592,13 @@ public static class EndpointRegistry
 
         new("GET", "/elevation/{datasetId}/value"),
         new("GET", "/elevation/{datasetId}/profile"),
+
+        // Scene analysis on the elevation surface (#1204).
+        new("POST", "/elevation/{datasetId}/sun-shadow"),
+        new("POST", "/elevation/{datasetId}/slice"),
+        // 3D visibility analysis on the elevation surface (#1203).
+        new("POST", "/elevation/{datasetId}/line-of-sight"),
+        new("POST", "/elevation/{datasetId}/viewshed"),
 
         new("GET", "/api/styles/{layerId}.json"),
 
@@ -671,6 +807,8 @@ public static class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/GPServer"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}"),
         new("POST", "/rest/services/{serviceId}/GPServer/{taskName}"),
+        new("POST", "/rest/services/{serviceId}/GPServer/{taskName}/execute"),
+        new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/execute"),
         new("POST", "/rest/services/{serviceId}/GPServer/{taskName}/submitJob"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/submitJob"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}"),
@@ -737,6 +875,19 @@ public static class EndpointRegistry
         new("POST", "/v1/spec/apply"),
         new("POST", "/v1/spec/cancel"),
         new("GET", "/v1/spec/artifact/{hash}"),
+
+        // Analysis content HTTP surface (#1182).
+        new("POST", "/api/v1/analysis/content/items"),
+        new("GET", "/api/v1/analysis/content/items/{itemId}"),
+        new("GET", "/api/v1/analysis/content/items/{itemId}/versions/latest"),
+        new("GET", "/api/v1/analysis/content/items/{itemId}/versions/{contentVersion}"),
+        new("POST", "/api/v1/analysis/content/items/{itemId}/versions"),
+        new("POST", "/api/v1/analysis/content/items/{itemId}/versions/{contentVersion}/preview"),
+        new("POST", "/api/v1/analysis/content/items/{itemId}/versions/{contentVersion}/runs"),
+        new("POST", "/api/v1/analysis/content/items/{itemId}/versions/{contentVersion}/reruns"),
+        new("GET", "/api/v1/analysis/artifacts/{artifactId}"),
+        new("GET", "/api/v1/analysis/jobs/{jobId}/logs"),
+        new("GET", "/api/v1/analysis/jobs/{jobId}/failure"),
 
         // Analysis report HTTP surface (#801).
         new("GET", "/api/v1/analysis/reports/{jobId}"),

@@ -3,8 +3,9 @@
 
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer.Handlers;
@@ -25,14 +26,14 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerIdentifyHandlerTests
 {
-    private readonly ILayerCatalog _layerCatalog = Substitute.For<ILayerCatalog>();
+    private readonly TestMetadataV2GraphProvider _graphProvider = BuildGraphWithLayer(1);
     private readonly IRasterStore _rasterStore = Substitute.For<IRasterStore>();
     private readonly ImageServerIdentifyHandler _handler;
 
     public ImageServerIdentifyHandlerTests()
     {
         _handler = new ImageServerIdentifyHandler(
-            _layerCatalog,
+            _graphProvider,
             _rasterStore,
             NullLogger<ImageServerIdentifyHandler>.Instance);
     }
@@ -41,8 +42,6 @@ public class ImageServerIdentifyHandlerTests
     [Operation(Operations.Identify)]
     public async Task IdentifyAsync_LayerNotFound_ReturnsNotFound()
     {
-        _layerCatalog.GetLayerAsync(99, Arg.Any<CancellationToken>())
-            .Returns((LayerDefinition?)null);
 
         var context = CreateImageServerContext();
         var request = CreateRequest("10,20");
@@ -56,8 +55,6 @@ public class ImageServerIdentifyHandlerTests
     [Operation(Operations.Identify)]
     public async Task IdentifyAsync_NoRasters_ReturnsNotFound()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs(Array.Empty<RasterInfo>());
 
@@ -73,8 +70,6 @@ public class ImageServerIdentifyHandlerTests
     [Operation(Operations.Identify)]
     public async Task IdentifyAsync_InvalidGeometryString_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestRasterInfo());
 
@@ -90,8 +85,6 @@ public class ImageServerIdentifyHandlerTests
     [Operation(Operations.Identify)]
     public async Task IdentifyAsync_CommaGeometryWithExtraCoordinate_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestRasterInfo());
 
@@ -109,8 +102,6 @@ public class ImageServerIdentifyHandlerTests
     [Operation(Operations.Identify)]
     public async Task IdentifyAsync_CommaGeometryExceedingLimit_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestRasterInfo());
 
@@ -129,8 +120,6 @@ public class ImageServerIdentifyHandlerTests
     [Operation(Operations.Identify)]
     public async Task IdentifyAsync_InvalidSpatialReference_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestRasterInfo());
 
@@ -146,8 +135,6 @@ public class ImageServerIdentifyHandlerTests
     [Operation(Operations.Identify)]
     public async Task IdentifyAsync_UnsupportedGeometryType_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestRasterInfo());
 
@@ -189,8 +176,6 @@ public class ImageServerIdentifyHandlerTests
     [Operation(Operations.Identify)]
     public async Task IdentifyAsync_JsonGeometryTooLarge_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestRasterInfo());
 
@@ -208,8 +193,6 @@ public class ImageServerIdentifyHandlerTests
     [Operation(Operations.Identify)]
     public async Task IdentifyAsync_InvalidJson_ReturnsBadRequest()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.GetPrimaryRasterInfoAsync(1, Arg.Any<CancellationToken>())
             .Returns(CreateTestRasterInfo());
 
@@ -275,8 +258,6 @@ public class ImageServerIdentifyHandlerTests
 
     private void SetupSuccessfulIdentify()
     {
-        _layerCatalog.GetLayerAsync(1, Arg.Any<CancellationToken>())
-            .Returns(CreateTestLayer());
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs([CreateTestRasterInfo()]);
         _rasterStore.IdentifyAsync(1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
@@ -298,8 +279,18 @@ public class ImageServerIdentifyHandlerTests
         F = "json"
     };
 
-    private static LayerDefinition CreateTestLayer()
-        => LayerDefinition.CreateBasic(1, "test-layer", GeometryType.Point);
+    private static TestMetadataV2GraphProvider BuildGraphWithLayer(int layerIndex)
+        => new TestMetadataV2GraphBuilder()
+            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ResourceType.RasterDataset)
+            .AddService($"service-{layerIndex}", $"image-svc-{layerIndex}", protocols: [ServiceProtocols.ImageServer])
+            .AddPublication(
+                $"publication-{layerIndex}",
+                $"service-{layerIndex}",
+                $"resource-{layerIndex}",
+                layerIndex: layerIndex,
+                serviceLocalId: "test-layer",
+                publicationType: MetadataV2PublicationType.EsriImageLayer)
+            .BuildProvider();
 
     private static RasterInfo CreateTestRasterInfo() => new()
     {

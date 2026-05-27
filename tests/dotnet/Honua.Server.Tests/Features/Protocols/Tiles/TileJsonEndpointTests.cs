@@ -6,7 +6,6 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.TestKit;
@@ -268,14 +267,13 @@ public sealed class TileJsonEndpointTests : IAsyncLifetime
         return template;
     }
 
-    private async Task UpdateServiceProtocolsAsync(string[] enabledProtocols)
+    private Task UpdateServiceProtocolsAsync(string[] enabledProtocols)
     {
-        var updater = _fixture.GetService<IServiceMetadataUpdater>();
-        await updater.UpdateServiceMetadataAsync(
-            WebAppFixture.TestServiceId,
-            new CatalogMetadata
-            {
-                EnabledProtocols = enabledProtocols
-            });
+        // V2 cutover (#1035 72/N): the v1 IServiceMetadataUpdater wrote
+        // CatalogMetadata.EnabledProtocols to the v1 services row. The migrated
+        // protocol-gate reads from MetadataV2Service.Protocols, so seed there
+        // directly via the fixture's in-memory V2 graph helper.
+        _fixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, enabledProtocols: enabledProtocols);
+        return Task.CompletedTask;
     }
 }

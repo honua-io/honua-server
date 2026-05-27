@@ -3,7 +3,7 @@
 
 using System.Globalization;
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer.Models;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer.Services;
 using Honua.Server.Features.Infrastructure.Models;
@@ -28,16 +28,16 @@ internal sealed class ImageServerCatalogQueryHandler
     /// <summary>Default page size when the caller does not specify <c>resultRecordCount</c>.</summary>
     private const int DefaultRecordCount = MaxRecordCount;
 
-    private readonly ILayerCatalog _layerCatalog;
+    private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IImageServerCatalogReader _catalogReader;
     private readonly ILogger<ImageServerCatalogQueryHandler> _logger;
 
     public ImageServerCatalogQueryHandler(
-        ILayerCatalog layerCatalog,
+        IMetadataV2GraphProvider graphProvider,
         IImageServerCatalogReader catalogReader,
         ILogger<ImageServerCatalogQueryHandler> logger)
     {
-        _layerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
+        _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _catalogReader = catalogReader ?? throw new ArgumentNullException(nameof(catalogReader));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -59,8 +59,8 @@ internal sealed class ImageServerCatalogQueryHandler
 
         try
         {
-            var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
-            if (layer is null)
+            var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is null)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");

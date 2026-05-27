@@ -12,13 +12,12 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Honua.Server.Features.Protocols.Mcp;
 
 /// <summary>
-/// DI registration for the MCP operator surface. Tool and resource handlers,
-/// and the dispatcher itself, are all stateless and depend only on singleton
-/// services (<see cref="Geoprocessing.IGeoprocessingJobService"/> and
-/// <see cref="ILogger{TCategoryName}"/>), so they are registered as singletons.
-/// That keeps the <c>SurfaceInitialized</c> startup log fired exactly once
-/// across the process lifetime and avoids re-building the tool and resource
-/// catalogs on every <c>POST /mcp</c> request.
+/// DI registration for the MCP operator surface. Tool and resource handlers are
+/// stateless singletons; handlers that need scoped state resolve it through an
+/// <see cref="IServiceScopeFactory"/> during the request. That keeps the
+/// <c>SurfaceInitialized</c> startup log fired exactly once across the process
+/// lifetime and avoids re-building the tool and resource catalogs on every
+/// <c>POST /mcp</c> request.
 /// </summary>
 internal static class McpServiceCollectionExtensions
 {
@@ -50,6 +49,8 @@ internal static class McpServiceCollectionExtensions
 
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ValidatePlanTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, DryRunPlanTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ValidatePackageTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PreviewPackageTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ExecutePlanTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CancelJobTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PlanAnalysisTool>());

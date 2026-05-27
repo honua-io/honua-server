@@ -3,6 +3,8 @@
 
 using System.Globalization;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -48,7 +50,7 @@ internal static partial class FeatureServerEndpoints
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerV2Async(
             resourceValidator,
             serviceId,
             layerId,
@@ -61,15 +63,26 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = validationResult.Service!;
-        var layer = validationResult.Layer!;
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+        var publication = validationResult.Publication!;
+        var resource = validationResult.Resource!;
+        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
         if (accessError != null)
         {
             return accessError;
         }
 
+        var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var storageLayerId = snapshot.ResolveStorageLayerId(publication);
+        if (storageLayerId is null)
+        {
+            return StandardErrorHelpers.CreateNotFound(
+                context,
+                $"Layer '{resource.Metadata.Name ?? layerId.ToString(CultureInfo.InvariantCulture)}' is not bound to a storage layer.");
+        }
+
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var estimates = await featureReader.GetEstimatesAsync(layer.Id, cancellationToken);
+        var estimates = await featureReader.GetEstimatesAsync(storageLayerId.Value, cancellationToken);
 
         var response = new GetEstimatesResponse
         {
@@ -117,7 +130,7 @@ internal static partial class FeatureServerEndpoints
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceAsync(
+        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceV2Async(
             resourceValidator,
             serviceId,
             context,
@@ -129,8 +142,11 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = serviceValidationResult.Service!;
+        var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+
         var values = ToCaseInsensitiveDictionary(context.Request.Query);
-        if (!TryResolveRequestedServiceLayers(service, values, out var selectedLayers, out _, out var selectionError))
+        if (!TryResolveRequestedServiceLayersV2(service, snapshot, values, out var selectedLayers, out _, out var selectionError))
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
@@ -138,22 +154,35 @@ internal static partial class FeatureServerEndpoints
                 [selectionError ?? "Invalid layer selection."]);
         }
 
-        var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, selectedLayers, service);
+        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+            context,
+            selectedLayers.Select(pair => pair.Resource),
+            service);
         if (accessError != null)
         {
             return accessError;
         }
 
-        var accessibleLayers = FilterAccessibleLayers(context, service, selectedLayers);
+        var accessibleLayers = FilterAccessibleLayersV2(context, service, selectedLayers);
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var layerEstimates = new List<ServiceLayerEstimateInfo>(accessibleLayers.Length);
 
-        foreach (var layer in accessibleLayers)
+        foreach (var (publication, resource) in accessibleLayers)
         {
-            var estimates = await featureReader.GetEstimatesAsync(layer.Id, cancellationToken);
+            // Mirror the V2 metadata builders' resolution order
+            // (FeatureServerUtilities.V2.MapLayerInfoV2): the integer storage
+            // handle for IFeatureReader is publication.LayerIndex when the graph
+            // doesn't carry an explicit storage binding for this publication.
+            var resolvedLayerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication);
+            if (resolvedLayerId is null)
+            {
+                continue;
+            }
+
+            var estimates = await featureReader.GetEstimatesAsync(resolvedLayerId.Value, cancellationToken);
             layerEstimates.Add(new ServiceLayerEstimateInfo
             {
-                Id = layer.Id,
+                Id = resolvedLayerId.Value,
                 Count = estimates.EstimatedCount,
                 Extent = estimates.Extent.HasValue ? estimates.Extent.Value.ToExtentInfo() : null
             });

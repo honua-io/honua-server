@@ -7,6 +7,7 @@ using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
@@ -186,6 +187,238 @@ internal static class OgcFeatureIdentifierResolver
         return null;
     }
 
+    // -----------------------------------------------------------------------
+    // Metadata v2 overloads
+    // -----------------------------------------------------------------------
+
+    public static object GetPublicId(Feature feature, MetadataV2Resource resource)
+        => GetPublicId(feature.Id, feature.Attributes, resource);
+
+    public static object GetPublicId(EncodedGeoJsonFeature feature, MetadataV2Resource resource)
+        => GetPublicId(feature.Id, feature.Attributes, resource);
+
+    public static object GetPublicId(long objectId, IReadOnlyDictionary<string, object?> attributes, MetadataV2Resource resource)
+    {
+        var objectIdFieldName = ResolveObjectIdFieldName(resource);
+
+        if (TryGetAttributeValue(attributes, objectIdFieldName, out var configuredId) &&
+            NormalizePublicId(configuredId) is { } normalizedConfiguredId)
+        {
+            return normalizedConfiguredId;
+        }
+
+        if (!objectIdFieldName.Equals("id", StringComparison.OrdinalIgnoreCase) &&
+            TryGetAttributeValue(attributes, "id", out var idValue) &&
+            NormalizePublicId(idValue) is { } normalizedId)
+        {
+            return normalizedId;
+        }
+
+        return objectId;
+    }
+
+    public static string FormatPublicId(Feature feature, MetadataV2Resource resource)
+        => Convert.ToString(GetPublicId(feature, resource), CultureInfo.InvariantCulture)
+           ?? feature.Id.ToString(CultureInfo.InvariantCulture);
+
+    public static string FormatPublicId(EncodedGeoJsonFeature feature, MetadataV2Resource resource)
+        => Convert.ToString(GetPublicId(feature, resource), CultureInfo.InvariantCulture)
+           ?? feature.Id.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Metadata v2 overload of
+    /// <see cref="FormatPayloadPublicId(IReadOnlyDictionary{string, object?}, LayerDefinition)"/>.
+    /// Resolves the public id field from the V2 resource's primary id field (falling back
+    /// to <c>id</c> for parity with the v1 logic).
+    /// </summary>
+    public static string? FormatPayloadPublicId(
+        IReadOnlyDictionary<string, object?>? properties,
+        MetadataV2Resource resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+
+        if (properties is null)
+        {
+            return null;
+        }
+
+        var objectIdFieldName = ResolveObjectIdFieldName(resource);
+        if (TryGetAttributeValue(properties, objectIdFieldName, out var configuredId))
+        {
+            return FormatPayloadId(configuredId);
+        }
+
+        if (!objectIdFieldName.Equals("id", StringComparison.OrdinalIgnoreCase) &&
+            TryGetAttributeValue(properties, "id", out var idValue))
+        {
+            return FormatPayloadId(idValue);
+        }
+
+        return null;
+    }
+
+    public static MetadataV2Field? ResolveWritablePublicIdField(MetadataV2Resource resource)
+    {
+        var objectIdFieldName = ResolveObjectIdFieldName(resource);
+        var field = resource.SchemaFields.FirstOrDefault(f =>
+                        f.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase))
+                    ?? resource.SchemaFields.FirstOrDefault(f =>
+                        f.Name.Equals("id", StringComparison.OrdinalIgnoreCase));
+
+        return field is null ||
+               IsGeometryField(field) ||
+               field.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase)
+            ? null
+            : field;
+    }
+
+    public static bool TryCreateIdsFilter(
+        string? rawIds,
+        MetadataV2Resource resource,
+        IFilterExpressionTranslator filterExpressionTranslator,
+        out ImmutableArray<long>? objectIds,
+        out SqlFragment? sqlFilter,
+        out string? error)
+    {
+        objectIds = null;
+        sqlFilter = null;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(rawIds))
+        {
+            return true;
+        }
+
+        if (HasEmptyCommaSeparatedToken(rawIds))
+        {
+            error = "Parameter 'ids' contains an empty ID value.";
+            return false;
+        }
+
+        var tokens = rawIds.Split(',', StringSplitOptions.TrimEntries);
+        if (tokens.Length == 0)
+        {
+            error = "Parameter 'ids' must contain at least one ID value.";
+            return false;
+        }
+
+        var idField = ResolvePublicIdField(resource);
+        if (CanUseObjectIdFastPath(idField, tokens, out var numericObjectIds))
+        {
+            objectIds = numericObjectIds;
+            return true;
+        }
+
+        var expression = BuildPublicIdExpression(idField, tokens);
+        if (expression == null)
+        {
+            sqlFilter = NoMatchingIdsFilter;
+            return true;
+        }
+
+        sqlFilter = filterExpressionTranslator.Translate(expression, resource);
+        return true;
+    }
+
+    public static async Task<ResolvedFeature?> ResolveAsync(
+        IFeatureReader featureReader,
+        IQueryProcessor queryProcessor,
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication publication,
+        MetadataV2Resource resource,
+        string featureId,
+        CancellationToken cancellationToken)
+    {
+        var idField = ResolvePublicIdField(resource);
+        // Mirror the OgcFeaturesQueryHandler / FeatureServer V2 ports: when the graph
+        // carries no explicit storage binding, fall back to publication.LayerIndex.
+        var storageLayerId = publication.LayerIndex
+            ?? snapshot.ResolveStorageLayerId(publication)
+            ?? snapshot.ResolveStorageLayerId(resource);
+
+        if (CanUseObjectIdFastPath(idField) &&
+            TryParseCanonicalPositiveObjectId(featureId, out var objectId) &&
+            storageLayerId is { } layerId)
+        {
+            var direct = await featureReader.GetAsync(layerId, objectId, cancellationToken).ConfigureAwait(false);
+            if (direct.HasValue)
+            {
+                return new ResolvedFeature(objectId, direct.Value);
+            }
+        }
+
+        var expression = BuildPublicIdExpression(idField, [featureId]);
+        if (expression != null && storageLayerId is { } sLayerId)
+        {
+            var unifiedQuery = new UnifiedQuery
+            {
+                Filter = QueryFilter.FromExpression(expression),
+                Limit = 1
+            };
+            var query = queryProcessor.ToFeatureQuery(unifiedQuery, resource);
+            var result = await featureReader.QueryAsync(sLayerId, query, cancellationToken).ConfigureAwait(false);
+            if (!result.Items.IsDefaultOrEmpty)
+            {
+                var feature = result.Items[0];
+                return new ResolvedFeature(feature.Id, feature);
+            }
+        }
+
+        if (CanUseVerifiedObjectIdFallback(idField) &&
+            TryParseCanonicalPositiveObjectId(featureId, out var fallbackObjectId) &&
+            storageLayerId is { } fallbackLayerId)
+        {
+            var direct = await featureReader.GetAsync(fallbackLayerId, fallbackObjectId, cancellationToken).ConfigureAwait(false);
+            if (direct.HasValue &&
+                string.Equals(FormatPublicId(direct.Value, resource), featureId, StringComparison.Ordinal))
+            {
+                return new ResolvedFeature(direct.Value.Id, direct.Value);
+            }
+        }
+
+        return null;
+    }
+
+    private static string ResolveObjectIdFieldName(MetadataV2Resource resource)
+        => resource.FindPrimaryIdField()?.Name ?? "objectid";
+
+    private static bool IsGeometryField(MetadataV2Field field)
+        => field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography;
+
+    private static FieldDefinition ResolvePublicIdField(MetadataV2Resource resource)
+    {
+        var objectIdFieldName = ResolveObjectIdFieldName(resource);
+        var match = resource.SchemaFields.FirstOrDefault(f =>
+                        f.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase))
+                    ?? resource.SchemaFields.FirstOrDefault(f =>
+                        f.Name.Equals("id", StringComparison.OrdinalIgnoreCase));
+
+        if (match is null)
+        {
+            return new FieldDefinition(FieldNames.ObjectId, FieldType.BigInteger, Nullable: false);
+        }
+
+        return new FieldDefinition(match.Name, MapV2FieldType(match.Type), Nullable: match.Nullable);
+    }
+
+    private static FieldType MapV2FieldType(MetadataV2FieldType type) => type switch
+    {
+        MetadataV2FieldType.String => FieldType.String,
+        MetadataV2FieldType.Integer => FieldType.Integer,
+        MetadataV2FieldType.BigInteger => FieldType.BigInteger,
+        MetadataV2FieldType.Double => FieldType.Double,
+        MetadataV2FieldType.Float => FieldType.Float,
+        MetadataV2FieldType.Boolean => FieldType.Boolean,
+        MetadataV2FieldType.DateTime => FieldType.DateTime,
+        MetadataV2FieldType.Date => FieldType.Date,
+        MetadataV2FieldType.Time => FieldType.Time,
+        MetadataV2FieldType.Json => FieldType.Json,
+        MetadataV2FieldType.Binary => FieldType.Binary,
+        MetadataV2FieldType.Uuid => FieldType.Uuid,
+        MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography => FieldType.Geometry,
+        _ => FieldType.String,
+    };
+
     private static FieldDefinition ResolvePublicIdField(LayerDefinition layer)
         => layer.Fields.FirstOrDefault(field => field.Name.Equals(layer.ObjectIdFieldName, StringComparison.OrdinalIgnoreCase))
            ?? layer.Fields.FirstOrDefault(field => field.Name.Equals("id", StringComparison.OrdinalIgnoreCase))
@@ -223,6 +456,10 @@ internal static class OgcFeatureIdentifierResolver
 
     private static bool CanUseObjectIdFastPath(FieldDefinition idField)
         => idField.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) &&
+           idField.Type is FieldType.Integer or FieldType.BigInteger;
+
+    private static bool CanUseVerifiedObjectIdFallback(FieldDefinition idField)
+        => !idField.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) &&
            idField.Type is FieldType.Integer or FieldType.BigInteger;
 
     private static bool TryParseCanonicalPositiveObjectId(string value, out long objectId)

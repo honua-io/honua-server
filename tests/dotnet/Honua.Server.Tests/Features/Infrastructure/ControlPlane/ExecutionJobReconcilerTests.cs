@@ -2008,6 +2008,17 @@ public sealed class ExecutionJobReconcilerTests
             return Task.FromResult(true);
         }
 
+        public Task<ExecutionJobPage> QueryAsync(ExecutionJobQuery query, CancellationToken cancellationToken = default)
+            => Task.FromResult(new ExecutionJobPage
+            {
+                Items = _jobs.Values
+                    .Where(job => query.Statuses.Count == 0 || query.Statuses.Contains(job.Status))
+                    .Where(job => !query.Kind.HasValue || job.Spec.Kind == query.Kind.Value)
+                    .OrderByDescending(job => job.CreatedAt)
+                    .Take(query.Limit)
+                    .ToArray()
+            });
+
         public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, CancellationToken cancellationToken = default)
         {
             var jobs = _jobs.Values
@@ -2038,6 +2049,14 @@ public sealed class ExecutionJobReconcilerTests
         }
         public Task<bool> TrySetAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
             => Task.FromResult(false);
+        public Task<ExecutionJobPage> QueryAsync(ExecutionJobQuery query, CancellationToken cancellationToken = default)
+            => Task.FromResult(new ExecutionJobPage
+            {
+                Items = _jobs.Values
+                    .OrderByDescending(job => job.CreatedAt)
+                    .Take(query.Limit)
+                    .ToArray()
+            });
         public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(ExecutionJobKind? kind = null, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<ExecutionJobRecord>>(_jobs.Values.ToArray());
     }

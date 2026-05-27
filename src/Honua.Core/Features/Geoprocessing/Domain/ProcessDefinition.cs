@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.ControlPlane.Domain;
+
 namespace Honua.Core.Features.Geoprocessing.Domain;
 
 /// <summary>
@@ -38,6 +40,19 @@ public sealed record ProcessDefinition
     /// Artifact kinds this process is expected to produce.
     /// </summary>
     public required IReadOnlyList<ArtifactKind> OutputArtifactKinds { get; init; }
+
+    /// <summary>
+    /// The runtime profile a job for this process must run under. Defaults to
+    /// <see cref="RuntimeProfiles.Managed"/> so the lean serving image executes it.
+    /// Processes backed by the heavyweight out-of-process GDAL worker (the
+    /// <c>gdal.*</c> family) declare <see cref="RuntimeProfiles.Native"/>; the
+    /// geoprocessing submit path reads this value to stamp
+    /// <c>ExecutionJobSpec.RuntimeProfile</c> so the claim fence routes the job to
+    /// the correct worker (the lean dispatcher never claims a native job; the GDAL
+    /// worker only claims native jobs). This is the data-driven seam that keeps the
+    /// routing decision in the catalog rather than hard-coded in the submit path.
+    /// </summary>
+    public string RuntimeProfile { get; init; } = RuntimeProfiles.Managed;
 }
 
 /// <summary>

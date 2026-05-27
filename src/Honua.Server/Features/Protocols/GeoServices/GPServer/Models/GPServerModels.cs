@@ -163,4 +163,9 @@ internal sealed class GPExecuteResponse
 
     /// <summary>Messages.</summary>
     public GPJobMessage[]? Messages { get; set; }
+
+    /// <summary>
+    /// Esri job status string for the synchronous run (e.g. esriJobSucceeded).
+    /// </summary>
+    public string? JobStatus { get; set; }
 }

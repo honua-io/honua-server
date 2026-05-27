@@ -14,6 +14,25 @@
   </PropertyGroup>
 
   <!--
+    Deterministic / reproducible builds + SourceLink. PublishRepositoryUrl and
+    EmbedUntrackedSources let consumers step into our sources from a published
+    package; IncludeSymbols + snupkg ships debug symbols alongside the package.
+    ContinuousIntegrationBuild is gated on common CI env vars so local builds
+    keep their full paths (helpful for `dotnet watch` and debugging) while CI
+    builds normalize them for byte-for-byte reproducibility.
+  -->
+  <PropertyGroup>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true' or '$(TF_BUILD)' == 'true' or '$(CI)' == 'true'">
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <!--
     Style-analyzer + XML-doc generation are expensive and not needed for the inner
     dev loop. Run them only on Release builds (and CI, which always builds Release)
     so `dotnet build -c Debug` stays snappy.
@@ -43,4 +62,35 @@
     the EnableConfigurationBindingGenerator above makes the common
     ConfigurationBinder.Bind / Configure<T> paths trim-safe at the source.
   -->
+
+  <!--
+    Build-time analyzers and source link, applied to every project so consumers
+    of the published packages get debuggable sources and we get consistent code-
+    quality feedback. PrivateAssets="all" keeps these out of the runtime package
+    graph; they only run at compile time.
+
+    Gate: skip for the synthetic `package-test` consumer project the core-package-
+    compatibility CI job creates via `dotnet new console`. That project inherits
+    this Directory.Build.props but doesn't see Directory.Packages.props's
+    centrally-managed versions, which produces NU1015/NU1604.
+  -->
+  <ItemGroup Condition="'$(HonuaSkipRepoAnalyzers)' != 'true' AND '$(MSBuildProjectName)' != 'package-test'">
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="all" />
+    <PackageReference Include="Roslynator.Analyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!--
+    Roslynator initial-rollout suppressions: a handful of rules fire en masse
+    across the existing codebase and would block the warnings-as-errors build.
+    They are suppressed (NOT silenced via Severity=None) so they still surface
+    as informational diagnostics in IDE / `dotnet build /p:TreatWarningsAsErrors=false`
+    triage runs, and can be paid down rule-by-rule in follow-up cleanup PRs.
+      RCS1194 — Implement exception constructors (every custom exception)
+      RCS1203 — Use AttributeUsageAttribute (validation attributes)
+      RCS1075 — Avoid empty catch that catches System.Exception (metrics best-effort paths)
+      RCS1139 — Add summary element to doc comment (partial XML-doc coverage)
+  -->
+  <PropertyGroup>
+    <NoWarn>$(NoWarn);RCS1194;RCS1203;RCS1075;RCS1139</NoWarn>
+  </PropertyGroup>
 </Project>
