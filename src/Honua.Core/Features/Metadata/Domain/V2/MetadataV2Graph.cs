@@ -210,7 +210,7 @@ public sealed record MetadataV2Resource
 
     /// <summary>
     /// Optional permanent filter applied to every query against this resource.
-    /// Mirrors the v1 <c>LayerMetadata.PermanentFilter</c>. The storage backends
+    /// Mirrors the legacy layer permanent-filter setting. The storage backends
     /// (Postgres / MySql / DuckDB / SqlServer FeatureStores) honour this by ANDing
     /// it with the per-request filter before SQL translation.
     /// </summary>
