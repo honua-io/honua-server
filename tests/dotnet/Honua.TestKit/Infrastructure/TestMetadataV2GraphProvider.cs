@@ -99,11 +99,18 @@ public sealed class TestMetadataV2GraphBuilder
         MetadataV2ResourceEditing? editing = null,
         IReadOnlyList<MetadataV2Relationship>? relationships = null,
         IReadOnlyDictionary<string, JsonElement>? extensions = null,
+        IReadOnlyDictionary<string, string>? annotations = null,
         MetadataV2Status? status = null)
     {
         _resources.Add(new MetadataV2Resource
         {
-            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name, Description = description },
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = id,
+                Name = name,
+                Description = description,
+                Annotations = annotations ?? new Dictionary<string, string>(),
+            },
             Type = type,
             Status = status,
             SchemaFields = fields?.ToArray() ?? Array.Empty<MetadataV2Field>(),

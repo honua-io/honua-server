@@ -201,6 +201,18 @@ public static class EndpointRegistry
         new("DELETE", "/api/v1/console/content/{id}"),
         new("GET", "/api/v1/console/content/{id}/provenance"),
         new("POST", "/api/v1/console/actions/check"),
+        // v1 Console Share access public-link + embed API (#1215)
+        new("GET", "/api/v1/console/content/{id}/share"),
+        new("PUT", "/api/v1/console/content/{id}/share/access"),
+        new("GET", "/api/v1/console/content/{id}/share/dependencies"),
+        new("GET", "/api/v1/console/content/{id}/share/link"),
+        new("POST", "/api/v1/console/content/{id}/share/link"),
+        new("DELETE", "/api/v1/console/content/{id}/share/link/{tokenId}"),
+        new("PUT", "/api/v1/console/content/{id}/share/embed"),
+        new("POST", "/api/v1/console/content/{id}/share/embed"),
+        new("GET", "/api/v1/console/share/content/{id}"),
+        new("GET", "/api/v1/console/share/link/{token}"),
+        new("POST", "/api/v1/console/share/embed/{token}/redeem"),
         new("POST", "/api/v1/admin/packages/validate"),
         new("POST", "/api/v1/admin/packages/preview"),
         new("GET", "/api/v1/console/workflow-node-registry"),
@@ -807,6 +819,8 @@ public static class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/GPServer"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}"),
         new("POST", "/rest/services/{serviceId}/GPServer/{taskName}"),
+        // Synchronous execute (POST + GET per Esri GP contract) shipped with the
+        // GP/ETL GPServer adapter (#1228) but was missing from the registry on trunk.
         new("POST", "/rest/services/{serviceId}/GPServer/{taskName}/execute"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/execute"),
         new("POST", "/rest/services/{serviceId}/GPServer/{taskName}/submitJob"),

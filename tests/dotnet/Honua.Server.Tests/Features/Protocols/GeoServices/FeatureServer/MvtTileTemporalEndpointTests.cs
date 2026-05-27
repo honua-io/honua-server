@@ -5,6 +5,7 @@ using System.Net;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Tests.Features.Licensing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -28,7 +29,18 @@ public sealed class MvtTileTemporalEndpointTests : IAsyncLifetime
         .WithTestLicense(HonuaEdition.Pro);
     private const int TestLayerId = WebAppFixture.TestLayerId;
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+
+        _fixture.UpdateV2ResourceMetadata(
+            TestLayerId,
+            temporal: new MetadataV2ResourceTemporal
+            {
+                StartTimeField = "timestamp",
+                EndTimeField = "event_date",
+            });
+    }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 

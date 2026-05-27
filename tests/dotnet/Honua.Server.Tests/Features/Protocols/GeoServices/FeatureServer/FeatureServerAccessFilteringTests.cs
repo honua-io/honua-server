@@ -8,6 +8,8 @@ using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Tests.Features.Security;
 using Honua.TestKit.Attributes;
@@ -15,6 +17,7 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -117,7 +120,111 @@ public sealed class FeatureServerAccessFilteringTests
     private static WebApplicationFactory<Program> CreateFactory()
         => ServiceRbacTestFixture.CreateFactory(
             static () => new FeatureServerAccessFilteringCatalog(),
-            static services => services.AddSingleton<IAttachmentStore, TestAttachmentStore>());
+            static services =>
+            {
+                services.AddSingleton<IAttachmentStore, TestAttachmentStore>();
+                services.RemoveAll<IMetadataV2GraphProvider>();
+                services.AddSingleton<IMetadataV2GraphProvider>(CreateMetadataV2GraphProvider());
+            });
+
+    private static TestMetadataV2GraphProvider CreateMetadataV2GraphProvider()
+    {
+        var spatial = new MetadataV2ResourceSpatial
+        {
+            SpatialReference = MetadataV2SpatialReference.Wgs84,
+            GeometryType = MetadataV2GeometryType.Point,
+            Bbox = new MetadataV2Bbox
+            {
+                West = -180,
+                South = -90,
+                East = 180,
+                North = 90
+            },
+            PrimaryGeometryField = "shape"
+        };
+
+        return new TestMetadataV2GraphBuilder()
+            .AddService(
+                "svc-alpha",
+                ServiceRbacTestFixture.AlphaService,
+                protocols: [ServiceProtocols.FeatureServer],
+                accessPolicy: ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["reader"]).AccessPolicy,
+                description: "FeatureServer access filtering test service")
+            .AddResource(
+                "res-alpha",
+                "Visible Audit Layer",
+                fields: CreateVisibleResourceFields(),
+                spatial: spatial,
+                annotations: new Dictionary<string, string>
+                {
+                    ["honua.io/attachments"] = "true",
+                })
+            .AddResource(
+                "res-beta",
+                "Hidden Audit Layer",
+                fields: CreateHiddenResourceFields(),
+                accessPolicy: ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["hidden-reader"]).AccessPolicy,
+                spatial: spatial)
+            .AddPublication(
+                "pub-alpha",
+                "svc-alpha",
+                "res-alpha",
+                layerIndex: ServiceRbacTestFixture.AlphaLayerId,
+                serviceLocalId: ServiceRbacTestFixture.AlphaLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+            .AddPublication(
+                "pub-beta",
+                "svc-alpha",
+                "res-beta",
+                layerIndex: ServiceRbacTestFixture.BetaLayerId,
+                serviceLocalId: ServiceRbacTestFixture.BetaLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+            .BuildProvider();
+    }
+
+    private static MetadataV2Field[] CreateVisibleResourceFields() =>
+    [
+        new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, SemanticRoles = ["id.primary"] },
+        new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true },
+        new MetadataV2Field
+        {
+            Name = "status",
+            Type = MetadataV2FieldType.String,
+            Nullable = true,
+            Domain = new MetadataV2FieldDomain
+            {
+                Type = "codedValue",
+                CodedValues =
+                [
+                    new MetadataV2CodedValue { Code = JsonSerializer.SerializeToElement("open"), Name = "Open" },
+                    new MetadataV2CodedValue { Code = JsonSerializer.SerializeToElement("closed"), Name = "Closed" },
+                ],
+            },
+        },
+        new MetadataV2Field { Name = "is_active", Type = MetadataV2FieldType.Boolean, Nullable = true },
+        new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, Nullable = true, SemanticRoles = ["geometry.primary"] },
+    ];
+
+    private static MetadataV2Field[] CreateHiddenResourceFields() =>
+    [
+        new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, SemanticRoles = ["id.primary"] },
+        new MetadataV2Field
+        {
+            Name = "is_active",
+            Type = MetadataV2FieldType.Boolean,
+            Nullable = true,
+            Domain = new MetadataV2FieldDomain
+            {
+                Type = "codedValue",
+                CodedValues =
+                [
+                    new MetadataV2CodedValue { Code = JsonSerializer.SerializeToElement(true), Name = "Active" },
+                    new MetadataV2CodedValue { Code = JsonSerializer.SerializeToElement(false), Name = "Inactive" },
+                ],
+            },
+        },
+        new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, Nullable = true, SemanticRoles = ["geometry.primary"] },
+    ];
 }
 
 internal sealed class FeatureServerAccessFilteringCatalog : ILayerCatalog
