@@ -555,7 +555,10 @@ jobs:
     # never instantiate a runner job, so per-shard `if:` gating is no longer
     # needed. The PR shard step composes its filter with `&Tier!=Slow` so
     # [EmulatorTest]/[ScaleTest]/[ExternalServiceTest]/[CloudTest] methods
-    # in a shard's namespace stay in nightly-slow-tier.yml.
+    # in a shard's namespace stay in nightly-slow-tier.yml. The CI shard step
+    # also opts into `&Tier!=Fast` so Fast tests run only once in
+    # dotnet-foundation-tests, while local pre-PR validation still exercises
+    # every server-test shard.
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
     needs: [build, changes, targeted-shards]
@@ -615,6 +618,7 @@ jobs:
           HONUA_SERVER_TEST_MAX_CPU_COUNT: ${{ matrix.max_cpu_count }}
           HONUA_SERVER_TEST_RESULTS_DIR: ./tests/TestResults
           HONUA_SERVER_TEST_CONFIGURATION: Release
+          HONUA_SERVER_TEST_EXCLUDE_FAST: "true"
         run: |
           scripts/ci/run-server-test-shard.sh
 
