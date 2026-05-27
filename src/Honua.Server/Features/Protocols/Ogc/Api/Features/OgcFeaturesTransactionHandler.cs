@@ -677,7 +677,25 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 }
                 else
                 {
-                    foreach (var (key, value) in patchRequest.Properties)
+                    // Validate only the properties this PATCH actually sets. Values carried
+                    // over from the existing row (notably the immutable id field read back
+                    // from storage) are not edits and must not be re-validated for
+                    // editability — this mirrors PUT, which validates only the submitted
+                    // properties. Validating the full merged set instead rejected unchanged
+                    // non-editable fields, e.g. "Field 'objectid' is not editable.".
+                    var patchValidation = _mutationValidator.ValidateAttributes(
+                        resource,
+                        patchRequest.Properties,
+                        ValidationExtensions.AttributeValidationMode.Strict,
+                        isUpdate: true);
+                    if (!patchValidation.IsValid)
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(
+                            context,
+                            patchValidation.ErrorMessage ?? "Invalid attributes.");
+                    }
+
+                    foreach (var (key, value) in patchValidation.Value!)
                     {
                         if (value == null)
                         {
@@ -691,22 +709,10 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 }
             }
 
-            var attributesResult = _mutationValidator.ValidateAttributes(
-                resource,
-                attributesBuilder.ToImmutable(),
-                ValidationExtensions.AttributeValidationMode.Strict,
-                isUpdate: true);
-            if (!attributesResult.IsValid)
-            {
-                return StandardErrorHelpers.CreateBadRequest(
-                    context,
-                    attributesResult.ErrorMessage ?? "Invalid attributes.");
-            }
-
             var feature = Feature.Create(
                 objectId,
                 geometryValidation.Geometry,
-                attributesResult.Value!);
+                attributesBuilder.ToImmutable());
 
             try
             {

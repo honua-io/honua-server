@@ -16,13 +16,13 @@ public sealed class OgcFeaturesCollectionsExceptionFilterTests : IAsyncLifetime
 
     public OgcFeaturesCollectionsExceptionFilterTests()
     {
-        var validator = Substitute.For<IResourceValidator>();
-        validator.ValidateCollectionV2Async(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        var resourceValidator = Substitute.For<IResourceValidator>();
+        resourceValidator.ValidateCollectionV2Async(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_ => Task.FromException<ResourceValidationResult<MetadataV2Resource>>(
                 new ArgumentException("Invalid Parse failure")));
 
         _fixture = new WebAppFixture()
-            .ReplaceService<IResourceValidator>(validator);
+            .ReplaceService<IResourceValidator>(resourceValidator);
     }
 
     public Task InitializeAsync() => _fixture.InitializeAsync();

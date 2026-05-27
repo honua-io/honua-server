@@ -312,22 +312,17 @@ public sealed class ODataBatchOperationHandlerTests
         services.AddSingleton(outputCacheInvalidationService);
         services.AddSingleton(layerCatalog);
         services.AddSingleton<IMetadataV2GraphProvider>(
-            new TestMetadataV2GraphBuilder()
+            new TestMetadataV2GraphProvider(new TestMetadataV2GraphBuilder()
                 .AddResource("res-layer-1", "Features", MetadataV2ResourceType.FeatureDataset)
-                .AddStorageBinding("storage-layer-1", "res-layer-1", "features", storageLayerId: 1)
-                .AddService(
-                    "svc-odata",
-                    "odata-service",
-                    protocols: [Honua.ServiceDefaults.HonuaTelemetry.Protocols.OData])
+                .AddService("svc-odata-test", "odata-service", protocols: [ServiceProtocols.OData])
                 .AddPublication(
-                    "pub-layer-1-odata",
-                    "svc-odata",
+                    "pub-odata-layer-1",
+                    "svc-odata-test",
                     "res-layer-1",
                     layerIndex: 1,
-                    storageBindingId: "storage-layer-1",
                     serviceLocalId: "1",
                     publicationType: MetadataV2PublicationType.ODataEntitySet)
-                .BuildProvider());
+                .Build()));
 
         var context = new DefaultHttpContext
         {

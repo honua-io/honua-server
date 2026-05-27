@@ -10,6 +10,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.ServiceDefaults;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -687,6 +688,42 @@ public sealed class StacSearchTests : IAsyncLifetime
         command.Parameters.AddWithValue("maxLength", maxLength.HasValue ? maxLength.Value : DBNull.Value);
         command.Parameters.AddWithValue("description", $"{fieldName} test field");
         await command.ExecuteNonQueryAsync();
+
+        _fixture.UpsertV2ResourceSchemaField(
+            WebAppFixture.TestLayerId,
+            new MetadataV2Field
+            {
+                Name = fieldName,
+                Type = ToMetadataV2FieldType(fieldType),
+                Length = maxLength,
+                Nullable = true,
+                Description = $"{fieldName} test field",
+            });
+    }
+
+    private static MetadataV2FieldType ToMetadataV2FieldType(string fieldType)
+    {
+        var normalized = fieldType.Replace("_", string.Empty, StringComparison.Ordinal)
+            .Replace("-", string.Empty, StringComparison.Ordinal)
+            .ToLowerInvariant();
+        return normalized switch
+        {
+            "string" or "text" => MetadataV2FieldType.String,
+            "integer" or "int" or "int32" => MetadataV2FieldType.Integer,
+            "biginteger" or "long" or "bigint" or "int64" => MetadataV2FieldType.BigInteger,
+            "double" or "float64" => MetadataV2FieldType.Double,
+            "float" or "single" => MetadataV2FieldType.Float,
+            "boolean" or "bool" => MetadataV2FieldType.Boolean,
+            "datetime" or "timestamp" => MetadataV2FieldType.DateTime,
+            "date" => MetadataV2FieldType.Date,
+            "time" => MetadataV2FieldType.Time,
+            "json" or "jsonb" => MetadataV2FieldType.Json,
+            "binary" or "bytes" => MetadataV2FieldType.Binary,
+            "uuid" or "guid" => MetadataV2FieldType.Uuid,
+            "geometry" => MetadataV2FieldType.Geometry,
+            "geography" => MetadataV2FieldType.Geography,
+            _ => MetadataV2FieldType.Unknown,
+        };
     }
 
     private async Task SetFeatureAttributeAsync(long featureId, string attributeName, string attributeValue)
