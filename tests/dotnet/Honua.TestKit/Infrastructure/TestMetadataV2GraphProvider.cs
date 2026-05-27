@@ -4,6 +4,7 @@
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
+using System.Text.Json;
 
 namespace Honua.TestKit.Infrastructure;
 
@@ -90,14 +91,29 @@ public sealed class TestMetadataV2GraphBuilder
         string name,
         MetadataV2ResourceType type = MetadataV2ResourceType.FeatureDataset,
         IEnumerable<MetadataV2Field>? fields = null,
-        AccessPolicy? accessPolicy = null)
+        AccessPolicy? accessPolicy = null,
+        MetadataV2ResourceSpatial? spatial = null,
+        MetadataV2ResourceTemporal? temporal = null,
+        string? description = null,
+        MetadataV2ResourceDisplay? display = null,
+        MetadataV2ResourceEditing? editing = null,
+        IReadOnlyList<MetadataV2Relationship>? relationships = null,
+        IReadOnlyDictionary<string, JsonElement>? extensions = null,
+        MetadataV2Status? status = null)
     {
         _resources.Add(new MetadataV2Resource
         {
-            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
+            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name, Description = description },
             Type = type,
+            Status = status,
             SchemaFields = fields?.ToArray() ?? Array.Empty<MetadataV2Field>(),
+            Relationships = relationships ?? Array.Empty<MetadataV2Relationship>(),
             AccessPolicy = accessPolicy,
+            Spatial = spatial,
+            Temporal = temporal,
+            Display = display,
+            Editing = editing,
+            Extensions = extensions ?? new Dictionary<string, JsonElement>(),
         });
         return this;
     }
@@ -140,14 +156,21 @@ public sealed class TestMetadataV2GraphBuilder
         string name,
         string? route = null,
         IReadOnlyList<string>? protocols = null,
-        AccessPolicy? accessPolicy = null)
+        AccessPolicy? accessPolicy = null,
+        string? description = null,
+        IReadOnlyDictionary<string, JsonElement>? options = null,
+        MetadataV2ServiceSettings? settings = null,
+        MetadataV2Status? status = null)
     {
         _services.Add(new MetadataV2Service
         {
-            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
+            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name, Description = description },
             Route = route,
             Protocols = protocols ?? Array.Empty<string>(),
+            Status = status,
             AccessPolicy = accessPolicy,
+            Options = options ?? new Dictionary<string, JsonElement>(),
+            Settings = settings,
         });
         return this;
     }
@@ -160,7 +183,8 @@ public sealed class TestMetadataV2GraphBuilder
         int? layerIndex = null,
         string? storageBindingId = null,
         string? serviceLocalId = null,
-        MetadataV2PublicationType publicationType = MetadataV2PublicationType.OgcCollection)
+        MetadataV2PublicationType publicationType = MetadataV2PublicationType.OgcCollection,
+        MetadataV2Status? status = null)
     {
         // The three legacy publication-identification slots collapsed onto one
         // typed MetadataV2PublicationIdentifier in design slice 61/N. Builder
@@ -185,6 +209,7 @@ public sealed class TestMetadataV2GraphBuilder
             ServiceId = serviceId,
             ResourceId = resourceId,
             StorageBindingId = storageBindingId,
+            Status = status,
             Identifier = new MetadataV2PublicationIdentifier
             {
                 Value = idValue,

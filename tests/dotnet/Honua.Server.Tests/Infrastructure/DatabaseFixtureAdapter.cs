@@ -21,6 +21,11 @@ public sealed class DatabaseFixtureAdapter : IDatabaseFixture
 
     public NpgsqlDataSource DataSource => _postgresFixture.DataSource;
 
+    /// <summary>
+    /// Gets the initialized database connection string, including credentials when required by the fixture.
+    /// </summary>
+    public string ConnectionString => _postgresFixture.ConnectionString;
+
     public async Task InitializeAsync()
     {
         await _postgresFixture.InitializeAsync();

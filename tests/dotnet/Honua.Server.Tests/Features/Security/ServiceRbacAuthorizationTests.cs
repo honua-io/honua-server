@@ -15,6 +15,8 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Geometry.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Events;
@@ -24,6 +26,7 @@ using Honua.Server.Features.Protocols.Ogc.Api.Features;
 using Honua.Server.Features.Protocols.Ogc.Api.Features.Models;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -1402,6 +1405,7 @@ internal static class ServiceRbacTestFixture
                 {
                     services.RemoveAll<ILayerCatalog>();
                     services.AddScoped<ILayerCatalog>(_ => layerCatalogFactory());
+                    RegisterMetadataV2Graph(services, layerCatalogFactory());
                     services.AddSingleton<ICrsRegistry, TestCrsRegistry>();
                     services.AddSingleton<ICoordinateTransformService, TestCoordinateTransformService>();
                     services.AddSingleton<IGeometryTopologyValidator, NoOpGeometryTopologyValidator>();
@@ -1419,6 +1423,267 @@ internal static class ServiceRbacTestFixture
                 });
             });
     }
+
+    private static void RegisterMetadataV2Graph(IServiceCollection services, ILayerCatalog layerCatalog)
+    {
+        var graph = BuildMetadataV2Graph(layerCatalog);
+        services.RemoveAll<IMetadataV2GraphProvider>();
+        services.AddSingleton<IMetadataV2GraphProvider>(_ => new TestMetadataV2GraphProvider(graph));
+    }
+
+    private static MetadataV2Graph BuildMetadataV2Graph(ILayerCatalog layerCatalog)
+    {
+        var services = layerCatalog.ListServicesAsync()
+            .GetAwaiter()
+            .GetResult()
+            .OrderBy(service => service.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var canonicalLayers = new Dictionary<int, (LayerDefinition Layer, ServiceDefinition Service)>();
+        foreach (var service in services)
+        {
+            foreach (var layer in service.Layers.OrderBy(layer => layer.Id))
+            {
+                canonicalLayers.TryAdd(layer.Id, (layer, service));
+            }
+        }
+
+        var builder = new TestMetadataV2GraphBuilder();
+        foreach (var service in services)
+        {
+            builder.AddService(
+                MetadataV2ServiceId(service),
+                service.Name,
+                protocols: ServiceProtocols.All,
+                accessPolicy: service.Metadata?.AccessPolicy,
+                description: service.Description,
+                options: MapMetadataV2ServiceOptions(service));
+        }
+
+        foreach (var (layer, service) in canonicalLayers.Values.OrderBy(entry => entry.Layer.Id))
+        {
+            var resourceId = MetadataV2ResourceId(layer);
+            var bindingId = MetadataV2BindingId(layer);
+            var layerId = layer.Id.ToString(CultureInfo.InvariantCulture);
+            builder
+                .AddResource(
+                    resourceId,
+                    layer.Name,
+                    fields: MapMetadataV2Fields(layer),
+                    accessPolicy: layer.Metadata?.AccessPolicy,
+                    spatial: MapMetadataV2Spatial(layer),
+                    description: layer.Description,
+                    editing: new MetadataV2ResourceEditing
+                    {
+                        CanModify = true,
+                        SupportsAttachments = layer.SupportsAttachments,
+                    },
+                    relationships: MapMetadataV2Relationships(layer))
+                .AddStorageBinding(
+                    bindingId,
+                    resourceId,
+                    $"features:{layer.Id}",
+                    storageLayerId: layer.Id)
+                .AddPublication(
+                    id: $"pub-layer-{layer.Id}",
+                    serviceId: MetadataV2ServiceId(service),
+                    resourceId: resourceId,
+                    layerIndex: layer.Id,
+                    storageBindingId: bindingId,
+                    serviceLocalId: layerId,
+                    publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+        }
+
+        return builder.Build();
+    }
+
+    private static string MetadataV2ServiceId(ServiceDefinition service)
+        => $"svc-{service.Name}";
+
+    private static string MetadataV2ResourceId(LayerDefinition layer)
+        => $"res-layer-{layer.Id}";
+
+    private static string MetadataV2BindingId(LayerDefinition layer)
+        => $"binding-layer-{layer.Id}";
+
+    private static IEnumerable<MetadataV2Field> MapMetadataV2Fields(LayerDefinition layer)
+    {
+        foreach (var field in layer.Fields)
+        {
+            yield return new MetadataV2Field
+            {
+                Name = field.Name,
+                Type = MapMetadataV2FieldType(field.Type),
+                Nullable = field.Nullable,
+                Alias = field.DisplayName,
+                Editable = !field.IsGeometry,
+                Length = field.Length,
+                DefaultValue = field.DefaultValue is null ? null : JsonSerializer.SerializeToElement(field.DefaultValue),
+                Description = field.Description,
+                Domain = MapMetadataV2Domain(field.Domain),
+                Extensions = MapMetadataV2FieldExtensions(field.Domain),
+                SemanticRoles = field.Name.Equals("objectid", StringComparison.OrdinalIgnoreCase)
+                    ? ["id.primary"]
+                    : [],
+            };
+        }
+
+        if (layer.GeometryType != GeometryType.None &&
+            !layer.Fields.Any(field => field.Type == FieldType.Geometry))
+        {
+            yield return new MetadataV2Field
+            {
+                Name = "shape",
+                Type = MetadataV2FieldType.Geometry,
+                Nullable = true,
+                Editable = false,
+                SemanticRoles = ["geometry.primary"],
+            };
+        }
+    }
+
+    private static Dictionary<string, JsonElement> MapMetadataV2ServiceOptions(ServiceDefinition service)
+        => new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+        {
+            ["capabilities"] = JsonSerializer.SerializeToElement(service.Capabilities),
+            ["supportedFormats"] = JsonSerializer.SerializeToElement(service.SupportedFormats),
+        };
+
+    private static MetadataV2Relationship[] MapMetadataV2Relationships(LayerDefinition layer)
+        => layer.LayerRelationships
+            .Select(relationship => new MetadataV2Relationship
+            {
+                Id = relationship.RelationshipId.ToString(CultureInfo.InvariantCulture),
+                Name = relationship.Name,
+                Description = relationship.Description,
+                RelatedResourceId = $"res-layer-{relationship.RelatedLayerId}",
+                Role = relationship.RelationshipType,
+                OriginField = relationship.OriginForeignKeyField,
+                DestinationField = relationship.DestinationForeignKeyField,
+                EsriRelationshipId = relationship.RelationshipId,
+            })
+            .ToArray();
+
+    private static MetadataV2FieldDomain? MapMetadataV2Domain(FieldDomainDefinition? domain)
+    {
+        if (domain is null)
+        {
+            return null;
+        }
+
+        return new MetadataV2FieldDomain
+        {
+            Type = domain.Type,
+            CodedValues = domain.CodedValues?
+                .Select(static codedValue => new MetadataV2CodedValue
+                {
+                    Name = codedValue.Name,
+                    Code = JsonSerializer.SerializeToElement(codedValue.Code),
+                })
+                .ToArray() ?? Array.Empty<MetadataV2CodedValue>(),
+            Range = domain.Range is null
+                ? null
+                :
+                [
+                    JsonSerializer.SerializeToElement(domain.Range.MinValue),
+                    JsonSerializer.SerializeToElement(domain.Range.MaxValue),
+                ],
+        };
+    }
+
+    private static Dictionary<string, JsonElement> MapMetadataV2FieldExtensions(FieldDomainDefinition? domain)
+    {
+        if (domain is null)
+        {
+            return new Dictionary<string, JsonElement>();
+        }
+
+        var extensions = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+        {
+            ["honua.io/geoservices/domainName"] = JsonSerializer.SerializeToElement(domain.Name),
+        };
+        if (!string.IsNullOrWhiteSpace(domain.MergePolicy))
+        {
+            extensions["honua.io/geoservices/domainMergePolicy"] = JsonSerializer.SerializeToElement(domain.MergePolicy);
+        }
+        if (!string.IsNullOrWhiteSpace(domain.SplitPolicy))
+        {
+            extensions["honua.io/geoservices/domainSplitPolicy"] = JsonSerializer.SerializeToElement(domain.SplitPolicy);
+        }
+        return extensions;
+    }
+
+    private static MetadataV2FieldType MapMetadataV2FieldType(FieldType type)
+        => type switch
+        {
+            FieldType.String => MetadataV2FieldType.String,
+            FieldType.Integer => MetadataV2FieldType.Integer,
+            FieldType.BigInteger => MetadataV2FieldType.BigInteger,
+            FieldType.Double => MetadataV2FieldType.Double,
+            FieldType.Float => MetadataV2FieldType.Float,
+            FieldType.Boolean => MetadataV2FieldType.Boolean,
+            FieldType.DateTime => MetadataV2FieldType.DateTime,
+            FieldType.Date => MetadataV2FieldType.Date,
+            FieldType.Time => MetadataV2FieldType.Time,
+            FieldType.Geometry => MetadataV2FieldType.Geometry,
+            FieldType.Json => MetadataV2FieldType.Json,
+            FieldType.Binary => MetadataV2FieldType.Binary,
+            FieldType.Uuid => MetadataV2FieldType.Uuid,
+            _ => MetadataV2FieldType.Unknown,
+        };
+
+    private static MetadataV2ResourceSpatial? MapMetadataV2Spatial(LayerDefinition layer)
+    {
+        if (layer.GeometryType == GeometryType.None)
+        {
+            return null;
+        }
+
+        var spatialReference = MapMetadataV2SpatialReference(layer.SpatialReference);
+        return new MetadataV2ResourceSpatial
+        {
+            SpatialReference = spatialReference,
+            GeometryType = MapMetadataV2GeometryType(layer.GeometryType),
+            PrimaryGeometryField = "shape",
+            Bbox = layer.Extent is { } extent
+                ? new MetadataV2Bbox
+                {
+                    West = extent.MinX,
+                    South = extent.MinY,
+                    East = extent.MaxX,
+                    North = extent.MaxY,
+                }
+                : null,
+            SupportedCrs = [spatialReference],
+        };
+    }
+
+    private static MetadataV2SpatialReference MapMetadataV2SpatialReference(SpatialReference spatialReference)
+        => spatialReference.Wkid switch
+        {
+            4326 => MetadataV2SpatialReference.Wgs84,
+            3857 => MetadataV2SpatialReference.WebMercator,
+            _ => new MetadataV2SpatialReference
+            {
+                Srid = spatialReference.Wkid,
+                Crs = $"EPSG:{spatialReference.Wkid}",
+                IsGeographic = spatialReference.IsGeographic,
+            },
+        };
+
+    private static MetadataV2GeometryType MapMetadataV2GeometryType(GeometryType geometryType)
+        => geometryType switch
+        {
+            GeometryType.Point => MetadataV2GeometryType.Point,
+            GeometryType.MultiPoint => MetadataV2GeometryType.MultiPoint,
+            GeometryType.LineString => MetadataV2GeometryType.LineString,
+            GeometryType.MultiLineString => MetadataV2GeometryType.MultiLineString,
+            GeometryType.Polygon => MetadataV2GeometryType.Polygon,
+            GeometryType.MultiPolygon => MetadataV2GeometryType.MultiPolygon,
+            GeometryType.GeometryCollection => MetadataV2GeometryType.GeometryCollection,
+            GeometryType.None => MetadataV2GeometryType.None,
+            _ => MetadataV2GeometryType.Mixed,
+        };
 
     public static HttpClient CreateClient(WebApplicationFactory<Program> factory, params string[] roles)
     {

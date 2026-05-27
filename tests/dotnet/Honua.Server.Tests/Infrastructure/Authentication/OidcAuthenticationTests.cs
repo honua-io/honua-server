@@ -5,9 +5,12 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Honua.Core.Features.Catalog.Abstractions;
+using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Tests;
 using Honua.TestKit;
@@ -136,11 +139,63 @@ public class OidcAuthenticationTests
                     services.AddScoped<ITileProvider>(provider => provider.GetRequiredService<TestFeatureStore>());
                     services.AddScoped<IRelationshipStore>(provider => provider.GetRequiredService<TestFeatureStore>());
                     services.AddScoped<IStreamingFeatureStore>(provider => provider.GetRequiredService<TestFeatureStore>());
+                    AddFeatureServerMetadataV2Graph(services);
                 });
             });
     }
 
     private static string TestPostgresConnectionString => TestConnectionStrings.DefaultPostgresConnectionString;
+
+    private static void AddFeatureServerMetadataV2Graph(IServiceCollection services)
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddService(
+                "svc-test-feature",
+                "test",
+                protocols: [ServiceProtocols.FeatureServer])
+            .AddResource(
+                "res-layer-0",
+                "Test Layer",
+                fields:
+                [
+                    new MetadataV2Field
+                    {
+                        Name = "objectid",
+                        Type = MetadataV2FieldType.Integer,
+                        Nullable = false,
+                        SemanticRoles = ["id.primary"],
+                    },
+                    new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true },
+                    new MetadataV2Field
+                    {
+                        Name = "shape",
+                        Type = MetadataV2FieldType.Geometry,
+                        Nullable = true,
+                        Editable = false,
+                        SemanticRoles = ["geometry.primary"],
+                    },
+                ],
+                spatial: new MetadataV2ResourceSpatial
+                {
+                    SpatialReference = MetadataV2SpatialReference.Wgs84,
+                    GeometryType = MetadataV2GeometryType.Point,
+                    PrimaryGeometryField = "shape",
+                    SupportedCrs = [MetadataV2SpatialReference.Wgs84],
+                })
+            .AddStorageBinding("binding-layer-0", "res-layer-0", "features:0", storageLayerId: 0)
+            .AddPublication(
+                id: "pub-layer-0",
+                serviceId: "svc-test-feature",
+                resourceId: "res-layer-0",
+                layerIndex: 0,
+                storageBindingId: "binding-layer-0",
+                serviceLocalId: "0",
+                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+            .Build();
+
+        services.RemoveAll<IMetadataV2GraphProvider>();
+        services.AddSingleton<IMetadataV2GraphProvider>(_ => new TestMetadataV2GraphProvider(graph));
+    }
 
     private sealed class AlwaysCompatibleDatabaseCompatibilityChecker : IDatabaseCompatibilityChecker
     {
