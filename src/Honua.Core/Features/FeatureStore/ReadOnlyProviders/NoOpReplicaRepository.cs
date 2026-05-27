@@ -4,16 +4,18 @@
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 
-namespace Honua.MySql.Features.FeatureStore;
+namespace Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 
 /// <summary>
-/// Replica repository for the read-only MySQL/MariaDB provider. Persistence is a no-op
-/// because the underlying database does not support replica write workflows; the Extract
-/// capability is also stripped from MySQL services at startup so the createReplica
-/// endpoint should not normally be reached. Mirrors the DuckDB read-only stub so DI
-/// activation succeeds when the provider is configured.
+/// Replica repository for read-only feature providers (DuckDB, MySQL/MariaDB). Persistence
+/// is a no-op because the underlying databases do not support replica write workflows; the
+/// Extract capability is also stripped from read-only services at startup so the
+/// createReplica endpoint should not normally be reached. The no-op upsert prevents the
+/// caching write-through path from throwing if the endpoint is invoked anyway — any replica
+/// state then lives only in the distributed replica cache for the configured TTL, which is
+/// acceptable for V1 read-only analytics workloads.
 /// </summary>
-internal sealed class ReadOnlyMySqlReplicaRepository : IReplicaRepository
+public sealed class NoOpReplicaRepository : IReplicaRepository
 {
     /// <inheritdoc />
     public Task UpsertAsync(ReplicaRecord record, CancellationToken cancellationToken = default)

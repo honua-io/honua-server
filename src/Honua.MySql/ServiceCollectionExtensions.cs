@@ -1,15 +1,16 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Catalog;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
-using Honua.MySql.Features.Catalog;
 using Honua.MySql.Features.FeatureStore;
 using Honua.MySql.Features.FeatureStore.Services;
 using Honua.MySql.Features.HealthCheck;
@@ -97,19 +98,26 @@ internal static class ServiceCollectionExtensions
         // capabilities (FeatureServer query executor, gRPC service, OGC handlers, WFS, OData)
         // can activate under DataSource:Provider=mysql. The slice is read/query-only, so the
         // write-shaped surfaces are no-op or NotSupportedException stubs.
-        services.AddScoped<IFeatureWriter>(_ => new ReadOnlyMySqlFeatureWriter());
-        services.AddScoped<IReplicaRepository>(_ => new ReadOnlyMySqlReplicaRepository());
-        services.AddScoped<IChangeTracker>(_ => new ReadOnlyMySqlChangeTracker());
-        services.AddScoped<ITileProvider>(_ => new ReadOnlyMySqlTileProvider());
-        services.AddScoped<IGmlFeatureStore>(_ => new ReadOnlyMySqlGmlFeatureStore());
+        services.AddScoped<IFeatureWriter>(_ => new ReadOnlyFeatureWriter("MySQL/MariaDB"));
+        services.AddScoped<IReplicaRepository>(_ => new NoOpReplicaRepository());
+        services.AddScoped<IChangeTracker>(_ => new NoOpChangeTracker());
+        services.AddScoped<ITileProvider>(_ => new ReadOnlyTileProvider("MySQL/MariaDB"));
+        services.AddScoped<IGmlFeatureStore>(_ => new ReadOnlyGmlFeatureStore("MySQL/MariaDB"));
 
         services.AddScoped<ISqlFilterTranslator>(sp =>
             new MySqlSqlFilterTranslator(sp.GetRequiredService<MySqlEngineFlavorHolder>().Flavor));
 
+        // Uses the shared Core ConfigurationLayerCatalog; the provider-specific initialization
+        // log message is emitted via the onInitialized callback so the log category, event id,
+        // and wording stay MySQL/MariaDB-specific.
         services.AddScoped<ILayerCatalog>(sp =>
         {
             var (layers, serviceDefs) = BuildCatalogEntries(options, mappings);
-            return new MySqlLayerCatalog(layers, serviceDefs, sp.GetRequiredService<ILogger<MySqlLayerCatalog>>());
+            var logger = sp.GetRequiredService<ILogger<ConfigurationLayerCatalog>>();
+            return new ConfigurationLayerCatalog(
+                layers,
+                serviceDefs,
+                (layerCount, serviceCount) => MySqlLog.LayerCatalogInitialized(logger, layerCount, serviceCount));
         });
 
         return services;

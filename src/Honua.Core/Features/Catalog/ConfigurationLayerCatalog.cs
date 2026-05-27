@@ -4,79 +4,72 @@
 using System.Collections.Frozen;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
-using Honua.DuckDB;
-using Microsoft.Extensions.Logging;
 
-namespace Honua.DuckDB.Features.Catalog;
+namespace Honua.Core.Features.Catalog;
 
 /// <summary>
-/// Configuration-driven layer catalog for DuckDB.
-/// Layer and service definitions are read from <see cref="DuckDBOptions"/> at startup.
+/// Configuration-driven layer catalog shared by read-only providers (DuckDB, MySQL/MariaDB).
+/// Layer and service definitions are supplied at construction (read from provider options at
+/// startup) and exposed through immutable <see cref="FrozenDictionary{TKey, TValue}"/> lookups.
+/// Relationships are not supported and always resolve to empty results.
 /// </summary>
-internal sealed class DuckDBLayerCatalog : ILayerCatalog
+public sealed class ConfigurationLayerCatalog : ILayerCatalog
 {
     private readonly FrozenDictionary<int, LayerDefinition> _layers;
     private readonly FrozenDictionary<string, ServiceDefinition> _services;
 
-    public DuckDBLayerCatalog(
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ConfigurationLayerCatalog"/> class.
+    /// </summary>
+    /// <param name="layers">Layer definitions, keyed by <see cref="LayerDefinition.Id"/>.</param>
+    /// <param name="services">Service definitions, keyed case-insensitively by name.</param>
+    /// <param name="onInitialized">
+    /// Optional callback invoked once after the lookups are built, with the layer and service
+    /// counts. Providers use this to emit their own source-generated initialization log message
+    /// so the log category, event id, and wording remain provider-specific.
+    /// </param>
+    public ConfigurationLayerCatalog(
         IEnumerable<LayerDefinition> layers,
         IEnumerable<ServiceDefinition> services,
-        ILogger<DuckDBLayerCatalog> logger)
+        Action<int, int>? onInitialized = null)
     {
         _layers = layers.ToFrozenDictionary(l => l.Id);
         _services = services.ToFrozenDictionary(
             s => s.Name,
             StringComparer.OrdinalIgnoreCase);
 
-        DuckDbLog.LayerCatalogInitialized(logger, _layers.Count, _services.Count);
+        onInitialized?.Invoke(_layers.Count, _services.Count);
     }
 
     /// <inheritdoc />
     public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
-    {
-        return Task.FromResult(_layers.TryGetValue(layerId, out var layer) ? layer : null);
-    }
+        => Task.FromResult(_layers.TryGetValue(layerId, out var layer) ? layer : null);
 
     /// <inheritdoc />
     public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
-    {
-        return Task.FromResult(_layers.Values.ToArray());
-    }
+        => Task.FromResult(_layers.Values.ToArray());
 
     /// <inheritdoc />
     public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-    {
-        return Task.FromResult(_services.TryGetValue(serviceName, out var service) ? service : null);
-    }
+        => Task.FromResult(_services.TryGetValue(serviceName, out var service) ? service : null);
 
     /// <inheritdoc />
     public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
-    {
-        return Task.FromResult(_services.Values.ToArray());
-    }
+        => Task.FromResult(_services.Values.ToArray());
 
     /// <inheritdoc />
     public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
-    {
-        return Task.FromResult(_layers.ContainsKey(layerId));
-    }
+        => Task.FromResult(_layers.ContainsKey(layerId));
 
     /// <inheritdoc />
     public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
-    {
-        return Task.FromResult(_services.ContainsKey(serviceName));
-    }
+        => Task.FromResult(_services.ContainsKey(serviceName));
 
     /// <inheritdoc />
     public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
-    {
-        // DuckDB provider does not support relationships in V1
-        return Task.FromResult<Relationship?>(null);
-    }
+        => Task.FromResult<Relationship?>(null);
 
     /// <inheritdoc />
     public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
-    {
-        return Task.FromResult(Array.Empty<Relationship>());
-    }
+        => Task.FromResult(Array.Empty<Relationship>());
 }
