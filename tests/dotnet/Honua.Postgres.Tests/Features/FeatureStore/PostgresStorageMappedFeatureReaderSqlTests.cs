@@ -31,7 +31,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         var expression = PostgresStorageMappedFeatureReader.BuildStatisticsAggregateExpression(
             StatisticType.Avg,
             "\"longitude\"",
-            FieldType.Double);
+            Honua.Core.Features.Metadata.Domain.V2.MetadataV2FieldType.Double);
 
         expression.Should().Be("AVG(NULLIF((\"longitude\")::text, '')::numeric)");
     }
