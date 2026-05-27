@@ -623,14 +623,6 @@ internal static class SearchEndpoints
         return true;
     }
 
-    // TODO(#1035 follow-up): the V2 fields lookup is now keyed on
-    // <see cref="MetadataV2Resource.SchemaFields"/>, so query parameters like
-    // <c>fields=+properties.foo</c> only resolve when the V2 graph carries <c>foo</c>
-    // as a schema field. Tests that mutate the v1 <c>honua.layer_fields</c> table
-    // (e.g. WebAppFixture UpsertLayerFieldAsync) currently bypass the V2 snapshot
-    // and will return "Unknown fields include" until the V2 graph is rederived
-    // from the v1 catalog or the fixtures are ported to publish via the V2 builder
-    // directly. See task #55 (Port test fixtures off v1).
     private static bool TryBuildFieldSelection(
         MetadataV2Resource resource,
         StacFieldsExtension fields,

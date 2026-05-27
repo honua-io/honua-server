@@ -1039,6 +1039,56 @@ public sealed class WebAppFixture : IAsyncLifetime
     }
 
     /// <summary>
+    /// Upserts a schema field on the Metadata v2 resource bound to the supplied layer index.
+    /// Test code that still seeds <c>honua.layer_fields</c> directly should call this helper
+    /// so V2 schema-driven endpoints observe the same field set.
+    /// </summary>
+    public void UpsertV2ResourceSchemaField(int layerIndex, MetadataV2Field field)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+
+        var provider = GetService<IMetadataV2GraphProvider>() as Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider
+            ?? throw new InvalidOperationException(
+                "Test V2 graph provider not registered as TestMetadataV2GraphProvider.");
+
+        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
+        var pub = snapshot.Graph.Publications.FirstOrDefault(p => p.LayerIndex == layerIndex);
+        if (pub is null)
+        {
+            throw new InvalidOperationException(
+                $"No publication for layer {layerIndex} in the test V2 graph.");
+        }
+
+        var resources = snapshot.Graph.Resources.ToArray();
+        var mutated = false;
+        for (var i = 0; i < resources.Length; i++)
+        {
+            if (!string.Equals(resources[i].Metadata.Id, pub.ResourceId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var fields = resources[i].SchemaFields
+                .Where(existing => !string.Equals(existing.Name, field.Name, StringComparison.OrdinalIgnoreCase))
+                .Append(field)
+                .ToArray();
+            resources[i] = resources[i] with { SchemaFields = fields };
+            mutated = true;
+        }
+
+        if (!mutated)
+        {
+            return;
+        }
+
+        provider.SetGraph(snapshot.Graph with
+        {
+            Resources = resources,
+            Revision = snapshot.Graph.Revision + 1,
+        });
+    }
+
+    /// <summary>
     /// V2-aware helper that renames the canonical resource bound to the publication
     /// with <paramref name="layerIndex"/>. The CITE-conformance WMS tests rename the
     /// v1 <c>honua.layers.layer_name</c> column to drive conformance behaviour keyed on
