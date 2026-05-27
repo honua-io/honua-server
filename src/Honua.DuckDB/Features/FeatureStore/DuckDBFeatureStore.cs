@@ -12,7 +12,8 @@ namespace Honua.DuckDB.Features.FeatureStore;
 
 /// <summary>
 /// DuckDB implementation of feature storage using service composition.
-/// Implements read-only interfaces; write operations are handled by <see cref="ReadOnlyFeatureWriter"/>.
+/// Implements read-only interfaces; write operations are handled by
+/// <see cref="Core.Features.FeatureStore.ReadOnlyProviders.ReadOnlyFeatureWriter"/>.
 /// </summary>
 /// <remarks>
 /// Follows the same delegation pattern as the Postgres provider:

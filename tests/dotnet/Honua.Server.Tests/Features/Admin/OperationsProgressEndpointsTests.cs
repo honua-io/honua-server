@@ -1509,6 +1509,7 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
         public Task<string?> TryClaimAsync(
             string workerId,
             IReadOnlySet<ExecutionJobKind>? acceptedKinds = null,
+            IReadOnlySet<string>? acceptedRuntimeProfiles = null,
             CancellationToken cancellationToken = default)
             => Task.FromResult(_operationIds.FirstOrDefault());
 

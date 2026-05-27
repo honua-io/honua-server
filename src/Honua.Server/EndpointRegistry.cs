@@ -102,6 +102,7 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/metadata/release-packages"),
         new("GET", "/api/v1/admin/metadata/release-packages/{packageId}"),
         new("GET", "/api/v1/admin/metadata/release-packages/{packageId}/gitops-manifest"),
+        new("GET", "/api/v1/admin/metadata/releases/{packageId}/operation"),
         new("POST", "/api/v1/admin/metadata/prevalidate"),
         new("GET", "/api/v1/admin/deploy/preflight"),
         new("POST", "/api/v1/admin/deploy/plan"),
@@ -200,6 +201,18 @@ public static class EndpointRegistry
         new("DELETE", "/api/v1/console/content/{id}"),
         new("GET", "/api/v1/console/content/{id}/provenance"),
         new("POST", "/api/v1/console/actions/check"),
+        // v1 Console Share access public-link + embed API (#1215)
+        new("GET", "/api/v1/console/content/{id}/share"),
+        new("PUT", "/api/v1/console/content/{id}/share/access"),
+        new("GET", "/api/v1/console/content/{id}/share/dependencies"),
+        new("GET", "/api/v1/console/content/{id}/share/link"),
+        new("POST", "/api/v1/console/content/{id}/share/link"),
+        new("DELETE", "/api/v1/console/content/{id}/share/link/{tokenId}"),
+        new("PUT", "/api/v1/console/content/{id}/share/embed"),
+        new("POST", "/api/v1/console/content/{id}/share/embed"),
+        new("GET", "/api/v1/console/share/content/{id}"),
+        new("GET", "/api/v1/console/share/link/{token}"),
+        new("POST", "/api/v1/console/share/embed/{token}/redeem"),
         new("POST", "/api/v1/admin/packages/validate"),
         new("POST", "/api/v1/admin/packages/preview"),
         new("GET", "/api/v1/console/workflow-node-registry"),
@@ -232,6 +245,15 @@ public static class EndpointRegistry
         new("POST", "/api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests"),
         new("POST", "/api/v1/studio/content-items/{itemId}/versions/{versionId}/reopen"),
         new("POST", "/api/v1/studio/content-items/{itemId}/rollback-requests"),
+
+        // v1 content publication registry for Studio-generated artifacts (#1183)
+        new("POST", "/api/v1/console/publications"),
+        new("GET", "/api/v1/console/publications/{publicationId}"),
+        new("GET", "/api/v1/console/publications/{publicationId}/versions/{versionSelector}"),
+        new("POST", "/api/v1/console/publications/{publicationId}/republish"),
+        new("POST", "/api/v1/console/publications/{publicationId}/rollback"),
+        new("PATCH", "/api/v1/console/publications/{publicationId}/policy"),
+        new("GET", "/api/v1/published/{*routeSlug}"),
 
         // v1 admin metadata resource CRUD endpoints removed in #1035 cutover.
         // (Layer-style/fields/filter/validation endpoints below still serve v1 layer ids.)
@@ -404,6 +426,22 @@ public static class EndpointRegistry
         new("POST", "/api/v1/admin/jobs/{jobId}/cancel"),
         new("POST", "/api/v1/admin/jobs/{jobId}/retry"),
 
+        // Console Share export jobs and traffic endpoints (#1216)
+        new("GET", "/api/v1/admin/share/exports"),
+        new("POST", "/api/v1/admin/share/exports"),
+        new("GET", "/api/v1/admin/share/exports/{exportId}"),
+        new("PUT", "/api/v1/admin/share/exports/{exportId}"),
+        new("DELETE", "/api/v1/admin/share/exports/{exportId}"),
+        new("POST", "/api/v1/admin/share/exports/{exportId}/trigger"),
+        new("POST", "/api/v1/admin/share/exports/{exportId}/pause"),
+        new("POST", "/api/v1/admin/share/exports/{exportId}/resume"),
+        new("GET", "/api/v1/admin/share/exports/{exportId}/runs"),
+        new("GET", "/api/v1/admin/share/exports/{exportId}/runs/{runId}"),
+        new("GET", "/api/v1/admin/share/traffic"),
+        new("GET", "/api/v1/admin/share/traffic/series"),
+        new("GET", "/api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic"),
+        new("GET", "/api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic/series"),
+
         // Mobile runtime auth and diagnostics endpoints (#924)
         new("POST", "/api/mobile/exceptions"),
 
@@ -575,6 +613,13 @@ public static class EndpointRegistry
 
         new("GET", "/elevation/{datasetId}/value"),
         new("GET", "/elevation/{datasetId}/profile"),
+
+        // Scene analysis on the elevation surface (#1204).
+        new("POST", "/elevation/{datasetId}/sun-shadow"),
+        new("POST", "/elevation/{datasetId}/slice"),
+        // 3D visibility analysis on the elevation surface (#1203).
+        new("POST", "/elevation/{datasetId}/line-of-sight"),
+        new("POST", "/elevation/{datasetId}/viewshed"),
 
         new("GET", "/api/styles/{layerId}.json"),
 
@@ -783,6 +828,10 @@ public static class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/GPServer"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}"),
         new("POST", "/rest/services/{serviceId}/GPServer/{taskName}"),
+        // Synchronous execute (POST + GET per Esri GP contract) shipped with the
+        // GP/ETL GPServer adapter (#1228) but was missing from the registry on trunk.
+        new("POST", "/rest/services/{serviceId}/GPServer/{taskName}/execute"),
+        new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/execute"),
         new("POST", "/rest/services/{serviceId}/GPServer/{taskName}/submitJob"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/submitJob"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}"),

@@ -18,6 +18,28 @@ public interface IJobExecutor
     ExecutionJobKind Kind { get; }
 
     /// <summary>
+    /// The set of runtime profiles this executor is willing to run.
+    /// </summary>
+    /// <remarks>
+    /// This is the worker-side half of the runtime-profile claim fence. The default
+    /// implementation returns <see cref="RuntimeProfiles.DefaultAccepted"/>
+    /// (managed/default only) so that every existing executor — and the lean
+    /// dispatcher composed from them — is correctly fenced and can NEVER claim a
+    /// <see cref="RuntimeProfiles.Native"/> job without opting in. An undeclared set
+    /// therefore means "managed/default only", NOT "accept any profile". The
+    /// heavyweight GDAL worker (added in a later stream) overrides this to declare
+    /// <c>{ "native" }</c>.
+    ///
+    /// <para>
+    /// A job whose <see cref="ExecutionJobSpec.RuntimeProfile"/> is <c>null</c> or
+    /// empty is treated as the managed/default profile (see
+    /// <see cref="RuntimeProfiles.Normalize(string?)"/>), so pre-profile jobs remain
+    /// claimable by managed workers and are never starved.
+    /// </para>
+    /// </remarks>
+    IReadOnlySet<string> AcceptedRuntimeProfiles => RuntimeProfiles.DefaultAccepted;
+
+    /// <summary>
     /// Executes the job. The implementation should report progress, append structured
     /// logs, and publish artifact references through <paramref name="context"/>.
     /// </summary>

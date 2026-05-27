@@ -150,10 +150,18 @@ envelope's `publicationIntent`. Invalid intent overrides fail with `400` before
 a publication request is persisted. Versions whose captured validation status
 is `invalid` still produce a durable publication request, but the request
 status is `rejected` and the published pointer is not moved. Valid and warning
-versions are accepted and move the published pointer; warning acknowledgement is
-optional audit text in the MVP. The `pending` publication status is reserved
-for later asynchronous publication execution and is not emitted by the API
-service today.
+versions are accepted and move the Studio content item's published pointer;
+warning acknowledgement is optional audit text in the MVP. The `pending`
+publication status is reserved for later asynchronous publication execution and
+is not emitted by the API service today.
+
+Route-resolvable publication for Studio-generated `map`, `dashboard`, `report`,
+and `app` artifacts is handled by the sibling
+[Content Publication Registry API](content-publication-registry.md). That API
+owns the public route slug, active route pointer, share/embed/public-link policy,
+generated-app reopen-by-revision reads, and rollback pointer. Studio clients
+should use the package lifecycle API for draft/version governance, then use the
+publication registry when a version must become a runtime route.
 
 `POST /content-items/{itemId}/rollback-requests` accepts `pointer` values
 `current`, `published`, and `both` and returns the resulting

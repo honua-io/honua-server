@@ -40,4 +40,19 @@ public sealed record OperatorAuthorizationRequest
     /// to distinguish destructive operations from routine execution.
     /// </summary>
     public bool IsDestructive { get; init; }
+
+    /// <summary>
+    /// Whether the request carries an explicit policy requirement for operator approval.
+    /// </summary>
+    public bool RequiresExplicitApproval { get; init; }
+
+    /// <summary>
+    /// Policy reference to report when <see cref="RequiresExplicitApproval"/> is true.
+    /// </summary>
+    public string? ApprovalPolicyRef { get; init; }
+
+    /// <summary>
+    /// Machine-readable reason codes to report when <see cref="RequiresExplicitApproval"/> is true.
+    /// </summary>
+    public IReadOnlyList<string> ApprovalReasonCodes { get; init; } = Array.Empty<string>();
 }

@@ -3,16 +3,17 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.DuckDB.Features.FeatureStore;
+using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 
 namespace Honua.DuckDB.Tests;
 
 /// <summary>
-/// Verifies that the read-only feature writer rejects all write operations.
+/// Verifies that the shared read-only feature writer rejects all write operations
+/// (as registered by the DuckDB provider).
 /// </summary>
 public class ReadOnlyFeatureWriterTests
 {
-    private readonly ReadOnlyFeatureWriter _writer = new();
+    private readonly ReadOnlyFeatureWriter _writer = new("DuckDB");
 
     [Fact]
     public async Task CreateAsync_ThrowsNotSupported()

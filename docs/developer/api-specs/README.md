@@ -109,9 +109,12 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 > (`/api/v1/studio/**`) require the same admin authorization posture but are not
 > part of this `/api/v1/admin` OpenAPI snapshot. Console workflow package
 > contracts are maintained in
-> [Console Workflow Packages](../../admin-api/console-workflow-packages.md), and
+> [Console Workflow Packages](../../admin-api/console-workflow-packages.md),
 > the Studio package lifecycle contract is maintained in
 > [Studio Package Lifecycle API](../../admin-api/studio-package-lifecycle.md),
+> and the map/dashboard/report/generated-app publication route contract is
+> maintained in
+> [Content Publication Registry API](../../admin-api/content-publication-registry.md)
 > until dedicated Console and Studio OpenAPI documents are published.
 >
 > **Runtime capability discovery**: `GET /api/v1/capabilities/manifest` is a

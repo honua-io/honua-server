@@ -119,6 +119,37 @@ internal static class GeoprocessingServiceCollectionExtensions
         services.TryAddSingleton<GeometryDissolveJobExecutor>();
         services.TryAddSingleton<GeometrySimplifyJobExecutor>();
         services.TryAddSingleton<GeometrySnapJobExecutor>();
+
+        // Catalog-honesty reconciliation onto #1185: geometry.make-valid and
+        // geometry.difference were advertised in the catalog (and flagged
+        // synchronous / first-slice automated) on trunk but had no executor, so
+        // a job submission could never reach them. Add the managed NTS executors
+        // (GeometryFixer / Geometry.Difference) so the advertised set is honest.
+        services.TryAddSingleton<GeometryMakeValidJobExecutor>();
+        services.TryAddSingleton<GeometryDifferenceJobExecutor>();
+
+        // Managed spatial-join (analytics.spatial-join-managed) — a job-dispatchable
+        // counterpart to trunk's analytics.spatial-join, which runs only through the
+        // synchronous PostGIS SpatialAnalytics protocol and is not job-routed. NTS
+        // STRtree aggregate join over two inline FeatureCollections; no Postgres.
+        services.TryAddSingleton<ManagedSpatialJoinExecutor>();
+
+        // GeoETL transform executors reconciled from feat/geoetl-baseline onto the
+        // #1185 add-a-capability contract. Each reads/writes a FeatureCollection
+        // data URI and is composed behind GeoprocessingDispatchJobExecutor.
+        services.TryAddSingleton<AttributeRenameTransformExecutor>();
+        services.TryAddSingleton<AttributeCastTransformExecutor>();
+        services.TryAddSingleton<ComputedFieldTransformExecutor>();
+        services.TryAddSingleton<AttributeFilterTransformExecutor>();
+        services.TryAddSingleton<SpatialFilterTransformExecutor>();
+        services.TryAddSingleton<ClipTransformExecutor>();
+        services.TryAddSingleton<DedupTransformExecutor>();
+        services.TryAddSingleton<ReprojectTransformExecutor>();
+        services.TryAddSingleton<GeoJsonSourceExecutor>();
+        services.TryAddSingleton<CsvSourceExecutor>();
+        services.TryAddSingleton<GeoJsonFileSinkExecutor>();
+        services.TryAddSingleton<QuarantineSinkExecutor>();
+        services.TryAddSingleton<ExternalPostgisSinkExecutor>();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IJobExecutor, GeoprocessingDispatchJobExecutor>());
 

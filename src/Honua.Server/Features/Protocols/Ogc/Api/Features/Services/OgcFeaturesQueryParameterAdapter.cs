@@ -164,6 +164,103 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
         }
     }
 
+    /// <summary>
+    /// Metadata v2 overload of
+    /// <see cref="ConvertAsync(OgcFeaturesQueryParameters, LayerDefinition, CancellationToken)"/>.
+    /// </summary>
+    public async Task<QueryAdapterResult> ConvertAsync(
+        OgcFeaturesQueryParameters parameters,
+        MetadataV2Resource resource,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var filterResult = await _filterProcessor.ProcessFiltersAsync(
+                parameters.Request,
+                resource,
+                parameters.Filter,
+                parameters.Bbox,
+                parameters.Datetime,
+                parameters.Crs,
+                cancellationToken);
+            if (!filterResult.IsSuccess)
+            {
+                return QueryAdapterResult.Failure(filterResult.ErrorMessage ?? "Invalid query parameters.");
+            }
+
+            var paginationResult = _queryValidator.ValidateAndNormalizePagination(parameters.Offset, parameters.Limit);
+            if (!paginationResult.IsValid)
+            {
+                return QueryAdapterResult.Failure(paginationResult.ErrorMessage ?? "Invalid paging parameters.");
+            }
+
+            if (!OgcFeatureIdentifierResolver.TryCreateIdsFilter(
+                    parameters.Ids,
+                    resource,
+                    _filterExpressionTranslator,
+                    out var objectIds,
+                    out var idsSqlFilter,
+                    out var idsError))
+            {
+                return QueryAdapterResult.Failure(idsError ?? "Invalid ids parameter.");
+            }
+
+            if (!TryParseProperties(parameters.Properties, resource, out var selectedProperties, out var propertiesError))
+            {
+                return QueryAdapterResult.Failure(propertiesError ?? "Invalid properties parameter.");
+            }
+
+            if (!TryParseSortBy(parameters.Sortby, resource, out var orderBy, out var sortByError))
+            {
+                return QueryAdapterResult.Failure(sortByError ?? "Invalid sortby parameter.");
+            }
+
+            QueryFilter? queryFilter = null;
+            var sqlFilter = CombineSqlFilters(filterResult.SqlFilter, idsSqlFilter);
+            if (sqlFilter != null)
+            {
+                queryFilter = QueryFilter.FromSql(sqlFilter);
+            }
+
+            var metadata = new Dictionary<string, object>
+            {
+                ["f"] = parameters.F ?? "json",
+                ["crsUri"] = filterResult.CrsDefinition.Uri,
+                ["axisOrder"] = filterResult.CrsDefinition.AxisOrder,
+                ["includeNullGeometry"] = filterResult.IncludeNullGeometry
+            };
+
+            var unifiedQuery = new UnifiedQuery
+            {
+                Filter = queryFilter,
+                SpatialFilter = filterResult.SpatialFilter,
+                TemporalFilter = filterResult.TemporalFilter,
+                ObjectIds = objectIds,
+                OutFields = selectedProperties,
+                Offset = paginationResult.Value!.Offset,
+                Limit = paginationResult.Value.Limit,
+                OrderBy = orderBy,
+                OutputCrs = QueryCrs.Create(
+                    filterResult.CrsDefinition.Srid,
+                    filterResult.CrsDefinition.AxisOrder,
+                    filterResult.CrsDefinition.Uri),
+                Hints = QueryHints.Create(
+                    preferStreaming: paginationResult.Value.Limit > 200,
+                    enableCaching: true,
+                    requireExactCount: true),
+                Extensions = ImmutableDictionary<string, object>.Empty
+                    .Add("includeNullGeometry", filterResult.IncludeNullGeometry)
+            };
+
+            return QueryAdapterResult.Success(unifiedQuery, metadata);
+        }
+        catch (Exception ex)
+        {
+            OgcFeaturesPreparedAdaptersLog.QueryParameterConversionFailed(_logger, ex);
+            return QueryAdapterResult.Failure("Invalid query parameters.");
+        }
+    }
+
     private static SqlFragment? CombineSqlFilters(SqlFragment? left, SqlFragment? right)
     {
         if (left == null)
@@ -179,6 +276,137 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
         return new SqlFragment(
             $"({left.Sql}) AND ({right.Sql})",
             left.Parameters.Concat(right.Parameters).ToArray());
+    }
+
+    private static bool TryParseProperties(
+        string? rawProperties,
+        MetadataV2Resource resource,
+        out ImmutableArray<string>? properties,
+        out string? error)
+    {
+        properties = null;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(rawProperties) ||
+            string.Equals(rawProperties.Trim(), "*", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (HasEmptyCommaSeparatedToken(rawProperties))
+        {
+            error = "Parameter 'properties' contains an empty field name.";
+            return false;
+        }
+
+        var tokens = rawProperties.Split(',', StringSplitOptions.TrimEntries);
+        if (tokens.Length == 0)
+        {
+            error = "Parameter 'properties' must contain at least one field name.";
+            return false;
+        }
+
+        var fieldsByName = resource.SchemaFields
+            .ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
+        var selected = ImmutableArray.CreateBuilder<string>(tokens.Length);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var token in tokens)
+        {
+            if (!IsSimpleFieldName(token))
+            {
+                error = $"Invalid properties field '{token}'.";
+                return false;
+            }
+
+            if (!fieldsByName.TryGetValue(token, out var field))
+            {
+                error = $"Unknown properties field '{token}'.";
+                return false;
+            }
+
+            if (seen.Add(field.Name))
+            {
+                selected.Add(field.Name);
+            }
+        }
+
+        properties = selected.ToImmutable();
+        return true;
+    }
+
+    private static bool TryParseSortBy(
+        string? rawSortBy,
+        MetadataV2Resource resource,
+        out ImmutableArray<OrderByClause>? orderBy,
+        out string? error)
+    {
+        orderBy = null;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(rawSortBy))
+        {
+            return true;
+        }
+
+        if (HasEmptyCommaSeparatedToken(rawSortBy))
+        {
+            error = "Parameter 'sortby' contains an empty field expression.";
+            return false;
+        }
+
+        var tokens = rawSortBy.Split(',', StringSplitOptions.TrimEntries);
+        if (tokens.Length == 0)
+        {
+            error = "Parameter 'sortby' must contain at least one field expression.";
+            return false;
+        }
+
+        var normalized = new List<string>(tokens.Length);
+        foreach (var rawToken in tokens)
+        {
+            var token = rawToken.Trim();
+            if (token.Length == 0)
+            {
+                error = "Invalid sortby expression.";
+                return false;
+            }
+
+            var ascending = true;
+            if (token[0] is '+' or '-')
+            {
+                ascending = token[0] != '-';
+                token = token[1..].Trim();
+            }
+
+            if (token.Length == 0)
+            {
+                error = "Invalid sortby expression.";
+                return false;
+            }
+
+            if (!IsSimpleFieldName(token))
+            {
+                error = $"Invalid sortby field '{token}'.";
+                return false;
+            }
+
+            normalized.Add(ascending ? token : $@"{token} DESC");
+        }
+
+        try
+        {
+            orderBy = OrderByParsing.ParseFeatureServerOrderBy(
+                string.Join(",", normalized),
+                resource,
+                SortByCoreFields);
+            return true;
+        }
+        catch (InvalidOperationException ex)
+        {
+            error = ex.Message.Replace("orderByFields", "sortby", StringComparison.OrdinalIgnoreCase);
+            return false;
+        }
     }
 
     private static bool TryParseProperties(

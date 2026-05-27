@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
-using System.Data.Common;
 using System.Diagnostics.Metrics;
 using System.Text.Json;
 using FluentAssertions;
@@ -599,13 +598,6 @@ public sealed class OutboxDispatcherBackgroundServiceTests
         public List<Guid> FailedIds => Failed.Select(static x => x.OutboxId).ToList();
 
         public Guid OnlyOutboxId => Pending.FirstOrDefault()?.OutboxId ?? Dispatched.Select(static x => x.OutboxId).Concat(Failed.Select(static x => x.OutboxId)).Single();
-
-        public Task WriteOutboxRowAsync(DbConnection connection, DbTransaction transaction,
-            FeatureChangeOutboxEntry entry, CancellationToken cancellationToken)
-        {
-            Pending.Enqueue(entry);
-            return Task.CompletedTask;
-        }
 
         /// <summary>
         /// Set this to a thrown exception factory to simulate ClaimPendingAsync failure

@@ -21,7 +21,12 @@ public enum WorkflowOperationKind
     /// <summary>
     /// Coordinate a migration or schema gate outside the request path.
     /// </summary>
-    Migration
+    Migration,
+
+    /// <summary>
+    /// Track a GitOps metadata release package through deploy, evidence, and rollback lifecycle stages.
+    /// </summary>
+    MetadataRelease
 }
 
 /// <summary>
@@ -76,6 +81,103 @@ public enum WorkflowOperationStatus
 }
 
 /// <summary>
+/// Fine-grained lifecycle stage for a metadata release workflow.
+/// </summary>
+public enum MetadataReleaseStage
+{
+    /// <summary>
+    /// Release package and target prerequisites are being checked.
+    /// </summary>
+    Preflight,
+
+    /// <summary>
+    /// Required metadata or data backups are being captured.
+    /// </summary>
+    Backup,
+
+    /// <summary>
+    /// Release-associated scripts or migrations are being executed.
+    /// </summary>
+    ScriptMigration,
+
+    /// <summary>
+    /// Metadata package changes are being applied.
+    /// </summary>
+    MetadataApply,
+
+    /// <summary>
+    /// Updated service content is being published.
+    /// </summary>
+    ServicePublication,
+
+    /// <summary>
+    /// Smoke verification is running against the published release.
+    /// </summary>
+    Smoke,
+
+    /// <summary>
+    /// Service-level-objective watch checks are running before promotion.
+    /// </summary>
+    SloWatch,
+
+    /// <summary>
+    /// The release is being promoted to the target environment.
+    /// </summary>
+    Promotion,
+
+    /// <summary>
+    /// The metadata release completed successfully.
+    /// </summary>
+    Complete,
+
+    /// <summary>
+    /// The metadata release failed before completion.
+    /// </summary>
+    Failed,
+
+    /// <summary>
+    /// A rollback was requested for the metadata release.
+    /// </summary>
+    RollbackRequested
+}
+
+/// <summary>
+/// Rollback classes supported by metadata release operation records.
+/// </summary>
+public enum MetadataRollbackClass
+{
+    /// <summary>
+    /// Revert metadata package state only; data restore is not required.
+    /// </summary>
+    MetadataOnly,
+
+    /// <summary>
+    /// Repoint a service or DNS alias to a previous revision.
+    /// </summary>
+    AliasRepoint,
+
+    /// <summary>
+    /// Revert a published service revision.
+    /// </summary>
+    ServiceRevisionRevert,
+
+    /// <summary>
+    /// Execute a compensating rollback script.
+    /// </summary>
+    ScriptRollback,
+
+    /// <summary>
+    /// Restore data from a database, object-store, or filesystem snapshot.
+    /// </summary>
+    SnapshotRestore,
+
+    /// <summary>
+    /// Require an operator-managed recovery path outside automatic rollback.
+    /// </summary>
+    ManualRecovery
+}
+
+/// <summary>
 /// Batch-style execution jobs that run to completion.
 /// </summary>
 public enum ExecutionJobKind
@@ -93,7 +195,12 @@ public enum ExecutionJobKind
     /// <summary>
     /// Tile cache generation or refresh workload.
     /// </summary>
-    TileCache
+    TileCache,
+
+    /// <summary>
+    /// Scheduled Share export workload.
+    /// </summary>
+    ShareExport
 }
 
 /// <summary>
@@ -334,6 +441,139 @@ public sealed record DeployOperationSpec
 }
 
 /// <summary>
+/// Metadata-release-specific context embedded in a durable workflow operation.
+/// </summary>
+public sealed record MetadataReleaseContext
+{
+    /// <summary>
+    /// Metadata release package identifier. TODO(#1163): upgrade to typed MetadataPackageId once the package domain is stable.
+    /// </summary>
+    public required string PackageId { get; init; }
+
+    /// <summary>
+    /// Git operation identifier that wrote the release package, if known.
+    /// </summary>
+    public string? GitOperationId { get; init; }
+
+    /// <summary>
+    /// Pull request URL associated with the release package, if one exists.
+    /// </summary>
+    public string? PrUrl { get; init; }
+
+    /// <summary>
+    /// Commit SHA that pins the release revision.
+    /// </summary>
+    public string? CommitSha { get; init; }
+
+    /// <summary>
+    /// Desired Git revision, tag, or ref for the metadata release.
+    /// </summary>
+    public required string DesiredRevision { get; init; }
+
+    /// <summary>
+    /// Target environment label for the metadata release.
+    /// </summary>
+    public required string TargetEnvironment { get; init; }
+
+    /// <summary>
+    /// Linked deploy workflow operation identifier, if the release triggered service publication.
+    /// </summary>
+    public string? DeployOperationId { get; init; }
+
+    /// <summary>
+    /// Linked data or publication job identifiers for the release.
+    /// </summary>
+    public IReadOnlyList<string> JobIds { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Evidence artifacts captured for compatibility, smoke, SLO, or promotion gates.
+    /// </summary>
+    public IReadOnlyList<MetadataEvidenceRef> EvidenceRefs { get; init; } = Array.Empty<MetadataEvidenceRef>();
+
+    /// <summary>
+    /// Current fine-grained release stage.
+    /// </summary>
+    public MetadataReleaseStage CurrentStage { get; init; } = MetadataReleaseStage.Preflight;
+
+    /// <summary>
+    /// Precomputed rollback plan retained with the operation record.
+    /// </summary>
+    public MetadataRollbackPlan? RollbackPlan { get; init; }
+
+    /// <summary>
+    /// Blocking reason codes or messages specific to metadata release progression.
+    /// </summary>
+    public IReadOnlyList<string> Blockers { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Non-blocking advisory messages specific to metadata release progression.
+    /// </summary>
+    public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
+}
+
+/// <summary>
+/// Rollback plan persisted with a metadata release workflow operation.
+/// </summary>
+public sealed record MetadataRollbackPlan
+{
+    /// <summary>
+    /// Rollback class that describes the recovery mechanism.
+    /// </summary>
+    public required MetadataRollbackClass Class { get; init; }
+
+    /// <summary>
+    /// Whether rollback can affect service routing, scripts, or data state.
+    /// </summary>
+    public bool IsDataAffecting => Class is not MetadataRollbackClass.MetadataOnly;
+
+    /// <summary>
+    /// Whether the plan requires explicit operator approval. Data-affecting plans are treated as requiring approval even when this value is false.
+    /// </summary>
+    public bool RequiresExplicitApproval { get; init; }
+
+    /// <summary>
+    /// Ordered operator-facing rollback steps.
+    /// </summary>
+    public IReadOnlyList<string> Steps { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Evidence labels that must be available before executing the rollback.
+    /// </summary>
+    public IReadOnlyList<string> EvidenceRequired { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Approval policy reference to use when rollback requires an approval gate.
+    /// </summary>
+    public string? ApprovalPolicyRef { get; init; }
+}
+
+/// <summary>
+/// Lightweight reference to a metadata release evidence artifact.
+/// </summary>
+public sealed record MetadataEvidenceRef
+{
+    /// <summary>
+    /// Evidence kind, such as compatibility prevalidation, smoke result, or SLO snapshot.
+    /// </summary>
+    public required string Kind { get; init; }
+
+    /// <summary>
+    /// Opaque evidence identifier in the originating system.
+    /// </summary>
+    public required string RefId { get; init; }
+
+    /// <summary>
+    /// Optional resolvable evidence URI.
+    /// </summary>
+    public string? Uri { get; init; }
+
+    /// <summary>
+    /// Time when the evidence was captured.
+    /// </summary>
+    public required DateTimeOffset At { get; init; }
+}
+
+/// <summary>
 /// Stable deploy target definition used to resolve provider-specific metadata for workflow operations.
 /// </summary>
 public sealed record DeployTargetDefinition
@@ -473,6 +713,11 @@ public sealed record WorkflowOperationRecord
     /// Deploy-specific desired state for deploy or rollback workflows.
     /// </summary>
     public DeployOperationSpec? Deploy { get; init; }
+
+    /// <summary>
+    /// Metadata-release-specific desired state and rollback context.
+    /// </summary>
+    public MetadataReleaseContext? MetadataRelease { get; init; }
 }
 
 /// <summary>

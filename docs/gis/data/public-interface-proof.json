@@ -293,7 +293,7 @@
     },
     {
       "surfaceId": "console-content-rbac",
-      "displayName": "Console metadata v2 content and RBAC baseline",
+      "displayName": "Console metadata v2 content, Share, and RBAC baseline",
       "surfaceKind": "http-route-family",
       "protocol": "Admin API",
       "canonicalIdentifier": "/api/v1/console/**",
@@ -307,30 +307,33 @@
       "proofs": [
         {
           "proofClass": "route-coverage",
-          "proofMechanism": "EndpointRegistry coverage and ConsoleSessionEndpointTests integration tests asserting session bootstrap, content CRUD, action checks, and provenance traversal under admin authorization",
+          "proofMechanism": "EndpointRegistry coverage plus Console integration tests assert session bootstrap, content CRUD, action checks, provenance traversal, Share projection reads, public-link lifecycle, embed redemption, anonymous denial, and dependency-closure conflicts.",
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Console/ConsoleSessionEndpointTests.cs"
+            "tests/dotnet/Honua.Server.Tests/Features/Console/ConsoleSessionEndpointTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Console/ConsoleShareEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
-          "linkedTicket": "#1162",
+          "linkedTicket": "#1162,#1215",
           "versionCaptureRule": null
         },
         {
           "proofClass": "contract-governance",
-          "proofMechanism": "Source-generated ConsoleJsonContext keeps the wire shapes AOT-safe and SDK-consumable; the docs/admin-api/console-content-and-rbac.md contract describes the canonical item, action, and provenance shapes",
+          "proofMechanism": "Source-generated ConsoleJsonContext keeps the wire shapes AOT-safe and SDK-consumable; the docs/admin-api/console-content-and-rbac.md contract describes the canonical item, action, provenance, Share, public-link, and embed shapes.",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "src/Honua.Server/Features/Console/Models/ConsoleJsonContext.cs",
             "src/Honua.Core/Features/Console/Domain/ConsoleContentItem.cs",
+            "src/Honua.Core/Features/Console/Domain/ConsoleShareProjection.cs",
+            "src/Honua.Core/Features/Console/Domain/ConsoleShareTokens.cs",
             "docs/admin-api/console-content-and-rbac.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
-          "linkedTicket": "#1162",
+          "linkedTicket": "#1162,#1215",
           "versionCaptureRule": null
         }
       ]
@@ -433,6 +436,53 @@
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": "#1170",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "content-publication-registry",
+      "displayName": "Content publication registry and published artifact routes",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API + HTTP",
+      "canonicalIdentifier": "/api/v1/console/publications/** + /api/v1/published/**",
+      "parentSurfaceId": "console-content-rbac",
+      "endpointPrefixes": [
+        "/api/v1/console/publications",
+        "/api/v1/published/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus content publication endpoint integration tests for publish, detail, immutable version reads, republish, rollback, policy updates, anonymous published reads, owner and authenticated non-owner route access enforcement, undefined-policy rejection, public links, embed policy, and generated app revision preview",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Console/Publications/ContentPublicationEndpointsTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Console/Publications/PublishedRouteEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1183",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Core service and Postgres store tests cover slug reservation, immutable revisions, route pointer transitions, policy hashing, visibility and dependency-kind validation, generated app manifest references, public view projection, dependency provenance, optimistic concurrency, and JSON contract round trips",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Core.Tests/Features/Publishing/Content/ContentPublicationServiceTests.cs",
+            "tests/dotnet/Honua.Core.Tests/Features/Publishing/Content/ContentPublicationPrimitivesTests.cs",
+            "tests/dotnet/Honua.Postgres.Tests/Features/Publishing/PostgresContentPublicationStoreTests.cs",
+            "src/Honua.Core/Features/Publishing/Content/Domain/ContentPublicationJsonContext.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1183",
           "versionCaptureRule": null
         }
       ]

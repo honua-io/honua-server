@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.MySql.Features.FeatureStore;
@@ -19,7 +20,7 @@ namespace Honua.MySql.Tests;
 /// Verifies that the canonical "mysql" name and the "mariadb" alias both resolve to
 /// the MySQL/MariaDB feature provider through <see cref="IFeatureDataProviderRegistry"/>.
 /// </summary>
-public class MySqlProviderResolutionTests
+public sealed class MySqlProviderResolutionTests
 {
     [Fact]
     public void DataProviderNames_MariadbAlias_NormalisesToMysql()
@@ -104,7 +105,7 @@ public class MySqlProviderResolutionTests
         using var scope = provider.CreateScope();
         var writer = scope.ServiceProvider.GetRequiredService<IFeatureWriter>();
 
-        Assert.IsType<ReadOnlyMySqlFeatureWriter>(writer);
+        Assert.IsType<ReadOnlyFeatureWriter>(writer);
         var feature = Feature.Create(0, null);
         await Assert.ThrowsAsync<NotSupportedException>(() => writer.CreateAsync(1, feature));
     }
@@ -116,7 +117,7 @@ public class MySqlProviderResolutionTests
         using var scope = provider.CreateScope();
         var tracker = scope.ServiceProvider.GetRequiredService<IChangeTracker>();
 
-        Assert.IsType<ReadOnlyMySqlChangeTracker>(tracker);
+        Assert.IsType<NoOpChangeTracker>(tracker);
         Assert.Equal(0L, await tracker.GetCurrentGenerationAsync());
         var changes = await tracker.GetChangesSinceAsync(0L, [1]);
         Assert.Empty(changes);
@@ -129,7 +130,7 @@ public class MySqlProviderResolutionTests
         using var scope = provider.CreateScope();
         var repo = scope.ServiceProvider.GetRequiredService<IReplicaRepository>();
 
-        Assert.IsType<ReadOnlyMySqlReplicaRepository>(repo);
+        Assert.IsType<NoOpReplicaRepository>(repo);
         Assert.Null(await repo.GetAsync("anything"));
         var listed = await repo.ListByServiceAsync("anything");
         Assert.Empty(listed);

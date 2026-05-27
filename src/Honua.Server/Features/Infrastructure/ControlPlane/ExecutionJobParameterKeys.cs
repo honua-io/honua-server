@@ -85,6 +85,26 @@ internal static class ExecutionJobParameterKeys
     public const string GeoprocessingOutputArtifactKinds = "honua.geoprocessing.output_artifact_kinds";
 
     /// <summary>
+    /// Scheduled Share export definition identifier.
+    /// </summary>
+    public const string ShareExportId = "honua.share.export_id";
+
+    /// <summary>
+    /// Scheduled Share export run identifier.
+    /// </summary>
+    public const string ShareRunId = "honua.share.run_id";
+
+    /// <summary>
+    /// Scheduled Share export destination type.
+    /// </summary>
+    public const string ShareDestinationType = "honua.share.destination_type";
+
+    /// <summary>
+    /// Scheduled Share export output format.
+    /// </summary>
+    public const string ShareFormat = "honua.share.format";
+
+    /// <summary>
     /// Prefix for canonical step-input parameters projected onto the job spec by
     /// the geoprocessing submit path. The first-slice production executors
     /// (e.g. <c>geometry.buffer</c>) read their parameters from this prefix because

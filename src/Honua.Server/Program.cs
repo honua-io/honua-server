@@ -10,6 +10,7 @@ using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
@@ -20,11 +21,13 @@ using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security;
+using Honua.Core.Features.Share.Abstractions;
 using Honua.Core.Features.Styling;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Jobs;
 using Honua.Server.Features.Admin.OperateFixtures;
+using Honua.Server.Features.Admin.Share;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Features.CloudDemo;
@@ -323,6 +326,8 @@ builder.Services.AddOptions<ControlPlaneOptions>()
     .ValidateOnStart();
 builder.Services.AddOptions<KubernetesExecutionOptions>()
     .Bind(builder.Configuration.GetSection($"{ControlPlaneOptions.SectionName}:Kubernetes"));
+builder.Services.Configure<MetadataReleaseOperationOptions>(
+    builder.Configuration.GetSection(MetadataReleaseOperationOptions.SectionName));
 builder.Services.AddResilientHttpClient(
     "import-source",
     "import-source",
@@ -401,6 +406,9 @@ builder.Services.AddHonuaLicensing(builder.Configuration);
 builder.Services.AddScoped<Honua.Server.Features.Admin.Services.ConfigurationDocumentationService>();
 builder.Services.TryAddSingleton(TimeProvider.System);
 builder.Services.TryAddScoped<IConsoleJobService, ConsoleJobService>();
+builder.Services.TryAddSingleton<IShareExportDestinationResolver, UnsupportedShareExportDestinationResolver>();
+builder.Services.TryAddSingleton<IShareExportStore, InMemoryShareExportStore>();
+builder.Services.TryAddSingleton<IShareTrafficStore, InMemoryShareTrafficStore>();
 
 // Register control plane IAM services (in-memory implementations until #496, #498, #355 land)
 builder.Services.AddSingleton<Honua.Core.Features.Identity.Abstractions.IOidcProviderStore,
@@ -420,6 +428,19 @@ builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleC
         sp.GetService<TimeProvider>() ?? TimeProvider.System));
 builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleActionEvaluator,
     Honua.Server.Features.Console.Services.ConsoleActionEvaluator>();
+// Console Share access: public-link + embed state (#1215). In-memory store
+// shares the persistent-store follow-on (#1163); validator depends on the
+// content + share stores to walk the provenance closure.
+builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleShareStore>(sp =>
+    new Honua.Server.Features.Console.Services.InMemoryConsoleShareStore(
+        sp.GetService<TimeProvider>() ?? TimeProvider.System));
+builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleDependencyClosureValidator,
+    Honua.Server.Features.Console.Services.ConsoleDependencyClosureValidator>();
+
+// Content publication registry for Studio-generated maps/dashboards/reports/apps (#1183).
+// In-memory store is the default; Postgres registration (AddPostgreSqlServices) overrides
+// it with durable storage when Postgres is active.
+Honua.Core.Features.Publishing.Content.ContentPublishingServiceCollectionExtensions.AddContentPublishingServices(builder.Services);
 
 // Register shared Infrastructure services
 builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.IGeometryConverter,
@@ -545,6 +566,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.ServiceSettingsJsonContext.Default,
         Honua.Core.Features.Metadata.Domain.V2.MetadataReleaseJsonContext.Default,
         Honua.Server.Features.Admin.Models.MetadataPrevalidationJsonContext.Default,
+        Honua.Core.Features.Publishing.Content.Domain.ContentPublicationJsonContext.Default,
         Honua.Server.Features.Admin.Models.DeployControlJsonContext.Default,
         Honua.Server.Features.Infrastructure.Monitoring.MetricsJsonContext.Default,
         Honua.Server.Features.Import.ImportJsonContext.Default,
@@ -608,11 +630,14 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Protocols.Coverages.Multidimensional.MultidimensionalCoverageJsonContext.Default,
         Honua.Server.Features.Protocols.Zarr.ZarrJsonContext.Default,
         Honua.Server.Features.Protocols.SpatialAnalytics.Models.SpatialAnalyticsJsonContext.Default,
+        Honua.Server.Features.Protocols.Elevation.SceneAnalysisJsonContext.Default,
+        Honua.Server.Features.Protocols.Elevation.VisibilityJsonContext.Default,
         Honua.Server.Features.Collaboration.Sessions.CollaborationSessionJsonContext.Default,
         Honua.Server.Features.Collaboration.FeatureLocks.FeatureLockJsonContext.Default,
         Honua.Core.Features.Authorization.Domain.OperatorAuthorizationJsonContext.Default,
         Honua.Server.Features.Admin.ObservabilityJsonContext.Default,
         Honua.Server.Features.Admin.InvestigationJsonContext.Default,
+        Honua.Server.Features.Admin.Share.ShareAdminJsonContext.Default,
         Honua.Server.Features.Protocols.Ogc.Api.Processes.OgcProcessesJsonContext.Default);
 });
 
@@ -948,6 +973,7 @@ app.MapExternalServiceDiscoveryEndpoints();
 app.MapConfigurationDiscoveryEndpoints();
 app.MapAdminObservabilityEndpoints();
 app.MapConsoleJobEndpoints();
+app.MapShareAdminEndpoints();
 app.MapAdminRealtimeHub();
 
 // Configure layer publishing endpoints
@@ -959,6 +985,7 @@ app.MapServiceSettingsEndpoints();
 // Configure admin metadata version/manifest endpoints
 // v1 admin endpoint mappings removed in #1035 cutover; V2 admin UX (#1046) lives elsewhere.
 app.MapMetadataReleaseEndpoints();
+app.MapMetadataReleaseOperationEndpoints();
 app.MapMetadataPrevalidationEndpoints();
 app.MapDeployControlEndpoints();
 
@@ -1005,8 +1032,13 @@ app.MapRoleEndpoints();
 app.MapConsoleSessionEndpoints();
 app.MapConsoleContentEndpoints();
 app.MapConsoleActionEndpoints();
+// Console Share access public-link + embed API (#1215)
+app.MapConsoleShareEndpoints();
+app.MapConsoleSharePublicEndpoints();
 app.MapStudioPackageEndpoints();
 app.MapWorkflowPackageEndpoints();
+Honua.Server.Features.Console.Publications.ContentPublicationEndpoints.MapContentPublicationEndpoints(app);
+Honua.Server.Features.Console.Publications.PublishedRouteEndpoints.MapPublishedRouteEndpoints(app);
 app.MapAdminApiKeyEndpoints();
 app.MapPackageReviewEndpoints();
 

@@ -35,11 +35,16 @@ public sealed class ProcessCatalogTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
-    public void Catalog_ListProcesses_ReturnsExactly38BuiltIns()
+    public void Catalog_ListProcesses_ReturnsExactly54BuiltIns()
     {
         var all = _catalog.ListProcesses();
 
-        all.Should().HaveCount(38);
+        // 38 original trunk processes + 13 GeoETL transform/source/sink processes
+        // reconciled from feat/geoetl-baseline + 1 managed spatial-join
+        // (analytics.spatial-join-managed) added for the workflow/codemod job path
+        // + 2 native-profile GDAL worker processes (gdal.gdalwarp, gdal.ogr2ogr)
+        // reconciled from feat/gdal-heavy-worker.
+        all.Should().HaveCount(54);
         all.Select(p => p.ProcessId).Should().OnlyHaveUniqueItems();
     }
 
@@ -57,11 +62,13 @@ public sealed class ProcessCatalogTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
-    public void Catalog_AnalyticsCategory_Returns4Processes()
+    public void Catalog_AnalyticsCategory_Returns5Processes()
     {
         var analytics = _catalog.GetProcessesByCategory("analytics");
 
-        analytics.Should().HaveCount(4);
+        // 4 trunk analytics + analytics.spatial-join-managed (the job-dispatchable
+        // managed counterpart to the PostGIS-protocol analytics.spatial-join).
+        analytics.Should().HaveCount(5);
         analytics.Should().AllSatisfy(p => p.Category.Should().Be("analytics"));
     }
 
@@ -214,6 +221,7 @@ public sealed class ProcessCatalogTests
             "geometry.length", "geometry.centroid", "geometry.convex-hull",
             "geometry.dissolve", "geometry.snap",
             "analytics.cluster", "analytics.spatial-join",
+            "analytics.spatial-join-managed",
             "analytics.buffer-aggregate", "analytics.density",
             "surface.slope", "surface.aspect", "surface.hillshade",
             "surface.rugosity-tri", "surface.rugosity-tpi", "surface.roughness",
@@ -223,7 +231,14 @@ public sealed class ProcessCatalogTests
             "conversion.raster-format", "conversion.raster-reproject",
             "generalization.simplify-layer", "generalization.dissolve",
             "data-management.copy-features", "data-management.delete-features",
-            "data-management.calculate-field"
+            "data-management.calculate-field",
+            // GeoETL transform/source/sink processes reconciled from feat/geoetl-baseline.
+            "transform.attribute-rename", "transform.attribute-cast",
+            "transform.computed-field", "transform.attribute-filter",
+            "transform.spatial-filter", "transform.clip",
+            "transform.dedup", "transform.reproject",
+            "source.geojson", "source.csv",
+            "sink.geojson-file", "sink.quarantine", "sink.external-postgis"
         ];
 
         foreach (var processId in expectedIds)

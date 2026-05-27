@@ -122,6 +122,24 @@
       ]
     },
     {
+      "name": "Raster & Scene Analysis",
+      "shard_name": "Raster & Scene Analysis",
+      "artifact_suffix": "raster-scene",
+      "log_name": "server-tests-raster-scene",
+      "timeout_minutes": 30,
+      "test_timeout_minutes": 20,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Elevation|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Scene",
+      "paths": [
+        "src/Honua.Server/Features/Protocols/Elevation/",
+        "src/Honua.Server/Features/Protocols/Scene/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Elevation/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/"
+      ]
+    },
+    {
       "name": "Import",
       "shard_name": "Import",
       "artifact_suffix": "import",

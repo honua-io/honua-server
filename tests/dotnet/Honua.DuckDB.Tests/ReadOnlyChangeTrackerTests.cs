@@ -1,16 +1,17 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.DuckDB.Features.FeatureStore;
+using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 
 namespace Honua.DuckDB.Tests;
 
 /// <summary>
-/// Verifies that the read-only change tracker reports no changes.
+/// Verifies that the shared no-op change tracker reports no changes
+/// (as registered by the DuckDB provider).
 /// </summary>
 public class ReadOnlyChangeTrackerTests
 {
-    private readonly ReadOnlyChangeTracker _tracker = new();
+    private readonly NoOpChangeTracker _tracker = new();
 
     [Fact]
     public async Task GetCurrentGenerationAsync_ReturnsZero()

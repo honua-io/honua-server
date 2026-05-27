@@ -386,7 +386,7 @@ public sealed class JobExecutionServiceTests
             .Returns(provisioning);
 
         var jobQueue = Substitute.For<IJobQueue>();
-        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<CancellationToken>())
+        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<IReadOnlySet<string>?>(), Arg.Any<CancellationToken>())
             .Returns(provisioning.OperationId, (string?)null);
 
         var executorWarnings = new List<string> { "Projection mismatch", "CRS fallback used" };
@@ -440,7 +440,7 @@ public sealed class JobExecutionServiceTests
             .Returns(provisioning);
 
         var jobQueue = Substitute.For<IJobQueue>();
-        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<CancellationToken>())
+        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<IReadOnlySet<string>?>(), Arg.Any<CancellationToken>())
             .Returns(provisioning.OperationId, (string?)null);
 
         var executor = Substitute.For<IJobExecutor>();
@@ -490,7 +490,7 @@ public sealed class JobExecutionServiceTests
             .Returns(provisioning);
 
         var jobQueue = Substitute.For<IJobQueue>();
-        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<CancellationToken>())
+        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<IReadOnlySet<string>?>(), Arg.Any<CancellationToken>())
             .Returns(provisioning.OperationId, (string?)null);
 
         var executor = Substitute.For<IJobExecutor>();
@@ -1309,6 +1309,7 @@ public sealed class JobExecutionServiceTests
         await jobQueue.DidNotReceive().TryClaimAsync(
             Arg.Any<string>(),
             Arg.Any<IReadOnlySet<ExecutionJobKind>>(),
+            Arg.Any<IReadOnlySet<string>?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -1327,7 +1328,7 @@ public sealed class JobExecutionServiceTests
         var stoppingCts = new CancellationTokenSource();
 
         var jobQueue = Substitute.For<IJobQueue>();
-        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<CancellationToken>())
+        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<IReadOnlySet<string>?>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
                 capturedWorkerId = callInfo.ArgAt<string>(0);
@@ -1555,7 +1556,7 @@ public sealed class JobExecutionServiceTests
             .Returns(provisioning);
 
         var jobQueue = Substitute.For<IJobQueue>();
-        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<CancellationToken>())
+        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<IReadOnlySet<string>?>(), Arg.Any<CancellationToken>())
             .Returns(provisioning.OperationId, (string?)null);
 
         var executor = Substitute.For<IJobExecutor>();
@@ -1597,7 +1598,7 @@ public sealed class JobExecutionServiceTests
             .Returns(provisioning);
 
         var jobQueue = Substitute.For<IJobQueue>();
-        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<CancellationToken>())
+        jobQueue.TryClaimAsync(Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(), Arg.Any<IReadOnlySet<string>?>(), Arg.Any<CancellationToken>())
             .Returns(provisioning.OperationId, (string?)null);
 
         var executor = Substitute.For<IJobExecutor>();
@@ -1915,5 +1916,115 @@ public sealed class JobExecutionServiceTests
 
         var task = (Task)method!.Invoke(service, [operationId, workerId, stoppingToken])!;
         await task.ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Runtime-profile claim fence (worker-side aggregation). A worker composed
+    /// entirely of default (un-overridden) executors must pass only the
+    /// managed/default profile to the queue claim, so it can never request native
+    /// jobs. Uses concrete executors so the default interface member resolves to
+    /// <see cref="RuntimeProfiles.DefaultAccepted"/> (NSubstitute would return null).
+    /// </summary>
+    [UnitTest]
+    public async Task ExecuteAsync_LeanWorker_PassesManagedOnlyAcceptedProfilesToClaim()
+    {
+        IReadOnlySet<string>? capturedProfiles = null;
+        var captured = new TaskCompletionSource();
+        var stoppingCts = new CancellationTokenSource();
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        jobQueue.TryClaimAsync(
+                Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(),
+                Arg.Any<IReadOnlySet<string>?>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedProfiles = callInfo.ArgAt<IReadOnlySet<string>?>(2);
+                captured.TrySetResult();
+                return (string?)null;
+            });
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [new ManagedTestExecutor()], cancellationTokens,
+            Array.Empty<IJobTerminalCallback>(), null, NullLogger<JobExecutionService>.Instance);
+
+        await service.StartAsync(stoppingCts.Token);
+        await captured.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await stoppingCts.CancelAsync();
+        await service.StopAsync(CancellationToken.None);
+
+        Assert.NotNull(capturedProfiles);
+        Assert.Contains(RuntimeProfiles.Managed, capturedProfiles);
+        Assert.DoesNotContain(RuntimeProfiles.Native, capturedProfiles);
+        Assert.Single(capturedProfiles);
+    }
+
+    /// <summary>
+    /// A worker whose executor declares the native profile aggregates to a
+    /// native-accepting set, so the heavyweight GDAL worker requests native jobs.
+    /// </summary>
+    [UnitTest]
+    public async Task ExecuteAsync_NativeWorker_PassesNativeAcceptedProfilesToClaim()
+    {
+        IReadOnlySet<string>? capturedProfiles = null;
+        var captured = new TaskCompletionSource();
+        var stoppingCts = new CancellationTokenSource();
+
+        var jobQueue = Substitute.For<IJobQueue>();
+        jobQueue.TryClaimAsync(
+                Arg.Any<string>(), Arg.Any<IReadOnlySet<ExecutionJobKind>>(),
+                Arg.Any<IReadOnlySet<string>?>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedProfiles = callInfo.ArgAt<IReadOnlySet<string>?>(2);
+                captured.TrySetResult();
+                return (string?)null;
+            });
+
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+
+        var service = new JobExecutionService(
+            jobQueue, jobStore, [new NativeTestExecutor()], cancellationTokens,
+            Array.Empty<IJobTerminalCallback>(), null, NullLogger<JobExecutionService>.Instance);
+
+        await service.StartAsync(stoppingCts.Token);
+        await captured.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await stoppingCts.CancelAsync();
+        await service.StopAsync(CancellationToken.None);
+
+        Assert.NotNull(capturedProfiles);
+        Assert.Contains(RuntimeProfiles.Native, capturedProfiles);
+        Assert.DoesNotContain(RuntimeProfiles.Managed, capturedProfiles);
+    }
+
+    /// <summary>
+    /// Default executor: does not override <see cref="IJobExecutor.AcceptedRuntimeProfiles"/>,
+    /// so it inherits the managed/default-only fence.
+    /// </summary>
+    private sealed class ManagedTestExecutor : IJobExecutor
+    {
+        public ExecutionJobKind Kind => ExecutionJobKind.ExtractTransformLoad;
+
+        public Task<JobExecutionResult> ExecuteAsync(
+            ExecutionJobRecord job, IJobExecutionContext context, CancellationToken cancellationToken)
+            => Task.FromResult(JobExecutionResult.Succeeded());
+    }
+
+    /// <summary>
+    /// Native executor: overrides the accepted set to declare the native profile.
+    /// </summary>
+    private sealed class NativeTestExecutor : IJobExecutor
+    {
+        public ExecutionJobKind Kind => ExecutionJobKind.ExtractTransformLoad;
+
+        public IReadOnlySet<string> AcceptedRuntimeProfiles { get; } =
+            new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native };
+
+        public Task<JobExecutionResult> ExecuteAsync(
+            ExecutionJobRecord job, IJobExecutionContext context, CancellationToken cancellationToken)
+            => Task.FromResult(JobExecutionResult.Succeeded());
     }
 }

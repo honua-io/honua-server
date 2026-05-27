@@ -13,6 +13,86 @@ Related Metadata v2 release endpoints:
 | `POST /api/v1/admin/metadata/release-packages` | Creates a persisted `MetadataReleasePackage` from source and target environments. |
 | `GET /api/v1/admin/metadata/release-packages/{packageId}` | Reads a persisted release package. |
 | `GET /api/v1/admin/metadata/release-packages/{packageId}/gitops-manifest` | Exports a GitOps-safe JSON manifest for the package. |
+| `GET /api/v1/admin/metadata/releases/{packageId}/operation` | Reads the most recent metadata release operation for a package ID, including Git refs, linked deploy/jobs, evidence, lifecycle stage, and rollback plan. |
+
+Package-ID operation lookup is a current-attempt index. If a package is retried
+under the same ID, the lookup returns the most recent operation; earlier attempts
+remain readable by their stable operation ID through
+`GET /api/v1/admin/deploy/operations/{operationId}` for the configured metadata
+release retention window.
+
+## Metadata Release Operation Contract
+
+`GET /api/v1/admin/metadata/releases/{packageId}/operation` returns the same
+`DeployOperationResponse` shape as
+`GET /api/v1/admin/deploy/operations/{operationId}`. It is not wrapped in the
+`ApiResponse<T>` admin envelope. The response has `kind: "MetadataRelease"` and
+embeds release-specific state in `metadataRelease`.
+
+The operation response includes:
+
+| Field | Notes |
+|---|---|
+| `operationId` | Stable workflow operation ID. Use this for retry history and rollback requests. |
+| `kind` | `MetadataRelease` for metadata release lifecycle records. |
+| `status` | Workflow status such as `Planned`, `AwaitingApproval`, `Submitted`, `Reconciling`, `Succeeded`, `Failed`, `RollbackRequested`, `RolledBack`, or `ManualInterventionRequired`. |
+| `priority` | Workflow priority (`Low`, `Normal`, `High`, or `Critical`). |
+| `target` | Deploy target details for deploy operations; normally `null` on metadata release lifecycle records because release-specific target state is carried in `metadataRelease`. |
+| `providerOperationId`, `currentPhase`, `observedState`, `errorMessage` | Provider/reconciler status details when available. |
+| `warnings`, `blockingReasons` | Operation-level advisories and blockers. |
+| `requestedBy`, `reason`, `correlationId` | Audit and tracing fields captured from the operation request or rollback request when supplied. |
+| `metadataRelease` | Metadata release lifecycle context described below. |
+| `createdAt`, `updatedAt`, `completedAt` | Durable operation timestamps. |
+
+Both package-ID and operation-ID reads may run the workflow reconciler before
+returning when the operation is `Submitted`, `Reconciling`, or
+`RollbackRequested`.
+
+`metadataRelease` fields:
+
+| Field | Notes |
+|---|---|
+| `packageId` | Metadata release package ID used by the package lookup index. |
+| `gitOperationId`, `prUrl`, `commitSha`, `desiredRevision` | Git operation and revision refs captured for the release. |
+| `targetEnvironment` | Target environment label for the release. |
+| `deployOperationId` | Linked deploy operation ID when service publication is part of the release. |
+| `jobIds` | Linked data, backup, smoke, or publication job IDs. |
+| `evidenceRefs` | Compatibility, smoke, SLO, or promotion evidence references with `kind`, `refId`, optional `uri`, and `at`. |
+| `currentStage` | Fine-grained lifecycle stage for Console timelines. |
+| `rollbackPlan` | Precomputed rollback plan, available before execution and retained after failure when known. |
+| `warnings`, `blockers` | Release-specific advisories and blockers. |
+
+Lifecycle stages are `Preflight`, `Backup`, `ScriptMigration`, `MetadataApply`,
+`ServicePublication`, `Smoke`, `SloWatch`, `Promotion`, `Complete`, `Failed`,
+and `RollbackRequested`.
+
+Rollback plan `class` values are `MetadataOnly`, `AliasRepoint`,
+`ServiceRevisionRevert`, `ScriptRollback`, `SnapshotRestore`, and
+`ManualRecovery`. `MetadataOnly` plans report `isDataAffecting: false` and use
+the non-destructive path unless the stored plan also sets
+`requiresExplicitApproval: true`; in that case the rollback endpoint evaluates an
+explicit operator approval gate without treating the plan as data-affecting. All
+other rollback classes are treated as data-affecting; the response reports
+`requiresExplicitApproval: true`, the rollback endpoint evaluates the destructive
+approval gate, and the plan may list required evidence labels in
+`evidenceRequired`.
+
+Rollback is requested through the existing deploy-control endpoint:
+`POST /api/v1/admin/deploy/operations/{operationId}/rollback`. The request body
+may include `reason`. When accepted for a metadata release operation, the
+operation status changes to `RollbackRequested` and
+`metadataRelease.currentStage` changes to `RollbackRequested`. If approval is
+required and not satisfied, the endpoint returns `403` and leaves the stored
+operation unchanged.
+
+The endpoint derives the approval decision from the rollback plan's
+`isDataAffecting` and `requiresExplicitApproval` values, then re-reads the stored
+operation before writing the state change. If either approval-affecting
+classification changed in that window (for example, a recomputed plan moved from
+`MetadataOnly` without explicit approval to either an explicit-approval or
+data-affecting plan), the endpoint returns `409` and leaves the stored operation
+unchanged so the operator can re-read the current plan and re-approve against the
+correct gate.
 
 ## Request
 

@@ -593,6 +593,26 @@ internal static class ODataUtilityService
         };
     }
 
+    /// <summary>
+    /// Metadata v2 overload of <see cref="BuildLayerPayload(LayerDefinition)"/>.
+    /// Projects the OData Layer entity directly off the canonical resource and the
+    /// publication's layer index, without going through the v1 LayerDefinition shape.
+    /// </summary>
+    public static Dictionary<string, object?> BuildLayerPayload(
+        MetadataV2Resource resource,
+        int layerIndex)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Id"] = layerIndex,
+            ["Name"] = resource.Metadata.Name,
+            ["Description"] = resource.Metadata.Description,
+            ["GeometryType"] = resource.ReadGeometryType().ToString(),
+            ["Srid"] = resource.ReadSrid() ?? 0
+        };
+    }
+
     public static HashSet<string>? ParseSelect(string? select)
     {
         if (string.IsNullOrWhiteSpace(select))

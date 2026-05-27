@@ -54,6 +54,23 @@ internal static class ConsoleEnumParser
     };
 
     /// <inheritdoc cref="IsDefined(ConsoleContentItemType)" />
+    public static bool IsDefined(ConsoleShareAccessTier value) => value switch
+    {
+        ConsoleShareAccessTier.Private
+            or ConsoleShareAccessTier.Organization
+            or ConsoleShareAccessTier.PublicLink
+            or ConsoleShareAccessTier.PublicIndexed => true,
+        _ => false,
+    };
+
+    /// <inheritdoc cref="IsDefined(ConsoleContentItemType)" />
+    public static bool IsDefined(ConsoleEmbedAudience value) => value switch
+    {
+        ConsoleEmbedAudience.Map or ConsoleEmbedAudience.Content => true,
+        _ => false,
+    };
+
+    /// <inheritdoc cref="IsDefined(ConsoleContentItemType)" />
     public static bool IsDefined(MetadataV2LifecycleStatus value) => value switch
     {
         MetadataV2LifecycleStatus.Draft
@@ -125,6 +142,46 @@ internal static class ConsoleEnumParser
             case "public":
             case "Public":
                 value = ConsoleVisibility.Public; return true;
+            default:
+                value = default;
+                return false;
+        }
+    }
+
+    public static bool TryParse(string raw, out ConsoleShareAccessTier value)
+    {
+        switch (raw)
+        {
+            case "private":
+            case "Private":
+                value = ConsoleShareAccessTier.Private; return true;
+            case "organization":
+            case "Organization":
+                value = ConsoleShareAccessTier.Organization; return true;
+            case "public-link":
+            case "PublicLink":
+            case "publicLink":
+                value = ConsoleShareAccessTier.PublicLink; return true;
+            case "public-indexed":
+            case "PublicIndexed":
+            case "publicIndexed":
+                value = ConsoleShareAccessTier.PublicIndexed; return true;
+            default:
+                value = default;
+                return false;
+        }
+    }
+
+    public static bool TryParse(string raw, out ConsoleEmbedAudience value)
+    {
+        switch (raw)
+        {
+            case "map":
+            case "Map":
+                value = ConsoleEmbedAudience.Map; return true;
+            case "content":
+            case "Content":
+                value = ConsoleEmbedAudience.Content; return true;
             default:
                 value = default;
                 return false;

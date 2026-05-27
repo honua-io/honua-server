@@ -48,6 +48,22 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         GeometryDissolveJobExecutor dissolve,
         GeometrySimplifyJobExecutor simplify,
         GeometrySnapJobExecutor snap,
+        GeometryMakeValidJobExecutor makeValid,
+        GeometryDifferenceJobExecutor difference,
+        ManagedSpatialJoinExecutor spatialJoinManaged,
+        AttributeRenameTransformExecutor attributeRename,
+        AttributeCastTransformExecutor attributeCast,
+        ComputedFieldTransformExecutor computedField,
+        AttributeFilterTransformExecutor attributeFilter,
+        SpatialFilterTransformExecutor spatialFilter,
+        ClipTransformExecutor clip2,
+        DedupTransformExecutor dedup,
+        ReprojectTransformExecutor reproject,
+        GeoJsonSourceExecutor geoJsonSource,
+        CsvSourceExecutor csvSource,
+        GeoJsonFileSinkExecutor geoJsonFileSink,
+        QuarantineSinkExecutor quarantineSink,
+        ExternalPostgisSinkExecutor externalPostgisSink,
         ILogger<GeoprocessingDispatchJobExecutor> logger)
     {
         ArgumentNullException.ThrowIfNull(buffer);
@@ -62,6 +78,22 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         ArgumentNullException.ThrowIfNull(dissolve);
         ArgumentNullException.ThrowIfNull(simplify);
         ArgumentNullException.ThrowIfNull(snap);
+        ArgumentNullException.ThrowIfNull(makeValid);
+        ArgumentNullException.ThrowIfNull(difference);
+        ArgumentNullException.ThrowIfNull(spatialJoinManaged);
+        ArgumentNullException.ThrowIfNull(attributeRename);
+        ArgumentNullException.ThrowIfNull(attributeCast);
+        ArgumentNullException.ThrowIfNull(computedField);
+        ArgumentNullException.ThrowIfNull(attributeFilter);
+        ArgumentNullException.ThrowIfNull(spatialFilter);
+        ArgumentNullException.ThrowIfNull(clip2);
+        ArgumentNullException.ThrowIfNull(dedup);
+        ArgumentNullException.ThrowIfNull(reproject);
+        ArgumentNullException.ThrowIfNull(geoJsonSource);
+        ArgumentNullException.ThrowIfNull(csvSource);
+        ArgumentNullException.ThrowIfNull(geoJsonFileSink);
+        ArgumentNullException.ThrowIfNull(quarantineSink);
+        ArgumentNullException.ThrowIfNull(externalPostgisSink);
         ArgumentNullException.ThrowIfNull(logger);
 
         _handlers = new Dictionary<string, IJobExecutor>(StringComparer.Ordinal)
@@ -78,6 +110,22 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             [GeometryDissolveJobExecutor.HandledProcessId] = dissolve,
             [GeometrySimplifyJobExecutor.HandledProcessId] = simplify,
             [GeometrySnapJobExecutor.HandledProcessId] = snap,
+            [GeometryMakeValidJobExecutor.HandledProcessId] = makeValid,
+            [GeometryDifferenceJobExecutor.HandledProcessId] = difference,
+            [ManagedSpatialJoinExecutor.HandledProcessId] = spatialJoinManaged,
+            [AttributeRenameTransformExecutor.HandledProcessId] = attributeRename,
+            [AttributeCastTransformExecutor.HandledProcessId] = attributeCast,
+            [ComputedFieldTransformExecutor.HandledProcessId] = computedField,
+            [AttributeFilterTransformExecutor.HandledProcessId] = attributeFilter,
+            [SpatialFilterTransformExecutor.HandledProcessId] = spatialFilter,
+            [ClipTransformExecutor.HandledProcessId] = clip2,
+            [DedupTransformExecutor.HandledProcessId] = dedup,
+            [ReprojectTransformExecutor.HandledProcessId] = reproject,
+            [GeoJsonSourceExecutor.HandledProcessId] = geoJsonSource,
+            [CsvSourceExecutor.HandledProcessId] = csvSource,
+            [GeoJsonFileSinkExecutor.HandledProcessId] = geoJsonFileSink,
+            [QuarantineSinkExecutor.HandledProcessId] = quarantineSink,
+            [ExternalPostgisSinkExecutor.HandledProcessId] = externalPostgisSink,
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
         _logger = logger;
