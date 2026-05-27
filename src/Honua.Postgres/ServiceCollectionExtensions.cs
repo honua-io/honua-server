@@ -104,11 +104,10 @@ internal static class ServiceCollectionExtensions
         services.TryAddScoped<IFeatureDataProviderRegistry>(serviceProvider =>
             new FeatureDataProviderRegistry(serviceProvider.GetServices<IFeatureDataProvider>()));
         services.TryAddScoped(serviceProvider =>
-            new FeatureProviderBindingResolver(
+            new FeatureProviderQueryRouter(
                 serviceProvider.GetRequiredService<ISecureConnectionRegistry>(),
                 serviceProvider.GetRequiredService<IFeatureDataProviderRegistry>(),
                 DataProviderNames.Postgis));
-        services.TryAddScoped<FeatureProviderQueryRouter>();
 
         // Register raster store implementation
         services.AddPostgresRasterStore(configuration["Database:Schema"]);

@@ -18,7 +18,7 @@ public sealed record GeoServicesFieldInfo : FieldDefinitionBase
     /// <summary>
     /// Field domain (for coded values)
     /// </summary>
-    public object? Domain { get; init; }
+    public GeoServicesFieldDomainInfo? Domain { get; init; }
 
     /// <summary>
     /// Whether the field is editable

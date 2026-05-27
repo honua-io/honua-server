@@ -4,9 +4,10 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
@@ -80,34 +81,30 @@ internal static partial class MapServerEndpoints
             var bboxValue = GetValue(values, "bbox");
 
             var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-            var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
+            var serviceResult = await ServiceResourceValidationHelpers.ValidateServiceV2Async(
+                resourceValidator,
+                serviceId,
+                ServiceProtocols.MapServer,
+                context,
+                cancellationToken: cancellationToken);
             if (!serviceResult.IsValid)
             {
-                var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
-                if (serviceResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context, errorMessage);
-                }
-
-                return StandardErrorHelpers.CreateNotFound(context, errorMessage);
+                return serviceResult.ErrorResult!;
             }
 
-            var service = serviceResult.Resource!;
-            var protocolError = ProtocolValidationHelpers.ValidateProtocolEnabled(context, service, ServiceProtocols.MapServer);
-            if (protocolError is not null)
-            {
-                return protocolError;
-            }
+            var service = serviceResult.Service!;
+            var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var publishedLayers = ResolveMapServerMetadataLayers(snapshot, service);
 
-            var mapConfig = service.Metadata?.MapServer;
-            var maxDimensionW = mapConfig?.MaxImageWidth ?? MaxImageDimension;
-            var maxDimensionH = mapConfig?.MaxImageHeight ?? MaxImageDimension;
-            var defaultWidth = mapConfig?.DefaultImageWidth ?? DefaultImageWidth;
-            var defaultHeight = mapConfig?.DefaultImageHeight ?? DefaultImageHeight;
-            var defaultDpi = mapConfig?.DefaultDpi ?? DefaultDpi;
-            var defaultFormat = mapConfig?.DefaultFormat ?? "png";
-            var defaultTransparent = mapConfig?.DefaultTransparent ?? false;
-            var maxFeatures = mapConfig?.MaxFeaturesPerLayer ?? MaxFeaturesPerLayer;
+            var maxDimensionW = service.Settings?.MaxImageWidth ?? MaxImageDimension;
+            var maxDimensionH = service.Settings?.MaxImageHeight ?? MaxImageDimension;
+            var defaultWidth = DefaultImageWidth;
+            var defaultHeight = DefaultImageHeight;
+            var defaultDpi = service.Settings?.DefaultDpi ?? DefaultDpi;
+            var defaultFormat = service.Settings?.DefaultFormat ?? "png";
+            var defaultTransparent = false;
+            var maxFeatures = service.Settings?.MaxFeaturesPerLayer ?? MaxFeaturesPerLayer;
 
             if (!TryParseSize(GetValue(values, "size"), defaultWidth, defaultHeight, out var imageWidth, out var imageHeight, out var sizeError))
             {
@@ -149,7 +146,7 @@ internal static partial class MapServerEndpoints
                 return StandardErrorHelpers.CreateBadRequest(context, "Invalid imageSR parameter.");
             }
 
-            var serviceSrid = service.SpatialReference.Srid;
+            var serviceSrid = ResolveExportServiceSrid(service, publishedLayers);
             bboxSrid ??= serviceSrid;
             imageSrid ??= serviceSrid;
             var bboxCrsDefinition = SpatialReferenceHelpers.TryParseCrsDefinition(
@@ -211,7 +208,10 @@ internal static partial class MapServerEndpoints
                     layerTimeOptionsError ?? "Invalid layerTimeOptions parameter.");
             }
 
-            if (!TryParseDynamicLayers(GetValue(values, "dynamicLayers"), service, queryValidator, out var dynamicLayers, out var dynamicLayersError))
+            var knownLayerIds = publishedLayers
+                .Select(static layer => layer.PublicLayerId)
+                .ToHashSet();
+            if (!TryParseDynamicLayers(GetValue(values, "dynamicLayers"), knownLayerIds, queryValidator, out var dynamicLayers, out var dynamicLayersError))
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
                     dynamicLayersError ?? "Invalid dynamicLayers parameter.");
@@ -241,7 +241,10 @@ internal static partial class MapServerEndpoints
             activity?.SetTag("honua.mapserver.height", imageHeight);
             activity?.SetTag("honua.mapserver.format", imageFormat);
 
-            var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, service.Layers, service);
+            var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+                context,
+                publishedLayers.Select(static layer => layer.Resource),
+                service);
             if (accessError != null)
             {
                 return accessError;
@@ -273,7 +276,12 @@ internal static partial class MapServerEndpoints
                     RasterRenderCapacityLimiter.RetryAfterSeconds);
             }
 
-            var (renderLayers, renderLayersError) = ResolveRenderLayers(service, parameters.Layers, dynamicLayers, context);
+            var (renderLayers, renderLayersError) = ResolveRenderLayers(
+                publishedLayers,
+                service,
+                parameters.Layers,
+                dynamicLayers,
+                context);
             if (renderLayersError is not null)
             {
                 return renderLayersError;
@@ -290,7 +298,7 @@ internal static partial class MapServerEndpoints
                     imageHeight,
                     parameters.Transparent,
                     backgroundColor,
-                    GeometryType.None);
+                    MetadataV2GeometryType.None);
 
                 stopwatch.Stop();
                 MapServerLog.ExportCompleted(logger, serviceId, 0, stopwatch.Elapsed.TotalMilliseconds);
@@ -343,17 +351,18 @@ internal static partial class MapServerEndpoints
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var layer = renderLayer.Layer;
+                var resource = layer.Resource;
                 if (!IsLayerVisibleAtScale(layer, scaleDenominator))
                 {
                     continue;
                 }
 
-                if (!layer.HasGeometry)
+                if (!HasMapServerGeometry(resource))
                 {
                     continue;
                 }
 
-                layerDefs.TryGetValue(layer.Id, out var layerDef);
+                layerDefs.TryGetValue(layer.PublicLayerId, out var layerDef);
                 var combinedDefinition = CombineDefinitionExpressions(renderLayer.DefinitionExpression, layerDef);
 
                 if (!TryGetEffectiveTimeParameters(
@@ -371,7 +380,7 @@ internal static partial class MapServerEndpoints
 
                 if (!TryBuildLayerSqlFilter(
                         filterExpressionService,
-                        layer,
+                        resource,
                         combinedDefinition,
                         effectiveTime,
                         effectiveTimeRelation,
@@ -384,7 +393,7 @@ internal static partial class MapServerEndpoints
 
                 var stylePlan = await GetRasterStylePlanAsync(
                     styleCatalog,
-                    layer.Id,
+                    layer.StorageLayerId,
                     cancellationToken).ConfigureAwait(false);
                 var featureQuery = CreateRasterFeatureQuery(
                     stylePlan,
@@ -393,12 +402,13 @@ internal static partial class MapServerEndpoints
                     imageSrid,
                     maxFeatures,
                     sqlFilter);
+                var geometryType = resource.ReadGeometryType();
 
                 var renderedPointCount = await TryRenderRasterPointFastPathAsync(
                     canvas,
                     featureReader,
-                    layer.Id,
-                    layer.GeometryType,
+                    layer.StorageLayerId,
+                    geometryType,
                     stylePlan,
                     featureQuery,
                     renderExtent,
@@ -412,7 +422,7 @@ internal static partial class MapServerEndpoints
                     continue;
                 }
 
-                var features = await QueryRasterFeaturesAsync(featureReader, layer.Id, featureQuery, cancellationToken);
+                var features = await QueryRasterFeaturesAsync(featureReader, layer.StorageLayerId, featureQuery, cancellationToken);
 
                 if (features.Length == 0)
                 {
@@ -420,7 +430,7 @@ internal static partial class MapServerEndpoints
                 }
 
                 totalFeatureCount += features.Length;
-                RenderLayerToCanvas(canvas, features, stylePlan.StyleLayers, transform, layer.GeometryType);
+                RenderLayerToCanvas(canvas, features, stylePlan.StyleLayers, transform, geometryType);
             }
 
             stopwatch.Stop();
@@ -736,8 +746,8 @@ internal static partial class MapServerEndpoints
         int MapLayerId,
         string? DefinitionExpression);
 
-    private sealed record RenderLayer(
-        LayerDefinition Layer,
+    private sealed record ExportRenderLayer(
+        MapServerMetadataLayerDescriptor Layer,
         int Id,
         string? DefinitionExpression);
 
@@ -893,7 +903,7 @@ internal static partial class MapServerEndpoints
 
     private static bool TryParseDynamicLayers(
         string? dynamicLayersValue,
-        ServiceDefinition service,
+        HashSet<int> knownLayerIds,
         ICommonQueryValidator queryValidator,
         out List<DynamicLayerDefinition> dynamicLayers,
         out string? error)
@@ -915,7 +925,6 @@ internal static partial class MapServerEndpoints
                 return false;
             }
 
-            var knownLayers = service.Layers.ToDictionary(layer => layer.Id);
             var seenIds = new HashSet<int>();
 
             foreach (var element in document.RootElement.EnumerateArray())
@@ -958,7 +967,7 @@ internal static partial class MapServerEndpoints
                     return false;
                 }
 
-                if (!knownLayers.ContainsKey(mapLayerId))
+                if (!knownLayerIds.Contains(mapLayerId))
                 {
                     error = $"dynamicLayers entry '{id}' references unknown layer '{mapLayerId}'.";
                     return false;
@@ -1011,24 +1020,25 @@ internal static partial class MapServerEndpoints
         }
     }
 
-    private static (RenderLayer[] Layers, IResult? Error) ResolveRenderLayers(
-        ServiceDefinition service,
+    private static (ExportRenderLayer[] Layers, IResult? Error) ResolveRenderLayers(
+        IReadOnlyList<MapServerMetadataLayerDescriptor> publishedLayers,
+        MetadataV2Service service,
         string? layersParam,
         IReadOnlyList<DynamicLayerDefinition> dynamicLayers,
         HttpContext context)
     {
-        var layerLookup = service.Layers.ToDictionary(layer => layer.Id);
+        var layerLookup = publishedLayers.ToDictionary(static layer => layer.PublicLayerId);
         if (dynamicLayers.Count == 0)
         {
-            var accessibleLayers = service.Layers
-                .Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer, service))
+            var accessibleLayers = publishedLayers
+                .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
                 .ToArray();
 
             if (string.IsNullOrWhiteSpace(layersParam))
             {
                 return (accessibleLayers
-                    .Where(layer => layer.DefaultVisibility)
-                    .Select(layer => new RenderLayer(layer, layer.Id, null))
+                    .Where(static layer => layer.Resource.Display?.DefaultVisibility ?? true)
+                    .Select(static layer => new ExportRenderLayer(layer, layer.PublicLayerId, null))
                     .ToArray(), null);
             }
 
@@ -1036,20 +1046,20 @@ internal static partial class MapServerEndpoints
             var requestedStaticLayerIds = ParseLayerIds(spec);
             if (requestedStaticLayerIds.Count == 0)
             {
-                return (Array.Empty<RenderLayer>(), StandardErrorHelpers.CreateBadRequest(context, "Invalid layers parameter."));
+                return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(context, "Invalid layers parameter."));
             }
 
-            var accessibleLayerIds = accessibleLayers.Select(layer => layer.Id).ToHashSet();
+            var accessibleLayerIds = accessibleLayers.Select(static layer => layer.PublicLayerId).ToHashSet();
             if (requestedStaticLayerIds.Any(id => !accessibleLayerIds.Contains(id)))
             {
-                return (Array.Empty<RenderLayer>(), StandardErrorHelpers.CreateBadRequest(
+                return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(
                     context,
                     "layers parameter references an invalid or inaccessible layer."));
             }
 
             return (accessibleLayers
-                .Where(layer => requestedStaticLayerIds.Contains(layer.Id))
-                .Select(layer => new RenderLayer(layer, layer.Id, null))
+                .Where(layer => requestedStaticLayerIds.Contains(layer.PublicLayerId))
+                .Select(static layer => new ExportRenderLayer(layer, layer.PublicLayerId, null))
                 .ToArray(), null);
         }
 
@@ -1082,7 +1092,7 @@ internal static partial class MapServerEndpoints
                         return false;
                     }
 
-                    return mapLayer.DefaultVisibility || ids.Contains(layer.Id);
+                    return (mapLayer.Resource.Display?.DefaultVisibility ?? true) || ids.Contains(layer.Id);
                 });
             }
             else if (spec.StartsWith("exclude:", StringComparison.OrdinalIgnoreCase))
@@ -1096,7 +1106,7 @@ internal static partial class MapServerEndpoints
                         return false;
                     }
 
-                    return mapLayer.DefaultVisibility && !ids.Contains(layer.Id);
+                    return (mapLayer.Resource.Display?.DefaultVisibility ?? true) && !ids.Contains(layer.Id);
                 });
             }
             else
@@ -1111,7 +1121,7 @@ internal static partial class MapServerEndpoints
                 var dynamicLayerIds = dynamicLayers.Select(layer => layer.Id).ToHashSet();
                 if (requestedIds.Any(id => !dynamicLayerIds.Contains(id)))
                 {
-                    return (Array.Empty<RenderLayer>(), StandardErrorHelpers.CreateBadRequest(
+                    return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(
                         context,
                         "layers parameter references an invalid or inaccessible layer."));
                 }
@@ -1121,9 +1131,9 @@ internal static partial class MapServerEndpoints
                     var dynamicLayer = dynamicLayers.FirstOrDefault(layer => layer.Id == requestedId);
                     if (dynamicLayer is null ||
                         !layerLookup.TryGetValue(dynamicLayer.MapLayerId, out var requestedMapLayer) ||
-                        !AccessPolicyHelpers.IsLayerAccessible(context, requestedMapLayer, service))
+                        !AccessPolicyHelpers.IsResourceAccessible(context, requestedMapLayer.Resource, service))
                     {
-                        return (Array.Empty<RenderLayer>(), StandardErrorHelpers.CreateBadRequest(
+                        return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(
                             context,
                             "layers parameter references an invalid or inaccessible layer."));
                     }
@@ -1131,24 +1141,24 @@ internal static partial class MapServerEndpoints
             }
         }
 
-        var renderLayers = new List<RenderLayer>();
+        var renderLayers = new List<ExportRenderLayer>();
         foreach (var dynamicLayer in selected)
         {
             if (!layerLookup.TryGetValue(dynamicLayer.MapLayerId, out var layer))
             {
-                return (Array.Empty<RenderLayer>(), StandardErrorHelpers.CreateBadRequest(
+                return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(
                     context,
                     "layers parameter references an invalid or inaccessible layer."));
             }
 
-            if (!AccessPolicyHelpers.IsLayerAccessible(context, layer, service))
+            if (!AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
             {
-                return (Array.Empty<RenderLayer>(), StandardErrorHelpers.CreateBadRequest(
+                return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(
                     context,
                     "layers parameter references an invalid or inaccessible layer."));
             }
 
-            renderLayers.Add(new RenderLayer(layer, dynamicLayer.Id, dynamicLayer.DefinitionExpression));
+            renderLayers.Add(new ExportRenderLayer(layer, dynamicLayer.Id, dynamicLayer.DefinitionExpression));
         }
 
         return (renderLayers.ToArray(), null);
@@ -1173,13 +1183,12 @@ internal static partial class MapServerEndpoints
     private static bool TryGetEffectiveTimeParameters(
         string? globalTime,
         string? globalTimeRelation,
-        RenderLayer renderLayer,
+        ExportRenderLayer renderLayer,
         IReadOnlyDictionary<int, LayerTimeOptions> layerTimeOptions,
         out string? effectiveTime,
         out string? effectiveTimeRelation,
         out string? error)
     {
-        var layer = renderLayer.Layer;
         effectiveTime = globalTime;
         effectiveTimeRelation = globalTimeRelation;
         error = null;
@@ -1260,7 +1269,7 @@ internal static partial class MapServerEndpoints
 
     private static bool TryResolveLayerTimeOptions(
         IReadOnlyDictionary<int, LayerTimeOptions> layerTimeOptions,
-        RenderLayer renderLayer,
+        ExportRenderLayer renderLayer,
         out LayerTimeOptions resolvedOptions)
     {
         if (layerTimeOptions.TryGetValue(renderLayer.Id, out var directOptions) &&
@@ -1270,8 +1279,8 @@ internal static partial class MapServerEndpoints
             return true;
         }
 
-        if (renderLayer.Id != renderLayer.Layer.Id &&
-            layerTimeOptions.TryGetValue(renderLayer.Layer.Id, out var sourceLayerOptions) &&
+        if (renderLayer.Id != renderLayer.Layer.PublicLayerId &&
+            layerTimeOptions.TryGetValue(renderLayer.Layer.PublicLayerId, out var sourceLayerOptions) &&
             sourceLayerOptions is not null)
         {
             resolvedOptions = sourceLayerOptions;
@@ -1445,149 +1454,6 @@ internal static partial class MapServerEndpoints
         return $"({first}) AND ({second})";
     }
 
-    private static bool TryResolveTemporalFieldSelection(
-        LayerDefinition layer,
-        out bool applyTemporalFilter,
-        out string? error)
-    {
-        applyTemporalFilter = false;
-        error = null;
-
-        var timeInfo = layer.Metadata?.TimeInfo;
-        FieldDefinition? startField = null;
-        FieldDefinition? endField = null;
-
-        if (timeInfo != null)
-        {
-            if (!string.IsNullOrWhiteSpace(timeInfo.StartTimeField))
-            {
-                startField = FindTemporalField(layer, timeInfo.StartTimeField);
-                if (startField == null)
-                {
-                    error = $"Temporal field '{timeInfo.StartTimeField}' is not defined on layer '{layer.Name}'.";
-                    return false;
-                }
-            }
-            else
-            {
-                startField = layer.AttributeFields.FirstOrDefault(field => field.Type is FieldType.DateTime or FieldType.Date);
-            }
-
-            if (!string.IsNullOrWhiteSpace(timeInfo.EndTimeField))
-            {
-                endField = FindTemporalField(layer, timeInfo.EndTimeField);
-                if (endField == null)
-                {
-                    error = $"Temporal field '{timeInfo.EndTimeField}' is not defined on layer '{layer.Name}'.";
-                    return false;
-                }
-            }
-        }
-        else
-        {
-            startField = layer.AttributeFields.FirstOrDefault(field => field.Type is FieldType.DateTime or FieldType.Date);
-        }
-
-        if (startField == null)
-        {
-            applyTemporalFilter = false;
-            return true;
-        }
-
-        if (endField != null && endField.Type != startField.Type)
-        {
-            error = "Start and end time fields must use the same temporal type.";
-            return false;
-        }
-
-        applyTemporalFilter = true;
-        return true;
-    }
-
-    private static FieldDefinition? FindTemporalField(LayerDefinition layer, string fieldName)
-    {
-        return layer.AttributeFields.FirstOrDefault(field =>
-            field.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase) &&
-            field.Type is FieldType.DateTime or FieldType.Date);
-    }
-
-    private static bool TryBuildLayerSqlFilter(
-        IFilterExpressionService filterExpressionService,
-        LayerDefinition layer,
-        string? where,
-        string? time,
-        string? timeRelation,
-        out SqlFragment? sqlFilter,
-        out string? error)
-    {
-        sqlFilter = null;
-        error = null;
-
-        FilterExpression? filterExpression = null;
-        if (!string.IsNullOrWhiteSpace(where))
-        {
-            var parseResult = filterExpressionService.Parse(FilterLanguage.ArcGisSql, where);
-            if (!parseResult.IsSuccess)
-            {
-                error = parseResult.ErrorMessage ?? "Invalid filter syntax.";
-                return false;
-            }
-
-            filterExpression = parseResult.Expression;
-            if (filterExpression != null && !FilterExpressionHelpers.IsBooleanFilterExpression(filterExpression))
-            {
-                error = "Invalid where clause.";
-                return false;
-            }
-        }
-
-        FilterExpression? temporalExpression = null;
-        if (!string.IsNullOrWhiteSpace(time))
-        {
-            if (!TryResolveTemporalFieldSelection(layer, out var applyTemporalFilter, out var temporalError))
-            {
-                error = temporalError ?? "Invalid temporal field configuration.";
-                return false;
-            }
-
-            if (applyTemporalFilter)
-            {
-                try
-                {
-                    temporalExpression = GeoServicesTemporalQueryBuilder.BuildTemporalExpression(time, timeRelation, layer);
-                }
-                catch (ArgumentException)
-                {
-                    error = InvalidTimeParameterMessage;
-                    return false;
-                }
-            }
-        }
-
-        if (filterExpression != null && temporalExpression != null)
-        {
-            filterExpression = new BinaryExpression(filterExpression, BinaryOperator.And, temporalExpression);
-        }
-        else
-        {
-            filterExpression ??= temporalExpression;
-        }
-
-        if (filterExpression != null)
-        {
-            var translationResult = filterExpressionService.Translate(filterExpression, layer);
-            if (!translationResult.IsSuccess)
-            {
-                error = translationResult.ErrorMessage ?? "Invalid filter syntax.";
-                return false;
-            }
-
-            sqlFilter = translationResult.SqlFilter;
-        }
-
-        return true;
-    }
-
     private static bool TryReadJsonStringOrNumber(JsonElement element, out string? value)
     {
         switch (element.ValueKind)
@@ -1683,54 +1549,6 @@ internal static partial class MapServerEndpoints
         return true;
     }
 
-    private static LayerDefinition[] ResolveVisibleLayers(
-        ServiceDefinition service,
-        string? layersParam,
-        HttpContext context)
-    {
-        var accessibleLayers = service.Layers
-            .Where(l => AccessPolicyHelpers.IsLayerAccessible(context, l, service))
-            .ToArray();
-
-        if (string.IsNullOrWhiteSpace(layersParam))
-        {
-            return accessibleLayers.Where(l => l.DefaultVisibility).ToArray();
-        }
-
-        var spec = layersParam.Trim();
-
-        if (spec.StartsWith("show:", StringComparison.OrdinalIgnoreCase))
-        {
-            var ids = ParseLayerIds(spec["show:".Length..]);
-            return accessibleLayers.Where(l => ids.Contains(l.Id)).ToArray();
-        }
-
-        if (spec.StartsWith("hide:", StringComparison.OrdinalIgnoreCase))
-        {
-            var ids = ParseLayerIds(spec["hide:".Length..]);
-            return accessibleLayers.Where(l => !ids.Contains(l.Id)).ToArray();
-        }
-
-        if (spec.StartsWith("include:", StringComparison.OrdinalIgnoreCase))
-        {
-            var ids = ParseLayerIds(spec["include:".Length..]);
-            return accessibleLayers
-                .Where(l => l.DefaultVisibility || ids.Contains(l.Id))
-                .ToArray();
-        }
-
-        if (spec.StartsWith("exclude:", StringComparison.OrdinalIgnoreCase))
-        {
-            var ids = ParseLayerIds(spec["exclude:".Length..]);
-            return accessibleLayers
-                .Where(l => l.DefaultVisibility && !ids.Contains(l.Id))
-                .ToArray();
-        }
-
-        var showIds = ParseLayerIds(spec);
-        return accessibleLayers.Where(l => showIds.Contains(l.Id)).ToArray();
-    }
-
     private static HashSet<int> ParseLayerIds(string idList)
     {
         var ids = new HashSet<int>();
@@ -1823,19 +1641,27 @@ internal static partial class MapServerEndpoints
         return false;
     }
 
-    private static bool IsLayerVisibleAtScale(LayerDefinition layer, double scaleDenominator)
+    private static int ResolveExportServiceSrid(
+        MetadataV2Service service,
+        IReadOnlyList<MapServerMetadataLayerDescriptor> layers)
+        => service.SpatialReference?.ResolveSrid()
+            ?? layers.Select(static layer => layer.Resource.ReadSrid()).FirstOrDefault(static srid => srid.HasValue)
+            ?? SpatialReference.WGS84.Wkid;
+
+    private static bool IsLayerVisibleAtScale(MapServerMetadataLayerDescriptor layer, double scaleDenominator)
     {
         if (scaleDenominator <= 0)
         {
             return true;
         }
 
-        if (layer.MinScale.HasValue && layer.MinScale.Value > 0 && scaleDenominator > layer.MinScale.Value)
+        var display = layer.Resource.Display;
+        if (display?.MinScale is > 0 && scaleDenominator > display.MinScale.Value)
         {
             return false;
         }
 
-        if (layer.MaxScale.HasValue && layer.MaxScale.Value > 0 && scaleDenominator < layer.MaxScale.Value)
+        if (display?.MaxScale is > 0 && scaleDenominator < display.MaxScale.Value)
         {
             return false;
         }

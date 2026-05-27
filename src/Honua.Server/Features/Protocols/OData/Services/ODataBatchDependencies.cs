@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
@@ -21,7 +20,6 @@ namespace Honua.Server.Features.Protocols.OData.Services;
 internal sealed class ODataBatchDependencies
 {
     public ODataBatchDependencies(
-        ILayerCatalog layerCatalog,
         IFeatureReader featureReader,
         IFeatureWriter featureWriter,
         IGeometryService geometryService,
@@ -34,7 +32,6 @@ internal sealed class ODataBatchDependencies
         IEditProcessor editProcessor,
         IFeatureChangeEventPublisher featureChangeEventPublisher)
         : this(
-            layerCatalog,
             featureReader,
             featureWriter,
             geometryService,
@@ -50,7 +47,6 @@ internal sealed class ODataBatchDependencies
     }
 
     public ODataBatchDependencies(
-        ILayerCatalog layerCatalog,
         IFeatureReader featureReader,
         IFeatureWriter featureWriter,
         IGeometryService geometryService,
@@ -64,7 +60,6 @@ internal sealed class ODataBatchDependencies
         FeatureMutationEventService mutationEventService)
     {
         // Validation framework eliminates 10 lines of duplicate null checks
-        LayerCatalog = layerCatalog.ThrowIfNull();
         FeatureReader = featureReader.ThrowIfNull();
         FeatureWriter = featureWriter.ThrowIfNull();
         GeometryService = geometryService.ThrowIfNull();
@@ -77,8 +72,6 @@ internal sealed class ODataBatchDependencies
         EditProcessor = editProcessor.ThrowIfNull();
         MutationEventService = mutationEventService.ThrowIfNull();
     }
-
-    public ILayerCatalog LayerCatalog { get; }
 
     public IFeatureReader FeatureReader { get; }
 

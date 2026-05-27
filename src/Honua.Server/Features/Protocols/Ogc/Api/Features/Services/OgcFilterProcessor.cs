@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -90,195 +89,6 @@ internal sealed partial class OgcFilterProcessor
     }
 
     /// <summary>
-    /// Processes all filter types and combines them into a unified query structure.
-    /// </summary>
-    public async Task<FilterProcessingResult> ProcessFiltersAsync(
-        HttpRequest request,
-        LayerDefinition layer,
-        string? filter,
-        string? bbox,
-        string? datetime,
-        string? crs,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var filterLang = OgcCommonUtilities.GetQueryValue(request, "filter-lang");
-            var filterCrs = OgcCommonUtilities.GetQueryValue(request, "filter-crs");
-            var bboxCrs = OgcCommonUtilities.GetQueryValue(request, "bbox-crs");
-
-            var filterLangResult = TryResolveFilterLanguage(filterLang);
-            if (!filterLangResult.IsSuccess)
-            {
-                return FilterProcessingResult.Failure(filterLangResult.ErrorMessage!);
-            }
-
-            var supportedCrs = await OgcFeaturesUtilities.GetSupportedCrsDefinitionsAsync(
-                layer,
-                _crsRegistry,
-                cancellationToken).ConfigureAwait(false);
-            var crsResolution = await OgcFeaturesUtilities.TryResolveCrsAsync(
-                crs,
-                supportedCrs,
-                _crsRegistry,
-                cancellationToken).ConfigureAwait(false);
-            if (!crsResolution.IsSuccess)
-            {
-                return FilterProcessingResult.Failure(crsResolution.Error!);
-            }
-
-            var crsDefinition = crsResolution.Definition;
-
-            if (!string.IsNullOrWhiteSpace(filterCrs) && string.IsNullOrWhiteSpace(filter))
-            {
-                return FilterProcessingResult.Failure("filter-crs requires a filter parameter.");
-            }
-
-            var defaultFilterCrsResolution = await OgcFeaturesUtilities.TryResolveCrsAsync(
-                OgcFeaturesUtilities.Crs84Uri,
-                supportedCrs,
-                _crsRegistry,
-                cancellationToken).ConfigureAwait(false);
-            if (!defaultFilterCrsResolution.IsSuccess)
-            {
-                return FilterProcessingResult.Failure(
-                    defaultFilterCrsResolution.Error ?? "Unable to resolve default filter CRS.");
-            }
-
-            var filterCrsDefinition = defaultFilterCrsResolution.Definition;
-            if (!string.IsNullOrWhiteSpace(filterCrs))
-            {
-                var filterCrsResolution = await OgcFeaturesUtilities.TryResolveCrsAsync(
-                    filterCrs,
-                    supportedCrs,
-                    _crsRegistry,
-                    cancellationToken).ConfigureAwait(false);
-                if (!filterCrsResolution.IsSuccess)
-                {
-                    return FilterProcessingResult.Failure(filterCrsResolution.Error!);
-                }
-
-                filterCrsDefinition = filterCrsResolution.Definition;
-            }
-
-            var bboxCrsDefinition = defaultFilterCrsResolution.Definition;
-            if (!string.IsNullOrWhiteSpace(bboxCrs))
-            {
-                var bboxCrsResolution = await OgcFeaturesUtilities.TryResolveCrsAsync(
-                    bboxCrs,
-                    supportedCrs,
-                    _crsRegistry,
-                    cancellationToken).ConfigureAwait(false);
-                if (!bboxCrsResolution.IsSuccess)
-                {
-                    return FilterProcessingResult.Failure(bboxCrsResolution.Error!);
-                }
-
-                bboxCrsDefinition = bboxCrsResolution.Definition;
-            }
-
-            // Process CQL filters
-            FilterExpression? filterExpression = null;
-            string? combinedFilter = null;
-
-            if (string.Equals(filterLangResult.ResolvedLanguage, FilterLangCql2Json, StringComparison.OrdinalIgnoreCase))
-            {
-                var jsonResult = ProcessCql2JsonFilter(filter, request, layer);
-                if (!jsonResult.IsSuccess)
-                {
-                    return FilterProcessingResult.Failure(jsonResult.ErrorMessage!);
-                }
-                filterExpression = jsonResult.FilterExpression;
-                combinedFilter = jsonResult.CombinedFilter;
-            }
-            else
-            {
-                var textResult = ProcessCql2TextFilter(filter, request, layer);
-                if (!textResult.IsSuccess)
-                {
-                    return FilterProcessingResult.Failure(textResult.ErrorMessage!);
-                }
-                filterExpression = textResult.FilterExpression;
-                combinedFilter = textResult.CombinedFilter;
-            }
-
-            if (filterExpression != null)
-            {
-                var supportedSrids = supportedCrs.Values
-                    .Select(static definition => definition.Srid)
-                    .ToHashSet();
-
-                foreach (var explicitGeometrySrid in FilterGeometryCrsValidator.GetExplicitGeometrySrids(filterExpression))
-                {
-                    if (!supportedSrids.Contains(explicitGeometrySrid))
-                    {
-                        return FilterProcessingResult.Failure(
-                            $"{InvalidCqlFilterPrefix}: Unsupported explicit geometry CRS 'EPSG:{explicitGeometrySrid}' for this collection.");
-                    }
-                }
-            }
-
-            if (filterExpression != null && !string.IsNullOrWhiteSpace(filterCrs))
-            {
-                filterExpression = Cql2FilterProcessor.ApplyFilterCrs(filterExpression, filterCrsDefinition);
-            }
-
-            if (filterExpression != null)
-            {
-                filterExpression = Cql2FilterProcessor.NormalizeFilterAxisOrder(filterExpression, filterCrsDefinition.AxisOrder);
-            }
-
-            // Translate to SQL
-            SqlFragment? sqlFilter = null;
-            if (filterExpression != null)
-            {
-                var translationResult = _filterExpressionService.Translate(filterExpression, layer);
-                if (!translationResult.IsSuccess)
-                {
-                    return FilterProcessingResult.Failure(
-                        $"{InvalidCqlFilterPrefix}: {SanitizeCqlErrorMessage(translationResult.ErrorMessage ?? "Invalid filter.")}");
-                }
-
-                sqlFilter = translationResult.SqlFilter;
-            }
-
-            // Process spatial filter (bbox)
-            var bboxResult = ProcessBboxFilter(bbox, bboxCrsDefinition);
-            if (!bboxResult.IsSuccess)
-            {
-                return FilterProcessingResult.Failure(bboxResult.ErrorMessage!);
-            }
-
-            // Process temporal filter
-            var temporalResult = ProcessTemporalFilter(datetime, layer);
-            if (!temporalResult.IsSuccess)
-            {
-                return FilterProcessingResult.Failure(temporalResult.ErrorMessage!);
-            }
-
-            // OGC API Features Part 1, Section 7.15.4: when bbox is provided, only features
-            // with a spatial geometry that intersects the bounding box shall be in the result set.
-            // Features with null geometry cannot intersect a bbox, so exclude them.
-            var includeNullGeometry = bboxResult.SpatialFilter == null;
-
-            return FilterProcessingResult.Success(
-                combinedFilter,
-                sqlFilter,
-                bboxResult.SpatialFilter,
-                temporalResult.TemporalFilter,
-                includeNullGeometry,
-                crsDefinition);
-        }
-        catch (Exception ex)
-        {
-            FilterLog.FilterProcessingFailed(_logger, ex);
-            return FilterProcessingResult.Failure(InvalidFilterProcessingMessage);
-        }
-    }
-
-    /// <summary>
-    /// Metadata v2 overload of
-    /// <see cref="ProcessFiltersAsync(HttpRequest, LayerDefinition, string?, string?, string?, string?, CancellationToken)"/>.
     /// Processes all filter types against a V2 canonical resource.
     /// </summary>
     public async Task<FilterProcessingResult> ProcessFiltersAsync(
@@ -461,66 +271,6 @@ internal sealed partial class OgcFilterProcessor
     private CqlFilterResult ProcessCql2JsonFilter(
         string? filter,
         HttpRequest request,
-        LayerDefinition layer)
-    {
-        FilterExpression? jsonFilterExpression = null;
-        var jsonParseResult = _filterExpressionService.Parse(FilterLanguage.Cql2Json, filter);
-        if (!jsonParseResult.IsSuccess)
-        {
-            return CqlFilterResult.Failure($"{InvalidCqlFilterPrefix}: {SanitizeCqlErrorMessage(jsonParseResult.ErrorMessage ?? "Invalid filter.")}");
-        }
-
-        jsonFilterExpression = jsonParseResult.Expression;
-
-        var queryableResult = TryBuildCombinedFilter(null, request, layer);
-        if (!queryableResult.IsSuccess)
-        {
-            return CqlFilterResult.Failure(queryableResult.ErrorMessage!);
-        }
-
-        FilterExpression? queryableExpression = null;
-        var combinedFilter = queryableResult.CombinedFilter;
-
-        var queryableParseResult = _filterExpressionService.Parse(FilterLanguage.Cql2Text, combinedFilter);
-        if (!queryableParseResult.IsSuccess)
-        {
-            return CqlFilterResult.Failure($"{InvalidCqlFilterPrefix}: {SanitizeCqlErrorMessage(queryableParseResult.ErrorMessage ?? "Invalid filter.")}");
-        }
-
-        queryableExpression = queryableParseResult.Expression;
-
-        var finalExpression = CombineFilters(jsonFilterExpression, queryableExpression);
-        return CqlFilterResult.Success(finalExpression, combinedFilter);
-    }
-
-    private CqlFilterResult ProcessCql2TextFilter(
-        string? filter,
-        HttpRequest request,
-        LayerDefinition layer)
-    {
-        var combinedResult = TryBuildCombinedFilter(filter, request, layer);
-        if (!combinedResult.IsSuccess)
-        {
-            return CqlFilterResult.Failure(combinedResult.ErrorMessage!);
-        }
-
-        var combinedFilter = combinedResult.CombinedFilter;
-        FilterExpression? filterExpression = null;
-
-        var parseResult = _filterExpressionService.Parse(FilterLanguage.Cql2Text, combinedFilter);
-        if (!parseResult.IsSuccess)
-        {
-            return CqlFilterResult.Failure($"{InvalidCqlFilterPrefix}: {SanitizeCqlErrorMessage(parseResult.ErrorMessage ?? "Invalid filter.")}");
-        }
-
-        filterExpression = parseResult.Expression;
-
-        return CqlFilterResult.Success(filterExpression, combinedFilter);
-    }
-
-    private CqlFilterResult ProcessCql2JsonFilter(
-        string? filter,
-        HttpRequest request,
         MetadataV2Resource resource)
     {
         FilterExpression? jsonFilterExpression = null;
@@ -595,54 +345,6 @@ internal sealed partial class OgcFilterProcessor
         }
 
         return FilterLanguageResult.Failure($"Unsupported filter language '{filterLang}'.");
-    }
-
-    private static CombinedFilterResult TryBuildCombinedFilter(
-        string? filter,
-        HttpRequest request,
-        LayerDefinition layer)
-    {
-        var fragments = new List<string>();
-
-        if (!string.IsNullOrWhiteSpace(filter))
-        {
-            fragments.Add(filter.Trim());
-        }
-
-        foreach (var (key, values) in request.Query)
-        {
-            if (OgcFeaturesUtilities.AllowedQueryParameters.Items.Contains(key))
-            {
-                continue;
-            }
-
-            if (string.IsNullOrWhiteSpace(values))
-            {
-                continue;
-            }
-
-            var field = layer.VisibleAttributeFields.FirstOrDefault(f => f.Name.Equals(key, StringComparison.OrdinalIgnoreCase));
-            if (field == null)
-            {
-                return CombinedFilterResult.Failure($"Unknown query parameter: {key}");
-            }
-
-            if (!OgcFeaturesUtilities.IsSimpleQueryableField(field))
-            {
-                return CombinedFilterResult.Failure($"Field '{field.Name}' is not queryable.");
-            }
-
-            var formatResult = TryFormatQueryableValue(field, values.ToString());
-            if (!formatResult.IsSuccess)
-            {
-                return CombinedFilterResult.Failure(formatResult.ErrorMessage!);
-            }
-
-            fragments.Add($"{field.Name} = {formatResult.Literal}");
-        }
-
-        var combinedFilter = fragments.Count == 0 ? null : string.Join(" AND ", fragments);
-        return CombinedFilterResult.Success(combinedFilter);
     }
 
     private static CombinedFilterResult TryBuildCombinedFilter(
@@ -753,17 +455,6 @@ internal sealed partial class OgcFilterProcessor
         return BboxFilterResult.Success(spatialFilter);
     }
 
-    private static TemporalFilterResult ProcessTemporalFilter(string? datetime, LayerDefinition layer)
-    {
-        var result = TryParseTemporalFilter(datetime, layer);
-        if (!result.IsSuccess)
-        {
-            return TemporalFilterResult.Failure(result.ErrorMessage!);
-        }
-
-        return TemporalFilterResult.Success(result.TemporalFilter);
-    }
-
     private static FilterExpression? CombineFilters(FilterExpression? left, FilterExpression? right)
     {
         if (left == null)
@@ -777,39 +468,6 @@ internal sealed partial class OgcFilterProcessor
         }
 
         return new BinaryExpression(left, BinaryOperator.And, right);
-    }
-
-    private static QueryableValueResult TryFormatQueryableValue(FieldDefinition field, string value)
-    {
-        switch (field.Type)
-        {
-            case FieldType.Integer:
-            case FieldType.BigInteger:
-                if (!long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var longValue))
-                {
-                    return QueryableValueResult.Failure($"Invalid value for '{field.Name}'.");
-                }
-                return QueryableValueResult.Success(FormattableString.Invariant($"{longValue}"));
-
-            case FieldType.Double:
-            case FieldType.Float:
-                if (!double.TryParse(value, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var doubleValue))
-                {
-                    return QueryableValueResult.Failure($"Invalid value for '{field.Name}'.");
-                }
-                return QueryableValueResult.Success(FormattableString.Invariant($"{doubleValue}"));
-
-            case FieldType.Boolean:
-                if (!bool.TryParse(value, out var boolValue))
-                {
-                    return QueryableValueResult.Failure($"Invalid value for '{field.Name}'.");
-                }
-                return QueryableValueResult.Success(boolValue ? "true" : "false");
-
-            default:
-                var escaped = value.Replace("'", "''", StringComparison.Ordinal);
-                return QueryableValueResult.Success($"'{escaped}'");
-        }
     }
 
     private BboxParseResult TryParseBbox(string? bboxValue, CrsDefinition crsDefinition)
@@ -918,16 +576,6 @@ internal sealed partial class OgcFilterProcessor
             EnvelopeMaxX = bbox.MinX <= bbox.MaxX ? bbox.MaxX : null,
             EnvelopeMaxY = bbox.MinX <= bbox.MaxX ? bbox.MaxY : null
         };
-    }
-
-    private static TemporalParseResult TryParseTemporalFilter(string? datetime, LayerDefinition layer)
-    {
-        if (OgcTemporalFilterParser.TryParse(datetime, layer, out var temporalFilter, out var errorMessage))
-        {
-            return TemporalParseResult.Success(temporalFilter);
-        }
-
-        return TemporalParseResult.Failure(errorMessage ?? "Invalid datetime parameter.");
     }
 
     private static string SanitizeCqlErrorMessage(string exceptionMessage)

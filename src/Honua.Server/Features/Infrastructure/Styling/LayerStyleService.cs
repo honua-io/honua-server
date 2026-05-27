@@ -2,7 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
 using Microsoft.Extensions.Logging;
@@ -19,17 +20,26 @@ internal sealed class LayerStyleService : ILayerStyleService
 
     private readonly ILayerStyleCatalog _styleCatalog;
     private readonly ILogger<LayerStyleService> _logger;
+    private readonly IMetadataV2GraphProvider? _metadataV2GraphProvider;
 
-    public LayerStyleService(ILayerStyleCatalog styleCatalog, ILogger<LayerStyleService> logger)
+    public LayerStyleService(
+        ILayerStyleCatalog styleCatalog,
+        ILogger<LayerStyleService> logger,
+        IMetadataV2GraphProvider? metadataV2GraphProvider = null)
     {
         _styleCatalog = styleCatalog ?? throw new ArgumentNullException(nameof(styleCatalog));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _metadataV2GraphProvider = metadataV2GraphProvider;
     }
 
     /// <inheritdoc />
-    public async Task<LayerStyleSnapshot?> GetStyleAsync(LayerDefinition layer, CancellationToken cancellationToken = default)
+    public async Task<LayerStyleSnapshot?> GetStyleAsync(
+        MetadataV2Resource resource,
+        int layerId,
+        CancellationToken cancellationToken = default)
     {
-        var stored = await _styleCatalog.GetLayerStyleAsync(layer.Id, cancellationToken).ConfigureAwait(false);
+        var styleLayer = await ResolveStyleLayerAsync(resource, layerId, cancellationToken).ConfigureAwait(false);
+        var stored = await _styleCatalog.GetLayerStyleAsync(styleLayer.Id, cancellationToken).ConfigureAwait(false);
         if (stored == null)
         {
             return null;
@@ -45,14 +55,14 @@ internal sealed class LayerStyleService : ILayerStyleService
             // path, contradicting the PUT-only revision contract documented
             // in docs/gis/style-engine-protocol-consumption.md.  The first
             // PUT lands the genuine revision metadata.
-            var defaultStyle = StyleDefaults.BuildDefaultMapLibreStyle(layer);
+            var defaultStyle = StyleDefaults.BuildDefaultMapLibreStyle(styleLayer);
             mapLibreJson = StyleJsonUtilities.Serialize(defaultStyle);
         }
 
         var drawingInfoJson = stored.DrawingInfoJson;
         if (string.IsNullOrWhiteSpace(drawingInfoJson))
         {
-            drawingInfoJson = MapLibreToGeoServicesConverter.Convert(mapLibreJson!, layer);
+            drawingInfoJson = MapLibreToGeoServicesConverter.Convert(mapLibreJson!, styleLayer);
             if (hasStoredMapLibre)
             {
                 // Cache the back-generated drawingInfo only when we have a
@@ -60,7 +70,7 @@ internal sealed class LayerStyleService : ILayerStyleService
                 // not touch revision metadata, so this preserves the PUT-only
                 // contract.  For unstyled layers the drawingInfo column stays
                 // NULL until the first PUT lands a canonical row.
-                _ = await _styleCatalog.SetDrawingInfoAsync(layer.Id, drawingInfoJson, cancellationToken).ConfigureAwait(false);
+                _ = await _styleCatalog.SetDrawingInfoAsync(styleLayer.Id, drawingInfoJson, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -68,21 +78,26 @@ internal sealed class LayerStyleService : ILayerStyleService
     }
 
     /// <inheritdoc />
-    public async Task<JsonElement?> GetDrawingInfoAsync(LayerDefinition layer, CancellationToken cancellationToken = default)
+    public async Task<JsonElement?> GetDrawingInfoAsync(
+        MetadataV2Resource resource,
+        int layerId,
+        CancellationToken cancellationToken = default)
     {
-        var snapshot = await GetStyleAsync(layer, cancellationToken).ConfigureAwait(false);
+        var snapshot = await GetStyleAsync(resource, layerId, cancellationToken).ConfigureAwait(false);
         return snapshot?.DrawingInfo;
     }
 
     /// <inheritdoc />
     public async Task<LayerStyleUpdateResult> UpdateStyleAsync(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        int layerId,
         JsonElement? mapLibreStyle,
         JsonElement? drawingInfo,
         string? revisedBy = null,
         string? changeSummary = null,
         CancellationToken cancellationToken = default)
     {
+        var styleLayer = await ResolveStyleLayerAsync(resource, layerId, cancellationToken).ConfigureAwait(false);
         var hasMapLibre = mapLibreStyle.HasValue && mapLibreStyle.Value.ValueKind != JsonValueKind.Null;
         var hasDrawingInfo = drawingInfo.HasValue && drawingInfo.Value.ValueKind != JsonValueKind.Null;
 
@@ -96,20 +111,20 @@ internal sealed class LayerStyleService : ILayerStyleService
 
         if (hasMapLibre)
         {
-            if (!MapLibreStyleNormalizer.TryNormalize(mapLibreStyle!.Value, layer, out var normalized, out var error))
+            if (!MapLibreStyleNormalizer.TryNormalize(mapLibreStyle!.Value, styleLayer, out var normalized, out var error))
             {
                 return new LayerStyleUpdateResult(LayerStyleUpdateStatus.Invalid, null, error);
             }
 
             var updated = await _styleCatalog
-                .SetMapLibreStyleAsync(layer.Id, normalized, revisedBy, changeSummary, cancellationToken)
+                .SetMapLibreStyleAsync(styleLayer.Id, normalized, revisedBy, changeSummary, cancellationToken)
                 .ConfigureAwait(false);
             if (updated == null)
             {
                 return new LayerStyleUpdateResult(LayerStyleUpdateStatus.NotFound, null, null);
             }
 
-            var generatedDrawingInfoJson = MapLibreToGeoServicesConverter.Convert(normalized, layer);
+            var generatedDrawingInfoJson = MapLibreToGeoServicesConverter.Convert(normalized, styleLayer);
 
             return new LayerStyleUpdateResult(
                 LayerStyleUpdateStatus.Updated,
@@ -122,14 +137,14 @@ internal sealed class LayerStyleService : ILayerStyleService
         if (TryGetRendererType(drawingInfo.Value, out var rendererType)
             && !IsSupportedRendererType(rendererType))
         {
-            LayerStyleLog.UnsupportedRendererType(_logger, rendererType ?? "unknown", layer.Id);
+            LayerStyleLog.UnsupportedRendererType(_logger, rendererType ?? "unknown", styleLayer.Id);
         }
 
-        var conversion = GeoServicesToMapLibreConverter.Convert(drawingInfo.Value, layer);
+        var conversion = GeoServicesToMapLibreConverter.Convert(drawingInfo.Value, styleLayer);
         var mapLibreJson = conversion.MapLibreStyleJson;
 
         var saved = await _styleCatalog
-            .SetStyleAsync(layer.Id, mapLibreJson, drawingInfoJson, revisedBy, changeSummary, cancellationToken)
+            .SetStyleAsync(styleLayer.Id, mapLibreJson, drawingInfoJson, revisedBy, changeSummary, cancellationToken)
             .ConfigureAwait(false);
         if (saved == null)
         {
@@ -141,6 +156,31 @@ internal sealed class LayerStyleService : ILayerStyleService
             BuildSnapshot(saved, mapLibreJson, drawingInfoJson),
             null,
             conversion.Unsupported);
+    }
+
+    private async ValueTask<StyleLayerDescriptor> ResolveStyleLayerAsync(
+        MetadataV2Resource resource,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+
+        var storageLayerId = layerId;
+        if (_metadataV2GraphProvider is not null)
+        {
+            var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            if (snapshot.Index.StorageBindingsByStorageLayerId.TryGetValue(layerId, out var binding) &&
+                string.Equals(binding.ResourceId, resource.Metadata.Id, StringComparison.Ordinal))
+            {
+                storageLayerId = layerId;
+            }
+            else
+            {
+                storageLayerId = snapshot.ResolveStorageLayerId(resource) ?? layerId;
+            }
+        }
+
+        return StyleLayerDescriptor.FromResource(resource, storageLayerId);
     }
 
     private static LayerStyleSnapshot BuildSnapshot(LayerStyleDefinition stored, string mapLibreJson, string drawingInfoJson)

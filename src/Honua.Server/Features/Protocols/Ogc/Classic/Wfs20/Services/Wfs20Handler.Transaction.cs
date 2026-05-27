@@ -12,11 +12,10 @@ using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
@@ -33,6 +32,7 @@ using Honua.Server.Features.Protocols.Ogc.Api.Features.Models;
 using Honua.Server.Features.Protocols.Ogc.Api.Features.Services;
 using Honua.Server.Features.Protocols.Ogc.Classic.Wfs20.Models;
 using Honua.ServiceDefaults;
+using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 using NetTopologySuite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -271,7 +271,7 @@ internal sealed partial class Wfs20Handler
 
         var layerId = operations.Count == 0
             ? 0
-            : operations[0].Descriptor.Layer.Id;
+            : operations[0].Descriptor.StorageLayerId;
 
         return TransactionPreparationResult.Success(
             operations.ToImmutable(),
@@ -317,7 +317,7 @@ internal sealed partial class Wfs20Handler
             var descriptor = ResolveTransactionFeatureTypeDescriptor(descriptors, featureElement.Name.LocalName);
             var validationError = await ValidateTransactionLayerWriteAccessAsync(
                 context,
-                descriptor.Layer.Id,
+                descriptor.StorageLayerId,
                 validatedLayerIds,
                 cancellationToken).ConfigureAwait(false);
             if (validationError != null)
@@ -325,9 +325,9 @@ internal sealed partial class Wfs20Handler
                 return validationError;
             }
 
-            distinctLayerIds.Add(descriptor.Layer.Id);
+            distinctLayerIds.Add(descriptor.StorageLayerId);
             var feature = await BuildTransactionInsertFeatureAsync(
-                descriptor.Layer,
+                descriptor.Resource,
                 featureElement,
                 cancellationToken).ConfigureAwait(false);
             // Insert always carries the request's geometry intent in the built feature.
@@ -377,7 +377,7 @@ internal sealed partial class Wfs20Handler
         var descriptor = ResolveTransactionFeatureTypeDescriptor(descriptors, typeName);
         var validationError = await ValidateTransactionLayerWriteAccessAsync(
             context,
-            descriptor.Layer.Id,
+            descriptor.StorageLayerId,
             validatedLayerIds,
             cancellationToken).ConfigureAwait(false);
         if (validationError != null)
@@ -385,11 +385,11 @@ internal sealed partial class Wfs20Handler
             return validationError;
         }
 
-        distinctLayerIds.Add(descriptor.Layer.Id);
+        distinctLayerIds.Add(descriptor.StorageLayerId);
 
-        var changes = ParseTransactionUpdateChanges(descriptor.Layer, updateElement);
+        var changes = ParseTransactionUpdateChanges(descriptor.Resource, updateElement);
         var targetIds = await ResolveTransactionTargetObjectIdsAsync(
-            descriptor.Layer,
+            descriptor,
             updateElement,
             cancellationToken).ConfigureAwait(false);
 
@@ -405,7 +405,7 @@ internal sealed partial class Wfs20Handler
         foreach (var objectId in targetIds)
         {
             var existing = await _featureReader.GetAsync(
-                descriptor.Layer.Id,
+                descriptor.StorageLayerId,
                 objectId,
                 cancellationToken).ConfigureAwait(false);
             if (!existing.HasValue)
@@ -419,7 +419,7 @@ internal sealed partial class Wfs20Handler
 
             var updatedFeature = await BuildTransactionUpdatedFeatureAsync(
                 existing.Value,
-                descriptor.Layer,
+                descriptor.Resource,
                 changes,
                 cancellationToken).ConfigureAwait(false);
             // Capture the request-intent flag BEFORE the merge result hides it: the
@@ -471,7 +471,7 @@ internal sealed partial class Wfs20Handler
         var descriptor = ResolveTransactionFeatureTypeDescriptor(descriptors, typeName);
         var validationError = await ValidateTransactionLayerWriteAccessAsync(
             context,
-            descriptor.Layer.Id,
+            descriptor.StorageLayerId,
             validatedLayerIds,
             cancellationToken).ConfigureAwait(false);
         if (validationError != null)
@@ -479,10 +479,10 @@ internal sealed partial class Wfs20Handler
             return validationError;
         }
 
-        distinctLayerIds.Add(descriptor.Layer.Id);
+        distinctLayerIds.Add(descriptor.StorageLayerId);
 
         var targetIds = await ResolveTransactionTargetObjectIdsAsync(
-            descriptor.Layer,
+            descriptor,
             deleteElement,
             cancellationToken).ConfigureAwait(false);
 
@@ -498,7 +498,7 @@ internal sealed partial class Wfs20Handler
         foreach (var objectId in targetIds)
         {
             var existing = await _featureReader.GetAsync(
-                descriptor.Layer.Id,
+                descriptor.StorageLayerId,
                 objectId,
                 cancellationToken).ConfigureAwait(false);
             if (!existing.HasValue)
@@ -554,7 +554,7 @@ internal sealed partial class Wfs20Handler
         var descriptor = ResolveTransactionFeatureTypeDescriptor(descriptors, featureElement.Name.LocalName);
         var validationError = await ValidateTransactionLayerWriteAccessAsync(
             context,
-            descriptor.Layer.Id,
+            descriptor.StorageLayerId,
             validatedLayerIds,
             cancellationToken).ConfigureAwait(false);
         if (validationError != null)
@@ -562,10 +562,10 @@ internal sealed partial class Wfs20Handler
             return validationError;
         }
 
-        distinctLayerIds.Add(descriptor.Layer.Id);
+        distinctLayerIds.Add(descriptor.StorageLayerId);
 
         var targetIds = await ResolveTransactionTargetObjectIdsAsync(
-            descriptor.Layer,
+            descriptor,
             replaceElement,
             cancellationToken).ConfigureAwait(false);
         if (targetIds.Length != 1)
@@ -578,7 +578,7 @@ internal sealed partial class Wfs20Handler
         }
 
         var existing = await _featureReader.GetAsync(
-            descriptor.Layer.Id,
+            descriptor.StorageLayerId,
             targetIds[0],
             cancellationToken).ConfigureAwait(false);
         if (!existing.HasValue)
@@ -591,7 +591,7 @@ internal sealed partial class Wfs20Handler
         }
 
         var replacement = await BuildTransactionReplaceFeatureAsync(
-            descriptor.Layer,
+            descriptor.Resource,
             targetIds[0],
             featureElement,
             cancellationToken).ConfigureAwait(false);
@@ -620,14 +620,14 @@ internal sealed partial class Wfs20Handler
 
 
     private async Task<Feature> BuildTransactionInsertFeatureAsync(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         XElement featureElement,
         CancellationToken cancellationToken)
     {
-        var payload = ReadTransactionFeaturePayload(layer, featureElement);
+        var payload = ReadTransactionFeaturePayload(resource, featureElement);
 
         return await CreateTransactionFeatureAsync(
-            layer,
+            resource,
             objectId: 0,
             payload.Geometry,
             payload.Attributes,
@@ -636,15 +636,15 @@ internal sealed partial class Wfs20Handler
 
 
     private async Task<Feature> BuildTransactionReplaceFeatureAsync(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         long objectId,
         XElement featureElement,
         CancellationToken cancellationToken)
     {
-        var payload = ReadTransactionFeaturePayload(layer, featureElement);
+        var payload = ReadTransactionFeaturePayload(resource, featureElement);
 
         return await CreateTransactionFeatureAsync(
-            layer,
+            resource,
             objectId,
             payload.Geometry,
             payload.Attributes,
@@ -654,7 +654,7 @@ internal sealed partial class Wfs20Handler
 
     private async Task<Feature> BuildTransactionUpdatedFeatureAsync(
         Feature existing,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         TransactionFeatureChanges changes,
         CancellationToken cancellationToken)
     {
@@ -669,7 +669,7 @@ internal sealed partial class Wfs20Handler
             : existing.Geometry;
 
         return await CreateTransactionFeatureAsync(
-            layer,
+            resource,
             existing.Id,
             geometry,
             attributes.ToImmutable(),
@@ -678,7 +678,7 @@ internal sealed partial class Wfs20Handler
 
 
     private async Task<Feature> CreateTransactionFeatureAsync(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         long objectId,
         byte[]? geometry,
         ImmutableDictionary<string, object?> attributes,
@@ -693,7 +693,7 @@ internal sealed partial class Wfs20Handler
         }
 
         var attributesResult = _mutationValidator.ValidateAttributes(
-            layer,
+            resource,
             attributes,
             ValidationExtensions.AttributeValidationMode.Strict);
         if (!attributesResult.IsValid)
@@ -706,17 +706,18 @@ internal sealed partial class Wfs20Handler
 
 
     private static TransactionFeaturePayload ReadTransactionFeaturePayload(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         XElement featureElement)
     {
         var attributes = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
         var gmlAssignedFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         byte[]? geometry = null;
+        var geometryField = resource.FindPrimaryGeometryField();
 
         foreach (var propertyElement in featureElement.Elements())
         {
             if (TryResolveReservedGmlTransactionAttributeName(
-                layer,
+                resource,
                 propertyElement.Name.LocalName,
                 propertyElement.Name.NamespaceName,
                 out var reservedAttributeName))
@@ -726,7 +727,7 @@ internal sealed partial class Wfs20Handler
             }
 
             var resolution = ResolveTransactionField(
-                layer,
+                resource,
                 propertyElement.Name.LocalName,
                 propertyElement.Name.NamespaceName);
             if (!resolution.HasValue)
@@ -736,10 +737,10 @@ internal sealed partial class Wfs20Handler
 
             var resolvedField = resolution.Value;
 
-            if (layer.GeometryField != null &&
-                resolvedField.Field.Name.Equals(layer.GeometryField.Name, StringComparison.OrdinalIgnoreCase))
+            if (geometryField != null &&
+                resolvedField.Field.Name.Equals(geometryField.Name, StringComparison.OrdinalIgnoreCase))
             {
-                geometry = ParseTransactionGeometryProperty(propertyElement, layer);
+                geometry = ParseTransactionGeometryProperty(propertyElement, resource);
                 continue;
             }
 
@@ -763,7 +764,7 @@ internal sealed partial class Wfs20Handler
 
 
     private static TransactionFeatureChanges ParseTransactionUpdateChanges(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         XElement updateElement)
     {
         var attributes = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
@@ -778,6 +779,7 @@ internal sealed partial class Wfs20Handler
         byte[]? geometry = null;
         var geometrySpecified = false;
         var gmlAssignedFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var geometryField = resource.FindPrimaryGeometryField();
 
         foreach (var propertyElement in propertyElements)
         {
@@ -803,7 +805,7 @@ internal sealed partial class Wfs20Handler
                 .FirstOrDefault(element => string.Equals(element.Name.LocalName, "Value", StringComparison.OrdinalIgnoreCase));
 
             if (TryResolveReservedGmlTransactionAttributeName(
-                layer,
+                resource,
                 nameElement.Value.Trim(),
                 namespaceName: null,
                 out var reservedAttributeName))
@@ -814,7 +816,7 @@ internal sealed partial class Wfs20Handler
                 continue;
             }
 
-            var fieldResolution = ResolveTransactionField(layer, nameElement.Value.Trim());
+            var fieldResolution = ResolveTransactionField(resource, nameElement.Value.Trim());
             if (!fieldResolution.HasValue)
             {
                 continue;
@@ -822,13 +824,13 @@ internal sealed partial class Wfs20Handler
 
             var resolvedField = fieldResolution.Value;
 
-            if (layer.GeometryField != null &&
-                resolvedField.Field.Name.Equals(layer.GeometryField.Name, StringComparison.OrdinalIgnoreCase))
+            if (geometryField != null &&
+                resolvedField.Field.Name.Equals(geometryField.Name, StringComparison.OrdinalIgnoreCase))
             {
                 geometrySpecified = true;
                 geometry = valueElement == null
                     ? null
-                    : ParseTransactionGeometryProperty(valueElement, layer);
+                    : ParseTransactionGeometryProperty(valueElement, resource);
                 continue;
             }
 
@@ -856,7 +858,7 @@ internal sealed partial class Wfs20Handler
 
 
     private async Task<ImmutableArray<long>> ResolveTransactionTargetObjectIdsAsync(
-        LayerDefinition layer,
+        WfsFeatureTypeDescriptor descriptor,
         XElement actionElement,
         CancellationToken cancellationToken)
     {
@@ -895,7 +897,7 @@ internal sealed partial class Wfs20Handler
         }
 
         var query = await BuildFeatureQueryAsync(
-            layer,
+            descriptor,
             propertyName: null,
             sortBy: null,
             bbox: null,
@@ -907,7 +909,7 @@ internal sealed partial class Wfs20Handler
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
         var objectIds = await _featureReader.QueryObjectIdsAsync(
-            layer.Id,
+            descriptor.StorageLayerId,
             query,
             cancellationToken).ConfigureAwait(false);
 
@@ -931,31 +933,26 @@ internal sealed partial class Wfs20Handler
             return null;
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
             context,
             layerId,
             scope: AccessScope.Write,
-            requiredProtocol: ServiceProtocols.Wfs20,
+            requiredProtocol: MetadataV2ServiceProtocols.Wfs20,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult;
         }
 
-        var primaryService = await LayerValidationHelpers.ResolvePrimaryServiceAsync(
-            context,
-            layerId,
-            ServiceProtocols.Wfs20,
-            cancellationToken).ConfigureAwait(false);
-        if (IsAnonymousWriteAllowed(context, layerValidation.Layer!, primaryService))
+        if (IsAnonymousWriteAllowed(context, layerValidation.Resource!, layerValidation.Service))
         {
             return null;
         }
 
-        return await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
+        return await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
             context,
-            layerValidation.Layer!,
-            primaryService,
+            layerValidation.Resource!,
+            layerValidation.Service,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -989,12 +986,12 @@ internal sealed partial class Wfs20Handler
 
 
     private static TransactionFieldResolution? ResolveTransactionField(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         string rawName,
         string? namespaceName = null)
     {
         var normalizedName = NormalizeTransactionPropertyReference(rawName);
-        if (TryResolveGmlTransactionField(layer, normalizedName, rawName, namespaceName, out var gmlField))
+        if (TryResolveGmlTransactionField(resource, normalizedName, rawName, namespaceName, out var gmlField))
         {
             return gmlField == null
                 ? null
@@ -1002,23 +999,24 @@ internal sealed partial class Wfs20Handler
         }
 
         var resolvedName = FilterExpressionHelpers.ResolveFieldName(
-            layer,
+            resource,
             normalizedName,
             allowGeometryAlias: true);
         if (resolvedName == null)
         {
-            throw new ArgumentException($"Unknown property '{rawName}' for feature type '{layer.Name}'.");
+            throw new ArgumentException($"Unknown property '{rawName}' for feature type '{GetResourceFeatureTypeName(resource)}'.");
         }
 
-        if (layer.PrimaryKeyField != null &&
-            resolvedName.Equals(layer.PrimaryKeyField.Name, StringComparison.OrdinalIgnoreCase))
+        var primaryKeyField = resource.FindPrimaryIdField();
+        if (primaryKeyField != null &&
+            resolvedName.Equals(primaryKeyField.Name, StringComparison.OrdinalIgnoreCase))
         {
             return null;
         }
 
-        var resolvedField = layer.Fields.FirstOrDefault(field =>
+        var resolvedField = resource.SchemaFields.FirstOrDefault(field =>
             field.Name.Equals(resolvedName, StringComparison.OrdinalIgnoreCase))
-            ?? throw new ArgumentException($"Unknown property '{rawName}' for feature type '{layer.Name}'.");
+            ?? throw new ArgumentException($"Unknown property '{rawName}' for feature type '{GetResourceFeatureTypeName(resource)}'.");
 
         return new TransactionFieldResolution(resolvedField, IsGmlProperty: false);
     }
@@ -1055,7 +1053,7 @@ internal sealed partial class Wfs20Handler
 
 
     private static bool TryResolveReservedGmlTransactionAttributeName(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         string rawName,
         string? namespaceName,
         [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? attributeName)
@@ -1077,8 +1075,8 @@ internal sealed partial class Wfs20Handler
         attributeName = localName.ToLowerInvariant() switch
         {
             "identifier" => ValidationExtensions.WfsGmlIdentifierAttributeName,
-            "name" when !HasTransactionAttributeField(layer, "name") => ValidationExtensions.WfsGmlNameAttributeName,
-            "description" when !HasTransactionAttributeField(layer, "description") => ValidationExtensions.WfsGmlDescriptionAttributeName,
+            "name" when !HasTransactionAttributeField(resource, "name") => ValidationExtensions.WfsGmlNameAttributeName,
+            "description" when !HasTransactionAttributeField(resource, "description") => ValidationExtensions.WfsGmlDescriptionAttributeName,
             _ => null
         };
 
@@ -1086,19 +1084,20 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private static bool HasTransactionAttributeField(LayerDefinition layer, string fieldName)
+    private static bool HasTransactionAttributeField(MetadataV2Resource resource, string fieldName)
     {
-        return layer.AttributeFields.Any(candidate =>
+        return resource.SchemaFields.Any(candidate =>
+            candidate.Type is not MetadataV2FieldType.Geometry and not MetadataV2FieldType.Geography &&
             candidate.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
     }
 
 
     private static bool TryResolveGmlTransactionField(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         string normalizedName,
         string rawName,
         string? namespaceName,
-        out FieldDefinition? field)
+        out MetadataV2Field? field)
     {
         field = null;
 
@@ -1125,11 +1124,12 @@ internal sealed partial class Wfs20Handler
             return true;
         }
 
-        field = layer.Fields.FirstOrDefault(candidate =>
+        field = resource.SchemaFields.FirstOrDefault(candidate =>
             candidate.Name.Equals(mappedFieldName, StringComparison.OrdinalIgnoreCase));
+        var primaryKeyField = resource.FindPrimaryIdField();
         if (field != null &&
-            layer.PrimaryKeyField != null &&
-            field.Name.Equals(layer.PrimaryKeyField.Name, StringComparison.OrdinalIgnoreCase))
+            primaryKeyField != null &&
+            field.Name.Equals(primaryKeyField.Name, StringComparison.OrdinalIgnoreCase))
         {
             field = null;
         }
@@ -1138,7 +1138,7 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private static object? ParseTransactionFieldValue(FieldDefinition field, XElement valueElement)
+    private static object? ParseTransactionFieldValue(MetadataV2Field field, XElement valueElement)
     {
         if (HasNilAttribute(valueElement))
         {
@@ -1148,15 +1148,15 @@ internal sealed partial class Wfs20Handler
         var rawValue = valueElement.Value.Trim();
         return field.Type switch
         {
-            FieldType.Integer or FieldType.BigInteger
+            MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger
                 => long.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integerValue)
                     ? integerValue
                     : rawValue,
-            FieldType.Double or FieldType.Float
+            MetadataV2FieldType.Double or MetadataV2FieldType.Float
                 => double.TryParse(rawValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var numericValue)
                     ? numericValue
                     : rawValue,
-            FieldType.Boolean
+            MetadataV2FieldType.Boolean
                 => bool.TryParse(rawValue, out var booleanValue)
                     ? booleanValue
                     : rawValue,
@@ -1178,7 +1178,7 @@ internal sealed partial class Wfs20Handler
 
     private static byte[]? ParseTransactionGeometryProperty(
         XElement propertyElement,
-        LayerDefinition layer)
+        MetadataV2Resource resource)
     {
         if (HasNilAttribute(propertyElement))
         {
@@ -1200,9 +1200,24 @@ internal sealed partial class Wfs20Handler
             throw new ArgumentException($"Geometry property '{propertyElement.Name.LocalName}' must contain a GML geometry.");
         }
 
-        var defaultSrid = layer.SpatialReference.ToSrid();
+        var defaultSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         var geometry = ParseTransactionGeometry(geometryElement, defaultSrid);
         return GeometryWkbWriter.Write(geometry);
+    }
+
+    private static string GetResourceFeatureTypeName(MetadataV2Resource resource)
+    {
+        if (!string.IsNullOrWhiteSpace(resource.Metadata.Name))
+        {
+            return resource.Metadata.Name;
+        }
+
+        if (!string.IsNullOrWhiteSpace(resource.Metadata.Id))
+        {
+            return resource.Metadata.Id;
+        }
+
+        return "resource";
     }
 
 
@@ -1533,9 +1548,13 @@ internal sealed partial class Wfs20Handler
             var requestGeometryChangedFlags = prepared.Operations
                 .Select(static operation => operation.RequestGeometryChanged)
                 .ToImmutableArray();
+            var resource = prepared.Operations.IsDefaultOrEmpty
+                ? throw new InvalidOperationException("WFS transaction did not prepare any operations.")
+                : prepared.Operations[0].Descriptor.Resource;
             return await ExecutePreparedEditAsync(
                 context,
                 prepared.LayerId,
+                resource,
                 operations,
                 requestGeometryChangedFlags,
                 rollbackOnFailure,
@@ -1576,15 +1595,17 @@ internal sealed partial class Wfs20Handler
         var deletedCount = 0;
 
         foreach (var layerGroup in prepared.Operations
-                     .GroupBy(static operation => operation.Descriptor.Layer.Id)
+                     .GroupBy(static operation => operation.Descriptor.StorageLayerId)
                      .OrderBy(static group => group.Min(operation => operation.Sequence)))
         {
             var operations = layerGroup.OrderBy(static operation => operation.Sequence).ToImmutableArray();
+            var resource = operations[0].Descriptor.Resource;
             // Per-operation request-intent geometry flags, ordered to match the
             // EditOperation sequence the data layer iterates.
             var layerResult = await ExecutePreparedEditAsync(
                 context,
                 layerGroup.Key,
+                resource,
                 operations
                     .Select(static operation => operation.EditOperation)
                     .ToImmutableArray(),
@@ -1664,35 +1685,32 @@ internal sealed partial class Wfs20Handler
     private async Task<FeatureEditResult> ExecutePreparedEditAsync(
         HttpContext context,
         int layerId,
+        MetadataV2Resource resource,
         ImmutableArray<FeatureEditOperation> operations,
         ImmutableArray<bool> requestGeometryChangedFlags,
         bool rollbackOnFailure,
         CancellationToken cancellationToken)
     {
-        var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Layer '{layerId}' was not found.");
-
         var editAdapterResult = await _editParameterAdapter.ConvertAsync(
             new Wfs20EditRequest
             {
                 Operations = operations,
                 RollbackOnFailure = rollbackOnFailure
             },
-            layer,
             cancellationToken).ConfigureAwait(false);
         if (!editAdapterResult.IsSuccess || editAdapterResult.EditRequest == null)
         {
             throw new InvalidOperationException(editAdapterResult.ErrorMessage ?? "Invalid WFS transaction.");
         }
 
-        var optimizedEdit = _editProcessor.OptimizeEdit(editAdapterResult.EditRequest.Value, layer);
-        var editValidation = _editProcessor.ValidateEdit(optimizedEdit, layer);
+        var optimizedEdit = _editProcessor.OptimizeEdit(editAdapterResult.EditRequest.Value, resource);
+        var editValidation = _editProcessor.ValidateEdit(optimizedEdit, resource);
         if (!editValidation.IsValid)
         {
             throw new InvalidOperationException(editValidation.ErrorMessage ?? "Invalid WFS transaction.");
         }
 
-        var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, layer);
+        var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, resource);
         // Bin per-kind geometry-change flags from the request-intent flags captured by
         // PrepareInsert/Update/Delete/ReplaceOperationsAsync (BEFORE merging with the
         // existing row). Reading editBatch.Operations[i].Feature.Geometry would over-
@@ -1703,11 +1721,8 @@ internal sealed partial class Wfs20Handler
             context,
             layerId,
             HonuaTelemetry.Protocols.Wfs20,
-            serviceProtocol: ServiceProtocols.Wfs20,
-            // ToSrid() prefers LatestWkid so the outbox enrichment fallback emits the
-            // same SRID the inline-publish path uses (Wkid=102100/LatestWkid=3857
-            // would otherwise publish the deprecated WKID on outbox backends only).
-            layerSrid: layer.SpatialReference.ToSrid(),
+            serviceProtocol: MetadataV2ServiceProtocols.Wfs20,
+            layerSrid: resource.ReadSrid(),
             perOperationGeometryChanged: perOperationGeometryChanged,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
@@ -1771,13 +1786,13 @@ internal sealed partial class Wfs20Handler
     {
         var serviceIdsByLayer = new Dictionary<int, string>();
         foreach (var layerId in prepared.Operations
-                     .Select(static operation => operation.Descriptor.Layer.Id)
+                     .Select(static operation => operation.Descriptor.StorageLayerId)
                      .Distinct())
         {
             serviceIdsByLayer[layerId] = await FeatureMutationEventService.ResolveServiceIdAsync(
                 context,
                 layerId,
-                ServiceProtocols.Wfs20,
+                MetadataV2ServiceProtocols.Wfs20,
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -1812,11 +1827,11 @@ internal sealed partial class Wfs20Handler
                             break;
                         }
 
-                        var layerId = operation.Descriptor.Layer.Id;
+                        var layerId = operation.Descriptor.StorageLayerId;
                         var createdFeature = operation.MutationFeature.Value with { Id = result.ObjectId.Value };
-                        // WFS GeometryWkbWriter does not embed SRID, so thread the layer
+                        // WFS GeometryWkbWriter does not embed SRID, so thread the resource
                         // SRID through as the enrichment fallback.
-                        var layerSrid = operation.Descriptor.Layer.SpatialReference.ToSrid();
+                        var layerSrid = operation.Descriptor.Resource.ReadSrid();
                         await _mutationEventService.PublishAsync(
                             context,
                             layerId,
@@ -1826,7 +1841,7 @@ internal sealed partial class Wfs20Handler
                             cancellationToken,
                             mutationFeature: createdFeature,
                             serviceId: serviceIdsByLayer[layerId],
-                            serviceProtocol: ServiceProtocols.Wfs20,
+                            serviceProtocol: MetadataV2ServiceProtocols.Wfs20,
                             layerSrid: layerSrid).ConfigureAwait(false);
                         break;
                     }
@@ -1843,8 +1858,8 @@ internal sealed partial class Wfs20Handler
                             break;
                         }
 
-                        var layerId = operation.Descriptor.Layer.Id;
-                        var layerSrid = operation.Descriptor.Layer.SpatialReference.ToSrid();
+                        var layerId = operation.Descriptor.StorageLayerId;
+                        var layerSrid = operation.Descriptor.Resource.ReadSrid();
                         await _mutationEventService.PublishAsync(
                             context,
                             layerId,
@@ -1854,7 +1869,7 @@ internal sealed partial class Wfs20Handler
                             cancellationToken,
                             mutationFeature: operation.MutationFeature.Value,
                             serviceId: serviceIdsByLayer[layerId],
-                            serviceProtocol: ServiceProtocols.Wfs20,
+                            serviceProtocol: MetadataV2ServiceProtocols.Wfs20,
                             layerSrid: layerSrid).ConfigureAwait(false);
                         break;
                     }
@@ -1871,8 +1886,8 @@ internal sealed partial class Wfs20Handler
                             break;
                         }
 
-                        var layerId = operation.Descriptor.Layer.Id;
-                        var layerSrid = operation.Descriptor.Layer.SpatialReference.ToSrid();
+                        var layerId = operation.Descriptor.StorageLayerId;
+                        var layerSrid = operation.Descriptor.Resource.ReadSrid();
                         await _mutationEventService.PublishAsync(
                             context,
                             layerId,
@@ -1882,7 +1897,7 @@ internal sealed partial class Wfs20Handler
                             cancellationToken,
                             mutationFeature: operation.DeleteSnapshot,
                             serviceId: serviceIdsByLayer[layerId],
-                            serviceProtocol: ServiceProtocols.Wfs20,
+                            serviceProtocol: MetadataV2ServiceProtocols.Wfs20,
                             layerSrid: layerSrid).ConfigureAwait(false);
                         break;
                     }
@@ -2089,7 +2104,7 @@ internal sealed partial class Wfs20Handler
     }
 
     private readonly record struct TransactionFieldResolution(
-        FieldDefinition Field,
+        MetadataV2Field Field,
         bool IsGmlProperty);
 
     private readonly record struct TransactionFeaturePayload(

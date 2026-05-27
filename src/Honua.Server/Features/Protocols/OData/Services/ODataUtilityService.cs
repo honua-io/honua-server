@@ -3,7 +3,6 @@
 
 using System.Collections.Frozen;
 using System.Globalization;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -575,22 +574,9 @@ internal static class ODataUtilityService
         return payload;
     }
 
-    public static Dictionary<string, object?> BuildLayerPayload(LayerDefinition layer)
-    {
-        return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["Id"] = layer.Id,
-            ["Name"] = layer.Name,
-            ["Description"] = layer.Description,
-            ["GeometryType"] = layer.GeometryType.ToString(),
-            ["Srid"] = layer.SpatialReference.ToSrid()
-        };
-    }
-
     /// <summary>
-    /// Metadata v2 overload of <see cref="BuildLayerPayload(LayerDefinition)"/>.
     /// Projects the OData Layer entity directly off the canonical resource and the
-    /// publication's layer index, without going through the v1 LayerDefinition shape.
+    /// publication's layer index.
     /// </summary>
     public static Dictionary<string, object?> BuildLayerPayload(
         MetadataV2Resource resource,

@@ -8,18 +8,20 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Publishing.Domain;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Scene;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Scene;
 
 /// <summary>
-/// Unit tests for the v1 3D Tiles generation executor (#842). The tests use
+/// Unit tests for the 3D Tiles generation executor (#842). The tests use
 /// in-memory stubs for the catalog and feature source so the pipeline can be
 /// exercised end-to-end without standing up Postgres.
 /// </summary>
@@ -30,6 +32,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     private readonly StubLayerCatalog _catalog;
     private readonly StubFeatureSource _featureSource;
     private readonly StubRegistrationService _registration;
+    private readonly TestMetadataV2GraphProvider _metadataProvider;
     private readonly SceneTilesPublishExecutor _executor;
 
     public SceneTilesPublishExecutorTests()
@@ -38,6 +41,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         _catalog = new StubLayerCatalog();
         _featureSource = new StubFeatureSource();
         _registration = new StubRegistrationService();
+        _metadataProvider = new TestMetadataV2GraphProvider(BuildSceneGraph());
 
         var options = Options.Create(new SceneGenerationServerOptions
         {
@@ -48,8 +52,8 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         var environment = new TestHostEnvironment();
 
         _executor = new SceneTilesPublishExecutor(
-            _catalog,
             _featureSource,
+            _metadataProvider,
             environment,
             options,
             NullLogger<SceneTilesPublishExecutor>.Instance,
@@ -122,7 +126,8 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
                 }
             ]
         };
-        _catalog.Layer = BuildLayer(symbology: symbology);
+        _catalog.Layer = BuildLayer();
+        SetResourceSymbology(symbology);
         _featureSource.Features = SamplePolygons();
 
         var outcome = await _executor.RunDirectAsync(BuildIntent(), CancellationToken.None);
@@ -195,6 +200,12 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     public async Task Execute_UnknownLayer_ReturnsLayerNotFoundCode()
     {
         _catalog.Layer = null;
+        _metadataProvider.SetGraph(new MetadataV2Graph
+        {
+            Revision = 2,
+            Environment = "test",
+            GeneratedAt = DateTimeOffset.UtcNow
+        });
         _featureSource.Features = SamplePolygons();
 
         var act = () => _executor.RunDirectAsync(BuildIntent(), CancellationToken.None);
@@ -292,10 +303,11 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_AppliesExtrusionOverrideToProduceVerticalGeometry()
     {
-        _catalog.Layer = BuildLayer(extrusion: new LayerExtrusionInfo
+        _catalog.Layer = BuildLayer();
+        SetResourceExtrusion(new MetadataV2ExtrusionInfo
         {
             HeightField = "height",
-            Unit = VerticalUnits.Meters
+            Unit = MetadataV2VerticalUnits.Meters
         });
         _featureSource.Features = SamplePolygons();
 
@@ -347,11 +359,12 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     [UnitTest]
     public async Task Execute_BoundingRegionMaxHeight_AccountsForBaseHeightField()
     {
-        _catalog.Layer = BuildLayer(extrusion: new LayerExtrusionInfo
+        _catalog.Layer = BuildLayer();
+        SetResourceExtrusion(new MetadataV2ExtrusionInfo
         {
             HeightField = "height",
             BaseHeightField = "base",
-            Unit = VerticalUnits.Meters
+            Unit = MetadataV2VerticalUnits.Meters
         });
         _featureSource.Features = SamplePolygons(baseHeight: 100.0);
 
@@ -389,10 +402,11 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         // signed-min/max fix, region.maxHeight would be capped at the
         // negative topZ (~-25m) instead of the actual surface baseHeight (0m),
         // causing CesiumJS to cull the tile prematurely above ground level.
-        _catalog.Layer = BuildLayer(extrusion: new LayerExtrusionInfo
+        _catalog.Layer = BuildLayer();
+        SetResourceExtrusion(new MetadataV2ExtrusionInfo
         {
             HeightField = "height",
-            Unit = VerticalUnits.Meters
+            Unit = MetadataV2VerticalUnits.Meters
         });
         _featureSource.Features = DownwardExtrusionPolygons();
 
@@ -542,6 +556,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         _catalog.Layer = new LayerDefinition(
             LayerId, "Bâtiments-2026", null, GeometryType.Polygon,
             SpatialReference.Create(4326, 4326), fields);
+        _metadataProvider.SetGraph(BuildSceneGraph(resourceName: "Bâtiments-2026", fields: fields));
         _featureSource.Features = SamplePolygons();
 
         var outcome = await _executor.RunDirectAsync(BuildIntent(), CancellationToken.None);
@@ -876,6 +891,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         _catalog.Layer = new LayerDefinition(
             LayerId, "Buildings", null, GeometryType.Polygon,
             SpatialReference.Create(4326, 4326), fields);
+        _metadataProvider.SetGraph(BuildSceneGraph(fields: fields));
 
         var basePolygons = SamplePolygons();
         var withCollidingFields = new List<SceneFeature>(basePolygons.Count);
@@ -978,6 +994,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         _catalog.Layer = new LayerDefinition(
             LayerId, "Buildings", null, GeometryType.Polygon,
             SpatialReference.Create(4326, 4326), fields);
+        _metadataProvider.SetGraph(BuildSceneGraph(fields: fields));
 
         var basePolygons = SamplePolygons();
         var bigValues = new long[] { (long)int.MaxValue + 100L, (long)int.MinValue - 100L };
@@ -1001,9 +1018,7 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
 
     private LayerDefinition BuildLayer(
         SpatialReference? spatialReference = null,
-        LayerExtrusionInfo? extrusion = null,
-        AccessPolicy? accessPolicy = null,
-        Symbology3D? symbology = null)
+        AccessPolicy? accessPolicy = null)
     {
         var sr = spatialReference ?? SpatialReference.Create(4326, 4326);
         var fields = new[]
@@ -1013,19 +1028,103 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
             new FieldDefinition("name", FieldType.String, Length: 64, Nullable: true),
             new FieldDefinition("height", FieldType.Integer, Length: null, Nullable: true)
         };
-        var metadata = (extrusion, accessPolicy, symbology) switch
-        {
-            (null, null, null) => null,
-            _ => new CatalogMetadata { Extrusion = extrusion, AccessPolicy = accessPolicy, Symbology3D = symbology }
-        };
+        _metadataProvider.SetGraph(BuildSceneGraph(srid: sr.Wkid, accessPolicy: accessPolicy, fields: fields));
         return new LayerDefinition(
             LayerId,
             "Buildings",
             null,
             GeometryType.Polygon,
             sr,
-            fields,
-            Metadata: metadata);
+            fields);
+    }
+
+    private void SetResourceExtrusion(MetadataV2ExtrusionInfo extrusion)
+        => _metadataProvider.SetGraph(BuildSceneGraph(extrusion));
+
+    private void SetResourceSymbology(Symbology3D symbology)
+        => _metadataProvider.SetGraph(BuildSceneGraph(symbology: symbology));
+
+    private static MetadataV2Graph BuildSceneGraph(
+        MetadataV2ExtrusionInfo? extrusion = null,
+        Symbology3D? symbology = null,
+        AccessPolicy? accessPolicy = null,
+        int srid = 4326,
+        string resourceName = "Buildings",
+        IReadOnlyList<FieldDefinition>? fields = null)
+    {
+        const string resourceId = "res-layer-7";
+        const string bindingId = "binding-layer-7";
+
+        return new MetadataV2Graph
+        {
+            Revision = 1,
+            Environment = "test",
+            GeneratedAt = DateTimeOffset.UtcNow,
+            Resources =
+            [
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = resourceId, Name = resourceName },
+                    Type = MetadataV2ResourceType.FeatureDataset,
+                    StorageBindingIds = [bindingId],
+                    SchemaFields = BuildMetadataFields(fields),
+                    Spatial = new MetadataV2ResourceSpatial
+                    {
+                        SpatialReference = new MetadataV2SpatialReference
+                        {
+                            Srid = srid,
+                            Crs = $"EPSG:{srid.ToString(CultureInfo.InvariantCulture)}",
+                            IsGeographic = srid == 4326
+                        },
+                        GeometryType = MetadataV2GeometryType.Polygon,
+                        PrimaryGeometryField = "shape"
+                    },
+                    Extrusion = extrusion,
+                    Symbology3D = symbology,
+                    AccessPolicy = accessPolicy
+                }
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = bindingId, Name = bindingId },
+                    ResourceId = resourceId,
+                    StorageType = MetadataV2StorageType.RelationalTable,
+                    Locator = $"features:{LayerId}",
+                    StorageLayerId = LayerId
+                }
+            ]
+        };
+    }
+
+    private static MetadataV2Field[] BuildMetadataFields(IReadOnlyList<FieldDefinition>? fields)
+    {
+        fields ??=
+        [
+            new FieldDefinition("objectid", FieldType.Integer, Length: null, Nullable: false),
+            new FieldDefinition("shape", FieldType.Geometry, Length: null, Nullable: false),
+            new FieldDefinition("name", FieldType.String, Length: 64, Nullable: true),
+            new FieldDefinition("height", FieldType.Integer, Length: null, Nullable: true),
+            new FieldDefinition("base", FieldType.Integer, Length: null, Nullable: true)
+        ];
+
+        return fields.Select(field => new MetadataV2Field
+        {
+            Name = field.Name,
+            Type = field.Type switch
+            {
+                FieldType.Integer => MetadataV2FieldType.Integer,
+                FieldType.BigInteger => MetadataV2FieldType.BigInteger,
+                FieldType.Double => MetadataV2FieldType.Double,
+                FieldType.Float => MetadataV2FieldType.Float,
+                FieldType.String => MetadataV2FieldType.String,
+                FieldType.Geometry => MetadataV2FieldType.Geometry,
+                _ => MetadataV2FieldType.Unknown
+            },
+            Nullable = field.Nullable,
+            Length = field.Length
+        }).ToArray();
     }
 
     private static List<SceneFeature> SamplePolygonsWithoutZ()

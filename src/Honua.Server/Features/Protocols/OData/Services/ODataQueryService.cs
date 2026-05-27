@@ -3,7 +3,6 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
@@ -37,55 +36,7 @@ internal sealed partial class ODataQueryService
     }
 
     /// <summary>
-    /// Builds a feature query from OData parameters with proper validation and conversion.
-    /// </summary>
-    public async Task<(FeatureQuery Query, string? Error)> BuildFeatureQueryAsync(
-        string? filter,
-        string? orderby,
-        int? resultRecordCount,
-        int? resultOffset,
-        LayerDefinition layer,
-        string? select = null,
-        string? expand = null,
-        bool? count = null,
-        string? compute = null,
-        string? format = null,
-        CancellationToken cancellationToken = default)
-    {
-        var conversion = await _queryParameterAdapter.ConvertAsync(
-            new ODataQueryParameters
-            {
-                Filter = filter,
-                OrderBy = orderby,
-                Top = resultRecordCount,
-                Skip = resultOffset,
-                Select = select,
-                Expand = expand,
-                Count = count,
-                Compute = compute,
-                Format = format
-            },
-            layer,
-            cancellationToken).ConfigureAwait(false);
-
-        if (!conversion.IsSuccess || conversion.Query == null)
-        {
-            return (new FeatureQuery(), conversion.ErrorMessage ?? "Invalid OData query.");
-        }
-
-        var validation = _queryProcessor.ValidateQuery(conversion.Query.Value, layer);
-        if (!validation.IsValid)
-        {
-            return (new FeatureQuery(), validation.ErrorMessage ?? "Invalid OData query.");
-        }
-
-        var optimized = _queryProcessor.OptimizeQuery(conversion.Query.Value, layer);
-        return (_queryProcessor.ToFeatureQuery(optimized, layer), null);
-    }
-
-    /// <summary>
-    /// Metadata v2 overload of <see cref="BuildFeatureQueryAsync(string?, string?, int?, int?, LayerDefinition, string?, string?, bool?, string?, string?, CancellationToken)"/>.
-    /// Routes the OData query parameters through the V2 <see cref="IQueryParameterAdapter{TProtocolParams}.ConvertAsync(TProtocolParams, MetadataV2Resource, CancellationToken)"/>
+    /// Routes OData query parameters through the V2 <see cref="IQueryParameterAdapter{TProtocolParams}.ConvertAsync(TProtocolParams, MetadataV2Resource, CancellationToken)"/>
     /// path and the V2 <see cref="IQueryProcessor"/> overloads so $filter SQL translation
     /// and $select validation honour the canonical resource's <see cref="MetadataV2Resource.SchemaFields"/>.
     /// </summary>
@@ -136,15 +87,15 @@ internal sealed partial class ODataQueryService
     }
 
     /// <summary>
-    /// Applies basic filtering to layer collections using simple OData expressions.
+    /// Applies basic filtering to projected OData layer payloads.
     /// </summary>
-    public IEnumerable<LayerDefinition> ApplyBasicFilter(
-        IEnumerable<LayerDefinition> layers,
+    public IEnumerable<Dictionary<string, object?>> ApplyBasicFilter(
+        IEnumerable<Dictionary<string, object?>> layerPayloads,
         string filter)
     {
         if (string.IsNullOrWhiteSpace(filter))
         {
-            return layers;
+            return layerPayloads;
         }
 
         var parseResult = _filterExpressionService.Parse(FilterLanguage.OData, filter);
@@ -155,10 +106,10 @@ internal sealed partial class ODataQueryService
 
         if (parseResult.Expression == null)
         {
-            return layers;
+            return layerPayloads;
         }
 
-        return layers.Where(layer => EvaluateLayerFilter(parseResult.Expression, layer));
+        return layerPayloads.Where(payload => EvaluateLayerPayloadFilter(parseResult.Expression, payload));
     }
 
     /// <summary>
@@ -201,26 +152,6 @@ internal sealed partial class ODataQueryService
     }
 
     /// <summary>
-    /// Converts an OData $filter expression into a parameterized SQL fragment.
-    /// </summary>
-    public SqlFragment? ConvertODataFilterToSqlFragment(string? odataFilter, LayerDefinition layer)
-    {
-        if (string.IsNullOrWhiteSpace(odataFilter))
-        {
-            return null;
-        }
-
-        var translationResult = _filterExpressionService.Translate(FilterLanguage.OData, odataFilter, layer);
-        if (!translationResult.IsSuccess)
-        {
-            throw new ArgumentException(translationResult.ErrorMessage ?? "Invalid OData filter.");
-        }
-
-        return translationResult.SqlFilter;
-    }
-
-    /// <summary>
-    /// Metadata v2 overload of <see cref="ConvertODataFilterToSqlFragment(string?, LayerDefinition)"/>.
     /// Parses the OData filter, then routes through the V2 <see cref="IFilterExpressionService.Translate(FilterExpression?, MetadataV2Resource)"/>
     /// path so SQL translation honours the resource's <see cref="MetadataV2Resource.SchemaFields"/>
     /// (typed field set) instead of the v1 layer's attribute fields.
@@ -254,9 +185,11 @@ internal sealed partial class ODataQueryService
     }
 
 
-    private static bool EvaluateLayerFilter(FilterExpression expression, LayerDefinition layer)
+    private static bool EvaluateLayerPayloadFilter(
+        FilterExpression expression,
+        IReadOnlyDictionary<string, object?> payload)
     {
-        var result = EvaluateExpression(expression, layer);
+        var result = EvaluateExpression(expression, payload);
         if (result is bool booleanResult)
         {
             return booleanResult;
@@ -265,32 +198,36 @@ internal sealed partial class ODataQueryService
         throw new ArgumentException("OData filter did not evaluate to a boolean expression.");
     }
 
-    private static object? EvaluateExpression(FilterExpression expression, LayerDefinition layer)
+    private static object? EvaluateExpression(
+        FilterExpression expression,
+        IReadOnlyDictionary<string, object?> payload)
     {
         return expression switch
         {
-            BinaryExpression binary => EvaluateBinary(binary, layer),
-            UnaryExpression unary => EvaluateUnary(unary, layer),
-            PropertyReference property => GetLayerPropertyValue(layer, property.PropertyName),
+            BinaryExpression binary => EvaluateBinary(binary, payload),
+            UnaryExpression unary => EvaluateUnary(unary, payload),
+            PropertyReference property => GetLayerPayloadPropertyValue(payload, property.PropertyName),
             Literal literal => literal.Value,
-            FunctionCall function => EvaluateFunction(function, layer),
+            FunctionCall function => EvaluateFunction(function, payload),
             _ => throw new ArgumentException($"Unsupported OData filter expression: {expression.GetType().Name}")
         };
     }
 
-    private static object? EvaluateBinary(BinaryExpression expression, LayerDefinition layer)
+    private static object? EvaluateBinary(
+        BinaryExpression expression,
+        IReadOnlyDictionary<string, object?> payload)
     {
         if (expression.Operator is BinaryOperator.And or BinaryOperator.Or)
         {
-            var leftBool = ToBoolean(EvaluateExpression(expression.Left, layer));
-            var rightBool = ToBoolean(EvaluateExpression(expression.Right, layer));
+            var leftBool = ToBoolean(EvaluateExpression(expression.Left, payload));
+            var rightBool = ToBoolean(EvaluateExpression(expression.Right, payload));
             return expression.Operator == BinaryOperator.And ? leftBool && rightBool : leftBool || rightBool;
         }
 
         if (expression.Operator is BinaryOperator.Add or BinaryOperator.Subtract or BinaryOperator.Multiply or BinaryOperator.Divide or BinaryOperator.Modulo)
         {
-            var leftNumber = ToNumber(EvaluateExpression(expression.Left, layer));
-            var rightNumber = ToNumber(EvaluateExpression(expression.Right, layer));
+            var leftNumber = ToNumber(EvaluateExpression(expression.Left, payload));
+            var rightNumber = ToNumber(EvaluateExpression(expression.Right, payload));
 
             return expression.Operator switch
             {
@@ -303,8 +240,8 @@ internal sealed partial class ODataQueryService
             };
         }
 
-        var left = EvaluateExpression(expression.Left, layer);
-        var right = EvaluateExpression(expression.Right, layer);
+        var left = EvaluateExpression(expression.Left, payload);
+        var right = EvaluateExpression(expression.Right, payload);
 
         return expression.Operator switch
         {
@@ -318,9 +255,9 @@ internal sealed partial class ODataQueryService
         };
     }
 
-    private static bool EvaluateUnary(UnaryExpression expression, LayerDefinition layer)
+    private static bool EvaluateUnary(UnaryExpression expression, IReadOnlyDictionary<string, object?> payload)
     {
-        var operand = EvaluateExpression(expression.Operand, layer);
+        var operand = EvaluateExpression(expression.Operand, payload);
         return expression.Operator switch
         {
             UnaryOperator.Not => !ToBoolean(operand),
@@ -330,10 +267,10 @@ internal sealed partial class ODataQueryService
         };
     }
 
-    private static object? EvaluateFunction(FunctionCall function, LayerDefinition layer)
+    private static object? EvaluateFunction(FunctionCall function, IReadOnlyDictionary<string, object?> payload)
     {
         var name = function.FunctionName.ToUpperInvariant();
-        var args = function.Arguments.Select(arg => EvaluateExpression(arg, layer)).ToArray();
+        var args = function.Arguments.Select(arg => EvaluateExpression(arg, payload)).ToArray();
 
         return name switch
         {
@@ -397,17 +334,16 @@ internal sealed partial class ODataQueryService
         return value.Substring(start, maxLength);
     }
 
-    private static object? GetLayerPropertyValue(LayerDefinition layer, string propertyName)
+    private static object? GetLayerPayloadPropertyValue(
+        IReadOnlyDictionary<string, object?> payload,
+        string propertyName)
     {
-        return propertyName.ToLowerInvariant() switch
+        if (payload.TryGetValue(propertyName, out var value))
         {
-            "id" => layer.Id,
-            "name" => layer.Name,
-            "description" => layer.Description,
-            "geometrytype" => layer.GeometryType.ToString(),
-            "srid" => layer.SpatialReference.ToSrid(),
-            _ => throw new ArgumentException($"Unknown layer property '{propertyName}'.")
-        };
+            return value;
+        }
+
+        throw new ArgumentException($"Unknown layer property '{propertyName}'.");
     }
 
     private static bool AreEqual(object? left, object? right)

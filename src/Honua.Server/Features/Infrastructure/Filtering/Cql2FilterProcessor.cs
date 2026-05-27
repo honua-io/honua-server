@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -48,95 +47,6 @@ internal sealed class Cql2FilterProcessor(
             };
     }
 
-    public async Task<ProcessingResult> ProcessFilterAsync(
-        LayerDefinition layer,
-        JsonElement? filter,
-        string? filterLang,
-        string? filterCrs,
-        bool defaultFilterLangIsText,
-        CancellationToken cancellationToken)
-    {
-        var hasFilter = filter.HasValue;
-        var hasFilterLang = !string.IsNullOrWhiteSpace(filterLang);
-        var hasFilterCrs = !string.IsNullOrWhiteSpace(filterCrs);
-        if (!hasFilter && !hasFilterLang && !hasFilterCrs)
-        {
-            return ProcessingResult.Success(null);
-        }
-
-        if (!hasFilter)
-        {
-            return ProcessingResult.Failure("filter requires a filter expression.");
-        }
-
-        var filterLanguage = ResolveFilterLanguage(filterLang, filter, defaultFilterLangIsText);
-        if (filterLanguage is null)
-        {
-            return ProcessingResult.Failure("Invalid filter-lang parameter.");
-        }
-
-        var filterElement = filter.GetValueOrDefault();
-        var filterText = filterLanguage.Value == FilterLanguage.Cql2Json
-            ? filterElement.GetRawText()
-            : filterElement.ValueKind == JsonValueKind.String
-                ? filterElement.GetString()
-                : null;
-
-        if (filterLanguage.Value == FilterLanguage.Cql2Text && filterElement.ValueKind != JsonValueKind.String)
-        {
-            return ProcessingResult.Failure("filter must be a string when filter-lang is cql2-text.");
-        }
-
-        if (filterLanguage.Value == FilterLanguage.Cql2Json &&
-            filterElement.ValueKind is not JsonValueKind.Object and not JsonValueKind.Array)
-        {
-            return ProcessingResult.Failure("filter must be a JSON object when filter-lang is cql2-json.");
-        }
-
-        var parseResult = _filterExpressionService.Parse(filterLanguage.Value, filterText);
-        if (!parseResult.IsSuccess)
-        {
-            return ProcessingResult.Failure(parseResult.ErrorMessage ?? "Invalid filter expression.");
-        }
-
-        var parsedExpression = parseResult.Expression;
-        if (parsedExpression is null)
-        {
-            return ProcessingResult.Failure("Invalid filter expression.");
-        }
-
-        if (hasFilterCrs)
-        {
-            var filterCrsDefinition = await _crsRegistry.ResolveAsync(filterCrs, cancellationToken).ConfigureAwait(false);
-            if (!filterCrsDefinition.HasValue)
-            {
-                return ProcessingResult.Failure($"Unsupported filter-crs '{filterCrs}'.");
-            }
-
-            parsedExpression = ApplyFilterCrs(parsedExpression, filterCrsDefinition.Value);
-            parsedExpression = NormalizeFilterAxisOrder(parsedExpression, filterCrsDefinition.Value.AxisOrder);
-        }
-
-        foreach (var explicitGeometrySrid in FilterGeometryCrsValidator.GetExplicitGeometrySrids(parsedExpression))
-        {
-            if (!await _crsRegistry.IsSridSupportedAsync(explicitGeometrySrid, cancellationToken).ConfigureAwait(false))
-            {
-                return ProcessingResult.Failure($"Unsupported explicit geometry CRS 'EPSG:{explicitGeometrySrid}'.");
-            }
-        }
-
-        var translationResult = _filterExpressionService.Translate(parsedExpression, layer);
-        return translationResult.IsSuccess
-            ? ProcessingResult.Success(translationResult.SqlFilter)
-            : ProcessingResult.Failure(translationResult.ErrorMessage ?? "Invalid filter expression.");
-    }
-
-    /// <summary>
-    /// V2 overload of <see cref="ProcessFilterAsync(LayerDefinition, JsonElement?, string?, string?, bool, CancellationToken)"/>
-    /// that drives filter translation off a <see cref="MetadataV2Resource"/> instead of a v1 layer.
-    /// Mirrors the v1 path step-for-step; the only difference is the final
-    /// <see cref="IFilterExpressionService.Translate(FilterExpression?, MetadataV2Resource)"/> call.
-    /// </summary>
     public async Task<ProcessingResult> ProcessFilterAsync(
         MetadataV2Resource resource,
         JsonElement? filter,

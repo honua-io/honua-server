@@ -1,13 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.SqlServer;
 using Honua.SqlServer.Features.FeatureStore;
 using Honua.SqlServer.Features.FeatureStore.Services;
@@ -17,13 +17,15 @@ using Microsoft.Extensions.Options;
 namespace Honua.SqlServer.Tests;
 
 /// <summary>
-/// Verifies that the SQL Server provider plugs into the shared provider seam:
+/// Verifies that the SQL Server provider plugs into the shared Metadata v2 provider seam:
 /// it is discoverable by canonical name and aliases, advertises read-only capabilities,
-/// and resolves through <see cref="FeatureProviderBindingResolver"/> for layers whose
-/// <see cref="DataConnection"/> selects the SQL Server engine.
+/// and resolves through <see cref="FeatureProviderQueryRouter"/> for source-backed publications
+/// whose connection selects the SQL Server engine.
 /// </summary>
 public class SqlServerProviderResolutionTests
 {
+    private const int LayerId = 1;
+
     [Theory]
     [InlineData("sqlserver")]
     [InlineData("mssql")]
@@ -59,63 +61,40 @@ public class SqlServerProviderResolutionTests
     }
 
     [Fact]
-    public async Task BindingResolver_RoutesSqlServerConnectionToSqlServerProvider()
-    {
-        var connectionId = Guid.NewGuid();
-        var connection = new DataConnection { ConnectionId = connectionId, Provider = DataProviderNames.SqlServer };
-        var connectionRegistry = new FakeSecureConnectionRegistry(connection);
-
-        var sqlProvider = CreateSqlServerStore();
-        var providerRegistry = new FeatureDataProviderRegistry([sqlProvider]);
-
-        var resolver = new FeatureProviderBindingResolver(
-            connectionRegistry,
-            providerRegistry,
-            DataProviderNames.SqlServer);
-
-        var layer = LayerDefinition.CreateBasic(1, "Parcels", GeometryType.Polygon)
-            with
-        { StorageMapping = new LayerStorageMapping("parcels", SchemaName: "dbo", PrimaryKeyColumn: "objectid", GeometryColumn: "shape", StorageSrid: 4326) };
-
-        var service = new ServiceDefinition(
-            Name: "Parcels",
-            Description: "test",
-            Layers: [layer],
-            SpatialReference: Honua.Core.Features.Shared.Models.SpatialReference.WGS84,
-            Capabilities: ["Query"],
-            ConnectionId: connectionId);
-
-        var binding = await resolver.ResolveAsync(service, layer);
-
-        Assert.Same(sqlProvider, binding.Provider);
-        Assert.Equal(DataProviderNames.SqlServer, binding.Provider.ProviderName);
-    }
-
-    [Fact]
     public async Task QueryStatistics_OnSqlServerProvider_Throws()
     {
         var provider = CreateSqlServerStore();
         var reader = provider.Reader;
         await Assert.ThrowsAsync<NotSupportedException>(
-            () => reader.QueryStatisticsAsync(1, new FeatureQuery()));
+            () => reader.QueryStatisticsAsync(LayerId, new FeatureQuery()));
     }
 
     [Fact]
-    public void CreateReaderForBinding_WithoutDataConnection_ReturnsSelf()
+    public async Task DefaultReader_WithoutMetadataV2Binding_ThrowsClearError()
     {
-        SqlServerFeatureStore provider = CreateSqlServerStore();
-        var layer = CreateLayer();
+        var provider = CreateSqlServerStore();
 
-        var binding = new FeatureProviderBinding(
-            CreateService(connectionId: null),
-            layer,
-            layer.StorageMapping!,
-            provider,
-            Connection: null);
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => provider.Reader.CountAsync(LayerId, new FeatureQuery()));
 
-        var reader = provider.CreateReaderForBinding(binding);
+        Assert.Contains("Metadata v2 provider binding", exception.Message, StringComparison.Ordinal);
+    }
 
-        Assert.Same(provider, reader);
+    [Fact]
+    public async Task CreateReaderForBinding_WithoutDataConnection_PassesNullDataConnection()
+    {
+        var factory = new RecordingConnectionFactory();
+        var provider = CreateSqlServerStore(factory);
+        var reader = ((IBindableFeatureDataProvider)provider)
+            .CreateReaderForBinding(CreateBinding(provider, connection: null));
+
+        Assert.NotSame(provider, reader);
+
+        await Assert.ThrowsAsync<RecordingConnectionFactory.SentinelException>(
+            () => reader.CountAsync(LayerId, new FeatureQuery()));
+
+        Assert.True(factory.WasCalled);
+        Assert.Null(factory.LastDataConnection);
     }
 
     [Fact]
@@ -134,54 +113,21 @@ public class SqlServerProviderResolutionTests
         };
 
         var factory = new RecordingConnectionFactory();
-        var dataAccess = new SqlServerFeatureDataAccess(
-            factory,
-            Options.Create(new SqlServerOptions()),
-            NullLogger<SqlServerFeatureDataAccess>.Instance);
-
-        var layer = CreateLayer();
-        var catalog = new SingleLayerCatalog(layer);
-        var provider = new SqlServerFeatureStore(dataAccess, catalog);
-
-        var binding = new FeatureProviderBinding(
-            CreateService(connectionId),
-            layer,
-            layer.StorageMapping!,
-            provider,
-            dataConnection);
-
-        var reader = ((IBindableFeatureDataProvider)provider).CreateReaderForBinding(binding);
+        var provider = CreateSqlServerStore(factory);
+        var reader = ((IBindableFeatureDataProvider)provider)
+            .CreateReaderForBinding(CreateBinding(provider, dataConnection));
 
         Assert.NotSame(provider, reader);
 
         await Assert.ThrowsAsync<RecordingConnectionFactory.SentinelException>(
-            () => reader.CountAsync(layer.Id, new FeatureQuery()));
+            () => reader.CountAsync(LayerId, new FeatureQuery()));
 
         Assert.NotNull(factory.LastDataConnection);
         Assert.Equal(connectionId, factory.LastDataConnection!.ConnectionId);
     }
 
     [Fact]
-    public async Task DefaultReader_WithoutBinding_PassesNullDataConnection()
-    {
-        var factory = new RecordingConnectionFactory();
-        var dataAccess = new SqlServerFeatureDataAccess(
-            factory,
-            Options.Create(new SqlServerOptions()),
-            NullLogger<SqlServerFeatureDataAccess>.Instance);
-
-        var layer = CreateLayer();
-        var provider = new SqlServerFeatureStore(dataAccess, new SingleLayerCatalog(layer));
-
-        await Assert.ThrowsAsync<RecordingConnectionFactory.SentinelException>(
-            () => provider.Reader.CountAsync(layer.Id, new FeatureQuery()));
-
-        Assert.True(factory.WasCalled);
-        Assert.Null(factory.LastDataConnection);
-    }
-
-    [Fact]
-    public async Task QueryRouter_RoutesSqlServerBinding_ThroughBindableSeam()
+    public async Task QueryRouter_RoutesSqlServerConnection_ThroughBindableSeam()
     {
         var connectionId = Guid.NewGuid();
         var dataConnection = new DataConnection
@@ -196,65 +142,130 @@ public class SqlServerProviderResolutionTests
         };
 
         var factory = new RecordingConnectionFactory();
-        var dataAccess = new SqlServerFeatureDataAccess(
-            factory,
-            Options.Create(new SqlServerOptions()),
-            NullLogger<SqlServerFeatureDataAccess>.Instance);
-
-        var layer = CreateLayer();
-        var catalog = new SingleLayerCatalog(layer);
-        var provider = new SqlServerFeatureStore(dataAccess, catalog);
+        var provider = CreateSqlServerStore(factory);
         var providerRegistry = new FeatureDataProviderRegistry([provider]);
-
-        var connectionRegistry = new FakeSecureConnectionRegistry(dataConnection);
-        var bindingResolver = new FeatureProviderBindingResolver(
-            connectionRegistry,
+        var router = new FeatureProviderQueryRouter(
+            new FakeSecureConnectionRegistry(dataConnection),
             providerRegistry,
             DataProviderNames.SqlServer);
-        var router = new FeatureProviderQueryRouter(bindingResolver);
+        var (snapshot, service, resource, publication) = CreateSnapshot(connectionId);
 
-        var service = CreateService(connectionId);
-
-        var reader = await router.ResolveReaderAsync(service, layer, FeatureProviderReadOperation.Count);
+        var reader = await router.ResolveReaderAsync(
+            snapshot,
+            service,
+            resource,
+            publication,
+            LayerId,
+            FeatureProviderReadOperation.Count);
 
         Assert.NotSame(provider, reader);
 
         await Assert.ThrowsAsync<RecordingConnectionFactory.SentinelException>(
-            () => reader.CountAsync(layer.Id, new FeatureQuery()));
+            () => reader.CountAsync(LayerId, new FeatureQuery()));
 
         Assert.NotNull(factory.LastDataConnection);
         Assert.Equal(connectionId, factory.LastDataConnection!.ConnectionId);
     }
 
-    private static LayerDefinition CreateLayer() =>
-        LayerDefinition.CreateBasic(1, "Parcels", GeometryType.Polygon)
-        with
+    private static FeatureProviderBinding CreateBinding(SqlServerFeatureStore provider, DataConnection? connection)
+    {
+        var (snapshot, service, resource, publication) = CreateSnapshot(connection?.ConnectionId ?? Guid.NewGuid());
+        var storageBinding = snapshot.ResolveStorageBinding(publication)
+            ?? throw new InvalidOperationException("Test snapshot did not include a storage binding.");
+
+        return new FeatureProviderBinding(
+            service,
+            resource,
+            publication,
+            storageBinding,
+            FeatureStorageMapping.FromMetadata(resource, storageBinding),
+            LayerId,
+            provider,
+            connection);
+    }
+
+    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Publication Publication)
+        CreateSnapshot(Guid connectionId)
+    {
+        var service = new MetadataV2Service
         {
-            StorageMapping = new LayerStorageMapping(
-                TableName: "parcels",
-                SchemaName: "dbo",
-                PrimaryKeyColumn: "objectid",
-                GeometryColumn: "shape",
-                StorageSrid: 4326)
+            Metadata = new MetadataV2ObjectMetadata { Id = "svc-parcels", Name = "Parcels" },
+            SpatialReference = MetadataV2SpatialReference.Wgs84
+        };
+        var resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "Parcels" },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            StorageBindingIds = ["binding-parcels"],
+            SchemaFields =
+            [
+                new MetadataV2Field
+                {
+                    Name = "objectid",
+                    Type = MetadataV2FieldType.BigInteger,
+                    Nullable = false,
+                    SemanticRoles = ["id.primary"]
+                },
+                new MetadataV2Field
+                {
+                    Name = "shape",
+                    Type = MetadataV2FieldType.Geometry,
+                    Nullable = false,
+                    SemanticRoles = ["geometry.primary"]
+                },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }
+            ],
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = MetadataV2SpatialReference.Wgs84,
+                GeometryType = MetadataV2GeometryType.Polygon,
+                PrimaryGeometryField = "shape"
+            }
+        };
+        var storageBinding = new MetadataV2StorageBinding
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "binding-parcels", Name = "binding-parcels" },
+            ResourceId = resource.Metadata.Id,
+            ConnectionId = connectionId.ToString(),
+            StorageType = MetadataV2StorageType.RelationalTable,
+            Locator = "dbo.parcels",
+            StorageLayerId = LayerId
+        };
+        var metadataConnection = new MetadataV2Connection
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = connectionId.ToString(), Name = "secure" },
+            Provider = DataProviderNames.SqlServer
+        };
+        var publication = new MetadataV2Publication
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "pub-parcels", Name = "Parcels" },
+            ServiceId = service.Metadata.Id,
+            ResourceId = resource.Metadata.Id,
+            StorageBindingId = storageBinding.Metadata.Id,
+            Identifier = new MetadataV2PublicationIdentifier { Value = LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture), IsNumeric = true }
+        };
+        var graph = new MetadataV2Graph
+        {
+            Revision = 1,
+            Environment = "test",
+            Resources = [resource],
+            Connections = [metadataConnection],
+            StorageBindings = [storageBinding],
+            Services = [service],
+            Publications = [publication]
         };
 
-    private static ServiceDefinition CreateService(Guid? connectionId) =>
-        new(
-            Name: "Parcels",
-            Description: "test",
-            Layers: [CreateLayer()],
-            SpatialReference: Honua.Core.Features.Shared.Models.SpatialReference.WGS84,
-            Capabilities: ["Query"],
-            ConnectionId: connectionId);
+        return (new MetadataV2GraphSnapshot(graph, "test", DateTimeOffset.UtcNow), service, resource, publication);
+    }
 
-    private static SqlServerFeatureStore CreateSqlServerStore()
+    private static SqlServerFeatureStore CreateSqlServerStore(ISqlServerConnectionFactory? factory = null)
     {
         var dataAccess = new SqlServerFeatureDataAccess(
-            new ThrowingConnectionFactory(),
+            factory ?? new ThrowingConnectionFactory(),
             Options.Create(new SqlServerOptions()),
             NullLogger<SqlServerFeatureDataAccess>.Instance);
 
-        return new SqlServerFeatureStore(dataAccess, new EmptyLayerCatalog());
+        return new SqlServerFeatureStore(dataAccess);
     }
 
     private sealed class ThrowingConnectionFactory : ISqlServerConnectionFactory
@@ -281,70 +292,18 @@ public class SqlServerProviderResolutionTests
         }
     }
 
-    private sealed class SingleLayerCatalog(LayerDefinition layer) : ILayerCatalog
-    {
-        public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult<LayerDefinition?>(layer.Id == layerId ? layer : null);
-
-        public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(new[] { layer });
-
-        public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult<ServiceDefinition?>(null);
-
-        public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(Array.Empty<ServiceDefinition>());
-
-        public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(layer.Id == layerId);
-
-        public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult(false);
-
-        public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
-            => Task.FromResult<Relationship?>(null);
-
-        public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(Array.Empty<Relationship>());
-    }
-
-    private sealed class EmptyLayerCatalog : ILayerCatalog
-    {
-        public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult<LayerDefinition?>(null);
-
-        public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(Array.Empty<LayerDefinition>());
-
-        public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult<ServiceDefinition?>(null);
-
-        public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(Array.Empty<ServiceDefinition>());
-
-        public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(false);
-
-        public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult(false);
-
-        public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
-            => Task.FromResult<Relationship?>(null);
-
-        public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(Array.Empty<Relationship>());
-    }
-
     private sealed class FakeSecureConnectionRegistry(DataConnection connection) : ISecureConnectionRegistry
     {
         public Task<DataConnection?> GetConnectionAsync(Guid connectionId, CancellationToken cancellationToken = default)
             => Task.FromResult<DataConnection?>(connection.ConnectionId == connectionId ? connection : null);
 
         public Task<DataConnection?> GetConnectionAsync(string connectionId)
-            => Task.FromResult<DataConnection?>(null);
+            => Guid.TryParse(connectionId, out var id)
+                ? GetConnectionAsync(id)
+                : Task.FromResult<DataConnection?>(null);
 
         public Task<DataConnection?> GetConnectionAsync(string connectionId, CancellationToken cancellationToken)
-            => Task.FromResult<DataConnection?>(null);
+            => GetConnectionAsync(connectionId);
 
         public Task<DataConnection?> GetConnectionByNameAsync(string connectionName, CancellationToken cancellationToken = default)
             => Task.FromResult<DataConnection?>(null);

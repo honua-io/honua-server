@@ -1,9 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text.Json;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Server.Features.Infrastructure.Raster;
 
 namespace Honua.Server.Features.Protocols.GeoServices.ImageServer.Services;
 
@@ -71,7 +71,7 @@ internal static class ImageServerV2Lookups
     /// <summary>
     /// Returns the temporal field hints declared by the V2 resource's
     /// <c>temporal</c> document, if present. The shape mirrors the legacy
-    /// <c>LayerTimeInfo</c> projection so handlers can keep emitting the
+    /// temporal projection so handlers can keep emitting the
     /// ArcGIS-conformant <c>timeInfo</c> block while reading directly from V2.
     /// </summary>
     public static (string? StartTimeField, string? EndTimeField, string? TrackIdField) ReadTimeFieldHints(
@@ -91,90 +91,5 @@ internal static class ImageServerV2Lookups
     /// <c>extensions["rasterMosaic"].mergeStrategy</c> value is used if present.
     /// </summary>
     public static RasterMergeStrategy ResolveMergeStrategy(MetadataV2Resource? resource, string? mosaicRule)
-    {
-        if (TryParseMergeStrategy(mosaicRule, out var requested))
-        {
-            return requested;
-        }
-
-        if (resource is not null
-            && resource.Extensions.TryGetValue("rasterMosaic", out var rasterMosaic)
-            && rasterMosaic.ValueKind == JsonValueKind.Object)
-        {
-            var mergeStrategy = ReadStringProperty(rasterMosaic, "mergeStrategy");
-            if (TryParseMergeStrategy(mergeStrategy, out var fromResource))
-            {
-                return fromResource;
-            }
-        }
-
-        return RasterMergeStrategy.Newest;
-    }
-
-    private static string? ReadStringProperty(JsonElement element, string propertyName)
-    {
-        if (element.ValueKind != JsonValueKind.Object)
-        {
-            return null;
-        }
-
-        foreach (var property in element.EnumerateObject())
-        {
-            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase)
-                && property.Value.ValueKind == JsonValueKind.String)
-            {
-                return property.Value.GetString();
-            }
-        }
-        return null;
-    }
-
-    private static bool TryParseMergeStrategy(string? value, out RasterMergeStrategy strategy)
-    {
-        strategy = RasterMergeStrategy.Newest;
-
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return false;
-        }
-
-        var candidate = value.Trim();
-        if (candidate.StartsWith('{'))
-        {
-            try
-            {
-                using var document = JsonDocument.Parse(candidate);
-                if (document.RootElement.TryGetProperty("mergeStrategy", out var mergeStrategyProperty))
-                {
-                    candidate = mergeStrategyProperty.GetString() ?? string.Empty;
-                }
-                else if (document.RootElement.TryGetProperty("operation", out var operationProperty))
-                {
-                    candidate = operationProperty.GetString() ?? string.Empty;
-                }
-            }
-            catch (JsonException)
-            {
-                return false;
-            }
-        }
-
-        var token = candidate.Trim().ToLowerInvariant();
-        strategy = token switch
-        {
-            "newest" or "latest" or "last" or "mt_last" => RasterMergeStrategy.Newest,
-            "oldest" or "first" or "mt_first" => RasterMergeStrategy.Oldest,
-            "average" or "avg" or "mean" or "mt_mean" => RasterMergeStrategy.Average,
-            "max" or "maximum" or "mt_max" => RasterMergeStrategy.Max,
-            "min" or "minimum" or "mt_min" => RasterMergeStrategy.Min,
-            _ => RasterMergeStrategy.Newest,
-        };
-
-        return token is
-            "newest" or "latest" or "last" or "mt_last" or
-            "oldest" or "first" or "mt_first" or
-            "average" or "avg" or "mean" or "mt_mean" or
-            "max" or "maximum" or "mt_max" or
-            "min" or "minimum" or "mt_min";
-    }
+        => RasterMosaicUtilities.ResolveMergeStrategy(resource, mosaicRule);
 }

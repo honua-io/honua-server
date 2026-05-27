@@ -4,9 +4,9 @@
 using System.Collections.Immutable;
 using Grpc.Core;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
@@ -17,6 +17,8 @@ using Honua.Server.Features.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
+using AccessPolicy = Honua.Core.Features.Security.Domain.AccessPolicy;
 using Proto = Geospatial.V1;
 
 namespace Honua.Server.Features.Protocols.Grpc;
@@ -27,6 +29,8 @@ namespace Honua.Server.Features.Protocols.Grpc;
 /// </summary>
 internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceBase
 {
+    private const string GrpcProtocolName = "Grpc";
+
     private static readonly PaginationValidationOptions _grpcPaginationValidation =
         new(MinOffset: 0, MinLimit: 1, OffsetParameterName: "resultOffset", LimitParameterName: "resultRecordCount");
 
@@ -97,24 +101,12 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     {
         EnrichActivity("query", request);
 
-        var validation = await _resourceValidator.ValidateServiceLayerAsync(
+        var layer = await ValidateGrpcLayerAsync(
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
-
-        if (!validation.IsValid)
-        {
-            throw new RpcException(new Status(
-                validation.ErrorCode == ResourceValidationError.NotFound
-                    ? StatusCode.NotFound
-                    : StatusCode.InvalidArgument,
-                validation.ErrorMessage ?? "Resource validation failed"));
-        }
-
-        var (service, layer) = validation.Resource!;
-        EnsureGrpcEnabled(service);
-        EnsureReadAccess(context, service, layer);
+        EnsureReadAccess(context, layer.Service, layer.Resource);
         var queryContext = await CreateQueryContextAsync(request, layer, context.CancellationToken).ConfigureAwait(false);
         var query = queryContext.Query;
-        var pkField = layer.PrimaryKeyField?.Name ?? "objectid";
+        var pkField = layer.ObjectIdFieldName;
 
         var response = new Proto.QueryFeaturesResponse
         {
@@ -181,24 +173,12 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         EnrichActivity("query_stream", request);
         EnsureStreamingFlagsSupported(request);
 
-        var validation = await _resourceValidator.ValidateServiceLayerAsync(
+        var layer = await ValidateGrpcLayerAsync(
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
-
-        if (!validation.IsValid)
-        {
-            throw new RpcException(new Status(
-                validation.ErrorCode == ResourceValidationError.NotFound
-                    ? StatusCode.NotFound
-                    : StatusCode.InvalidArgument,
-                validation.ErrorMessage ?? "Resource validation failed"));
-        }
-
-        var (service, layer) = validation.Resource!;
-        EnsureGrpcEnabled(service);
-        EnsureReadAccess(context, service, layer);
+        EnsureReadAccess(context, layer.Service, layer.Resource);
         var queryContext = await CreateQueryContextAsync(request, layer, context.CancellationToken).ConfigureAwait(false);
         var query = queryContext.Query;
-        var pkField = layer.PrimaryKeyField?.Name ?? "objectid";
+        var pkField = layer.ObjectIdFieldName;
 
         var isFirstPage = true;
         var batch = new List<Proto.Feature>(_streamBatchSize);
@@ -263,21 +243,9 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     {
         EnrichActivity("apply_edits", request.ServiceId, request.LayerId);
 
-        var validation = await _resourceValidator.ValidateServiceLayerAsync(
+        var layer = await ValidateGrpcLayerAsync(
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
-
-        if (!validation.IsValid)
-        {
-            throw new RpcException(new Status(
-                validation.ErrorCode == ResourceValidationError.NotFound
-                    ? StatusCode.NotFound
-                    : StatusCode.InvalidArgument,
-                validation.ErrorMessage ?? "Resource validation failed"));
-        }
-
-        var (service, layer) = validation.Resource!;
-        EnsureGrpcEnabled(service);
-        await EnsureWriteAccessAsync(context, service, layer).ConfigureAwait(false);
+        await EnsureWriteAccessAsync(context, layer.Service, layer.Resource).ConfigureAwait(false);
 
         FeatureEditBatch editBatch;
         try
@@ -304,7 +272,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             request.LayerId,
             HonuaTelemetry.Protocols.Grpc,
             serviceId: request.ServiceId,
-            serviceProtocol: ServiceProtocols.Grpc,
+            serviceProtocol: GrpcProtocolName,
             // Use ToSrid() (LatestWkid ?? Wkid) so the outbox enrichment fallback
             // emits the same SRID as the inline-publish path on layers like
             // Wkid=102100/LatestWkid=3857. Passing Wkid alone would publish the
@@ -333,7 +301,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     private async Task PublishFeatureChangeEventsAsync(
         string serviceId,
         int layerId,
-        LayerDefinition layer,
+        GrpcLayerContext layer,
         FeatureEditBatch editBatch,
         FeatureEditResult editResult,
         ServerCallContext context)
@@ -434,9 +402,64 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         return result;
     }
 
+    private async Task<GrpcLayerContext> ValidateGrpcLayerAsync(
+        string serviceId,
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var validation = await _resourceValidator.ValidateServiceLayerV2Async(
+            serviceId, layerId, cancellationToken).ConfigureAwait(false);
+
+        if (!validation.IsValid)
+        {
+            throw new RpcException(new Status(
+                validation.ErrorCode == ResourceValidationError.NotFound
+                    ? StatusCode.NotFound
+                    : StatusCode.InvalidArgument,
+                validation.ErrorMessage ?? "Resource validation failed"));
+        }
+
+        var triple = validation.Resource;
+        var service = triple.Service;
+        if (!IsGrpcEnabled(service))
+        {
+            throw new RpcException(new Status(StatusCode.NotFound, "Grpc is not enabled for this service."));
+        }
+
+        return CreateLayerContext(service, triple.Publication, triple.Resource);
+    }
+
+    private static GrpcLayerContext CreateLayerContext(
+        MetadataV2Service service,
+        MetadataV2Publication publication,
+        MetadataV2Resource resource)
+    {
+        var spatialReference = ToSpatialReference(resource);
+        var geometryType = resource.ReadGeometryType();
+        var attributeFields = resource.SchemaFields
+            .Where(static field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
+            .ToArray();
+        var objectIdFieldName = resource.FindPrimaryIdField()?.Name ?? "objectid";
+
+        return new GrpcLayerContext(
+            service,
+            publication,
+            resource,
+            spatialReference,
+            geometryType,
+            attributeFields,
+            objectIdFieldName);
+    }
+
+    private static SpatialReference ToSpatialReference(MetadataV2Resource resource)
+    {
+        var srid = resource.ReadSrid();
+        return srid.HasValue ? SpatialReference.Create(srid.Value) : SpatialReference.WGS84;
+    }
+
     private static Proto.FeaturePage CreatePage(
         List<Proto.Feature> features,
-        LayerDefinition layer,
+        GrpcLayerContext layer,
         SpatialReference responseSpatialReference,
         string pkField,
         bool isFirstPage,
@@ -465,7 +488,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
     private async Task<QueryContext> CreateQueryContextAsync(
         Proto.QueryFeaturesRequest request,
-        LayerDefinition layer,
+        GrpcLayerContext layer,
         CancellationToken cancellationToken)
     {
         var whereValidation = _queryValidator.ValidateWhereClause(request.Where);
@@ -626,78 +649,84 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
     private static async Task EnsureWriteAccessAsync(
         ServerCallContext context,
-        ServiceDefinition service,
-        LayerDefinition layer)
+        MetadataV2Service service,
+        MetadataV2Resource resource)
     {
         var httpContext = context.GetHttpContext();
 
         var decision = AccessPolicyHelpers.EvaluateAccess(
             httpContext,
-            layer.Metadata?.AccessPolicy,
-            service.Metadata?.AccessPolicy,
+            resource.AccessPolicy,
+            service.AccessPolicy,
             AccessScope.Write);
 
-        if (!decision.IsAllowed)
-        {
-            throw new RpcException(new Status(
-                decision.RequiresAuthentication ? StatusCode.Unauthenticated : StatusCode.PermissionDenied,
-                decision.RequiresAuthentication
-                    ? AccessPolicyHelpers.AuthRequiredMessage
-                    : AccessPolicyHelpers.AccessForbiddenMessage));
-        }
+        ThrowIfAccessDenied(decision);
 
-        var rbacDecision = await ServiceDataEditorAuthorization.EvaluateServiceAccessAsync(
-            httpContext,
-            service,
-            layer,
-            context.CancellationToken).ConfigureAwait(false);
-
-        if (!rbacDecision.IsAllowed)
-        {
-            throw new RpcException(new Status(
-                rbacDecision.RequiresAuthentication ? StatusCode.Unauthenticated : StatusCode.PermissionDenied,
-                rbacDecision.RequiresAuthentication
-                    ? AccessPolicyHelpers.AuthRequiredMessage
-                    : AccessPolicyHelpers.AccessForbiddenMessage));
-        }
-    }
-
-    private static void EnsureReadAccess(
-        ServerCallContext context,
-        ServiceDefinition service,
-        LayerDefinition layer)
-    {
-        var httpContext = context.GetHttpContext();
-
-        var decision = AccessPolicyHelpers.EvaluateAccess(
-            httpContext,
-            layer.Metadata?.AccessPolicy,
-            service.Metadata?.AccessPolicy,
-            AccessScope.Read);
-
-        if (!decision.IsAllowed)
-        {
-            throw new RpcException(new Status(
-                decision.RequiresAuthentication ? StatusCode.Unauthenticated : StatusCode.PermissionDenied,
-                decision.RequiresAuthentication
-                    ? AccessPolicyHelpers.AuthRequiredMessage
-                    : AccessPolicyHelpers.AccessForbiddenMessage));
-        }
-    }
-
-    private static void EnsureGrpcEnabled(ServiceDefinition service)
-    {
-        if (ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.Grpc))
+        if (HasExplicitWritePolicy(resource.AccessPolicy) || HasExplicitWritePolicy(service.AccessPolicy))
         {
             return;
         }
 
-        throw new RpcException(new Status(StatusCode.NotFound, "Grpc is not enabled for this service."));
+        var rbacDecision = await ServiceDataEditorAuthorization.EvaluateServiceAccessAsync(
+            httpContext,
+            service.Metadata.Name,
+            context.CancellationToken).ConfigureAwait(false);
+
+        ThrowIfAccessDenied(rbacDecision);
     }
+
+    private static void EnsureReadAccess(
+        ServerCallContext context,
+        MetadataV2Service service,
+        MetadataV2Resource resource)
+    {
+        var httpContext = context.GetHttpContext();
+
+        var decision = AccessPolicyHelpers.EvaluateAccess(
+            httpContext,
+            resource.AccessPolicy,
+            service.AccessPolicy,
+            AccessScope.Read);
+
+        ThrowIfAccessDenied(decision);
+    }
+
+    private static void ThrowIfAccessDenied(AccessDecision decision)
+    {
+        if (decision.IsAllowed)
+        {
+            return;
+        }
+
+        throw new RpcException(new Status(
+            decision.RequiresAuthentication ? StatusCode.Unauthenticated : StatusCode.PermissionDenied,
+            decision.RequiresAuthentication
+                ? AccessPolicyHelpers.AuthRequiredMessage
+                : AccessPolicyHelpers.AccessForbiddenMessage));
+    }
+
+    private static bool HasExplicitWritePolicy(AccessPolicy? policy)
+        => policy is not null &&
+           (policy.AllowAnonymousWrite ||
+            policy.AllowedWriteRoles is { Length: > 0 } ||
+            policy.AllowedRoles is { Length: > 0 });
+
+    private static bool IsGrpcEnabled(MetadataV2Service service)
+        => service.Protocols.Any(enabled =>
+            string.Equals(enabled, GrpcProtocolName, StringComparison.OrdinalIgnoreCase));
 
     private readonly record struct QueryContext(
         FeatureQuery Query,
         SpatialReference ResponseSpatialReference,
         GeometryLimits GeometryLimits,
         bool ReturnGeometry);
+
+    private readonly record struct GrpcLayerContext(
+        MetadataV2Service Service,
+        MetadataV2Publication Publication,
+        MetadataV2Resource Resource,
+        SpatialReference SpatialReference,
+        MetadataV2GeometryType GeometryType,
+        IReadOnlyList<MetadataV2Field> AttributeFields,
+        string ObjectIdFieldName);
 }

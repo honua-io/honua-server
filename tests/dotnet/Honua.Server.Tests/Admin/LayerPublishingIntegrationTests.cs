@@ -7,8 +7,6 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
@@ -185,23 +183,13 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         using (var scope = _fixture.Services.CreateScope())
         {
             var catalog = scope.ServiceProvider.GetRequiredService<ILayerCatalog>();
-            var service = await catalog.GetServiceAsync(_serviceName);
-            service.Should().NotBeNull();
-            service!.ConnectionId.Should().Be(_connectionId);
-            var layer = service.Layers.Single(layer => layer.Id == _layerId);
+            var legacyService = await catalog.GetServiceAsync(_serviceName);
+            legacyService.Should().NotBeNull();
+            legacyService!.ConnectionId.Should().Be(_connectionId);
+            var layer = legacyService.Layers.Single(layer => layer.Id == _layerId);
             layer.StorageMapping.Should().NotBeNull();
             layer.StorageMapping!.IsSourceBacked.Should().BeTrue();
 
-            var router = scope.ServiceProvider.GetRequiredService<FeatureProviderQueryRouter>();
-            var reader = await router.ResolveReaderAsync(
-                service,
-                layer,
-                FeatureProviderReadOperation.Query);
-            var directResult = await reader.QueryAsync(
-                _layerId.Value,
-                new FeatureQuery { Where = "1=1", Limit = 10, SpatialReferenceSrid = 4326 });
-
-            directResult.Items.Should().HaveCount(1);
         }
 
         var metadataResponse = await _client.GetAsync(

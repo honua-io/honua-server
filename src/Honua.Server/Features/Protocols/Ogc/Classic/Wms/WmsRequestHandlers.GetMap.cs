@@ -255,7 +255,7 @@ internal static partial class WmsRequestHandlers
             }
 
             var spatialFilter = CreateBboxSpatialFilter(queryExtent, serviceSrid);
-            var geometryType = MapGeometryType(layer.Resource.ReadGeometryType());
+            var geometryType = layer.Resource.ReadGeometryType();
 
             var stylePlan = await GetRasterStylePlanAsync(
                 styleCatalog,

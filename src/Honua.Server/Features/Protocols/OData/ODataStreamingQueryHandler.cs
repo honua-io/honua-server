@@ -8,6 +8,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation;
 using Honua.Server.Features.Infrastructure.Models;
@@ -36,6 +37,7 @@ internal sealed partial class ODataStreamingQueryHandler(
     private readonly ODataQuerySearchService _querySearchService = dependencies.QuerySearchService;
     private readonly ILogger<ODataStreamingQueryHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
+    private const string ODataProtocol = "OData";
     private const int StreamingThreshold = 1000;
     private const int FlushInterval = 32;
     private const string InvalidLayerIdFilterMessage = "LayerId filter must be a valid OData expression that resolves to a single layer.";
@@ -216,10 +218,11 @@ internal sealed partial class ODataStreamingQueryHandler(
                     resolvedLayerId = layerResolution.LayerId;
                 }
 
-                var applyLayerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+                var applyLayerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
                     context,
                     resolvedLayerId.Value,
                     LayerValidationHelpers.ValidationProtocol.OData,
+                    requiredProtocol: ODataProtocol,
                     cancellationToken: effectiveToken);
                 if (!applyLayerValidation.IsValid)
                 {
@@ -272,10 +275,11 @@ internal sealed partial class ODataStreamingQueryHandler(
                     resolvedLayerId = layerResolution.LayerId;
                 }
 
-                var searchLayerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+                var searchLayerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
                     context,
                     resolvedLayerId.Value,
                     LayerValidationHelpers.ValidationProtocol.OData,
+                    requiredProtocol: ODataProtocol,
                     cancellationToken: effectiveToken);
                 if (!searchLayerValidation.IsValid)
                 {
@@ -334,20 +338,35 @@ internal sealed partial class ODataStreamingQueryHandler(
                     $"$deltatoken was issued for layer {deltaLayerId.Value} but the request targets layer {layerId.Value}.");
             }
 
-            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
                 context,
                 layerId.Value,
                 LayerValidationHelpers.ValidationProtocol.OData,
+                requiredProtocol: ODataProtocol,
                 cancellationToken: effectiveToken);
             if (!layerValidation.IsValid)
             {
                 return layerValidation.ErrorResult!;
             }
-            var layer = layerValidation.Layer!;
+            var resource = layerValidation.Resource!;
+            var publicLayerId = layerValidation.Publication?.LayerIndex ?? layerId.Value;
+            var storageLayerId = await ODataV2Lookups.ResolveStorageLayerIdAsync(
+                context,
+                layerValidation.Publication,
+                resource,
+                effectiveToken).ConfigureAwait(false);
+            if (!storageLayerId.HasValue)
+            {
+                return ODataUtilityService.CreateODataError(
+                    context,
+                    "InternalServerError",
+                    "Layer storage binding is not configured.",
+                    StatusCodes.Status500InternalServerError);
+            }
             var deltaDefinition = deltaState ?? new ODataDeltaService.DeltaQueryState
             {
                 Timestamp = DateTimeOffset.UtcNow,
-                LayerId = layerId.Value,
+                LayerId = publicLayerId,
                 Filter = filter,
                 Select = select,
                 OrderBy = orderby,
@@ -362,7 +381,7 @@ internal sealed partial class ODataStreamingQueryHandler(
 
             var requestActivity = Activity.Current;
             requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
-            requestActivity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId.Value.ToString(CultureInfo.InvariantCulture));
+            requestActivity?.SetTag(HonuaTelemetry.Tags.LayerId, publicLayerId.ToString(CultureInfo.InvariantCulture));
 
             // Build feature query using query service
             var (featureQuery, queryError) = await _querySearchService.BuildFeatureQueryAsync(
@@ -370,7 +389,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                 orderby,
                 pagination.Limit,
                 pagination.Offset,
-                layer,
+                resource,
                 select,
                 expand,
                 countValue,
@@ -397,7 +416,7 @@ internal sealed partial class ODataStreamingQueryHandler(
 
                 return await queryHandler.HandleGetFeaturesNonStreamingAsync(
                     context,
-                    layerId.Value,
+                    publicLayerId,
                     filter,
                     select,
                     orderby,
@@ -418,14 +437,14 @@ internal sealed partial class ODataStreamingQueryHandler(
             featureActivity = HonuaTelemetry.StartFeatureActivity(
                 "query",
                 HonuaTelemetry.Protocols.OData,
-                layerId.Value.ToString(CultureInfo.InvariantCulture),
+                publicLayerId.ToString(CultureInfo.InvariantCulture),
                 context.TraceIdentifier);
 
             long? totalCount = null;
             var streamQuery = featureQuery;
             if (countValue == true)
             {
-                totalCount = await _featureReader.CountAsync(layerId.Value, featureQuery, effectiveToken);
+                totalCount = await _featureReader.CountAsync(storageLayerId.Value, featureQuery, effectiveToken);
             }
             else if (streamQuery.Limit.HasValue && streamQuery.Limit.Value < int.MaxValue)
             {
@@ -435,7 +454,7 @@ internal sealed partial class ODataStreamingQueryHandler(
 
             var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
                 _crsRegistry,
-                layer.SpatialReference.ToSrid(),
+                resource.ReadSrid() ?? 4326,
                 effectiveToken);
 
             // Set up streaming response
@@ -451,10 +470,10 @@ internal sealed partial class ODataStreamingQueryHandler(
 
             // Stream the OData response
             await StreamODataFeaturesAsync(
-                (IAsyncEnumerable<Feature>)_streamingFeatureStore.StreamFeaturesAsync(layerId.Value, streamQuery, effectiveToken),
+                (IAsyncEnumerable<Feature>)_streamingFeatureStore.StreamFeaturesAsync(storageLayerId.Value, streamQuery, effectiveToken),
                 context,
-                layerId.Value,
-                layer.SpatialReference.ToSrid(),
+                publicLayerId,
+                resource.ReadSrid() ?? 4326,
                 axisOrder,
                 pagination,
                 selectedFields,
@@ -891,25 +910,40 @@ internal sealed partial class ODataStreamingQueryHandler(
             }
 
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
-            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
                 context,
                 layerId.Value,
                 LayerValidationHelpers.ValidationProtocol.OData,
+                requiredProtocol: ODataProtocol,
                 cancellationToken: effectiveToken);
             if (!layerValidation.IsValid)
             {
                 return layerValidation.ErrorResult!;
             }
-            var layer = layerValidation.Layer!;
+            var resource = layerValidation.Resource!;
+            var publicLayerId = layerValidation.Publication?.LayerIndex ?? layerId.Value;
+            var storageLayerId = await ODataV2Lookups.ResolveStorageLayerIdAsync(
+                context,
+                layerValidation.Publication,
+                resource,
+                effectiveToken).ConfigureAwait(false);
+            if (!storageLayerId.HasValue)
+            {
+                return ODataUtilityService.CreateODataError(
+                    context,
+                    "InternalServerError",
+                    "Layer storage binding is not configured.",
+                    StatusCodes.Status500InternalServerError);
+            }
 
             var requestActivity = Activity.Current;
             requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
-            requestActivity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId.Value.ToString(CultureInfo.InvariantCulture));
+            requestActivity?.SetTag(HonuaTelemetry.Tags.LayerId, publicLayerId.ToString(CultureInfo.InvariantCulture));
 
             featureActivity = HonuaTelemetry.StartFeatureActivity(
                 "count",
                 HonuaTelemetry.Protocols.OData,
-                layerId.Value.ToString(CultureInfo.InvariantCulture),
+                publicLayerId.ToString(CultureInfo.InvariantCulture),
                 context.TraceIdentifier);
 
             var (featureQuery, queryError) = await _querySearchService.BuildFeatureQueryAsync(
@@ -917,14 +951,14 @@ internal sealed partial class ODataStreamingQueryHandler(
                 null,
                 null,
                 null,
-                layer,
+                resource,
                 cancellationToken: effectiveToken);
             if (queryError != null)
             {
                 return ODataUtilityService.CreateODataError(context, "InvalidQuery", queryError);
             }
 
-            var count = await _featureReader.CountAsync(layerId.Value, featureQuery, effectiveToken);
+            var count = await _featureReader.CountAsync(storageLayerId.Value, featureQuery, effectiveToken);
 
             ODataUtilityService.SetODataHeaders(context);
             HonuaTelemetry.SetSuccess(featureActivity, (int)Math.Min(count, int.MaxValue));

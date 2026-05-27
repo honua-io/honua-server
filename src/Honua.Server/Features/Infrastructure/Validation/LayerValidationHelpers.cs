@@ -1,19 +1,15 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
-using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Protocols.OData.Services;
 using Honua.Server.Features.Protocols.Ogc.Api.Features;
 using Microsoft.Extensions.DependencyInjection;
-using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
+using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Server.Features.Infrastructure.Validation;
 
@@ -33,21 +29,9 @@ internal static class LayerValidationHelpers
     }
 
     /// <summary>
-    /// Result of combined layer validation and access checking.
-    /// </summary>
-    /// <param name="IsValid">Whether validation succeeded</param>
-    /// <param name="Layer">The validated layer if successful</param>
-    /// <param name="ErrorResult">IResult containing appropriate error response if validation failed</param>
-    internal readonly record struct LayerValidationResult(
-        bool IsValid,
-        LayerDefinition? Layer,
-        IResult? ErrorResult);
-
-    /// <summary>
-    /// Result of V2 publication validation + access checking. Replaces
-    /// <see cref="LayerValidationResult"/> for consumers that have been ported off the v1
-    /// LayerDefinition shape. Carries the publication, the canonical resource, and the
-    /// resolved service so the caller has everything needed for downstream operations.
+    /// Result of V2 publication validation + access checking. Carries the publication,
+    /// the canonical resource, and the resolved service so callers have everything
+    /// needed for downstream operations.
     /// </summary>
     /// <param name="IsValid">Whether validation succeeded.</param>
     /// <param name="Publication">The matched V2 publication, if any.</param>
@@ -60,329 +44,6 @@ internal static class LayerValidationHelpers
         MetadataV2Resource? Resource,
         MetadataV2Service? Service,
         IResult? ErrorResult);
-
-    /// <summary>
-    /// Validates layer existence and access in a single operation.
-    /// Returns protocol-specific error responses while maintaining existing error message formats.
-    /// </summary>
-    /// <param name="context">HTTP context containing request services and user information</param>
-    /// <param name="layerId">Layer ID to validate</param>
-    /// <param name="protocol">Protocol format for error responses</param>
-    /// <param name="scope">Access scope required for the request</param>
-    /// <param name="requiredProtocol">Protocol that must be enabled for the resolved layer.</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Validation result with layer or error response</returns>
-    public static async Task<LayerValidationResult> ValidateLayerWithAccessAsync(
-        HttpContext context,
-        int layerId,
-        ValidationProtocol protocol,
-        AccessScope scope = AccessScope.Read,
-        string? requiredProtocol = null,
-        CancellationToken cancellationToken = default)
-    {
-        var effectiveToken = protocol == ValidationProtocol.OData
-            ? ODataUtilityService.GetTimeoutAwareCancellationToken(context)
-            : cancellationToken;
-
-        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var layerResult = await resourceValidator.ValidateLayerAsync(layerId, effectiveToken);
-
-        if (!layerResult.IsValid)
-        {
-            var layerErrorMessage = layerResult.ErrorMessage ?? $"Layer {layerId} not found";
-            var statusCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier ? 400 : 404;
-
-            var errorResult = protocol switch
-            {
-                ValidationProtocol.OData => CreateODataError(context, layerErrorMessage, statusCode),
-                ValidationProtocol.OgcFeatures => CreateOgcError(context, layerErrorMessage, statusCode),
-                _ => throw new ArgumentOutOfRangeException(nameof(protocol), protocol, "Unsupported validation protocol")
-            };
-
-            return new LayerValidationResult(false, null, errorResult);
-        }
-
-        var layer = layerResult.Resource!;
-        var effectiveRequiredProtocol = string.IsNullOrWhiteSpace(requiredProtocol)
-            ? protocol switch
-            {
-                ValidationProtocol.OData => ServiceProtocols.OData,
-                ValidationProtocol.OgcFeatures => ServiceProtocols.OgcFeatures,
-                _ => null
-            }
-            : requiredProtocol;
-        var relatedServices = await GetRelatedServicesAsync(context, layer.Id, effectiveToken);
-        var resolvedService = ResolvePrimaryService(relatedServices, effectiveRequiredProtocol);
-        var accessDecision = EvaluateLayerAccess(context, layer, resolvedService, scope);
-        var accessError = AccessPolicyHelpers.CreateAccessDeniedResult(context, accessDecision);
-        if (accessError != null)
-        {
-            return new LayerValidationResult(false, null, accessError);
-        }
-
-        if (!string.IsNullOrWhiteSpace(effectiveRequiredProtocol) &&
-            !IsProtocolEnabledForLayer(layer, resolvedService, effectiveRequiredProtocol))
-        {
-            var protocolError = protocol switch
-            {
-                ValidationProtocol.OData => CreateODataError(
-                    context,
-                    $"{effectiveRequiredProtocol} is not enabled for this service.",
-                    StatusCodes.Status404NotFound),
-                ValidationProtocol.OgcFeatures => CreateOgcError(
-                    context,
-                    $"{effectiveRequiredProtocol} is not enabled for this service.",
-                    StatusCodes.Status404NotFound),
-                _ => throw new ArgumentOutOfRangeException(nameof(protocol), protocol, "Unsupported validation protocol")
-            };
-
-            return new LayerValidationResult(false, null, protocolError);
-        }
-
-        return new LayerValidationResult(true, layer, null);
-    }
-
-    /// <summary>
-    /// Validates layer existence and access using standard error responses.
-    /// </summary>
-    /// <param name="context">HTTP context containing request services and user information</param>
-    /// <param name="layerId">Layer ID to validate</param>
-    /// <param name="scope">Access scope required for the request</param>
-    /// <param name="requiredProtocol">Protocol that must be enabled for the resolved layer.</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Validation result with layer or error response</returns>
-    public static async Task<LayerValidationResult> ValidateLayerWithAccessAsync(
-        HttpContext context,
-        int layerId,
-        AccessScope scope = AccessScope.Read,
-        string? requiredProtocol = null,
-        CancellationToken cancellationToken = default)
-    {
-        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var layerResult = await resourceValidator.ValidateLayerAsync(layerId, cancellationToken);
-
-        if (!layerResult.IsValid)
-        {
-            var errorMessage = layerResult.ErrorMessage ?? $"Layer {layerId} not found";
-            var errorResult = StandardErrorHelpers.CreateNotFound(context, errorMessage);
-            return new LayerValidationResult(false, null, errorResult);
-        }
-
-        var layer = layerResult.Resource!;
-        var relatedServices = await GetRelatedServicesAsync(context, layer.Id, cancellationToken);
-        var resolvedService = ResolvePrimaryService(relatedServices, requiredProtocol);
-        var accessDecision = EvaluateLayerAccess(context, layer, resolvedService, scope);
-        var accessError = AccessPolicyHelpers.CreateAccessDeniedResult(context, accessDecision);
-        if (accessError != null)
-        {
-            return new LayerValidationResult(false, null, accessError);
-        }
-
-        if (!string.IsNullOrWhiteSpace(requiredProtocol))
-        {
-            if (!IsProtocolEnabledForLayer(layer, resolvedService, requiredProtocol))
-            {
-                var protocolError = StandardErrorHelpers.CreateNotFound(
-                    context,
-                    $"{requiredProtocol} is not enabled for this service.");
-                return new LayerValidationResult(false, null, protocolError);
-            }
-        }
-
-        return new LayerValidationResult(true, layer, null);
-    }
-
-    /// <summary>
-    /// Validates collection existence and access in a single operation for OGC API Features.
-    /// </summary>
-    /// <param name="context">HTTP context containing request services and user information</param>
-    /// <param name="collectionId">Collection ID string to validate and parse</param>
-    /// <param name="scope">Access scope required for the request</param>
-    /// <param name="requiredProtocol">Protocol that must be enabled for the resolved collection layer.</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Validation result with layer or error response</returns>
-    public static async Task<LayerValidationResult> ValidateCollectionWithAccessAsync(
-        HttpContext context,
-        string collectionId,
-        AccessScope scope = AccessScope.Read,
-        string? requiredProtocol = ServiceProtocols.OgcFeatures,
-        CancellationToken cancellationToken = default)
-    {
-        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var collectionResult = await resourceValidator.ValidateCollectionAsync(collectionId, cancellationToken);
-
-        if (!collectionResult.IsValid)
-        {
-            var errorMessage = collectionResult.ErrorMessage ?? $"Collection '{collectionId}' not found.";
-            var errorResult = StandardErrorHelpers.CreateNotFound(context, errorMessage);
-            return new LayerValidationResult(false, null, errorResult);
-        }
-
-        var layer = collectionResult.Resource!;
-        var relatedServices = await GetRelatedServicesAsync(context, layer.Id, cancellationToken);
-        var resolvedService = ResolvePrimaryService(relatedServices, requiredProtocol);
-        var accessDecision = EvaluateLayerAccess(context, layer, resolvedService, scope);
-        var accessError = AccessPolicyHelpers.CreateAccessDeniedResult(context, accessDecision);
-        if (accessError != null)
-        {
-            return new LayerValidationResult(false, null, accessError);
-        }
-
-        if (!string.IsNullOrWhiteSpace(requiredProtocol))
-        {
-            if (!IsProtocolEnabledForLayer(layer, resolvedService, requiredProtocol))
-            {
-                var protocolError = StandardErrorHelpers.CreateNotFound(
-                    context,
-                    $"{requiredProtocol} is not enabled for this service.");
-                return new LayerValidationResult(false, null, protocolError);
-            }
-        }
-
-        return new LayerValidationResult(true, layer, null);
-    }
-
-    /// <summary>
-    /// Validates layer existence, write access, and RBAC data-editor role in a single call.
-    /// Combines <see cref="ValidateLayerWithAccessAsync(HttpContext, int, AccessScope, string, CancellationToken)"/>
-    /// with <see cref="ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(HttpContext, LayerDefinition, ServiceDefinition?, CancellationToken)"/>.
-    /// </summary>
-    public static async Task<LayerValidationResult> ValidateWriteAccessAsync(
-        HttpContext context,
-        int layerId,
-        CancellationToken cancellationToken = default)
-    {
-        var layerValidation = await ValidateLayerWithAccessAsync(
-            context, layerId, scope: AccessScope.Write, cancellationToken: cancellationToken);
-        if (!layerValidation.IsValid)
-        {
-            return layerValidation;
-        }
-
-        var service = await ResolvePrimaryServiceAsync(context, layerId, cancellationToken: cancellationToken);
-        var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
-            context, layerValidation.Layer!, service, cancellationToken);
-        if (rbacError != null)
-        {
-            return new LayerValidationResult(false, null, rbacError);
-        }
-
-        return layerValidation;
-    }
-
-    /// <summary>
-    /// Resolves the canonical service for the specified layer and protocol.
-    /// When a layer belongs to multiple services, the protocol-enabled service with the
-    /// lexicographically earliest name wins to keep routing deterministic.
-    /// </summary>
-    public static async Task<ServiceDefinition?> ResolvePrimaryServiceAsync(
-        HttpContext context,
-        int layerId,
-        string? preferredProtocol = null,
-        CancellationToken cancellationToken = default)
-    {
-        var relatedServices = await GetRelatedServicesAsync(context, layerId, cancellationToken);
-        return ResolvePrimaryService(relatedServices, preferredProtocol);
-    }
-
-    /// <summary>
-    /// Resolves the canonical service name for the specified layer and protocol.
-    /// </summary>
-    public static async Task<string?> ResolvePrimaryServiceNameAsync(
-        HttpContext context,
-        int layerId,
-        string? preferredProtocol = null,
-        CancellationToken cancellationToken = default)
-    {
-        var service = await ResolvePrimaryServiceAsync(context, layerId, preferredProtocol, cancellationToken);
-        return service?.Name;
-    }
-
-    /// <summary>
-    /// Builds a deterministic layer-to-service map for a protocol-specific route surface.
-    /// </summary>
-    public static IReadOnlyDictionary<int, ServiceDefinition> BuildPrimaryServiceMap(
-        IEnumerable<ServiceDefinition> services,
-        string? preferredProtocol = null)
-    {
-        ArgumentNullException.ThrowIfNull(services);
-
-        return services
-            .SelectMany(service => service.Layers.Select(layer => (LayerId: layer.Id, Service: service)))
-            .GroupBy(static entry => entry.LayerId)
-            .ToDictionary(
-                static group => group.Key,
-                group => ResolvePrimaryService(
-                    group.Select(static entry => entry.Service).DistinctBy(static service => service.Name, StringComparer.OrdinalIgnoreCase).ToArray(),
-                    preferredProtocol)
-                    ?? throw new InvalidOperationException("Layer service group unexpectedly resolved to no service."));
-    }
-
-    /// <summary>
-    /// Validates collection existence, write access, and RBAC data-editor role for OGC Features.
-    /// </summary>
-    public static async Task<LayerValidationResult> ValidateCollectionWriteAccessAsync(
-        HttpContext context,
-        string collectionId,
-        CancellationToken cancellationToken = default)
-    {
-        var layerValidation = await ValidateCollectionWithAccessAsync(
-            context, collectionId, scope: AccessScope.Write, cancellationToken: cancellationToken);
-        if (!layerValidation.IsValid)
-        {
-            return layerValidation;
-        }
-
-        var service = await ResolvePrimaryServiceAsync(
-            context,
-            layerValidation.Layer!.Id,
-            ServiceProtocols.OgcFeatures,
-            cancellationToken);
-        var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
-            context, layerValidation.Layer!, service, cancellationToken);
-        if (rbacError != null)
-        {
-            return new LayerValidationResult(false, null, rbacError);
-        }
-
-        return layerValidation;
-    }
-
-    /// <summary>
-    /// Validates layer existence, write access, and RBAC data-editor role with OData-specific
-    /// error formatting.
-    /// </summary>
-    public static async Task<LayerValidationResult> ValidateODataWriteAccessAsync(
-        HttpContext context,
-        int layerId,
-        CancellationToken cancellationToken = default)
-    {
-        var layerValidation = await ValidateLayerWithAccessAsync(
-            context,
-            layerId,
-            ValidationProtocol.OData,
-            scope: AccessScope.Write,
-            requiredProtocol: ServiceProtocols.OData,
-            cancellationToken: cancellationToken);
-        if (!layerValidation.IsValid)
-        {
-            return layerValidation;
-        }
-
-        var service = await ResolvePrimaryServiceAsync(
-            context,
-            layerId,
-            ServiceProtocols.OData,
-            cancellationToken);
-        var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
-            context, layerValidation.Layer!, service, cancellationToken);
-        if (rbacError != null)
-        {
-            return new LayerValidationResult(false, null, rbacError);
-        }
-
-        return layerValidation;
-    }
 
     /// <summary>
     /// Creates OData-formatted error response with correct status code mapping.
@@ -412,55 +73,6 @@ internal static class LayerValidationHelpers
             404 => StandardErrorHelpers.CreateNotFound(context, message),
             _ => StandardErrorHelpers.CreateInternalServerError(context, message)
         };
-    }
-
-    private static async Task<ServiceDefinition[]> GetRelatedServicesAsync(
-        HttpContext context,
-        int layerId,
-        CancellationToken cancellationToken)
-    {
-        var layerCatalog = context.RequestServices.GetRequiredService<ILayerCatalog>();
-        var services = await layerCatalog.ListServicesAsync(cancellationToken);
-        return services
-            .Where(service => service.Layers.Any(candidate => candidate.Id == layerId))
-            .ToArray();
-    }
-
-    private static AccessDecision EvaluateLayerAccess(
-        HttpContext context,
-        LayerDefinition layer,
-        ServiceDefinition? service,
-        AccessScope scope)
-    {
-        return AccessPolicyHelpers.EvaluateAccess(
-            context,
-            layer.Metadata?.AccessPolicy,
-            service?.Metadata?.AccessPolicy,
-            scope);
-    }
-
-    private static bool IsProtocolEnabledForLayer(
-        LayerDefinition layer,
-        ServiceDefinition? service,
-        string protocol)
-    {
-        return service == null
-            ? ServiceProtocols.IsProtocolEnabled(layer.Metadata, protocol)
-            : ServiceProtocols.IsProtocolEnabled(service.Metadata, protocol);
-    }
-
-    private static ServiceDefinition? ResolvePrimaryService(
-        IEnumerable<ServiceDefinition> relatedServices,
-        string? preferredProtocol)
-    {
-        ArgumentNullException.ThrowIfNull(relatedServices);
-
-        return relatedServices
-            .OrderByDescending(service =>
-                !string.IsNullOrWhiteSpace(preferredProtocol) &&
-                ServiceProtocols.IsProtocolEnabled(service.Metadata, preferredProtocol))
-            .ThenBy(service => service.Name, StringComparer.OrdinalIgnoreCase)
-            .FirstOrDefault();
     }
 
     // ---- Metadata v2 validation. Resolves a (publication, resource, service) triple
@@ -505,7 +117,7 @@ internal static class LayerValidationHelpers
         }
 
         if (!string.IsNullOrWhiteSpace(requiredProtocol) && service is not null &&
-            !ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
+            !MetadataV2ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
         {
             var msg = $"{requiredProtocol} is not enabled for this service.";
             var error = protocol switch
@@ -547,7 +159,7 @@ internal static class LayerValidationHelpers
         }
 
         if (!string.IsNullOrWhiteSpace(requiredProtocol) && service is not null &&
-            !ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
+            !MetadataV2ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
         {
             var error = StandardErrorHelpers.CreateNotFound(
                 context,
@@ -568,7 +180,7 @@ internal static class LayerValidationHelpers
         HttpContext context,
         string collectionId,
         AccessScope scope = AccessScope.Read,
-        string? requiredProtocol = ServiceProtocols.OgcFeatures,
+        string? requiredProtocol = MetadataV2ServiceProtocols.OgcFeatures,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(collectionId))
@@ -584,10 +196,22 @@ internal static class LayerValidationHelpers
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
 
         bool MatchesCollectionId(MetadataV2Publication p)
-            => string.Equals(p.ServiceLocalId, collectionId, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(p.Path, collectionId, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(p.Metadata.Name, collectionId, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(p.Metadata.Id, collectionId, StringComparison.OrdinalIgnoreCase);
+        {
+            if (string.Equals(p.ServiceLocalId, collectionId, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(p.Path, collectionId, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(p.Metadata.Name, collectionId, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(p.Metadata.Title, collectionId, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(p.Metadata.Id, collectionId, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            var resource = snapshot.ResolveResource(p);
+            return resource is not null &&
+                (string.Equals(resource.Metadata.Name, collectionId, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(resource.Metadata.Title, collectionId, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(resource.Metadata.Id, collectionId, StringComparison.OrdinalIgnoreCase));
+        }
 
         MetadataV2Publication? publication = null;
 
@@ -600,7 +224,7 @@ internal static class LayerValidationHelpers
             publication = snapshot.Graph.Publications.FirstOrDefault(p =>
                 MatchesCollectionId(p) &&
                 snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var s) &&
-                ServiceProtocols.IsProtocolEnabled(s, requiredProtocol));
+                MetadataV2ServiceProtocols.IsProtocolEnabled(s, requiredProtocol));
         }
         publication ??= snapshot.Graph.Publications.FirstOrDefault(MatchesCollectionId);
 
@@ -636,7 +260,7 @@ internal static class LayerValidationHelpers
         }
 
         if (!string.IsNullOrWhiteSpace(requiredProtocol) && service is not null &&
-            !ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
+            !MetadataV2ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
         {
             var error = StandardErrorHelpers.CreateNotFound(
                 context,
@@ -684,8 +308,8 @@ internal static class LayerValidationHelpers
             //   2. publication.IsPrimary
             //   3. lexicographically earliest service name
             var hasProtocolGate = !string.IsNullOrWhiteSpace(requiredProtocol);
-            var existingMatches = hasProtocolGate && ServiceProtocols.IsProtocolEnabled(existing.Service, requiredProtocol!);
-            var candidateMatches = hasProtocolGate && ServiceProtocols.IsProtocolEnabled(service, requiredProtocol!);
+            var existingMatches = hasProtocolGate && MetadataV2ServiceProtocols.IsProtocolEnabled(existing.Service, requiredProtocol!);
+            var candidateMatches = hasProtocolGate && MetadataV2ServiceProtocols.IsProtocolEnabled(service, requiredProtocol!);
             if (candidateMatches && !existingMatches)
             {
                 byLayer[pub.LayerIndex.Value] = (pub, service);
@@ -765,7 +389,7 @@ internal static class LayerValidationHelpers
             if (!snapshot.Index.ServicesById.TryGetValue(pub.ServiceId, out var service)) continue;
 
             if (!string.IsNullOrWhiteSpace(requiredProtocol) &&
-                !ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
+                !MetadataV2ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
             {
                 continue;
             }
@@ -807,7 +431,7 @@ internal static class LayerValidationHelpers
             var preferred = candidatePublications
                 .Where(p =>
                     snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var s) &&
-                    ServiceProtocols.IsProtocolEnabled(s, requiredProtocol))
+                    MetadataV2ServiceProtocols.IsProtocolEnabled(s, requiredProtocol))
                 .OrderByDescending(p => p.IsPrimary)
                 .FirstOrDefault();
             if (preferred is not null)
@@ -840,8 +464,7 @@ internal static class LayerValidationHelpers
     }
 
     /// <summary>
-    /// V2 sibling of <see cref="ValidateCollectionWriteAccessAsync"/>. Combines
-    /// <see cref="ValidateCollectionWithAccessV2Async"/> with the V2 RBAC data-editor
+    /// Combines <see cref="ValidateCollectionWithAccessV2Async"/> with the V2 RBAC data-editor
     /// helper so OGC API Features CRUD/Transaction handlers can run a single check.
     /// Returns the matched publication + resource + service plus an
     /// <see cref="IResult"/> error when validation or authorization fails.
@@ -849,12 +472,12 @@ internal static class LayerValidationHelpers
     /// <param name="context">HTTP context carrying request services and principal.</param>
     /// <param name="collectionId">Collection identifier from the route.</param>
     /// <param name="requiredProtocol">Optional protocol gate. Defaults to
-    /// <see cref="ServiceProtocols.OgcFeatures"/> to mirror the v1 method.</param>
+    /// <c>OgcFeatures</c> protocol constant to mirror the v1 method.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     public static async Task<MetadataV2ValidationResult> ValidateCollectionWriteAccessV2Async(
         HttpContext context,
         string collectionId,
-        string? requiredProtocol = ServiceProtocols.OgcFeatures,
+        string? requiredProtocol = MetadataV2ServiceProtocols.OgcFeatures,
         CancellationToken cancellationToken = default)
     {
         var validation = await ValidateCollectionWithAccessV2Async(
@@ -863,6 +486,47 @@ internal static class LayerValidationHelpers
             scope: AccessScope.Write,
             requiredProtocol: requiredProtocol,
             cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!validation.IsValid)
+        {
+            return validation;
+        }
+
+        var rbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+            context,
+            validation.Resource!,
+            validation.Service,
+            cancellationToken).ConfigureAwait(false);
+        if (rbacError != null)
+        {
+            return new MetadataV2ValidationResult(
+                false,
+                validation.Publication,
+                validation.Resource,
+                validation.Service,
+                rbacError);
+        }
+
+        return validation;
+    }
+
+    /// <summary>
+    /// V2 sibling of write-access validation. Combines V2 layer access validation
+    /// with the V2 RBAC data-editor helper and preserves protocol-specific error formatting.
+    /// </summary>
+    public static async Task<MetadataV2ValidationResult> ValidateLayerWriteAccessV2Async(
+        HttpContext context,
+        int layerId,
+        ValidationProtocol protocol,
+        string? requiredProtocol = null,
+        CancellationToken cancellationToken = default)
+    {
+        var validation = await ValidateLayerWithAccessV2Async(
+            context,
+            layerId,
+            protocol,
+            AccessScope.Write,
+            requiredProtocol,
+            cancellationToken).ConfigureAwait(false);
         if (!validation.IsValid)
         {
             return validation;
@@ -921,7 +585,7 @@ internal static class LayerValidationHelpers
         if (!string.IsNullOrWhiteSpace(requiredProtocol))
         {
             service = snapshot.Graph.Services.FirstOrDefault(s =>
-                ServiceProtocols.IsProtocolEnabled(s, requiredProtocol) &&
+                MetadataV2ServiceProtocols.IsProtocolEnabled(s, requiredProtocol) &&
                 string.Equals(s.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase));
         }
         service ??= snapshot.Index.ServicesByName.TryGetValue(serviceName, out var s) ? s : null;
@@ -934,7 +598,7 @@ internal static class LayerValidationHelpers
         }
 
         if (!string.IsNullOrWhiteSpace(requiredProtocol) &&
-            !ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
+            !MetadataV2ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
         {
             return new MetadataV2ServiceValidationResult(
                 false, service, [], [],

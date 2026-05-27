@@ -4,7 +4,6 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -57,6 +56,7 @@ internal static partial class WmsRequestHandlers
     private const double CiteLakesDefaultElevation = 500;
     private const string CiteAutosDefaultTime = "2000-01-01T00:00:30Z";
     private const string CiteAutosExtent = "2000-01-01T00:00:00Z/2000-01-01T00:01:00Z/PT5S";
+    private const string WmsProtocolName = "Wms";
     private static readonly DateTimeOffset[] _citeAutosInstants =
     [
         new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero),
@@ -99,8 +99,8 @@ internal static partial class WmsRequestHandlers
 
     /// <summary>
     /// Resolved (resource, publication, storage layer id) triple for a single WMS layer.
-    /// Replaces the v1 <c>LayerDefinition</c> in the request pipeline. Mirrors the
-    /// <c>WmtsLayer</c> shape used by the just-landed WMTS port — Identifier is the
+    /// Replaces the legacy layer shape in the request pipeline. Mirrors the
+    /// <c>WmtsLayer</c> shape used by the WMTS port — Identifier is the
     /// protocol-facing LAYER token (publication.LayerIndex stringified when numeric,
     /// else ServiceLocalId/Name), StorageLayerId is the integer handle that
     /// <see cref="IFeatureReader"/> and the raster pipeline expect.
@@ -110,6 +110,9 @@ internal static partial class WmsRequestHandlers
         MetadataV2Publication Publication,
         int StorageLayerId,
         string Identifier);
+
+    private static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)
+        => service?.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase)) == true;
 
     /// <summary>
     /// Handle OGC WMS requests (GetCapabilities, GetMap, GetFeatureInfo).
@@ -153,7 +156,7 @@ internal static partial class WmsRequestHandlers
             }
 
             var svcDef = serviceResult.Resource!;
-            if (!ServiceProtocols.IsProtocolEnabled(svcDef, ServiceProtocols.Wms))
+            if (!IsProtocolEnabled(svcDef, WmsProtocolName))
             {
                 return CreateWmsServiceException(context, "OperationNotSupported", "WMS protocol is not enabled for this service.");
             }
@@ -333,18 +336,6 @@ internal static partial class WmsRequestHandlers
         // treated as "this layer is renderable".
         return resource.FindPrimaryGeometryField() is not null;
     }
-
-    private static GeometryType MapGeometryType(MetadataV2GeometryType v2)
-        => v2 switch
-        {
-            MetadataV2GeometryType.Point => GeometryType.Point,
-            MetadataV2GeometryType.MultiPoint => GeometryType.MultiPoint,
-            MetadataV2GeometryType.LineString => GeometryType.LineString,
-            MetadataV2GeometryType.MultiLineString => GeometryType.MultiLineString,
-            MetadataV2GeometryType.Polygon => GeometryType.Polygon,
-            MetadataV2GeometryType.MultiPolygon => GeometryType.MultiPolygon,
-            _ => GeometryType.None,
-        };
 
     /// <summary>
     /// Display name used everywhere the WMS protocol surfaces a layer (LAYERS,

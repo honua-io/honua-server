@@ -4,7 +4,6 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Exceptions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -28,6 +27,9 @@ namespace Honua.Server.Features.Protocols.Ogc.Api.Features;
 internal static class CollectionsEndpoints
 {
     internal const int MaxCollectionProjectionConcurrency = 8;
+    private const string OgcFeaturesProtocolName = "OgcFeatures";
+    private const string OgcApiMapsProtocolName = "OGC-API-Maps";
+    private const string OgcApiTilesProtocolName = "OGC-API-Tiles";
 
     private static readonly IReadOnlyDictionary<string, string> _queryablesFormatParameters =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -130,7 +132,7 @@ internal static class CollectionsEndpoints
                 {
                     continue;
                 }
-                if (!ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.OgcFeatures))
+                if (!IsProtocolEnabled(service, OgcFeaturesProtocolName))
                 {
                     continue;
                 }
@@ -266,7 +268,7 @@ internal static class CollectionsEndpoints
             var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
                 context,
                 collectionId,
-                requiredProtocol: ServiceProtocols.OgcFeatures,
+                requiredProtocol: OgcFeaturesProtocolName,
                 cancellationToken: cancellationToken);
             if (!validation.IsValid)
             {
@@ -388,7 +390,7 @@ internal static class CollectionsEndpoints
             var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
                 context,
                 collectionId,
-                requiredProtocol: ServiceProtocols.OgcFeatures,
+                requiredProtocol: OgcFeaturesProtocolName,
                 cancellationToken: effectiveToken);
             if (!validation.IsValid)
             {
@@ -494,7 +496,7 @@ internal static class CollectionsEndpoints
             type: MediaTypes.GeoJson,
             title: "Data"));
 
-        if (service is not null && ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.OgcApiMaps))
+        if (IsProtocolEnabled(service, OgcApiMapsProtocolName))
         {
             collectionLinks.Add(Link.Create(
                 href: $"{baseUrl}/ogc/maps/collections/{collectionSegment}/map",
@@ -528,7 +530,7 @@ internal static class CollectionsEndpoints
                 title: "Style"));
         }
 
-        if (service is not null && ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.OgcApiTiles))
+        if (IsProtocolEnabled(service, OgcApiTilesProtocolName))
         {
             collectionLinks.Add(Link.Create(
                 href: $"{baseUrl}/ogc/tiles/collections/{collectionSegment}/tiles",
@@ -808,6 +810,9 @@ internal static class CollectionsEndpoints
         bool Found,
         string ResolvedCollectionId,
         IResult? ErrorResult);
+
+    private static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)
+        => service?.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase)) == true;
 
 }
 

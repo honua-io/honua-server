@@ -3,7 +3,6 @@
 
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Metadata.Services;
 using Honua.TestKit.Attributes;
@@ -127,7 +126,7 @@ public sealed class FileMetadataV2GraphProviderTests
                     Metadata = new MetadataV2ObjectMetadata { Id = "resource.parcels", Name = "parcels" },
                     Type = MetadataV2ResourceType.FeatureDataset,
                     StorageBindingIds = ["storage.parcels.postgis"],
-                    
+
                 }
             ],
             StorageBindings =
@@ -138,6 +137,7 @@ public sealed class FileMetadataV2GraphProviderTests
                     ResourceId = "resource.parcels",
                     StorageType = MetadataV2StorageType.RelationalTable,
                     Locator = "public.parcels",
+                    StorageLayerId = 0,
                 }
             ],
             Services =

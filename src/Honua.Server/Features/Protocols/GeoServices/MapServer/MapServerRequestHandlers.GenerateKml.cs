@@ -8,9 +8,10 @@ using System.Text;
 using System.Xml;
 using System.Collections.Immutable;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
@@ -32,6 +33,14 @@ internal static partial class MapServerEndpoints
     private const string InvalidGenerateKmlRequestMessage = "Invalid generateKml request parameters.";
     private const string KmlContentType = "application/vnd.google-earth.kml+xml";
     private const string KmzContentType = "application/vnd.google-earth.kmz";
+
+    private sealed record GenerateKmlLayerDescriptor(
+        int Id,
+        int PublicLayerId,
+        int StorageLayerId,
+        string Name,
+        MetadataV2Resource Resource,
+        string? DefinitionExpression);
 
     /// <summary>
     /// Handle MapServer generateKml requests.
@@ -84,26 +93,26 @@ internal static partial class MapServerEndpoints
             }
 
             var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-            var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
+            var serviceResult = await ServiceResourceValidationHelpers.ValidateServiceV2Async(
+                resourceValidator,
+                serviceId,
+                ServiceProtocols.MapServer,
+                context,
+                cancellationToken: cancellationToken);
             if (!serviceResult.IsValid)
             {
-                var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
-                if (serviceResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context, errorMessage);
-                }
-
-                return StandardErrorHelpers.CreateNotFound(context, errorMessage);
+                return serviceResult.ErrorResult!;
             }
 
-            var service = serviceResult.Resource!;
-            var protocolError = ProtocolValidationHelpers.ValidateProtocolEnabled(context, service, ServiceProtocols.MapServer);
-            if (protocolError is not null)
-            {
-                return protocolError;
-            }
+            var service = serviceResult.Service!;
+            var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var publishedLayers = ResolveGenerateKmlPublishedLayers(snapshot, service);
 
-            var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, service.Layers, service);
+            var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+                context,
+                publishedLayers.Select(static layer => layer.Resource),
+                service);
             if (accessError != null)
             {
                 return accessError;
@@ -120,7 +129,10 @@ internal static partial class MapServerEndpoints
                 return StandardErrorHelpers.CreateBadRequest(context, layerTimeOptionsError ?? "Invalid layerTimeOptions parameter.");
             }
 
-            if (!TryParseDynamicLayers(GetValue(values, "dynamicLayers"), service, queryValidator, out var dynamicLayers, out var dynamicLayersError))
+            var knownLayerIds = publishedLayers
+                .Select(static layer => layer.PublicLayerId)
+                .ToHashSet();
+            if (!TryParseDynamicLayers(GetValue(values, "dynamicLayers"), knownLayerIds, queryValidator, out var dynamicLayers, out var dynamicLayersError))
             {
                 return StandardErrorHelpers.CreateBadRequest(context, dynamicLayersError ?? "Invalid dynamicLayers parameter.");
             }
@@ -128,7 +140,7 @@ internal static partial class MapServerEndpoints
             var documentName = GetValue(values, "docName");
             if (string.IsNullOrWhiteSpace(documentName))
             {
-                documentName = service.Name;
+                documentName = service.Metadata.Name;
             }
 
             if (string.IsNullOrWhiteSpace(documentName))
@@ -136,10 +148,9 @@ internal static partial class MapServerEndpoints
                 documentName = "Map";
             }
 
-            var mapConfig = service.Metadata?.MapServer;
             var limits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value;
             var maxFeaturesPerLayer = Math.Clamp(
-                mapConfig?.MaxFeaturesPerLayer ?? MaxFeaturesPerLayer,
+                service.Settings?.MaxFeaturesPerLayer ?? MaxFeaturesPerLayer,
                 1,
                 limits.Query.MaxRecordCount);
 
@@ -156,14 +167,19 @@ internal static partial class MapServerEndpoints
             var kmlFeatureStore = featureReader as IKmlFeatureStore;
             var wkbReader = new WKBReader();
 
-            var (resolvedLayers, renderLayerError) = ResolveRenderLayers(service, layersValue, dynamicLayers, context);
+            var (resolvedLayers, renderLayerError) = ResolveGenerateKmlLayers(
+                publishedLayers,
+                layersValue,
+                dynamicLayers,
+                context,
+                service);
             if (renderLayerError != null)
             {
                 return renderLayerError;
             }
 
             var renderLayers = resolvedLayers
-                .Where(static renderLayer => renderLayer.Layer.HasGeometry)
+                .Where(static renderLayer => HasGenerateKmlGeometry(renderLayer.Resource))
                 .ToArray();
 
             var timeValue = GetValue(values, "time");
@@ -191,8 +207,8 @@ internal static partial class MapServerEndpoints
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    var layer = renderLayer.Layer;
-                    layerDefs.TryGetValue(layer.Id, out var layerDef);
+                    var resource = renderLayer.Resource;
+                    layerDefs.TryGetValue(renderLayer.PublicLayerId, out var layerDef);
                     var combinedDefinition = CombineDefinitionExpressions(renderLayer.DefinitionExpression, layerDef);
 
                     if (!TryGetEffectiveTimeParameters(
@@ -209,7 +225,7 @@ internal static partial class MapServerEndpoints
 
                     if (!TryBuildLayerSqlFilter(
                             filterExpressionService,
-                            layer,
+                            resource,
                             combinedDefinition,
                             effectiveTime,
                             effectiveTimeRelation,
@@ -221,21 +237,21 @@ internal static partial class MapServerEndpoints
 
                     var featureQuery = new FeatureQuery
                     {
-                        SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
+                        SpatialReferenceSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid,
                         OutputSrid = 4326,
                         Limit = maxFeaturesPerLayer,
                         SqlFilter = sqlFilter
                     };
 
-                    var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
-                    var displayField = ResolveDisplayField(layer, objectIdField);
+                    var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+                    var displayField = ResolveDisplayField(resource, objectIdField);
 
                     writer.WriteStartElement("Folder");
-                    writer.WriteElementString("name", layer.Name);
+                    writer.WriteElementString("name", renderLayer.Name);
 
                     if (kmlFeatureStore is not null)
                     {
-                        var queryResult = await kmlFeatureStore.QueryKmlAsync(layer.Id, featureQuery, cancellationToken);
+                        var queryResult = await kmlFeatureStore.QueryKmlAsync(renderLayer.StorageLayerId, featureQuery, cancellationToken);
                         totalFeatureCount += queryResult.Items.Length;
 
                         foreach (var feature in queryResult.Items)
@@ -249,7 +265,7 @@ internal static partial class MapServerEndpoints
                     }
                     else
                     {
-                        var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, cancellationToken);
+                        var queryResult = await featureReader.QueryAsync(renderLayer.StorageLayerId, featureQuery, cancellationToken);
                         totalFeatureCount += queryResult.Items.Length;
 
                         foreach (var feature in queryResult.Items)
@@ -307,6 +323,439 @@ internal static partial class MapServerEndpoints
             MapServerLog.GenerateKmlFailed(logger, serviceId, ex.Message, ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "MapServer generateKml failed.");
         }
+    }
+
+    private static GenerateKmlLayerDescriptor[] ResolveGenerateKmlPublishedLayers(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Service service)
+    {
+        var descriptors = new List<GenerateKmlLayerDescriptor>();
+        foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
+        {
+            if (publication.LayerIndex is not int publicLayerId)
+            {
+                continue;
+            }
+
+            var resource = snapshot.ResolveResource(publication);
+            if (resource is null)
+            {
+                continue;
+            }
+
+            var storageLayerId = snapshot.ResolveStorageLayerId(publication)
+                ?? snapshot.ResolveStorageLayerId(resource)
+                ?? publicLayerId;
+            var layerName = string.IsNullOrWhiteSpace(resource.Metadata.Name)
+                ? publication.Metadata.Name
+                : resource.Metadata.Name;
+
+            descriptors.Add(new GenerateKmlLayerDescriptor(
+                publicLayerId,
+                publicLayerId,
+                storageLayerId,
+                string.IsNullOrWhiteSpace(layerName)
+                    ? publicLayerId.ToString(CultureInfo.InvariantCulture)
+                    : layerName,
+                resource,
+                null));
+        }
+
+        return [.. descriptors.OrderBy(static layer => layer.PublicLayerId)];
+    }
+
+    private static (GenerateKmlLayerDescriptor[] Layers, IResult? Error) ResolveGenerateKmlLayers(
+        IReadOnlyList<GenerateKmlLayerDescriptor> publishedLayers,
+        string? layersParam,
+        IReadOnlyList<DynamicLayerDefinition> dynamicLayers,
+        HttpContext context,
+        MetadataV2Service service)
+    {
+        var layerLookup = publishedLayers.ToDictionary(static layer => layer.PublicLayerId);
+        if (dynamicLayers.Count == 0)
+        {
+            var accessibleLayers = publishedLayers
+                .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
+                .ToArray();
+
+            if (string.IsNullOrWhiteSpace(layersParam))
+            {
+                return (accessibleLayers
+                    .Where(static layer => layer.Resource.Display?.DefaultVisibility ?? true)
+                    .ToArray(), null);
+            }
+
+            var spec = layersParam.Trim();
+            var requestedStaticLayerIds = ParseLayerIds(spec);
+            if (requestedStaticLayerIds.Count == 0)
+            {
+                return (Array.Empty<GenerateKmlLayerDescriptor>(), StandardErrorHelpers.CreateBadRequest(context, "Invalid layers parameter."));
+            }
+
+            var accessibleLayerIds = accessibleLayers.Select(static layer => layer.PublicLayerId).ToHashSet();
+            if (requestedStaticLayerIds.Any(id => !accessibleLayerIds.Contains(id)))
+            {
+                return (Array.Empty<GenerateKmlLayerDescriptor>(), StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "layers parameter references an invalid or inaccessible layer."));
+            }
+
+            return (accessibleLayers
+                .Where(layer => requestedStaticLayerIds.Contains(layer.PublicLayerId))
+                .ToArray(), null);
+        }
+
+        IEnumerable<DynamicLayerDefinition> selected = dynamicLayers;
+        HashSet<int>? requestedIds = null;
+
+        if (!string.IsNullOrWhiteSpace(layersParam))
+        {
+            var spec = layersParam.Trim();
+            if (spec.StartsWith("show:", StringComparison.OrdinalIgnoreCase))
+            {
+                var ids = ParseLayerIds(spec["show:".Length..]);
+                requestedIds = ids;
+                selected = dynamicLayers.Where(layer => ids.Contains(layer.Id));
+            }
+            else if (spec.StartsWith("hide:", StringComparison.OrdinalIgnoreCase))
+            {
+                var ids = ParseLayerIds(spec["hide:".Length..]);
+                requestedIds = ids;
+                selected = dynamicLayers.Where(layer => !ids.Contains(layer.Id));
+            }
+            else if (spec.StartsWith("include:", StringComparison.OrdinalIgnoreCase))
+            {
+                var ids = ParseLayerIds(spec["include:".Length..]);
+                requestedIds = ids;
+                selected = dynamicLayers.Where(layer =>
+                {
+                    if (!layerLookup.TryGetValue(layer.MapLayerId, out var mapLayer))
+                    {
+                        return false;
+                    }
+
+                    return (mapLayer.Resource.Display?.DefaultVisibility ?? true) || ids.Contains(layer.Id);
+                });
+            }
+            else if (spec.StartsWith("exclude:", StringComparison.OrdinalIgnoreCase))
+            {
+                var ids = ParseLayerIds(spec["exclude:".Length..]);
+                requestedIds = ids;
+                selected = dynamicLayers.Where(layer =>
+                {
+                    if (!layerLookup.TryGetValue(layer.MapLayerId, out var mapLayer))
+                    {
+                        return false;
+                    }
+
+                    return (mapLayer.Resource.Display?.DefaultVisibility ?? true) && !ids.Contains(layer.Id);
+                });
+            }
+            else
+            {
+                var ids = ParseLayerIds(spec);
+                requestedIds = ids;
+                selected = dynamicLayers.Where(layer => ids.Contains(layer.Id));
+            }
+
+            if (requestedIds is { Count: > 0 })
+            {
+                var dynamicLayerIds = dynamicLayers.Select(static layer => layer.Id).ToHashSet();
+                if (requestedIds.Any(id => !dynamicLayerIds.Contains(id)))
+                {
+                    return (Array.Empty<GenerateKmlLayerDescriptor>(), StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        "layers parameter references an invalid or inaccessible layer."));
+                }
+
+                foreach (var requestedId in requestedIds)
+                {
+                    var dynamicLayer = dynamicLayers.FirstOrDefault(layer => layer.Id == requestedId);
+                    if (dynamicLayer is null ||
+                        !layerLookup.TryGetValue(dynamicLayer.MapLayerId, out var requestedMapLayer) ||
+                        !AccessPolicyHelpers.IsResourceAccessible(context, requestedMapLayer.Resource, service))
+                    {
+                        return (Array.Empty<GenerateKmlLayerDescriptor>(), StandardErrorHelpers.CreateBadRequest(
+                            context,
+                            "layers parameter references an invalid or inaccessible layer."));
+                    }
+                }
+            }
+        }
+
+        var renderLayers = new List<GenerateKmlLayerDescriptor>();
+        foreach (var dynamicLayer in selected)
+        {
+            if (!layerLookup.TryGetValue(dynamicLayer.MapLayerId, out var layer))
+            {
+                return (Array.Empty<GenerateKmlLayerDescriptor>(), StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "layers parameter references an invalid or inaccessible layer."));
+            }
+
+            if (!AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
+            {
+                return (Array.Empty<GenerateKmlLayerDescriptor>(), StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    "layers parameter references an invalid or inaccessible layer."));
+            }
+
+            renderLayers.Add(layer with
+            {
+                Id = dynamicLayer.Id,
+                DefinitionExpression = dynamicLayer.DefinitionExpression
+            });
+        }
+
+        return (renderLayers.ToArray(), null);
+    }
+
+    private static bool HasGenerateKmlGeometry(MetadataV2Resource resource)
+    {
+        var geometryType = resource.ReadGeometryType();
+        return geometryType != MetadataV2GeometryType.None ||
+               resource.FindPrimaryGeometryField() is not null;
+    }
+
+    private static string ResolveDisplayField(MetadataV2Resource resource, string objectIdField)
+    {
+        var configuredDisplayField = resource.Display?.DisplayField;
+        if (!string.IsNullOrWhiteSpace(configuredDisplayField))
+        {
+            var field = resource.SchemaFields.FirstOrDefault(field =>
+                field.Name.Equals(configuredDisplayField, StringComparison.OrdinalIgnoreCase));
+            if (field is not null)
+            {
+                return field.Name;
+            }
+        }
+
+        var stringField = resource.SchemaFields
+            .FirstOrDefault(static field => field.Type == MetadataV2FieldType.String);
+        return stringField?.Name ?? objectIdField;
+    }
+
+    private static bool TryGetEffectiveTimeParameters(
+        string? globalTime,
+        string? globalTimeRelation,
+        GenerateKmlLayerDescriptor renderLayer,
+        IReadOnlyDictionary<int, LayerTimeOptions> layerTimeOptions,
+        out string? effectiveTime,
+        out string? effectiveTimeRelation,
+        out string? error)
+    {
+        effectiveTime = globalTime;
+        effectiveTimeRelation = globalTimeRelation;
+        error = null;
+
+        LayerTimeOptions? options = null;
+        if (TryResolveLayerTimeOptions(layerTimeOptions, renderLayer, out var resolvedOptions))
+        {
+            options = resolvedOptions;
+            if (options.UseTime is false)
+            {
+                effectiveTime = null;
+                effectiveTimeRelation = null;
+                return true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(options.Time))
+            {
+                effectiveTime = options.Time;
+            }
+
+            if (!string.IsNullOrWhiteSpace(options.TimeRelation))
+            {
+                effectiveTimeRelation = options.TimeRelation;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(effectiveTime))
+        {
+            effectiveTime = null;
+            effectiveTimeRelation = null;
+            return true;
+        }
+
+        if (!GeoServicesTemporalQueryBuilder.TryParseTimeParameter(effectiveTime, out var start, out var end))
+        {
+            error = InvalidTimeParameterMessage;
+            return false;
+        }
+
+        if (start is null && end is null && options?.TimeDataCumulative != true)
+        {
+            effectiveTime = null;
+            effectiveTimeRelation = null;
+            return true;
+        }
+
+        if (options?.TimeDataCumulative == true)
+        {
+            start = null;
+        }
+
+        if (options?.TimeOffset.HasValue == true)
+        {
+            if (!TryApplyTimeOffset(
+                    start,
+                    end,
+                    options.TimeOffset.Value,
+                    options.TimeOffsetUnits,
+                    out var adjustedStart,
+                    out var adjustedEnd,
+                    out var offsetError))
+            {
+                error = offsetError ?? "Invalid time offset.";
+                return false;
+            }
+
+            start = adjustedStart;
+            end = adjustedEnd;
+        }
+
+        effectiveTime = BuildTimeParameter(start, end);
+        effectiveTimeRelation = NormalizeTimeRelation(effectiveTimeRelation);
+        return true;
+    }
+
+    private static bool TryResolveLayerTimeOptions(
+        IReadOnlyDictionary<int, LayerTimeOptions> layerTimeOptions,
+        GenerateKmlLayerDescriptor renderLayer,
+        out LayerTimeOptions resolvedOptions)
+    {
+        if (layerTimeOptions.TryGetValue(renderLayer.Id, out var directOptions) &&
+            directOptions is not null)
+        {
+            resolvedOptions = directOptions;
+            return true;
+        }
+
+        if (renderLayer.Id != renderLayer.PublicLayerId &&
+            layerTimeOptions.TryGetValue(renderLayer.PublicLayerId, out var sourceLayerOptions) &&
+            sourceLayerOptions is not null)
+        {
+            resolvedOptions = sourceLayerOptions;
+            return true;
+        }
+
+        resolvedOptions = default!;
+        return false;
+    }
+
+    private static bool TryBuildLayerSqlFilter(
+        IFilterExpressionService filterExpressionService,
+        MetadataV2Resource resource,
+        string? where,
+        string? time,
+        string? timeRelation,
+        out SqlFragment? sqlFilter,
+        out string? error)
+    {
+        sqlFilter = null;
+        error = null;
+
+        FilterExpression? filterExpression = null;
+        if (!string.IsNullOrWhiteSpace(where))
+        {
+            var parseResult = filterExpressionService.Parse(FilterLanguage.ArcGisSql, where);
+            if (!parseResult.IsSuccess)
+            {
+                error = parseResult.ErrorMessage ?? "Invalid filter syntax.";
+                return false;
+            }
+
+            filterExpression = parseResult.Expression;
+            if (filterExpression != null && !FilterExpressionHelpers.IsBooleanFilterExpression(filterExpression))
+            {
+                error = "Invalid where clause.";
+                return false;
+            }
+        }
+
+        FilterExpression? temporalExpression = null;
+        if (!string.IsNullOrWhiteSpace(time))
+        {
+            if (!TryResolveTemporalFieldSelection(resource, out var applyTemporalFilter, out var temporalError))
+            {
+                error = temporalError ?? "Invalid temporal field configuration.";
+                return false;
+            }
+
+            if (applyTemporalFilter)
+            {
+                try
+                {
+                    temporalExpression = GeoServicesTemporalQueryBuilder.BuildTemporalExpression(time, timeRelation, resource);
+                }
+                catch (ArgumentException)
+                {
+                    error = InvalidTimeParameterMessage;
+                    return false;
+                }
+            }
+        }
+
+        if (filterExpression != null && temporalExpression != null)
+        {
+            filterExpression = new BinaryExpression(filterExpression, BinaryOperator.And, temporalExpression);
+        }
+        else
+        {
+            filterExpression ??= temporalExpression;
+        }
+
+        if (filterExpression != null)
+        {
+            var translationResult = filterExpressionService.Translate(filterExpression, resource);
+            if (!translationResult.IsSuccess)
+            {
+                error = translationResult.ErrorMessage ?? "Invalid filter syntax.";
+                return false;
+            }
+
+            sqlFilter = translationResult.SqlFilter;
+        }
+
+        return true;
+    }
+
+    private static bool TryResolveTemporalFieldSelection(
+        MetadataV2Resource resource,
+        out bool applyTemporalFilter,
+        out string? error)
+    {
+        applyTemporalFilter = false;
+        error = null;
+
+        var timeInfo = resource.ReadTemporalFields();
+        if (string.IsNullOrWhiteSpace(timeInfo.StartTimeField))
+        {
+            return true;
+        }
+
+        if (FindTemporalField(resource, timeInfo.StartTimeField) is null)
+        {
+            error = $"Temporal field '{timeInfo.StartTimeField}' is not defined on resource '{resource.Metadata.Name}'.";
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(timeInfo.EndTimeField) &&
+            FindTemporalField(resource, timeInfo.EndTimeField) is null)
+        {
+            error = $"Temporal field '{timeInfo.EndTimeField}' is not defined on resource '{resource.Metadata.Name}'.";
+            return false;
+        }
+
+        applyTemporalFilter = true;
+        return true;
+    }
+
+    private static MetadataV2Field? FindTemporalField(MetadataV2Resource resource, string fieldName)
+    {
+        return resource.SchemaFields.FirstOrDefault(field =>
+            field.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase) &&
+            field.Type is MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time);
     }
 
     private static bool TryNormalizeGenerateKmlOutputFormat(string? format, out string normalized, out string? error)

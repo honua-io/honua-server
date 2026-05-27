@@ -1,12 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Styling;
+using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
@@ -41,21 +41,27 @@ internal static class AdminLayerStyleEndpoints
     private static async Task<IResult> HandleGetLayerStyle(
         int layerId,
         HttpContext context,
-        [FromServices] IResourceValidator resourceValidator,
         [FromServices] ILayerStyleService styleService,
         CancellationToken cancellationToken)
     {
-        var layerResult = await resourceValidator.ValidateLayerAsync(layerId, cancellationToken);
-        if (!layerResult.IsValid || layerResult.Resource == null)
+        if (layerId < 0)
         {
-            var statusCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier
-                ? StatusCodes.Status400BadRequest
-                : StatusCodes.Status404NotFound;
-            var message = layerResult.ErrorMessage ?? $"Layer {layerId} not found.";
-            return ProblemDetailsHelpers.CreateAdminProblem(context, statusCode, message);
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status400BadRequest,
+                $"Layer id '{layerId}' is invalid.");
         }
 
-        var snapshot = await styleService.GetStyleAsync(layerResult.Resource, cancellationToken).ConfigureAwait(false);
+        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
+            context,
+            layerId,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!layerValidation.IsValid || layerValidation.Resource is null)
+        {
+            return layerValidation.ErrorResult!;
+        }
+
+        var snapshot = await styleService.GetStyleAsync(layerValidation.Resource, layerId, cancellationToken).ConfigureAwait(false);
         if (snapshot == null)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -74,19 +80,16 @@ internal static class AdminLayerStyleEndpoints
         int layerId,
         LayerStyleUpdateRequest request,
         HttpContext context,
-        [FromServices] IResourceValidator resourceValidator,
         [FromServices] ILayerStyleService styleService,
         [FromServices] OutputCacheInvalidationService cacheInvalidator,
         CancellationToken cancellationToken)
     {
-        var layerResult = await resourceValidator.ValidateLayerAsync(layerId, cancellationToken);
-        if (!layerResult.IsValid || layerResult.Resource == null)
+        if (layerId < 0)
         {
-            var statusCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier
-                ? StatusCodes.Status400BadRequest
-                : StatusCodes.Status404NotFound;
-            var message = layerResult.ErrorMessage ?? $"Layer {layerId} not found.";
-            return ProblemDetailsHelpers.CreateAdminProblem(context, statusCode, message);
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status400BadRequest,
+                $"Layer id '{layerId}' is invalid.");
         }
 
         if (!string.IsNullOrEmpty(request.ChangeSummary) && request.ChangeSummary.Length > 1000)
@@ -97,8 +100,19 @@ internal static class AdminLayerStyleEndpoints
                 "Change summary must be 1000 characters or fewer.");
         }
 
+        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
+            context,
+            layerId,
+            scope: AccessScope.Write,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!layerValidation.IsValid || layerValidation.Resource is null)
+        {
+            return layerValidation.ErrorResult!;
+        }
+
         var result = await styleService.UpdateStyleAsync(
-                layerResult.Resource,
+                layerValidation.Resource,
+                layerId,
                 request.MapLibreStyle,
                 request.DrawingInfo,
                 request.ChangedBy,

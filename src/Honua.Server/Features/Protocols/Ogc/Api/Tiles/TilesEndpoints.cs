@@ -5,17 +5,15 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
-using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Protocols.Ogc.Common;
 using Honua.Server.Features.Protocols.Ogc.Api.Features;
 using Honua.Server.Features.Infrastructure.Rendering;
@@ -28,12 +26,13 @@ using Microsoft.Extensions.Options;
 using NetTopologySuite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Server.Features.Protocols.Ogc.Api.Tiles;
 
 internal static partial class TilesEndpoints
 {
-    private const string OgcApiTilesProtocol = "OGC-API-Tiles";
+    private const string OgcApiTilesProtocol = MetadataV2ServiceProtocols.OgcApiTiles;
     private const int MaxCollectionsPerDatasetRasterTileRequest = 16;
     private static readonly WKBWriter BboxWkbWriter = new();
 
@@ -100,7 +99,7 @@ internal static partial class TilesEndpoints
 
     private static async Task<IResult> HandleGetDatasetTilesets(
         HttpContext context,
-        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var request = context.Request;
@@ -120,7 +119,7 @@ internal static partial class TilesEndpoints
         }
 
         var cancellationToken = OgcTilesUtilities.GetTimeoutAwareCancellationToken(context);
-        var (selectedLayers, layerError) = await ResolveDatasetLayersAsync(collections, layerCatalog, context, cancellationToken);
+        var (selectedLayers, layerError) = await ResolveDatasetLayersAsync(collections, graphProvider, context, cancellationToken);
         if (layerError is not null)
         {
             return layerError;
@@ -143,7 +142,7 @@ internal static partial class TilesEndpoints
     private static async Task<IResult> HandleGetDatasetTileset(
         string tileMatrixSetId,
         HttpContext context,
-        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var request = context.Request;
@@ -168,7 +167,7 @@ internal static partial class TilesEndpoints
         }
 
         var cancellationToken = OgcTilesUtilities.GetTimeoutAwareCancellationToken(context);
-        var (layers, layerError) = await ResolveDatasetLayersAsync(collections, layerCatalog, context, cancellationToken);
+        var (layers, layerError) = await ResolveDatasetLayersAsync(collections, graphProvider, context, cancellationToken);
         if (layerError is not null)
         {
             return layerError;
@@ -180,7 +179,7 @@ internal static partial class TilesEndpoints
         var tileTemplate = $"{baseUrl}/ogc/tiles/tiles/{tileMatrixSetId}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}{querySuffix}";
         var tileMatrixSetHref = $"{baseUrl}/ogc/tiles/tileMatrixSets/{tileMatrixSetId}";
         var geodataHref = layers!.Length == 1
-            ? $"{baseUrl}/ogc/features/collections/{layers[0].Id}"
+            ? $"{baseUrl}/ogc/features/collections/{Uri.EscapeDataString(layers[0].CollectionId)}"
             : $"{baseUrl}/ogc/features/collections";
         var geodataTitle = layers.Length == 1
             ? "Collection metadata"
@@ -211,7 +210,7 @@ internal static partial class TilesEndpoints
         int tileRow,
         int tileCol,
         HttpContext context,
-        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
         [FromServices] ITileProvider tileProvider,
         [FromServices] IOptions<TileOptions> tileOptions,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
@@ -236,8 +235,7 @@ internal static partial class TilesEndpoints
             crs,
             subsetCrs,
             OgcTilesUtilities.AllowedQueryParameters.DatasetTiles,
-            cancellationToken => ResolveDatasetLayersAsync(collections, layerCatalog, context, cancellationToken),
-            layer => layer.SpatialReference.Wkid,
+            cancellationToken => ResolveDatasetLayersAsync(collections, graphProvider, context, cancellationToken),
             tileProvider,
             tileOptions,
             limitsOptions);
@@ -246,7 +244,7 @@ internal static partial class TilesEndpoints
     private static async Task<IResult> HandleGetCollectionTilesets(
         string collectionId,
         HttpContext context,
-        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var request = context.Request;
@@ -265,29 +263,17 @@ internal static partial class TilesEndpoints
         }
 
         var cancellationToken = OgcTilesUtilities.GetTimeoutAwareCancellationToken(context);
-        var layer = await ResolveCollectionLayerAsync(context, collectionId, cancellationToken);
-        if (layer == null)
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var resolution = ResolveCollectionLayer(context, snapshot, collectionId, missingCollectionIsBadRequest: false);
+        if (resolution.Error is not null)
         {
-            return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
-        }
-        var layerId = layer.Id;
-
-        var services = await layerCatalog.ListServicesAsync(cancellationToken);
-        var primaryService = GetPrimaryService(layer.Id, LayerValidationHelpers.BuildPrimaryServiceMap(services, OgcApiTilesProtocol));
-        if (!IsOgcApiTilesEnabled(layer, primaryService))
-        {
-            return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+            return resolution.Error;
         }
 
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, primaryService);
-        if (accessError != null)
-        {
-            return accessError;
-        }
-
+        var layer = resolution.Layer!;
         var tileLimits = limitsOptions.Value.Tiles;
         var encodedCollectionId = Uri.EscapeDataString(collectionId);
-        var tilesets = BuildTileSetItems(layerId, layer.Name, baseUrl, tileLimits, encodedCollectionId).ToImmutableArray();
+        var tilesets = BuildTileSetItems(layer, baseUrl, tileLimits, encodedCollectionId).ToImmutableArray();
         return BuildTilesetsListResponse(
             request,
             $"{baseUrl}/ogc/tiles/collections/{encodedCollectionId}/tiles",
@@ -301,7 +287,7 @@ internal static partial class TilesEndpoints
         string collectionId,
         string tileMatrixSetId,
         HttpContext context,
-        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
     {
         var request = context.Request;
@@ -325,35 +311,22 @@ internal static partial class TilesEndpoints
         }
 
         var cancellationToken = OgcTilesUtilities.GetTimeoutAwareCancellationToken(context);
-        var layer = await ResolveCollectionLayerAsync(context, collectionId, cancellationToken);
-        if (layer == null)
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var resolution = ResolveCollectionLayer(context, snapshot, collectionId, missingCollectionIsBadRequest: false);
+        if (resolution.Error is not null)
         {
-            return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
-        }
-        var layerId = layer.Id;
-
-        var services = await layerCatalog.ListServicesAsync(cancellationToken);
-        var primaryService = GetPrimaryService(layer.Id, LayerValidationHelpers.BuildPrimaryServiceMap(services, OgcApiTilesProtocol));
-        if (!IsOgcApiTilesEnabled(layer, primaryService))
-        {
-            return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+            return resolution.Error;
         }
 
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, primaryService);
-        if (accessError != null)
-        {
-            return accessError;
-        }
-
+        var layer = resolution.Layer!;
         var tileLimits = limitsOptions.Value.Tiles;
         var encodedCollectionId = Uri.EscapeDataString(collectionId);
         var tilesetHref = $"{baseUrl}/ogc/tiles/collections/{encodedCollectionId}/tiles/{tileMatrixSetId}";
         var tileTemplate = $"{tilesetHref}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}";
         var tileMatrixSetHref = $"{baseUrl}/ogc/tiles/tileMatrixSets/{tileMatrixSetId}";
-        var titleBase = string.IsNullOrWhiteSpace(layer.Name) ? $"Layer {layerId}" : layer.Name;
 
         var tileset = BuildTileset(
-            titleBase,
+            layer.DisplayName,
             tilesetHref,
             tileTemplate,
             tileMatrixSetHref,
@@ -373,7 +346,7 @@ internal static partial class TilesEndpoints
         int tileRow,
         int tileCol,
         HttpContext context,
-        [FromServices] ILayerCatalog layerCatalog,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
         [FromServices] ITileProvider tileProvider,
         [FromServices] IOptions<TileOptions> tileOptions,
         [FromServices] IOptions<LimitsOptions> limitsOptions)
@@ -401,28 +374,15 @@ internal static partial class TilesEndpoints
             OgcTilesUtilities.AllowedQueryParameters.Tiles,
             async cancellationToken =>
             {
-                var layer = await ResolveCollectionLayerAsync(context, collectionId, cancellationToken);
-                if (layer == null)
+                var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+                var resolution = ResolveCollectionLayer(context, snapshot, collectionId, missingCollectionIsBadRequest: false);
+                if (resolution.Error is not null)
                 {
-                    return (Array.Empty<LayerDefinition>(), StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found."));
+                    return (Array.Empty<TileRequestLayer>(), resolution.Error);
                 }
 
-                var services = await layerCatalog.ListServicesAsync(cancellationToken);
-                var primaryService = GetPrimaryService(layer.Id, LayerValidationHelpers.BuildPrimaryServiceMap(services, OgcApiTilesProtocol));
-                if (!IsOgcApiTilesEnabled(layer, primaryService))
-                {
-                    return (Array.Empty<LayerDefinition>(), StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found."));
-                }
-
-                var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, primaryService);
-                if (accessError != null)
-                {
-                    return (Array.Empty<LayerDefinition>(), accessError);
-                }
-
-                return (new[] { layer }, null);
+                return (new[] { resolution.Layer! }, null);
             },
-            layer => layer.SpatialReference.ToSrid(),
             tileProvider,
             tileOptions,
             limitsOptions);
@@ -440,8 +400,7 @@ internal static partial class TilesEndpoints
         string? crs,
         string? subsetCrs,
         IReadOnlySet<string> allowedQueryParameters,
-        Func<CancellationToken, Task<(LayerDefinition[] Layers, IResult? Error)>> resolveLayersAsync,
-        Func<LayerDefinition, int> getSpatialReferenceSrid,
+        Func<CancellationToken, Task<(TileRequestLayer[] Layers, IResult? Error)>> resolveLayersAsync,
         ITileProvider tileProvider,
         IOptions<TileOptions> tileOptions,
         IOptions<LimitsOptions> limitsOptions)
@@ -513,7 +472,7 @@ internal static partial class TilesEndpoints
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
             HonuaTelemetry.Activities.TileGeneration, ActivityKind.Internal);
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OgcTiles);
-        activity?.SetTag(HonuaTelemetry.Tags.LayerId, string.Join(",", layers.Select(candidate => candidate.Id)));
+        activity?.SetTag(HonuaTelemetry.Tags.LayerId, string.Join(",", layers.Select(candidate => candidate.PublicLayerId)));
         activity?.SetTag("honua.layer_count", layers.Length);
         activity?.SetTag(HonuaTelemetry.Tags.TileZ, zoomLevel);
         activity?.SetTag(HonuaTelemetry.Tags.TileX, tileCol);
@@ -559,7 +518,6 @@ internal static partial class TilesEndpoints
                         tileRow,
                         zoomLevel,
                         isGeographic,
-                        getSpatialReferenceSrid,
                         GetTemporalFilterForLayer(layer, temporalFilters),
                         tileLimits,
                         tileOptionsValue,
@@ -572,7 +530,6 @@ internal static partial class TilesEndpoints
                         tileRow,
                         zoomLevel,
                         isGeographic,
-                        getSpatialReferenceSrid,
                         temporalFilters,
                         tileLimits,
                         tileOptionsValue,
@@ -584,12 +541,12 @@ internal static partial class TilesEndpoints
                 ? await VectorTileExecution.ExecuteAsync(
                     context,
                     tileProvider,
-                    layer,
+                    layer.StorageLayerId,
                     tileCol,
                     tileRow,
                     zoomLevel,
                     CreateVectorTileQuery(
-                        getSpatialReferenceSrid(layer),
+                        layer.SpatialReferenceSrid,
                         isGeographic,
                         temporalFilter: GetTemporalFilterForLayer(layer, temporalFilters)),
                     tileOptionsValue,
@@ -604,7 +561,6 @@ internal static partial class TilesEndpoints
                     tileRow,
                     zoomLevel,
                     isGeographic,
-                    getSpatialReferenceSrid,
                     GetTemporalFilterForLayer(layer, temporalFilters),
                     tileOptionsValue,
                     tileLimits,
@@ -623,7 +579,7 @@ internal static partial class TilesEndpoints
             {
                 LogTileResponseGenerationFailed(
                     logger,
-                    string.Join(",", layers.Select(candidate => candidate.Id)),
+                    string.Join(",", layers.Select(candidate => candidate.PublicLayerId)),
                     tileMatrixSetId,
                     zoomLevel,
                     tileCol,
@@ -636,12 +592,11 @@ internal static partial class TilesEndpoints
 
     private static async Task<IResult> HandleRasterTileAsync(
         HttpContext context,
-        LayerDefinition layer,
+        TileRequestLayer layer,
         int tileCol,
         int tileRow,
         int zoomLevel,
         bool isGeographic,
-        Func<LayerDefinition, int> getSpatialReferenceSrid,
         TemporalFilter? temporalFilter,
         TileLimits tileLimits,
         TileOptions tileOptionsValue,
@@ -659,13 +614,13 @@ internal static partial class TilesEndpoints
         var featureQuery = new FeatureQuery
         {
             SpatialFilter = spatialFilter,
-            SpatialReferenceSrid = getSpatialReferenceSrid(layer),
+            SpatialReferenceSrid = layer.SpatialReferenceSrid,
             OutputSrid = filterSrid,
             Limit = tileLimits.MaxFeaturesPerTile > 0 ? tileLimits.MaxFeaturesPerTile : 10_000,
             TemporalFilter = temporalFilter
         };
 
-        var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, cancellationToken);
+        var queryResult = await featureReader.QueryAsync(layer.StorageLayerId, featureQuery, cancellationToken);
 
         if (queryResult.Items.Length == 0)
         {
@@ -675,7 +630,7 @@ internal static partial class TilesEndpoints
             return Results.NoContent();
         }
 
-        var imageBytes = TileRenderer.RenderTilePng(queryResult.Items, bounds, layer.GeometryType);
+        var imageBytes = TileRenderer.RenderTilePng(queryResult.Items, bounds, ToTileGeometryKind(layer.GeometryType));
 
         activity?.SetStatus(ActivityStatusCode.Ok);
         activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, queryResult.Items.Length);
@@ -688,12 +643,11 @@ internal static partial class TilesEndpoints
     private static async Task<IResult> ExecuteDatasetVectorTileAsync(
         HttpContext context,
         ITileProvider tileProvider,
-        LayerDefinition[] layers,
+        TileRequestLayer[] layers,
         int tileCol,
         int tileRow,
         int zoomLevel,
         bool isGeographic,
-        Func<LayerDefinition, int> getSpatialReferenceSrid,
         TemporalFilter? temporalFilter,
         TileOptions tileOptionsValue,
         TileLimits tileLimits,
@@ -714,7 +668,6 @@ internal static partial class TilesEndpoints
             tileRow,
             zoomLevel,
             isGeographic,
-            getSpatialReferenceSrid,
             temporalFilter,
             tileOptionsValue,
             tileLimits,
@@ -738,12 +691,11 @@ internal static partial class TilesEndpoints
 
     private static async Task<IResult> HandleDatasetRasterTileAsync(
         HttpContext context,
-        LayerDefinition[] layers,
+        TileRequestLayer[] layers,
         int tileCol,
         int tileRow,
         int zoomLevel,
         bool isGeographic,
-        Func<LayerDefinition, int> getSpatialReferenceSrid,
         IReadOnlyDictionary<int, TemporalFilter?> temporalFilters,
         TileLimits tileLimits,
         TileOptions tileOptionsValue,
@@ -771,19 +723,19 @@ internal static partial class TilesEndpoints
             var featureQuery = new FeatureQuery
             {
                 SpatialFilter = spatialFilter,
-                SpatialReferenceSrid = getSpatialReferenceSrid(layer),
+                SpatialReferenceSrid = layer.SpatialReferenceSrid,
                 OutputSrid = filterSrid,
                 Limit = remainingBudget,
                 TemporalFilter = GetTemporalFilterForLayer(layer, temporalFilters)
             };
 
-            var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, cancellationToken);
+            var queryResult = await featureReader.QueryAsync(layer.StorageLayerId, featureQuery, cancellationToken);
             if (queryResult.Items.Length == 0)
             {
                 continue;
             }
 
-            renderedLayers.Add(new TileRenderer.TileRenderLayer(queryResult.Items, layer.GeometryType));
+            renderedLayers.Add(new TileRenderer.TileRenderLayer(queryResult.Items, ToTileGeometryKind(layer.GeometryType)));
             totalFeatureCount += queryResult.Items.Length;
             remainingBudget -= queryResult.Items.Length;
         }
@@ -808,12 +760,11 @@ internal static partial class TilesEndpoints
 
     private static async Task<byte[]?> MergeVectorTileAsync(
         ITileProvider tileProvider,
-        LayerDefinition[] layers,
+        TileRequestLayer[] layers,
         int tileCol,
         int tileRow,
         int zoomLevel,
         bool isGeographic,
-        Func<LayerDefinition, int> getSpatialReferenceSrid,
         TemporalFilter? temporalFilter,
         TileOptions tileOptionsValue,
         TileLimits tileLimits,
@@ -825,11 +776,11 @@ internal static partial class TilesEndpoints
         foreach (var layer in layers)
         {
             var query = CreateVectorTileQuery(
-                getSpatialReferenceSrid(layer),
+                layer.SpatialReferenceSrid,
                 isGeographic,
                 temporalFilter: temporalFilter);
             var tileData = await tileProvider.GetMvtTileAsync(
-                layer.Id,
+                layer.StorageLayerId,
                 tileCol,
                 tileRow,
                 zoomLevel,
@@ -931,19 +882,18 @@ internal static partial class TilesEndpoints
     }
 
     private static IEnumerable<TileSetItem> BuildTileSetItems(
-        int layerId,
-        string? layerName,
+        TileRequestLayer layer,
         string baseUrl,
         TileLimits tileLimits,
         string? encodedCollectionId = null)
     {
-        var collectionId = encodedCollectionId ?? layerId.ToString(CultureInfo.InvariantCulture);
+        var collectionId = encodedCollectionId ?? Uri.EscapeDataString(layer.CollectionId);
 
         foreach (var descriptor in OgcTileMatrixSetDescriptors.Supported)
         {
             var href = $"{baseUrl}/ogc/tiles/collections/{collectionId}/tiles/{descriptor.Id}";
             yield return BuildTileSetItemCore(
-                string.IsNullOrWhiteSpace(layerName) ? $"Layer {layerId}" : $"{layerName} ({descriptor.Id})",
+                $"{layer.DisplayName} ({descriptor.Id})",
                 href,
                 $"{href}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}",
                 $"{baseUrl}/ogc/tiles/tileMatrixSets/{descriptor.Id}",
@@ -1108,43 +1058,48 @@ internal static partial class TilesEndpoints
     private static ImmutableArray<TileMatrixSetLimit> BuildTileMatrixSetLimits(TileLimits limits)
         => OgcTilesUtilities.BuildWebMercatorQuadLimits(limits);
 
-    private static async Task<(LayerDefinition[] Layers, IResult? Error)> ResolveDatasetLayersAsync(
+    private static async Task<(TileRequestLayer[] Layers, IResult? Error)> ResolveDatasetLayersAsync(
         string? collections,
-        ILayerCatalog layerCatalog,
+        IMetadataV2GraphProvider graphProvider,
         HttpContext context,
         CancellationToken cancellationToken)
     {
-        var services = await layerCatalog.ListServicesAsync(cancellationToken);
-        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMap(services, OgcApiTilesProtocol);
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(collections))
         {
-            var layers = await layerCatalog.ListLayersAsync(cancellationToken);
-            if (layers.Length == 0)
-            {
-                return (Array.Empty<LayerDefinition>(), StandardErrorHelpers.CreateNotFound(context, "No collections are available."));
-            }
-
-            var accessibleLayers = new List<LayerDefinition>(layers.Length);
+            var accessibleLayersByResource = new Dictionary<string, TileRequestLayer>(StringComparer.Ordinal);
             var requiresAuth = false;
             var hasDenied = false;
 
-            foreach (var layer in layers)
+            foreach (var publication in snapshot.Graph.Publications)
             {
-                var service = GetPrimaryService(layer.Id, primaryServices);
-                if (!IsOgcApiTilesEnabled(layer, service))
+                if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) ||
+                    !MetadataV2ServiceProtocols.IsProtocolEnabled(service, OgcApiTilesProtocol))
+                {
+                    continue;
+                }
+
+                var resource = snapshot.ResolveResource(publication);
+                if (resource is null)
                 {
                     continue;
                 }
 
                 var decision = AccessPolicyHelpers.EvaluateAccess(
                     context,
-                    layer.Metadata?.AccessPolicy,
-                    service?.Metadata?.AccessPolicy);
+                    resource.AccessPolicy,
+                    service.AccessPolicy);
 
                 if (decision.IsAllowed)
                 {
-                    accessibleLayers.Add(layer);
+                    var layer = CreateTileRequestLayer(snapshot, publication, service, resource);
+                    if (layer is not null &&
+                        (!accessibleLayersByResource.TryGetValue(resource.Metadata.Id, out var existing) ||
+                         (publication.IsPrimary && !existing.Publication.IsPrimary)))
+                    {
+                        accessibleLayersByResource[resource.Metadata.Id] = layer;
+                    }
                     continue;
                 }
 
@@ -1155,20 +1110,21 @@ internal static partial class TilesEndpoints
                 }
             }
 
-            var accessibleLayersArray = accessibleLayers
-                .OrderBy(layer => layer.Id)
+            var accessibleLayersArray = accessibleLayersByResource.Values
+                .OrderBy(layer => layer.PublicLayerId)
+                .ThenBy(layer => layer.CollectionId, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
 
             if (accessibleLayersArray.Length == 0)
             {
                 if (hasDenied)
                 {
-                    return (Array.Empty<LayerDefinition>(), requiresAuth
+                    return (Array.Empty<TileRequestLayer>(), requiresAuth
                         ? StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage)
                         : StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage));
                 }
 
-                return (Array.Empty<LayerDefinition>(), StandardErrorHelpers.CreateNotFound(context, "No collections are available."));
+                return (Array.Empty<TileRequestLayer>(), StandardErrorHelpers.CreateNotFound(context, "No collections are available."));
             }
 
             return (accessibleLayersArray, null);
@@ -1176,34 +1132,25 @@ internal static partial class TilesEndpoints
 
         if (!TryParseCollectionIds(collections, out var collectionIds, out var parseError))
         {
-            return (Array.Empty<LayerDefinition>(), StandardErrorHelpers.CreateBadRequest(context, parseError ?? "Invalid collections parameter."));
+            return (Array.Empty<TileRequestLayer>(), StandardErrorHelpers.CreateBadRequest(context, parseError ?? "Invalid collections parameter."));
         }
 
-        var selectedLayers = new List<LayerDefinition>(collectionIds.Length);
+        var selectedLayers = new List<TileRequestLayer>(collectionIds.Length);
         foreach (var collectionId in collectionIds)
         {
-            var selectedLayer = await ResolveCollectionLayerAsync(context, collectionId, cancellationToken);
-            if (selectedLayer == null)
+            var resolution = ResolveCollectionLayer(context, snapshot, collectionId, missingCollectionIsBadRequest: true);
+            if (resolution.Error is not null)
             {
-                return (Array.Empty<LayerDefinition>(), StandardErrorHelpers.CreateBadRequest(context, $"Collection '{collectionId}' not found."));
+                return (Array.Empty<TileRequestLayer>(), resolution.Error);
             }
 
-            var primaryService = GetPrimaryService(selectedLayer.Id, primaryServices);
-            if (!IsOgcApiTilesEnabled(selectedLayer, primaryService))
-            {
-                return (Array.Empty<LayerDefinition>(), StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found."));
-            }
-
-            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, selectedLayer, primaryService);
-            if (accessError != null)
-            {
-                return (Array.Empty<LayerDefinition>(), accessError);
-            }
-
-            selectedLayers.Add(selectedLayer);
+            selectedLayers.Add(resolution.Layer!);
         }
 
-        return (selectedLayers.OrderBy(layer => layer.Id).ToArray(), null);
+        return (selectedLayers
+            .OrderBy(layer => layer.PublicLayerId)
+            .ThenBy(layer => layer.CollectionId, StringComparer.OrdinalIgnoreCase)
+            .ToArray(), null);
     }
 
     private static bool TryParseCollectionIds(string collections, out string[] collectionIds, out string? error)
@@ -1248,28 +1195,151 @@ internal static partial class TilesEndpoints
         return true;
     }
 
-    private static async Task<LayerDefinition?> ResolveCollectionLayerAsync(
+    private static TileRequestLayerResolution ResolveCollectionLayer(
         HttpContext context,
+        MetadataV2GraphSnapshot snapshot,
         string collectionId,
-        CancellationToken cancellationToken)
+        bool missingCollectionIsBadRequest)
     {
-        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var validationResult = await resourceValidator.ValidateCollectionAsync(collectionId, cancellationToken);
-        return validationResult.IsValid ? validationResult.Resource : null;
+        var publication = FindCollectionPublication(snapshot, collectionId, requireProtocol: true, out var service);
+        if (publication is null || service is null)
+        {
+            var existsWithoutProtocol = FindCollectionPublication(snapshot, collectionId, requireProtocol: false, out _) is not null;
+            var error = existsWithoutProtocol || !missingCollectionIsBadRequest
+                ? StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.")
+                : StandardErrorHelpers.CreateBadRequest(context, $"Collection '{collectionId}' not found.");
+            return new TileRequestLayerResolution(null, error);
+        }
+
+        var resource = snapshot.ResolveResource(publication);
+        if (resource is null)
+        {
+            var error = missingCollectionIsBadRequest
+                ? StandardErrorHelpers.CreateBadRequest(context, $"Collection '{collectionId}' not found.")
+                : StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+            return new TileRequestLayerResolution(null, error);
+        }
+
+        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+        if (accessError is not null)
+        {
+            return new TileRequestLayerResolution(null, accessError);
+        }
+
+        var layer = CreateTileRequestLayer(snapshot, publication, service, resource);
+        if (layer is null)
+        {
+            return new TileRequestLayerResolution(
+                null,
+                StandardErrorHelpers.CreateInternalServerError(
+                    context,
+                    $"Collection '{collectionId}' is not bound to a storage layer."));
+        }
+
+        return new TileRequestLayerResolution(layer, null);
     }
 
-    private static string BuildDatasetTitleBase(LayerDefinition[] layers)
+    private static MetadataV2Publication? FindCollectionPublication(
+        MetadataV2GraphSnapshot snapshot,
+        string collectionId,
+        bool requireProtocol,
+        out MetadataV2Service? service)
+    {
+        service = null;
+        foreach (var publication in snapshot.Graph.Publications)
+        {
+            if (!MatchesCollectionId(snapshot, publication, collectionId))
+            {
+                continue;
+            }
+
+            if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var candidateService))
+            {
+                continue;
+            }
+
+            if (requireProtocol &&
+                !MetadataV2ServiceProtocols.IsProtocolEnabled(candidateService, OgcApiTilesProtocol))
+            {
+                continue;
+            }
+
+            service = candidateService;
+            return publication;
+        }
+
+        return null;
+    }
+
+    private static bool MatchesCollectionId(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication publication,
+        string collectionId)
+    {
+        if (string.Equals(publication.ServiceLocalId, collectionId, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(publication.Path, collectionId, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(publication.Metadata.Name, collectionId, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(publication.Metadata.Title, collectionId, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(publication.Metadata.Id, collectionId, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var resource = snapshot.ResolveResource(publication);
+        return resource is not null &&
+            (string.Equals(resource.Metadata.Name, collectionId, StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(resource.Metadata.Title, collectionId, StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(resource.Metadata.Id, collectionId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static TileRequestLayer? CreateTileRequestLayer(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication publication,
+        MetadataV2Service service,
+        MetadataV2Resource resource)
+    {
+        var storageLayerId = snapshot.ResolveStorageLayerId(publication) ?? snapshot.ResolveStorageLayerId(resource);
+        if (!storageLayerId.HasValue)
+        {
+            return null;
+        }
+
+        var publicLayerId = publication.LayerIndex ?? storageLayerId.Value;
+        var collectionId = ResolveCollectionId(publication, resource);
+        var displayName = publication.TitleOverride ?? resource.Metadata.Title ?? resource.Metadata.Name;
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            displayName = $"Layer {publicLayerId}";
+        }
+
+        return new TileRequestLayer(
+            collectionId,
+            publicLayerId,
+            storageLayerId.Value,
+            displayName,
+            resource.Metadata.Description,
+            resource,
+            publication,
+            service);
+    }
+
+    private static string ResolveCollectionId(MetadataV2Publication publication, MetadataV2Resource resource)
+    {
+        var collectionId = publication.ServiceLocalId ?? publication.Path ?? resource.Metadata.Name;
+        return string.IsNullOrWhiteSpace(collectionId) ? resource.Metadata.Id : collectionId;
+    }
+
+    private static string BuildDatasetTitleBase(TileRequestLayer[] layers)
     {
         if (layers.Length == 1)
         {
-            var layer = layers[0];
-            return string.IsNullOrWhiteSpace(layer.Name) ? $"Layer {layer.Id}" : layer.Name;
+            return layers[0].DisplayName;
         }
 
         return "Dataset";
     }
 
-    private static string BuildCollectionsQuerySuffix(string? requestedCollections, LayerDefinition[] layers)
+    private static string BuildCollectionsQuerySuffix(string? requestedCollections, TileRequestLayer[] layers)
     {
         if (string.IsNullOrWhiteSpace(requestedCollections))
         {
@@ -1278,7 +1348,7 @@ internal static partial class TilesEndpoints
 
         var canonicalCollections = string.Join(
             ",",
-            layers.Select(layer => Uri.EscapeDataString(layer.Id.ToString(CultureInfo.InvariantCulture))));
+            layers.Select(layer => Uri.EscapeDataString(layer.CollectionId)));
         return $"?collections={canonicalCollections}";
     }
 
@@ -1316,7 +1386,7 @@ internal static partial class TilesEndpoints
 
     private static IResult? ValidateTileQueryParameters(
         HttpContext context,
-        LayerDefinition[] layers,
+        TileRequestLayer[] layers,
         string? datetime,
         string? subset,
         string? crs,
@@ -1348,15 +1418,15 @@ internal static partial class TilesEndpoints
 
         foreach (var layer in layers)
         {
-            if (!OgcTemporalFilterParser.TryParse(datetime, layer, out var temporalFilter, out var errorMessage))
+            if (!OgcTemporalFilterParser.TryParse(datetime, layer.Resource, out var temporalFilter, out var errorMessage))
             {
                 var detail = layers.Length > 1
-                    ? $"Collection '{layer.Id}' cannot satisfy the requested datetime filter. {errorMessage ?? "Invalid datetime parameter."}"
+                    ? $"Collection '{layer.CollectionId}' cannot satisfy the requested datetime filter. {errorMessage ?? "Invalid datetime parameter."}"
                     : errorMessage ?? "Invalid datetime parameter.";
                 return StandardErrorHelpers.CreateBadRequest(context, detail);
             }
 
-            parsedTemporalFilters[layer.Id] = temporalFilter;
+            parsedTemporalFilters[layer.StorageLayerId] = temporalFilter;
         }
 
         return null;
@@ -1376,9 +1446,9 @@ internal static partial class TilesEndpoints
         Exception exception);
 
     private static TemporalFilter? GetTemporalFilterForLayer(
-        LayerDefinition layer,
+        TileRequestLayer layer,
         IReadOnlyDictionary<int, TemporalFilter?> temporalFilters)
-        => temporalFilters.TryGetValue(layer.Id, out var temporalFilter) ? temporalFilter : null;
+        => temporalFilters.TryGetValue(layer.StorageLayerId, out var temporalFilter) ? temporalFilter : null;
 
     private static bool IsSupportedCrs(string? crs, string tileMatrixSetId)
     {
@@ -1466,15 +1536,33 @@ internal static partial class TilesEndpoints
         }
     }
 
-    private static ServiceDefinition? GetPrimaryService(
-        int layerId,
-        IReadOnlyDictionary<int, ServiceDefinition> primaryServices)
-        => primaryServices.TryGetValue(layerId, out var service) ? service : null;
+    private static TileRenderer.GeometryKind ToTileGeometryKind(MetadataV2GeometryType geometryType)
+        => geometryType switch
+        {
+            MetadataV2GeometryType.Point => TileRenderer.GeometryKind.Point,
+            MetadataV2GeometryType.MultiPoint => TileRenderer.GeometryKind.MultiPoint,
+            MetadataV2GeometryType.LineString => TileRenderer.GeometryKind.LineString,
+            MetadataV2GeometryType.MultiLineString => TileRenderer.GeometryKind.MultiLineString,
+            MetadataV2GeometryType.Polygon => TileRenderer.GeometryKind.Polygon,
+            MetadataV2GeometryType.MultiPolygon => TileRenderer.GeometryKind.MultiPolygon,
+            _ => TileRenderer.GeometryKind.Unknown
+        };
 
-    private static bool IsOgcApiTilesEnabled(LayerDefinition layer, ServiceDefinition? service)
+    private sealed record TileRequestLayer(
+        string CollectionId,
+        int PublicLayerId,
+        int StorageLayerId,
+        string DisplayName,
+        string? Description,
+        MetadataV2Resource Resource,
+        MetadataV2Publication Publication,
+        MetadataV2Service Service)
     {
-        var metadata = service?.Metadata ?? layer.Metadata;
-        return ServiceProtocols.IsProtocolEnabled(metadata, OgcApiTilesProtocol);
+        public int SpatialReferenceSrid => Resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
+
+        public MetadataV2GeometryType GeometryType => Resource.ReadGeometryType();
     }
+
+    private readonly record struct TileRequestLayerResolution(TileRequestLayer? Layer, IResult? Error);
 
 }

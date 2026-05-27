@@ -2,13 +2,18 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text.Json;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using NpgsqlTypes;
+using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Postgres.Features.Admin;
 
@@ -17,6 +22,7 @@ namespace Honua.Postgres.Features.Admin;
 /// </summary>
 internal sealed partial class PostgreSqlLayerPublishingService(
     ITableDiscoveryService tableDiscoveryService,
+    IMetadataV2GraphStore metadataGraphStore,
     ILogger<PostgreSqlLayerPublishingService> logger) : ILayerPublishingService
 {
     private const string DefaultServiceName = "default";
@@ -34,6 +40,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     private static readonly string[] _defaultCapabilities = ["Query", "Extract"];
 
     private readonly ITableDiscoveryService _tableDiscoveryService = tableDiscoveryService;
+    private readonly IMetadataV2GraphStore _metadataGraphStore = metadataGraphStore;
     private readonly ILogger<PostgreSqlLayerPublishingService> _logger = logger;
 
     public async Task<IReadOnlyList<PublishedLayerSummary>> ListPublishedLayersAsync(
@@ -251,6 +258,16 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         await EnsureLayerSequenceAsync(connection, transaction, cancellationToken);
 
+        var extent = await ReadLayerExtentAsync(
+                connection,
+                transaction,
+                schema,
+                table,
+                geometryColumn,
+                storageSrid,
+                cancellationToken)
+            .ConfigureAwait(false);
+
         var layerId = await InsertLayerAsync(
             connection,
             transaction,
@@ -263,7 +280,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             geometryType,
             srid,
             storageSrid,
-            null,
+            extent,
             request.Enabled,
             cancellationToken);
 
@@ -288,6 +305,22 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         await transaction.CommitAsync(cancellationToken);
 
+        await UpsertPublishedLayerMetadataV2Async(
+                serviceName,
+                request,
+                layerId,
+                schema,
+                table,
+                primaryKeyColumn.Name,
+                geometryColumn,
+                geometryType,
+                srid,
+                storageSrid,
+                fields,
+                extent,
+                cancellationToken)
+            .ConfigureAwait(false);
+
         return new PublishedLayerSummary
         {
             LayerId = layerId,
@@ -302,6 +335,449 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             Enabled = request.Enabled,
             ServiceName = serviceName
         };
+    }
+
+    private async Task UpsertPublishedLayerMetadataV2Async(
+        string serviceName,
+        LayerPublishRequest request,
+        int layerId,
+        string schema,
+        string table,
+        string primaryKeyColumn,
+        string geometryColumn,
+        string geometryType,
+        int srid,
+        int storageSrid,
+        IReadOnlyList<LayerFieldInsert> fields,
+        LayerExtentInsert? extent,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await _metadataGraphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var graph = snapshot.Graph;
+        var now = DateTimeOffset.UtcNow;
+        var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
+        var service = BuildPublishedService(graph, serviceName, srid, now);
+        var resource = BuildPublishedResource(
+            request,
+            layerId,
+            primaryKeyColumn,
+            geometryColumn,
+            geometryType,
+            srid,
+            storageSrid,
+            fields,
+            extent,
+            now);
+        var binding = BuildPublishedStorageBinding(
+            request,
+            layerId,
+            resource.Metadata.Id,
+            schema,
+            table,
+            primaryKeyColumn,
+            geometryColumn,
+            storageSrid,
+            now);
+        var publication = BuildPublishedPublication(
+            service,
+            resource,
+            binding,
+            layerIdText,
+            request.LayerName.Trim(),
+            now);
+        var connection = BuildPublishedConnection(request.ConnectionId, now);
+        service = service with
+        {
+            PublicationIds = service.PublicationIds
+                .Append(publication.Metadata.Id)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray()
+        };
+
+        var updatedGraph = graph with
+        {
+            Revision = Math.Max(graph.Revision + 1, 1),
+            GeneratedAt = now,
+            Services = UpsertById(graph.Services, service, static item => item.Metadata.Id),
+            Resources = UpsertById(graph.Resources, resource, static item => item.Metadata.Id),
+            StorageBindings = UpsertById(graph.StorageBindings, binding, static item => item.Metadata.Id),
+            Publications = UpsertPublication(graph.Publications, publication),
+            Connections = connection is null
+                ? graph.Connections
+                : UpsertById(graph.Connections, connection, static item => item.Metadata.Id)
+        };
+
+        var validation = MetadataV2GraphValidator.Validate(updatedGraph);
+        if (!validation.IsValid)
+        {
+            throw new InvalidOperationException(
+                $"Published layer metadata v2 graph is invalid: {string.Join("; ", validation.Errors)}");
+        }
+
+        await _metadataGraphStore.SaveAsync(updatedGraph, snapshot.Etag, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static MetadataV2Service BuildPublishedService(
+        MetadataV2Graph graph,
+        string serviceName,
+        int srid,
+        DateTimeOffset now)
+    {
+        var existing = graph.Services.FirstOrDefault(service =>
+            string.Equals(service.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(service.Metadata.Id, serviceName, StringComparison.Ordinal));
+
+        var serviceId = existing?.Metadata.Id ?? $"svc-publish-{SanitizeMetadataId(serviceName)}";
+        var metadata = (existing?.Metadata ?? new MetadataV2ObjectMetadata()) with
+        {
+            Id = serviceId,
+            Name = string.IsNullOrWhiteSpace(existing?.Metadata.Name) ? serviceName : existing!.Metadata.Name,
+            Title = existing?.Metadata.Title ?? serviceName,
+            Description = existing?.Metadata.Description ?? $"Honua service '{serviceName}'",
+            CreatedAt = existing?.Metadata.CreatedAt ?? now,
+            UpdatedAt = now
+        };
+
+        return (existing ?? new MetadataV2Service()) with
+        {
+            Metadata = metadata,
+            ServiceType = MetadataV2ServiceType.EsriFeatureService,
+            Route = $"/rest/services/{serviceName}/FeatureServer",
+            Protocols = MetadataV2ServiceProtocols.All,
+            SpatialReference = CreateSpatialReference(srid),
+            Status = ActiveReadyStatus(now)
+        };
+    }
+
+    private static MetadataV2Resource BuildPublishedResource(
+        LayerPublishRequest request,
+        int layerId,
+        string primaryKeyColumn,
+        string geometryColumn,
+        string geometryType,
+        int srid,
+        int storageSrid,
+        IReadOnlyList<LayerFieldInsert> fields,
+        LayerExtentInsert? extent,
+        DateTimeOffset now)
+    {
+        var bindingId = BuildStorageBindingId(layerId);
+        return new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = BuildResourceId(layerId),
+                Name = request.LayerName.Trim(),
+                Title = request.LayerName.Trim(),
+                Description = request.Description,
+                CreatedAt = now,
+                UpdatedAt = now
+            },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            StorageBindingIds = [bindingId],
+            PrimaryStorageBindingId = bindingId,
+            SchemaFields = fields
+                .Select(field => MapLayerFieldToMetadataV2(field, primaryKeyColumn, geometryColumn))
+                .ToArray(),
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = CreateSpatialReference(srid),
+                GeometryType = MapMetadataV2GeometryType(geometryType),
+                Bbox = extent is not null && extent.Srid == srid
+                    ? new MetadataV2Bbox
+                    {
+                        West = extent.MinX,
+                        South = extent.MinY,
+                        East = extent.MaxX,
+                        North = extent.MaxY
+                    }
+                    : null,
+                PrimaryGeometryField = geometryColumn,
+                StorageCrs = CreateSpatialReference(storageSrid)
+            },
+            Display = new MetadataV2ResourceDisplay
+            {
+                DisplayField = fields
+                    .FirstOrDefault(field =>
+                        field.Type != FieldType.Geometry &&
+                        !string.Equals(field.Name, primaryKeyColumn, StringComparison.OrdinalIgnoreCase))
+                    ?.Name,
+                Queryable = true,
+                DefaultVisibility = request.Enabled
+            },
+            Status = ActiveReadyStatus(now)
+        };
+    }
+
+    private static MetadataV2StorageBinding BuildPublishedStorageBinding(
+        LayerPublishRequest request,
+        int layerId,
+        string resourceId,
+        string schema,
+        string table,
+        string primaryKeyColumn,
+        string geometryColumn,
+        int storageSrid,
+        DateTimeOffset now)
+    {
+        var connectionId = request.ConnectionId?.ToString("D");
+        return new MetadataV2StorageBinding
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = BuildStorageBindingId(layerId),
+                Name = BuildStorageBindingId(layerId),
+                Title = $"{schema}.{table}",
+                CreatedAt = now,
+                UpdatedAt = now
+            },
+            ResourceId = resourceId,
+            ConnectionId = connectionId,
+            StorageType = MetadataV2StorageType.RelationalTable,
+            Locator = $"{schema}.{table}",
+            StorageLayerId = layerId,
+            Capabilities =
+            [
+                MetadataV2StorageBindingCapability.Query,
+                MetadataV2StorageBindingCapability.Filter,
+                MetadataV2StorageBindingCapability.Sort,
+                MetadataV2StorageBindingCapability.Aggregate
+            ],
+            Options = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+            {
+                [FeatureStorageMapping.SourceBackedOption] = JsonSerializer.SerializeToElement(true),
+                ["schemaName"] = JsonSerializer.SerializeToElement(schema),
+                ["tableName"] = JsonSerializer.SerializeToElement(table),
+                ["primaryKeyColumn"] = JsonSerializer.SerializeToElement(primaryKeyColumn),
+                ["geometryColumn"] = JsonSerializer.SerializeToElement(geometryColumn),
+                ["storageSrid"] = JsonSerializer.SerializeToElement(storageSrid)
+            },
+            Status = ActiveReadyStatus(now)
+        };
+    }
+
+    private static MetadataV2Publication BuildPublishedPublication(
+        MetadataV2Service service,
+        MetadataV2Resource resource,
+        MetadataV2StorageBinding binding,
+        string layerIdText,
+        string layerTitle,
+        DateTimeOffset now)
+    {
+        return new MetadataV2Publication
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = $"pub-{service.Metadata.Id}-{layerIdText}",
+                Name = layerIdText,
+                Title = layerTitle,
+                CreatedAt = now,
+                UpdatedAt = now
+            },
+            ResourceId = resource.Metadata.Id,
+            ServiceId = service.Metadata.Id,
+            StorageBindingId = binding.Metadata.Id,
+            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+            Identifier = new MetadataV2PublicationIdentifier
+            {
+                Value = layerIdText,
+                IsNumeric = true
+            },
+            IsPrimary = true,
+            SupportedFormats = _defaultFormats,
+            Capabilities = _defaultCapabilities,
+            Status = ActiveReadyStatus(now)
+        };
+    }
+
+    private static MetadataV2Connection? BuildPublishedConnection(Guid? connectionId, DateTimeOffset now)
+    {
+        if (!connectionId.HasValue)
+        {
+            return null;
+        }
+
+        var id = connectionId.Value.ToString("D");
+        return new MetadataV2Connection
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = id,
+                Name = id,
+                Title = "PostGIS secure connection",
+                CreatedAt = now,
+                UpdatedAt = now
+            },
+            Type = MetadataV2ConnectionType.Database,
+            Provider = DataProviderNames.Postgis,
+            Status = ActiveReadyStatus(now)
+        };
+    }
+
+    private static MetadataV2Field MapLayerFieldToMetadataV2(
+        LayerFieldInsert field,
+        string primaryKeyColumn,
+        string geometryColumn)
+    {
+        var semanticRoles = new List<string>(capacity: 2);
+        if (string.Equals(field.Name, primaryKeyColumn, StringComparison.OrdinalIgnoreCase))
+        {
+            semanticRoles.Add("id.primary");
+        }
+        if (string.Equals(field.Name, geometryColumn, StringComparison.OrdinalIgnoreCase))
+        {
+            semanticRoles.Add("geometry.primary");
+        }
+
+        return new MetadataV2Field
+        {
+            Name = field.Name,
+            Type = MapMetadataV2FieldType(field.Type),
+            Title = field.Name,
+            Description = field.Description,
+            Nullable = field.Nullable,
+            SemanticRoles = semanticRoles.ToArray(),
+            Alias = field.Name,
+            Editable = field.Type != FieldType.Geometry,
+            Length = field.MaxLength
+        };
+    }
+
+    private static MetadataV2FieldType MapMetadataV2FieldType(FieldType fieldType)
+        => fieldType switch
+        {
+            FieldType.String => MetadataV2FieldType.String,
+            FieldType.Integer => MetadataV2FieldType.Integer,
+            FieldType.BigInteger => MetadataV2FieldType.BigInteger,
+            FieldType.Double => MetadataV2FieldType.Double,
+            FieldType.Float => MetadataV2FieldType.Float,
+            FieldType.Boolean => MetadataV2FieldType.Boolean,
+            FieldType.DateTime => MetadataV2FieldType.DateTime,
+            FieldType.Date => MetadataV2FieldType.Date,
+            FieldType.Time => MetadataV2FieldType.Time,
+            FieldType.Geometry => MetadataV2FieldType.Geometry,
+            FieldType.Json => MetadataV2FieldType.Json,
+            FieldType.Binary => MetadataV2FieldType.Binary,
+            FieldType.Uuid => MetadataV2FieldType.Uuid,
+            _ => MetadataV2FieldType.Unknown
+        };
+
+    private static MetadataV2GeometryType MapMetadataV2GeometryType(string geometryType)
+        => geometryType.Trim().ToLowerInvariant() switch
+        {
+            "point" => MetadataV2GeometryType.Point,
+            "multipoint" => MetadataV2GeometryType.MultiPoint,
+            "linestring" => MetadataV2GeometryType.LineString,
+            "multilinestring" => MetadataV2GeometryType.MultiLineString,
+            "polygon" => MetadataV2GeometryType.Polygon,
+            "multipolygon" => MetadataV2GeometryType.MultiPolygon,
+            "geometrycollection" => MetadataV2GeometryType.GeometryCollection,
+            _ => MetadataV2GeometryType.Mixed
+        };
+
+    private static MetadataV2SpatialReference CreateSpatialReference(int srid)
+        => new()
+        {
+            Srid = srid,
+            Crs = $"EPSG:{srid.ToString(CultureInfo.InvariantCulture)}",
+            IsGeographic = srid == 4326
+        };
+
+    private static MetadataV2Status ActiveReadyStatus(DateTimeOffset now)
+        => new()
+        {
+            Lifecycle = MetadataV2LifecycleStatus.Active,
+            State = MetadataV2OperationalState.Ready,
+            ObservedAt = now
+        };
+
+    private static List<T> UpsertById<T>(
+        IReadOnlyList<T> items,
+        T item,
+        Func<T, string> idSelector)
+    {
+        var itemId = idSelector(item);
+        var result = new List<T>(items.Count + 1);
+        var replaced = false;
+
+        foreach (var existing in items)
+        {
+            if (string.Equals(idSelector(existing), itemId, StringComparison.Ordinal))
+            {
+                if (!replaced)
+                {
+                    result.Add(item);
+                    replaced = true;
+                }
+                continue;
+            }
+
+            result.Add(existing);
+        }
+
+        if (!replaced)
+        {
+            result.Add(item);
+        }
+
+        return result;
+    }
+
+    private static List<MetadataV2Publication> UpsertPublication(
+        IReadOnlyList<MetadataV2Publication> publications,
+        MetadataV2Publication publication)
+    {
+        var result = new List<MetadataV2Publication>(publications.Count + 1);
+        var replaced = false;
+
+        foreach (var existing in publications)
+        {
+            var sameIdentity = string.Equals(
+                existing.Metadata.Id,
+                publication.Metadata.Id,
+                StringComparison.Ordinal);
+            var sameServiceLayer = string.Equals(
+                existing.ServiceId,
+                publication.ServiceId,
+                StringComparison.Ordinal) &&
+                existing.LayerIndex == publication.LayerIndex;
+
+            if (sameIdentity || sameServiceLayer)
+            {
+                if (!replaced)
+                {
+                    result.Add(publication);
+                    replaced = true;
+                }
+                continue;
+            }
+
+            result.Add(existing);
+        }
+
+        if (!replaced)
+        {
+            result.Add(publication);
+        }
+
+        return result;
+    }
+
+    private static string BuildResourceId(int layerId)
+        => $"res-layer-{layerId.ToString(CultureInfo.InvariantCulture)}";
+
+    private static string BuildStorageBindingId(int layerId)
+        => $"binding-layer-{layerId.ToString(CultureInfo.InvariantCulture)}";
+
+    private static string SanitizeMetadataId(string value)
+    {
+        var trimmed = value.Trim();
+        var chars = trimmed.Select(ch =>
+            char.IsLetterOrDigit(ch) || ch is '-' or '_' or '.'
+                ? ch
+                : '-');
+        var sanitized = new string(chars.ToArray()).Trim('-');
+        return string.IsNullOrWhiteSpace(sanitized) ? "default" : sanitized;
     }
 
     public async Task<PublishedLayerSummary?> LinkExistingLayerToServiceAsync(

@@ -28,6 +28,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
@@ -573,9 +574,6 @@ public sealed class OgcFeaturesStringIdentifierEndpointTests
 
     private sealed class StringIdSqlFilterTranslator : ISqlFilterTranslator
     {
-        public SqlFragment Translate(FilterExpression filter, LayerDefinition layer)
-            => TranslateCore(filter);
-
         public SqlFragment Translate(FilterExpression filter, MetadataV2Resource resource)
             => TranslateCore(filter);
 
@@ -678,14 +676,6 @@ public sealed class OgcFeaturesStringIdentifierEndpointTests
     {
         private static readonly SpatialReference SpatialReference = SpatialReference.Create(4326);
         private static readonly FeatureExtent Extent = FeatureExtent.Create(-180, -90, 180, 90, 4326);
-        private static readonly CatalogMetadata Metadata = new()
-        {
-            AccessPolicy = new AccessPolicy
-            {
-                AllowAnonymous = true,
-                AllowAnonymousWrite = true
-            }
-        };
         private static readonly LayerDefinition Layer = new(
             Id: StringIdLayerId,
             Name: "String ID Layer",
@@ -701,8 +691,7 @@ public sealed class OgcFeaturesStringIdentifierEndpointTests
             Extent: Extent,
             MinScale: null,
             MaxScale: null,
-            DefaultVisibility: true,
-            Metadata: Metadata);
+            DefaultVisibility: true);
         private static readonly LayerDefinition NumericNameLayer = Layer with
         {
             Id = 100,
@@ -713,8 +702,7 @@ public sealed class OgcFeaturesStringIdentifierEndpointTests
             "string-ids",
             "Feature service for string identifier tests",
             [Layer, NumericNameLayer],
-            SpatialReference,
-            Metadata: Metadata);
+            SpatialReference);
 
         public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
             => Task.FromResult(layerId switch
@@ -775,7 +763,7 @@ public sealed class OgcFeaturesStringIdentifierEndpointTests
                 "svc-string-ids",
                 "string-ids",
                 route: "/ogc/features",
-                protocols: new[] { ServiceProtocols.OgcFeatures },
+                protocols: new[] { MetadataV2ServiceProtocols.OgcFeatures },
                 accessPolicy: openAccessPolicy)
             .AddResource(
                 "res-string-id-layer",

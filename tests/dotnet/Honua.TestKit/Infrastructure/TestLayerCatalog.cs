@@ -24,6 +24,9 @@ public sealed class TestLayerCatalog : ILayerCatalog
 
     public TestLayerCatalog(AccessPolicy? servicePolicy = null, AccessPolicy? layerPolicy = null)
     {
+        _ = servicePolicy;
+        _ = layerPolicy;
+
         // Create a test layer with minimal required fields
         var testFields = new[]
         {
@@ -37,7 +40,6 @@ public sealed class TestLayerCatalog : ILayerCatalog
         var spatialRef = SpatialReference.Create(4326); // WGS84
         var extent = FeatureExtent.Create(-180, -90, 180, 90, 4326);
 
-        var layerMetadata = layerPolicy == null ? null : new CatalogMetadata { AccessPolicy = layerPolicy };
         _testLayer = new LayerDefinition(
             Id: 0,
             Name: "Test Layer",
@@ -48,11 +50,9 @@ public sealed class TestLayerCatalog : ILayerCatalog
             Extent: extent,
             MinScale: null,
             MaxScale: null,
-            DefaultVisibility: true,
-            Metadata: layerMetadata);
+            DefaultVisibility: true);
 
         // Create test service containing the test layer
-        var serviceMetadata = servicePolicy == null ? null : new CatalogMetadata { AccessPolicy = servicePolicy };
         _testService = new ServiceDefinition(
             Name: "test",
             Description: "Test service for integration tests",
@@ -60,8 +60,7 @@ public sealed class TestLayerCatalog : ILayerCatalog
             SpatialReference: spatialRef,
             SupportedFormats: _supportedFormats,
             Capabilities: _capabilities,
-            ServiceExtent: extent,
-            Metadata: serviceMetadata);
+            ServiceExtent: extent);
     }
 
     public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)

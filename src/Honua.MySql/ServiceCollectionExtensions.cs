@@ -217,19 +217,12 @@ internal static class ServiceCollectionExtensions
                 continue;
             }
 
-            CatalogMetadata? metadata = null;
-            if (svcOpt.EnabledProtocols is { Length: > 0 })
-            {
-                metadata = new CatalogMetadata { EnabledProtocols = svcOpt.EnabledProtocols };
-            }
-
             services.Add(new ServiceDefinition(
                 svcOpt.Name,
                 svcOpt.Description ?? $"MySQL/MariaDB feature service: {svcOpt.Name}",
                 svcLayers,
                 svcLayers[0].SpatialReference,
-                Capabilities: svcOpt.Capabilities,
-                Metadata: metadata));
+                Capabilities: svcOpt.Capabilities));
         }
 
         return (layers, services);

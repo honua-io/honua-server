@@ -311,19 +311,12 @@ internal static class ServiceCollectionExtensions
                 continue;
             }
 
-            CatalogMetadata? metadata = null;
-            if (svcOpt.EnabledProtocols is { Length: > 0 })
-            {
-                metadata = new CatalogMetadata { EnabledProtocols = svcOpt.EnabledProtocols };
-            }
-
             var service = new ServiceDefinition(
                 svcOpt.Name,
                 svcOpt.Description ?? $"DuckDB feature service: {svcOpt.Name}",
                 svcLayers,
                 svcLayers[0].SpatialReference,
-                Capabilities: svcOpt.Capabilities,
-                Metadata: metadata);
+                Capabilities: svcOpt.Capabilities);
 
             services.Add(service);
         }

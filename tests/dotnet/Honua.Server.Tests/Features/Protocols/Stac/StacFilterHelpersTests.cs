@@ -2,14 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
-using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
-using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Protocols.Stac.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
@@ -17,61 +13,111 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
-using NSubstitute;
-using CatalogGeometryType = Honua.Core.Features.Catalog.Domain.GeometryType;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
 
 public sealed class StacFilterHelpersTests
 {
     [UnitTest]
-    public async Task ResolveStacVisibleLayers_WithSharedLayerAcrossServices_IsDeterministic()
+    public async Task ResolveVisibleStacPublicationsAsync_WithOutOfOrderPublications_IsDeterministic()
     {
-        var sharedLayer = CreateLayer(1);
-        var alphaService = CreateService("alpha", sharedLayer, allowAnonymous: true);
-        var betaService = CreateService("beta", sharedLayer);
+        var firstGraph = new TestMetadataV2GraphBuilder()
+            .AddService("svc-alpha", "alpha", protocols: [StacProtocolConstants.ProtocolName], accessPolicy: AnonymousAccess())
+            .AddResource("res-two", "second")
+            .AddResource("res-one", "first")
+            .AddPublication(
+                "pub-two",
+                "svc-alpha",
+                "res-two",
+                layerIndex: 2,
+                serviceLocalId: "second",
+                publicationType: MetadataV2PublicationType.StacCollection)
+            .AddPublication(
+                "pub-one",
+                "svc-alpha",
+                "res-one",
+                layerIndex: 1,
+                serviceLocalId: "first",
+                publicationType: MetadataV2PublicationType.StacCollection)
+            .Build();
 
-        var firstOrder = await ResolveVisibleLayersAsync(
-            [alphaService, betaService],
-            [sharedLayer]);
+        var secondGraph = new TestMetadataV2GraphBuilder()
+            .AddService("svc-alpha", "alpha", protocols: [StacProtocolConstants.ProtocolName], accessPolicy: AnonymousAccess())
+            .AddResource("res-one", "first")
+            .AddResource("res-two", "second")
+            .AddPublication(
+                "pub-one",
+                "svc-alpha",
+                "res-one",
+                layerIndex: 1,
+                serviceLocalId: "first",
+                publicationType: MetadataV2PublicationType.StacCollection)
+            .AddPublication(
+                "pub-two",
+                "svc-alpha",
+                "res-two",
+                layerIndex: 2,
+                serviceLocalId: "second",
+                publicationType: MetadataV2PublicationType.StacCollection)
+            .Build();
 
-        var secondOrder = await ResolveVisibleLayersAsync(
-            [betaService, alphaService],
-            [sharedLayer]);
+        var firstOrder = await ResolveVisiblePublicationsAsync(firstGraph);
+        var secondOrder = await ResolveVisiblePublicationsAsync(secondGraph);
 
-        firstOrder.Should().ContainSingle(layer => layer.Id == sharedLayer.Id);
-        secondOrder.Should().ContainSingle(layer => layer.Id == sharedLayer.Id);
+        firstOrder.Select(publication => publication.LayerIndex).Should().Equal(1, 2);
+        secondOrder.Select(publication => publication.LayerIndex).Should().Equal(1, 2);
     }
 
     [UnitTest]
-    public async Task ResolveStacVisibleLayers_FallsBackToLayerMetadata_WhenNoStacServiceClaimsLayer()
+    public async Task ResolveVisibleStacPublicationsAsync_IgnoresResourcesWithoutStacPublication()
     {
-        var metadataOnlyLayer = CreateLayer(1, allowAnonymous: true, stacEnabled: true);
-        var stacServiceLayer = CreateLayer(2);
-        var stacService = CreateService("alpha", stacServiceLayer, allowAnonymous: true, stacEnabled: true);
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddService("svc-alpha", "alpha", protocols: [StacProtocolConstants.ProtocolName], accessPolicy: AnonymousAccess())
+            .AddResource("res-unpublished", "unpublished", accessPolicy: AnonymousAccess())
+            .AddResource("res-published", "published")
+            .AddPublication(
+                "pub-published",
+                "svc-alpha",
+                "res-published",
+                layerIndex: 2,
+                serviceLocalId: "published",
+                publicationType: MetadataV2PublicationType.StacCollection)
+            .Build();
 
-        var visibleLayers = await ResolveVisibleLayersAsync(
-            [stacService],
-            [metadataOnlyLayer, stacServiceLayer]);
+        var visible = await ResolveVisiblePublicationsAsync(graph);
 
-        visibleLayers.Should().ContainSingle(layer => layer.Id == metadataOnlyLayer.Id);
-        visibleLayers.Should().ContainSingle(layer => layer.Id == stacServiceLayer.Id);
+        visible.Should().ContainSingle(publication => publication.Resource.Metadata.Id == "res-published");
+        visible.Should().NotContain(publication => publication.Resource.Metadata.Id == "res-unpublished");
     }
 
     [UnitTest]
-    public async Task ResolveStacVisibleLayers_DoesNotUseLayerMetadata_WhenOwningServiceIsNotStacEnabled()
+    public async Task ResolveVisibleStacPublicationsAsync_IgnoresPublicationsOnNonStacService()
     {
-        var serviceOwnedLayer = CreateLayer(1, allowAnonymous: true, stacEnabled: true);
-        var stacServiceLayer = CreateLayer(2);
-        var nonStacService = CreateService("alpha", serviceOwnedLayer, allowAnonymous: true, stacEnabled: false);
-        var stacService = CreateService("beta", stacServiceLayer, allowAnonymous: true, stacEnabled: true);
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddService("svc-non-stac", "alpha", protocols: ["FeatureServer"], accessPolicy: AnonymousAccess())
+            .AddService("svc-stac", "beta", protocols: [StacProtocolConstants.ProtocolName], accessPolicy: AnonymousAccess())
+            .AddResource("res-non-stac", "non-stac")
+            .AddResource("res-stac", "stac")
+            .AddPublication(
+                "pub-non-stac",
+                "svc-non-stac",
+                "res-non-stac",
+                layerIndex: 1,
+                serviceLocalId: "non-stac",
+                publicationType: MetadataV2PublicationType.StacCollection)
+            .AddPublication(
+                "pub-stac",
+                "svc-stac",
+                "res-stac",
+                layerIndex: 2,
+                serviceLocalId: "stac",
+                publicationType: MetadataV2PublicationType.StacCollection)
+            .Build();
 
-        var visibleLayers = await ResolveVisibleLayersAsync(
-            [nonStacService, stacService],
-            [serviceOwnedLayer, stacServiceLayer]);
+        var visible = await ResolveVisiblePublicationsAsync(graph);
 
-        visibleLayers.Should().ContainSingle(layer => layer.Id == stacServiceLayer.Id);
-        visibleLayers.Should().NotContain(layer => layer.Id == serviceOwnedLayer.Id);
+        visible.Should().ContainSingle(publication => publication.Resource.Metadata.Id == "res-stac");
+        visible.Should().NotContain(publication => publication.Resource.Metadata.Id == "res-non-stac");
     }
 
     [UnitTest]
@@ -81,7 +127,7 @@ public sealed class StacFilterHelpersTests
             .AddService(
                 "svc-stac",
                 "stac",
-                protocols: [ServiceProtocols.FeatureServer])
+                protocols: ["FeatureServer"])
             .AddResource("res-stac", "stac-resource")
             .AddPublication(
                 "pub-stac",
@@ -150,15 +196,13 @@ public sealed class StacFilterHelpersTests
     [UnitTest]
     public void ParseDatetime_WithFallbackStringTimestamp_ReturnsNull()
     {
-        var layer = CreateLayer(
-            1,
-            fields:
+        var resource = CreateResource(
             [
-                new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                new FieldDefinition("timestamp", FieldType.String, Length: 128)
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+                new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.String }
             ]);
 
-        var filter = StacFilterHelpers.ParseDatetime("2023-01-02T00:00:00Z", layer);
+        var filter = StacFilterHelpers.ParseDatetime("2023-01-02T00:00:00Z", resource);
 
         filter.Should().BeNull();
     }
@@ -166,31 +210,23 @@ public sealed class StacFilterHelpersTests
     [UnitTest]
     public void ParseDatetime_WithFallbackTemporalTimestamp_ReturnsTemporalFilter()
     {
-        var layer = CreateLayer(
-            1,
-            fields:
+        var resource = CreateResource(
             [
-                new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                new FieldDefinition("timestamp", FieldType.DateTime)
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+                new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime }
             ]);
 
-        var filter = StacFilterHelpers.ParseDatetime("2023-01-02T00:00:00Z", layer);
+        var filter = StacFilterHelpers.ParseDatetime("2023-01-02T00:00:00Z", resource);
 
         filter.Should().NotBeNull();
         filter!.Value.PropertyName.Should().Be("timestamp");
     }
 
-    private static async Task<LayerDefinition[]> ResolveVisibleLayersAsync(
-        ServiceDefinition[] services,
-        LayerDefinition[] layers)
+    private static async Task<StacV2Lookups.ResolvedStacPublication[]> ResolveVisiblePublicationsAsync(
+        MetadataV2Graph graph)
     {
-        var layerCatalog = Substitute.For<ILayerCatalog>();
-        layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(services));
-        layerCatalog.ListLayersAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(layers));
-
         using var provider = new ServiceCollection()
+            .AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph))
             .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
             .BuildServiceProvider();
 
@@ -199,62 +235,17 @@ public sealed class StacFilterHelpersTests
             RequestServices = provider
         };
 
-        return await StacFilterHelpers.ResolveStacVisibleLayersAsync(context, layerCatalog, CancellationToken.None);
+        return await StacV2Lookups.ResolveVisibleStacPublicationsAsync(context, CancellationToken.None);
     }
 
-    private static LayerDefinition CreateLayer(
-        int id,
-        bool allowAnonymous = false,
-        bool stacEnabled = false,
-        FieldDefinition[]? fields = null)
+    private static MetadataV2Resource CreateResource(MetadataV2Field[] fields)
     {
-        var metadata = stacEnabled || allowAnonymous
-            ? new CatalogMetadata
-            {
-                EnabledProtocols = stacEnabled ? [ServiceProtocols.Stac] : null,
-                AccessPolicy = allowAnonymous
-                    ? new AccessPolicy { AllowAnonymous = true }
-                    : null
-            }
-            : null;
-
-        return new LayerDefinition(
-            id,
-            $"Layer{id}",
-            "Test layer",
-            CatalogGeometryType.Point,
-            SpatialReference.WGS84,
-            fields ??
-            [
-                new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                new FieldDefinition("name", FieldType.String, Length: 128)
-            ],
-            Metadata: metadata);
-    }
-
-    private static ServiceDefinition CreateService(
-        string name,
-        LayerDefinition layer,
-        bool allowAnonymous = false,
-        bool stacEnabled = true)
-    {
-        string[]? enabledProtocols =
-            stacEnabled
-                ? [ServiceProtocols.Stac]
-                : [ServiceProtocols.FeatureServer];
-        var metadata = new CatalogMetadata
+        return new MetadataV2Resource
         {
-            EnabledProtocols = enabledProtocols,
-            AccessPolicy = allowAnonymous
-                ? new AccessPolicy { AllowAnonymous = true }
-                : null
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-test", Name = "Test resource" },
+            SchemaFields = fields,
         };
-
-        return new ServiceDefinition(
-            name,
-            $"{name} service",
-            [layer],
-            SpatialReference.WGS84,
-            Metadata: metadata);
     }
+
+    private static AccessPolicy AnonymousAccess() => new() { AllowAnonymous = true };
 }

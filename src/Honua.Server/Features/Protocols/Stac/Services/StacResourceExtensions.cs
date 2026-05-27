@@ -68,12 +68,13 @@ internal static class StacResourceExtensions
         // STAC keywords are now sourced from the resource's labels (the v2
         // Kubernetes-style label dictionary). A label entry with empty value is
         // treated as a bare tag.
-        if (resource.Metadata.Labels.Count == 0)
+        var labels = resource.Metadata?.Labels;
+        if (labels is null || labels.Count == 0)
         {
             return null;
         }
 
-        var normalized = resource.Metadata.Labels.Keys
+        var normalized = labels.Keys
             .Where(static keyword => !string.IsNullOrWhiteSpace(keyword))
             .Select(static keyword => keyword.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -135,7 +136,8 @@ internal static class StacResourceExtensions
 
     private static bool TryGetStacObject(MetadataV2Resource resource, out JsonElement stac)
     {
-        if (resource.Extensions.TryGetValue(StacExtensionKey, out var element) &&
+        if (resource.Extensions is not null &&
+            resource.Extensions.TryGetValue(StacExtensionKey, out var element) &&
             element.ValueKind == JsonValueKind.Object)
         {
             stac = element;

@@ -4,13 +4,14 @@
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
 using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
@@ -18,7 +19,7 @@ namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
 /// <summary>
 /// V2 overloads of the response-builder helpers on
 /// <see cref="FeatureServerEndpoints"/> (issue #1035, FeatureServer cutover 91/N).
-/// These mirror the v1 helper bodies one-for-one, with substitutions:
+/// These build GeoServices metadata directly from Metadata V2 graph objects:
 /// <list type="bullet">
 ///   <item><c>layer.Fields</c>            → <c>resource.SchemaFields</c></item>
 ///   <item><c>layer.AttributeFields</c>   → <c>resource.SchemaFields.Where(f => f.Type is not (Geometry or Geography))</c></item>
@@ -29,13 +30,11 @@ namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
 ///   <item><c>service.Layers</c>          → iterate <c>snapshot.Index.PublicationsByService[serviceId]</c></item>
 ///   <item><c>service.SpatialReference</c> → <c>service.SpatialReference?.ResolveSrid()</c></item>
 /// </list>
-/// V1 overloads remain in place so in-flight ports keep compiling.
 /// </summary>
 internal static partial class FeatureServerEndpoints
 {
     /// <summary>
-    /// V2 overload of
-    /// <see cref="MapServiceToResponse(ServiceDefinition, QueryLimits, bool, bool)"/>.
+    /// Builds a GeoServices FeatureServer response from a Metadata V2 service and its publications.
     /// </summary>
     /// <param name="service">V2 service backing the FeatureServer route.</param>
     /// <param name="publications">Resolved (publication, resource) tuples for the service in
@@ -74,6 +73,7 @@ internal static partial class FeatureServerEndpoints
         var spatialReference = srid.HasValue
             ? SpatialReference.Create(srid.Value).ToSpatialReferenceInfo()
             : SpatialReference.WGS84.ToSpatialReferenceInfo();
+        var serviceExtent = ResolveServiceExtentV2(publications, srid ?? SpatialReference.WGS84.Wkid);
 
         return new FeatureServerResponse
         {
@@ -81,11 +81,8 @@ internal static partial class FeatureServerEndpoints
             ServiceDescription = service.Metadata.Description ?? string.Empty,
             Layers = [.. publications.Select(pair => MapLayerInfoV2(pair.Resource, pair.Publication, snapshot))],
             SpatialReference = spatialReference,
-            // V2 services don't carry a service-level extent (EffectiveExtent is a v1 concept).
-            // The catalog/admin UI computes a union from publications when needed; the metadata
-            // endpoint can return null here without breaking Esri clients.
-            InitialExtent = null,
-            FullExtent = null,
+            InitialExtent = serviceExtent,
+            FullExtent = serviceExtent,
             MaxRecordCount = queryLimits.MaxRecordCount,
             SupportedQueryFormats = NormalizeSupportedQueryFormats(supportedFormats, supportsGeobufOutput),
             Capabilities = BuildServiceCapabilitiesV2(service, publications, supportsAttachmentUploads),
@@ -99,8 +96,7 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// V2 overload of
-    /// <see cref="MapLayerToResponse(ServiceDefinition, LayerDefinition, QueryLimits, FeatureServerTimeInfo?, JsonElement?, FeatureServerExtrusionInfo?, bool, bool)"/>.
+    /// Builds a GeoServices layer response from a Metadata V2 resource publication.
     /// </summary>
     private static LayerResponse MapLayerToResponseV2(
         MetadataV2Service service,
@@ -142,6 +138,7 @@ internal static partial class FeatureServerEndpoints
 
         var supportedFormats = ReadServiceSupportedFormatsV2(service);
         var supportsAttachments = ResourceSupportsAttachmentsV2(resource);
+        var extent = ResolveLayerExtentV2(resource, srid ?? SpatialReference.WGS84.Wkid);
 
         return new LayerResponse
         {
@@ -151,11 +148,7 @@ internal static partial class FeatureServerEndpoints
             Type = "Feature Layer",
             GeometryType = MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None),
             SpatialReference = spatialReference,
-            // V2 resources don't carry an extent on the canonical model; the spatial bbox
-            // is the closest equivalent and is reported separately via temporal/spatial
-            // extent endpoints. Returning null preserves byte-for-byte compatibility with
-            // the v1 path for resources without an extent.
-            Extent = null,
+            Extent = extent,
             TimeInfo = timeInfo,
             ExtrusionInfo = extrusionInfo,
             Fields = [.. ResolveVisibleFieldsV2(resource).Select(MapFieldInfoV2)],
@@ -188,8 +181,8 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// V2 overload of <see cref="MapLayerInfo(LayerDefinition)"/>. Builds the lightweight
-    /// service-listing entry (id/name/geometry-type) for a (resource, publication) pair.
+    /// Builds the lightweight service-listing entry (id/name/geometry-type) for a
+    /// Metadata V2 resource publication.
     /// </summary>
     private static LayerInfo MapLayerInfoV2(
         MetadataV2Resource resource,
@@ -216,8 +209,8 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// V2 overload of <see cref="MapFieldInfo(FieldDefinition)"/>. Maps a canonical
-    /// <see cref="MetadataV2Field"/> to the Esri-style GeoServices field info shape.
+    /// Maps a canonical <see cref="MetadataV2Field"/> to the Esri-style GeoServices
+    /// field info shape.
     /// </summary>
     private static GeoServicesFieldInfo MapFieldInfoV2(MetadataV2Field field)
     {
@@ -232,7 +225,7 @@ internal static partial class FeatureServerEndpoints
             Name = field.Name,
             Type = geoServicesType,
             SqlType = sqlType,
-            Alias = field.Title ?? field.Name,
+            Alias = field.Alias ?? field.Title ?? field.Name,
             // V2 has no length slot on the canonical field model (length lives in the
             // storage binding when needed). Pass null so the response omits the key.
             Length = null,
@@ -241,15 +234,12 @@ internal static partial class FeatureServerEndpoints
             // V2 has no default-value slot on the canonical field; the catalog/admin layer
             // owns insertion defaults.
             DefaultValue = null,
-            // V2 doesn't model coded-value domains on the canonical field — that's an Esri-
-            // specific projection that lives in admin-time configuration. Leaving null preserves
-            // the v1 contract for resources without domains.
-            Domain = null
+            Domain = GeoServicesFieldDomainMapper.Map(field.Domain),
+            Visible = !field.Hidden
         };
     }
 
     /// <summary>
-    /// V2 overload of <see cref="BuildServiceCapabilities(ServiceDefinition, bool)"/>.
     /// Reads capabilities from the service's <c>Options["capabilities"]</c> JsonElement when
     /// present; otherwise defaults to <c>"Query"</c>. Emits <c>Create/Update/Delete/Editing</c>
     /// when any of those edit-capability tokens are present, and <c>Uploads</c> when any
@@ -294,7 +284,7 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// V2 overload of <see cref="BuildLayerCapabilities(ServiceDefinition, LayerDefinition, bool)"/>.
+    /// Builds the GeoServices capabilities string for one Metadata V2 resource.
     /// </summary>
     private static string BuildLayerCapabilitiesV2(
         MetadataV2Service service,
@@ -334,7 +324,6 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// V2 overload of <see cref="GeoServicesObjectIdFieldResolver.ResolveServiceObjectIdFieldName(ServiceDefinition)"/>.
     /// Aggregates the per-resource object-id field across all publications on the service
     /// and returns the single shared name when all resources agree; otherwise falls back to
     /// the default <see cref="FieldNames.ObjectId"/> constant.
@@ -358,7 +347,54 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// V2 overload of <see cref="ResolveDisplayFieldFromLayer(LayerDefinition, string)"/>.
+    /// Builds a GeoServices extent from the v2 resource bbox.
+    /// </summary>
+    private static ExtentInfo? ResolveLayerExtentV2(MetadataV2Resource resource, int fallbackSrid)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+
+        var bbox = resource.ReadBbox();
+        if (bbox is null)
+        {
+            return null;
+        }
+
+        var srid = resource.ReadSrid() ?? fallbackSrid;
+        return FeatureExtent.Create(bbox.West, bbox.South, bbox.East, bbox.North, srid).ToExtentInfo();
+    }
+
+    /// <summary>
+    /// Builds the service extent by unioning v2 resource bboxes.
+    /// </summary>
+    private static ExtentInfo? ResolveServiceExtentV2(
+        IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,
+        int fallbackSrid)
+    {
+        double? west = null;
+        double? south = null;
+        double? east = null;
+        double? north = null;
+
+        foreach (var (_, resource) in publications)
+        {
+            var bbox = resource.ReadBbox();
+            if (bbox is null)
+            {
+                continue;
+            }
+
+            west = west.HasValue ? Math.Min(west.Value, bbox.West) : bbox.West;
+            south = south.HasValue ? Math.Min(south.Value, bbox.South) : bbox.South;
+            east = east.HasValue ? Math.Max(east.Value, bbox.East) : bbox.East;
+            north = north.HasValue ? Math.Max(north.Value, bbox.North) : bbox.North;
+        }
+
+        return west.HasValue && south.HasValue && east.HasValue && north.HasValue
+            ? FeatureExtent.Create(west.Value, south.Value, east.Value, north.Value, fallbackSrid).ToExtentInfo()
+            : null;
+    }
+
+    /// <summary>
     /// Prefers a field named "name", then the first string-type field, then objectIdField.
     /// </summary>
     private static string ResolveDisplayFieldFromResource(MetadataV2Resource resource, string objectIdField)
@@ -380,14 +416,12 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// V2 overload of <c>layer.VisibleFields</c>. V2 has no per-field <c>IsHidden</c> slot, so
-    /// every schema field is treated as visible. Centralised here so callers don't depend on
-    /// that contract directly.
+    /// V2 overload of <c>layer.VisibleFields</c>.
     /// </summary>
     private static IEnumerable<MetadataV2Field> ResolveVisibleFieldsV2(MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
-        return resource.SchemaFields;
+        return resource.SchemaFields.Where(static field => !field.Hidden);
     }
 
     /// <summary>
@@ -397,15 +431,14 @@ internal static partial class FeatureServerEndpoints
     {
         ArgumentNullException.ThrowIfNull(resource);
         return resource.SchemaFields.Where(field =>
+            !field.Hidden &&
             field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography));
     }
 
     /// <summary>
-    /// V2 overload of
-    /// <see cref="BuildTimeInfoAsync(LayerDefinition, IFeatureReader, CancellationToken)"/>.
     /// Reads the temporal field configuration from <see cref="MetadataV2Resource.Temporal"/>
     /// and probes the feature store for the range. Returns null when the resource does not
-    /// declare opt-in temporal fields, mirroring the v1 no-fallback contract.
+    /// declare opt-in temporal fields.
     /// </summary>
     private static async Task<FeatureServerTimeInfo?> BuildTimeInfoV2Async(
         MetadataV2Resource resource,
@@ -456,8 +489,6 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// V2 overload of
-    /// <see cref="TryResolveRequestedServiceLayers(ServiceDefinition, IReadOnlyDictionary{string, StringValues}, out LayerDefinition[], out bool, out string?)"/>.
     /// Parses <c>layerId</c>/<c>layers</c> query parameters and returns the matching
     /// (publication, resource) tuples on the service. <c>selectorSpecified</c> is true when
     /// either parameter was supplied.
@@ -537,8 +568,6 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// V2 overload of
-    /// <see cref="FilterAccessibleLayers(HttpContext, ServiceDefinition, IEnumerable{LayerDefinition})"/>.
     /// Drops (publication, resource) pairs the caller is not authorised to read using the V2
     /// access-policy resolver (resource policy composed with service policy under deny-wins).
     /// </summary>
@@ -558,7 +587,6 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// V2 overload of <see cref="BuildRelationshipResponse(LayerDefinition)"/>.
     /// Projects <see cref="MetadataV2Resource.Relationships"/> to the Esri-style wire shape.
     /// The integer <c>RelatedTableId</c> is resolved by looking up the related resource's
     /// primary publication and reading its <see cref="MetadataV2Publication.LayerIndex"/>; if
@@ -613,7 +641,7 @@ internal static partial class FeatureServerEndpoints
         return [.. result];
     }
 
-    private static int StableStringHash(string value)
+    internal static int StableStringHash(string value)
     {
         // FNV-1a 32-bit hash, then clamped to a non-negative int so the Esri client doesn't
         // refuse a "negative" relationship id.
@@ -689,12 +717,12 @@ internal static partial class FeatureServerEndpoints
 
     /// <summary>
     /// Reads the service's declared capability list from <c>service.Options["capabilities"]</c>.
-    /// Defaults to <c>["Query"]</c> when the option is absent or not a string array — matching
-    /// the v1 ServiceDefinition default.
+    /// Defaults to <c>["Query"]</c> when the option is absent or not a string array.
     /// </summary>
     private static List<string> ReadServiceCapabilitiesV2(MetadataV2Service service)
     {
-        if (service.Options.TryGetValue("capabilities", out var element) &&
+        if (service.Options is not null &&
+            service.Options.TryGetValue("capabilities", out var element) &&
             element.ValueKind == JsonValueKind.Array)
         {
             var list = new List<string>(element.GetArrayLength());
@@ -722,7 +750,8 @@ internal static partial class FeatureServerEndpoints
     /// </summary>
     private static string[]? ReadServiceSupportedFormatsV2(MetadataV2Service service)
     {
-        if (service.Options.TryGetValue("supportedFormats", out var element) &&
+        if (service.Options is not null &&
+            service.Options.TryGetValue("supportedFormats", out var element) &&
             element.ValueKind == JsonValueKind.Array)
         {
             var list = new List<string>(element.GetArrayLength());
@@ -776,9 +805,10 @@ internal static partial class FeatureServerEndpoints
                false;
     }
 
-    private static bool? TryReadBoolAnnotation(IReadOnlyDictionary<string, string> annotations, string key)
+    private static bool? TryReadBoolAnnotation(IReadOnlyDictionary<string, string>? annotations, string key)
     {
-        if (annotations.TryGetValue(key, out var raw) &&
+        if (annotations is not null &&
+            annotations.TryGetValue(key, out var raw) &&
             bool.TryParse(raw, out var parsed))
         {
             return parsed;

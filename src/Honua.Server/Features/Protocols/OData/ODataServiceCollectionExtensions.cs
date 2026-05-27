@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
@@ -50,7 +49,6 @@ internal static class ODataServiceCollectionExtensions
         {
             var limitsOptions = sp.GetRequiredService<IOptions<LimitsOptions>>().Value;
             return new ODataBatchDependencies(
-                sp.GetRequiredService<ILayerCatalog>(),
                 sp.GetRequiredService<IFeatureReader>(),
                 sp.GetRequiredService<IFeatureWriter>(),
                 sp.GetRequiredService<IGeometryService>(),

@@ -7,8 +7,8 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.SpatialAnalytics.Abstractions;
@@ -37,6 +37,9 @@ namespace Honua.Server.Features.Protocols.SpatialAnalytics;
 /// </summary>
 internal static partial class SpatialAnalyticsRequestHandlers
 {
+    private const string FeatureServerProtocolName = "FeatureServer";
+    private const string OgcFeaturesProtocolName = "OgcFeatures";
+
     /// <summary>
     /// Parameter names shared between REST and OGC analytics endpoints.
     /// </summary>
@@ -258,51 +261,6 @@ internal static partial class SpatialAnalyticsRequestHandlers
         return type.ToLowerInvariant() is "count" or "sum" or "min" or "max" or "avg" or "stddev" or "var";
     }
 
-    private static ImmutableArray<StatisticDefinition>? ApplyStatisticFieldTypes(
-        ImmutableArray<StatisticDefinition>? outStatistics,
-        LayerDefinition layer)
-    {
-        if (!outStatistics.HasValue || outStatistics.Value.IsDefaultOrEmpty)
-        {
-            return outStatistics;
-        }
-
-        var builder = ImmutableArray.CreateBuilder<StatisticDefinition>(outStatistics.Value.Length);
-        foreach (var statistic in outStatistics.Value)
-        {
-            builder.Add(statistic with
-            {
-                FieldType = TryResolveFieldType(layer, statistic.OnStatisticField, out var fieldType)
-                    ? fieldType
-                    : statistic.FieldType
-            });
-        }
-
-        return builder.ToImmutable();
-    }
-
-    private static bool TryResolveFieldType(LayerDefinition layer, string fieldName, out FieldType fieldType)
-    {
-        if (string.Equals(fieldName, layer.ObjectIdFieldName, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(fieldName, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
-        {
-            fieldType = layer.PrimaryKeyField?.Type ?? FieldType.Integer;
-            return true;
-        }
-
-        foreach (var field in layer.Fields)
-        {
-            if (string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
-            {
-                fieldType = field.Type;
-                return true;
-            }
-        }
-
-        fieldType = default;
-        return false;
-    }
-
     private static string? GetValueString(IReadOnlyDictionary<string, StringValues> values, string key)
         => values.TryGetValue(key, out var raw) ? raw.ToString() : null;
 
@@ -427,11 +385,11 @@ internal static partial class SpatialAnalyticsRequestHandlers
     /// directly so the slice does not take a hard dependency on the
     /// FeatureServer-internal validation helper (vertical slice isolation).
     /// </summary>
-    private static async Task<(LayerDefinition? Layer, ServiceDefinition? Service, IResult? Error)> ValidateRestResourceAsync(
+    private static async Task<(int LayerId, MetadataV2Resource? Resource, MetadataV2Service? Service, IResult? Error)> ValidateRestResourceAsync(
         HttpContext context, string serviceId, int layerId, CancellationToken cancellationToken)
     {
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var resourceResult = await resourceValidator.ValidateServiceLayerAsync(serviceId, layerId, cancellationToken);
+        var resourceResult = await resourceValidator.ValidateServiceLayerV2Async(serviceId, layerId, cancellationToken);
 
         if (!resourceResult.IsValid)
         {
@@ -439,47 +397,59 @@ internal static partial class SpatialAnalyticsRequestHandlers
             var errorResult = resourceResult.ErrorCode == ResourceValidationError.InvalidIdentifier
                 ? StandardErrorHelpers.CreateBadRequest(context, errorMessage)
                 : StandardErrorHelpers.CreateNotFound(context, errorMessage);
-            return (null, null, errorResult);
+            return (0, null, null, errorResult);
         }
 
-        var service = resourceResult.Resource!.Service;
-        var layer = resourceResult.Resource.Layer;
+        var triple = resourceResult.Resource;
+        var service = triple.Service;
+        var resource = triple.Resource;
 
-        var protocolError = ProtocolValidationHelpers.ValidateProtocolEnabled(
-            context, service, ServiceProtocols.FeatureServer);
-        if (protocolError != null)
+        if (!IsProtocolEnabled(service, FeatureServerProtocolName))
         {
-            return (null, null, protocolError);
+            return (0, null, null, StandardErrorHelpers.CreateNotFound(
+                context,
+                $"{FeatureServerProtocolName} is not enabled for this service."));
         }
 
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
         if (accessError != null)
         {
-            return (null, null, accessError);
+            return (0, null, null, accessError);
         }
 
-        return (layer, service, null);
+        return (layerId, resource, service, null);
     }
 
     /// <summary>
     /// Validates the OGC-style (collectionId) resource bundle and checks that
-    /// the caller can read the layer. Mirrors <see cref="LayerValidationHelpers.ValidateCollectionWithAccessAsync"/>.
+    /// the caller can read the layer. Mirrors <see cref="LayerValidationHelpers.ValidateCollectionWithAccessV2Async"/>.
     /// </summary>
-    private static async Task<(LayerDefinition? Layer, IResult? Error)> ValidateOgcResourceAsync(
+    private static async Task<(int LayerId, MetadataV2Resource? Resource, IResult? Error)> ValidateOgcResourceAsync(
         HttpContext context, string collectionId, CancellationToken cancellationToken)
     {
-        var layerValidation = await LayerValidationHelpers.ValidateCollectionWithAccessAsync(
+        var layerValidation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
             context,
             collectionId,
             cancellationToken: cancellationToken,
-            requiredProtocol: ServiceProtocols.OgcFeatures);
+            requiredProtocol: OgcFeaturesProtocolName);
         if (!layerValidation.IsValid)
         {
-            return (null, layerValidation.ErrorResult!);
+            return (0, null, layerValidation.ErrorResult!);
         }
 
-        return (layerValidation.Layer!, null);
+        if (!layerValidation.Publication!.LayerIndex.HasValue)
+        {
+            return (0, null, StandardErrorHelpers.CreateNotFound(
+                context,
+                $"Collection '{collectionId}' is not available for spatial analytics."));
+        }
+
+        return (layerValidation.Publication.LayerIndex.Value, layerValidation.Resource!, null);
     }
+
+    private static bool IsProtocolEnabled(MetadataV2Service service, string protocol)
+        => service.Protocols.Any(enabled =>
+            string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase));
 
     private static Activity? StartAnalyticsActivity(string operation, string protocol, string? serviceId, int layerId)
     {

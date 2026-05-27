@@ -4,8 +4,8 @@
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Exceptions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Publishing.Domain;
 using Honua.Core.Features.Scene;
@@ -52,23 +52,23 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
     internal const string TargetConfigCreatedBy = "createdBy";
     internal const string TargetConfigEditionGate = "editionGate";
 
-    private readonly ILayerCatalog _catalog;
     private readonly ISceneFeatureSource _featureSource;
     private readonly ISceneRegistrationService? _registration;
+    private readonly IMetadataV2GraphProvider _metadataProvider;
     private readonly IHostEnvironment _environment;
     private readonly IOptions<SceneGenerationServerOptions> _options;
     private readonly ILogger<SceneTilesPublishExecutor> _logger;
 
     public SceneTilesPublishExecutor(
-        ILayerCatalog catalog,
         ISceneFeatureSource featureSource,
+        IMetadataV2GraphProvider metadataProvider,
         IHostEnvironment environment,
         IOptions<SceneGenerationServerOptions> options,
         ILogger<SceneTilesPublishExecutor> logger,
         ISceneRegistrationService? registration = null)
     {
-        _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _featureSource = featureSource ?? throw new ArgumentNullException(nameof(featureSource));
+        _metadataProvider = metadataProvider ?? throw new ArgumentNullException(nameof(metadataProvider));
         _environment = environment ?? throw new ArgumentNullException(nameof(environment));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -146,12 +146,11 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                     $"{SceneGenerationErrorCodes.LayerNotFound}: SourceId '{intent.SourceId}' is not a valid layer id.");
             }
 
-            var layer = await _catalog.GetLayerAsync(layerId, cancellationToken).ConfigureAwait(false)
-                ?? throw new ValidationException(
-                    $"{SceneGenerationErrorCodes.LayerNotFound}: Layer {layerId} not found.");
-            activity?.SetTag(HonuaTelemetry.Tags.LayerId, layer.Id);
+            var (resource, storageLayerId) = await ResolveSourceResourceAsync(layerId, cancellationToken)
+                .ConfigureAwait(false);
+            activity?.SetTag(HonuaTelemetry.Tags.LayerId, storageLayerId);
 
-            if (layer.SpatialReference.Wkid <= 0)
+            if (resource.ReadSrid() is not > 0)
             {
                 throw new ValidationException(
                     $"{SceneGenerationErrorCodes.LayerCrsUnknown}: Layer {layerId} has no resolvable spatial reference.");
@@ -164,8 +163,8 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             // worse, the project rule is to reject identifiers before any
             // provider call. The bounds-dependent extrusion math still runs
             // after collection because it needs per-feature Z values.
-            var sceneId = ResolveSceneId(intent, layer);
-            var displayName = ResolveDisplayName(intent, layer, sceneId);
+            var sceneId = ResolveSceneId(intent, resource);
+            var displayName = ResolveDisplayName(intent, resource, sceneId);
             ValidateDisplayName(displayName);
             var description = TryGetTargetConfig(intent, TargetConfigDescription);
             var editionGate = TryGetTargetConfig(intent, TargetConfigEditionGate);
@@ -177,11 +176,11 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             // publishes against the same id.
             await PreflightSceneRegistrationConflictAsync(sceneId, cancellationToken).ConfigureAwait(false);
 
-            var extrusion = generationOptions.ExtrusionOverride ?? layer.Metadata?.Extrusion;
-            var symbology = layer.Metadata?.Symbology3D;
-            var attributeSchemas = BuildAttributeSchemas(layer, includeAttributes);
+            var extrusion = generationOptions.ExtrusionOverride ?? resource.Extrusion;
+            var symbology = resource.Symbology3D;
+            var attributeSchemas = BuildAttributeSchemas(resource, includeAttributes);
             var collected = await CollectFeaturesAsync(
-                layer, includeAttributes, maxFeatures, cancellationToken).ConfigureAwait(false);
+                resource, storageLayerId, includeAttributes, maxFeatures, cancellationToken).ConfigureAwait(false);
 
             var bounds = collected.Bounds;
             var minHeight = collected.MinHeight;
@@ -307,7 +306,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
                     bounds,
                     generationOptions.CacheMaxAgeSeconds,
                     editionGate,
-                    layer.Metadata?.AccessPolicy,
+                    resource.AccessPolicy,
                     createdBy: TryGetTargetConfig(intent, TargetConfigCreatedBy) ?? "publisher",
                     cancellationToken).ConfigureAwait(false);
 
@@ -403,7 +402,8 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
     }
 
     private async Task<CollectedFeatures> CollectFeaturesAsync(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        int storageLayerId,
         IReadOnlyList<string> includeAttributes,
         int maxFeatures,
         CancellationToken cancellationToken)
@@ -413,14 +413,14 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         var nonDegenerateCount = 0;
 
         await foreach (var feature in _featureSource
-            .StreamAsync(layer, includeAttributes, cancellationToken)
+            .StreamAsync(resource, storageLayerId, includeAttributes, cancellationToken)
             .ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (collected.Features.Count >= maxFeatures)
             {
                 throw new ValidationException(
-                    $"{SceneGenerationErrorCodes.FeatureLimitExceeded}: Layer {layer.Id} exceeds the {maxFeatures}-feature v1 limit.");
+                    $"{SceneGenerationErrorCodes.FeatureLimitExceeded}: Layer {storageLayerId} exceeds the {maxFeatures}-feature v1 limit.");
             }
 
             if (!IsSupportedKind(feature.Geometry.Kind))
@@ -441,7 +441,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             else if (feature.Geometry.Kind != expectedKind.Value)
             {
                 throw new ValidationException(
-                    $"{SceneGenerationErrorCodes.UnsupportedGeometryType}: Layer {layer.Id} mixes geometry kinds " +
+                    $"{SceneGenerationErrorCodes.UnsupportedGeometryType}: Layer {storageLayerId} mixes geometry kinds " +
                     $"('{expectedKind.Value}' and '{feature.Geometry.Kind}'); v1 requires a single kind per layer.");
             }
 
@@ -470,7 +470,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         if (collected.Features.Count == 0)
         {
             throw new ValidationException(
-                $"{SceneGenerationErrorCodes.OptionsInvalid}: Layer {layer.Id} contains no features to generate.");
+                $"{SceneGenerationErrorCodes.OptionsInvalid}: Layer {storageLayerId} contains no features to generate.");
         }
 
         // GeometryTileBuilder.BuildGlb throws InvalidOperationException("No
@@ -481,7 +481,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         if (nonDegenerateCount == 0)
         {
             throw new ValidationException(
-                $"{SceneGenerationErrorCodes.OptionsInvalid}: Layer {layer.Id} contains only degenerate features; " +
+                $"{SceneGenerationErrorCodes.OptionsInvalid}: Layer {storageLayerId} contains only degenerate features; " +
                 "no feature has enough vertices to produce geometry.");
         }
 
@@ -650,7 +650,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
     }
 
     private static List<SceneAttributeSchema> BuildAttributeSchemas(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         IReadOnlyList<string> includeAttributes)
     {
         var allow = includeAttributes.Count == 0
@@ -665,8 +665,13 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         // De-duplicate deterministically by appending "_2", "_3", ... in
         // declaration order so the layout stays byte-identical across runs.
         var seenPropertyIds = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var field in layer.AttributeFields)
+        foreach (var field in resource.SchemaFields)
         {
+            if (field.Hidden || field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)
+            {
+                continue;
+            }
+
             if (allow is not null && !allow.Contains(field.Name))
             {
                 continue;
@@ -698,15 +703,30 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         return schemas;
     }
 
-    private static (string? Schema, string Component) MapFieldType(FieldType fieldType) => fieldType switch
+    private static (string? Schema, string Component) MapFieldType(MetadataV2FieldType fieldType) => fieldType switch
     {
-        FieldType.Integer => ("SCALAR", "INT32"),
-        FieldType.BigInteger => ("SCALAR", "INT64"),
-        FieldType.Double => ("SCALAR", "FLOAT32"),
-        FieldType.Float => ("SCALAR", "FLOAT32"),
-        FieldType.String => ("STRING", string.Empty),
+        MetadataV2FieldType.Integer => ("SCALAR", "INT32"),
+        MetadataV2FieldType.BigInteger => ("SCALAR", "INT64"),
+        MetadataV2FieldType.Double => ("SCALAR", "FLOAT32"),
+        MetadataV2FieldType.Float => ("SCALAR", "FLOAT32"),
+        MetadataV2FieldType.String => ("STRING", string.Empty),
         _ => (null, string.Empty)
     };
+
+    private async Task<(MetadataV2Resource Resource, int StorageLayerId)> ResolveSourceResourceAsync(
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await _metadataProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource))
+        {
+            throw new ValidationException(
+                $"{SceneGenerationErrorCodes.LayerNotFound}: Layer {layerId} not found.");
+        }
+
+        var storageLayerId = snapshot.ResolveStorageLayerId(resource) ?? layerId;
+        return (resource, storageLayerId);
+    }
 
     private static string SanitizePropertyId(string name)
     {
@@ -728,7 +748,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
     private static bool IsSupportedKind(SceneGeometryKind kind)
         => kind is SceneGeometryKind.Point or SceneGeometryKind.LineString or SceneGeometryKind.Polygon;
 
-    private static double ResolveExtrusionMax(SceneFeature feature, LayerExtrusionInfo extrusion)
+    private static double ResolveExtrusionMax(SceneFeature feature, MetadataV2ExtrusionInfo extrusion)
     {
         if (!feature.Attributes.TryGetValue(extrusion.HeightField, out var raw) || raw is null)
         {
@@ -750,7 +770,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         return ConvertVerticalToMeters(value, extrusion.Unit);
     }
 
-    private static double ResolveExtrusionBase(SceneFeature feature, LayerExtrusionInfo extrusion)
+    private static double ResolveExtrusionBase(SceneFeature feature, MetadataV2ExtrusionInfo extrusion)
     {
         if (string.IsNullOrEmpty(extrusion.BaseHeightField))
         {
@@ -776,16 +796,16 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
 
     private static double ConvertVerticalToMeters(double value, string? unit)
     {
-        VerticalUnits.TryNormalize(unit, out var normalized);
+        MetadataV2VerticalUnits.TryNormalize(unit, out var normalized);
         return normalized switch
         {
-            VerticalUnits.Feet => value * 0.3048,
-            VerticalUnits.UsSurveyFeet => value * (1200.0 / 3937.0),
+            MetadataV2VerticalUnits.Feet => value * 0.3048,
+            MetadataV2VerticalUnits.UsSurveyFeet => value * (1200.0 / 3937.0),
             _ => value
         };
     }
 
-    private static string ResolveSceneId(PublishIntent intent, LayerDefinition layer)
+    private static string ResolveSceneId(PublishIntent intent, MetadataV2Resource resource)
     {
         var explicitId = TryGetTargetConfig(intent, TargetConfigSceneId);
         if (!string.IsNullOrEmpty(explicitId))
@@ -805,7 +825,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         // Reserve room for the "-{suffix}" tail so the auto-generated id
         // satisfies the registry's MaxSceneIdLength budget.
         var slugBudget = SceneDatasetValidator.MaxSceneIdLength - 1 - suffix.Length;
-        var slug = SlugifyName(layer.Name, Math.Max(1, slugBudget));
+        var slug = SlugifyName(resource.Metadata.Name, Math.Max(1, slugBudget));
         var candidate = $"{slug}-{suffix}".ToLowerInvariant();
         if (!SceneDatasetValidator.TryValidateSceneId(candidate, out var autoError))
         {
@@ -815,7 +835,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         return candidate;
     }
 
-    private static string ResolveDisplayName(PublishIntent intent, LayerDefinition layer, string sceneId)
+    private static string ResolveDisplayName(PublishIntent intent, MetadataV2Resource resource, string sceneId)
     {
         var name = TryGetTargetConfig(intent, TargetConfigDisplayName);
         if (!string.IsNullOrEmpty(name))
@@ -823,12 +843,12 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             return name;
         }
         // The registry's name uniqueness constraint means defaulting to
-        // layer.Name causes the second auto-generated scene from the same
+        // resource name causes the second auto-generated scene from the same
         // layer to fail with a misleading id-conflict message (the conflict
         // is on name, not id). Suffix with the resolved sceneId so the
         // default is unique by construction; the operator can always
         // override via the displayName field.
-        var layerName = string.IsNullOrWhiteSpace(layer.Name) ? "Scene" : layer.Name;
+        var layerName = FirstNonBlank(resource.Metadata.Title, resource.Metadata.Name) ?? "Scene";
         var suffix = $" ({sceneId})";
         var available = SceneDatasetValidator.MaxSceneNameLength - suffix.Length;
         if (available <= 0)
@@ -840,6 +860,19 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             layerName = layerName[..available];
         }
         return layerName + suffix;
+    }
+
+    private static string? FirstNonBlank(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return null;
     }
 
     private static string? TryGetTargetConfig(PublishIntent intent, string key)
@@ -919,14 +952,10 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
             return null;
         }
 
-        // Carry the source layer's access policy through to the registered
-        // scene so a tileset materialised from a protected feature layer
-        // does NOT silently expose its geometry and attributes to the
-        // anonymous serving path. The hosted-serving registry projects
-        // CatalogMetadata.AccessPolicy from RequiresAuth/AllowedRoles, so
-        // missing this mapping previously turned every protected source
-        // layer into a public scene — a real RBAC bypass for AEC and field
-        // workflows.
+        // Carry the source resource's access policy through to the registered
+        // scene so a tileset materialised from a protected feature layer does
+        // not silently expose its geometry and attributes to the anonymous
+        // serving path.
         var (isPublic, requiresAuth, allowedRoles) = ResolveSceneAccess(layerAccessPolicy);
 
         var record = new SceneDatasetRecord

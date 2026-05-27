@@ -3,7 +3,6 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
@@ -21,7 +20,7 @@ namespace Honua.Server.Features.Protocols.Ogc.Api.Tiles;
 
 internal static class CollectionsEndpoints
 {
-    private const string OgcApiTilesProtocol = "OGC-API-Tiles";
+    private const string OgcApiTilesProtocol = ServiceProtocols.OgcApiTiles;
 
     public static IEndpointRouteBuilder MapCollectionsEndpoints(this IEndpointRouteBuilder endpoints)
     {

@@ -4,7 +4,6 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -76,8 +75,7 @@ internal sealed class ODataCrudHandler(
             return formatValidation;
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context, layerId, LayerValidationHelpers.ValidationProtocol.OData, cancellationToken: effectiveToken);
+        var layerValidation = await ValidateODataLayerAsync(context, layerId, effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
@@ -159,8 +157,7 @@ internal sealed class ODataCrudHandler(
             return queryValidation;
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context, layerId, LayerValidationHelpers.ValidationProtocol.OData, cancellationToken: effectiveToken);
+        var layerValidation = await ValidateODataLayerAsync(context, layerId, effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
@@ -218,8 +215,7 @@ internal sealed class ODataCrudHandler(
             return formatValidation;
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context, layerId, LayerValidationHelpers.ValidationProtocol.OData, cancellationToken: effectiveToken);
+        var layerValidation = await ValidateODataLayerAsync(context, layerId, effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
@@ -253,8 +249,7 @@ internal sealed class ODataCrudHandler(
 
         if (layerId.HasValue)
         {
-            var layerValidation = await LayerValidationHelpers.ValidateODataWriteAccessAsync(
-                context, layerId.Value, effectiveToken);
+            var layerValidation = await ValidateODataLayerWriteAccessAsync(context, layerId.Value, effectiveToken);
             if (!layerValidation.IsValid)
             {
                 return layerValidation.ErrorResult!;
@@ -318,8 +313,7 @@ internal sealed class ODataCrudHandler(
                 "LayerId is required when creating a feature.");
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateODataWriteAccessAsync(
-            context, resolvedLayerId.Value, effectiveToken);
+        var layerValidation = await ValidateODataLayerWriteAccessAsync(context, resolvedLayerId.Value, effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
@@ -337,11 +331,10 @@ internal sealed class ODataCrudHandler(
             context,
             resolvedLayerId.Value,
             HonuaTelemetry.Protocols.OData,
-            serviceProtocol: ServiceProtocols.OData,
-            // ToSrid() prefers LatestWkid over Wkid so the outbox enrichment fallback
-            // matches the inline-publish path for layers like Wkid=102100/LatestWkid=3857.
-            // The fallback only applies when the mutation WKB carries no embedded SRID.
-            layerSrid: layerValidation.Layer!.SpatialReference.ToSrid(),
+            serviceProtocol: ODataProtocolConstants.ProtocolName,
+            // Metadata V2 carries the canonical resource SRID used by the outbox
+            // enrichment fallback when mutation WKB carries no embedded SRID.
+            layerSrid: ResolveLayerSrid(layerValidation),
             // GeometrySpecified tracks whether the request body explicitly carried a
             // Geometry property; without this hint the outbox would default to false
             // even when the create request set geometry. The inline publish path on
@@ -394,7 +387,7 @@ internal sealed class ODataCrudHandler(
                         HonuaTelemetry.Protocols.OData,
                         CancellationToken.None,
                         mutationFeature: result.MutationFeature,
-                        serviceProtocol: ServiceProtocols.OData).ConfigureAwait(false);
+                        serviceProtocol: ODataProtocolConstants.ProtocolName).ConfigureAwait(false);
                 }
             }
             HonuaTelemetry.SetSuccess(activity);
@@ -427,8 +420,7 @@ internal sealed class ODataCrudHandler(
             return queryValidation;
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateODataWriteAccessAsync(
-            context, layerId, effectiveToken);
+        var layerValidation = await ValidateODataLayerWriteAccessAsync(context, layerId, effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
@@ -469,8 +461,7 @@ internal sealed class ODataCrudHandler(
             return queryValidation;
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateODataWriteAccessAsync(
-            context, layerId, effectiveToken);
+        var layerValidation = await ValidateODataLayerWriteAccessAsync(context, layerId, effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
@@ -535,8 +526,7 @@ internal sealed class ODataCrudHandler(
             return ODataUtilityService.CreateODataError(context, "InvalidRequest", "ObjectId in payload does not match route.");
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateODataWriteAccessAsync(
-            context, layerId, effectiveToken);
+        var layerValidation = await ValidateODataLayerWriteAccessAsync(context, layerId, effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
@@ -566,11 +556,10 @@ internal sealed class ODataCrudHandler(
             context,
             layerId,
             HonuaTelemetry.Protocols.OData,
-            serviceProtocol: ServiceProtocols.OData,
-            // ToSrid() prefers LatestWkid over Wkid so the outbox enrichment fallback
-            // matches the inline-publish path for layers like Wkid=102100/LatestWkid=3857.
-            // The fallback only applies when the mutation WKB carries no embedded SRID.
-            layerSrid: layerValidation.Layer!.SpatialReference.ToSrid(),
+            serviceProtocol: ODataProtocolConstants.ProtocolName,
+            // Metadata V2 carries the canonical resource SRID used by the outbox
+            // enrichment fallback when mutation WKB carries no embedded SRID.
+            layerSrid: ResolveLayerSrid(layerValidation),
             geometryChanged: replace || payload.GeometrySpecified,
             cancellationToken: effectiveToken).ConfigureAwait(false);
         ODataCrudResult<Dictionary<string, object?>> result;
@@ -628,7 +617,7 @@ internal sealed class ODataCrudHandler(
                     HonuaTelemetry.Protocols.OData,
                     CancellationToken.None,
                     mutationFeature: result.MutationFeature,
-                    serviceProtocol: ServiceProtocols.OData,
+                    serviceProtocol: ODataProtocolConstants.ProtocolName,
                     geometryChanged: replace || payload.GeometrySpecified).ConfigureAwait(false);
             }
             HonuaTelemetry.SetSuccess(activity);
@@ -661,8 +650,7 @@ internal sealed class ODataCrudHandler(
             return queryValidation;
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateODataWriteAccessAsync(
-            context, layerId, effectiveToken);
+        var layerValidation = await ValidateODataLayerWriteAccessAsync(context, layerId, effectiveToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
@@ -680,13 +668,12 @@ internal sealed class ODataCrudHandler(
             context,
             layerId,
             HonuaTelemetry.Protocols.OData,
-            serviceProtocol: ServiceProtocols.OData,
-            // ToSrid() prefers LatestWkid over Wkid so the outbox enrichment fallback
-            // matches the inline-publish path. Delete events have no after-image, so
-            // the geodesy invariant guard in PublishAsync strips the paired
-            // geometry/geometryCrs anyway, but threading layerSrid keeps every OData
-            // outbox scope site uniform with the OGC/WFS/FeatureServer/gRPC handlers.
-            layerSrid: layerValidation.Layer!.SpatialReference.ToSrid(),
+            serviceProtocol: ODataProtocolConstants.ProtocolName,
+            // Delete events have no after-image, so the geodesy invariant guard in
+            // PublishAsync strips the paired geometry/geometryCrs anyway, but
+            // threading layerSrid keeps every OData outbox scope site uniform with
+            // the OGC/WFS/FeatureServer/gRPC handlers.
+            layerSrid: ResolveLayerSrid(layerValidation),
             cancellationToken: effectiveToken).ConfigureAwait(false);
         ODataCrudResult<object> result;
         using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(deleteOutboxScopeData))
@@ -706,7 +693,7 @@ internal sealed class ODataCrudHandler(
                     HonuaTelemetry.Protocols.OData,
                     CancellationToken.None,
                     mutationFeature: result.MutationFeature,
-                    serviceProtocol: ServiceProtocols.OData).ConfigureAwait(false);
+                    serviceProtocol: ODataProtocolConstants.ProtocolName).ConfigureAwait(false);
             }
             HonuaTelemetry.SetSuccess(activity);
         }
@@ -794,7 +781,7 @@ internal sealed class ODataCrudHandler(
         // walk but stays entirely on MetadataV2Resource / MetadataV2Service.
         var provider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMapV2(snapshot, ServiceProtocols.OData);
+        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMapV2(snapshot, ODataProtocolConstants.ProtocolName);
         IResult? firstError = null;
 
         // Iterate publications in a deterministic order (LayerIndex asc) so the
@@ -807,7 +794,7 @@ internal sealed class ODataCrudHandler(
         foreach (var publication in publications)
         {
             if (!primaryServices.TryGetValue(publication.LayerIndex!.Value, out var service) ||
-                !ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.OData))
+                !ODataProtocolConstants.IsEnabled(service))
             {
                 continue;
             }
@@ -837,6 +824,31 @@ internal sealed class ODataCrudHandler(
             "No OData collections are available.",
             StatusCodes.Status404NotFound);
     }
+
+    private static Task<LayerValidationHelpers.MetadataV2ValidationResult> ValidateODataLayerAsync(
+        HttpContext context,
+        int layerId,
+        CancellationToken cancellationToken)
+        => LayerValidationHelpers.ValidateLayerWithAccessV2Async(
+            context,
+            layerId,
+            LayerValidationHelpers.ValidationProtocol.OData,
+            requiredProtocol: ODataProtocolConstants.ProtocolName,
+            cancellationToken: cancellationToken);
+
+    private static Task<LayerValidationHelpers.MetadataV2ValidationResult> ValidateODataLayerWriteAccessAsync(
+        HttpContext context,
+        int layerId,
+        CancellationToken cancellationToken)
+        => LayerValidationHelpers.ValidateLayerWriteAccessV2Async(
+            context,
+            layerId,
+            LayerValidationHelpers.ValidationProtocol.OData,
+            ODataProtocolConstants.ProtocolName,
+            cancellationToken);
+
+    private static int ResolveLayerSrid(LayerValidationHelpers.MetadataV2ValidationResult layerValidation)
+        => layerValidation.Resource!.ReadSrid() ?? SpatialReference.WGS84.ToSrid();
 
     private static bool TryExtractObjectId(object? payload, out long objectId)
     {

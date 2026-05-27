@@ -3,8 +3,8 @@
 
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Scene.Domain;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 
@@ -311,6 +311,7 @@ public sealed class MetadataV2ModelTests
     {
         Enum.GetNames<MetadataV2ResourceType>().Should().BeEquivalentTo(
             nameof(MetadataV2ResourceType.FeatureDataset),
+            nameof(MetadataV2ResourceType.Table),
             nameof(MetadataV2ResourceType.RasterDataset),
             nameof(MetadataV2ResourceType.TileDataset),
             nameof(MetadataV2ResourceType.Process),
@@ -363,6 +364,44 @@ public sealed class MetadataV2ModelTests
         json.Should().Contain("\"render\"");
         json.Should().Contain("\"tile\"");
         json.Should().Contain("\"download\"");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void JsonContext_SerializesResourceSymbology3D()
+    {
+        var resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource.buildings" },
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "height", Type = MetadataV2FieldType.Integer }
+            ],
+            Symbology3D = new Symbology3D
+            {
+                DefaultColor = new Symbology3DColor(255, 255, 255),
+                DefaultOpacity = 0.75,
+                Rules =
+                [
+                    new Symbology3DRule
+                    {
+                        Attribute = "height",
+                        Comparison = Symbology3DComparison.GreaterThan,
+                        Value = "30",
+                        Color = new Symbology3DColor(255, 0, 0)
+                    }
+                ]
+            }
+        };
+
+        var json = JsonSerializer.Serialize(resource, MetadataV2JsonContext.Default.MetadataV2Resource);
+        var roundTrip = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Resource);
+
+        json.Should().Contain("\"symbology3D\"");
+        json.Should().Contain("\"defaultOpacity\":0.75");
+        roundTrip!.Symbology3D.Should().NotBeNull();
+        roundTrip.Symbology3D!.Rules.Single().Attribute.Should().Be("height");
+        roundTrip.Symbology3D.Rules.Single().Color.Should().Be(new Symbology3DColor(255, 0, 0));
     }
 
     [UnitTest]
@@ -480,7 +519,8 @@ public sealed class MetadataV2ModelTests
                     {
                         Id = "storage.hydrants.postgis"
                     },
-                    ResourceId = "resource.hydrants"
+                    ResourceId = "resource.hydrants",
+                    StorageLayerId = 1
                 }
             ]
         };
@@ -533,6 +573,44 @@ public sealed class MetadataV2ModelTests
         result.Errors.Should().Contain("publication 'publication.parcels' references missing service 'service.other'.");
     }
 
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Validate_WithSymbology3DReferencingMissingField_ReturnsError()
+    {
+        var graph = new MetadataV2Graph
+        {
+            Resources =
+            [
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource.buildings" },
+                    SchemaFields =
+                    [
+                        new MetadataV2Field { Name = "height", Type = MetadataV2FieldType.Integer }
+                    ],
+                    Symbology3D = new Symbology3D
+                    {
+                        Rules =
+                        [
+                            new Symbology3DRule
+                            {
+                                Attribute = "missing_height",
+                                Comparison = Symbology3DComparison.GreaterThan,
+                                Value = "30"
+                            }
+                        ]
+                    }
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(
+            "resource 'resource.buildings' symbology3D.rules.attribute 'missing_height' is not declared in schemaFields.");
+    }
+
     private static MetadataV2Graph CreateValidGraph()
     {
         return new MetadataV2Graph
@@ -570,7 +648,8 @@ public sealed class MetadataV2ModelTests
                         Id = "storage.parcels.postgis"
                     },
                     ResourceId = "resource.parcels",
-                    ConnectionId = "connection.postgis"
+                    ConnectionId = "connection.postgis",
+                    StorageLayerId = 0
                 }
             ],
             Services =

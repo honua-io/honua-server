@@ -7,8 +7,9 @@ using System.Text.Json;
 using Apache.Arrow;
 using Apache.Arrow.Types;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Protocols.GeoServices;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Services;
@@ -38,22 +39,11 @@ internal sealed class GeoParquetQueryFormatter
     private static WKBWriter? _wkbWriter3D;
 
     /// <summary>
-    /// Formats query result as GeoParquet
+    /// Formats query result as GeoParquet using Metadata v2 resource metadata.
     /// </summary>
-    /// <param name="result">Query result with features</param>
-    /// <param name="layer">Layer definition for metadata</param>
-    /// <param name="returnGeometry">Whether to include geometry</param>
-    /// <param name="outputSrid">Output SRID for geometry</param>
-    /// <param name="returnZ">Whether to include Z values</param>
-    /// <param name="returnM">Whether to include M values.
-    /// Cloud-native geometry outputs reject this because GeoParquet 1.1.0 only supports XY and XYZ geometries.</param>
-    /// <param name="geometryLimits">Pre-computed effective geometry limits (precision, simplification).</param>
-    /// <param name="outFields">Fields to include in output</param>
-    /// <param name="logger">Optional logger for conversion diagnostics</param>
-    /// <returns>Formatted result as byte array and content type</returns>
     public static (byte[] response, string contentType) FormatAsGeoParquet(
         QueryResult<Feature> result,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         bool returnGeometry,
         int? outputSrid,
         bool returnZ,
@@ -62,33 +52,29 @@ internal sealed class GeoParquetQueryFormatter
         string[]? outFields = null,
         ILogger? logger = null)
     {
+        ArgumentNullException.ThrowIfNull(resource);
+
         var features = result.Items;
-        var includeGeometry = returnGeometry && layer.HasGeometry;
-        var srid = outputSrid ?? layer.SpatialReference.Wkid;
+        var includeGeometry = returnGeometry && HasGeometry(resource);
+        var srid = outputSrid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
 
         EnsureSupportedCloudNativeGeometrySrid(includeGeometry, srid, "GeoParquet");
         EnsureSupportedCloudNativeGeometryMeasures(includeGeometry, returnM, "GeoParquet");
 
         if (features.Length == 0)
         {
-            // Return empty GeoParquet file with schema only
-            return CreateEmptyGeoParquet(layer, returnGeometry, outFields, outputSrid, returnZ);
+            return CreateEmptyGeoParquet(resource, returnGeometry, outFields, outputSrid, returnZ);
         }
 
-        // Detect runtime-computed attributes (e.g. "distance" from KNN queries) that
-        // exist in the result set but are not declared in the layer schema.
-        var runtimeFields = DetectRuntimeFields(features, layer);
+        var runtimeFields = DetectRuntimeFields(features, resource);
 
-        // Build geometry column first so we know whether any geometry actually has Z.
-        // This drives the GeoParquet metadata `geometry_types` truthfully rather than
-        // relying on the `returnZ` flag which may not match the actual data.
         BinaryArray? geometryArray = null;
         bool anyGeometryHasZ = false;
-        if (returnGeometry && layer.HasGeometry)
+        if (returnGeometry && HasGeometry(resource))
         {
             (geometryArray, anyGeometryHasZ) = BuildGeometryArray(
                 features,
-                outputSrid ?? layer.SpatialReference.Wkid,
+                srid,
                 returnZ,
                 returnM,
                 geometryLimits,
@@ -96,15 +82,13 @@ internal sealed class GeoParquetQueryFormatter
         }
 
         var (schema, fieldsToInclude, objectIdFieldName) = BuildSchema(
-            layer, returnGeometry, outFields, outputSrid,
+            resource, returnGeometry, outFields, outputSrid,
             advertiseZ: anyGeometryHasZ,
             runtimeFields);
 
-        // Build record batch
         var arrays = BuildArrays(
             features,
             schema,
-            layer,
             returnGeometry,
             geometryArray,
             objectIdFieldName,
@@ -113,7 +97,6 @@ internal sealed class GeoParquetQueryFormatter
 
         using var recordBatch = new RecordBatch(schema, arrays, features.Length);
 
-        // Write to Parquet format
         using var stream = new MemoryStream();
         var arrowWriterProperties = new ArrowWriterPropertiesBuilder().StoreSchema().Build();
         using (var writer = new FileWriter(stream, schema, null, arrowWriterProperties, true))
@@ -125,9 +108,9 @@ internal sealed class GeoParquetQueryFormatter
         return (stream.ToArray(), ContentType);
     }
 
-    internal static List<FieldDefinition> ResolveSelectedFields(LayerDefinition layer, string[]? outFields)
+    internal static List<MetadataV2Field> ResolveSelectedFields(MetadataV2Resource resource, string[]? outFields)
     {
-        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         var includeAllFields = outFields == null || outFields.Length == 0 ||
             (outFields.Length == 1 && outFields[0].Equals("*", StringComparison.Ordinal));
 
@@ -140,30 +123,34 @@ internal sealed class GeoParquetQueryFormatter
             };
         }
 
-        var selectedFields = layer.VisibleFields
-            .Where(field => !field.IsGeometry)
+        var selectedFields = resource.SchemaFields
+            .Where(field => !IsGeometryField(field))
+            .Where(field => !field.Hidden)
             .Where(field => includeAllFields || requestedFields!.Contains(field.Name))
             .ToList();
 
         if (!selectedFields.Any(field => field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase)))
         {
-            selectedFields.Insert(0, new FieldDefinition(objectIdFieldName, FieldType.BigInteger, Nullable: false));
+            selectedFields.Insert(0, new MetadataV2Field
+            {
+                Name = objectIdFieldName,
+                Type = MetadataV2FieldType.BigInteger,
+                Nullable = false,
+                SqlType = "BIGINT"
+            });
         }
 
         return selectedFields;
     }
 
-    /// <summary>
-    /// Creates empty GeoParquet file with schema only
-    /// </summary>
     private static (byte[] response, string contentType) CreateEmptyGeoParquet(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         bool returnGeometry,
         string[]? outFields,
         int? outputSrid,
         bool returnZ)
     {
-        var (schema, _, _) = BuildSchema(layer, returnGeometry, outFields, outputSrid, returnZ, isEmpty: true);
+        var (schema, _, _) = BuildSchema(resource, returnGeometry, outFields, outputSrid, returnZ, isEmpty: true);
 
         using var stream = new MemoryStream();
         var arrowWriterProperties = new ArrowWriterPropertiesBuilder().StoreSchema().Build();
@@ -179,7 +166,7 @@ internal sealed class GeoParquetQueryFormatter
     /// Builds the Arrow schema and resolves which attribute fields to include.
     /// Shared by both populated and empty GeoParquet paths.
     /// </summary>
-    /// <param name="layer">Layer definition for schema metadata.</param>
+    /// <param name="resource">Metadata v2 resource for schema metadata.</param>
     /// <param name="returnGeometry">Whether to include the geometry column.</param>
     /// <param name="outFields">Requested output fields, or null / ["*"] for all.</param>
     /// <param name="outputSrid">Output SRID for CRS metadata.</param>
@@ -187,13 +174,13 @@ internal sealed class GeoParquetQueryFormatter
     /// For populated results this reflects actual geometry content; for empty results it mirrors returnZ.</param>
     /// <param name="runtimeFields">
     /// Runtime-computed attributes detected from the result set (e.g. "distance" from KNN queries).
-    /// These exist in <c>feature.Attributes</c> but are not part of the layer schema.
+    /// These exist in <c>feature.Attributes</c> but are not part of the resource schema.
     /// Pass an empty list for the empty-result path.
     /// </param>
     /// <param name="isEmpty">True when the result set has zero features, so that
     /// <c>geometry_types</c> is emitted as <c>[]</c> per GeoParquet 1.1.0 §4.1.</param>
-    private static (Schema schema, List<FieldDefinition> fieldsToInclude, string objectIdFieldName) BuildSchema(
-        LayerDefinition layer,
+    private static (Schema schema, List<MetadataV2Field> fieldsToInclude, string objectIdFieldName) BuildSchema(
+        MetadataV2Resource resource,
         bool returnGeometry,
         string[]? outFields,
         int? outputSrid,
@@ -201,11 +188,9 @@ internal sealed class GeoParquetQueryFormatter
         IReadOnlyList<(string name, IArrowType type)>? runtimeFields = null,
         bool isEmpty = false)
     {
-        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
-        var resolvedFields = ResolveSelectedFields(layer, outFields);
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+        var resolvedFields = ResolveSelectedFields(resource, outFields);
 
-        // BuildSchema handles objectId as the first dedicated column, so exclude it
-        // from the attribute fields list to avoid a duplicate column.
         var fieldsToInclude = resolvedFields
             .Where(f => !f.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase))
             .ToList();
@@ -215,7 +200,7 @@ internal sealed class GeoParquetQueryFormatter
             new Field(objectIdFieldName, new Int64Type(), false)
         };
 
-        if (returnGeometry && layer.HasGeometry)
+        if (returnGeometry && HasGeometry(resource))
         {
             schemaFields.Add(new Field(GeometryColumnName, new BinaryType(), true));
         }
@@ -225,10 +210,6 @@ internal sealed class GeoParquetQueryFormatter
             schemaFields.Add(new Field(field.Name, MapToArrowType(field), field.Nullable));
         }
 
-        // Append runtime-computed attributes (e.g. "distance" from KNN queries) that are
-        // not declared in the layer schema but appear in feature.Attributes.
-        // Only include when outFields is omitted / "*", or the field was explicitly requested,
-        // to match the filtering behavior of JSON/GeoJSON/PBF formatters.
         if (runtimeFields != null)
         {
             var includeAllFields = outFields == null || outFields.Length == 0 ||
@@ -242,14 +223,14 @@ internal sealed class GeoParquetQueryFormatter
             }
         }
 
-        var schema = new Schema(schemaFields, BuildGeoParquetMetadata(layer, returnGeometry, outputSrid, advertiseZ, isEmpty));
+        var schema = new Schema(schemaFields, BuildGeoParquetMetadata(resource, returnGeometry, outputSrid, advertiseZ, isEmpty));
         return (schema, fieldsToInclude, objectIdFieldName);
     }
 
     /// <summary>
     /// Builds GeoParquet metadata following the specification.
     /// </summary>
-    /// <param name="layer">Layer definition for CRS and geometry type metadata.</param>
+    /// <param name="resource">Metadata v2 resource for CRS and geometry type metadata.</param>
     /// <param name="returnGeometry">Whether the geometry column is included.</param>
     /// <param name="outputSrid">Output SRID for CRS metadata.</param>
     /// <param name="advertiseZ">Whether to advertise Z in geometry_types.</param>
@@ -257,7 +238,7 @@ internal sealed class GeoParquetQueryFormatter
     /// GeoParquet 1.1.0 §4.1 requires <c>geometry_types</c> to list actual geometry
     /// types present in the file — an empty file must use <c>[]</c>.</param>
     private static Dictionary<string, string> BuildGeoParquetMetadata(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         bool returnGeometry,
         int? outputSrid,
         bool advertiseZ,
@@ -265,24 +246,17 @@ internal sealed class GeoParquetQueryFormatter
     {
         var metadata = new Dictionary<string, string>();
 
-        if (!returnGeometry || !layer.HasGeometry)
+        if (!returnGeometry || !HasGeometry(resource))
         {
             return metadata;
         }
 
-        var srid = outputSrid ?? layer.SpatialReference.Wkid;
+        var srid = outputSrid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         EnsureSupportedCloudNativeGeometrySrid(includeGeometry: true, srid, "GeoParquet");
 
-        // bbox is omitted: GeoParquet 1.1.0 defines bbox as the bounding box of the
-        // geometries *in the file*, but we only have the full layer extent which would
-        // be incorrect for filtered or empty exports. Computing the actual result bbox
-        // would require parsing every WKB geometry; deferred to a follow-up.
-
-        // GeoParquet 1.1.0 §4.1: geometry_types lists actual types in the file.
-        // An empty file has no geometries, so geometry_types must be [].
         var geometryTypesPart = isEmpty
             ? "[]"
-            : $"[\"{MapGeometryTypeToGeoParquet(layer.GeometryType, advertiseZ)}\"]";
+            : $"[\"{MapGeometryTypeToGeoParquet(resource.ReadGeometryType(), advertiseZ)}\"]";
         var geoJson = $@"{{""version"":""{GeoParquetVersion}"",""primary_column"":""{GeometryColumnName}"",""columns"":{{""{GeometryColumnName}"":{{""encoding"":""{GeometryEncoding}"",""geometry_types"":{geometryTypesPart}}}}}}}";
 
         metadata[GeoMetadataKey] = geoJson;
@@ -315,26 +289,25 @@ internal sealed class GeoParquetQueryFormatter
 
     /// <summary>
     /// Detects runtime-computed attributes present in the result set but not declared in the
-    /// layer schema (e.g. the "distance" field injected by KNN queries when returnDistance=true).
+    /// resource schema (e.g. the "distance" field injected by KNN queries when returnDistance=true).
     /// Internal fields prefixed with "__" are excluded.
     /// </summary>
     internal static List<(string name, IArrowType type)> DetectRuntimeFields(
         ImmutableArray<Feature> features,
-        LayerDefinition layer)
+        MetadataV2Resource resource)
     {
         var result = new List<(string name, IArrowType type)>();
         if (features.Length == 0) return result;
 
-        var layerFieldNames = new HashSet<string>(
-            layer.Fields.Select(f => f.Name), StringComparer.OrdinalIgnoreCase);
+        var resourceFieldNames = new HashSet<string>(
+            resource.SchemaFields.Select(f => f.Name), StringComparer.OrdinalIgnoreCase);
         var seenRuntimeFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var feature in features)
         {
             foreach (var (key, value) in feature.Attributes)
             {
-                if (seenRuntimeFields.Contains(key) || layerFieldNames.Contains(key)) continue;
-                // Skip internal fields (e.g. __honua_total_count)
+                if (seenRuntimeFields.Contains(key) || resourceFieldNames.Contains(key)) continue;
                 if (key.StartsWith("__", StringComparison.Ordinal)) continue;
 
                 var arrowType = InferArrowTypeFromValue(value);
@@ -371,19 +344,19 @@ internal sealed class GeoParquetQueryFormatter
     }
 
     /// <summary>
-    /// Maps layer geometry type to GeoParquet geometry type string
+    /// Maps metadata v2 geometry type to GeoParquet geometry type string.
     /// </summary>
-    internal static string MapGeometryTypeToGeoParquet(Core.Features.Catalog.Domain.GeometryType geometryType, bool returnZ)
+    internal static string MapGeometryTypeToGeoParquet(MetadataV2GeometryType geometryType, bool returnZ)
     {
         var baseType = geometryType switch
         {
-            Core.Features.Catalog.Domain.GeometryType.Point => "Point",
-            Core.Features.Catalog.Domain.GeometryType.LineString => "LineString",
-            Core.Features.Catalog.Domain.GeometryType.Polygon => "Polygon",
-            Core.Features.Catalog.Domain.GeometryType.MultiPoint => "MultiPoint",
-            Core.Features.Catalog.Domain.GeometryType.MultiLineString => "MultiLineString",
-            Core.Features.Catalog.Domain.GeometryType.MultiPolygon => "MultiPolygon",
-            Core.Features.Catalog.Domain.GeometryType.GeometryCollection => "GeometryCollection",
+            MetadataV2GeometryType.Point => "Point",
+            MetadataV2GeometryType.LineString => "LineString",
+            MetadataV2GeometryType.Polygon => "Polygon",
+            MetadataV2GeometryType.MultiPoint => "MultiPoint",
+            MetadataV2GeometryType.MultiLineString => "MultiLineString",
+            MetadataV2GeometryType.MultiPolygon => "MultiPolygon",
+            MetadataV2GeometryType.GeometryCollection => "GeometryCollection",
             _ => "Geometry"
         };
 
@@ -391,13 +364,13 @@ internal sealed class GeoParquetQueryFormatter
     }
 
     /// <summary>
-    /// Maps field definition to Arrow data type.
-    /// IMPORTANT: keep in sync with <see cref="BuildAttributeArray"/> which selects the
+    /// Maps metadata v2 field metadata to Arrow data type.
+    /// IMPORTANT: keep in sync with the matching attribute array builders which select the
     /// matching typed builder for the same SQL type strings.
     /// </summary>
-    private static IArrowType MapToArrowType(FieldDefinition field)
+    private static IArrowType MapToArrowType(MetadataV2Field field)
     {
-        return field.SqlType.ToLowerInvariant() switch
+        return ResolveSqlType(field).ToLowerInvariant() switch
         {
             "bigint" or "int8" => new Int64Type(),
             "integer" or "int4" => new Int32Type(),
@@ -411,14 +384,46 @@ internal sealed class GeoParquetQueryFormatter
             "bytea" => new BinaryType(),
             "uuid" => new StringType(),
             "json" or "jsonb" => new StringType(),
-            _ when field.SqlType.StartsWith("varchar", StringComparison.OrdinalIgnoreCase) => new StringType(),
-            _ when field.SqlType.StartsWith("char", StringComparison.OrdinalIgnoreCase) => new StringType(),
-            _ when field.SqlType.StartsWith("text", StringComparison.OrdinalIgnoreCase) => new StringType(),
-            _ when field.SqlType.StartsWith("numeric", StringComparison.OrdinalIgnoreCase) => new DoubleType(),
-            _ when field.SqlType.StartsWith("decimal", StringComparison.OrdinalIgnoreCase) => new DoubleType(),
-            _ => new StringType() // Default to string for unknown types
+            var sqlType when sqlType.StartsWith("varchar", StringComparison.OrdinalIgnoreCase) => new StringType(),
+            var sqlType when sqlType.StartsWith("char", StringComparison.OrdinalIgnoreCase) => new StringType(),
+            var sqlType when sqlType.StartsWith("text", StringComparison.OrdinalIgnoreCase) => new StringType(),
+            var sqlType when sqlType.StartsWith("numeric", StringComparison.OrdinalIgnoreCase) => new DoubleType(),
+            var sqlType when sqlType.StartsWith("decimal", StringComparison.OrdinalIgnoreCase) => new DoubleType(),
+            _ => new StringType()
         };
     }
+
+    private static string ResolveSqlType(MetadataV2Field field)
+    {
+        if (!string.IsNullOrWhiteSpace(field.SqlType))
+        {
+            return field.SqlType;
+        }
+
+        return field.Type switch
+        {
+            MetadataV2FieldType.Integer => "INTEGER",
+            MetadataV2FieldType.BigInteger => "BIGINT",
+            MetadataV2FieldType.Double => "DOUBLE PRECISION",
+            MetadataV2FieldType.Float => "REAL",
+            MetadataV2FieldType.Boolean => "BOOLEAN",
+            MetadataV2FieldType.DateTime => "TIMESTAMP WITH TIME ZONE",
+            MetadataV2FieldType.Date => "DATE",
+            MetadataV2FieldType.Time => "TIME",
+            MetadataV2FieldType.Json => "JSONB",
+            MetadataV2FieldType.Binary => "BYTEA",
+            MetadataV2FieldType.Uuid => "UUID",
+            MetadataV2FieldType.Geometry => "GEOMETRY",
+            MetadataV2FieldType.Geography => "GEOGRAPHY",
+            _ => "TEXT"
+        };
+    }
+
+    private static bool HasGeometry(MetadataV2Resource resource)
+        => resource.ReadGeometryType() != MetadataV2GeometryType.None;
+
+    private static bool IsGeometryField(MetadataV2Field field)
+        => field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography;
 
     /// <summary>
     /// Builds Arrow arrays for each column.
@@ -427,11 +432,10 @@ internal sealed class GeoParquetQueryFormatter
     private static IArrowArray[] BuildArrays(
         ImmutableArray<Feature> features,
         Schema schema,
-        LayerDefinition layer,
         bool returnGeometry,
         BinaryArray? geometryArray,
         string objectIdFieldName,
-        List<FieldDefinition> fieldsToInclude,
+        List<MetadataV2Field> fieldsToInclude,
         ILogger? logger = null)
     {
         var arrays = new List<IArrowArray>();
@@ -455,8 +459,6 @@ internal sealed class GeoParquetQueryFormatter
                 }
                 else
                 {
-                    // Runtime-computed attribute (e.g. "distance" from KNN queries):
-                    // no FieldDefinition exists, so dispatch by the Arrow type declared in the schema.
                     arrays.Add(BuildRuntimeAttributeArray(features, field, logger));
                 }
             }
@@ -578,16 +580,16 @@ internal sealed class GeoParquetQueryFormatter
 
     /// <summary>
     /// Builds attribute array for a specific field.
-    /// IMPORTANT: keep in sync with <see cref="MapToArrowType"/> which declares the
+    /// IMPORTANT: keep in sync with the matching schema type mapper which declares the
     /// Arrow schema type for the same SQL type strings.
     /// </summary>
     private static IArrowArray BuildAttributeArray(
         ImmutableArray<Feature> features,
         string fieldName,
-        FieldDefinition fieldDef,
+        MetadataV2Field fieldDef,
         ILogger? logger = null)
     {
-        var sqlType = fieldDef.SqlType.ToLowerInvariant();
+        var sqlType = ResolveSqlType(fieldDef).ToLowerInvariant();
         return sqlType switch
         {
             "bigint" or "int8" => BuildInt64AttributeArray(features, fieldName, logger),
@@ -600,8 +602,8 @@ internal sealed class GeoParquetQueryFormatter
             "date" => BuildDate32AttributeArray(features, fieldName, logger),
             "time" => BuildTime32AttributeArray(features, fieldName, logger),
             "timestamp" or "timestamptz" or "timestamp with time zone" or "timestamp without time zone" => BuildTimestampAttributeArray(features, fieldName, logger),
-            _ when sqlType.StartsWith("numeric", StringComparison.OrdinalIgnoreCase) => BuildDoubleAttributeArray(features, fieldName, logger),
-            _ when sqlType.StartsWith("decimal", StringComparison.OrdinalIgnoreCase) => BuildDoubleAttributeArray(features, fieldName, logger),
+            var resolved when resolved.StartsWith("numeric", StringComparison.OrdinalIgnoreCase) => BuildDoubleAttributeArray(features, fieldName, logger),
+            var resolved when resolved.StartsWith("decimal", StringComparison.OrdinalIgnoreCase) => BuildDoubleAttributeArray(features, fieldName, logger),
             _ => BuildStringAttributeArray(features, fieldName, logger)
         };
     }
@@ -791,7 +793,7 @@ internal sealed class GeoParquetQueryFormatter
     }
 
     /// <summary>
-    /// Builds an array for a runtime-computed attribute (no <see cref="FieldDefinition"/>).
+    /// Builds an array for a runtime-computed attribute absent from the resource schema.
     /// Dispatches by the Arrow type declared in the schema field.
     /// </summary>
     private static IArrowArray BuildRuntimeAttributeArray(

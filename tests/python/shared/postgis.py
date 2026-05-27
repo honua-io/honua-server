@@ -778,6 +778,50 @@ class PostGISFixture:
             safe = safe.replace("--", "-")
         return safe or "default"
 
+    @staticmethod
+    def _metadata_v2_field_type(value: object) -> str:
+        token = str(value).strip().lower().replace("_", "").replace("-", "")
+        return {
+            "string": "string",
+            "integer": "integer",
+            "int": "integer",
+            "biginteger": "biginteger",
+            "long": "biginteger",
+            "double": "double",
+            "float": "float",
+            "single": "float",
+            "boolean": "boolean",
+            "bool": "boolean",
+            "datetime": "datetime",
+            "date": "date",
+            "time": "time",
+            "json": "json",
+            "binary": "binary",
+            "uuid": "uuid",
+            "guid": "uuid",
+            "geometry": "geometry",
+            "geography": "geography",
+        }.get(token, "unknown")
+
+    @staticmethod
+    def _metadata_v2_geometry_type(value: object) -> str:
+        token = str(value).strip().lower().replace("_", "").replace("-", "")
+        return {
+            "": "none",
+            "none": "none",
+            "point": "point",
+            "multipoint": "multipoint",
+            "linestring": "linestring",
+            "line": "linestring",
+            "polyline": "linestring",
+            "multilinestring": "multilinestring",
+            "polygon": "polygon",
+            "multipolygon": "multipolygon",
+            "geometrycollection": "geometrycollection",
+            "geometry": "geometrycollection",
+            "mixed": "mixed",
+        }.get(token, "none")
+
     def _seed_metadata_v2_snapshot(self, conn: psycopg.Connection) -> None:
         """Seed a Metadata v2 snapshot that mirrors the v1 compatibility catalog."""
         conn.execute(
@@ -849,7 +893,7 @@ class PostGISFixture:
 
             fields_by_layer.setdefault(field_layer_id, []).append({
                 "name": field_name,
-                "type": field_type,
+                "type": self._metadata_v2_field_type(field_type),
                 "description": description,
                 "nullable": bool(nullable),
                 "semanticRoles": semantic_roles,
@@ -891,7 +935,12 @@ class PostGISFixture:
                 "metadata": {"id": service_id, "name": name, "title": name},
                 "serviceType": service_type,
                 "route": route,
+                "protocols": protocols,
                 "enabledProtocols": protocols,
+                "options": {
+                    "capabilities": ["Query", "Extract", "Create", "Update", "Delete"],
+                    "supportedFormats": ["JSON", "GeoJSON"],
+                },
                 "status": status,
             })
 
@@ -917,16 +966,26 @@ class PostGISFixture:
             feature_storage_id = f"storage-layer-{layer_part}"
             image_storage_id = f"storage-image-layer-{layer_part}"
 
-            spatial = {
-                "srid": srid,
-                "crs": f"EPSG:{srid}",
-                "geometryType": geometry_type,
+            geometry_type_token = self._metadata_v2_geometry_type(geometry_type)
+            feature_spatial = {
+                "spatialReference": {
+                    "srid": srid,
+                    "crs": f"EPSG:{srid}",
+                    "isGeographic": srid == 4326,
+                },
+                "geometryType": geometry_type_token,
+                "primaryGeometryField": "shape",
                 "bbox": {
                     "west": west,
                     "south": south,
                     "east": east,
                     "north": north,
                 },
+            }
+            raster_spatial = {
+                "spatialReference": feature_spatial["spatialReference"],
+                "geometryType": "none",
+                "bbox": feature_spatial["bbox"],
             }
 
             resources_by_id.setdefault(feature_resource_id, {
@@ -940,7 +999,7 @@ class PostGISFixture:
                 "storageBindingIds": [feature_storage_id],
                 "primaryStorageBindingId": feature_storage_id,
                 "schemaFields": fields_by_layer.get(row_layer_id, []),
-                "spatial": spatial,
+                "spatial": feature_spatial,
                 "status": status,
                 "extensions": {},
             })
@@ -954,7 +1013,7 @@ class PostGISFixture:
                 "type": "raster-dataset",
                 "storageBindingIds": [image_storage_id],
                 "primaryStorageBindingId": image_storage_id,
-                "spatial": spatial,
+                "spatial": raster_spatial,
                 "status": status,
                 "extensions": {},
             })
@@ -965,6 +1024,7 @@ class PostGISFixture:
                 "connectionId": "conn-postgres",
                 "storageType": "relational-table",
                 "locator": f"{table_schema}.{table_name}",
+                "storageLayerId": row_layer_id,
                 "capabilities": [
                     "query",
                     "filter",
@@ -976,6 +1036,7 @@ class PostGISFixture:
                     "tile",
                     "search",
                 ],
+                "options": {},
                 "status": status,
             })
             storage_by_id.setdefault(image_storage_id, {
@@ -984,7 +1045,9 @@ class PostGISFixture:
                 "connectionId": "conn-postgres",
                 "storageType": "relational-table",
                 "locator": "honua.raster_data",
+                "storageLayerId": row_layer_id,
                 "capabilities": ["query", "filter", "render", "tile", "download"],
+                "options": {},
                 "status": status,
             })
 
@@ -1015,9 +1078,11 @@ class PostGISFixture:
                     "serviceId": image_service_id,
                     "storageBindingId": image_storage_id,
                     "publicationType": "esri-image-layer",
-                    "path": local_id,
-                    "layerIndex": row_layer_id,
-                    "serviceLocalId": local_id,
+                    "identifier": {
+                        "value": local_id,
+                        "isNumeric": True,
+                        "pathOverride": local_id,
+                    },
                     "status": status,
                 },
                 {
@@ -1026,9 +1091,11 @@ class PostGISFixture:
                     "serviceId": ogc_service_id,
                     "storageBindingId": feature_storage_id,
                     "publicationType": "ogc-collection",
-                    "path": local_id,
-                    "layerIndex": row_layer_id,
-                    "serviceLocalId": local_id,
+                    "identifier": {
+                        "value": local_id,
+                        "isNumeric": True,
+                        "pathOverride": local_id,
+                    },
                     "status": status,
                 },
                 {
@@ -1037,9 +1104,11 @@ class PostGISFixture:
                     "serviceId": feature_service_id,
                     "storageBindingId": feature_storage_id,
                     "publicationType": "esri-feature-layer",
-                    "path": local_id,
-                    "layerIndex": row_layer_id,
-                    "serviceLocalId": local_id,
+                    "identifier": {
+                        "value": local_id,
+                        "isNumeric": True,
+                        "pathOverride": local_id,
+                    },
                     "status": status,
                 },
                 {
@@ -1048,9 +1117,11 @@ class PostGISFixture:
                     "serviceId": map_service_id,
                     "storageBindingId": feature_storage_id,
                     "publicationType": "esri-map-layer",
-                    "path": local_id,
-                    "layerIndex": row_layer_id,
-                    "serviceLocalId": local_id,
+                    "identifier": {
+                        "value": local_id,
+                        "isNumeric": True,
+                        "pathOverride": local_id,
+                    },
                     "status": status,
                 },
                 {
@@ -1059,9 +1130,11 @@ class PostGISFixture:
                     "serviceId": stac_service_id,
                     "storageBindingId": feature_storage_id,
                     "publicationType": "stac-collection",
-                    "path": local_id,
-                    "layerIndex": row_layer_id,
-                    "serviceLocalId": local_id,
+                    "identifier": {
+                        "value": local_id,
+                        "isNumeric": True,
+                        "pathOverride": local_id,
+                    },
                     "status": status,
                 },
             ])
@@ -1085,6 +1158,7 @@ class PostGISFixture:
                     "metadata": {"id": "conn-postgres", "name": "postgres"},
                     "type": "managed",
                     "provider": "postgres",
+                    "options": {},
                     "status": status,
                 }
             ],

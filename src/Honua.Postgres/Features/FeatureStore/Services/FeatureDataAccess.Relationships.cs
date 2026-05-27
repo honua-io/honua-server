@@ -19,19 +19,28 @@ internal sealed partial class FeatureDataAccess
             return QueryResult<Feature>.Empty();
         }
 
-        if (!FeatureQueryBuilder.IsValidFieldName(query.Relationship.OriginForeignKeyField))
+        var relatedLayerId = ResolveRelatedLayerId(query);
+        var originForeignKeyField = ResolveOriginForeignKeyField(query);
+        var destinationForeignKeyField = ResolveDestinationForeignKeyField(query);
+
+        if (!FeatureQueryBuilder.IsValidFieldName(originForeignKeyField))
         {
-            throw new ArgumentException($"Invalid relationship field: {query.Relationship.OriginForeignKeyField}");
+            throw new ArgumentException($"Invalid relationship field: {originForeignKeyField}");
         }
 
-        if (!FeatureQueryBuilder.IsValidFieldName(query.Relationship.DestinationForeignKeyField))
+        if (!FeatureQueryBuilder.IsValidFieldName(destinationForeignKeyField))
         {
-            throw new ArgumentException($"Invalid relationship field: {query.Relationship.DestinationForeignKeyField}");
+            throw new ArgumentException($"Invalid relationship field: {destinationForeignKeyField}");
         }
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
 
-        var foreignKeyValues = await GetOriginForeignKeyValuesAsync(connection, layerId, query, cancellationToken).ConfigureAwait(false);
+        var foreignKeyValues = await GetOriginForeignKeyValuesAsync(
+            connection,
+            layerId,
+            query,
+            originForeignKeyField,
+            cancellationToken).ConfigureAwait(false);
         if (foreignKeyValues.Count == 0)
         {
             return QueryResult<Feature>.Empty();
@@ -50,8 +59,8 @@ internal sealed partial class FeatureDataAccess
 
         var parameters = new List<object>
         {
-            query.Relationship.RelatedLayerId,
-            query.Relationship.DestinationForeignKeyField,
+            relatedLayerId,
+            destinationForeignKeyField,
             foreignKeyValues.ToArray()
         };
 
@@ -118,6 +127,7 @@ internal sealed partial class FeatureDataAccess
         NpgsqlConnection connection,
         int layerId,
         RelatedQuery query,
+        string originForeignKeyField,
         CancellationToken cancellationToken)
     {
         var sql = $@"
@@ -129,7 +139,7 @@ internal sealed partial class FeatureDataAccess
         await using var command = CreateSafeCommand(connection, sql);
         command.Parameters.AddWithValue(layerId);
         command.Parameters.AddWithValue(query.ObjectIds);
-        command.Parameters.AddWithValue(query.Relationship.OriginForeignKeyField);
+        command.Parameters.AddWithValue(originForeignKeyField);
         ApplyCommandTimeout(command, _queryTimeoutSeconds);
 
         var values = new List<string>();
@@ -148,5 +158,35 @@ internal sealed partial class FeatureDataAccess
         }
 
         return values;
+    }
+
+    private static int ResolveRelatedLayerId(RelatedQuery query)
+    {
+        if (query.RelatedLayerId is int relatedLayerId)
+        {
+            return relatedLayerId;
+        }
+
+        throw new ArgumentException("Related layer id is required.");
+    }
+
+    private static string ResolveOriginForeignKeyField(RelatedQuery query)
+    {
+        if (!string.IsNullOrWhiteSpace(query.OriginForeignKeyField))
+        {
+            return query.OriginForeignKeyField;
+        }
+
+        throw new ArgumentException("Origin relationship field is required.");
+    }
+
+    private static string ResolveDestinationForeignKeyField(RelatedQuery query)
+    {
+        if (!string.IsNullOrWhiteSpace(query.DestinationForeignKeyField))
+        {
+            return query.DestinationForeignKeyField;
+        }
+
+        throw new ArgumentException("Destination relationship field is required.");
     }
 }

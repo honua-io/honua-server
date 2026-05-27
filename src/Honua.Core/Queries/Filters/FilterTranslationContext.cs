@@ -9,18 +9,15 @@ namespace Honua.Core.Queries.Filters;
 
 /// <summary>
 /// Provider-neutral schema context consumed by <see cref="ISqlFilterTranslator"/>
-/// implementations. Lets a single translator implementation accept either a v1
-/// <see cref="LayerDefinition"/> or a Metadata v2 <see cref="MetadataV2Resource"/>
-/// without duplicating its recursive translation logic.
+/// implementations. Lets translator implementations consume Metadata v2 resources
+/// without duplicating recursive translation logic.
 /// </summary>
 /// <remarks>
 /// The context exposes only the surface the translators actually need: field
 /// metadata (name / type / geometry flag / primary-key flag), the geometry column
 /// name and SRID, and the resource name used in error messages. SRID resolution
-/// follows the v1 contract — when the resource doesn't carry an explicit SRID, the
-/// translator falls back to <see cref="SpatialReference.WGS84"/> (the same default
-/// the v1 <see cref="LayerDefinition.SpatialReference"/> uses when constructed via
-/// <c>CreateBasic</c>).
+/// falls back to <see cref="SpatialReference.WGS84"/> when the resource does not
+/// carry an explicit SRID.
 /// </remarks>
 public readonly struct FilterTranslationContext
 {
@@ -71,32 +68,6 @@ public readonly struct FilterTranslationContext
 
     /// <summary>Display name of the resource, used in diagnostic messages.</summary>
     public string ResourceName { get; }
-
-    /// <summary>
-    /// Builds a <see cref="FilterTranslationContext"/> from a v1 <see cref="LayerDefinition"/>.
-    /// </summary>
-    public static FilterTranslationContext FromLayer(LayerDefinition layer)
-    {
-        ArgumentNullException.ThrowIfNull(layer);
-
-        var primaryKey = layer.PrimaryKeyField;
-        var fields = new ContextField[layer.Fields.Length];
-        for (var i = 0; i < layer.Fields.Length; i++)
-        {
-            var f = layer.Fields[i];
-            var isPk = primaryKey is not null && string.Equals(f.Name, primaryKey.Name, StringComparison.OrdinalIgnoreCase);
-            fields[i] = new ContextField(f.Name, f.Type, f.IsGeometry, isPk);
-        }
-
-        return new FilterTranslationContext(
-            fields,
-            primaryKey?.Name,
-            layer.GeometryField?.Name,
-            layer.SpatialReference.Wkid,
-            layer.SpatialReference.IsGeographic,
-            layer.GeometryType,
-            layer.Name);
-    }
 
     /// <summary>
     /// Builds a <see cref="FilterTranslationContext"/> from a Metadata v2 resource.

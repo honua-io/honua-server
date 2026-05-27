@@ -1,7 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using PermanentFilterLanguages = Honua.Core.Features.Metadata.Domain.V2.MetadataV2PermanentFilterLanguages;
 
 namespace Honua.Server.Features.Admin.Models;
 
@@ -34,7 +35,7 @@ public sealed class LayerFieldConfigurationUpdateItem
     /// <summary>
     /// Optional coded-value domain for the field. Null clears the domain.
     /// </summary>
-    public FieldDomainDefinition? Domain { get; init; }
+    public MetadataV2FieldDomain? Domain { get; init; }
 
     /// <summary>
     /// Optional hidden-field flag. Null preserves the current value.
@@ -81,7 +82,7 @@ public sealed class LayerFieldConfigurationItem
     /// <summary>
     /// Optional coded-value domain for the field.
     /// </summary>
-    public FieldDomainDefinition? Domain { get; init; }
+    public MetadataV2FieldDomain? Domain { get; init; }
 
     /// <summary>
     /// Whether public protocol output should omit the field.
@@ -129,5 +130,5 @@ public sealed class LayerPermanentFilterConfiguration
     /// <summary>
     /// Filter language token. Supported values are arcgis-sql, cql2-text, and cql2-json.
     /// </summary>
-    public string Language { get; init; } = LayerPermanentFilterLanguages.ArcGisSql;
+    public string Language { get; init; } = PermanentFilterLanguages.ArcGisSql;
 }

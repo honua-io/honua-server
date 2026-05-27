@@ -7,8 +7,8 @@ using System.Globalization;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters.Fes20;
 using Honua.Server.Features.Infrastructure.Helpers;
@@ -478,7 +478,7 @@ internal sealed partial class Wfs20Handler
         var queryResults = new List<(LayerQueryPlan Plan, ImmutableArray<Feature> Features)>(planSet.Plans.Length);
         foreach (var plan in planSet.Plans)
         {
-            var result = await _featureReader.QueryAsync(plan.Descriptor.Layer.Id, plan.Query, cancellationToken)
+            var result = await _featureReader.QueryAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken)
                 .ConfigureAwait(false);
             queryResults.Add((plan, result.Items));
         }
@@ -643,24 +643,25 @@ internal sealed partial class Wfs20Handler
 
     private static void WriteLegacyGeometryField(XmlWriter writer, string version, LayerQueryPlan plan, Feature feature)
     {
-        if (plan.Descriptor.Layer.GeometryField is null || feature.Geometry is null)
+        var geometryField = plan.Descriptor.Resource.FindPrimaryGeometryField();
+        if (geometryField is null || feature.Geometry is null)
         {
             return;
         }
 
         writer.WriteStartElement(
-            GetFieldNamespacePrefix(plan.Descriptor, plan.Descriptor.Layer.GeometryField),
-            XmlConvert.EncodeLocalName(plan.Descriptor.Layer.GeometryField.Name),
-            GetFieldNamespaceUri(plan.Descriptor, plan.Descriptor.Layer.GeometryField));
+            GetFieldNamespacePrefix(plan.Descriptor, geometryField),
+            XmlConvert.EncodeLocalName(geometryField.Name),
+            GetFieldNamespaceUri(plan.Descriptor, geometryField));
         WriteLegacyGeometry(writer, version, plan, feature.Geometry);
         writer.WriteEndElement();
     }
 
-    private static IEnumerable<FieldDefinition> GetLegacyProjectedAttributeFields(
+    private static IEnumerable<MetadataV2Field> GetLegacyProjectedAttributeFields(
         WfsFeatureTypeDescriptor descriptor,
         FeatureQuery query)
     {
-        var fields = GetProjectedAttributeFields(descriptor.Layer, query);
+        var fields = GetProjectedAttributeFields(descriptor.Resource, query);
         return IsCiteFeatureType(descriptor)
             ? fields.Where(field =>
                 !field.Name.Equals("objectid", StringComparison.OrdinalIgnoreCase) &&
@@ -689,12 +690,12 @@ internal sealed partial class Wfs20Handler
            (descriptor.NamespaceUri == "http://www.opengis.net/cite/data" &&
             descriptor.LocalName is "Nulls" or "Locks");
 
-    private static string GetFieldNamespacePrefix(WfsFeatureTypeDescriptor descriptor, FieldDefinition field)
+    private static string GetFieldNamespacePrefix(WfsFeatureTypeDescriptor descriptor, MetadataV2Field field)
         => IsCiteFeatureType(descriptor) && field.Name.EndsWith("Property", StringComparison.OrdinalIgnoreCase)
             ? "gml"
             : descriptor.NamespacePrefix;
 
-    private static string GetFieldNamespaceUri(WfsFeatureTypeDescriptor descriptor, FieldDefinition field)
+    private static string GetFieldNamespaceUri(WfsFeatureTypeDescriptor descriptor, MetadataV2Field field)
         => IsCiteFeatureType(descriptor) && field.Name.EndsWith("Property", StringComparison.OrdinalIgnoreCase)
             ? GmlLegacyNamespace
             : descriptor.NamespaceUri;
@@ -705,7 +706,10 @@ internal sealed partial class Wfs20Handler
     private static void WriteLegacyGeometry(XmlWriter writer, string version, LayerQueryPlan plan, byte[] geometryWkb)
     {
         var geometry = LegacyWkbReader.Read(geometryWkb);
-        var outputSrid = plan.Query.OutputSrid ?? plan.Query.SpatialReferenceSrid ?? plan.Descriptor.Layer.SpatialReference.ToSrid();
+        var outputSrid = plan.Query.OutputSrid ??
+            plan.Query.SpatialReferenceSrid ??
+            plan.Descriptor.Resource.ReadSrid() ??
+            SpatialReference.WGS84.Wkid;
         var srsName = IsWfs10(version) ? $"EPSG:{outputSrid.ToString(CultureInfo.InvariantCulture)}" : FormatCrs(outputSrid);
         var axisOrder = IsWfs10(version) ? AxisOrder.EastNorth : plan.Query.OutputAxisOrder ?? AxisOrder.EastNorth;
 
@@ -881,12 +885,13 @@ internal sealed partial class Wfs20Handler
             schema.AppendLine("""      <xsd:extension base="gml:AbstractFeatureType">""");
             schema.AppendLine("""        <xsd:sequence>""");
 
-            if (featureType.Layer.GeometryField is not null)
+            var geometryField = featureType.Resource.FindPrimaryGeometryField();
+            if (geometryField is not null)
             {
-                schema.AppendLine($"""          <xsd:element name="{XmlConvert.EncodeLocalName(featureType.Layer.GeometryField.Name)}" type="gml:GeometryPropertyType" minOccurs="0" nillable="true"/>""");
+                schema.AppendLine($"""          <xsd:element name="{XmlConvert.EncodeLocalName(geometryField.Name)}" type="gml:GeometryPropertyType" minOccurs="0" nillable="true"/>""");
             }
 
-            foreach (var field in featureType.Layer.VisibleAttributeFields)
+            foreach (var field in GetVisibleAttributeFields(featureType.Resource))
             {
                 var minOccurs = field.Nullable ? " minOccurs=\"0\"" : string.Empty;
                 var nillable = field.Nullable ? " nillable=\"true\"" : string.Empty;

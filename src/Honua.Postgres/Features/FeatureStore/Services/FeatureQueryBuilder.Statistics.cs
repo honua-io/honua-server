@@ -4,8 +4,8 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Postgres.Features.Infrastructure;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
 using CoreParameterizedQuery = Honua.Core.Features.FeatureStore.Domain.ParameterizedQuery;
@@ -109,7 +109,7 @@ internal sealed partial class FeatureQueryBuilder
     private static string BuildAggregateExpression(
         StatisticType statisticType,
         string fieldExpr,
-        FieldType? fieldType = null)
+        MetadataV2FieldType? fieldType = null)
     {
         var numericExpr = $"({fieldExpr})::numeric";
         var orderedExpr = IsNumericFieldType(fieldType) ? numericExpr : fieldExpr;
@@ -126,12 +126,12 @@ internal sealed partial class FeatureQueryBuilder
         };
     }
 
-    private static bool IsNumericFieldType(FieldType? fieldType)
+    private static bool IsNumericFieldType(MetadataV2FieldType? fieldType)
     {
-        return fieldType is FieldType.Integer
-            or FieldType.BigInteger
-            or FieldType.Float
-            or FieldType.Double;
+        return fieldType is MetadataV2FieldType.Integer
+            or MetadataV2FieldType.BigInteger
+            or MetadataV2FieldType.Float
+            or MetadataV2FieldType.Double;
     }
 
     private static string GetFieldExpression(string fieldName)

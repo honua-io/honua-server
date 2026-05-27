@@ -5,9 +5,10 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Validation.Abstractions;
@@ -152,7 +153,7 @@ internal static partial class FeatureServerEndpoints
 
         // Validate service/layer access
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerV2Async(
             resourceValidator,
             serviceId,
             layerId,
@@ -165,11 +166,24 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = validationResult.Service!;
-        var layer = validationResult.Layer!;
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+        var publication = validationResult.Publication!;
+        var resource = validationResult.Resource!;
+        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
         if (accessError != null)
         {
             return accessError;
+        }
+
+        var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var storageLayerId = publication.LayerIndex
+            ?? snapshot.ResolveStorageLayerId(publication)
+            ?? snapshot.ResolveStorageLayerId(resource);
+        if (storageLayerId is null)
+        {
+            return StandardErrorHelpers.CreateNotFound(
+                context,
+                $"Layer '{resource.Metadata.Name ?? layerId.ToString(CultureInfo.InvariantCulture)}' is not bound to a storage layer.");
         }
 
         // Check h3-pg extension availability
@@ -194,7 +208,7 @@ internal static partial class FeatureServerEndpoints
 
             if (parseResult.Expression != null)
             {
-                var translationResult = filterService.Translate(parseResult.Expression, layer);
+                var translationResult = filterService.Translate(parseResult.Expression, resource);
                 if (!translationResult.IsSuccess)
                 {
                     return StandardErrorHelpers.CreateBadRequest(context,
@@ -210,7 +224,7 @@ internal static partial class FeatureServerEndpoints
         {
             Where = where,
             SqlFilter = sqlFilter,
-            SpatialReferenceSrid = layer.SpatialReference.ToSrid()
+            SpatialReferenceSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Srid
         };
 
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
@@ -222,7 +236,8 @@ internal static partial class FeatureServerEndpoints
                 values,
                 serviceId,
                 layerId,
-                layer,
+                resource,
+                storageLayerId.Value,
                 featureQuery,
                 resolution,
                 kRingDistance,
@@ -248,7 +263,7 @@ internal static partial class FeatureServerEndpoints
             MaxCells = queryLimits.MaxH3CellsPerQuery
         };
 
-        var rows = await featureReader.QueryH3Async(layer.Id, featureQuery, h3Query, cancellationToken);
+        var rows = await featureReader.QueryH3Async(storageLayerId.Value, featureQuery, h3Query, cancellationToken);
 
         var responseFeatures = rows.Select(row =>
         {
@@ -344,16 +359,29 @@ internal static partial class FeatureServerEndpoints
         activity?.SetTag("h3.resolution", resolution);
 
         // Validate layer access before checking server capabilities
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
             context,
             layerId,
-            requiredProtocol: ServiceProtocols.FeatureServer,
+            requiredProtocol: FeatureServerProtocolName,
             cancellationToken: cancellationToken);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
         }
-        var layer = layerValidation.Layer!;
+        var publication = layerValidation.Publication!;
+        var resource = layerValidation.Resource!;
+
+        var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var storageLayerId = publication.LayerIndex
+            ?? snapshot.ResolveStorageLayerId(publication)
+            ?? snapshot.ResolveStorageLayerId(resource);
+        if (storageLayerId is null)
+        {
+            return StandardErrorHelpers.CreateNotFound(
+                context,
+                $"Layer '{resource.Metadata.Name ?? layerId.ToString(CultureInfo.InvariantCulture)}' is not bound to a storage layer.");
+        }
 
         // Check h3-pg extension availability (after auth, consistent with HandleQueryH3Core)
         var h3Error = await H3CapabilityHelpers.ValidateH3AvailabilityAsync(context, cancellationToken);
@@ -377,7 +405,7 @@ internal static partial class FeatureServerEndpoints
 
             if (parseResult.Expression != null)
             {
-                var translationResult = filterService.Translate(parseResult.Expression, layer);
+                var translationResult = filterService.Translate(parseResult.Expression, resource);
                 if (!translationResult.IsSuccess)
                 {
                     return StandardErrorHelpers.CreateBadRequest(context,
@@ -393,12 +421,12 @@ internal static partial class FeatureServerEndpoints
         {
             Where = where,
             SqlFilter = sqlFilter,
-            SpatialReferenceSrid = layer.SpatialReference.ToSrid()
+            SpatialReferenceSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Srid
         };
 
         var tileProvider = context.RequestServices.GetRequiredService<ITileProvider>();
         var tileData = await tileProvider.GetH3MvtTileAsync(
-            layerId,
+            storageLayerId.Value,
             x,
             y,
             z,

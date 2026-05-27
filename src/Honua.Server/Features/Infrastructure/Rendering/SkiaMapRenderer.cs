@@ -3,8 +3,8 @@
 
 using System.Buffers;
 using System.Collections.Immutable;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Rendering;
 using SkiaSharp;
 
@@ -56,7 +56,7 @@ internal sealed class SkiaMapRenderer : IDisposable
         int imageHeight,
         bool transparent,
         SKColor? backgroundColor,
-        GeometryType geometryType,
+        MetadataV2GeometryType geometryType,
         double? zoom = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -108,7 +108,7 @@ internal sealed class SkiaMapRenderer : IDisposable
         RenderExtent extent,
         int imageWidth,
         int imageHeight,
-        GeometryType geometryType,
+        MetadataV2GeometryType geometryType,
         double? zoom = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -135,7 +135,7 @@ internal sealed class SkiaMapRenderer : IDisposable
     /// </summary>
     internal static byte[] RenderLegendSwatch(
         MapLibreStyleLayer styleLayer,
-        GeometryType geometryType,
+        MetadataV2GeometryType geometryType,
         int width = 20,
         int height = 20)
     {
@@ -235,20 +235,20 @@ internal sealed class SkiaMapRenderer : IDisposable
         return EncodeSurface(surface);
     }
 
-    private static void RenderDefaultLegendSwatch(SKCanvas canvas, GeometryType geometryType, int width, int height, float padding)
+    private static void RenderDefaultLegendSwatch(SKCanvas canvas, MetadataV2GeometryType geometryType, int width, int height, float padding)
     {
         var (fill, stroke) = StyleTranslator.CreateDefaultPaints(geometryType);
         try
         {
             switch (geometryType)
             {
-                case GeometryType.Point or GeometryType.MultiPoint:
+                case MetadataV2GeometryType.Point or MetadataV2GeometryType.MultiPoint:
                     canvas.DrawCircle(width / 2f, height / 2f, Math.Min(width, height) / 4f, fill);
                     break;
-                case GeometryType.LineString or GeometryType.MultiLineString:
+                case MetadataV2GeometryType.LineString or MetadataV2GeometryType.MultiLineString:
                     canvas.DrawLine(padding, height / 2f, width - padding, height / 2f, fill);
                     break;
-                case GeometryType.Polygon or GeometryType.MultiPolygon:
+                case MetadataV2GeometryType.Polygon or MetadataV2GeometryType.MultiPolygon:
                     canvas.DrawRect(padding, padding, width - 2 * padding, height - 2 * padding, fill);
                     if (stroke != null)
                     {
@@ -311,12 +311,12 @@ internal sealed class SkiaMapRenderer : IDisposable
         SKCanvas canvas,
         IReadOnlyList<Feature> features,
         Func<double, double, SKPoint> transform,
-        GeometryType geometryType)
+        MetadataV2GeometryType geometryType)
     {
         var (fill, stroke) = StyleTranslator.CreateDefaultPaints(geometryType);
         try
         {
-            if (geometryType == GeometryType.Point)
+            if (geometryType == MetadataV2GeometryType.Point)
             {
                 RenderDefaultPoints(canvas, features, transform, fill);
                 return;

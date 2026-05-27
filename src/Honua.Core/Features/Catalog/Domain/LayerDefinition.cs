@@ -22,7 +22,6 @@ namespace Honua.Core.Features.Catalog.Domain;
 /// <param name="DefaultVisibility">Whether layer is visible by default</param>
 /// <param name="Relationships">Relationships defined for this layer (optional)</param>
 /// <param name="SupportsAttachments">Whether this layer supports file attachments (default true)</param>
-/// <param name="Metadata">Optional catalog metadata for access policy and extensions</param>
 /// <param name="StorageMapping">Optional runtime binding to physical feature storage</param>
 public record LayerDefinition(
     int Id,
@@ -37,7 +36,6 @@ public record LayerDefinition(
     bool DefaultVisibility = true,
     Relationship[]? Relationships = null,
     bool SupportsAttachments = true,
-    CatalogMetadata? Metadata = null,
     LayerStorageMapping? StorageMapping = null)
 {
     /// <summary>

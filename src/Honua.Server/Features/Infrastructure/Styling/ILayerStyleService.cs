@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Domain;
 
 namespace Honua.Server.Features.Infrastructure.Styling;
@@ -15,23 +15,32 @@ internal interface ILayerStyleService
     /// <summary>
     /// Retrieves the style snapshot for a layer.
     /// </summary>
-    /// <param name="layer">Layer definition.</param>
+    /// <param name="resource">Metadata v2 resource.</param>
+    /// <param name="layerId">Route layer id used as a storage-layer fallback.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Style snapshot or null when not available.</returns>
-    Task<LayerStyleSnapshot?> GetStyleAsync(LayerDefinition layer, CancellationToken cancellationToken = default);
+    Task<LayerStyleSnapshot?> GetStyleAsync(
+        MetadataV2Resource resource,
+        int layerId,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Retrieves drawingInfo for a layer.
     /// </summary>
-    /// <param name="layer">Layer definition.</param>
+    /// <param name="resource">Metadata v2 resource.</param>
+    /// <param name="layerId">Route layer id used as a storage-layer fallback.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>drawingInfo payload or null when not available.</returns>
-    Task<JsonElement?> GetDrawingInfoAsync(LayerDefinition layer, CancellationToken cancellationToken = default);
+    Task<JsonElement?> GetDrawingInfoAsync(
+        MetadataV2Resource resource,
+        int layerId,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Updates the style for a layer using MapLibre or drawingInfo input.
     /// </summary>
-    /// <param name="layer">Layer definition.</param>
+    /// <param name="resource">Metadata v2 resource.</param>
+    /// <param name="layerId">Route layer id used as a storage-layer fallback.</param>
     /// <param name="mapLibreStyle">MapLibre style payload.</param>
     /// <param name="drawingInfo">GeoServices drawingInfo payload.</param>
     /// <param name="revisedBy">Optional author or source identifier captured for the new revision.</param>
@@ -39,7 +48,8 @@ internal interface ILayerStyleService
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Update result with status and style snapshot.</returns>
     Task<LayerStyleUpdateResult> UpdateStyleAsync(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        int layerId,
         JsonElement? mapLibreStyle,
         JsonElement? drawingInfo,
         string? revisedBy = null,

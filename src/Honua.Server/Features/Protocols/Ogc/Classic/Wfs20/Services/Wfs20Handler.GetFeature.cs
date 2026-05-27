@@ -130,7 +130,7 @@ internal sealed partial class Wfs20Handler
             {
                 var descriptor = selectedTypes[0];
                 var query = (await BuildFeatureQueryAsync(
-                    descriptor.Layer,
+                    descriptor,
                     propertyName,
                     sortBy,
                     bbox,
@@ -439,7 +439,7 @@ internal sealed partial class Wfs20Handler
             foreach (var featureType in selectedTypes)
             {
                 var query = await BuildFeatureQueryAsync(
-                    featureType.Layer,
+                    featureType,
                     xmlQuery.PropertyName,
                     xmlQuery.SortBy ?? sortBy,
                     bbox,
@@ -450,7 +450,7 @@ internal sealed partial class Wfs20Handler
                     requireResourceIdQualifier: selectedTypes.Length > 1,
                     cancellationToken: cancellationToken);
 
-                var layerMatched = await _featureReader.CountAsync(featureType.Layer.Id, query, cancellationToken);
+                var layerMatched = await _featureReader.CountAsync(featureType.StorageLayerId, query, cancellationToken);
                 totalMatched += layerMatched;
 
                 if (layerMatched == 0)

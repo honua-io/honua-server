@@ -17,11 +17,13 @@ using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Forms.Packages;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Forms;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Security;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
@@ -356,11 +358,11 @@ public sealed class FormSubmissionServiceTests
         FakeFeatureWriter writer,
         IAttachmentStore? attachmentStore = null)
     {
-        var catalog = new StaticLayerCatalog(store.Service);
+        var targetMetadataResolver = new FormTargetMetadataResolver(CreateMetadataProvider(store.Service));
         return new FormSubmissionService(
             store,
-            new FormPackageValidator(catalog, Options.Create(CreateLimitsOptions())),
-            catalog,
+            new FormPackageValidator(targetMetadataResolver, Options.Create(CreateLimitsOptions())),
+            targetMetadataResolver,
             new PassThroughEditProcessor(),
             writer,
             attachmentStore ?? new RecordingAttachmentStore(),
@@ -369,6 +371,102 @@ public sealed class FormSubmissionServiceTests
             NullAuditLog.Instance,
             NullLogger<FormSubmissionService>.Instance);
     }
+
+    private static TestMetadataV2GraphProvider CreateMetadataProvider(ServiceDefinition service)
+    {
+        var layer = service.Layers[0];
+        return new TestMetadataV2GraphBuilder()
+            .AddConnection("managed", "Managed")
+            .AddResource(
+                "resource-inspections",
+                layer.Name,
+                fields: layer.Fields.Select(MapField),
+                spatial: new MetadataV2ResourceSpatial
+                {
+                    GeometryType = MapGeometryType(layer.GeometryType),
+                    SpatialReference = new MetadataV2SpatialReference
+                    {
+                        Srid = layer.SpatialReference.ToSrid(),
+                        Crs = $"EPSG:{layer.SpatialReference.ToSrid()}",
+                        IsGeographic = layer.SpatialReference.ToSrid() == 4326
+                    },
+                    PrimaryGeometryField = layer.Fields
+                        .FirstOrDefault(static field => field.IsGeometry)
+                        ?.Name
+                },
+                annotations: new Dictionary<string, string>
+                {
+                    ["honua.io/attachments"] = layer.SupportsAttachments.ToString()
+                })
+            .AddStorageBinding(
+                "binding-inspections",
+                "resource-inspections",
+                "inspections",
+                "managed",
+                storageLayerId: layer.Id)
+            .AddService(
+                "service-test",
+                service.Name,
+                protocols: ["FeatureServer"],
+                options: new Dictionary<string, JsonElement>
+                {
+                    ["capabilities"] = JsonArray(service.Capabilities)
+                })
+            .AddPublication(
+                "publication-inspections",
+                "service-test",
+                "resource-inspections",
+                layerIndex: layer.Id,
+                storageBindingId: "binding-inspections",
+                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+            .BuildProvider();
+    }
+
+    private static MetadataV2Field MapField(FieldDefinition field)
+        => new()
+        {
+            Name = field.Name,
+            Type = MapFieldType(field.Type),
+            Nullable = field.Nullable,
+            Length = field.Length,
+            Hidden = field.IsHidden,
+            Editable = !field.IsHidden && !field.IsGeometry
+        };
+
+    private static MetadataV2FieldType MapFieldType(FieldType type)
+        => type switch
+        {
+            FieldType.String => MetadataV2FieldType.String,
+            FieldType.Integer => MetadataV2FieldType.Integer,
+            FieldType.BigInteger => MetadataV2FieldType.BigInteger,
+            FieldType.Double => MetadataV2FieldType.Double,
+            FieldType.Float => MetadataV2FieldType.Float,
+            FieldType.Boolean => MetadataV2FieldType.Boolean,
+            FieldType.DateTime => MetadataV2FieldType.DateTime,
+            FieldType.Date => MetadataV2FieldType.Date,
+            FieldType.Time => MetadataV2FieldType.Time,
+            FieldType.Json => MetadataV2FieldType.Json,
+            FieldType.Binary => MetadataV2FieldType.Binary,
+            FieldType.Uuid => MetadataV2FieldType.Uuid,
+            FieldType.Geometry => MetadataV2FieldType.Geometry,
+            _ => MetadataV2FieldType.Unknown
+        };
+
+    private static MetadataV2GeometryType MapGeometryType(GeometryType type)
+        => type switch
+        {
+            GeometryType.Point => MetadataV2GeometryType.Point,
+            GeometryType.MultiPoint => MetadataV2GeometryType.MultiPoint,
+            GeometryType.LineString => MetadataV2GeometryType.LineString,
+            GeometryType.MultiLineString => MetadataV2GeometryType.MultiLineString,
+            GeometryType.Polygon => MetadataV2GeometryType.Polygon,
+            GeometryType.MultiPolygon => MetadataV2GeometryType.MultiPolygon,
+            GeometryType.GeometryCollection => MetadataV2GeometryType.GeometryCollection,
+            _ => MetadataV2GeometryType.None
+        };
+
+    private static JsonElement JsonArray(IEnumerable<string> values)
+        => JsonSerializer.SerializeToElement(values);
 
     private static ServiceProvider CreateRequestServices()
     {
@@ -803,53 +901,26 @@ public sealed class FormSubmissionServiceTests
         }
     }
 
-    private sealed class StaticLayerCatalog(ServiceDefinition service) : ILayerCatalog
-    {
-        public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(service.GetLayer(layerId));
-
-        public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(service.Layers);
-
-        public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult<ServiceDefinition?>(string.Equals(serviceName, service.Name, StringComparison.OrdinalIgnoreCase) ? service : null);
-
-        public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(new[] { service });
-
-        public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(service.GetLayer(layerId) is not null);
-
-        public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult(string.Equals(serviceName, service.Name, StringComparison.OrdinalIgnoreCase));
-
-        public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
-            => Task.FromResult<Relationship?>(null);
-
-        public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(Array.Empty<Relationship>());
-    }
-
     private sealed class PassThroughEditProcessor : IEditProcessor
     {
-        public EditValidationResult ValidateEdit(UnifiedEditRequest editRequest, LayerDefinition layer)
+        public EditValidationResult ValidateEdit(UnifiedEditRequest editRequest, MetadataV2Resource resource)
             => EditValidationResult.Success();
 
-        public UnifiedEditRequest OptimizeEdit(UnifiedEditRequest editRequest, LayerDefinition layer)
+        public UnifiedEditRequest OptimizeEdit(UnifiedEditRequest editRequest, MetadataV2Resource resource)
             => editRequest;
 
-        public FeatureEditBatch ToFeatureEditBatch(UnifiedEditRequest editRequest, LayerDefinition layer)
+        public FeatureEditBatch ToFeatureEditBatch(UnifiedEditRequest editRequest, MetadataV2Resource resource)
             => FeatureEditBatch.Create();
 
-        public TransactionValidationResult ValidateTransaction(EditTransaction transaction, LayerDefinition layer)
+        public TransactionValidationResult ValidateTransaction(EditTransaction transaction, MetadataV2Resource resource)
             => TransactionValidationResult.Success();
 
-        public EditExecutionStrategy DetermineExecutionStrategy(UnifiedEditRequest editRequest, LayerDefinition layer)
+        public EditExecutionStrategy DetermineExecutionStrategy(UnifiedEditRequest editRequest, MetadataV2Resource resource)
             => new();
 
         public Task<EditPerformanceEstimate> EstimatePerformanceAsync(
             UnifiedEditRequest editRequest,
-            LayerDefinition layer,
+            MetadataV2Resource resource,
             CancellationToken cancellationToken)
             => Task.FromResult(new EditPerformanceEstimate());
     }

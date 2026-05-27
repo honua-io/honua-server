@@ -12,11 +12,10 @@ using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
@@ -36,6 +35,7 @@ using Honua.ServiceDefaults;
 using NetTopologySuite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Server.Features.Protocols.Ogc.Classic.Wfs20.Services;
 
@@ -141,40 +141,74 @@ internal sealed partial class Wfs20Handler
         HttpContext context,
         CancellationToken cancellationToken)
     {
-        var layers = await _layerCatalog.ListLayersAsync(cancellationToken);
-        var services = await _layerCatalog.ListServicesAsync(cancellationToken);
-        var visibleLayers = layers
-            .Where(layer => IsPublishedForWfs(context, layer, services))
-            .OrderBy(layer => layer.Id)
+        var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var candidates = new List<(int StorageLayerId, MetadataV2Resource Resource, MetadataV2Publication Publication, MetadataV2Service Service)>();
+        foreach (var publication in snapshot.Graph.Publications)
+        {
+            if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) ||
+                !MetadataV2ServiceProtocols.IsProtocolEnabled(service, MetadataV2ServiceProtocols.Wfs20))
+            {
+                continue;
+            }
+
+            var resource = snapshot.ResolveResource(publication);
+            if (resource is null ||
+                !AccessPolicyHelpers.IsResourceAccessible(context, resource, service))
+            {
+                continue;
+            }
+
+            var storageLayerId = snapshot.ResolveStorageLayerId(publication);
+            if (!storageLayerId.HasValue)
+            {
+                continue;
+            }
+
+            candidates.Add((storageLayerId.Value, resource, publication, service!));
+        }
+
+        var visiblePublications = candidates
+            .OrderBy(static candidate => candidate.StorageLayerId)
+            .ThenBy(static candidate => candidate.Publication.LayerIndex ?? int.MaxValue)
+            .ThenBy(static candidate => candidate.Resource.Metadata.Name, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(static candidate => candidate.StorageLayerId)
+            .Select(static group => group.First())
             .ToArray();
 
-        var descriptors = ImmutableArray.CreateBuilder<WfsFeatureTypeDescriptor>(visibleLayers.Length);
+        var descriptors = ImmutableArray.CreateBuilder<WfsFeatureTypeDescriptor>(visiblePublications.Length);
         var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var layer in visibleLayers)
+        foreach (var candidate in visiblePublications)
         {
-            var baseName = IsWfs10CiteLayerName(layer.Name) ? layer.Name : BuildTypeLocalName(layer);
+            var resourceName = GetResourceFeatureTypeName(candidate.Resource);
+
+            var baseName = IsWfs10CiteLayerName(resourceName)
+                ? resourceName
+                : BuildTypeLocalName(resourceName, candidate.StorageLayerId);
             var localName = baseName;
             if (!usedNames.Add(localName))
             {
-                localName = $"{baseName}_{layer.Id}";
+                localName = $"{baseName}_{candidate.StorageLayerId.ToString(CultureInfo.InvariantCulture)}";
                 usedNames.Add(localName);
             }
 
             descriptors.Add(new WfsFeatureTypeDescriptor(
-                layer,
-                $"{GetFeatureNamespacePrefix(layer)}:{localName}",
+                candidate.Resource,
+                candidate.Publication,
+                candidate.Service,
+                candidate.StorageLayerId,
+                $"{GetFeatureNamespacePrefix(resourceName)}:{localName}",
                 localName,
-                GetFeatureNamespacePrefix(layer),
-                GetFeatureNamespaceUri(layer)));
+                GetFeatureNamespacePrefix(resourceName),
+                GetFeatureNamespaceUri(resourceName)));
         }
 
         return descriptors.ToImmutable();
     }
 
 
-    private static string GetFeatureNamespacePrefix(LayerDefinition layer)
-        => layer.Name switch
+    private static string GetFeatureNamespacePrefix(string layerName)
+        => layerName switch
         {
             "Other" or "Fifteen" or "Seven" or "Nulls" or "Locks" => "cdf",
             "Points" or "Lines" or "Polygons" or "MPoints" or "MLines" or "MPolygons" => "cgf",
@@ -182,8 +216,8 @@ internal sealed partial class Wfs20Handler
         };
 
 
-    private static string GetFeatureNamespaceUri(LayerDefinition layer)
-        => layer.Name switch
+    private static string GetFeatureNamespaceUri(string layerName)
+        => layerName switch
         {
             "Other" or "Fifteen" or "Seven" or "Nulls" or "Locks" => "http://www.opengis.net/cite/data",
             "Points" or "Lines" or "Polygons" or "MPoints" or "MLines" or "MPolygons" => "http://www.opengis.net/cite/geometry",
@@ -213,7 +247,7 @@ internal sealed partial class Wfs20Handler
             foreach (var featureType in publishedTypes)
             {
                 if (!MatchesRequestedType(featureType, requestedType) ||
-                    !seenLayerIds.Add(featureType.Layer.Id))
+                    !seenLayerIds.Add(featureType.StorageLayerId))
                 {
                     continue;
                 }
@@ -247,26 +281,8 @@ internal sealed partial class Wfs20Handler
         var normalizedRequested = FilterExpressionHelpers.NormalizeIdentifier(requestedType);
         return string.Equals(requestedType, featureType.QualifiedName, StringComparison.OrdinalIgnoreCase) ||
                string.Equals(normalizedRequested, featureType.LocalName, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(normalizedRequested, featureType.Layer.Name, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(normalizedRequested, featureType.Layer.Id.ToString(CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
-    }
-
-
-    private static bool IsPublishedForWfs(HttpContext context, LayerDefinition layer, ServiceDefinition[] services)
-    {
-        var relatedServices = services
-            .Where(service => service.Layers.Any(candidate => candidate.Id == layer.Id))
-            .ToArray();
-
-        if (relatedServices.Length == 0)
-        {
-            return ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.Wfs20) &&
-                AccessPolicyHelpers.IsLayerAccessible(context, layer);
-        }
-
-        return relatedServices
-            .Where(service => ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.Wfs20))
-            .Any(service => AccessPolicyHelpers.IsLayerAccessible(context, layer, service));
+               string.Equals(normalizedRequested, featureType.Resource.Metadata.Name, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(normalizedRequested, featureType.StorageLayerId.ToString(CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
     }
 
 
@@ -274,24 +290,25 @@ internal sealed partial class Wfs20Handler
         WfsFeatureTypeDescriptor featureType,
         CancellationToken cancellationToken)
     {
-        var layer = featureType.Layer;
-        string[]? otherCrs = layer.SpatialReference.ToSrid() == 3857
+        var resource = featureType.Resource;
+        var srid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
+        string[]? otherCrs = srid == 3857
             ? null
             : [FormatCrs(3857)];
 
         return new FeatureType
         {
             Name = featureType.QualifiedName,
-            Title = layer.Name,
-            Abstract = layer.Description,
-            Keywords = BuildKeywords(layer),
-            DefaultCRS = FormatCrs(layer.SpatialReference.ToSrid()),
+            Title = resource.Metadata.Title ?? resource.Metadata.Name,
+            Abstract = resource.Metadata.Description,
+            Keywords = BuildKeywords(resource),
+            DefaultCRS = FormatCrs(srid),
             OtherCRS = otherCrs,
             OutputFormats = new OutputFormats
             {
                 Formats = Wfs20Utilities.OutputFormats.All.ToArray()
             },
-            WGS84BoundingBox = await BuildWgs84BoundingBoxAsync(layer, cancellationToken).ConfigureAwait(false)
+            WGS84BoundingBox = await BuildWgs84BoundingBoxAsync(resource, cancellationToken).ConfigureAwait(false)
         };
     }
 
@@ -319,7 +336,7 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private static string[] BuildKeywords(LayerDefinition layer)
+    private static string[] BuildKeywords(MetadataV2Resource resource)
     {
         var keywords = new List<string>
         {
@@ -327,16 +344,19 @@ internal sealed partial class Wfs20Handler
             "feature"
         };
 
-        if (!string.IsNullOrWhiteSpace(layer.Name))
+        keywords.AddRange(resource.Metadata.Keywords.Where(keyword => !string.IsNullOrWhiteSpace(keyword)));
+
+        if (!string.IsNullOrWhiteSpace(resource.Metadata.Name))
         {
-            keywords.AddRange(layer.Name
+            keywords.AddRange(resource.Metadata.Name
                 .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Select(word => word.ToLowerInvariant()));
         }
 
-        if (layer.HasGeometry)
+        var geometryType = resource.ReadGeometryType();
+        if (geometryType != MetadataV2GeometryType.None)
         {
-            keywords.Add(layer.GeometryType.ToString().ToLowerInvariant());
+            keywords.Add(geometryType.ToString().ToLowerInvariant());
         }
 
         return keywords
@@ -346,22 +366,23 @@ internal sealed partial class Wfs20Handler
 
 
     private async Task<WGS84BoundingBox?> BuildWgs84BoundingBoxAsync(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         CancellationToken cancellationToken)
     {
-        if (layer.Extent == null)
+        var bbox = resource.ReadBbox();
+        if (bbox is null)
         {
             return null;
         }
 
-        var extent = layer.Extent.Value;
+        var srid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         var transformedExtent = await OgcExtentTransformer
             .TryTransformExtentToCrs84Async(
-                extent.MinX,
-                extent.MinY,
-                extent.MaxX,
-                extent.MaxY,
-                extent.SpatialReference,
+                bbox.West,
+                bbox.South,
+                bbox.East,
+                bbox.North,
+                srid,
                 _coordinateTransformService,
                 cancellationToken)
             .ConfigureAwait(false);
@@ -730,13 +751,14 @@ internal sealed partial class Wfs20Handler
             schema.AppendLine("""      <xsd:extension base="gml:AbstractFeatureType">""");
             schema.AppendLine("""        <xsd:sequence>""");
 
-            if (featureType.Layer.GeometryField is not null)
+            var geometryField = featureType.Resource.FindPrimaryGeometryField();
+            if (geometryField is not null)
             {
-                var geometryFieldName = XmlConvert.EncodeLocalName(featureType.Layer.GeometryField.Name);
-                schema.AppendLine($"""          <xsd:element name="{geometryFieldName}" type="{MapGeometryPropertyType(featureType.Layer.GeometryType)}" minOccurs="0" nillable="true"/>""");
+                var geometryFieldName = XmlConvert.EncodeLocalName(geometryField.Name);
+                schema.AppendLine($"""          <xsd:element name="{geometryFieldName}" type="{MapGeometryPropertyType(featureType.Resource.ReadGeometryType())}" minOccurs="0" nillable="true"/>""");
             }
 
-            foreach (var field in featureType.Layer.VisibleAttributeFields)
+            foreach (var field in GetVisibleAttributeFields(featureType.Resource))
             {
                 var fieldName = XmlConvert.EncodeLocalName(field.Name);
                 var minOccurs = field.Nullable ? " minOccurs=\"0\"" : string.Empty;

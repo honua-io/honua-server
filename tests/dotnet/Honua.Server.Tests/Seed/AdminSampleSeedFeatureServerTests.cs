@@ -31,6 +31,7 @@ public sealed class AdminSampleSeedFeatureServerTests : IAsyncLifetime
         await _fixture.Postgres.ApplySeedAsync(
             ResolveRepoFile("tests", "seed", "admin-sample-feature-server.yaml"),
             schema);
+        _fixture.AddAdminSampleMetadataV2Graph();
     }
 
     public async Task DisposeAsync()

@@ -388,7 +388,7 @@ internal static partial class SceneDiscoveryEndpoints
 
     private static PublicSceneAuthRequirements ToAuth(SceneDataset scene)
     {
-        var requiresAuthentication = scene.Metadata?.AccessPolicy is not null;
+        var requiresAuthentication = scene.AccessPolicy is not null;
         return new PublicSceneAuthRequirements
         {
             RequiresAuthentication = requiresAuthentication,

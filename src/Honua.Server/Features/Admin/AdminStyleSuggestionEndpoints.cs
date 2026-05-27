@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
 using Honua.Server.Features.Admin.Models;
@@ -49,18 +50,21 @@ internal static class AdminStyleSuggestionEndpoints
     {
         AdminStyleSuggestionLog.StyleSuggestionRequested(logger, layerId);
 
-        // Validate layer exists
-        var layerResult = await resourceValidator.ValidateLayerAsync(layerId, cancellationToken);
-        if (!layerResult.IsValid || layerResult.Resource == null)
+        // Validate layer exists in the canonical Metadata v2 graph.
+        var resourceResult = await resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
+        if (!resourceResult.IsValid || resourceResult.Resource == null)
         {
-            var statusCode = layerResult.ErrorCode == Core.Features.Validation.Abstractions.ResourceValidationError.InvalidIdentifier
+            var statusCode = resourceResult.ErrorCode == Core.Features.Validation.Abstractions.ResourceValidationError.InvalidIdentifier
                 ? StatusCodes.Status400BadRequest
                 : StatusCodes.Status404NotFound;
-            var message = layerResult.ErrorMessage ?? $"Layer {layerId} not found.";
+            var message = resourceResult.ErrorMessage ?? $"Layer {layerId} not found.";
             return ProblemDetailsHelpers.CreateAdminProblem(context, statusCode, message);
         }
 
-        var layer = layerResult.Resource;
+        var resource = resourceResult.Resource;
+        var layerName = string.IsNullOrWhiteSpace(resource.Metadata.Name)
+            ? $"layer-{layerId}"
+            : resource.Metadata.Name;
         var licenseSnapshot = entitlementService.GetSnapshot();
         var isPro = licenseSnapshot.HasEntitlement("styling.auto-suggest");
 
@@ -69,8 +73,8 @@ internal static class AdminStyleSuggestionEndpoints
             if (!isPro)
             {
                 // Community: enhanced geometry-only defaults
-                var enhancedStyle = StyleSuggestionGenerator.GenerateEnhancedDefaults(layer);
-                var enhancedDrawingInfo = StyleSuggestionGenerator.GenerateEnhancedDrawingInfo(layer);
+                var enhancedStyle = StyleSuggestionGenerator.GenerateEnhancedDefaults(resource, layerId);
+                var enhancedDrawingInfo = StyleSuggestionGenerator.GenerateEnhancedDrawingInfo(resource);
 
                 var enhancedMapLibreJson = StyleJsonUtilities.Serialize(enhancedStyle);
                 var enhancedDrawingInfoJson = StyleJsonUtilities.Serialize(enhancedDrawingInfo);
@@ -79,8 +83,8 @@ internal static class AdminStyleSuggestionEndpoints
 
                 var communityLegend = new LegendInfo
                 {
-                    Title = layer.Name,
-                    Entries = [new LegendEntry { Label = layer.Name, Color = "#2D69A5" }]
+                    Title = layerName,
+                    Entries = [new LegendEntry { Label = layerName, Color = "#2D69A5" }]
                 };
 
                 var communityResponse = BuildResponse(
@@ -89,7 +93,7 @@ internal static class AdminStyleSuggestionEndpoints
                     communityLegend,
                     null, null,
                     "Default",
-                    ["Geometry type: " + layer.GeometryType + ".",
+                    ["Geometry type: " + resource.ReadGeometryType() + ".",
                      "Community edition: using enhanced geometry-aware defaults.",
                      "Upgrade to Pro for field-based classification and smart palette selection."],
                     "Community");
@@ -100,12 +104,16 @@ internal static class AdminStyleSuggestionEndpoints
 
             // Pro: full profiling, classification, palette selection
             var options = MapRequestToOptions(request, licenseSnapshot.Edition);
-            var suggestion = await styleSuggestionService.SuggestAsync(layer, options, cancellationToken)
+            var suggestion = await styleSuggestionService.SuggestAsync(
+                    resource,
+                    layerId,
+                    options,
+                    cancellationToken)
                 .ConfigureAwait(false);
 
             // Generate MapLibre and GeoServices JSON
-            var mapLibreStyle = StyleSuggestionGenerator.GenerateMapLibreStyle(layer, suggestion);
-            var drawingInfo = StyleSuggestionGenerator.GenerateDrawingInfo(layer, suggestion);
+            var mapLibreStyle = StyleSuggestionGenerator.GenerateMapLibreStyle(resource, layerId, suggestion);
+            var drawingInfo = StyleSuggestionGenerator.GenerateDrawingInfo(resource, suggestion);
 
             var mapLibreJson = StyleJsonUtilities.Serialize(mapLibreStyle);
             var drawingInfoJson = StyleJsonUtilities.Serialize(drawingInfo);

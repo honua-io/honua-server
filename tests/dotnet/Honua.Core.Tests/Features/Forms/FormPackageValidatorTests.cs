@@ -3,10 +3,8 @@
 
 using System.Text.Json;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Forms.Packages;
-using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Options;
@@ -324,7 +322,7 @@ public sealed class FormPackageValidatorTests
     [UnitTest]
     public async Task ValidateSubmission_WithArcGisWebMercatorLatestWkid_AcceptsLayerSrid()
     {
-        var validator = CreateValidator(spatialReference: SpatialReference.WebMercator);
+        var validator = CreateValidator(spatialReference: MetadataV2SpatialReference.WebMercator);
         var packageVersion = new FormPackageVersion
         {
             FormId = "inspection",
@@ -535,17 +533,26 @@ public sealed class FormPackageValidatorTests
 
     private static FormPackageValidator CreateValidator(
         string[]? serviceCapabilities = null,
-        SpatialReference? spatialReference = null)
+        MetadataV2SpatialReference? spatialReference = null)
     {
-        var layer = CreateLayer(spatialReference ?? SpatialReference.WGS84);
-        var service = new ServiceDefinition(
-            "test",
-            "Test service",
-            [layer],
-            spatialReference ?? SpatialReference.WGS84,
-            Capabilities: serviceCapabilities ?? ["Query", "Extract", "Create", "Update", "Delete"]);
+        var service = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "service-test", Name = "test", Title = "Test service" },
+            Options = new Dictionary<string, JsonElement>
+            {
+                ["capabilities"] = JsonArray(serviceCapabilities ?? ["Query", "Extract", "Create", "Update", "Delete"])
+            }
+        };
+        var publication = new MetadataV2Publication
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "publication-inspections", Name = "0" },
+            ServiceId = service.Metadata.Id,
+            ResourceId = "resource-inspections",
+            LayerIndex = 0
+        };
+        var resource = CreateResource(spatialReference ?? MetadataV2SpatialReference.Wgs84);
         return new FormPackageValidator(
-            new StaticLayerCatalog(service),
+            new StaticFormTargetMetadataResolver(new FormTargetMetadataResolution(service, publication, resource, 0)),
             Options.Create(new LimitsOptions
             {
                 Attachments = new AttachmentLimits
@@ -558,20 +565,35 @@ public sealed class FormPackageValidatorTests
             }));
     }
 
-    private static LayerDefinition CreateLayer(SpatialReference spatialReference)
-        => new(
-            0,
-            "Inspections",
-            "Field inspections",
-            GeometryType.Point,
-            spatialReference,
+    private static MetadataV2Resource CreateResource(MetadataV2SpatialReference spatialReference)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "resource-inspections",
+                Name = "Inspections",
+                Title = "Field inspections"
+            },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                GeometryType = MetadataV2GeometryType.Point,
+                SpatialReference = spatialReference,
+                PrimaryGeometryField = "shape"
+            },
+            Editing = new MetadataV2ResourceEditing
+            {
+                SupportsAttachments = true
+            },
+            SchemaFields =
             [
-                new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                new FieldDefinition("name", FieldType.String, Length: 255),
-                new FieldDefinition("count", FieldType.Integer),
-                new FieldDefinition("category", FieldType.String, Length: 64),
-                new FieldDefinition("shape", FieldType.Geometry)
-            ]);
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 255, Nullable = true },
+                new MetadataV2Field { Name = "count", Type = MetadataV2FieldType.Integer, Nullable = true },
+                new MetadataV2Field { Name = "category", Type = MetadataV2FieldType.String, Length = 64, Nullable = true },
+                new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, Nullable = true }
+            ]
+        };
 
     private static FormPackageDocument CreatePackage(
         bool includeAttachment = false,
@@ -679,30 +701,18 @@ public sealed class FormPackageValidatorTests
     private static JsonElement Json(string json)
         => JsonDocument.Parse(json).RootElement.Clone();
 
-    private sealed class StaticLayerCatalog(ServiceDefinition service) : ILayerCatalog
+    private static JsonElement JsonArray(IEnumerable<string> values)
+        => JsonSerializer.SerializeToElement(values);
+
+    private sealed class StaticFormTargetMetadataResolver(FormTargetMetadataResolution resolution) : IFormTargetMetadataResolver
     {
-        public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(service.GetLayer(layerId));
-
-        public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(service.Layers);
-
-        public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult(string.Equals(serviceName, service.Name, StringComparison.OrdinalIgnoreCase) ? service : null);
-
-        public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(new[] { service });
-
-        public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(service.GetLayer(layerId) is not null);
-
-        public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult(string.Equals(serviceName, service.Name, StringComparison.OrdinalIgnoreCase));
-
-        public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
-            => Task.FromResult<Relationship?>(null);
-
-        public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(Array.Empty<Relationship>());
+        public Task<FormTargetMetadataResolution> ResolveAsync(
+            FormTargetDefinition? target,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(
+                target is { LayerId: 0 } &&
+                string.Equals(target.ServiceId, "test", StringComparison.OrdinalIgnoreCase)
+                    ? resolution
+                    : default);
     }
 }

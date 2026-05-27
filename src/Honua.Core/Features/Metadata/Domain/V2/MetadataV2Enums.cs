@@ -18,6 +18,12 @@ public enum MetadataV2ResourceType
     FeatureDataset,
 
     /// <summary>
+    /// A tabular resource without required geometry.
+    /// </summary>
+    [JsonStringEnumMemberName("table")]
+    Table,
+
+    /// <summary>
     /// A raster or gridded dataset.
     /// </summary>
     [JsonStringEnumMemberName("raster-dataset")]
@@ -243,6 +249,85 @@ public enum MetadataV2StorageType
 }
 
 /// <summary>
+/// Public service categories. These are intentionally separate from storage types.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<MetadataV2ServiceType>))]
+public enum MetadataV2ServiceType
+{
+    /// <summary>
+    /// An OGC API Features service.
+    /// </summary>
+    [JsonStringEnumMemberName("ogc-api-features")]
+    OgcApiFeatures,
+
+    /// <summary>
+    /// A WFS service.
+    /// </summary>
+    [JsonStringEnumMemberName("wfs")]
+    Wfs,
+
+    /// <summary>
+    /// A WMS service.
+    /// </summary>
+    [JsonStringEnumMemberName("wms")]
+    Wms,
+
+    /// <summary>
+    /// A WMTS service.
+    /// </summary>
+    [JsonStringEnumMemberName("wmts")]
+    Wmts,
+
+    /// <summary>
+    /// An Esri feature service.
+    /// </summary>
+    [JsonStringEnumMemberName("esri-feature-service")]
+    EsriFeatureService,
+
+    /// <summary>
+    /// An Esri map service.
+    /// </summary>
+    [JsonStringEnumMemberName("esri-map-service")]
+    EsriMapService,
+
+    /// <summary>
+    /// An Esri image service.
+    /// </summary>
+    [JsonStringEnumMemberName("esri-image-service")]
+    EsriImageService,
+
+    /// <summary>
+    /// A STAC API.
+    /// </summary>
+    [JsonStringEnumMemberName("stac-api")]
+    StacApi,
+
+    /// <summary>
+    /// A DCAT catalog.
+    /// </summary>
+    [JsonStringEnumMemberName("dcat-catalog")]
+    DcatCatalog,
+
+    /// <summary>
+    /// An OGC Records catalog service.
+    /// </summary>
+    [JsonStringEnumMemberName("ogc-records")]
+    OgcRecords,
+
+    /// <summary>
+    /// An OData service.
+    /// </summary>
+    [JsonStringEnumMemberName("odata")]
+    OData,
+
+    /// <summary>
+    /// A custom or extension-defined service.
+    /// </summary>
+    [JsonStringEnumMemberName("custom")]
+    Custom
+}
+
+/// <summary>
 /// Publication categories exposed by services. These are intentionally separate from storage types.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<MetadataV2PublicationType>))]
@@ -386,6 +471,80 @@ public enum MetadataV2StorageBindingCapability
     /// </summary>
     [JsonStringEnumMemberName("search")]
     Search
+}
+
+/// <summary>
+/// Lifecycle values shared by Metadata v2 graph entities.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<MetadataV2LifecycleStatus>))]
+public enum MetadataV2LifecycleStatus
+{
+    /// <summary>
+    /// The entity is being drafted and should not be treated as active.
+    /// </summary>
+    [JsonStringEnumMemberName("draft")]
+    Draft,
+
+    /// <summary>
+    /// The entity is active.
+    /// </summary>
+    [JsonStringEnumMemberName("active")]
+    Active,
+
+    /// <summary>
+    /// The entity is deprecated but still available.
+    /// </summary>
+    [JsonStringEnumMemberName("deprecated")]
+    Deprecated,
+
+    /// <summary>
+    /// The entity is retired.
+    /// </summary>
+    [JsonStringEnumMemberName("retired")]
+    Retired,
+
+    /// <summary>
+    /// The entity is archived.
+    /// </summary>
+    [JsonStringEnumMemberName("archived")]
+    Archived
+}
+
+/// <summary>
+/// Observed operational state for Metadata v2 graph entities.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<MetadataV2OperationalState>))]
+public enum MetadataV2OperationalState
+{
+    /// <summary>
+    /// State has not been observed yet.
+    /// </summary>
+    [JsonStringEnumMemberName("unknown")]
+    Unknown,
+
+    /// <summary>
+    /// The entity is ready.
+    /// </summary>
+    [JsonStringEnumMemberName("ready")]
+    Ready,
+
+    /// <summary>
+    /// The entity is pending reconciliation.
+    /// </summary>
+    [JsonStringEnumMemberName("pending")]
+    Pending,
+
+    /// <summary>
+    /// The entity is degraded.
+    /// </summary>
+    [JsonStringEnumMemberName("degraded")]
+    Degraded,
+
+    /// <summary>
+    /// The entity failed reconciliation or health checks.
+    /// </summary>
+    [JsonStringEnumMemberName("failed")]
+    Failed
 }
 
 /// <summary>

@@ -3,7 +3,6 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -23,6 +22,10 @@ internal static class OgcRecordsEndpoints
     internal const string CatalogCollectionId = "honua-catalog";
     private const int DefaultLimit = 10;
     private const int MaxLimit = 1_000;
+    private const string FeatureServerProtocolName = "FeatureServer";
+    private const string MapServerProtocolName = "MapServer";
+    private const string OgcFeaturesProtocolName = "OgcFeatures";
+    private const string StacProtocolName = "Stac";
 
     private static readonly HashSet<string> MetadataQueryParameters = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -317,14 +320,20 @@ internal static class OgcRecordsEndpoints
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var records = new List<CatalogRecord>();
 
-        // Service-level records: one per service that has at least one publication for
-        // an accessible resource.
-        foreach (var service in snapshot.Graph.Services.OrderBy(s => s.Metadata.Name, StringComparer.OrdinalIgnoreCase))
+        // Service-level records: one public record per service name. The V2 graph can
+        // contain multiple protocol-specific service rows with the same public name
+        // (for example FeatureServer/MapServer/STAC views), but Records should expose
+        // the public service once with merged protocol links.
+        foreach (var serviceGroup in snapshot.Graph.Services
+                     .GroupBy(s => s.Metadata.Name, StringComparer.OrdinalIgnoreCase)
+                     .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
         {
-            var visiblePublications = snapshot.Index.PublicationsByService[service.Metadata.Id]
-                .Select(p => (Publication: p, Resource: snapshot.ResolveResource(p)))
+            var services = serviceGroup.ToArray();
+            var visiblePublications = services
+                .SelectMany(service => snapshot.Index.PublicationsByService[service.Metadata.Id]
+                    .Select(p => (Service: service, Publication: p, Resource: snapshot.ResolveResource(p))))
                 .Where(t => t.Resource is not null)
-                .Where(t => AccessPolicyHelpers.IsResourceAccessible(context, t.Resource!, service))
+                .Where(t => AccessPolicyHelpers.IsResourceAccessible(context, t.Resource!, t.Service))
                 .OrderBy(t => snapshot.ResolveStorageLayerId(t.Publication) ?? int.MaxValue)
                 .ToArray();
             if (visiblePublications.Length == 0)
@@ -332,15 +341,40 @@ internal static class OgcRecordsEndpoints
                 continue;
             }
 
-            records.Add(CreateServiceRecord(service, visiblePublications!, snapshot, baseUrl));
+            var representative = services[0] with
+            {
+                Protocols = services
+                    .SelectMany(service => service.Protocols)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray()
+            };
+            records.Add(CreateServiceRecord(
+                representative,
+                visiblePublications.Select(t => (t.Publication, t.Resource)).ToArray()!,
+                snapshot,
+                baseUrl));
         }
 
         // Resource-level records: one per resource, attributed to its primary publication's service.
-        foreach (var resource in snapshot.Graph.Resources.OrderBy(r => r.Metadata.Id, StringComparer.OrdinalIgnoreCase))
+        var resourceRecords = snapshot.Graph.Resources
+            .Select(resource =>
+            {
+                var publications = snapshot.Index.PublicationsByResource[resource.Metadata.Id].ToArray();
+                var primary = publications.FirstOrDefault(p => p.IsPrimary) ?? publications.FirstOrDefault();
+                var storageLayerId = primary is not null ? snapshot.ResolveStorageLayerId(primary) : null;
+                var layerSort = primary is not null
+                    ? storageLayerId ?? primary.LayerIndex ?? int.MaxValue
+                    : int.MaxValue;
+                return (Resource: resource, Publications: publications, Primary: primary, LayerSort: layerSort, HasStorageLayer: storageLayerId.HasValue);
+            })
+            .OrderByDescending(item => item.HasStorageLayer)
+            .ThenBy(item => item.LayerSort)
+            .ThenBy(item => item.Resource.Metadata.Id, StringComparer.OrdinalIgnoreCase);
+        foreach (var item in resourceRecords)
         {
             // Pick the primary publication if any (prefer IsPrimary, else first).
-            var publications = snapshot.Index.PublicationsByResource[resource.Metadata.Id].ToArray();
-            MetadataV2Publication? primary = publications.FirstOrDefault(p => p.IsPrimary) ?? publications.FirstOrDefault();
+            var resource = item.Resource;
+            var primary = item.Primary;
             MetadataV2Service? primaryService = primary is not null && snapshot.Index.ServicesById.TryGetValue(primary.ServiceId, out var svc)
                 ? svc
                 : null;
@@ -362,17 +396,19 @@ internal static class OgcRecordsEndpoints
         MetadataV2GraphSnapshot snapshot,
         string baseUrl)
     {
+        var serviceMetadata = service.Metadata
+            ?? throw new InvalidOperationException("Metadata v2 service metadata is required.");
         // Combine bboxes of visible resources; project into WGS84 only if the resource declares 4326.
         var bbox = CombineResourceBboxes(visiblePublications.Select(p => p.Resource!));
-        var servicePath = $"{baseUrl}/rest/services/{Uri.EscapeDataString(service.Metadata.Name)}";
+        var servicePath = $"{baseUrl}/rest/services/{Uri.EscapeDataString(serviceMetadata.Name)}";
         var links = ImmutableArray.CreateBuilder<Link>();
-        links.Add(Link.Create($"{baseUrl}/ogc/records/collections/{CatalogCollectionId}/items/{Uri.EscapeDataString($"service:{service.Metadata.Name}")}", RelationTypes.Self, MediaTypes.GeoJson, service.Metadata.Name));
-        if (ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.FeatureServer))
+        links.Add(Link.Create($"{baseUrl}/ogc/records/collections/{CatalogCollectionId}/items/{Uri.EscapeDataString($"service:{serviceMetadata.Name}")}", RelationTypes.Self, MediaTypes.GeoJson, serviceMetadata.Name));
+        if (service is not null && IsProtocolEnabled(service, FeatureServerProtocolName))
         {
             links.Add(Link.Create($"{servicePath}/FeatureServer", RelationTypes.Alternate, MediaTypes.Json, "FeatureServer"));
         }
 
-        if (ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.MapServer))
+        if (IsProtocolEnabled(service, MapServerProtocolName))
         {
             links.Add(Link.Create($"{servicePath}/MapServer", RelationTypes.Alternate, MediaTypes.Json, "MapServer"));
         }
@@ -386,18 +422,18 @@ internal static class OgcRecordsEndpoints
 
         var properties = new OgcRecordProperties
         {
-            Title = service.Metadata.Title ?? service.Metadata.Name,
-            Description = service.Metadata.Description,
+            Title = serviceMetadata.Title ?? serviceMetadata.Name,
+            Description = serviceMetadata.Description,
             Type = "service",
             ResourceType = "Service",
-            ExternalIds = ImmutableArray.Create(service.Metadata.Name),
+            ExternalIds = ImmutableArray.Create(serviceMetadata.Name),
             LayerIds = layerIds
         };
 
         return new CatalogRecord(
             new OgcRecordFeature
             {
-                Id = $"service:{service.Metadata.Name}",
+                Id = $"service:{serviceMetadata.Name}",
                 Geometry = null,
                 Bbox = bbox,
                 Properties = properties,
@@ -405,8 +441,8 @@ internal static class OgcRecordsEndpoints
             },
             bbox,
             Modified: null,
-            ExternalIds: [service.Metadata.Name],
-            SearchText: $"{service.Metadata.Name} {service.Metadata.Description}");
+            ExternalIds: [serviceMetadata.Name],
+            SearchText: $"{serviceMetadata.Name} {serviceMetadata.Description}");
     }
 
     private static CatalogRecord CreateResourceRecord(
@@ -429,20 +465,21 @@ internal static class OgcRecordsEndpoints
         var links = ImmutableArray.CreateBuilder<Link>();
         links.Add(Link.Create($"{baseUrl}/ogc/records/collections/{CatalogCollectionId}/items/{Uri.EscapeDataString($"layer:{layerIdString}")}", RelationTypes.Self, MediaTypes.GeoJson, resource.Metadata.Name));
 
-        if (ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.OgcFeatures))
+        if (IsProtocolEnabled(service, OgcFeaturesProtocolName))
         {
             links.Add(Link.Create($"{baseUrl}/ogc/features/collections/{layerIdString}", RelationTypes.Alternate, MediaTypes.Json, "OGC API Features collection"));
             links.Add(Link.Create($"{baseUrl}/ogc/features/collections/{layerIdString}/items", RelationTypes.Data, MediaTypes.GeoJson, "OGC API Features items"));
         }
 
-        if (ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.Stac))
+        if (IsProtocolEnabled(service, StacProtocolName))
         {
             links.Add(Link.Create($"{baseUrl}/stac/collections/{layerIdString}", RelationTypes.Alternate, MediaTypes.Json, "STAC collection"));
         }
 
-        if (service is not null && ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.FeatureServer))
+        if (service is { Metadata: { } featureServiceMetadata } featureServerService &&
+            IsProtocolEnabled(featureServerService, FeatureServerProtocolName))
         {
-            links.Add(Link.Create($"{baseUrl}/rest/services/{Uri.EscapeDataString(service.Metadata.Name)}/FeatureServer/{layerIdString}", RelationTypes.Alternate, MediaTypes.Json, "FeatureServer layer"));
+            links.Add(Link.Create($"{baseUrl}/rest/services/{Uri.EscapeDataString(featureServiceMetadata.Name)}/FeatureServer/{layerIdString}", RelationTypes.Alternate, MediaTypes.Json, "FeatureServer layer"));
         }
 
         var properties = new OgcRecordProperties
@@ -734,6 +771,9 @@ internal static class OgcRecordsEndpoints
 
     private static bool IsCatalogCollection(string collectionId)
         => string.Equals(collectionId, CatalogCollectionId, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)
+        => service?.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase)) == true;
 
     private sealed record CatalogRecord(
         OgcRecordFeature Feature,

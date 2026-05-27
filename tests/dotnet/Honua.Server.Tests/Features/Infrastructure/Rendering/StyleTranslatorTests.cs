@@ -3,7 +3,7 @@
 
 using System.Collections.Immutable;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.TestKit.Attributes;
 using MapLibreStyleLayer = Honua.Server.Features.Infrastructure.Rendering.MapLibreStyleLayer;
@@ -240,7 +240,7 @@ public class StyleTranslatorTests
     [UnitTest]
     public void CreateDefaultPaints_Point_ReturnsBatchedStrokePaint()
     {
-        var (fill, stroke) = StyleTranslator.CreateDefaultPaints(GeometryType.Point);
+        var (fill, stroke) = StyleTranslator.CreateDefaultPaints(MetadataV2GeometryType.Point);
 
         fill.Should().NotBeNull();
         fill.Style.Should().Be(SKPaintStyle.Stroke);
@@ -253,7 +253,7 @@ public class StyleTranslatorTests
     [UnitTest]
     public void CreateDefaultPaints_LineString_ReturnsStrokeOnly()
     {
-        var (fill, stroke) = StyleTranslator.CreateDefaultPaints(GeometryType.LineString);
+        var (fill, stroke) = StyleTranslator.CreateDefaultPaints(MetadataV2GeometryType.LineString);
 
         fill.Should().NotBeNull();
         fill.Style.Should().Be(SKPaintStyle.Stroke);
@@ -264,7 +264,7 @@ public class StyleTranslatorTests
     [UnitTest]
     public void CreateDefaultPaints_Polygon_ReturnsFillAndStroke()
     {
-        var (fill, stroke) = StyleTranslator.CreateDefaultPaints(GeometryType.Polygon);
+        var (fill, stroke) = StyleTranslator.CreateDefaultPaints(MetadataV2GeometryType.Polygon);
 
         fill.Should().NotBeNull();
         fill.Style.Should().Be(SKPaintStyle.Fill);

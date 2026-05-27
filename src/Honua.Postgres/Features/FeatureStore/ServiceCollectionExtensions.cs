@@ -3,10 +3,10 @@
 
 using System.Text;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.SpatialAnalytics.Abstractions;
 using Honua.Core.Queries.Filters;
@@ -89,11 +89,11 @@ internal static class ServiceCollectionExtensions
                 provider.GetRequiredService<IFeatureQueryBuilder>(),
                 provider.GetRequiredService<IFeatureDataAccess>(),
                 provider.GetRequiredService<IFeatureCacheManager>(),
-                provider.GetService<ILayerCatalog>(),
                 provider.GetRequiredService<IDatabaseConnectionProvider>(),
                 provider.GetRequiredService<ObjectPool<Dictionary<string, object?>>>(),
                 provider.GetService<IConnectionEncryptionService>(),
-                provider.GetService<IFilterExpressionService>()));
+                provider.GetService<IFilterExpressionService>(),
+                provider.GetService<IMetadataV2GraphProvider>()));
 
         // Register segregated interfaces
         services.AddScoped<IFeatureDataProvider>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());

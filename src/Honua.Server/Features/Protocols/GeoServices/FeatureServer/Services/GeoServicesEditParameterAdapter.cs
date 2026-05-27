@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -40,74 +39,8 @@ internal sealed class GeoServicesEditParameterAdapter(
 
     public TransactionSemantics TransactionSemantics => TransactionSemantics.GeoServices;
 
-    public Task<EditAdapterResult> ConvertAsync(
-        GeoServicesEditRequest protocolRequest,
-        LayerDefinition layer,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var creates = protocolRequest.Creates.IsDefaultOrEmpty
-                ? (ImmutableArray<EditFeature>?)null
-                : protocolRequest.Creates
-                    .Select(static feature => EditFeature.ForCreate(feature.Geometry, feature.Attributes))
-                    .ToImmutableArray();
-            var updates = protocolRequest.Updates.IsDefaultOrEmpty
-                ? (ImmutableArray<EditFeature>?)null
-                : protocolRequest.Updates
-                    .Select(static feature => EditFeature.ForUpdate(
-                        feature.Id,
-                        feature.Geometry,
-                        feature.Attributes,
-                        EditUpdateMode.Replace))
-                    .ToImmutableArray();
-
-            var editRequest = new UnifiedEditRequest
-            {
-                Creates = creates,
-                Updates = updates,
-                Deletes = protocolRequest.Deletes.IsDefaultOrEmpty ? null : protocolRequest.Deletes,
-                TransactionOptions = new EditTransactionOptions
-                {
-                    RollbackOnFailure = protocolRequest.RollbackOnFailure,
-                    UseExplicitTransaction = protocolRequest.RollbackOnFailure,
-                    IsolationLevel = protocolRequest.RollbackOnFailure
-                        ? TransactionIsolationLevel.Serializable
-                        : TransactionIsolationLevel.ReadCommitted,
-                    TimeoutMs = 600_000
-                },
-                ValidationOptions = EditValidationOptions.Strict()
-            };
-
-            var metadata = new Dictionary<string, object>
-            {
-                ["rollbackOnFailure"] = protocolRequest.RollbackOnFailure,
-                ["useGlobalIds"] = protocolRequest.UseGlobalIds
-            };
-
-            var transaction = EditTransaction.CreateSimple(
-                Guid.NewGuid().ToString("n"),
-                ProtocolName,
-                editRequest,
-                protocolRequest.RollbackOnFailure) with
-            {
-                Metadata = metadata.ToImmutableDictionary()
-            };
-
-            return Task.FromResult(EditAdapterResult.Success(editRequest, transaction, metadata));
-        }
-        catch (Exception ex)
-        {
-            GeoServicesPreparedAdaptersLog.EditParameterConversionFailed(_logger, ex);
-            return Task.FromResult(EditAdapterResult.Failure("Invalid edit request."));
-        }
-    }
-
     /// <summary>
-    /// V2 overload of <see cref="ConvertAsync(GeoServicesEditRequest, LayerDefinition, CancellationToken)"/>.
-    /// The edit-translation path here does not consume layer schema, so the resource is accepted
-    /// for symmetry with the V2 query adapter and validated as non-null; behaviour matches the
-    /// v1 path otherwise.
+    /// Converts prepared edits against a Metadata v2 canonical resource.
     /// </summary>
     public Task<EditAdapterResult> ConvertAsync(
         GeoServicesEditRequest protocolRequest,

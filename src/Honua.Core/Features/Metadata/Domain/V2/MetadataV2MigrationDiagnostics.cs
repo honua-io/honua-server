@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-namespace Honua.Core.Features.Metadata.Domain;
+namespace Honua.Core.Features.Metadata.Domain.V2;
 
 /// <summary>
 /// Severity for metadata v1 to v2 migration diagnostics.

@@ -6,7 +6,6 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -68,10 +67,7 @@ public sealed class TileJsonEndpointTests : IAsyncLifetime
     [Endpoint("GET /tiles/{layerId}/tile.json")]
     public async Task GetTileJson_FeatureServerProtocolDisabled_ReturnsNotFound()
     {
-        await UpdateServiceProtocolsAsync(
-            ServiceProtocols.All
-                .Where(protocol => !string.Equals(protocol, ServiceProtocols.FeatureServer, StringComparison.Ordinal))
-                .ToArray());
+        _fixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, enabledProtocols: ["Stac"]);
 
         var response = await _fixture.Client.GetAsync($"/tiles/{WebAppFixture.TestLayerId}/tile.json");
 
@@ -265,15 +261,5 @@ public sealed class TileJsonEndpointTests : IAsyncLifetime
         }
 
         return template;
-    }
-
-    private Task UpdateServiceProtocolsAsync(string[] enabledProtocols)
-    {
-        // V2 cutover (#1035 72/N): the v1 IServiceMetadataUpdater wrote
-        // CatalogMetadata.EnabledProtocols to the v1 services row. The migrated
-        // protocol-gate reads from MetadataV2Service.Protocols, so seed there
-        // directly via the fixture's in-memory V2 graph helper.
-        _fixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, enabledProtocols: enabledProtocols);
-        return Task.CompletedTask;
     }
 }

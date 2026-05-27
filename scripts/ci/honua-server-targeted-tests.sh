@@ -10,8 +10,7 @@
 #   2. When the diff touches a path under `infrastructure_paths` in
 #      ci-shards.json (TestKit, Core/Postgres project and shared
 #      infrastructure paths, Honua.ServiceDefaults,
-#      src/Honua.Server/Features/Infrastructure/, Honua.sln, .github/,
-#      scripts/ci/), emit
+#      src/Honua.Server/Features/Infrastructure/, Honua.sln), emit
 #      {"run_all": true, "reason": "infrastructure_change"}.
 #   3. Otherwise, walk every changed file, match it against shard `paths`
 #      prefixes, and union the shard names that claim it.
@@ -21,8 +20,8 @@
 #      {"run_all": true, "reason": "unmapped_source_change"} so a new feature
 #      directory does not silently fall back to the Core shard whose filter
 #      excludes Honua.Server.Tests.Features.*.
-#   5. When the union from step 3 is empty (e.g. doc-only or workflow-only
-#      diffs that did not trigger steps 2 or 4), fall back to
+#   5. When the union from step 3 is empty (e.g. doc-only or CI-only diffs
+#      that did not trigger steps 2 or 4), fall back to
 #      `default_shards_when_no_match` (currently ["Core"]) with reason
 #      "no_path_match" so the smoke shard still runs.
 #   6. Otherwise emit {"run_all": false, "shards": [...], "reason": "targeted"}

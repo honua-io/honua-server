@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Queries.Filters;
@@ -19,22 +20,9 @@ public static class FilterExpressionNormalizer
     public const int MaxExpressionDepth = 50;
 
     /// <summary>
-    /// Normalizes a filter expression for the provided layer definition.
+    /// Normalizes a filter expression for the provided Metadata v2 resource.
     /// </summary>
-    /// <param name="expression">Filter expression to normalize.</param>
-    /// <param name="layer">Layer definition used for type coercion.</param>
-    /// <returns>Normalized filter expression.</returns>
-    public static FilterExpression Normalize(FilterExpression expression, LayerDefinition layer)
-    {
-        EnsureWithinMaxDepth(expression);
-        return NormalizeCore(expression, FilterFieldSchema.From(layer));
-    }
-
-    /// <summary>
-    /// V2 overload of <see cref="Normalize(FilterExpression, LayerDefinition)"/>. Resolves
-    /// field types from the resource's <c>SchemaFields</c>.
-    /// </summary>
-    public static FilterExpression Normalize(FilterExpression expression, Honua.Core.Features.Metadata.Domain.V2.MetadataV2Resource resource)
+    public static FilterExpression Normalize(FilterExpression expression, MetadataV2Resource resource)
     {
         EnsureWithinMaxDepth(expression);
         return NormalizeCore(expression, FilterFieldSchema.From(resource));

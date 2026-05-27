@@ -2,8 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Tiles;
 using Honua.Postgres.Features.FeatureStore.Services;
 using Microsoft.Extensions.ObjectPool;
@@ -23,7 +23,7 @@ public sealed class FeatureQueryBuilderSpatialFilterParameterTests
 
         var query = new FeatureQuery
         {
-            GeometryType = GeometryType.Point,
+            GeometryType = MetadataV2GeometryType.Point,
             SpatialReferenceSrid = 4326,
             SpatialFilter = SpatialFilter.Create(
                 [1, 2, 3, 4],
@@ -55,7 +55,7 @@ public sealed class FeatureQueryBuilderSpatialFilterParameterTests
 
         var query = new FeatureQuery
         {
-            GeometryType = GeometryType.Point,
+            GeometryType = MetadataV2GeometryType.Point,
             SpatialReferenceSrid = 4326,
             SpatialFilter = SpatialFilter.Create(
                 [1, 2, 3, 4],
@@ -90,7 +90,7 @@ public sealed class FeatureQueryBuilderSpatialFilterParameterTests
 
         var query = new FeatureQuery
         {
-            GeometryType = GeometryType.Point,
+            GeometryType = MetadataV2GeometryType.Point,
             SpatialReferenceSrid = 4326,
             SpatialFilter = SpatialFilter.Create(
                 [1, 2, 3, 4],
@@ -117,7 +117,7 @@ public sealed class FeatureQueryBuilderSpatialFilterParameterTests
 
         var query = new FeatureQuery
         {
-            GeometryType = GeometryType.Point,
+            GeometryType = MetadataV2GeometryType.Point,
             SpatialReferenceSrid = 4326,
             SpatialFilter = SpatialFilter.Create(
                 [1, 2, 3, 4],
@@ -148,7 +148,7 @@ public sealed class FeatureQueryBuilderSpatialFilterParameterTests
 
         var query = new FeatureQuery
         {
-            GeometryType = GeometryType.Point,
+            GeometryType = MetadataV2GeometryType.Point,
             SpatialReferenceSrid = 4326,
             SpatialFilter = SpatialFilter.Create([1, 2, 3, 4], SpatialRelationship.Intersects, 4326)
         };

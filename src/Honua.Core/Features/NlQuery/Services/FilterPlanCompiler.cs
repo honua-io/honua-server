@@ -3,7 +3,7 @@
 
 using System.Globalization;
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.NlQuery.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
@@ -15,7 +15,7 @@ namespace Honua.Core.Features.NlQuery.Services;
 /// <summary>
 /// Compiles a <see cref="FilterPlan"/> into the existing <see cref="FilterExpression"/> AST.
 /// Acts as a security boundary: only the allowed subset of operators maps to AST nodes,
-/// and every property reference is validated against the layer schema.
+/// and every property reference is validated against the resource schema.
 /// </summary>
 public static class FilterPlanCompiler
 {
@@ -38,15 +38,15 @@ public static class FilterPlanCompiler
 
     /// <summary>
     /// Compiles a filter plan into a <see cref="FilterExpression"/> AST, validating
-    /// all property references and operators against the layer definition.
+    /// all property references and operators against the Metadata v2 resource.
     /// </summary>
     /// <param name="plan">The filter plan to compile.</param>
-    /// <param name="layer">The layer definition providing schema metadata.</param>
+    /// <param name="resource">The Metadata v2 resource providing schema metadata.</param>
     /// <returns>A result containing either the compiled expression or an error.</returns>
-    public static FilterPlanCompileResult Compile(FilterPlan plan, LayerDefinition layer)
+    public static FilterPlanCompileResult Compile(FilterPlan plan, MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        ArgumentNullException.ThrowIfNull(layer);
+        ArgumentNullException.ThrowIfNull(resource);
 
         if (plan.Clauses.Length == 0)
         {
@@ -55,7 +55,7 @@ public static class FilterPlanCompiler
 
         try
         {
-            var expression = CompileClauses(plan.Combinator, plan.Clauses, layer);
+            var expression = CompileClauses(plan.Combinator, plan.Clauses, resource);
             return FilterPlanCompileResult.Success(expression);
         }
         catch (FilterPlanCompilationException ex)
@@ -67,18 +67,18 @@ public static class FilterPlanCompiler
     private static FilterExpression CompileClauses(
         FilterPlanCombinator combinator,
         FilterPlanClause[] clauses,
-        LayerDefinition layer)
+        MetadataV2Resource resource)
     {
         if (clauses.Length == 0)
         {
             throw new FilterPlanCompilationException("Empty clause list.");
         }
 
-        var compiled = CompileClause(clauses[0], layer);
+        var compiled = CompileClause(clauses[0], resource);
 
         for (var i = 1; i < clauses.Length; i++)
         {
-            var right = CompileClause(clauses[i], layer);
+            var right = CompileClause(clauses[i], resource);
             var op = combinator == FilterPlanCombinator.And ? BinaryOperator.And : BinaryOperator.Or;
             compiled = new BinaryExpression(compiled, op, right);
         }
@@ -86,34 +86,34 @@ public static class FilterPlanCompiler
         return compiled;
     }
 
-    private static FilterExpression CompileClause(FilterPlanClause clause, LayerDefinition layer)
+    private static FilterExpression CompileClause(FilterPlanClause clause, MetadataV2Resource resource)
     {
         return clause.Type.ToLowerInvariant() switch
         {
             "comparison" => CompileComparison(
                 clause.Comparison ?? throw new FilterPlanCompilationException("Comparison clause data is missing."),
-                layer),
+                resource),
             "spatial" => CompileSpatial(
                 clause.Spatial ?? throw new FilterPlanCompilationException("Spatial clause data is missing."),
-                layer),
+                resource),
             "temporal" => CompileTemporal(
                 clause.Temporal ?? throw new FilterPlanCompilationException("Temporal clause data is missing."),
-                layer),
+                resource),
             "nested" => CompileNested(
                 clause.Nested ?? throw new FilterPlanCompilationException("Nested clause data is missing."),
-                layer),
+                resource),
             _ => throw new FilterPlanCompilationException($"Unknown clause type: '{clause.Type}'.")
         };
     }
 
-    private static BinaryExpression CompileComparison(ComparisonClause clause, LayerDefinition layer)
+    private static BinaryExpression CompileComparison(ComparisonClause clause, MetadataV2Resource resource)
     {
         if (!AllowedComparisonOperators.Contains(clause.Operator))
         {
             throw new FilterPlanCompilationException($"Unsupported comparison operator: '{clause.Operator}'.");
         }
 
-        ValidatePropertyExists(clause.Property, layer);
+        ValidatePropertyExists(clause.Property, resource);
 
         var property = new PropertyReference(clause.Property);
 
@@ -128,7 +128,7 @@ public static class FilterPlanCompiler
         return new BinaryExpression(property, op, literal);
     }
 
-    private static FilterExpression CompileSpatial(SpatialClause clause, LayerDefinition layer)
+    private static FilterExpression CompileSpatial(SpatialClause clause, MetadataV2Resource resource)
     {
         if (!AllowedSpatialOperators.Contains(clause.Operator))
         {
@@ -136,8 +136,8 @@ public static class FilterPlanCompiler
         }
 
         var geometryLiteral = ParseGeoJsonGeometry(clause.Geometry);
-        var geometryField = layer.GeometryField
-            ?? throw new FilterPlanCompilationException("Layer does not have a geometry field.");
+        var geometryField = resource.FindPrimaryGeometryField()
+            ?? throw new FilterPlanCompilationException("Resource does not have a geometry field.");
         var propertyRef = new PropertyReference(geometryField.Name);
 
         var spatialOp = MapSpatialOperator(clause.Operator);
@@ -156,15 +156,15 @@ public static class FilterPlanCompiler
         return new SpatialPredicate(spatialOp, propertyRef, geometryLiteral);
     }
 
-    private static TemporalPredicate CompileTemporal(TemporalClause clause, LayerDefinition layer)
+    private static TemporalPredicate CompileTemporal(TemporalClause clause, MetadataV2Resource resource)
     {
         if (!AllowedTemporalOperators.Contains(clause.Operator))
         {
             throw new FilterPlanCompilationException($"Unsupported temporal operator: '{clause.Operator}'.");
         }
 
-        var field = FindField(clause.Property, layer);
-        if (field.Type is not FieldType.Date and not FieldType.DateTime)
+        var field = FindField(clause.Property, resource);
+        if (field.Type is not MetadataV2FieldType.Date and not MetadataV2FieldType.DateTime)
         {
             throw new FilterPlanCompilationException(
                 $"Temporal property '{clause.Property}' must be a date or datetime field.");
@@ -196,27 +196,27 @@ public static class FilterPlanCompiler
         }
     }
 
-    private static FilterExpression CompileNested(NestedClause clause, LayerDefinition layer)
+    private static FilterExpression CompileNested(NestedClause clause, MetadataV2Resource resource)
     {
         if (clause.Clauses.Length == 0)
         {
             throw new FilterPlanCompilationException("Nested clause contains no sub-clauses.");
         }
 
-        return CompileClauses(clause.Combinator, clause.Clauses, layer);
+        return CompileClauses(clause.Combinator, clause.Clauses, resource);
     }
 
-    private static void ValidatePropertyExists(string propertyName, LayerDefinition layer)
-        => _ = FindField(propertyName, layer);
+    private static void ValidatePropertyExists(string propertyName, MetadataV2Resource resource)
+        => _ = FindField(propertyName, resource);
 
-    private static FieldDefinition FindField(string propertyName, LayerDefinition layer)
+    private static MetadataV2Field FindField(string propertyName, MetadataV2Resource resource)
     {
         if (string.IsNullOrWhiteSpace(propertyName))
         {
             throw new FilterPlanCompilationException("Property name cannot be empty.");
         }
 
-        foreach (var field in layer.Fields)
+        foreach (var field in resource.SchemaFields)
         {
             if (string.Equals(field.Name, propertyName, StringComparison.OrdinalIgnoreCase))
             {
@@ -225,7 +225,7 @@ public static class FilterPlanCompiler
         }
 
         throw new FilterPlanCompilationException(
-            $"Property '{propertyName}' does not exist in layer '{layer.Name}'.");
+            $"Property '{propertyName}' does not exist in resource '{resource.Metadata.Name}'.");
     }
 
     private static BinaryOperator MapComparisonOperator(string op)

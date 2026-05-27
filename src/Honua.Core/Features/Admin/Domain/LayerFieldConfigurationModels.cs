@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Admin.Domain;
 
@@ -15,7 +15,7 @@ namespace Honua.Core.Features.Admin.Domain;
 public sealed record LayerFieldConfiguration(
     string Name,
     string? Alias,
-    FieldDomainDefinition? Domain,
+    MetadataV2FieldDomain? Domain,
     bool Hidden);
 
 /// <summary>
@@ -28,5 +28,5 @@ public sealed record LayerFieldConfiguration(
 public sealed record LayerFieldConfigurationUpdate(
     string Name,
     string? Alias,
-    FieldDomainDefinition? Domain,
+    MetadataV2FieldDomain? Domain,
     bool? Hidden);

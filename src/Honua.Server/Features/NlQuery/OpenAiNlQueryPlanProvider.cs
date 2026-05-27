@@ -158,7 +158,7 @@ internal sealed class OpenAiNlQueryPlanProvider : INlQueryPlanProvider
 
         try
         {
-            var systemPrompt = NlQuerySystemPrompt.Build(request.Layer);
+            var systemPrompt = NlQuerySystemPrompt.Build(request.Resource);
             var chatRequest = BuildChatRequest(systemPrompt, request.Query);
 
             var client = _httpClientFactory.CreateClient("nl-query");

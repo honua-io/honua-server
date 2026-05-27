@@ -2,12 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Grounding.Abstractions;
 using Honua.Core.Features.Grounding.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Geoprocessing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -24,14 +24,14 @@ internal sealed class GroundingService : IGroundingService
 {
     private readonly IGroundingEngine _engine;
     private readonly IProcessCatalog _processCatalog;
-    private readonly ILayerCatalog? _layerCatalog;
+    private readonly IMetadataV2GraphProvider? _metadataGraphProvider;
     private readonly IServiceScopeFactory? _serviceScopeFactory;
     private readonly IGroundingAuthorizationFilter _authorizationFilter;
     private readonly GroundingOptions _options;
     private readonly ILogger<GroundingService> _logger;
 
-    // Preferred constructor used by DI: the service stays a singleton and
-    // resolves the scoped ILayerCatalog per call via IServiceScopeFactory.
+    // Preferred constructor used by DI: the service stays a singleton and resolves
+    // the scoped Metadata V2 graph provider per call via IServiceScopeFactory.
     public GroundingService(
         IGroundingEngine engine,
         IProcessCatalog processCatalog,
@@ -39,12 +39,12 @@ internal sealed class GroundingService : IGroundingService
         IOptions<GroundingOptions> options,
         ILogger<GroundingService> logger,
         IServiceScopeFactory serviceScopeFactory)
-        : this(engine, processCatalog, authorizationFilter, options, logger, serviceScopeFactory, layerCatalog: null)
+        : this(engine, processCatalog, authorizationFilter, options, logger, serviceScopeFactory, metadataGraphProvider: null)
     {
     }
 
-    // Direct-catalog constructor retained for unit tests that supply a
-    // substituted ILayerCatalog without wiring a scope factory.
+    // Direct-provider constructor retained for unit tests that supply a
+    // substituted Metadata V2 graph provider without wiring a scope factory.
     internal GroundingService(
         IGroundingEngine engine,
         IProcessCatalog processCatalog,
@@ -52,7 +52,7 @@ internal sealed class GroundingService : IGroundingService
         IOptions<GroundingOptions> options,
         ILogger<GroundingService> logger,
         IServiceScopeFactory? serviceScopeFactory,
-        ILayerCatalog? layerCatalog)
+        IMetadataV2GraphProvider? metadataGraphProvider)
     {
         _engine = engine;
         _processCatalog = processCatalog;
@@ -60,7 +60,7 @@ internal sealed class GroundingService : IGroundingService
         _options = options.Value;
         _logger = logger;
         _serviceScopeFactory = serviceScopeFactory;
-        _layerCatalog = layerCatalog;
+        _metadataGraphProvider = metadataGraphProvider;
     }
 
     public async Task<GroundingResult> GroundAsync(
@@ -126,9 +126,9 @@ internal sealed class GroundingService : IGroundingService
             processCandidates, applied.PinnedProcessId, "process.selection", appliedIds);
         processCandidates = ApplyBandsAndCap(processCandidates);
 
-        // 3. Rank layers / services. Layer catalog is optional because some
+        // 3. Rank layers / services. Metadata V2 graph access is optional because some
         // deployments (e.g. read-only raster servers, pre-provisioning test
-        // harnesses) may not have it wired. Missing catalog → empty dataset
+        // harnesses) may not have it wired. Missing graph provider → empty dataset
         // list rather than a hard failure; the clarification envelope will
         // prompt for explicit inputs. Authorization and pin application
         // both run before the shortlist cap for the same reasons as
@@ -218,14 +218,14 @@ internal sealed class GroundingService : IGroundingService
         GroundingRequest request,
         CancellationToken cancellationToken)
     {
-        // Direct-catalog path for unit tests that inject a substituted
-        // ILayerCatalog without a scope factory.
-        if (_layerCatalog is not null)
+        // Direct-provider path for unit tests that inject a substituted
+        // Metadata V2 graph provider without a scope factory.
+        if (_metadataGraphProvider is not null)
         {
-            return await ScoreDatasetsFromCatalogAsync(_layerCatalog, request, cancellationToken).ConfigureAwait(false);
+            return await ScoreDatasetsFromGraphAsync(_metadataGraphProvider, request, cancellationToken).ConfigureAwait(false);
         }
 
-        // Production path: resolve the scoped ILayerCatalog inside a fresh
+        // Production path: resolve the scoped graph provider inside a fresh
         // DI scope so database connections cycle per request instead of
         // being captured by the singleton GroundingService.
         if (_serviceScopeFactory is null)
@@ -234,33 +234,31 @@ internal sealed class GroundingService : IGroundingService
         }
 
         await using var scope = _serviceScopeFactory.CreateAsyncScope();
-        var catalog = scope.ServiceProvider.GetService<ILayerCatalog>();
-        if (catalog is null)
+        var graphProvider = scope.ServiceProvider.GetService<IMetadataV2GraphProvider>();
+        if (graphProvider is null)
         {
             return [];
         }
 
-        return await ScoreDatasetsFromCatalogAsync(catalog, request, cancellationToken).ConfigureAwait(false);
+        return await ScoreDatasetsFromGraphAsync(graphProvider, request, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<IReadOnlyList<GroundingCandidate>> ScoreDatasetsFromCatalogAsync(
-        ILayerCatalog catalog,
+    private async Task<IReadOnlyList<GroundingCandidate>> ScoreDatasetsFromGraphAsync(
+        IMetadataV2GraphProvider graphProvider,
         GroundingRequest request,
         CancellationToken cancellationToken)
     {
-        // An injected ILayerCatalog is the caller's contract that a catalog
+        // An injected graph provider is the caller's contract that catalog metadata
         // exists. When it is present but the backing store fails, surface
         // GroundingException(CatalogUnavailable) so MCP returns a retryable
         // `unavailable` error (see docs/developer/MCP_SERVER.md error table)
         // instead of silently returning a successful empty ranking. The
-        // no-catalog-registered fallback in RankDatasetsAsync still returns
+        // no-provider-registered fallback in RankDatasetsAsync still returns
         // `[]` because that is a configuration shape, not an outage.
-        LayerDefinition[] layerDefs;
-        ServiceDefinition[] serviceDefs;
+        MetadataV2GraphSnapshot snapshot;
         try
         {
-            layerDefs = await catalog.ListLayersAsync(cancellationToken).ConfigureAwait(false);
-            serviceDefs = await catalog.ListServicesAsync(cancellationToken).ConfigureAwait(false);
+            snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -271,15 +269,16 @@ internal sealed class GroundingService : IGroundingService
             GroundingLog.PassRejected(_logger, nameof(GroundingErrorKind.CatalogUnavailable), ex.Message);
             throw new GroundingException(
                 GroundingErrorKind.CatalogUnavailable,
-                $"Layer catalog is unavailable: {ex.Message}",
+                $"Metadata graph is unavailable: {ex.Message}",
                 ex);
         }
 
-        var layerCandidates = layerDefs
-            .Select(l => new LayerCandidate(l.Id, l.Name, l.Description))
+        var layerCandidates = MetadataV2GroundingCatalog.BuildLayers(snapshot)
+            .Select(l => new LayerCandidate(l.LayerId, l.Name, l.Description))
             .ToArray();
-        var serviceCandidates = serviceDefs
-            .Select(s => new ServiceCandidate(s.Name, s.Description))
+        var serviceCandidates = snapshot.Graph.Services
+            .Select(s => new ServiceCandidate(s.Metadata.Name, s.Metadata.Description))
+            .Where(s => !string.IsNullOrWhiteSpace(s.Name))
             .ToArray();
 
         var layerScores = _engine.ScoreLayers(request, layerCandidates);

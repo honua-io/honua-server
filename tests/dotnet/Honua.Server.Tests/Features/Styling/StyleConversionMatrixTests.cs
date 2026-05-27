@@ -3,7 +3,7 @@
 
 using System.Globalization;
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Styling;
 using Xunit.Sdk;
 
@@ -20,7 +20,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void GeoServicesToMapLibre_SimpleLineDash_MapsDashArray()
     {
-        var layer = LayerDefinition.CreateBasic(1, "lines", GeometryType.LineString);
+        var layer = new StyleLayerDescriptor(1, "lines", MetadataV2GeometryType.LineString);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -49,7 +49,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void GeoServicesToMapLibre_SimplePolygonNullFill_MapsZeroOpacity()
     {
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -83,7 +83,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void GeoServicesToMapLibre_PictureMarker_MapsSymbolLayerAndMetadata()
     {
-        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -126,7 +126,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void GeoServicesToMapLibre_UniqueValuePoint_UsesMatchExpression()
     {
-        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -155,7 +155,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void MapLibreToGeoServices_LineDash_MapsEsriLineStyle()
     {
-        var layer = LayerDefinition.CreateBasic(1, "lines", GeometryType.LineString);
+        var layer = new StyleLayerDescriptor(1, "lines", MetadataV2GeometryType.LineString);
         const string mapLibreJson = """
         {
           "layers": [
@@ -190,7 +190,7 @@ public class StyleConversionMatrixTests
         // stored MapLibre style preserved the alpha. The polygon outline branch
         // already folded line-opacity into the color; the point branch must do the
         // same for circle-stroke-opacity.
-        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string mapLibreJson = """
         {
           "layers": [
@@ -224,7 +224,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void MapLibreToGeoServices_NullFill_MapsEsriNullStyle()
     {
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
         const string mapLibreJson = """
         {
           "layers": [
@@ -250,7 +250,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void MapLibreToGeoServices_PictureMarker_UsesMetadata()
     {
-        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string mapLibreJson = """
         {
           "metadata": {
@@ -293,7 +293,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void MapLibreToGeoServices_MatchExpression_MapsUniqueValueRenderer()
     {
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
         const string mapLibreJson = """
         {
           "layers": [
@@ -318,7 +318,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void MapLibreToGeoServices_StepExpression_MapsClassBreaksRenderer()
     {
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
         const string mapLibreJson = """
         {
           "layers": [
@@ -346,7 +346,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void MapLibreToGeoServices_MatchWithToStringWrapper_MapsUniqueValueRenderer()
     {
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
         const string mapLibreJson = """
         {
           "layers": [
@@ -371,7 +371,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void MapLibreToGeoServices_StepWithToNumberWrapper_MapsClassBreaksRenderer()
     {
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
         const string mapLibreJson = """
         {
           "layers": [
@@ -400,7 +400,7 @@ public class StyleConversionMatrixTests
     public void MapLibreToGeoServices_CaseWrappedStep_MapsClassBreaksRenderer()
     {
         // Round-trip: case+has guard must be unwrapped to extract the inner step expression.
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
         const string mapLibreJson = """
         {
           "layers": [
@@ -431,7 +431,7 @@ public class StyleConversionMatrixTests
         // Round-trip: the stronger ["all", ["has", ...], ["!=", ...]] guard must
         // still unwrap correctly because the case expression has 4 elements and
         // items[2] is the step array — same structural invariant as the has-only guard.
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
         const string mapLibreJson = """
         {
           "layers": [
@@ -461,7 +461,7 @@ public class StyleConversionMatrixTests
     {
         // Regression: arbitrary case predicates must not be unwrapped into classBreaks,
         // or the converted renderer would silently drop the outer condition.
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
         const string mapLibreJson = """
         {
           "layers": [
@@ -483,14 +483,14 @@ public class StyleConversionMatrixTests
     }
 
     [Theory]
-    [InlineData(GeometryType.Point, "esriSMS", 8d, 217)]
-    [InlineData(GeometryType.LineString, "esriSLS", null, 230)]
-    [InlineData(GeometryType.Polygon, "esriSFS", null, 102)]
-    [InlineData(GeometryType.GeometryCollection, "esriSFS", null, 102)]
+    [InlineData(MetadataV2GeometryType.Point, "esriSMS", 8d, 217)]
+    [InlineData(MetadataV2GeometryType.LineString, "esriSLS", null, 230)]
+    [InlineData(MetadataV2GeometryType.Polygon, "esriSFS", null, 102)]
+    [InlineData(MetadataV2GeometryType.GeometryCollection, "esriSFS", null, 102)]
     public void DefaultGeoServicesSymbol_MatchesMapLibreDefaults(
-        GeometryType geometryType, string expectedType, double? expectedSize, int expectedAlpha)
+        MetadataV2GeometryType geometryType, string expectedType, double? expectedSize, int expectedAlpha)
     {
-        var layer = LayerDefinition.CreateBasic(1, "test", geometryType);
+        var layer = new StyleLayerDescriptor(1, "test", geometryType);
 
         // Build both default representations
         var mapLibreStyle = StyleDefaults.BuildDefaultMapLibreStyle(layer);
@@ -521,12 +521,12 @@ public class StyleConversionMatrixTests
     {
         // Regression: GeometryCollection must produce esriSFS (fill) symbols,
         // not fall through to the esriSLS (line) default branch.
-        var layer = LayerDefinition.CreateBasic(1, "mixed", GeometryType.GeometryCollection);
+        var layer = new StyleLayerDescriptor(1, "mixed", MetadataV2GeometryType.GeometryCollection);
 
         var suggestion = new Core.Features.Styling.Domain.StyleSuggestion
         {
             LayerId = 1,
-            GeometryType = GeometryType.GeometryCollection,
+            GeometryType = MetadataV2GeometryType.GeometryCollection,
             SuggestedField = new Core.Features.Styling.Domain.FieldSuggestion
             {
                 Name = "category",
@@ -581,12 +581,12 @@ public class StyleConversionMatrixTests
     {
         // Regression: GeometryCollection suggestions must not be short-circuited to
         // defaults when applied through the PUT style → converter pipeline.
-        var layer = LayerDefinition.CreateBasic(1, "mixed", GeometryType.GeometryCollection);
+        var layer = new StyleLayerDescriptor(1, "mixed", MetadataV2GeometryType.GeometryCollection);
 
         var suggestion = new Core.Features.Styling.Domain.StyleSuggestion
         {
             LayerId = 1,
-            GeometryType = GeometryType.GeometryCollection,
+            GeometryType = MetadataV2GeometryType.GeometryCollection,
             SuggestedField = new Core.Features.Styling.Domain.FieldSuggestion
             {
                 Name = "category",
@@ -647,12 +647,12 @@ public class StyleConversionMatrixTests
     {
         // Regression: GeometryCollection class-break suggestions must round-trip
         // through the style update converters without being lost.
-        var layer = LayerDefinition.CreateBasic(1, "mixed", GeometryType.GeometryCollection);
+        var layer = new StyleLayerDescriptor(1, "mixed", MetadataV2GeometryType.GeometryCollection);
 
         var suggestion = new Core.Features.Styling.Domain.StyleSuggestion
         {
             LayerId = 1,
-            GeometryType = GeometryType.GeometryCollection,
+            GeometryType = MetadataV2GeometryType.GeometryCollection,
             SuggestedField = new Core.Features.Styling.Domain.FieldSuggestion
             {
                 Name = "population",
@@ -715,7 +715,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void GeoServicesToMapLibre_ClassBreaks_EmitsToNumberCoercion()
     {
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -767,7 +767,7 @@ public class StyleConversionMatrixTests
     {
         // Simulates the suggest-style → apply drawingInfo → re-read MapLibre flow.
         // The coercion wrappers must survive the GeoServices → MapLibre conversion.
-        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
 
         // Step 1: Build a unique-value drawingInfo (as the suggestion endpoint would return)
         const string drawingInfoJson = """
@@ -807,7 +807,7 @@ public class StyleConversionMatrixTests
     {
         // Regression: numeric/boolean unique-value stop tokens must be emitted as
         // strings so that match(to-string(get(field)), ...) can match them.
-        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -859,7 +859,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void GeoServicesToMapLibre_BooleanUniqueValues_EmitsStringStops()
     {
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -895,7 +895,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void GeoServicesToMapLibre_PictureMarkerNumericUniqueValues_EmitsStringStops()
     {
-        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -942,7 +942,7 @@ public class StyleConversionMatrixTests
         // ["step", ["get", field], baseId, ...] directly, skipping the numeric
         // guard and to-number coercion that the color classBreaks path uses.
         // Now both paths share the same documented contract.
-        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -987,7 +987,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void GeoServicesToMapLibre_PictureMarkerClassBreaks_HonorsDefaultSymbolAsCaseFallback()
     {
-        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -1026,7 +1026,7 @@ public class StyleConversionMatrixTests
     [Fact]
     public void GeoServicesToMapLibre_PictureMarkerClassBreaks_NoDefaultSymbolFallsBackToFirstStopImage()
     {
-        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -1056,12 +1056,12 @@ public class StyleConversionMatrixTests
     [Fact]
     public void GenerateDrawingInfo_ClassBreaks_UsesActualDataRangeBounds()
     {
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
 
         var suggestion = new Core.Features.Styling.Domain.StyleSuggestion
         {
             LayerId = 1,
-            GeometryType = GeometryType.Polygon,
+            GeometryType = MetadataV2GeometryType.Polygon,
             SuggestedField = new Core.Features.Styling.Domain.FieldSuggestion
             {
                 Name = "population",
@@ -1125,12 +1125,12 @@ public class StyleConversionMatrixTests
         // Regression: to-number(null) → 0 silently routes features with a
         // missing/null classification field into the first color bucket.
         // The step expression must be wrapped in ["case", ["has", field], step, fallback].
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
 
         var suggestion = new Core.Features.Styling.Domain.StyleSuggestion
         {
             LayerId = 1,
-            GeometryType = GeometryType.Polygon,
+            GeometryType = MetadataV2GeometryType.Polygon,
             SuggestedField = new Core.Features.Styling.Domain.FieldSuggestion
             {
                 Name = "population",
@@ -1199,7 +1199,7 @@ public class StyleConversionMatrixTests
         // Regression: geometry-only suggestion for line layers must return
         // equivalent MapLibre and drawingInfo payloads — no zoom-dependent
         // line-width in MapLibre when GeoServices can only express a static width.
-        var layer = LayerDefinition.CreateBasic(1, "roads", GeometryType.LineString);
+        var layer = new StyleLayerDescriptor(1, "roads", MetadataV2GeometryType.LineString);
 
         var mapLibreStyle = StyleSuggestionGenerator.GenerateEnhancedDefaults(layer);
         var drawingInfo = StyleSuggestionGenerator.GenerateEnhancedDrawingInfo(layer);
@@ -1225,19 +1225,19 @@ public class StyleConversionMatrixTests
     }
 
     [Theory]
-    [InlineData(GeometryType.Point)]
-    [InlineData(GeometryType.LineString)]
-    [InlineData(GeometryType.Polygon)]
-    public void UniqueValueSuggestion_FallbackColor_MatchesBetweenFormats(GeometryType geometryType)
+    [InlineData(MetadataV2GeometryType.Point)]
+    [InlineData(MetadataV2GeometryType.LineString)]
+    [InlineData(MetadataV2GeometryType.Polygon)]
+    public void UniqueValueSuggestion_FallbackColor_MatchesBetweenFormats(MetadataV2GeometryType geometryType)
     {
         // Regression: the MapLibre match expression fallback (#CCCCCC) must match
         // the GeoServices defaultSymbol color so unmatched features render identically.
-        var layer = LayerDefinition.CreateBasic(1, "test", geometryType);
+        var layer = new StyleLayerDescriptor(1, "test", geometryType);
 
         var suggestion = new Core.Features.Styling.Domain.StyleSuggestion
         {
             LayerId = 1,
-            GeometryType = geometryType,
+            GeometryType = ToMetadataV2GeometryType(geometryType),
             SuggestedField = new Core.Features.Styling.Domain.FieldSuggestion
             {
                 Name = "category",
@@ -1319,12 +1319,12 @@ public class StyleConversionMatrixTests
         // Regression: features whose numeric-classified field contains non-castable
         // text (e.g. "N/A", "") must render with the fallback color, NOT the first
         // class color.  The typeof guard prevents to-number from coercing to 0.
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
 
         var suggestion = new Core.Features.Styling.Domain.StyleSuggestion
         {
             LayerId = 1,
-            GeometryType = GeometryType.Polygon,
+            GeometryType = MetadataV2GeometryType.Polygon,
             SuggestedField = new Core.Features.Styling.Domain.FieldSuggestion
             {
                 Name = "population",
@@ -1385,12 +1385,12 @@ public class StyleConversionMatrixTests
         // must render with the fallback color.  typeof(null) → "null" ≠ "number", so
         // the guard rejects it.  Before the fix, the guard used ["!=", typeof, "string"]
         // which let null through because "null" ≠ "string" was true.
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
 
         var suggestion = new Core.Features.Styling.Domain.StyleSuggestion
         {
             LayerId = 1,
-            GeometryType = GeometryType.Polygon,
+            GeometryType = MetadataV2GeometryType.Polygon,
             SuggestedField = new Core.Features.Styling.Domain.FieldSuggestion
             {
                 Name = "population",
@@ -1447,12 +1447,12 @@ public class StyleConversionMatrixTests
     {
         // Complement to the dirty-text test: verify that native numbers
         // correctly route through the step expression.
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
 
         var suggestion = new Core.Features.Styling.Domain.StyleSuggestion
         {
             LayerId = 1,
-            GeometryType = GeometryType.Polygon,
+            GeometryType = MetadataV2GeometryType.Polygon,
             SuggestedField = new Core.Features.Styling.Domain.FieldSuggestion
             {
                 Name = "population",
@@ -1515,7 +1515,7 @@ public class StyleConversionMatrixTests
         // Regression: when the MapLibre style has a ["case", guard, step, "#CCCCCC"]
         // expression, the GeoServices classBreaks renderer must include a defaultSymbol
         // whose color matches the case fallback.
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
         const string mapLibreJson = """
         {
           "layers": [
@@ -1551,7 +1551,7 @@ public class StyleConversionMatrixTests
     {
         // Regression: when a classBreaks renderer includes defaultSymbol, the
         // MapLibre case fallback must use its color, not the first class color.
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -1592,12 +1592,12 @@ public class StyleConversionMatrixTests
     {
         // End-to-end: StyleSuggestionGenerator → MapLibre style → MapLibreToGeoServicesConverter
         // → verify the drawingInfo contains a gray defaultSymbol.
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
 
         var suggestion = new Core.Features.Styling.Domain.StyleSuggestion
         {
             LayerId = 1,
-            GeometryType = GeometryType.Polygon,
+            GeometryType = MetadataV2GeometryType.Polygon,
             SuggestedField = new Core.Features.Styling.Domain.FieldSuggestion
             {
                 Name = "population",
@@ -1713,12 +1713,12 @@ public class StyleConversionMatrixTests
         // Regression: a feature whose classified field key exists but has a null value
         // must render with the fallback color, not match an empty-string category.
         // to-string(null) → "" would match a "" stop without the non-null guard.
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
 
         var suggestion = new Core.Features.Styling.Domain.StyleSuggestion
         {
             LayerId = 1,
-            GeometryType = GeometryType.Polygon,
+            GeometryType = MetadataV2GeometryType.Polygon,
             SuggestedField = new Core.Features.Styling.Domain.FieldSuggestion
             {
                 Name = "category",
@@ -1784,7 +1784,7 @@ public class StyleConversionMatrixTests
     {
         // Regression: converted unique-value renderers must wrap the match expression
         // in a case/non-null guard, matching the class-breaks pattern.
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -1820,7 +1820,7 @@ public class StyleConversionMatrixTests
         // Regression: when the MapLibre style has a ["case", guard, match, fallback]
         // expression, the GeoServices uniqueValue renderer must include a defaultSymbol
         // whose color matches the case fallback.
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
         const string mapLibreJson = """
         {
           "layers": [
@@ -1856,7 +1856,7 @@ public class StyleConversionMatrixTests
     {
         // Regression: arbitrary case predicates must not be unwrapped into uniqueValue,
         // or the converted renderer would silently drop the outer condition.
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
         const string mapLibreJson = """
         {
           "layers": [
@@ -1882,7 +1882,7 @@ public class StyleConversionMatrixTests
     {
         // Roundtrip: GeoServices → MapLibre → GeoServices must preserve
         // the unique-value structure through the case null guard.
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -1929,12 +1929,12 @@ public class StyleConversionMatrixTests
         // native JSONB numbers, not numeric-looking strings — so this scenario
         // should never arise for correctly-typed data.  This test documents the
         // server evaluator's behavior for the edge case of mistyped JSONB data.
-        var layer = LayerDefinition.CreateBasic(1, "polygons", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polygons", MetadataV2GeometryType.Polygon);
 
         var suggestion = new Core.Features.Styling.Domain.StyleSuggestion
         {
             LayerId = 1,
-            GeometryType = GeometryType.Polygon,
+            GeometryType = MetadataV2GeometryType.Polygon,
             SuggestedField = new Core.Features.Styling.Domain.FieldSuggestion
             {
                 Name = "population",
@@ -2001,4 +2001,6 @@ public class StyleConversionMatrixTests
 
         throw new XunitException($"Expected numeric value but got {element.ValueKind}.");
     }
+
+    private static MetadataV2GeometryType ToMetadataV2GeometryType(MetadataV2GeometryType geometryType) => geometryType;
 }

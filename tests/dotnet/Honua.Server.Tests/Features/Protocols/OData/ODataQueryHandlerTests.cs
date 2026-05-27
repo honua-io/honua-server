@@ -1,113 +1,100 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Reflection;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
-using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
-using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Validation;
-using Honua.Server.Features.Protocols.OData;
+using Honua.Core.Features.Security.Domain;
+using Honua.Server.Features.Protocols.OData.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
-using CatalogGeometryType = Honua.Core.Features.Catalog.Domain.GeometryType;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
 /// <summary>
-/// Unit tests for OData layer visibility gating.
+/// Unit tests for OData metadata-v2 publication visibility.
 /// </summary>
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataQueryHandlerTests
 {
     [UnitTest]
-    public void IsODataLayerVisible_WithNonODataPrimaryService_UsesLayerMetadataAccess()
+    public async Task ResolveVisibleODataPublications_WithNonODataService_DoesNotUseResourceProtocolFallback()
     {
-        var layer = CreateLayer(1, odataEnabled: true, allowAnonymous: true);
-        var service = CreateService("alpha", layer, odataEnabled: false, allowAnonymous: false);
-        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMap([service], ServiceProtocols.OData);
+        using var provider = CreateProvider(["FeatureServer"]);
+        var context = CreateContext(provider);
 
-        var visible = InvokeIsODataLayerVisible(layer, primaryServices);
+        var visible = await ODataV2Lookups.ResolveVisibleODataPublicationsAsync(context, CancellationToken.None);
 
-        visible.Should().BeTrue();
+        visible.Should().BeEmpty();
     }
 
-    private static bool InvokeIsODataLayerVisible(
-        LayerDefinition layer,
-        IReadOnlyDictionary<int, ServiceDefinition> primaryServices)
+    [UnitTest]
+    public async Task ResolveVisibleODataPublications_WithODataService_ReturnsPublication()
     {
-        var method = typeof(ODataQueryHandler).GetMethod(
-            "IsODataLayerVisible",
-            BindingFlags.NonPublic | BindingFlags.Static);
-        method.Should().NotBeNull();
+        using var provider = CreateProvider(["OData"]);
+        var context = CreateContext(provider);
 
-        using var provider = new ServiceCollection()
+        var visible = await ODataV2Lookups.ResolveVisibleODataPublicationsAsync(context, CancellationToken.None);
+
+        visible.Should().ContainSingle();
+        visible[0].LayerIndex.Should().Be(1);
+        visible[0].StorageLayerId.Should().Be(101);
+        visible[0].Resource.Metadata.Name.Should().Be("Layer1");
+    }
+
+    private static ServiceProvider CreateProvider(IReadOnlyList<string> protocols)
+    {
+        var graphProvider = new TestMetadataV2GraphBuilder()
+            .AddResource(
+                "res-layer-1",
+                "Layer1",
+                fields:
+                [
+                    new MetadataV2Field
+                    {
+                        Name = "objectid",
+                        Type = MetadataV2FieldType.Integer,
+                        Nullable = false
+                    },
+                    new MetadataV2Field
+                    {
+                        Name = "name",
+                        Type = MetadataV2FieldType.String
+                    }
+                ],
+                accessPolicy: new AccessPolicy { AllowAnonymous = true })
+            .AddStorageBinding(
+                "binding-layer-1",
+                "res-layer-1",
+                "test.layers.1",
+                storageLayerId: 101)
+            .AddService(
+                "svc-alpha",
+                "alpha",
+                protocols: protocols,
+                accessPolicy: new AccessPolicy { AllowAnonymous = true })
+            .AddPublication(
+                "pub-alpha-layer-1",
+                "svc-alpha",
+                "res-layer-1",
+                layerIndex: 1,
+                storageBindingId: "binding-layer-1",
+                publicationType: MetadataV2PublicationType.ODataEntitySet)
+            .BuildProvider();
+
+        return new ServiceCollection()
             .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
+            .AddSingleton<IMetadataV2GraphProvider>(graphProvider)
             .BuildServiceProvider();
+    }
 
-        var context = new DefaultHttpContext
+    private static DefaultHttpContext CreateContext(ServiceProvider provider)
+        => new DefaultHttpContext
         {
             RequestServices = provider
         };
-
-        return (bool)method!.Invoke(null, [context, layer, primaryServices])!;
-    }
-
-    private static LayerDefinition CreateLayer(
-        int id,
-        bool odataEnabled = false,
-        bool allowAnonymous = false)
-    {
-        var metadata = odataEnabled || allowAnonymous
-            ? new CatalogMetadata
-            {
-                EnabledProtocols = odataEnabled ? [ServiceProtocols.OData] : null,
-                AccessPolicy = allowAnonymous
-                    ? new AccessPolicy { AllowAnonymous = true }
-                    : null
-            }
-            : null;
-
-        return new LayerDefinition(
-            id,
-            $"Layer{id}",
-            "Test layer",
-            CatalogGeometryType.Point,
-            SpatialReference.WGS84,
-            [
-                new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                new FieldDefinition("name", FieldType.String, Length: 128)
-            ],
-            Metadata: metadata);
-    }
-
-    private static ServiceDefinition CreateService(
-        string name,
-        LayerDefinition layer,
-        bool odataEnabled = true,
-        bool allowAnonymous = false)
-    {
-        string[]? enabledProtocols =
-            odataEnabled
-                ? [ServiceProtocols.OData]
-                : [ServiceProtocols.FeatureServer];
-        var metadata = new CatalogMetadata
-        {
-            EnabledProtocols = enabledProtocols,
-            AccessPolicy = allowAnonymous
-                ? new AccessPolicy { AllowAnonymous = true }
-                : null
-        };
-
-        return new ServiceDefinition(
-            name,
-            $"{name} service",
-            [layer],
-            SpatialReference.WGS84,
-            Metadata: metadata);
-    }
 }

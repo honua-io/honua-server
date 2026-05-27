@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Text.Json;
+using Honua.Core.Features.Metadata.Domain.V2;
 using SkiaSharp;
 
 namespace Honua.Server.Features.Infrastructure.Rendering;
@@ -237,15 +238,15 @@ internal static class StyleTranslator
     /// Creates default SkiaSharp paints for a geometry type when no style is defined.
     /// </summary>
     public static (SKPaint fill, SKPaint? stroke) CreateDefaultPaints(
-        Honua.Core.Features.Catalog.Domain.GeometryType geometryType)
+        MetadataV2GeometryType geometryType)
     {
         var strokeColor = new SKColor(45, 105, 165, 255);
         var fillColor = new SKColor(45, 105, 165, 64);
 
         return geometryType switch
         {
-            Honua.Core.Features.Catalog.Domain.GeometryType.Point or
-            Honua.Core.Features.Catalog.Domain.GeometryType.MultiPoint =>
+            MetadataV2GeometryType.Point or
+            MetadataV2GeometryType.MultiPoint =>
                 (new SKPaint
                 {
                     Style = SKPaintStyle.Stroke,
@@ -255,8 +256,8 @@ internal static class StyleTranslator
                     IsAntialias = true
                 }, null),
 
-            Honua.Core.Features.Catalog.Domain.GeometryType.LineString or
-            Honua.Core.Features.Catalog.Domain.GeometryType.MultiLineString =>
+            MetadataV2GeometryType.LineString or
+            MetadataV2GeometryType.MultiLineString =>
                 (new SKPaint
                 {
                     Style = SKPaintStyle.Stroke,
@@ -266,8 +267,8 @@ internal static class StyleTranslator
                     StrokeCap = SKStrokeCap.Round
                 }, null),
 
-            Honua.Core.Features.Catalog.Domain.GeometryType.Polygon or
-            Honua.Core.Features.Catalog.Domain.GeometryType.MultiPolygon =>
+            MetadataV2GeometryType.Polygon or
+            MetadataV2GeometryType.MultiPolygon =>
                 (new SKPaint
                 {
                     Style = SKPaintStyle.Fill,

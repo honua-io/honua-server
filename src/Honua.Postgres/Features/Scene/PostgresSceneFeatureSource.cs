@@ -6,7 +6,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Honua.Core.Exceptions;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Postgres.Features.Infrastructure;
@@ -18,7 +18,7 @@ namespace Honua.Postgres.Features.Scene;
 /// <summary>
 /// Postgres/PostGIS implementation of <see cref="ISceneFeatureSource"/>. Streams
 /// the canonical 3D Tiles input shape (WGS-84 lon/lat plus optional Z) for a
-/// catalog layer using <c>ST_AsBinary(ST_Transform(geom, 4326))</c>.
+/// metadata v2 feature resource using <c>ST_AsBinary(ST_Transform(geom, 4326))</c>.
 /// </summary>
 internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
 {
@@ -36,11 +36,12 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
     }
 
     public async IAsyncEnumerable<SceneFeature> StreamAsync(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        int storageLayerId,
         IReadOnlyList<string> includeAttributes,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(layer);
+        ArgumentNullException.ThrowIfNull(resource);
         ArgumentNullException.ThrowIfNull(includeAttributes);
 
         // Align with the canonical Postgres feature storage contract: every
@@ -50,8 +51,8 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
         // layer; we read attributes from the JSONB column rather than as
         // physical columns, and we constrain the stream to the requested
         // layer.
-        var qualifiedTable = DatabaseSchema.GetFeaturesTableName(layer.StorageMapping?.SchemaName);
-        var attributeFields = ResolveAttributeFields(layer, includeAttributes);
+        var qualifiedTable = DatabaseSchema.GetFeaturesTableName();
+        var attributeFields = ResolveAttributeFields(resource, includeAttributes);
 
         // ST_Force3D was previously wrapped around the geometry to ensure the
         // GLB writer always saw a Z component, but it masked the documented
@@ -90,7 +91,7 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
             // treat a partial feature list as complete.
             cancellationToken.ThrowIfCancellationRequested();
 
-            var batch = await ReadBatchAsync(sql, layer.Id, lastKey, attributeFields, cancellationToken).ConfigureAwait(false);
+            var batch = await ReadBatchAsync(sql, storageLayerId, lastKey, attributeFields, cancellationToken).ConfigureAwait(false);
             if (batch.Count == 0)
             {
                 hasMore = false;
@@ -111,7 +112,7 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
         string sql,
         int layerId,
         long lastKey,
-        List<FieldDefinition> attributeFields,
+        List<MetadataV2Field> attributeFields,
         CancellationToken cancellationToken)
     {
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -186,13 +187,13 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
         return results;
     }
 
-    private static List<FieldDefinition> ResolveAttributeFields(
-        LayerDefinition layer,
+    private static List<MetadataV2Field> ResolveAttributeFields(
+        MetadataV2Resource resource,
         IReadOnlyList<string> includeAttributes)
     {
-        var candidates = layer.AttributeFields
-            .Where(f => f.Type is FieldType.Integer or FieldType.BigInteger or FieldType.Double
-                or FieldType.Float or FieldType.String)
+        var candidates = resource.SchemaFields
+            .Where(f => !f.Hidden && f.Type is MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger
+                or MetadataV2FieldType.Double or MetadataV2FieldType.Float or MetadataV2FieldType.String)
             .ToList();
 
         if (includeAttributes.Count == 0)
@@ -430,4 +431,3 @@ internal ref struct WkbCursor
             : BinaryPrimitives.ReadDoubleBigEndian(slice);
     }
 }
-

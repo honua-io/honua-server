@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Shared.Models;
@@ -19,7 +18,7 @@ internal sealed partial class ODataBatchHandler
 {
     private Dictionary<string, object?> FeatureToBody(
         Feature feature,
-        LayerDefinition layer,
+        ODataBatchLayerContext layer,
         AxisOrder axisOrder,
         string baseUrl,
         out string etag)
@@ -27,10 +26,10 @@ internal sealed partial class ODataBatchHandler
         var geometry = ODataGeometryConverter.ConvertWkbToGeometry(
             _geometryService,
             feature.Geometry,
-            layer.SpatialReference.ToSrid(),
+            layer.Srid,
             axisOrder);
         var attributes = ODataAttributeSerializer.Serialize(feature.Attributes);
-        var payload = ODataUtilityService.BuildFeaturePayload(layer.Id, feature, geometry, attributes);
+        var payload = ODataUtilityService.BuildFeaturePayload(layer.PublicLayerId, feature, geometry, attributes);
         etag = ComputeFeatureEtag(payload);
         payload["@odata.etag"] = etag;
         payload["@odata.context"] = ODataUtilityService.BuildContextUrl(baseUrl, "Features", isSingle: true);

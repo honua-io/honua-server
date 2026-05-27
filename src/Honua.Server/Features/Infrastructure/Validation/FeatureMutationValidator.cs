@@ -4,7 +4,6 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -21,27 +20,7 @@ internal sealed class FeatureMutationValidator
         _geometryValidator = geometryValidator ?? throw new ArgumentNullException(nameof(geometryValidator));
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Kept as an instance method to preserve the existing validator service API.")]
-    public ValidationResult<ImmutableDictionary<string, object?>> ValidateAttributes(
-        LayerDefinition layer,
-        IReadOnlyDictionary<string, object?>? attributes,
-        ValidationExtensions.AttributeValidationMode mode)
-    {
-        return layer.ValidateAttributes(attributes, mode);
-    }
-
-    /// <summary>
-    /// V2 sibling of <see cref="ValidateAttributes(LayerDefinition, IReadOnlyDictionary{string, object?}, ValidationExtensions.AttributeValidationMode)"/>.
-    /// Reads <see cref="MetadataV2Resource.SchemaFields"/> with the typed
-    /// <see cref="MetadataV2FieldType"/> enum and honours the V2-only field
-    /// attributes <see cref="MetadataV2Field.Editable"/>,
-    /// <see cref="MetadataV2Field.Length"/>, and
-    /// <see cref="MetadataV2Field.Domain"/>. On the update path
-    /// (<paramref name="isUpdate"/> = <see langword="true"/>) attempts to mutate
-    /// non-editable fields are rejected. <see cref="MetadataV2Field.DefaultValue"/>
-    /// substitution is left to the caller.
-    /// </summary>
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Kept as an instance method to mirror the v1 ValidateAttributes service API.")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Kept as an instance method for the validator service API.")]
     public ValidationResult<ImmutableDictionary<string, object?>> ValidateAttributes(
         MetadataV2Resource resource,
         IReadOnlyDictionary<string, object?>? attributes,
@@ -89,10 +68,7 @@ internal sealed record GeometryMutationResult
 }
 
 /// <summary>
-/// Metadata v2 attribute-validation extensions. Sit alongside
-/// <see cref="ValidationExtensions"/> (which is hard-typed against the v1
-/// <see cref="LayerDefinition"/>/<see cref="FieldDefinition"/> shape) so v1
-/// and v2 paths can co-exist during the cutover.
+/// Metadata v2 attribute-validation extensions for mutation adapters.
 /// </summary>
 internal static class MetadataV2AttributeValidation
 {

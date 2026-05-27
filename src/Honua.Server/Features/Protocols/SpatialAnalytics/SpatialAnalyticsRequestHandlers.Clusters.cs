@@ -4,8 +4,8 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.SpatialAnalytics.Abstractions;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Server.Features.Protocols.GeoServices;
@@ -51,7 +51,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
             return readError!;
         }
 
-        var (layer, _, resourceError) = await ValidateRestResourceAsync(
+        var (validatedLayerId, resource, _, resourceError) = await ValidateRestResourceAsync(
             context, serviceId, layerId, cancellationToken);
         if (resourceError != null)
         {
@@ -61,7 +61,8 @@ internal static partial class SpatialAnalyticsRequestHandlers
         return await HandleClustersCoreAsync(
             context,
             values,
-            layer!,
+            validatedLayerId,
+            resource!,
             serviceId,
             HonuaTelemetry.Protocols.FeatureServer,
             logger,
@@ -88,7 +89,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
             return readError!;
         }
 
-        var (layer, resourceError) = await ValidateOgcResourceAsync(context, collectionId, cancellationToken);
+        var (layerId, resource, resourceError) = await ValidateOgcResourceAsync(context, collectionId, cancellationToken);
         if (resourceError != null)
         {
             return resourceError;
@@ -97,7 +98,8 @@ internal static partial class SpatialAnalyticsRequestHandlers
         return await HandleClustersCoreAsync(
             context,
             values,
-            layer!,
+            layerId,
+            resource!,
             serviceId: null,
             HonuaTelemetry.Protocols.OgcFeatures,
             logger,
@@ -107,17 +109,18 @@ internal static partial class SpatialAnalyticsRequestHandlers
     private static async Task<IResult> HandleClustersCoreAsync(
         HttpContext context,
         IReadOnlyDictionary<string, StringValues> values,
-        LayerDefinition layer,
+        int layerId,
+        MetadataV2Resource resource,
         string? serviceId,
         string protocol,
         ILogger? logger,
         CancellationToken cancellationToken)
     {
-        using var activity = StartAnalyticsActivity(ClusterOperation, protocol, serviceId, layer.Id);
+        using var activity = StartAnalyticsActivity(ClusterOperation, protocol, serviceId, layerId);
 
         if (logger != null)
         {
-            SpatialAnalyticsLog.RequestReceived(logger, ClusterOperation, layer.Id);
+            SpatialAnalyticsLog.RequestReceived(logger, ClusterOperation, layerId);
         }
 
         var startTimestamp = TimeProvider.System.GetTimestamp();
@@ -268,11 +271,11 @@ internal static partial class SpatialAnalyticsRequestHandlers
                 ["outStatistics requires returnHullPerCluster=true; per-feature cluster assignments cannot carry aggregate statistics."]);
         }
 
-        outStatistics = ApplyStatisticFieldTypes(outStatistics, layer);
+        outStatistics = AnalyticsFeatureQueryFactory.ApplyStatisticFieldTypes(outStatistics, resource);
 
         // Feature query (where + SQL filter + objectIds + spatial + temporal).
         var (featureQuery, filterError) = await AnalyticsFeatureQueryFactory.TryBuildAsync(
-            context, values, layer, cancellationToken);
+            context, values, resource, cancellationToken);
         if (featureQuery == null)
         {
             return filterError!;
@@ -299,7 +302,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         ImmutableArray<IReadOnlyDictionary<string, object?>> rows;
         try
         {
-            rows = await reader.QueryClustersAsync(layer.Id, featureQuery.Value, clusterQuery, cancellationToken);
+            rows = await reader.QueryClustersAsync(layerId, featureQuery.Value, clusterQuery, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -309,7 +312,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         {
             if (logger != null)
             {
-                SpatialAnalyticsLog.RequestFailed(logger, ClusterOperation, layer.Id, ex.Message, ex);
+                SpatialAnalyticsLog.RequestFailed(logger, ClusterOperation, layerId, ex.Message, ex);
             }
             return CreateReaderFailureResult(context, ClusterOperation, ex);
         }
@@ -326,11 +329,11 @@ internal static partial class SpatialAnalyticsRequestHandlers
             inputCount, rows.Length, analyticsLimits.MaxInputFeatures, maxOutputRows);
         if (inputTruncated && logger != null)
         {
-            SpatialAnalyticsLog.InputTruncated(logger, ClusterOperation, layer.Id, analyticsLimits.MaxInputFeatures);
+            SpatialAnalyticsLog.InputTruncated(logger, ClusterOperation, layerId, analyticsLimits.MaxInputFeatures);
         }
         if (resultTruncated && logger != null)
         {
-            SpatialAnalyticsLog.ResultTruncated(logger, ClusterOperation, layer.Id, maxOutputRows!.Value);
+            SpatialAnalyticsLog.ResultTruncated(logger, ClusterOperation, layerId, maxOutputRows!.Value);
         }
 
         rows = TrimOverflowRows(rows, analyticsLimits.MaxInputFeatures, maxOutputRows);
@@ -345,7 +348,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         if (logger != null)
         {
             SpatialAnalyticsLog.RequestCompleted(
-                logger, ClusterOperation, layer.Id, features.Length, elapsed.TotalMilliseconds);
+                logger, ClusterOperation, layerId, features.Length, elapsed.TotalMilliseconds);
         }
 
         var response = new SpatialAnalyticsFeatureCollection

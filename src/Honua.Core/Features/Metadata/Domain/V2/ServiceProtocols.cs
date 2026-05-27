@@ -1,12 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Metadata.Domain.V2;
-
-namespace Honua.Core.Features.Catalog.Domain;
+namespace Honua.Core.Features.Metadata.Domain.V2;
 
 /// <summary>
-/// Constants and helpers for service protocol identifiers.
+/// Constants and helpers for Metadata v2 service protocol identifiers.
 /// </summary>
 public static class ServiceProtocols
 {
@@ -86,16 +84,8 @@ public static class ServiceProtocols
     ];
 
     /// <summary>
-    /// Checks whether a protocol is enabled for a service based on its metadata.
-    /// When <see cref="CatalogMetadata.EnabledProtocols"/> is null, all protocols are enabled.
-    /// </summary>
-    public static bool IsProtocolEnabled(CatalogMetadata? metadata, string protocol)
-        => metadata?.EnabledProtocols is null || metadata.EnabledProtocols.Contains(protocol);
-
-    /// <summary>
-    /// Checks whether a V2 service exposes <paramref name="protocol"/>. The service's
-    /// <see cref="MetadataV2Service.Protocols"/> list is the single source of truth —
-    /// no implicit defaults. Empty <c>Protocols</c> means "exposes nothing".
+    /// Checks whether a Metadata v2 service exposes <paramref name="protocol"/>.
+    /// Empty <see cref="MetadataV2Service.Protocols"/> means the service exposes no protocols.
     /// </summary>
     public static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)
     {
@@ -103,6 +93,7 @@ public static class ServiceProtocols
         {
             return false;
         }
+
         if (string.IsNullOrWhiteSpace(protocol))
         {
             return true;
@@ -115,6 +106,7 @@ public static class ServiceProtocols
                 return true;
             }
         }
+
         return false;
     }
 }

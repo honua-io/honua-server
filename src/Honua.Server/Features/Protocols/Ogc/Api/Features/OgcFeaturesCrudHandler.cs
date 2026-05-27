@@ -5,7 +5,6 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Exceptions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -44,6 +43,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
     private readonly FeatureMutationValidator _mutationValidator = dependencies.MutationValidator;
     private readonly FeatureMutationEventService _mutationEventService = dependencies.MutationEventService;
     private readonly ILogger<OgcFeaturesCrudHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private const string OgcFeaturesProtocolName = "OgcFeatures";
 
     /// <summary>
     /// Handles feature creation requests.
@@ -307,7 +307,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 HonuaTelemetry.Protocols.OgcFeatures,
                 CancellationToken.None,
                 mutationFeature: mutationFeature,
-                serviceProtocol: ServiceProtocols.OgcFeatures).ConfigureAwait(false);
+                serviceProtocol: OgcFeaturesProtocolName).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -360,7 +360,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
             context,
             layerId,
             HonuaTelemetry.Protocols.OgcFeatures,
-            serviceProtocol: ServiceProtocols.OgcFeatures,
+            serviceProtocol: OgcFeaturesProtocolName,
             // V2 storage SRID is read from MetadataV2SpatialExtensions.ReadSrid so the
             // outbox enrichment fallback matches the inline-publish path.
             layerSrid: resource.ReadSrid(),

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
-  "_comment": "Single source of truth for the Honua.Server.Tests shard matrix. Owned by ADR-0037. Each entry under `shards` carries both routing fields (`paths`) and matrix-runtime fields (`shard_name`, `artifact_suffix`, `log_name`, `timeout_minutes`, `test_timeout_minutes`, `max_cpu_count`, `upload_operator_eval_report`, `upload_odata_evidence`, `filter`). The `targeted-shards` job in ci.yml reads this file, runs scripts/ci/honua-server-targeted-tests.sh to pick the active shards for the diff, and emits a filtered `matrix_include` that ci.yml::server-tests consumes via `strategy.matrix.include: fromJson(...)`. `timeout_minutes` is the GitHub runner job cap; `test_timeout_minutes` is the inner dotnet-test cap used by scripts/ci/run-server-test-shard.sh so logs and timing artifacts are uploaded before the runner is cancelled. `infrastructure_paths` short-circuits to run_all on first match. Keep infrastructure paths limited to shared CI/runtime wiring; feature-slice Core/Postgres paths should be mapped to shard `paths` instead of forcing run_all. `unmapped_source_run_all_prefixes` forces run_all when a changed file under one of those prefixes is not matched by any shard's `paths` — this prevents new feature directories from silently routing to the Core shard whose filter excludes Honua.Server.Tests.Features.*. `default_shards_when_no_match` is only consulted when no source code under those prefixes was touched (e.g. doc-only diffs).",
+  "_comment": "Single source of truth for the Honua.Server.Tests shard matrix. Owned by ADR-0037. Each entry under `shards` carries both routing fields (`paths`) and matrix-runtime fields (`shard_name`, `artifact_suffix`, `log_name`, `timeout_minutes`, `test_timeout_minutes`, `max_cpu_count`, `upload_operator_eval_report`, `upload_odata_evidence`, `filter`). The `targeted-shards` job in ci.yml reads this file, runs scripts/ci/honua-server-targeted-tests.sh to pick the active shards for the diff, and emits a filtered `matrix_include` that ci.yml::server-tests consumes via `strategy.matrix.include: fromJson(...)`. `timeout_minutes` is the GitHub runner job cap; `test_timeout_minutes` is the inner dotnet-test cap used by scripts/ci/run-server-test-shard.sh so logs and timing artifacts are uploaded before the runner is cancelled. `infrastructure_paths` short-circuits to run_all on first match. Keep infrastructure paths limited to shared runtime/test wiring; feature-slice Core/Postgres paths should be mapped to shard `paths` instead of forcing run_all. CI router and workflow changes are validated by scripts/ci/validate-ci-router.sh instead of forcing the server-test matrix. `unmapped_source_run_all_prefixes` forces run_all when a changed file under one of those prefixes is not matched by any shard's `paths` — this prevents new feature directories from silently routing to the Core shard whose filter excludes Honua.Server.Tests.Features.*. `default_shards_when_no_match` is only consulted when no source code under those prefixes was touched (e.g. doc-only or CI-only diffs).",
   "infrastructure_paths": [
     "tests/dotnet/Honua.TestKit/",
     "src/Honua.Core/Honua.Core.csproj",
@@ -17,9 +17,7 @@
     "src/Honua.Postgres/Queries/",
     "src/Honua.ServiceDefaults/",
     "src/Honua.Server/Features/Infrastructure/",
-    "Honua.sln",
-    ".github/",
-    "scripts/ci/"
+    "Honua.sln"
   ],
   "unmapped_source_run_all_prefixes": [
     "src/Honua.Core/",

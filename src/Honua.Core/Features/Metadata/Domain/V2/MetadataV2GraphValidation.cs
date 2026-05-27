@@ -30,7 +30,10 @@ public static class MetadataV2GraphValidator
         AddEntityIds(errors, entityIds, "service", graph.Services.Select(service => service.Metadata.Id));
         AddEntityIds(errors, entityIds, "publication", graph.Publications.Select(publication => publication.Metadata.Id));
 
-        var resourceIds = graph.Resources.Select(resource => resource.Metadata.Id).ToHashSet(StringComparer.Ordinal);
+        var resourcesById = ToUniqueDictionary(
+            graph.Resources,
+            resource => resource.Metadata.Id);
+        var resourceIds = resourcesById.Keys.ToHashSet(StringComparer.Ordinal);
         var connectionIds = graph.Connections.Select(connection => connection.Metadata.Id).ToHashSet(StringComparer.Ordinal);
         var storageBindingsById = ToUniqueDictionary(
             graph.StorageBindings,
@@ -42,7 +45,7 @@ public static class MetadataV2GraphValidator
 
         ValidateStorageBindings(errors, graph.StorageBindings, resourceIds, connectionIds);
         ValidateResources(errors, graph.Resources, storageBindingsById);
-        ValidatePublications(errors, graph.Publications, resourceIds, storageBindingsById, serviceIds);
+        ValidatePublications(errors, graph.Publications, resourcesById, storageBindingsById, serviceIds);
         ValidateServices(errors, graph.Services, publicationsById);
         ValidatePublicationPrimary(errors, graph.Publications);
         ValidateObjectMetadataUniversals(errors, graph);
@@ -144,6 +147,61 @@ public static class MetadataV2GraphValidator
             ValidateResourceTemporal(errors, resource);
             ValidateResourceSchemaFields(errors, resource);
             ValidateResourceDisplayEditing(errors, resource);
+            ValidateResourceExtrusion(errors, resource);
+            ValidateResourceSymbology3D(errors, resource);
+        }
+    }
+
+    private static void ValidateResourceExtrusion(List<string> errors, MetadataV2Resource resource)
+    {
+        if (resource.Extrusion is null)
+        {
+            return;
+        }
+
+        foreach (var errorCode in MetadataV2ExtrusionValidator.Validate(resource.Extrusion, resource.SchemaFields))
+        {
+            errors.Add($"resource '{resource.Metadata.Id}' extrusion is invalid: {errorCode}.");
+        }
+    }
+
+    private static void ValidateResourceSymbology3D(List<string> errors, MetadataV2Resource resource)
+    {
+        var symbology = resource.Symbology3D;
+        if (symbology is null)
+        {
+            return;
+        }
+
+        ValidateOpacity(errors, resource, symbology.DefaultOpacity, "symbology3D.defaultOpacity");
+
+        foreach (var rule in symbology.Rules)
+        {
+            if (string.IsNullOrWhiteSpace(rule.Attribute))
+            {
+                errors.Add($"resource '{resource.Metadata.Id}' symbology3D rule attribute is required.");
+                continue;
+            }
+
+            EnsureFieldDeclared(errors, resource, rule.Attribute, "symbology3D.rules.attribute");
+            ValidateOpacity(errors, resource, rule.Opacity, "symbology3D.rules.opacity");
+        }
+    }
+
+    private static void ValidateOpacity(
+        List<string> errors,
+        MetadataV2Resource resource,
+        double? opacity,
+        string slot)
+    {
+        if (opacity is null)
+        {
+            return;
+        }
+
+        if (double.IsNaN(opacity.Value) || opacity.Value < 0.0 || opacity.Value > 1.0)
+        {
+            errors.Add($"resource '{resource.Metadata.Id}' {slot} must be between 0 and 1.");
         }
     }
 
@@ -361,13 +419,14 @@ public static class MetadataV2GraphValidator
     private static void ValidatePublications(
         List<string> errors,
         IEnumerable<MetadataV2Publication> publications,
-        HashSet<string> resourceIds,
+        Dictionary<string, MetadataV2Resource> resourcesById,
         Dictionary<string, MetadataV2StorageBinding> storageBindingsById,
         HashSet<string> serviceIds)
     {
         foreach (var publication in publications)
         {
-            if (!resourceIds.Contains(publication.ResourceId))
+            var hasResource = resourcesById.TryGetValue(publication.ResourceId, out var resource);
+            if (!hasResource)
             {
                 errors.Add(
                     $"publication '{publication.Metadata.Id}' references missing resource '{publication.ResourceId}'.");
@@ -382,6 +441,16 @@ public static class MetadataV2GraphValidator
             if (publication.StorageBindingId is null)
             {
                 continue;
+            }
+
+            if (hasResource)
+            {
+                var storageBindingIds = resource!.StorageBindingIds ?? Array.Empty<string>();
+                if (!storageBindingIds.Contains(publication.StorageBindingId, StringComparer.Ordinal))
+                {
+                    errors.Add(
+                        $"resource '{publication.ResourceId}' primary storage binding '{publication.StorageBindingId}' must be listed in storageBindingIds.");
+                }
             }
 
             if (!storageBindingsById.TryGetValue(publication.StorageBindingId, out var storageBinding))

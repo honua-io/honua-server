@@ -5,7 +5,6 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -17,6 +16,7 @@ using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
+using Honua.Server.Features.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -63,7 +63,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerV2Async(
             resourceValidator,
             serviceId,
             layerId,
@@ -76,17 +76,17 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = validationResult.Service!;
-        var layer = validationResult.Layer!;
-        var accessError = AccessPolicyHelpers.RequireLayerWriteAccess(context, layer, service);
+        var resource = validationResult.Resource!;
+        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service, AccessScope.Write);
         if (accessError != null)
         {
             return accessError;
         }
 
-        var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
+        var rbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
             context,
+            resource,
             service,
-            layer,
             cancellationToken);
         if (rbacError != null)
         {
@@ -132,7 +132,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerV2Async(
             resourceValidator,
             serviceId,
             layerId,
@@ -145,17 +145,17 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = validationResult.Service!;
-        var layer = validationResult.Layer!;
-        var accessError = AccessPolicyHelpers.RequireLayerWriteAccess(context, layer, service);
+        var resource = validationResult.Resource!;
+        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service, AccessScope.Write);
         if (accessError != null)
         {
             return accessError;
         }
 
-        var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
+        var rbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
             context,
+            resource,
             service,
-            layer,
             cancellationToken);
         if (rbacError != null)
         {
@@ -217,7 +217,7 @@ internal static partial class FeatureServerEndpoints
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerV2Async(
             resourceValidator,
             serviceId,
             layerId,
@@ -230,21 +230,31 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = validationResult.Service!;
-        var layer = validationResult.Layer!;
-        var accessError = AccessPolicyHelpers.RequireLayerWriteAccess(context, layer, service);
+        var publication = validationResult.Publication!;
+        var resource = validationResult.Resource!;
+        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service, AccessScope.Write);
         if (accessError != null)
         {
             return accessError;
         }
 
-        var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
+        var rbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
             context,
+            resource,
             service,
-            layer,
             cancellationToken);
         if (rbacError != null)
         {
             return rbacError;
+        }
+
+        var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var storageLayerId = ResolveFeatureServerStorageLayerIdV2(snapshot, publication, resource);
+        if (storageLayerId is null)
+        {
+            return StandardErrorHelpers.CreateNotFound(context,
+                $"Layer '{resource.Metadata.Name ?? layerId.ToString(CultureInfo.InvariantCulture)}' is not bound to a storage layer.");
         }
 
         IReadOnlyDictionary<string, StringValues> values = ToCaseInsensitiveDictionary(context.Request.Query);
@@ -319,7 +329,7 @@ internal static partial class FeatureServerEndpoints
 
         // Validate that all target field names exist in the layer schema
         var validFieldNames = new HashSet<string>(
-            layer.Fields.Select(f => f.Name),
+            resource.SchemaFields.Select(f => f.Name),
             StringComparer.OrdinalIgnoreCase);
         foreach (var (field, _, _) in parsedExpressions)
         {
@@ -334,7 +344,7 @@ internal static partial class FeatureServerEndpoints
         var whereClause = GetValueString(values, "where");
         var query = new FeatureQuery
         {
-            SpatialReferenceSrid = layer.SpatialReference.ToSrid()
+            SpatialReferenceSrid = resource.ReadSrid()
         };
 
         if (!string.IsNullOrWhiteSpace(whereClause) && whereClause != "1=1")
@@ -350,7 +360,7 @@ internal static partial class FeatureServerEndpoints
 
             if (parseResult.Expression != null)
             {
-                var translationResult = filterService.Translate(parseResult.Expression, layer);
+                var translationResult = filterService.Translate(parseResult.Expression, resource);
                 if (!translationResult.IsSuccess)
                 {
                     return StandardErrorHelpers.CreateBadRequest(context,
@@ -367,7 +377,7 @@ internal static partial class FeatureServerEndpoints
 
         // Query features to update
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var queryResult = await featureReader.QueryAsync(layer.Id, query, cancellationToken);
+        var queryResult = await featureReader.QueryAsync(storageLayerId.Value, query, cancellationToken);
 
         if (queryResult.Items.Length == 0)
         {
@@ -398,7 +408,7 @@ internal static partial class FeatureServerEndpoints
 
         var editBatch = FeatureEditBatch.Create(updates: updates.ToImmutable());
         var featureWriter = context.RequestServices.GetRequiredService<IFeatureWriter>();
-        var editResult = await featureWriter.ApplyEditsAsync(layer.Id, editBatch, cancellationToken);
+        var editResult = await featureWriter.ApplyEditsAsync(storageLayerId.Value, editBatch, cancellationToken);
 
         // Invalidate output cache after successful mutations
         if (!editResult.HasErrors && editResult.UpdatedCount > 0)
@@ -482,14 +492,12 @@ internal static partial class FeatureServerEndpoints
             return accessError;
         }
 
-        // The V2 canonical schema (MetadataV2Field) does not carry coded-value /
-        // range domains; domain info is a v1-only annotation surfaced from the
-        // catalog FieldDomainDefinition. Under V2 the queryDomains endpoint
-        // returns an empty domain list — clients that need domain metadata can
-        // continue to read it from the v1 catalog endpoints. A future task can
-        // add a typed domain extension to MetadataV2Field and surface it here.
-        _ = FilterAccessibleLayersV2(context, service, selectedLayers);
-        var domains = Array.Empty<DomainInfo>();
+        var accessibleLayers = FilterAccessibleLayersV2(context, service, selectedLayers);
+        var domains = accessibleLayers
+            .SelectMany(pair => pair.Resource.SchemaFields
+                .Where(static field => !field.Hidden && field.Domain is not null)
+                .Select(field => MapDomainInfoV2(pair.Publication, pair.Resource, field, snapshot)))
+            .ToArray();
 
         var response = new QueryDomainsResponse
         {
@@ -498,6 +506,41 @@ internal static partial class FeatureServerEndpoints
 
         scope.SetSuccess(domains.Length);
         return Results.Json(response, FeatureServerJsonContext.Default.QueryDomainsResponse, contentType: "application/json");
+    }
+
+    private static DomainInfo MapDomainInfoV2(
+        MetadataV2Publication publication,
+        MetadataV2Resource resource,
+        MetadataV2Field field,
+        MetadataV2GraphSnapshot snapshot)
+    {
+        var domain = field.Domain!;
+        var layerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(resource) ?? -1;
+
+        return new DomainInfo
+        {
+            Type = domain.Type,
+            Name = domain.Name,
+            FieldName = field.Name,
+            FieldType = MapFieldTypeToGeoServicesV2(field.Type),
+            LayerId = layerId,
+            CodedValues = domain.CodedValues.Count == 0
+                ? null
+                : domain.CodedValues
+                    .Select(static codedValue => new DomainCodedValueInfo
+                    {
+                        Name = codedValue.Name,
+                        Code = codedValue.Code.Clone()
+                    })
+                    .ToArray(),
+            Range = domain.Range is null
+                ? null
+                : domain.Range
+                    .Select(static value => (object)value.Clone())
+                    .ToArray(),
+            MergePolicy = domain.MergePolicy,
+            SplitPolicy = domain.SplitPolicy
+        };
     }
 
     private static async Task<IResult> HandleQueryRelationships(
@@ -771,7 +814,7 @@ internal static partial class FeatureServerEndpoints
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerV2Async(
             resourceValidator,
             serviceId,
             layerId,
@@ -784,8 +827,8 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = validationResult.Service!;
-        var layer = validationResult.Layer!;
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+        var resource = validationResult.Resource!;
+        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
         if (accessError != null)
         {
             return accessError;

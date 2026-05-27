@@ -43,7 +43,7 @@ internal sealed class NlQueryOrchestrator(
         NlQueryLog.PlanSucceeded(logger, collectionId, planResult.Plan.Clauses.Length);
 
         // Step 2: Compile the filter plan into a FilterExpression AST.
-        var compileResult = FilterPlanCompiler.Compile(planResult.Plan, request.Layer);
+        var compileResult = FilterPlanCompiler.Compile(planResult.Plan, request.Resource);
 
         if (!compileResult.IsSuccess || compileResult.Expression is null)
         {

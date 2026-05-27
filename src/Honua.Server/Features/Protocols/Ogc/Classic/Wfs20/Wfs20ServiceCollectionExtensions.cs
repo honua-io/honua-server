@@ -27,13 +27,12 @@ internal static class Wfs20ServiceCollectionExtensions
         // Register WFS 2.0 core services following established patterns
         services.TryAddScoped<IQueryProcessor, QueryProcessor>();
         services.TryAddScoped<IEditProcessor, EditProcessor>();
-        services.TryAddScoped<IQueryParameterAdapter<Wfs20QueryRequest>, Wfs20QueryParameterAdapter>();
-        services.TryAddScoped<IEditParameterAdapter<Wfs20EditRequest>, Wfs20EditParameterAdapter>();
+        services.TryAddScoped<Wfs20QueryParameterAdapter>();
+        services.TryAddScoped<Wfs20EditParameterAdapter>();
         services.AddScoped<Wfs20QueryServices>();
         services.AddScoped<Wfs20Handler>();
 
         // Register additional WFS 2.0 services for comprehensive OGC compliance
-        services.AddScoped<IWfs20FeatureTypeSchemaGenerator, Wfs20FeatureTypeSchemaGenerator>();
         services.AddScoped<IGmlSerializer, GmlSerializer>();
         services.AddScoped<IWfs20FeatureFormatConverter, Wfs20FeatureFormatConverter>();
 

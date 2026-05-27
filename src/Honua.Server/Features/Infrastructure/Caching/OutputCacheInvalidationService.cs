@@ -205,7 +205,7 @@ internal sealed partial class OutputCacheInvalidationService
         await Task.WhenAll(
             EvictTagsAsync(tags, cancellationToken),
             EvictResponseCacheAsync(responsePatterns, cancellationToken),
-            EvictCatalogMetadataCacheAsync(normalizedServiceId, layerIdList, cancellationToken)).ConfigureAwait(false);
+            EvictCatalogCacheAsync(normalizedServiceId, layerIdList, cancellationToken)).ConfigureAwait(false);
     }
 
     private async Task EvictTagsAsync(IEnumerable<string> tags, CancellationToken cancellationToken)
@@ -253,7 +253,7 @@ internal sealed partial class OutputCacheInvalidationService
         }
     }
 
-    private async Task EvictCatalogMetadataCacheAsync(
+    private async Task EvictCatalogCacheAsync(
         string? serviceId,
         IReadOnlyCollection<int> layerIds,
         CancellationToken cancellationToken)

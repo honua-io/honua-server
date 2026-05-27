@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
@@ -349,13 +351,15 @@ public static partial class OgcMapsEndpoints
         CancellationToken cancellationToken)
     {
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var validationResult = await resourceValidator.ValidateCollectionAsync(value, cancellationToken);
+        var validationResult = await resourceValidator.ValidateCollectionV2Async(value, cancellationToken);
         if (!validationResult.IsValid || validationResult.Resource is null)
         {
             return null;
         }
 
-        return validationResult.Resource.Id;
+        var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        return snapshot.ResolveStorageLayerId(validationResult.Resource);
     }
 
     private static bool HasEmptyCommaSeparatedToken(string value)

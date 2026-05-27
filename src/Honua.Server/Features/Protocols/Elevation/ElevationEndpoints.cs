@@ -3,7 +3,6 @@
 
 using System.Globalization;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -23,6 +22,7 @@ internal static class ElevationEndpoints
 {
     private const string JsonContentType = "application/json";
     private const int DefaultSrid = 4326;
+    private const string ElevationProtocolName = "Elevation";
 
     public static IEndpointRouteBuilder MapElevationEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -86,7 +86,8 @@ internal static class ElevationEndpoints
             return validation.ErrorResult!;
         }
 
-        var layer = validation.Layer!;
+        var resource = validation.Resource!;
+        var layerId = validation.Publication!.LayerIndex!.Value;
         var resolvedSrid = await ResolveSridAsync(crsRegistry, srid, cancellationToken);
         if (!resolvedSrid.IsSupported)
         {
@@ -102,18 +103,18 @@ internal static class ElevationEndpoints
                 "Coordinates 'x' and 'y' must be within WGS 84 bounds when 'srid' is omitted or 4326: longitude in [-180, 180] and latitude in [-90, 90].");
         }
 
-        var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(layer.Metadata, mosaicRule);
+        var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(resource, mosaicRule);
 
         using var activity = HonuaTelemetry.StartActivity("honua.elevation.value");
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Elevation);
         activity?.SetTag(HonuaTelemetry.Tags.Operation, "elevation.value");
-        activity?.SetTag(HonuaTelemetry.Tags.LayerId, layer.Id);
+        activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
         activity?.SetTag(HonuaTelemetry.Tags.CollectionId, datasetId);
 
         try
         {
             var result = await elevationService.QueryPointAsync(
-                layer.Id,
+                layerId,
                 x.Value,
                 y.Value,
                 resolvedSrid.Srid,
@@ -203,7 +204,8 @@ internal static class ElevationEndpoints
             return validation.ErrorResult!;
         }
 
-        var layer = validation.Layer!;
+        var resource = validation.Resource!;
+        var layerId = validation.Publication!.LayerIndex!.Value;
         var resolvedSrid = await ResolveSridAsync(crsRegistry, srid, cancellationToken);
         if (!resolvedSrid.IsSupported)
         {
@@ -225,12 +227,12 @@ internal static class ElevationEndpoints
             }
         }
 
-        var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(layer.Metadata, mosaicRule);
+        var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(resource, mosaicRule);
 
         using var activity = HonuaTelemetry.StartActivity("honua.elevation.profile");
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Elevation);
         activity?.SetTag(HonuaTelemetry.Tags.Operation, "elevation.profile");
-        activity?.SetTag(HonuaTelemetry.Tags.LayerId, layer.Id);
+        activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
         activity?.SetTag(HonuaTelemetry.Tags.CollectionId, datasetId);
 
         try
@@ -250,7 +252,7 @@ internal static class ElevationEndpoints
             };
 
             var result = await elevationService.QueryProfileAsync(
-                layer.Id,
+                layerId,
                 lineWkb,
                 lineSrid,
                 samplingOptions,
@@ -262,7 +264,7 @@ internal static class ElevationEndpoints
             activity?.SetTag("honua.elevation.line_length_m", result.LineLengthMeters);
             activity?.SetTag("honua.elevation.no_data", result.IsAllNoData);
 
-            var response = BuildProfileResponse(datasetId, layer.Id, lineSrid, result, mergeStrategy);
+            var response = BuildProfileResponse(datasetId, layerId, lineSrid, result, mergeStrategy);
             return Results.Json(response, ElevationJsonContext.Default.ElevationProfileResponse, contentType: JsonContentType);
         }
         catch (ElevationQueryException ex)
@@ -348,27 +350,42 @@ internal static class ElevationEndpoints
         return supported ? new SridResolutionResult(srid, true) : SridResolutionResult.Unsupported;
     }
 
-    private static Task<LayerValidationHelpers.LayerValidationResult> ValidateDatasetAsync(
+    private static async Task<LayerValidationHelpers.MetadataV2ValidationResult> ValidateDatasetAsync(
         HttpContext context,
         string datasetId,
         CancellationToken cancellationToken)
     {
+        LayerValidationHelpers.MetadataV2ValidationResult validation;
         if (int.TryParse(datasetId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
         {
-            return LayerValidationHelpers.ValidateLayerWithAccessAsync(
+            validation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
                 context,
                 layerId,
                 AccessScope.Read,
-                ServiceProtocols.Elevation,
-                cancellationToken);
+                ElevationProtocolName,
+                cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
+                context,
+                datasetId,
+                AccessScope.Read,
+                ElevationProtocolName,
+                cancellationToken).ConfigureAwait(false);
         }
 
-        return LayerValidationHelpers.ValidateCollectionWithAccessAsync(
-            context,
-            datasetId,
-            AccessScope.Read,
-            ServiceProtocols.Elevation,
-            cancellationToken);
+        if (!validation.IsValid || validation.Publication?.LayerIndex is not null)
+        {
+            return validation;
+        }
+
+        return new LayerValidationHelpers.MetadataV2ValidationResult(
+            false,
+            validation.Publication,
+            validation.Resource,
+            validation.Service,
+            StandardErrorHelpers.CreateNotFound(context, $"Dataset '{datasetId}' not found."));
     }
 
     private static IResult MapElevationException(HttpContext context, ElevationQueryException exception)

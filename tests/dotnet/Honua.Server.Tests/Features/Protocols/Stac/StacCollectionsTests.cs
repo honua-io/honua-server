@@ -4,10 +4,7 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -118,20 +115,15 @@ public sealed class StacCollectionsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}")]
     public async Task GetCollection_ById_ReturnsDeclaredStacMetadata()
     {
-        await UpdateLayerMetadataAsync(new CatalogMetadata
-        {
-            TimeInfo = new LayerTimeInfo { StartTimeField = "timestamp" },
-            Stac = new StacCatalogMetadata
+        _fixture.UpdateV2ResourceMetadata(
+            WebAppFixture.TestLayerId,
+            temporal: new MetadataV2ResourceTemporal { StartTimeField = "timestamp" },
+            stacExtension: JsonSerializer.SerializeToElement(new
             {
-                License = "CC-BY-4.0",
-                Keywords = ["imagery", "ops-demo"],
-                Extensions =
-                [
-                    "https://stac-extensions.github.io/eo/v1.1.0/schema.json",
-                    "https://stac-extensions.github.io/projection/v1.1.0/schema.json"
-                ]
-            }
-        });
+                license = "CC-BY-4.0",
+                keywords = ExpectedCollectionKeywords,
+                extensions = ExpectedCollectionExtensions
+            }));
 
         var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var response = await _fixture.Client.GetAsync($"/stac/collections/{collectionId}");
@@ -218,63 +210,39 @@ public sealed class StacCollectionsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}")]
     public async Task GetCollection_WithProjectedExtent_UsesTransformFallbackForSpatialBbox()
     {
-        var fixture = new WebAppFixture()
-            .ReplaceService<ILayerCatalog>(new ProjectedExtentLayerCatalog());
-
-        try
-        {
-            await fixture.InitializeAsync();
-
-            var response = await fixture.Client.GetAsync($"/stac/collections/{ProjectedExtentLayerCatalog.LayerId}");
-
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var bbox = json.RootElement
-                .GetProperty("extent")
-                .GetProperty("spatial")
-                .GetProperty("bbox")[0];
-
-            bbox[0].GetDouble().Should().BeNegative();
-            bbox[1].GetDouble().Should().BeGreaterThan(0d);
-            bbox[2].GetDouble().Should().BeNegative();
-            bbox[2].GetDouble().Should().BeGreaterThan(bbox[0].GetDouble());
-            bbox[3].GetDouble().Should().BeGreaterThan(bbox[1].GetDouble());
-            bbox[1].GetDouble().Should().NotBe(-90d);
-            bbox[3].GetDouble().Should().NotBe(90d);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
-    }
-
-    private Task UpdateLayerMetadataAsync(CatalogMetadata metadata)
-    {
-        // The legacy v1 ILayerMetadataUpdater wrote CatalogMetadata to the v1 catalog. The
-        // V2-ported STAC endpoints read from resource.Extensions["stac"] and
-        // resource.Temporal. Bridge the test's CatalogMetadata input onto the V2 graph by
-        // serialising the Stac block and temporal field hints into the typed slots.
-        JsonElement? stac = null;
-        if (metadata.Stac is not null)
-        {
-            stac = JsonSerializer.SerializeToElement(
-                metadata.Stac,
-                Honua.Core.Features.Catalog.Domain.CatalogJsonContext.Default.StacCatalogMetadata);
-        }
-
-        MetadataV2ResourceTemporal? temporal = null;
-        if (metadata.TimeInfo is not null)
-        {
-            temporal = new MetadataV2ResourceTemporal
+        _fixture.UpdateV2ResourceMetadata(
+            WebAppFixture.TestLayerId,
+            spatial: new MetadataV2ResourceSpatial
             {
-                StartTimeField = metadata.TimeInfo.StartTimeField,
-                EndTimeField = metadata.TimeInfo.EndTimeField,
-                TrackIdField = metadata.TimeInfo.TrackIdField,
-            };
-        }
+                SpatialReference = MetadataV2SpatialReference.WebMercator,
+                StorageCrs = MetadataV2SpatialReference.WebMercator,
+                GeometryType = MetadataV2GeometryType.Point,
+                PrimaryGeometryField = "shape",
+                Bbox = new MetadataV2Bbox
+                {
+                    West = -13_630_000d,
+                    South = 4_540_000d,
+                    East = -13_620_000d,
+                    North = 4_550_000d,
+                },
+            });
 
-        _fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, stacExtension: stac, temporal: temporal);
-        return Task.CompletedTask;
+        var response = await _fixture.Client.GetAsync($"/stac/collections/{WebAppFixture.TestLayerId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var bbox = json.RootElement
+            .GetProperty("extent")
+            .GetProperty("spatial")
+            .GetProperty("bbox")[0];
+
+        bbox[0].GetDouble().Should().BeNegative();
+        bbox[1].GetDouble().Should().BeGreaterThan(0d);
+        bbox[2].GetDouble().Should().BeNegative();
+        bbox[2].GetDouble().Should().BeGreaterThan(bbox[0].GetDouble());
+        bbox[3].GetDouble().Should().BeGreaterThan(bbox[1].GetDouble());
+        bbox[1].GetDouble().Should().NotBe(-90d);
+        bbox[3].GetDouble().Should().NotBe(90d);
     }
 }

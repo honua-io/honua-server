@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -132,7 +131,7 @@ public sealed class MetadataV2GraphSnapshotTests
                     Metadata = new MetadataV2ObjectMetadata { Id = "resource.parcels", Name = "parcels" },
                     Type = MetadataV2ResourceType.FeatureDataset,
                     StorageBindingIds = ["storage.parcels.postgis"],
-                    
+
                     SchemaFields =
                     [
                         new MetadataV2Field { Name = "parcel_id", Type = MetadataV2FieldType.String, SemanticRoles = ["id.primary"] },
@@ -149,6 +148,7 @@ public sealed class MetadataV2GraphSnapshotTests
                     ConnectionId = "conn.postgres",
                     StorageType = MetadataV2StorageType.RelationalTable,
                     Locator = "public.parcels",
+                    StorageLayerId = 0,
                 }
             ],
             Services =

@@ -1,9 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Queries.Filters;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
@@ -14,8 +13,6 @@ internal interface IFeatureServerQueryServices
 
     RelatedRecordsValidationResult ValidateRelatedRecordsLimits(QueryRelatedRecordsParameters queryParams);
 
-    SqlFragment? TranslateFilter(FilterExpression filterExpression, LayerDefinition layer);
-
     Task<int?> ResolveSridAsync(
         string? srValue,
         GeoServicesSpatialReference? geometrySpatialReference,
@@ -23,7 +20,7 @@ internal interface IFeatureServerQueryServices
 
     ValueTask<(object Response, string ContentType)> FormatQueryResultAsync(
         QueryResult<Feature> result,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         string format,
         bool returnGeometry,
         int? outputSrid,

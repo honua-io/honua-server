@@ -6,8 +6,8 @@ using System.Globalization;
 namespace Honua.Core.Features.Scene.Domain;
 
 /// <summary>
-/// Attribute-driven 3D symbology configuration stored with a feature layer
-/// definition and consumed by the 3D Tiles generation pipeline.
+/// Attribute-driven 3D symbology configuration stored with a Metadata v2
+/// feature resource and consumed by the 3D Tiles generation pipeline.
 /// </summary>
 /// <remarks>
 /// <para>

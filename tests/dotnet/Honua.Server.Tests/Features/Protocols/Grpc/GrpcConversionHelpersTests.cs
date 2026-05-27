@@ -4,15 +4,14 @@
 using System.Collections.Immutable;
 using FluentAssertions;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Protocols.Grpc;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
-using DomainGeometryType = Honua.Core.Features.Catalog.Domain.GeometryType;
 using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Protocols.Grpc;
@@ -591,26 +590,32 @@ public sealed class GrpcConversionHelpersTests
     [UnitTest]
     public void ToProtoGeometryType_AllValues_MapCorrectly()
     {
-        GrpcConversionHelpers.ToProtoGeometryType(DomainGeometryType.Point)
+        GrpcConversionHelpers.ToProtoGeometryType(MetadataV2GeometryType.Point)
             .Should().Be(Proto.GeometryType.Point);
-        GrpcConversionHelpers.ToProtoGeometryType(DomainGeometryType.MultiPoint)
+        GrpcConversionHelpers.ToProtoGeometryType(MetadataV2GeometryType.MultiPoint)
             .Should().Be(Proto.GeometryType.MultiPoint);
-        GrpcConversionHelpers.ToProtoGeometryType(DomainGeometryType.LineString)
+        GrpcConversionHelpers.ToProtoGeometryType(MetadataV2GeometryType.LineString)
             .Should().Be(Proto.GeometryType.LineString);
-        GrpcConversionHelpers.ToProtoGeometryType(DomainGeometryType.MultiLineString)
+        GrpcConversionHelpers.ToProtoGeometryType(MetadataV2GeometryType.MultiLineString)
             .Should().Be(Proto.GeometryType.MultiLineString);
-        GrpcConversionHelpers.ToProtoGeometryType(DomainGeometryType.Polygon)
+        GrpcConversionHelpers.ToProtoGeometryType(MetadataV2GeometryType.Polygon)
             .Should().Be(Proto.GeometryType.Polygon);
-        GrpcConversionHelpers.ToProtoGeometryType(DomainGeometryType.MultiPolygon)
+        GrpcConversionHelpers.ToProtoGeometryType(MetadataV2GeometryType.MultiPolygon)
             .Should().Be(Proto.GeometryType.MultiPolygon);
-        GrpcConversionHelpers.ToProtoGeometryType(DomainGeometryType.None)
+        GrpcConversionHelpers.ToProtoGeometryType(MetadataV2GeometryType.None)
             .Should().Be(Proto.GeometryType.None);
     }
 
     [UnitTest]
     public void ToProtoField_MapsFieldProperties()
     {
-        var field = new FieldDefinition("name", FieldType.String, Length: 255, Nullable: true);
+        var field = new MetadataV2Field
+        {
+            Name = "name",
+            Type = MetadataV2FieldType.String,
+            Length = 255,
+            Nullable = true
+        };
 
         var proto = GrpcConversionHelpers.ToProtoField(field);
 

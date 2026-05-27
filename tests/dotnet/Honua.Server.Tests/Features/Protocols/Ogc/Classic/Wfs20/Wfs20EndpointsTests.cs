@@ -8,13 +8,17 @@ using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
+using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
@@ -123,7 +127,8 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     public async Task Wfs_GetCapabilities_WithProjectedExtent_UsesTransformFallbackForWgs84BoundingBox()
     {
         var fixture = new WebAppFixture()
-            .ReplaceService<ILayerCatalog>(new ProjectedExtentLayerCatalog());
+            .ReplaceService<ILayerCatalog>(new ProjectedExtentLayerCatalog())
+            .ReplaceService<IMetadataV2GraphProvider>(BuildProjectedMetadataProvider());
 
         try
         {
@@ -142,6 +147,64 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         {
             await fixture.DisposeAsync();
         }
+    }
+
+    private static TestMetadataV2GraphProvider BuildProjectedMetadataProvider()
+    {
+        const string ResourceId = "res-projected-metadata-layer";
+        const string StorageBindingId = "binding-projected-metadata-layer";
+        const string ServiceId = "svc-projected-metadata-wfs";
+
+        var spatialReference = new MetadataV2SpatialReference
+        {
+            Srid = ProjectedExtentLayerCatalog.LayerSrid,
+            Crs = $"EPSG:{ProjectedExtentLayerCatalog.LayerSrid}",
+            IsGeographic = false
+        };
+
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource(
+                ResourceId,
+                "Projected Metadata Layer",
+                MetadataV2ResourceType.FeatureDataset,
+                fields:
+                [
+                    new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+                    new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true },
+                    new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, Nullable = false }
+                ],
+                spatial: new MetadataV2ResourceSpatial
+                {
+                    SpatialReference = spatialReference,
+                    GeometryType = MetadataV2GeometryType.Point,
+                    Bbox = new MetadataV2Bbox
+                    {
+                        West = 500_000d,
+                        South = 4_100_000d,
+                        East = 600_000d,
+                        North = 4_200_000d
+                    }
+                })
+            .AddStorageBinding(
+                StorageBindingId,
+                ResourceId,
+                "projected_metadata_layer",
+                storageLayerId: ProjectedExtentLayerCatalog.LayerId)
+            .AddService(
+                ServiceId,
+                ProjectedExtentLayerCatalog.ServiceId,
+                protocols: [MetadataV2ServiceProtocols.Wfs20])
+            .AddPublication(
+                "pub-projected-metadata-wfs",
+                ServiceId,
+                ResourceId,
+                layerIndex: ProjectedExtentLayerCatalog.LayerId,
+                storageBindingId: StorageBindingId,
+                serviceLocalId: "projected_metadata_layer",
+                publicationType: MetadataV2PublicationType.WfsFeatureType)
+            .Build();
+
+        return new TestMetadataV2GraphProvider(graph);
     }
 
     [IntegrationTest]

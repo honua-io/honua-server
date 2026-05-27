@@ -55,17 +55,21 @@ internal static class StyleEndpoints
                 $"Unsupported theme '{theme}'. Use 'default', 'dark', 'colorblind-safe', or 'print'.");
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+        if (layerId < 0)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, $"Layer id '{layerId}' is invalid.");
+        }
+
+        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
             context,
             layerId,
             cancellationToken: cancellationToken);
-        if (!layerValidation.IsValid)
+        if (!layerValidation.IsValid || layerValidation.Resource is null)
         {
             return layerValidation.ErrorResult!;
         }
-        var layer = layerValidation.Layer!;
 
-        var snapshot = await styleService.GetStyleAsync(layer, cancellationToken);
+        var snapshot = await styleService.GetStyleAsync(layerValidation.Resource, layerId, cancellationToken);
         var styleElement = snapshot?.MapLibreStyle;
 
         if (!styleElement.HasValue || styleElement.Value.ValueKind == JsonValueKind.Null)

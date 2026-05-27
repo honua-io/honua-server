@@ -4,9 +4,9 @@
 using System.Text.Json;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Validation;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -68,7 +68,7 @@ internal sealed class PostgresLayerFieldConfigurationStore : ILayerFieldConfigur
             var domain = command.Parameters.Add(domainParameter, NpgsqlDbType.Jsonb);
             domain.Value = update.Domain is null
                 ? DBNull.Value
-                : JsonSerializer.Serialize(update.Domain, CatalogJsonContext.Default.FieldDomainDefinition);
+                : JsonSerializer.Serialize(update.Domain, MetadataV2JsonContext.Default.MetadataV2FieldDomain);
             var hidden = command.Parameters.Add(hiddenParameter, NpgsqlDbType.Boolean);
             hidden.Value = update.Hidden.HasValue ? update.Hidden.Value : DBNull.Value;
 
@@ -113,11 +113,11 @@ internal sealed class PostgresLayerFieldConfigurationStore : ILayerFieldConfigur
             int aliasOrdinal = reader.GetOrdinal("description");
             string? alias = reader.IsDBNull(aliasOrdinal) ? null : reader.GetString(aliasOrdinal);
             int domainOrdinal = reader.GetOrdinal("domain");
-            FieldDomainDefinition? domain = reader.IsDBNull(domainOrdinal)
+            MetadataV2FieldDomain? domain = reader.IsDBNull(domainOrdinal)
                 ? null
                 : JsonSerializer.Deserialize(
                     reader.GetString(domainOrdinal),
-                    CatalogJsonContext.Default.FieldDomainDefinition);
+                    MetadataV2JsonContext.Default.MetadataV2FieldDomain);
             bool hidden = reader.GetBoolean(reader.GetOrdinal("hidden"));
 
             fields.Add(new LayerFieldConfiguration(name, alias, domain, hidden));

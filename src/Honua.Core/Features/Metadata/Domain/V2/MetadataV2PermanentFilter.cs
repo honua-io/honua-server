@@ -13,9 +13,8 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 /// </summary>
 /// <remarks>
 /// Storage backends honour this by ANDing the parsed expression with the
-/// per-request filter before SQL translation. The same v1 use cases — saved
-/// filter shipped from admin UIs, tenant-scoped views, soft-delete masks —
-/// continue to apply.
+/// per-request filter before SQL translation. Saved filters shipped from admin
+/// UIs, tenant-scoped views, and soft-delete masks all use this contract.
 /// </remarks>
 public sealed record MetadataV2PermanentFilter
 {
@@ -27,8 +26,7 @@ public sealed record MetadataV2PermanentFilter
     public string Expression { get; init; } = string.Empty;
 
     /// <summary>
-    /// Identifier of the filter language. The canonical values mirror the v1
-    /// <c>LayerPermanentFilterLanguages</c> constants:
+    /// Identifier of the filter language. The canonical values are:
     /// <list type="bullet">
     /// <item><c>arcgis-sql</c> — Esri SQL92 subset (default).</item>
     /// <item><c>cql2-text</c> — OGC CQL2 text encoding.</item>
@@ -39,5 +37,26 @@ public sealed record MetadataV2PermanentFilter
     /// the filter.
     /// </summary>
     [JsonPropertyName("language")]
-    public string Language { get; init; } = string.Empty;
+    public string Language { get; init; } = MetadataV2PermanentFilterLanguages.ArcGisSql;
+}
+
+/// <summary>
+/// Stable permanent-filter language tokens used by Metadata v2 resources.
+/// </summary>
+public static class MetadataV2PermanentFilterLanguages
+{
+    /// <summary>
+    /// GeoServices SQL where-clause syntax.
+    /// </summary>
+    public const string ArcGisSql = "arcgis-sql";
+
+    /// <summary>
+    /// OGC CQL2 text syntax.
+    /// </summary>
+    public const string Cql2Text = "cql2-text";
+
+    /// <summary>
+    /// OGC CQL2 JSON syntax.
+    /// </summary>
+    public const string Cql2Json = "cql2-json";
 }

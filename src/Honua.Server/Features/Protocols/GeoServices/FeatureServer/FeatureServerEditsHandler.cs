@@ -3,10 +3,11 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
@@ -72,7 +73,7 @@ internal sealed class FeatureServerEditsHandler(
                 request.Deletes?.Length ?? 0);
 
             // Validate service and layer exist
-            var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+            var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerV2Async(
                 _resourceValidator,
                 serviceId,
                 layerId,
@@ -85,21 +86,31 @@ internal sealed class FeatureServerEditsHandler(
             }
 
             var service = validationResult.Service!;
-            var layer = validationResult.Layer!;
-            var accessError = AccessPolicyHelpers.RequireLayerWriteAccess(httpContext, layer, service);
+            var publication = validationResult.Publication!;
+            var resource = validationResult.Resource!;
+            var accessError = AccessPolicyHelpers.RequireResourceAccess(httpContext, resource, service, AccessScope.Write);
             if (accessError != null)
             {
                 return accessError;
             }
 
-            var rbacError = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
+            var rbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
                 httpContext,
+                resource,
                 service,
-                layer,
                 cancellationToken);
             if (rbacError != null)
             {
                 return rbacError;
+            }
+
+            var snapshotProvider = httpContext.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+            var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var storageLayerId = ResolveStorageLayerIdV2(snapshot, publication, resource);
+            if (storageLayerId is null)
+            {
+                return StandardErrorHelpers.CreateNotFound(httpContext,
+                    $"Layer '{resource.Metadata.Name ?? layerId.ToString(CultureInfo.InvariantCulture)}' is not bound to a storage layer.");
             }
 
             // Validate edit limits
@@ -118,7 +129,7 @@ internal sealed class FeatureServerEditsHandler(
             }
 
             // Process edit operations
-            var editContext = await ProcessEditOperationsAsync(request, layer, cancellationToken);
+            var editContext = await ProcessEditOperationsAsync(request, resource, storageLayerId.Value, cancellationToken);
 
             // Handle validation errors with rollback if needed
             if (editContext.HasValidationErrors && request.RollbackOnFailure)
@@ -127,7 +138,7 @@ internal sealed class FeatureServerEditsHandler(
             }
 
             // Execute edits in the database
-            var editResult = await ExecuteEdits(layer.Id, layer, editContext, request, serviceId, cancellationToken);
+            var editResult = await ExecuteEdits(storageLayerId.Value, resource, editContext, request, serviceId, cancellationToken);
 
             if (!editResult.WasRolledBack &&
                 (editResult.CreatedCount + editResult.UpdatedCount + editResult.DeletedCount) > 0)
@@ -182,12 +193,21 @@ internal sealed class FeatureServerEditsHandler(
         return null;
     }
 
+    private static int? ResolveStorageLayerIdV2(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication publication,
+        MetadataV2Resource resource)
+        => snapshot.ResolveStorageLayerId(publication)
+           ?? snapshot.ResolveStorageLayerId(resource)
+           ?? publication.LayerIndex;
+
     /// <summary>
     /// Processes add, update, and delete operations from the request
     /// </summary>
     private async Task<EditOperationContext> ProcessEditOperationsAsync(
         ApplyEditsRequest request,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        int storageLayerId,
         CancellationToken cancellationToken)
     {
         var context = new EditOperationContext
@@ -197,9 +217,9 @@ internal sealed class FeatureServerEditsHandler(
             DeleteResults = request.Deletes is { Length: > 0 } ? new EditResult?[request.Deletes.Length] : null
         };
 
-        await ProcessAddOperationsAsync(request, context, layer, cancellationToken);
-        await ProcessUpdateOperationsAsync(request, context, layer, cancellationToken);
-        await ProcessDeleteOperationsAsync(request, layer, context, cancellationToken);
+        await ProcessAddOperationsAsync(request, context, resource, cancellationToken);
+        await ProcessUpdateOperationsAsync(request, context, resource, storageLayerId, cancellationToken);
+        await ProcessDeleteOperationsAsync(request, resource, storageLayerId, context, cancellationToken);
 
         return context;
     }
@@ -210,7 +230,7 @@ internal sealed class FeatureServerEditsHandler(
     private async Task ProcessAddOperationsAsync(
         ApplyEditsRequest request,
         EditOperationContext context,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         CancellationToken cancellationToken)
     {
         if (request.Adds == null)
@@ -225,11 +245,11 @@ internal sealed class FeatureServerEditsHandler(
                 // request's, but using request.Adds[i].Geometry directly keeps the rule
                 // identical to the update path.
                 var requestHasGeometry = request.Adds[i].Geometry != null;
-                var newFeature = await BuildFeatureFromGeoServicesAsync(request.Adds[i], 0, layer, cancellationToken);
+                var newFeature = await BuildFeatureFromGeoServicesAsync(request.Adds[i], 0, resource, cancellationToken);
                 context.CreateFeatures.Add(newFeature);
                 context.CreateIndexes.Add(i);
                 context.CreateGeometryChanged.Add(requestHasGeometry);
-                context.CreateResponseObjectIds.Add(TryGetObjectId(newFeature.Attributes.ToDictionary(), layer, out var responseObjectId)
+                context.CreateResponseObjectIds.Add(TryGetObjectId(newFeature.Attributes.ToDictionary(), resource, out var responseObjectId)
                     ? responseObjectId
                     : null);
             }
@@ -257,7 +277,8 @@ internal sealed class FeatureServerEditsHandler(
     private async Task ProcessUpdateOperationsAsync(
         ApplyEditsRequest request,
         EditOperationContext context,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        int storageLayerId,
         CancellationToken cancellationToken)
     {
         if (request.Updates == null)
@@ -266,7 +287,7 @@ internal sealed class FeatureServerEditsHandler(
         for (var i = 0; i < request.Updates.Length; i++)
         {
             var update = request.Updates[i];
-            if (!TryGetObjectId(update.Attributes, layer, out var objectId))
+            if (!TryGetObjectId(update.Attributes, resource, out var objectId))
             {
                 context.HasValidationErrors = true;
                 context.UpdateResults![i] = CreateFailureResult(
@@ -277,9 +298,9 @@ internal sealed class FeatureServerEditsHandler(
 
             try
             {
-                var existingFeature = await ResolveFeatureByGeoServicesObjectIdAsync(layer, objectId, cancellationToken)
+                var existingFeature = await ResolveFeatureByGeoServicesObjectIdAsync(resource, storageLayerId, objectId, cancellationToken)
                     .ConfigureAwait(false);
-                if (!ShouldUseInternalObjectIdFastPath(layer) && existingFeature is null)
+                if (!ShouldUseInternalObjectIdFastPath(resource) && existingFeature is null)
                 {
                     context.HasValidationErrors = true;
                     context.UpdateResults![i] = CreateFailureResult(
@@ -298,7 +319,7 @@ internal sealed class FeatureServerEditsHandler(
                 var updateFeature = await BuildFeatureFromGeoServicesAsync(
                     update,
                     internalObjectId,
-                    layer,
+                    resource,
                     cancellationToken,
                     existingFeature).ConfigureAwait(false);
                 context.UpdateFeatures.Add(updateFeature);
@@ -331,7 +352,8 @@ internal sealed class FeatureServerEditsHandler(
     /// </summary>
     private async Task ProcessDeleteOperationsAsync(
         ApplyEditsRequest request,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        int storageLayerId,
         EditOperationContext context,
         CancellationToken cancellationToken)
     {
@@ -349,9 +371,9 @@ internal sealed class FeatureServerEditsHandler(
                 continue;
             }
 
-            var existingFeature = await ResolveFeatureByGeoServicesObjectIdAsync(layer, objectId, cancellationToken)
+            var existingFeature = await ResolveFeatureByGeoServicesObjectIdAsync(resource, storageLayerId, objectId, cancellationToken)
                 .ConfigureAwait(false);
-            if (!ShouldUseInternalObjectIdFastPath(layer) && existingFeature is null)
+            if (!ShouldUseInternalObjectIdFastPath(resource) && existingFeature is null)
             {
                 context.HasValidationErrors = true;
                 context.DeleteResults![i] = CreateFailureResult(
@@ -365,7 +387,7 @@ internal sealed class FeatureServerEditsHandler(
             context.DeleteIds.Add(internalObjectId);
             context.DeleteResponseObjectIds.Add(objectId);
             context.DeleteIndexes.Add(i);
-            context.DeleteFeatures.Add(existingFeature ?? await ReadDeleteFeatureSnapshotAsync(layer.Id, internalObjectId, cancellationToken));
+            context.DeleteFeatures.Add(existingFeature ?? await ReadDeleteFeatureSnapshotAsync(storageLayerId, internalObjectId, cancellationToken));
         }
     }
 
@@ -389,7 +411,7 @@ internal sealed class FeatureServerEditsHandler(
     /// </summary>
     private async Task<FeatureEditResult> ExecuteEdits(
         int layerId,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         EditOperationContext context,
         ApplyEditsRequest request,
         string serviceId,
@@ -409,21 +431,21 @@ internal sealed class FeatureServerEditsHandler(
                 RollbackOnFailure = request.RollbackOnFailure,
                 UseGlobalIds = request.UseGlobalIds
             },
-            layer,
+            resource,
             cancellationToken);
         if (!editAdapterResult.IsSuccess || editAdapterResult.EditRequest == null)
         {
             throw new InvalidOperationException(editAdapterResult.ErrorMessage ?? "Invalid edit request.");
         }
 
-        var optimizedEdit = _editProcessor.OptimizeEdit(editAdapterResult.EditRequest.Value, layer);
-        var editValidation = _editProcessor.ValidateEdit(optimizedEdit, layer);
+        var optimizedEdit = _editProcessor.OptimizeEdit(editAdapterResult.EditRequest.Value, resource);
+        var editValidation = _editProcessor.ValidateEdit(optimizedEdit, resource);
         if (!editValidation.IsValid)
         {
             throw new InvalidOperationException(editValidation.ErrorMessage ?? "Invalid edit request.");
         }
 
-        var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, layer);
+        var editBatch = _editProcessor.ToFeatureEditBatch(optimizedEdit, resource);
         var httpContext = _httpContextAccessor.HttpContext
             ?? throw new InvalidOperationException("HttpContext is required for FeatureServer edit dispatch.");
         // Per-row geometry-change semantics: read the request-intent flags captured by
@@ -437,11 +459,11 @@ internal sealed class FeatureServerEditsHandler(
             layerId,
             HonuaTelemetry.Protocols.FeatureServer,
             serviceId: serviceId,
-            serviceProtocol: ServiceProtocols.FeatureServer,
+            serviceProtocol: HonuaTelemetry.Protocols.FeatureServer,
             // ToSrid() picks LatestWkid when set so the outbox enrichment fallback
             // matches the inline post-commit path on layers like
             // Wkid=102100/LatestWkid=3857.
-            layerSrid: layer.SpatialReference.ToSrid(),
+            layerSrid: resource.ReadSrid(),
             perOperationGeometryChanged: perOperationGeometryChanged,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
@@ -659,16 +681,17 @@ internal sealed class FeatureServerEditsHandler(
     }
 
     private async Task<Feature?> ResolveFeatureByGeoServicesObjectIdAsync(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        int storageLayerId,
         long objectId,
         CancellationToken cancellationToken)
     {
-        if (ShouldUseInternalObjectIdFastPath(layer))
+        if (ShouldUseInternalObjectIdFastPath(resource))
         {
-            return await _featureReader.GetAsync(layer.Id, objectId, cancellationToken).ConfigureAwait(false);
+            return await _featureReader.GetAsync(storageLayerId, objectId, cancellationToken).ConfigureAwait(false);
         }
 
-        var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdField(layer);
+        var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource);
         if (objectIdField is null)
         {
             return null;
@@ -678,14 +701,14 @@ internal sealed class FeatureServerEditsHandler(
             new PropertyReference(objectIdField.Name),
             BinaryOperator.Equal,
             new Literal(objectId, LiteralType.Number));
-        var translation = _filterExpressionService.Translate(expression, layer);
+        var translation = _filterExpressionService.Translate(expression, resource);
         if (!translation.IsSuccess)
         {
             throw new ArgumentException(translation.ErrorMessage ?? "Invalid ObjectId field.");
         }
 
         var result = await _featureReader.QueryAsync(
-            layer.Id,
+            storageLayerId,
             new FeatureQuery
             {
                 SqlFilter = translation.SqlFilter,
@@ -696,15 +719,15 @@ internal sealed class FeatureServerEditsHandler(
         return result.Items.IsDefaultOrEmpty ? null : result.Items[0];
     }
 
-    private static bool ShouldUseInternalObjectIdFastPath(LayerDefinition layer)
-        => GeoServicesObjectIdFieldResolver.ResolveObjectIdField(layer)?.Name.Equals(
+    private static bool ShouldUseInternalObjectIdFastPath(MetadataV2Resource resource)
+        => GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource)?.Name.Equals(
             FieldNames.ObjectId,
             StringComparison.OrdinalIgnoreCase) != false;
 
     private async Task<Feature> BuildFeatureFromGeoServicesAsync(
         GeoServicesFeature feature,
         long objectId,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         CancellationToken cancellationToken,
         Feature? existingFeature = null)
     {
@@ -722,7 +745,7 @@ internal sealed class FeatureServerEditsHandler(
                 throw new ArgumentException(safeError);
             }
 
-            var layerSrid = layer.SpatialReference.Wkid;
+            var layerSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
             var geometrySrid = feature.Geometry.SpatialReference?.Wkid
                 ?? feature.Geometry.SpatialReference?.LatestWkid;
             if (geometrySrid.HasValue && geometrySrid.Value != layerSrid)
@@ -758,9 +781,10 @@ internal sealed class FeatureServerEditsHandler(
         }
 
         var attributesResult = _mutationValidator.ValidateAttributes(
-            layer,
+            resource,
             feature.Attributes,
-            ValidationExtensions.AttributeValidationMode.GeoServices);
+            ValidationExtensions.AttributeValidationMode.GeoServices,
+            isUpdate: existingFeature is not null);
         if (!attributesResult.IsValid)
         {
             throw new ArgumentException(
@@ -774,7 +798,7 @@ internal sealed class FeatureServerEditsHandler(
             attributes[key] = value;
         }
 
-        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         if (objectIdFieldName.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
         {
             attributes.Remove(objectIdFieldName);
@@ -783,7 +807,7 @@ internal sealed class FeatureServerEditsHandler(
         return Feature.Create(objectId, geometry, attributes.ToImmutable());
     }
 
-    private static bool TryGetObjectId(Dictionary<string, object?>? attributes, LayerDefinition layer, out long objectId)
+    private static bool TryGetObjectId(Dictionary<string, object?>? attributes, MetadataV2Resource resource, out long objectId)
     {
         objectId = 0;
 
@@ -792,7 +816,7 @@ internal sealed class FeatureServerEditsHandler(
             return false;
         }
 
-        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         foreach (var entry in attributes)
         {
             if (string.Equals(entry.Key, objectIdFieldName, StringComparison.OrdinalIgnoreCase))

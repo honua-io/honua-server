@@ -4,7 +4,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Honua.Core.Features.Metadata.Domain;
+namespace Honua.Core.Features.Metadata.Domain.V2;
 
 /// <summary>
 /// Metadata v2 cache entry family.

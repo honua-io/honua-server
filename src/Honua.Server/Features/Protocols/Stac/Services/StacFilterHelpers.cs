@@ -2,13 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Validation;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
@@ -25,33 +21,6 @@ internal static class StacFilterHelpers
     private static WKBWriter? _wkbWriter;
 
     private static WKBWriter GetWkbWriter() => _wkbWriter ??= new WKBWriter();
-    /// <summary>
-    /// Resolves layers that are visible through the STAC protocol, applying both
-    /// protocol gating and access-policy filtering.
-    /// </summary>
-    public static async Task<LayerDefinition[]> ResolveStacVisibleLayersAsync(
-        HttpContext context,
-        ILayerCatalog layerCatalog,
-        CancellationToken cancellationToken)
-    {
-        var allLayers = await layerCatalog.ListLayersAsync(cancellationToken);
-        var services = await layerCatalog.ListServicesAsync(cancellationToken);
-
-        var stacServices = services
-            .Where(service => ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.Stac))
-            .ToArray();
-
-        var allServices = LayerValidationHelpers.BuildPrimaryServiceMap(services);
-        var layerToService = LayerValidationHelpers.BuildPrimaryServiceMap(stacServices, ServiceProtocols.Stac);
-        return allLayers
-            .Where(layer => layerToService.TryGetValue(layer.Id, out var service)
-                ? AccessPolicyHelpers.IsLayerAccessible(context, layer, service)
-                : allServices.ContainsKey(layer.Id)
-                    ? false
-                : ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.Stac) &&
-                  AccessPolicyHelpers.IsLayerAccessible(context, layer))
-            .ToArray();
-    }
 
     /// <summary>
     /// Parses a STAC bbox parameter into a <see cref="SpatialFilter"/>.
@@ -238,108 +207,8 @@ internal static class StacFilterHelpers
     /// Parses an RFC 3339 datetime or interval into a <see cref="TemporalFilter"/>.
     /// Supports: instant, ../end, start/.., start/end.
     /// </summary>
-    public static TemporalFilter? ParseDatetime(string datetime, LayerDefinition layer)
-    {
-        var timeField = ResolveTemporalField(layer);
-        if (string.IsNullOrWhiteSpace(timeField))
-        {
-            return null;
-        }
-
-        var parts = datetime.Split('/');
-        DateTimeOffset? start = null;
-        DateTimeOffset? end = null;
-
-        if (parts.Length == 1)
-        {
-            // Single instant
-            if (TryParseRfc3339DateTime(parts[0], out var instant))
-            {
-                start = instant;
-                end = instant;
-            }
-            else
-            {
-                return null;
-            }
-        }
-        else if (parts.Length == 2)
-        {
-            // Interval: start/end, ../end, start/..
-            if (!IsOpenIntervalBound(parts[0]))
-            {
-                if (!TryParseRfc3339DateTime(parts[0], out var s))
-                {
-                    return null;
-                }
-
-                start = s;
-            }
-
-            if (!IsOpenIntervalBound(parts[1]))
-            {
-                if (!TryParseRfc3339DateTime(parts[1], out var e))
-                {
-                    return null;
-                }
-
-                end = e;
-            }
-        }
-        else
-        {
-            return null;
-        }
-
-        if (start is null && end is null)
-        {
-            return null;
-        }
-
-        if (start > end)
-        {
-            return null;
-        }
-
-        return new TemporalFilter
-        {
-            PropertyName = timeField,
-            PropertyType = TemporalPropertyType.DateTime,
-            Start = start,
-            End = end
-        };
-    }
-
-    private static string? ResolveTemporalField(LayerDefinition layer)
-    {
-        var configured = layer.Metadata?.TimeInfo?.StartTimeField;
-        if (!string.IsNullOrWhiteSpace(configured))
-        {
-            return configured;
-        }
-
-        ReadOnlySpan<string> fallbackCandidates =
-        [
-            "datetime", "created_at", "updated_at", "start_datetime",
-            "end_datetime", "timestamp", "event_date", "date"
-        ];
-
-        foreach (var candidate in fallbackCandidates)
-        {
-            if (layer.AttributeFields.Any(field =>
-                    field.Type is FieldType.Date or FieldType.DateTime &&
-                    string.Equals(field.Name, candidate, StringComparison.OrdinalIgnoreCase)))
-            {
-                return candidate;
-            }
-        }
-
-        return null;
-    }
-
     /// <summary>
-    /// V2 overload of <see cref="ParseDatetime(string, LayerDefinition)"/>. Reads the
-    /// configured temporal field name from <see cref="MetadataV2Resource.Temporal"/>; falls
+    /// Reads the configured temporal field name from <see cref="MetadataV2Resource.Temporal"/>; falls
     /// back to checking <see cref="MetadataV2Resource.SchemaFields"/> for canonical
     /// date/datetime field names.
     /// </summary>

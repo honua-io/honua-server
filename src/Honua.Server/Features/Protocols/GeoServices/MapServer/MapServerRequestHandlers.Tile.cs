@@ -4,7 +4,8 @@
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -18,6 +19,11 @@ namespace Honua.Server.Features.Protocols.GeoServices.MapServer;
 
 internal static partial class MapServerEndpoints
 {
+    private sealed record TileLayerDescriptor(
+        int PublicLayerId,
+        int StorageLayerId,
+        MetadataV2Resource Resource);
+
     /// <summary>
     /// Handle MapServer tile requests for cached raster PNG tiles.
     /// </summary>
@@ -55,26 +61,26 @@ internal static partial class MapServerEndpoints
         try
         {
             var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-            var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
+            var serviceResult = await ServiceResourceValidationHelpers.ValidateServiceV2Async(
+                resourceValidator,
+                serviceId,
+                ServiceProtocols.MapServer,
+                context,
+                cancellationToken: cancellationToken);
             if (!serviceResult.IsValid)
             {
-                var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
-                if (serviceResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context, errorMessage);
-                }
-
-                return StandardErrorHelpers.CreateNotFound(context, errorMessage);
+                return serviceResult.ErrorResult!;
             }
 
-            var service = serviceResult.Resource!;
-            var protocolError = ProtocolValidationHelpers.ValidateProtocolEnabled(context, service, ServiceProtocols.MapServer);
-            if (protocolError is not null)
-            {
-                return protocolError;
-            }
+            var service = serviceResult.Service!;
+            var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var publishedLayers = ResolveTileLayerDescriptors(snapshot, service);
 
-            var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, service.Layers, service);
+            var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+                context,
+                publishedLayers.Select(static layer => layer.Resource),
+                service);
             if (accessError != null)
             {
                 return accessError;
@@ -91,12 +97,16 @@ internal static partial class MapServerEndpoints
             activity?.SetTag(HonuaTelemetry.Tags.TileY, y);
             activity?.SetTag(HonuaTelemetry.Tags.TileX, x);
 
-            var renderLayers = ResolveTileLayers(service, context);
-            var mapConfig = service.Metadata?.MapServer;
-            var maxFeatures = mapConfig?.MaxFeaturesPerLayer ?? MaxFeaturesPerLayer;
-            var renderResult = await RenderRasterTileAsync(
+            var renderLayers = publishedLayers
+                .Where(layer => IsTileLayerVisibleByDefault(layer.Resource))
+                .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
+                .Select(BuildTileRenderDescriptor)
+                .ToArray();
+            var maxFeatures = service.Settings?.MaxFeaturesPerLayer ?? MaxFeaturesPerLayer;
+            var serviceSrid = ResolveTileServiceSrid(service, publishedLayers);
+            var renderResult = await RenderRasterTileV2Async(
                 context,
-                service,
+                serviceSrid,
                 renderLayers,
                 z,
                 y,
@@ -144,6 +154,48 @@ internal static partial class MapServerEndpoints
                int.TryParse(xValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out x);
     }
 
-    private static LayerDefinition[] ResolveTileLayers(ServiceDefinition service, HttpContext context)
-        => ResolveVisibleLayers(service, null, context);
+    private static TileLayerDescriptor[] ResolveTileLayerDescriptors(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Service service)
+    {
+        var descriptors = new List<TileLayerDescriptor>();
+        foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
+        {
+            if (publication.LayerIndex is not int publicLayerId)
+            {
+                continue;
+            }
+
+            var resource = snapshot.ResolveResource(publication);
+            if (resource is null)
+            {
+                continue;
+            }
+
+            var storageLayerId = snapshot.ResolveStorageLayerId(publication)
+                ?? snapshot.ResolveStorageLayerId(resource)
+                ?? publicLayerId;
+            descriptors.Add(new TileLayerDescriptor(publicLayerId, storageLayerId, resource));
+        }
+
+        return [.. descriptors.OrderBy(static layer => layer.PublicLayerId)];
+    }
+
+    private static RenderLayerDescriptor BuildTileRenderDescriptor(TileLayerDescriptor layer)
+    {
+        var geometryType = layer.Resource.ReadGeometryType();
+        var hasGeometry = geometryType != MetadataV2GeometryType.None ||
+                          layer.Resource.FindPrimaryGeometryField() is not null;
+        return CreateRenderLayerDescriptorFromV2(layer.StorageLayerId, hasGeometry, geometryType);
+    }
+
+    private static int ResolveTileServiceSrid(
+        MetadataV2Service service,
+        IReadOnlyList<TileLayerDescriptor> layers)
+        => service.SpatialReference?.ResolveSrid()
+            ?? layers.Select(static layer => layer.Resource.ReadSrid()).FirstOrDefault(static srid => srid.HasValue)
+            ?? 4326;
+
+    private static bool IsTileLayerVisibleByDefault(MetadataV2Resource resource)
+        => resource.Display?.DefaultVisibility ?? true;
 }

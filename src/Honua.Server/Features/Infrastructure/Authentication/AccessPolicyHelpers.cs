@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
@@ -62,93 +61,6 @@ internal static class AccessPolicyHelpers
         var decision = EvaluateAccess(context, layerPolicy, servicePolicy, scope);
         return CreateAccessDeniedResult(context, decision);
     }
-
-    public static IResult? RequireServiceAccess(
-        HttpContext context,
-        ServiceDefinition service,
-        AccessScope scope = AccessScope.Read)
-        => RequireAccess(context, null, service.Metadata?.AccessPolicy, scope);
-
-    public static IResult? RequireLayerAccess(
-        HttpContext context,
-        LayerDefinition layer,
-        ServiceDefinition? service = null,
-        AccessScope scope = AccessScope.Read)
-        => RequireAccess(context, layer.Metadata?.AccessPolicy, service?.Metadata?.AccessPolicy, scope);
-
-    public static IResult? RequireServiceWriteAccess(HttpContext context, ServiceDefinition service)
-        => RequireAccess(context, null, service.Metadata?.AccessPolicy, AccessScope.Write);
-
-    public static IResult? RequireLayerWriteAccess(HttpContext context, LayerDefinition layer, ServiceDefinition? service = null)
-        => RequireAccess(context, layer.Metadata?.AccessPolicy, service?.Metadata?.AccessPolicy, AccessScope.Write);
-
-    public static IResult? RequireAnyLayerAccess(
-        HttpContext context,
-        IEnumerable<LayerDefinition> layers,
-        ServiceDefinition? service = null,
-        AccessScope scope = AccessScope.Read)
-    {
-        var requiresAuth = false;
-        var hasDenied = false;
-
-        foreach (var layer in layers)
-        {
-            var decision = EvaluateAccess(context, layer.Metadata?.AccessPolicy, service?.Metadata?.AccessPolicy, scope);
-            if (decision.IsAllowed)
-            {
-                return null;
-            }
-
-            hasDenied = true;
-            if (decision.RequiresAuthentication)
-            {
-                requiresAuth = true;
-            }
-        }
-
-        if (!hasDenied)
-        {
-            return null;
-        }
-
-        return requiresAuth
-            ? StandardErrorHelpers.CreateUnauthorized(context, AuthRequiredMessage)
-            : StandardErrorHelpers.CreateForbidden(context, AccessForbiddenMessage);
-    }
-
-    public static bool IsLayerAccessible(HttpContext context, LayerDefinition layer, ServiceDefinition? service = null)
-        => EvaluateAccess(context, layer.Metadata?.AccessPolicy, service?.Metadata?.AccessPolicy).IsAllowed;
-
-    public static bool IsLayerWriteAccessible(HttpContext context, LayerDefinition layer, ServiceDefinition? service = null)
-        => EvaluateAccess(context, layer.Metadata?.AccessPolicy, service?.Metadata?.AccessPolicy, AccessScope.Write).IsAllowed;
-
-    public static bool AllowsAnonymousServiceAccess(
-        HttpContext context,
-        ServiceDefinition service,
-        AccessScope scope = AccessScope.Read)
-    {
-        ArgumentNullException.ThrowIfNull(service);
-
-        var evaluator = context.RequestServices.GetRequiredService<IAccessPolicyEvaluator>();
-        return evaluator.Evaluate(AnonymousPrincipal, null, service.Metadata?.AccessPolicy, scope).IsAllowed;
-    }
-
-    public static bool AllowsAnonymousLayerAccess(
-        HttpContext context,
-        LayerDefinition layer,
-        ServiceDefinition? service = null,
-        AccessScope scope = AccessScope.Read)
-    {
-        ArgumentNullException.ThrowIfNull(layer);
-
-        var evaluator = context.RequestServices.GetRequiredService<IAccessPolicyEvaluator>();
-        return evaluator.Evaluate(AnonymousPrincipal, layer.Metadata?.AccessPolicy, service?.Metadata?.AccessPolicy, scope).IsAllowed;
-    }
-
-    // ---- Metadata v2 overloads. These read the typed AccessPolicy carried on the
-    // V2 entities directly, removing the need for consumers to thread v1 LayerDefinition /
-    // ServiceDefinition through. They share the underlying RequireAccess / EvaluateAccess
-    // implementations so behaviour is identical.
 
     public static IResult? RequireResourceAccess(
         HttpContext context,

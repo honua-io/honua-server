@@ -3,7 +3,6 @@
 
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit.Infrastructure;
 using Honua.Core.Features.Raster.Abstractions;

@@ -5,15 +5,14 @@ using System.Collections.Immutable;
 using Google.Protobuf;
 using Google.Protobuf.Collections;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Services;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using DomainDistanceUnit = Honua.Core.Features.FeatureStore.Domain.DistanceUnit;
-using DomainGeometryType = Honua.Core.Features.Catalog.Domain.GeometryType;
 using DomainSpatialFilter = Honua.Core.Features.FeatureStore.Domain.SpatialFilter;
 using DomainSpatialRelationship = Honua.Core.Features.FeatureStore.Domain.SpatialRelationship;
 using Proto = Geospatial.V1;
@@ -229,9 +228,9 @@ internal static class GrpcConversionHelpers
     }
 
     /// <summary>
-    /// Converts a domain LayerDefinition's fields to proto FieldDefinition messages.
+    /// Converts a Metadata v2 field to proto FieldDefinition messages.
     /// </summary>
-    public static Proto.FieldDefinition ToProtoField(FieldDefinition field)
+    public static Proto.FieldDefinition ToProtoField(MetadataV2Field field)
     {
         return new Proto.FieldDefinition
         {
@@ -256,20 +255,20 @@ internal static class GrpcConversionHelpers
     }
 
     /// <summary>
-    /// Converts a domain GeometryType to a proto GeometryType.
+    /// Converts a Metadata v2 GeometryType to a proto GeometryType.
     /// </summary>
-    public static Proto.GeometryType ToProtoGeometryType(DomainGeometryType geometryType)
+    public static Proto.GeometryType ToProtoGeometryType(MetadataV2GeometryType geometryType)
     {
         return geometryType switch
         {
-            DomainGeometryType.Point => Proto.GeometryType.Point,
-            DomainGeometryType.MultiPoint => Proto.GeometryType.MultiPoint,
-            DomainGeometryType.LineString => Proto.GeometryType.LineString,
-            DomainGeometryType.MultiLineString => Proto.GeometryType.MultiLineString,
-            DomainGeometryType.Polygon => Proto.GeometryType.Polygon,
-            DomainGeometryType.MultiPolygon => Proto.GeometryType.MultiPolygon,
-            DomainGeometryType.GeometryCollection => Proto.GeometryType.GeometryCollection,
-            DomainGeometryType.None => Proto.GeometryType.None,
+            MetadataV2GeometryType.Point => Proto.GeometryType.Point,
+            MetadataV2GeometryType.MultiPoint => Proto.GeometryType.MultiPoint,
+            MetadataV2GeometryType.LineString => Proto.GeometryType.LineString,
+            MetadataV2GeometryType.MultiLineString => Proto.GeometryType.MultiLineString,
+            MetadataV2GeometryType.Polygon => Proto.GeometryType.Polygon,
+            MetadataV2GeometryType.MultiPolygon => Proto.GeometryType.MultiPolygon,
+            MetadataV2GeometryType.GeometryCollection => Proto.GeometryType.GeometryCollection,
+            MetadataV2GeometryType.None => Proto.GeometryType.None,
             _ => Proto.GeometryType.Unspecified
         };
     }
@@ -578,23 +577,23 @@ internal static class GrpcConversionHelpers
         return seq;
     }
 
-    private static Proto.FieldType ToProtoFieldType(FieldType fieldType)
+    private static Proto.FieldType ToProtoFieldType(MetadataV2FieldType fieldType)
     {
         return fieldType switch
         {
-            FieldType.String => Proto.FieldType.String,
-            FieldType.Integer => Proto.FieldType.Integer,
-            FieldType.BigInteger => Proto.FieldType.BigInteger,
-            FieldType.Double => Proto.FieldType.Double,
-            FieldType.Float => Proto.FieldType.Float,
-            FieldType.Boolean => Proto.FieldType.Boolean,
-            FieldType.DateTime => Proto.FieldType.DateTime,
-            FieldType.Date => Proto.FieldType.Date,
-            FieldType.Time => Proto.FieldType.Time,
-            FieldType.Geometry => Proto.FieldType.Geometry,
-            FieldType.Json => Proto.FieldType.Json,
-            FieldType.Binary => Proto.FieldType.Binary,
-            FieldType.Uuid => Proto.FieldType.Uuid,
+            MetadataV2FieldType.String => Proto.FieldType.String,
+            MetadataV2FieldType.Integer => Proto.FieldType.Integer,
+            MetadataV2FieldType.BigInteger => Proto.FieldType.BigInteger,
+            MetadataV2FieldType.Double => Proto.FieldType.Double,
+            MetadataV2FieldType.Float => Proto.FieldType.Float,
+            MetadataV2FieldType.Boolean => Proto.FieldType.Boolean,
+            MetadataV2FieldType.DateTime => Proto.FieldType.DateTime,
+            MetadataV2FieldType.Date => Proto.FieldType.Date,
+            MetadataV2FieldType.Time => Proto.FieldType.Time,
+            MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography => Proto.FieldType.Geometry,
+            MetadataV2FieldType.Json => Proto.FieldType.Json,
+            MetadataV2FieldType.Binary => Proto.FieldType.Binary,
+            MetadataV2FieldType.Uuid => Proto.FieldType.Uuid,
             _ => Proto.FieldType.Unspecified
         };
     }

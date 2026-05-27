@@ -4,7 +4,6 @@
 using System.Buffers.Binary;
 using System.Collections.Immutable;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Tiles;
 using Honua.Server.Features.Protocols.Ogc.Api.Tiles;
@@ -27,7 +26,7 @@ public sealed class TileRendererWkbTests
         var feature = Feature.Create(1, wkb);
         var features = ImmutableArray.Create(feature);
 
-        var png = TileRenderer.RenderTilePng(features, TestBounds, GeometryType.Point);
+        var png = TileRenderer.RenderTilePng(features, TestBounds, TileRenderer.GeometryKind.Point);
 
         png.Should().NotBeEmpty();
         png.Length.Should().BeGreaterThan(50); // PNG header alone is ~8 bytes; a drawn pixel adds more
@@ -42,7 +41,7 @@ public sealed class TileRendererWkbTests
         var feature = Feature.Create(1, wkb);
         var features = ImmutableArray.Create(feature);
 
-        var png = TileRenderer.RenderTilePng(features, TestBounds, GeometryType.Point);
+        var png = TileRenderer.RenderTilePng(features, TestBounds, TileRenderer.GeometryKind.Point);
 
         png.Should().NotBeEmpty();
         png.Length.Should().BeGreaterThan(50);
@@ -55,11 +54,11 @@ public sealed class TileRendererWkbTests
     {
         var lePng = TileRenderer.RenderTilePng(
             ImmutableArray.Create(Feature.Create(1, BuildPointWkb(128.0, 128.0, littleEndian: true))),
-            TestBounds, GeometryType.Point);
+            TestBounds, TileRenderer.GeometryKind.Point);
 
         var bePng = TileRenderer.RenderTilePng(
             ImmutableArray.Create(Feature.Create(1, BuildPointWkb(128.0, 128.0, littleEndian: false))),
-            TestBounds, GeometryType.Point);
+            TestBounds, TileRenderer.GeometryKind.Point);
 
         // Both should produce identical rendered output
         lePng.Should().Equal(bePng);
@@ -73,12 +72,12 @@ public sealed class TileRendererWkbTests
         var littleEndian = TileRenderer.RenderTilePng(
             ImmutableArray.Create(Feature.Create(1, BuildMultiPointWkb([(64d, 64d), (192d, 192d)], littleEndian: true))),
             TestBounds,
-            GeometryType.MultiPoint);
+            TileRenderer.GeometryKind.MultiPoint);
 
         var bigEndian = TileRenderer.RenderTilePng(
             ImmutableArray.Create(Feature.Create(1, BuildMultiPointWkb([(64d, 64d), (192d, 192d)], littleEndian: false))),
             TestBounds,
-            GeometryType.MultiPoint);
+            TileRenderer.GeometryKind.MultiPoint);
 
         littleEndian.Should().Equal(bigEndian);
     }
@@ -95,13 +94,13 @@ public sealed class TileRendererWkbTests
                     [(96d, 96d), (160d, 96d), (160d, 160d), (96d, 160d), (96d, 96d)]
                 ]))),
             TestBounds,
-            GeometryType.Polygon);
+            TileRenderer.GeometryKind.Polygon);
 
         var solidPolygon = TileRenderer.RenderTilePng(
             ImmutableArray.Create(Feature.Create(1, BuildPolygonWkb(
                 [[(32d, 32d), (224d, 32d), (224d, 224d), (32d, 224d), (32d, 32d)]]))),
             TestBounds,
-            GeometryType.Polygon);
+            TileRenderer.GeometryKind.Polygon);
 
         polygonWithHole.Should().NotEqual(solidPolygon);
     }

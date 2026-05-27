@@ -4,7 +4,6 @@
 using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
@@ -25,16 +24,15 @@ namespace Honua.Server.Startup;
 
 /// <summary>
 /// Composition root for swapping Core abstractions over to their Infrastructure
-/// implementations (provider routing + decorator wiring for the layer catalogs). Also hosts
-/// the shared cache, tile, and limits-options binders that the rest of the registration
-/// pipeline depends on.
+/// implementations (provider routing plus shared cache, tile, and limits-options binders
+/// that the rest of the registration pipeline depends on).
 /// </summary>
 internal static class InfrastructureCompositionRoot
 {
     /// <summary>
     /// Registers the configured database provider's services, the SQL Server read-only
     /// feature provider, the feature-provider routing surface, and the caching decorators
-    /// for <see cref="ILayerCatalog"/> / <see cref="ILayerStyleCatalog"/>.
+    /// for <see cref="ILayerStyleCatalog"/>.
     /// </summary>
     public static void RegisterInfrastructureServices(IServiceCollection services, IConfiguration configuration)
     {
@@ -61,8 +59,8 @@ internal static class InfrastructureCompositionRoot
         }
 
         // Register the SQL Server spatial provider as an additional read-only feature backend (#850).
-        // Layers whose connection resolves to provider 'sqlserver'/'mssql' are routed here through the
-        // shared FeatureProviderBindingResolver. Disabled when SqlServer:Enabled is explicitly false.
+        // Metadata v2 publications whose connection resolves to provider 'sqlserver'/'mssql' are routed here
+        // through the shared FeatureProviderQueryRouter. Disabled when SqlServer:Enabled is explicitly false.
         if (configuration.GetValue("SqlServer:Enabled", true))
         {
             Honua.SqlServer.ServiceCollectionExtensions.AddSqlServerFeatureProvider(services, configuration);
@@ -71,77 +69,13 @@ internal static class InfrastructureCompositionRoot
         services.TryAddScoped<IFeatureDataProviderRegistry>(serviceProvider =>
             new FeatureDataProviderRegistry(serviceProvider.GetServices<IFeatureDataProvider>()));
         services.TryAddScoped(serviceProvider =>
-            new FeatureProviderBindingResolver(
+            new FeatureProviderQueryRouter(
                 serviceProvider.GetRequiredService<Honua.Core.Features.Security.Abstractions.ISecureConnectionRegistry>(),
                 serviceProvider.GetRequiredService<IFeatureDataProviderRegistry>(),
                 DataProviderNames.Normalize(provider)));
-        services.TryAddScoped<FeatureProviderQueryRouter>();
 
         // Add centralized configuration management and secret services
         services.AddConfigurationManagement(configuration);
-
-        // Wrap ILayerCatalog with caching decorator
-        // This uses the decorator pattern to add caching behavior transparently
-        var innerCatalogDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(ILayerCatalog));
-        if (innerCatalogDescriptor != null)
-        {
-            services.Remove(innerCatalogDescriptor);
-
-            // Shared resolver for the data-source catalog (PostgresLayerCatalog) — avoids
-            // duplicating the resolution logic across the main and keyed registrations.
-            ILayerCatalog ResolveDataSourceCatalog(IServiceProvider sp)
-            {
-                if (innerCatalogDescriptor.ImplementationFactory != null)
-                    return (ILayerCatalog)innerCatalogDescriptor.ImplementationFactory(sp);
-                if (innerCatalogDescriptor.ImplementationType != null)
-                    return (ILayerCatalog)ActivatorUtilities.CreateInstance(sp, innerCatalogDescriptor.ImplementationType);
-                throw new InvalidOperationException("Unable to resolve inner ILayerCatalog implementation");
-            }
-
-            // Register the data-source catalog as a keyed service so the background refresh
-            // decorator can fetch fresh data without going through the caching layer.
-            // Wrapped with the monitoring decorator so background refresh reads remain
-            // observable in catalog telemetry while still bypassing the cache.
-            services.AddKeyedScoped<ILayerCatalog>(
-                BackgroundRefreshCacheDecorator.UncachedCatalogServiceKey,
-                (sp, _) =>
-                {
-                    var catalog = ResolveDataSourceCatalog(sp);
-                    var performanceMonitor = sp.GetRequiredService<IPerformanceMonitor>();
-                    var monitorLogger = sp.GetRequiredService<ILogger<MonitoredLayerCatalogDecorator>>();
-                    return new MonitoredLayerCatalogDecorator(catalog, performanceMonitor, monitorLogger);
-                });
-
-            services.AddScoped<ILayerCatalog>(sp =>
-            {
-                ILayerCatalog innerCatalog = ResolveDataSourceCatalog(sp);
-
-                // Apply caching decorator if enabled
-                var cacheOptions = sp.GetRequiredService<IOptions<CacheOptions>>().Value;
-                ILayerCatalog catalog = innerCatalog;
-                if (cacheOptions.Enabled)
-                {
-                    var cacheService = sp.GetRequiredService<ICacheService>();
-                    var options = sp.GetRequiredService<IOptions<CacheOptions>>();
-                    var schemaContext = sp.GetService<ISchemaContext>();
-                    catalog = new CachingLayerCatalog(catalog, cacheService, options, schemaContext);
-
-                    // Wrap with background refresh decorator for stale-while-revalidate
-                    if (cacheOptions.BackgroundRefreshEnabled)
-                    {
-                        var refreshCoordinator = sp.GetRequiredService<ICacheRefreshCoordinator>();
-                        var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
-                        var refreshLogger = sp.GetRequiredService<ILogger<BackgroundRefreshCacheDecorator>>();
-                        catalog = new BackgroundRefreshCacheDecorator(catalog, cacheService, refreshCoordinator, scopeFactory, options, refreshLogger, schemaContext);
-                    }
-                }
-
-                // Always wrap with monitoring for catalog metadata queries
-                var performanceMonitor = sp.GetRequiredService<IPerformanceMonitor>();
-                var logger = sp.GetRequiredService<ILogger<MonitoredLayerCatalogDecorator>>();
-                return new MonitoredLayerCatalogDecorator(catalog, performanceMonitor, logger);
-            });
-        }
 
         // Wrap ILayerStyleCatalog with caching decorator
         var innerStyleCatalogDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(ILayerStyleCatalog));
@@ -265,7 +199,5 @@ internal static class InfrastructureCompositionRoot
             sp.GetRequiredService<DistributedCacheRefreshCoordinator>());
         services.AddHostedService(sp =>
             sp.GetRequiredService<DistributedCacheRefreshCoordinator>());
-
-        // Register the CachingLayerCatalog - it will be wired via decorator pattern in RegisterInfrastructureServices
     }
 }

@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Server.Features.Infrastructure.Styling;
 
@@ -16,7 +16,9 @@ internal static class StyleDefaults
 
     public const string SourceLayerName = "layer";
 
-    public static string GetSourceId(LayerDefinition layer) => $"layer-{layer.Id}";
+    public static string GetSourceId(int layerId) => $"layer-{layerId}";
+
+    public static string GetSourceId(StyleLayerDescriptor layer) => GetSourceId(layer.Id);
 
     public static string GetTileUrl(int layerId) => $"/tiles/{layerId}/{{z}}/{{x}}/{{y}}.mvt";
 
@@ -46,30 +48,43 @@ internal static class StyleDefaults
         new object[] { "!=", new object[] { "typeof", new object[] { "get", fieldName } }, "null" }
     ];
 
-    public static Dictionary<string, object?> BuildDefaultMapLibreStyle(LayerDefinition layer)
+    public static Dictionary<string, object?> BuildDefaultMapLibreStyle(
+        MetadataV2Resource resource,
+        int storageLayerId)
+        => BuildDefaultMapLibreStyle(storageLayerId, resource.Metadata.Name, resource.ReadGeometryType());
+
+    public static Dictionary<string, object?> BuildDefaultMapLibreStyle(StyleLayerDescriptor layer)
+        => BuildDefaultMapLibreStyle(layer.Id, layer.Name, layer.GeometryType);
+
+    public static Dictionary<string, object?> BuildDefaultMapLibreStyle(
+        int layerId,
+        string layerName,
+        MetadataV2GeometryType geometryType)
     {
-        var sourceId = GetSourceId(layer);
-        var layers = BuildDefaultLayers(layer, sourceId);
-        return BuildStyleDocument(layer, layers);
+        var sourceId = GetSourceId(layerId);
+        var layers = BuildDefaultLayers(layerId, geometryType, sourceId);
+        return BuildStyleDocument(layerId, layerName, layers);
     }
 
     /// <summary>
     /// Wraps a layer list in a complete MapLibre v8 style document with vector tile source.
     /// </summary>
     internal static Dictionary<string, object?> BuildStyleDocument(
-        LayerDefinition layer, List<Dictionary<string, object?>> layers)
+        int layerId,
+        string layerName,
+        List<Dictionary<string, object?>> layers)
     {
-        var sourceId = GetSourceId(layer);
+        var sourceId = GetSourceId(layerId);
         return new Dictionary<string, object?>
         {
             ["version"] = 8,
-            ["name"] = layer.Name,
+            ["name"] = layerName,
             ["sources"] = new Dictionary<string, object?>
             {
                 [sourceId] = new Dictionary<string, object?>
                 {
                     ["type"] = "vector",
-                    ["tiles"] = new[] { GetTileUrl(layer.Id) },
+                    ["tiles"] = new[] { GetTileUrl(layerId) },
                     ["minzoom"] = 0,
                     ["maxzoom"] = 22
                 }
@@ -78,9 +93,17 @@ internal static class StyleDefaults
         };
     }
 
-    public static Dictionary<string, object?> BuildDefaultDrawingInfo(LayerDefinition layer)
+    internal static Dictionary<string, object?> BuildStyleDocument(
+        StyleLayerDescriptor layer,
+        List<Dictionary<string, object?>> layers)
+        => BuildStyleDocument(layer.Id, layer.Name, layers);
+
+    public static Dictionary<string, object?> BuildDefaultDrawingInfo(StyleLayerDescriptor layer)
+        => BuildDefaultDrawingInfo(layer.GeometryType);
+
+    public static Dictionary<string, object?> BuildDefaultDrawingInfo(MetadataV2GeometryType geometryType)
     {
-        var symbol = BuildDefaultGeoServicesSymbol(layer.GeometryType);
+        var symbol = BuildDefaultGeoServicesSymbol(geometryType);
         return new Dictionary<string, object?>
         {
             ["renderer"] = new Dictionary<string, object?>
@@ -96,26 +119,27 @@ internal static class StyleDefaults
     /// Bakes MapLibre opacity into the GeoServices RGBA alpha channel so the two
     /// format defaults stay visually aligned.
     /// </summary>
-    internal static Dictionary<string, object?> BuildDefaultGeoServicesSymbol(GeometryType geometryType)
+    internal static Dictionary<string, object?> BuildDefaultGeoServicesSymbol(MetadataV2GeometryType geometryType)
     {
         // #2D69A5 = RGB(45, 105, 165)
         return geometryType switch
         {
             // MapLibre: circle-color=#2D69A5, radius=4 (→ size 8), stroke=#FFFFFF, opacity=0.85
-            GeometryType.Point or GeometryType.MultiPoint =>
+            MetadataV2GeometryType.Point or MetadataV2GeometryType.MultiPoint =>
                 GeoServicesStyleBuilder.BuildSymbol(geometryType,
                     new StyleColor(45, 105, 165, 217),
                     new StyleColor(255, 255, 255, 255),
                     1d, 8d),
 
             // MapLibre: line-color=#2D69A5, width=2, opacity=0.9
-            GeometryType.LineString or GeometryType.MultiLineString =>
+            MetadataV2GeometryType.LineString or MetadataV2GeometryType.MultiLineString =>
                 GeoServicesStyleBuilder.BuildSymbol(geometryType,
                     new StyleColor(45, 105, 165, 230),
                     null, 2d, null),
 
             // MapLibre: fill=#2D69A5/0.4, outline=#1A4D80/0.8, width=0.75
-            GeometryType.Polygon or GeometryType.MultiPolygon or GeometryType.GeometryCollection =>
+            MetadataV2GeometryType.Polygon or MetadataV2GeometryType.MultiPolygon or
+                MetadataV2GeometryType.GeometryCollection or MetadataV2GeometryType.Mixed =>
                 GeoServicesStyleBuilder.BuildSymbol(geometryType,
                     new StyleColor(45, 105, 165, 102),
                     new StyleColor(26, 77, 128, 204),
@@ -130,17 +154,20 @@ internal static class StyleDefaults
         };
     }
 
-    internal static List<Dictionary<string, object?>> BuildDefaultLayers(LayerDefinition layer, string sourceId)
+    internal static List<Dictionary<string, object?>> BuildDefaultLayers(
+        int layerId,
+        MetadataV2GeometryType geometryType,
+        string sourceId)
     {
         var layers = new List<Dictionary<string, object?>>();
 
-        switch (layer.GeometryType)
+        switch (geometryType)
         {
-            case GeometryType.Point:
-            case GeometryType.MultiPoint:
+            case MetadataV2GeometryType.Point:
+            case MetadataV2GeometryType.MultiPoint:
                 layers.Add(new Dictionary<string, object?>
                 {
-                    ["id"] = $"layer-{layer.Id}-circle",
+                    ["id"] = $"layer-{layerId}-circle",
                     ["type"] = "circle",
                     ["source"] = sourceId,
                     ["source-layer"] = SourceLayerName,
@@ -154,11 +181,11 @@ internal static class StyleDefaults
                     }
                 });
                 break;
-            case GeometryType.LineString:
-            case GeometryType.MultiLineString:
+            case MetadataV2GeometryType.LineString:
+            case MetadataV2GeometryType.MultiLineString:
                 layers.Add(new Dictionary<string, object?>
                 {
-                    ["id"] = $"layer-{layer.Id}-line",
+                    ["id"] = $"layer-{layerId}-line",
                     ["type"] = "line",
                     ["source"] = sourceId,
                     ["source-layer"] = SourceLayerName,
@@ -170,12 +197,13 @@ internal static class StyleDefaults
                     }
                 });
                 break;
-            case GeometryType.Polygon:
-            case GeometryType.MultiPolygon:
-            case GeometryType.GeometryCollection:
+            case MetadataV2GeometryType.Polygon:
+            case MetadataV2GeometryType.MultiPolygon:
+            case MetadataV2GeometryType.GeometryCollection:
+            case MetadataV2GeometryType.Mixed:
                 layers.Add(new Dictionary<string, object?>
                 {
-                    ["id"] = $"layer-{layer.Id}-fill",
+                    ["id"] = $"layer-{layerId}-fill",
                     ["type"] = "fill",
                     ["source"] = sourceId,
                     ["source-layer"] = SourceLayerName,
@@ -187,7 +215,7 @@ internal static class StyleDefaults
                 });
                 layers.Add(new Dictionary<string, object?>
                 {
-                    ["id"] = $"layer-{layer.Id}-outline",
+                    ["id"] = $"layer-{layerId}-outline",
                     ["type"] = "line",
                     ["source"] = sourceId,
                     ["source-layer"] = SourceLayerName,

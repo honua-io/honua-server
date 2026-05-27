@@ -6,6 +6,7 @@ using System.Threading.Channels;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
@@ -89,6 +90,7 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
         await using var scope = _scopeFactory.CreateAsyncScope();
         var progressStore = scope.ServiceProvider.GetRequiredService<IUniversalProgressStore>();
         var resourceValidator = scope.ServiceProvider.GetRequiredService<IResourceValidator>();
+        var metadataGraphProvider = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphProvider>();
         var featureReader = scope.ServiceProvider.GetRequiredService<IFeatureReader>();
         var styleCatalog = scope.ServiceProvider.GetRequiredService<ILayerStyleCatalog>();
         var accessPolicyEvaluator = scope.ServiceProvider.GetRequiredService<IAccessPolicyEvaluator>();
@@ -119,6 +121,7 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
                 job.TemplateName,
                 job.Dpi,
                 resourceValidator,
+                metadataGraphProvider,
                 featureReader,
                 styleCatalog,
                 _logger,

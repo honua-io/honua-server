@@ -2,15 +2,17 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
 using FluentAssertions;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
@@ -21,12 +23,14 @@ using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Protocols.OData.Models;
 using Honua.Server.Features.Protocols.OData.Services;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using System.Security.Claims;
 using NSubstitute;
+using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Server.Tests.Features.Protocols.OData.Services;
 
@@ -35,17 +39,12 @@ public sealed class ODataBatchHandlerTests
     [Fact]
     public async Task ProcessBatchAsync_WithAtomicCreate_ReadsPersistedFeatureForResponse()
     {
-        var layerCatalog = Substitute.For<ILayerCatalog>();
         var featureReader = Substitute.For<IFeatureReader>();
         var featureWriter = Substitute.For<IFeatureWriter>();
         var layer = CreateLayer();
         var service = CreateService(layer);
         var createdFeature = CreateFeature(101, "Persisted name");
 
-        layerCatalog.GetLayerAsync(layer.Id, Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<LayerDefinition?>(layer));
-        layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new[] { service }));
         featureReader.GetAsync(layer.Id, 101, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Feature?>(createdFeature));
         featureWriter.ApplyEditsAsync(default, default!, default)
@@ -56,7 +55,7 @@ public sealed class ODataBatchHandlerTests
                 createdIds: ImmutableArray.Create(101L),
                 createResults: ImmutableArray.Create(EditOperationResult.Success(101))));
 
-        var sut = CreateSut(layerCatalog, featureReader, featureWriter);
+        var sut = CreateSut(featureReader, featureWriter);
         var request = new ODataBatchRequest
         {
             Requests =
@@ -79,7 +78,7 @@ public sealed class ODataBatchHandlerTests
             ]
         };
 
-        var response = await sut.ProcessBatchAsync(CreateContext(layerCatalog, "admin"), request, "https://example.test", CancellationToken.None);
+        var response = await sut.ProcessBatchAsync(CreateContext(layer, service, "admin"), request, "https://example.test", CancellationToken.None);
 
         response.Responses.Should().ContainSingle();
         var createResponse = response.Responses[0];
@@ -98,7 +97,6 @@ public sealed class ODataBatchHandlerTests
     [Fact]
     public async Task ProcessBatchAsync_WithAtomicUpdate_ReadsPersistedFeatureForResponse()
     {
-        var layerCatalog = Substitute.For<ILayerCatalog>();
         var featureReader = Substitute.For<IFeatureReader>();
         var featureWriter = Substitute.For<IFeatureWriter>();
         var layer = CreateLayer();
@@ -106,10 +104,6 @@ public sealed class ODataBatchHandlerTests
         var existingFeature = CreateFeature(25, "Before");
         var persistedFeature = CreateFeature(25, "Persisted after");
 
-        layerCatalog.GetLayerAsync(layer.Id, Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<LayerDefinition?>(layer));
-        layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new[] { service }));
         featureReader.GetAsync(layer.Id, existingFeature.Id, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Feature?>(existingFeature), Task.FromResult<Feature?>(persistedFeature));
         featureWriter.ApplyEditsAsync(default, default!, default)
@@ -119,7 +113,7 @@ public sealed class ODataBatchHandlerTests
                 deletedCount: 0,
                 updateResults: ImmutableArray.Create(EditOperationResult.Success(existingFeature.Id))));
 
-        var sut = CreateSut(layerCatalog, featureReader, featureWriter);
+        var sut = CreateSut(featureReader, featureWriter);
         var request = new ODataBatchRequest
         {
             Requests =
@@ -141,7 +135,7 @@ public sealed class ODataBatchHandlerTests
             ]
         };
 
-        var response = await sut.ProcessBatchAsync(CreateContext(layerCatalog, "admin"), request, "https://example.test", CancellationToken.None);
+        var response = await sut.ProcessBatchAsync(CreateContext(layer, service, "admin"), request, "https://example.test", CancellationToken.None);
 
         response.Responses.Should().ContainSingle();
         var updateResponse = response.Responses[0];
@@ -158,12 +152,10 @@ public sealed class ODataBatchHandlerTests
     }
 
     private static ODataBatchHandler CreateSut(
-        ILayerCatalog layerCatalog,
         IFeatureReader featureReader,
         IFeatureWriter featureWriter)
     {
         var dependencies = new ODataBatchDependencies(
-            layerCatalog,
             featureReader,
             featureWriter,
             Substitute.For<IGeometryService>(),
@@ -182,15 +174,12 @@ public sealed class ODataBatchHandlerTests
             Substitute.For<ILogger>());
     }
 
-    private static DefaultHttpContext CreateContext(ILayerCatalog? layerCatalog = null, params string[] roles)
+    private static DefaultHttpContext CreateContext(LayerDefinition layer, ServiceDefinition service, params string[] roles)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
         services.AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions()));
-        if (layerCatalog != null)
-        {
-            services.AddSingleton(layerCatalog);
-        }
+        services.AddSingleton<IMetadataV2GraphProvider>(CreateMetadataProvider(layer, service));
 
         var context = new DefaultHttpContext
         {
@@ -232,11 +221,55 @@ public sealed class ODataBatchHandlerTests
             "cities",
             "cities service",
             [layer],
-            SpatialReference.WGS84,
-            Metadata: new CatalogMetadata
+            SpatialReference.WGS84);
+
+    private static TestMetadataV2GraphProvider CreateMetadataProvider(LayerDefinition layer, ServiceDefinition service)
+    {
+        var resourceId = $"res-layer-{layer.Id.ToString(CultureInfo.InvariantCulture)}";
+        var bindingId = $"binding-layer-{layer.Id.ToString(CultureInfo.InvariantCulture)}";
+        var serviceId = $"svc-{service.Name}";
+
+        return new TestMetadataV2GraphBuilder()
+            .AddResource(
+                resourceId,
+                layer.Name,
+                MetadataV2ResourceType.FeatureDataset,
+                fields: layer.Fields.Select(MapField))
+            .AddStorageBinding(
+                bindingId,
+                resourceId,
+                $"test.layers.{layer.Id.ToString(CultureInfo.InvariantCulture)}",
+                storageLayerId: layer.Id)
+            .AddService(
+                serviceId,
+                service.Name,
+                protocols: ["OData"])
+            .AddPublication(
+                $"{serviceId}-layer-{layer.Id.ToString(CultureInfo.InvariantCulture)}",
+                serviceId,
+                resourceId,
+                layerIndex: layer.Id,
+                storageBindingId: bindingId,
+                publicationType: MetadataV2PublicationType.ODataEntitySet)
+            .BuildProvider();
+    }
+
+    private static MetadataV2Field MapField(FieldDefinition field)
+        => new()
+        {
+            Name = field.Name,
+            Type = field.Type switch
             {
-                EnabledProtocols = [ServiceProtocols.OData]
-            });
+                FieldType.Integer => MetadataV2FieldType.Integer,
+                FieldType.BigInteger => MetadataV2FieldType.BigInteger,
+                FieldType.Double => MetadataV2FieldType.Double,
+                FieldType.Date => MetadataV2FieldType.DateTime,
+                FieldType.Boolean => MetadataV2FieldType.Boolean,
+                _ => MetadataV2FieldType.String
+            },
+            Nullable = field.Nullable,
+            Length = field.Length
+        };
 
     private static Feature CreateFeature(long id, string name)
         => Feature.Create(

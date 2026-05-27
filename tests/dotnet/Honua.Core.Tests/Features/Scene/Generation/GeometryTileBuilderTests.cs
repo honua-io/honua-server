@@ -4,7 +4,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Core.Features.Scene.Generation;
 using Honua.TestKit.Attributes;
@@ -93,10 +93,10 @@ public sealed class GeometryTileBuilderTests
             new SceneAttributeSchema { PropertyId = "height", FieldName = "height", SchemaType = "SCALAR", SchemaComponentType = "FLOAT32" }
         };
 
-        var extrusion = new LayerExtrusionInfo
+        var extrusion = new MetadataV2ExtrusionInfo
         {
             HeightField = "height",
-            Unit = VerticalUnits.Meters
+            Unit = MetadataV2VerticalUnits.Meters
         };
 
         var glb = GeometryTileBuilder.BuildGlb([feature], schemas, extrusion);

@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Tiles;
 using Honua.Server.Features.Infrastructure.Rendering;
@@ -17,21 +16,32 @@ internal static class TileRenderer
 {
     private const int TileSize = 256;
 
-    internal readonly record struct TileRenderLayer(ImmutableArray<Feature> Features, GeometryType GeometryType);
+    internal enum GeometryKind
+    {
+        Unknown,
+        Point,
+        MultiPoint,
+        LineString,
+        MultiLineString,
+        Polygon,
+        MultiPolygon
+    }
+
+    internal readonly record struct TileRenderLayer(ImmutableArray<Feature> Features, GeometryKind GeometryKind);
 
     /// <summary>
     /// Renders a set of features to a PNG image for the given tile bounds.
     /// </summary>
     /// <param name="features">Features to render.</param>
     /// <param name="bounds">Tile bounding box in map coordinates.</param>
-    /// <param name="geometryType">Geometry type of the layer.</param>
+    /// <param name="geometryKind">Geometry kind of the layer.</param>
     /// <returns>PNG image bytes.</returns>
     internal static byte[] RenderTilePng(
         ImmutableArray<Feature> features,
         TileBounds bounds,
-        GeometryType geometryType)
+        GeometryKind geometryKind)
     {
-        return RenderTilePng([new TileRenderLayer(features, geometryType)], bounds);
+        return RenderTilePng([new TileRenderLayer(features, geometryKind)], bounds);
     }
 
     internal static byte[] RenderTilePng(
@@ -67,8 +77,8 @@ internal static class TileRenderer
 
         foreach (var layer in layers)
         {
-            using var fill = CreateDefaultFillPaint(layer.GeometryType);
-            using var stroke = CreateDefaultStrokePaint(layer.GeometryType);
+            using var fill = CreateDefaultFillPaint(layer.GeometryKind);
+            using var stroke = CreateDefaultStrokePaint(layer.GeometryKind);
 
             foreach (var feature in layer.Features)
             {
@@ -77,7 +87,7 @@ internal static class TileRenderer
                     continue;
                 }
 
-                RenderFeature(canvas, feature.Geometry, Transform, fill, stroke, layer.GeometryType);
+                RenderFeature(canvas, feature.Geometry, Transform, fill, stroke, layer.GeometryKind);
             }
         }
 
@@ -90,9 +100,9 @@ internal static class TileRenderer
         Func<double, double, SKPoint> transform,
         SKPaint fill,
         SKPaint? stroke,
-        GeometryType geometryType)
+        GeometryKind geometryKind)
     {
-        if (geometryType is GeometryType.Point or GeometryType.MultiPoint &&
+        if (geometryKind is GeometryKind.Point or GeometryKind.MultiPoint &&
             WkbToSkiaConverter.TryConvertPoint(wkb, transform, out var point))
         {
             canvas.DrawCircle(point, 4f, fill);
@@ -131,16 +141,16 @@ internal static class TileRenderer
         }
     }
 
-    private static SKPaint CreateDefaultFillPaint(GeometryType geometryType) =>
-        geometryType switch
+    private static SKPaint CreateDefaultFillPaint(GeometryKind geometryKind) =>
+        geometryKind switch
         {
-            GeometryType.Point or GeometryType.MultiPoint => new SKPaint
+            GeometryKind.Point or GeometryKind.MultiPoint => new SKPaint
             {
                 Style = SKPaintStyle.Fill,
                 Color = new SKColor(65, 105, 225), // Royal blue
                 IsAntialias = true
             },
-            GeometryType.LineString or GeometryType.MultiLineString => new SKPaint
+            GeometryKind.LineString or GeometryKind.MultiLineString => new SKPaint
             {
                 Style = SKPaintStyle.Stroke,
                 Color = new SKColor(65, 105, 225),
@@ -155,8 +165,8 @@ internal static class TileRenderer
             }
         };
 
-    private static SKPaint? CreateDefaultStrokePaint(GeometryType geometryType) =>
-        geometryType is GeometryType.Polygon or GeometryType.MultiPolygon
+    private static SKPaint? CreateDefaultStrokePaint(GeometryKind geometryKind) =>
+        geometryKind is GeometryKind.Polygon or GeometryKind.MultiPolygon
             ? new SKPaint
             {
                 Style = SKPaintStyle.Stroke,

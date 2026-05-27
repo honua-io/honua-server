@@ -8,10 +8,10 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Geoprocessing;
@@ -139,8 +139,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     public async Task ServiceInfo_UnknownService_ReturnsNotFound()
     {
         var resourceValidator = Substitute.For<IResourceValidator>();
-        resourceValidator.ValidateServiceAsync("MissingService", Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.NotFound<ServiceDefinition>("Service 'MissingService' was not found."));
+        resourceValidator.ValidateServiceV2Async("MissingService", Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.NotFound<MetadataV2Service>("Service 'MissingService' was not found."));
 
         var fixture = new WebAppFixture()
             .ConfigureServices(services =>
@@ -168,7 +168,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
-    public async Task TaskInfo_KnownTask_ReturnsCatalogMetadata()
+    public async Task TaskInfo_KnownTask_ReturnsTaskMetadata()
     {
         var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/geometry.buffer");
 
@@ -201,7 +201,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}")]
-    public async Task TaskInfo_Post_KnownTask_ReturnsCatalogMetadata()
+    public async Task TaskInfo_Post_KnownTask_ReturnsTaskMetadata()
     {
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -246,8 +246,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     public async Task TaskInfo_ProtocolDisabledService_ReturnsNotFound()
     {
         var resourceValidator = Substitute.For<IResourceValidator>();
-        resourceValidator.ValidateServiceAsync(ServiceId, Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.Success(CreateGpServerService(gpServerEnabled: false)));
+        resourceValidator.ValidateServiceV2Async(ServiceId, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(CreateGpServerServiceV2(gpServerEnabled: false)));
 
         var fixture = new WebAppFixture()
             .ConfigureServices(services =>
@@ -353,8 +353,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     public async Task SubmitJob_ProtocolDisabledService_ReturnsNotFound()
     {
         var resourceValidator = Substitute.For<IResourceValidator>();
-        resourceValidator.ValidateServiceAsync(ServiceId, Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.Success(CreateGpServerService(gpServerEnabled: false)));
+        resourceValidator.ValidateServiceV2Async(ServiceId, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(CreateGpServerServiceV2(gpServerEnabled: false)));
 
         var fixture = new WebAppFixture()
             .ConfigureServices(services =>
@@ -1176,40 +1176,17 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             => throw new NotSupportedException();
     }
 
-    private static ServiceDefinition CreateGpServerService(bool gpServerEnabled)
-    {
-        var layer = LayerDefinition.CreateBasic(0, "gp-layer", GeometryType.Point);
-        return ServiceDefinition.CreateSingle(ServiceId, layer, Honua.Core.Features.Shared.Models.SpatialReference.Create(4326)) with
+    private static MetadataV2Service CreateGpServerServiceV2(bool gpServerEnabled)
+        => new()
         {
-            Metadata = new CatalogMetadata
-            {
-                EnabledProtocols = gpServerEnabled
-                    ? [ServiceProtocols.GPServer]
-                    : [ServiceProtocols.FeatureServer]
-            }
+            Metadata = new MetadataV2ObjectMetadata { Id = "svc-gp", Name = ServiceId },
+            Protocols = gpServerEnabled ? ["GPServer"] : ["FeatureServer"],
         };
-    }
 
     private sealed class ThrowingResourceValidator(Exception exception) : IResourceValidator
     {
-        public Task<ResourceValidationResult<LayerDefinition>> ValidateLayerAsync(
-            int layerId,
-            CancellationToken cancellationToken = default)
-            => throw exception;
-
-        public Task<ResourceValidationResult<LayerDefinition>> ValidateCollectionAsync(
-            string collectionId,
-            CancellationToken cancellationToken = default)
-            => throw exception;
-
-        public Task<ResourceValidationResult<ServiceDefinition>> ValidateServiceAsync(
+        public Task<ResourceValidationResult<MetadataV2Service>> ValidateServiceV2Async(
             string serviceId,
-            CancellationToken cancellationToken = default)
-            => throw exception;
-
-        public Task<ResourceValidationResult<(ServiceDefinition Service, LayerDefinition Layer)>> ValidateServiceLayerAsync(
-            string serviceId,
-            int layerId,
             CancellationToken cancellationToken = default)
             => throw exception;
     }

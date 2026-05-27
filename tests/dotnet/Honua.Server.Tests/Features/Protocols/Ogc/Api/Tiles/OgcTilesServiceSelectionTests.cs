@@ -3,17 +3,16 @@
 
 using System.Reflection;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Tiles;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Protocols.Ogc.Api.Tiles;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
-using CatalogGeometryType = Honua.Core.Features.Catalog.Domain.GeometryType;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles;
 
@@ -23,21 +22,26 @@ public sealed class OgcTilesServiceSelectionTests
     private const string OgcApiTilesProtocol = "OGC-API-Tiles";
 
     [UnitTest]
-    public void BuildPrimaryServiceMap_WithPreferredProtocol_SelectsProtocolEnabledService()
+    public void BuildPrimaryServiceMapV2_WithPreferredProtocol_SelectsProtocolEnabledService()
     {
-        var layer = LayerDefinition.CreateBasic(10, "tiles-layer", CatalogGeometryType.Point);
-        var alpha = CreateService(
-            "alpha-service",
-            layer,
-            enabledProtocols: ServiceProtocols.All
-                .Where(protocol => !string.Equals(protocol, OgcApiTilesProtocol, StringComparison.Ordinal))
-                .ToArray());
-        var beta = CreateService("beta-service", layer, enabledProtocols: [OgcApiTilesProtocol]);
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddService(
+                "svc-alpha",
+                "alpha-service",
+                protocols: ServiceProtocols.All
+                    .Where(protocol => !string.Equals(protocol, OgcApiTilesProtocol, StringComparison.Ordinal))
+                    .ToArray())
+            .AddService("svc-beta", "beta-service", protocols: [OgcApiTilesProtocol])
+            .AddResource("res-tiles", "tiles-layer")
+            .AddPublication("pub-alpha", "svc-alpha", "res-tiles", layerIndex: 10)
+            .AddPublication("pub-beta", "svc-beta", "res-tiles", layerIndex: 10)
+            .Build();
+        var snapshot = new MetadataV2GraphSnapshot(graph, "\"test\"", DateTimeOffset.UtcNow);
 
-        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMap([alpha, beta], OgcApiTilesProtocol);
+        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMapV2(snapshot, OgcApiTilesProtocol);
 
         primaryServices.Should().ContainKey(10);
-        primaryServices[10].Name.Should().Be("beta-service");
+        primaryServices[10].Metadata.Name.Should().Be("beta-service");
     }
 
     [UnitTest]
@@ -59,18 +63,4 @@ public sealed class OgcTilesServiceSelectionTests
         geometry.Should().BeOfType<MultiPolygon>();
     }
 
-    private static ServiceDefinition CreateService(
-        string serviceName,
-        LayerDefinition layer,
-        string[] enabledProtocols)
-        => ServiceDefinition.CreateSingle(
-            serviceName,
-            layer,
-            SpatialReference.Create(layer.SpatialReference.Wkid)) with
-        {
-            Metadata = new CatalogMetadata
-            {
-                EnabledProtocols = enabledProtocols
-            }
-        };
 }

@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Domain;
 
 namespace Honua.Server.Features.Infrastructure.Styling;
@@ -20,11 +20,24 @@ internal static class StyleSuggestionGenerator
     /// Generates a complete MapLibre style document from a style suggestion.
     /// </summary>
     public static Dictionary<string, object?> GenerateMapLibreStyle(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        int storageLayerId,
+        StyleSuggestion suggestion)
+    {
+        var sourceId = StyleDefaults.GetSourceId(storageLayerId);
+        var layers = GenerateStyledLayers(resource.ReadGeometryType(), storageLayerId, sourceId, suggestion);
+        return StyleDefaults.BuildStyleDocument(storageLayerId, resource.Metadata.Name, layers);
+    }
+
+    /// <summary>
+    /// Generates a complete MapLibre style document from a style suggestion.
+    /// </summary>
+    public static Dictionary<string, object?> GenerateMapLibreStyle(
+        StyleLayerDescriptor layer,
         StyleSuggestion suggestion)
     {
         var sourceId = StyleDefaults.GetSourceId(layer);
-        var layers = GenerateStyledLayers(layer, sourceId, suggestion);
+        var layers = GenerateStyledLayers(layer.GeometryType, layer.Id, sourceId, suggestion);
         return StyleDefaults.BuildStyleDocument(layer, layers);
     }
 
@@ -32,54 +45,90 @@ internal static class StyleSuggestionGenerator
     /// Generates GeoServices drawingInfo from a style suggestion.
     /// </summary>
     public static Dictionary<string, object?> GenerateDrawingInfo(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        StyleSuggestion suggestion)
+        => GenerateDrawingInfo(resource.ReadGeometryType(), suggestion);
+
+    /// <summary>
+    /// Generates GeoServices drawingInfo from a style suggestion.
+    /// </summary>
+    public static Dictionary<string, object?> GenerateDrawingInfo(
+        StyleLayerDescriptor layer,
+        StyleSuggestion suggestion)
+        => GenerateDrawingInfo(layer.GeometryType, suggestion);
+
+    private static Dictionary<string, object?> GenerateDrawingInfo(
+        MetadataV2GeometryType geometryType,
         StyleSuggestion suggestion)
     {
         if (suggestion.Classification == null)
-            return GenerateEnhancedDrawingInfo(layer);
+            return GenerateEnhancedDrawingInfo(geometryType);
 
         if (suggestion.Classification.Method == ClassificationMethod.UniqueValue)
-            return BuildUniqueValueDrawingInfo(layer, suggestion);
+            return BuildUniqueValueDrawingInfo(geometryType, suggestion);
 
-        return BuildClassBreaksDrawingInfo(layer, suggestion);
+        return BuildClassBreaksDrawingInfo(geometryType, suggestion);
     }
 
     /// <summary>
     /// Generates a GeoServices drawingInfo that matches the enhanced MapLibre defaults.
     /// Used for geometry-only suggestions (Community tier or no suitable classification field).
     /// </summary>
-    public static Dictionary<string, object?> GenerateEnhancedDrawingInfo(LayerDefinition layer)
-        => StyleDefaults.BuildDefaultDrawingInfo(layer);
+    public static Dictionary<string, object?> GenerateEnhancedDrawingInfo(MetadataV2Resource resource)
+        => GenerateEnhancedDrawingInfo(resource.ReadGeometryType());
+
+    /// <summary>
+    /// Generates a GeoServices drawingInfo that matches the enhanced MapLibre defaults.
+    /// </summary>
+    public static Dictionary<string, object?> GenerateEnhancedDrawingInfo(StyleLayerDescriptor layer)
+        => GenerateEnhancedDrawingInfo(layer.GeometryType);
+
+    private static Dictionary<string, object?> GenerateEnhancedDrawingInfo(MetadataV2GeometryType geometryType)
+        => StyleDefaults.BuildDefaultDrawingInfo(geometryType);
 
     /// <summary>
     /// Generates enhanced geometry-only defaults (Community tier).
     /// </summary>
-    public static Dictionary<string, object?> GenerateEnhancedDefaults(LayerDefinition layer)
+    public static Dictionary<string, object?> GenerateEnhancedDefaults(
+        MetadataV2Resource resource,
+        int storageLayerId)
+    {
+        var sourceId = StyleDefaults.GetSourceId(storageLayerId);
+        var layers = BuildEnhancedDefaultLayers(resource.ReadGeometryType(), storageLayerId, sourceId);
+        return StyleDefaults.BuildStyleDocument(storageLayerId, resource.Metadata.Name, layers);
+    }
+
+    /// <summary>
+    /// Generates enhanced geometry-only defaults (Community tier).
+    /// </summary>
+    public static Dictionary<string, object?> GenerateEnhancedDefaults(StyleLayerDescriptor layer)
     {
         var sourceId = StyleDefaults.GetSourceId(layer);
-        var layers = BuildEnhancedDefaultLayers(layer, sourceId);
+        var layers = BuildEnhancedDefaultLayers(layer.GeometryType, layer.Id, sourceId);
         return StyleDefaults.BuildStyleDocument(layer, layers);
     }
 
     private static List<Dictionary<string, object?>> GenerateStyledLayers(
-        LayerDefinition layer,
+        MetadataV2GeometryType geometryType,
+        int storageLayerId,
         string sourceId,
         StyleSuggestion suggestion)
     {
         if (suggestion.Classification == null)
-            return BuildEnhancedDefaultLayers(layer, sourceId);
+            return BuildEnhancedDefaultLayers(geometryType, storageLayerId, sourceId);
 
         var colorExpression = BuildColorExpression(suggestion);
 
-        return layer.GeometryType switch
+        return geometryType switch
         {
-            GeometryType.Point or GeometryType.MultiPoint =>
-                BuildStyledPointLayers(layer, sourceId, colorExpression),
-            GeometryType.LineString or GeometryType.MultiLineString =>
-                BuildStyledLineLayers(layer, sourceId, colorExpression),
-            GeometryType.Polygon or GeometryType.MultiPolygon or GeometryType.GeometryCollection =>
-                BuildStyledPolygonLayers(layer, sourceId, colorExpression),
-            _ => BuildEnhancedDefaultLayers(layer, sourceId)
+            MetadataV2GeometryType.Point or MetadataV2GeometryType.MultiPoint =>
+                BuildStyledPointLayers(storageLayerId, sourceId, colorExpression),
+            MetadataV2GeometryType.LineString or MetadataV2GeometryType.MultiLineString =>
+                BuildStyledLineLayers(storageLayerId, sourceId, colorExpression),
+            MetadataV2GeometryType.Polygon or MetadataV2GeometryType.MultiPolygon or
+                MetadataV2GeometryType.GeometryCollection or MetadataV2GeometryType.Mixed =>
+                BuildStyledPolygonLayers(storageLayerId, sourceId, colorExpression),
+            _ => BuildEnhancedDefaultLayers(geometryType, storageLayerId, sourceId)
         };
     }
 
@@ -153,13 +202,13 @@ internal static class StyleSuggestionGenerator
     }
 
     private static List<Dictionary<string, object?>> BuildStyledPointLayers(
-        LayerDefinition layer, string sourceId, object colorExpression)
+        int storageLayerId, string sourceId, object colorExpression)
     {
         return
         [
             new Dictionary<string, object?>
             {
-                ["id"] = $"layer-{layer.Id}-circle",
+                ["id"] = $"layer-{storageLayerId}-circle",
                 ["type"] = "circle",
                 ["source"] = sourceId,
                 ["source-layer"] = StyleDefaults.SourceLayerName,
@@ -176,13 +225,13 @@ internal static class StyleSuggestionGenerator
     }
 
     private static List<Dictionary<string, object?>> BuildStyledLineLayers(
-        LayerDefinition layer, string sourceId, object colorExpression)
+        int storageLayerId, string sourceId, object colorExpression)
     {
         return
         [
             new Dictionary<string, object?>
             {
-                ["id"] = $"layer-{layer.Id}-line",
+                ["id"] = $"layer-{storageLayerId}-line",
                 ["type"] = "line",
                 ["source"] = sourceId,
                 ["source-layer"] = StyleDefaults.SourceLayerName,
@@ -197,13 +246,13 @@ internal static class StyleSuggestionGenerator
     }
 
     private static List<Dictionary<string, object?>> BuildStyledPolygonLayers(
-        LayerDefinition layer, string sourceId, object colorExpression)
+        int storageLayerId, string sourceId, object colorExpression)
     {
         return
         [
             new Dictionary<string, object?>
             {
-                ["id"] = $"layer-{layer.Id}-fill",
+                ["id"] = $"layer-{storageLayerId}-fill",
                 ["type"] = "fill",
                 ["source"] = sourceId,
                 ["source-layer"] = StyleDefaults.SourceLayerName,
@@ -215,7 +264,7 @@ internal static class StyleSuggestionGenerator
             },
             new Dictionary<string, object?>
             {
-                ["id"] = $"layer-{layer.Id}-outline",
+                ["id"] = $"layer-{storageLayerId}-outline",
                 ["type"] = "line",
                 ["source"] = sourceId,
                 ["source-layer"] = StyleDefaults.SourceLayerName,
@@ -230,23 +279,25 @@ internal static class StyleSuggestionGenerator
     }
 
     private static List<Dictionary<string, object?>> BuildEnhancedDefaultLayers(
-        LayerDefinition layer, string sourceId)
+        MetadataV2GeometryType geometryType,
+        int storageLayerId,
+        string sourceId)
     {
         // Use the standard default layers so that the MapLibre style and
         // GeoServices drawingInfo returned by the suggestion endpoint
         // describe identical rendering.  Zoom-dependent expressions would
         // diverge from drawingInfo which can only express static widths.
-        return StyleDefaults.BuildDefaultLayers(layer, sourceId);
+        return StyleDefaults.BuildDefaultLayers(storageLayerId, geometryType, sourceId);
     }
 
     private static Dictionary<string, object?> BuildUniqueValueDrawingInfo(
-        LayerDefinition layer,
+        MetadataV2GeometryType geometryType,
         StyleSuggestion suggestion)
     {
         var classification = suggestion.Classification!;
         var colors = suggestion.PaletteColors;
         var categories = classification.Categories!;
-        var (fillAlpha, outlineColor, lineWidth, size) = GetGeometryParams(layer.GeometryType);
+        var (fillAlpha, outlineColor, lineWidth, size) = GetGeometryParams(geometryType);
 
         var uniqueValueInfos = new List<Dictionary<string, object?>>();
         for (var i = 0; i < categories.Length && i < colors.Length; i++)
@@ -260,7 +311,7 @@ internal static class StyleSuggestionGenerator
                 ["value"] = categories[i],
                 ["label"] = categories[i],
                 ["symbol"] = GeoServicesStyleBuilder.BuildSymbol(
-                    layer.GeometryType,
+                    geometryType,
                     bakedColor,
                     outlineColor,
                     lineWidth,
@@ -274,7 +325,7 @@ internal static class StyleSuggestionGenerator
             {
                 ["type"] = "uniqueValue",
                 ["field1"] = classification.FieldName,
-                ["defaultSymbol"] = BuildFallbackSymbol(layer.GeometryType, fillAlpha, outlineColor, lineWidth, size),
+                ["defaultSymbol"] = BuildFallbackSymbol(geometryType, fillAlpha, outlineColor, lineWidth, size),
                 ["defaultLabel"] = "Other",
                 ["uniqueValueInfos"] = uniqueValueInfos
             }
@@ -282,13 +333,13 @@ internal static class StyleSuggestionGenerator
     }
 
     private static Dictionary<string, object?> BuildClassBreaksDrawingInfo(
-        LayerDefinition layer,
+        MetadataV2GeometryType geometryType,
         StyleSuggestion suggestion)
     {
         var classification = suggestion.Classification!;
         var colors = suggestion.PaletteColors;
         var breaks = classification.Breaks!;
-        var (fillAlpha, outlineColor, lineWidth, size) = GetGeometryParams(layer.GeometryType);
+        var (fillAlpha, outlineColor, lineWidth, size) = GetGeometryParams(geometryType);
 
         // Use actual data range for edge class bounds (GeoServices convention).
         // Profile min/max are always populated for numeric classification paths;
@@ -316,7 +367,7 @@ internal static class StyleSuggestionGenerator
                         ? $">= {minValue:F2}"
                         : $"{minValue:F2} - {maxValue:F2}",
                 ["symbol"] = GeoServicesStyleBuilder.BuildSymbol(
-                    layer.GeometryType,
+                    geometryType,
                     bakedColor,
                     outlineColor,
                     lineWidth,
@@ -331,7 +382,7 @@ internal static class StyleSuggestionGenerator
                 ["type"] = "classBreaks",
                 ["field"] = classification.FieldName,
                 ["classBreakInfos"] = classBreakInfos,
-                ["defaultSymbol"] = BuildFallbackSymbol(layer.GeometryType, fillAlpha, outlineColor, lineWidth, size),
+                ["defaultSymbol"] = BuildFallbackSymbol(geometryType, fillAlpha, outlineColor, lineWidth, size),
                 ["defaultLabel"] = "Other"
             }
         };
@@ -342,15 +393,15 @@ internal static class StyleSuggestionGenerator
     /// with MapLibre opacity baked into the GeoServices alpha channel.
     /// </summary>
     private static (byte FillAlpha, StyleColor? OutlineColor, double LineWidth, double? Size) GetGeometryParams(
-        GeometryType geometryType)
+        MetadataV2GeometryType geometryType)
     {
         return geometryType switch
         {
             // MapLibre: circle-opacity=0.85, circle-stroke-color=#FFFFFF, circle-stroke-width=1, radius=4→size=8
-            GeometryType.Point or GeometryType.MultiPoint =>
+            MetadataV2GeometryType.Point or MetadataV2GeometryType.MultiPoint =>
                 (217, new StyleColor(255, 255, 255, 255), 1d, (double?)8d),
             // MapLibre: line-opacity=0.9, line-width=2
-            GeometryType.LineString or GeometryType.MultiLineString =>
+            MetadataV2GeometryType.LineString or MetadataV2GeometryType.MultiLineString =>
                 (230, null, 2d, null),
             // MapLibre: fill-opacity=0.6, outline=#333333/0.8, outline-width=0.5
             _ =>
@@ -363,7 +414,7 @@ internal static class StyleSuggestionGenerator
     /// <c>defaultSymbol</c> in drawingInfo matches the MapLibre expression fallback.
     /// </summary>
     private static Dictionary<string, object?> BuildFallbackSymbol(
-        GeometryType geometryType, byte fillAlpha, StyleColor? outlineColor,
+        MetadataV2GeometryType geometryType, byte fillAlpha, StyleColor? outlineColor,
         double lineWidth, double? size)
     {
         // #CCCCCC = RGB(204, 204, 204)

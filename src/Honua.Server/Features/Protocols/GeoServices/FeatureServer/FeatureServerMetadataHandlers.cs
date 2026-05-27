@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -266,10 +267,17 @@ internal static partial class FeatureServerEndpoints
                 featureReader,
                 cancellationToken).ConfigureAwait(false);
 
-            // V2 has no extrusion or drawing-info model on the canonical resource; these
-            // remain v1-only concepts surfaced via the catalog/style services. The V2
-            // response builder tolerates null for both, mirroring the v1 path for layers
-            // without configured extrusion/style.
+            var drawingInfo = ResolveDrawingInfoV2(resource, snapshot);
+
+            var extrusionValidationErrors = ValidateExtrusionInfoV2(resource, out var extrusionInfo);
+            if (extrusionValidationErrors.Count > 0)
+            {
+                return StandardErrorHelpers.CreateUnprocessableEntity(
+                    context,
+                    "Layer extrusion metadata is invalid.",
+                    extrusionValidationErrors);
+            }
+
             LayerResponse response = MapLayerToResponseV2(
                 service,
                 resource,
@@ -277,8 +285,8 @@ internal static partial class FeatureServerEndpoints
                 snapshot,
                 limits,
                 timeInfo,
-                drawingInfo: null,
-                extrusionInfo: null,
+                drawingInfo: drawingInfo,
+                extrusionInfo: extrusionInfo,
                 supportsGeobufOutput: featureReader is IGeobufFeatureStore,
                 supportsAttachmentUploads: supportsAttachmentUploads);
 
@@ -296,6 +304,104 @@ internal static partial class FeatureServerEndpoints
             return StandardErrorHelpers.CreateInternalServerError(
                 context,
                 "Layer metadata retrieval failed");
+        }
+    }
+
+    private static IReadOnlyList<string> ValidateExtrusionInfoV2(
+        MetadataV2Resource resource,
+        out FeatureServerExtrusionInfo? extrusionInfo)
+    {
+        extrusionInfo = null;
+
+        if (resource.Extrusion is null)
+        {
+            return Array.Empty<string>();
+        }
+
+        var errors = MetadataV2ExtrusionValidator.Validate(resource.Extrusion, resource.SchemaFields);
+        if (errors.Count > 0)
+        {
+            return errors;
+        }
+
+        MetadataV2VerticalUnits.TryNormalize(resource.Extrusion.Unit, out var normalizedUnit);
+        extrusionInfo = new FeatureServerExtrusionInfo
+        {
+            Enabled = true,
+            HeightField = resource.Extrusion.HeightField,
+            BaseHeightField = resource.Extrusion.BaseHeightField,
+            Unit = normalizedUnit,
+            DefaultHeight = resource.Extrusion.DefaultHeight,
+            MaterialHint = resource.Extrusion.MaterialHint
+        };
+        return Array.Empty<string>();
+    }
+
+    private static JsonElement? ResolveDrawingInfoV2(
+        MetadataV2Resource resource,
+        MetadataV2GraphSnapshot snapshot)
+    {
+        if (TryResolveDrawingInfoExtension(resource, out var extensionDrawingInfo))
+        {
+            return extensionDrawingInfo;
+        }
+
+        foreach (var styleResourceId in resource.StyleResourceIds ?? Array.Empty<string>())
+        {
+            if (!snapshot.Index.ResourcesById.TryGetValue(styleResourceId, out var styleResource)
+                || styleResource.Type != MetadataV2ResourceType.Style
+                || styleResource.Style is null)
+            {
+                continue;
+            }
+
+            foreach (var encoding in styleResource.Style.Encodings ?? Array.Empty<MetadataV2StyleEncoding>())
+            {
+                if (!string.Equals(encoding.Encoding, "esri-drawing-info", StringComparison.OrdinalIgnoreCase)
+                    || string.IsNullOrWhiteSpace(encoding.Body))
+                {
+                    continue;
+                }
+
+                if (TryParseJsonElement(encoding.Body, out var drawingInfo))
+                {
+                    return drawingInfo;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryResolveDrawingInfoExtension(
+        MetadataV2Resource resource,
+        out JsonElement drawingInfo)
+    {
+        if (resource.Extensions is not null
+            && (resource.Extensions.TryGetValue("geoservices:drawingInfo", out drawingInfo)
+                || resource.Extensions.TryGetValue("drawingInfo", out drawingInfo))
+            && drawingInfo.ValueKind != JsonValueKind.Null
+            && drawingInfo.ValueKind != JsonValueKind.Undefined)
+        {
+            return true;
+        }
+
+        drawingInfo = default;
+        return false;
+    }
+
+    private static bool TryParseJsonElement(string json, out JsonElement element)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            element = document.RootElement.Clone();
+            return element.ValueKind != JsonValueKind.Null && element.ValueKind != JsonValueKind.Undefined;
+        }
+        catch (JsonException)
+        {
+            element = default;
+            return false;
         }
     }
 

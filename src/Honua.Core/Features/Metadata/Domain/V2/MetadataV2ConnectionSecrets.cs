@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Core.Features.Metadata.Domain;
+namespace Honua.Core.Features.Metadata.Domain.V2;
 
 /// <summary>
 /// Connection secret references used by metadata v2 connection resources.

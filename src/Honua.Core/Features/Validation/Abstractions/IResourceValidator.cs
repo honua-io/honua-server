@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Validation.Abstractions;
@@ -26,54 +25,7 @@ namespace Honua.Core.Features.Validation.Abstractions;
 public interface IResourceValidator
 {
     /// <summary>
-    /// Validates that a layer exists and retrieves its definition.
-    /// This is the primary validation method used by all protocols.
-    /// </summary>
-    /// <param name="layerId">The layer ID to validate.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Result containing the layer if found, or validation error details.</returns>
-    Task<ResourceValidationResult<LayerDefinition>> ValidateLayerAsync(
-        int layerId,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Validates a collection ID (used by OGC API Features where collection IDs are strings).
-    /// Parses the collection ID and validates the corresponding layer exists.
-    /// </summary>
-    /// <param name="collectionId">The collection ID string to validate.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Result containing the layer if found, or validation error details.</returns>
-    Task<ResourceValidationResult<LayerDefinition>> ValidateCollectionAsync(
-        string collectionId,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Validates that a service exists and retrieves its definition.
-    /// Used by GeoServices REST protocol which accesses layers through services.
-    /// </summary>
-    /// <param name="serviceId">The service identifier.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Result containing the service if found, or validation error details.</returns>
-    Task<ResourceValidationResult<ServiceDefinition>> ValidateServiceAsync(
-        string serviceId,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Validates that a service and layer exist, and retrieves both definitions.
-    /// Used by GeoServices REST protocol for two-level resource hierarchy.
-    /// </summary>
-    /// <param name="serviceId">The service identifier.</param>
-    /// <param name="layerId">The layer ID within the service.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Result containing both service and layer if found, or validation error details.</returns>
-    Task<ResourceValidationResult<(ServiceDefinition Service, LayerDefinition Layer)>> ValidateServiceLayerAsync(
-        string serviceId,
-        int layerId,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// V2 overload of <see cref="ValidateLayerAsync(int, CancellationToken)"/>. Looks up
-    /// the canonical resource via the V2 graph using the publication's layer index.
+    /// Validates that a protocol-facing layer index resolves to a canonical Metadata v2 resource.
     /// </summary>
     Task<ResourceValidationResult<MetadataV2Resource>> ValidateLayerV2Async(
         int layerId,
@@ -82,7 +34,7 @@ public interface IResourceValidator
             $"{GetType().Name} does not yet implement Metadata v2 ValidateLayerV2Async.");
 
     /// <summary>
-    /// V2 overload of <see cref="ValidateCollectionAsync(string, CancellationToken)"/>.
+    /// Validates a collection ID against canonical Metadata v2 resources.
     /// </summary>
     Task<ResourceValidationResult<MetadataV2Resource>> ValidateCollectionV2Async(
         string collectionId,
@@ -91,7 +43,7 @@ public interface IResourceValidator
             $"{GetType().Name} does not yet implement Metadata v2 ValidateCollectionV2Async.");
 
     /// <summary>
-    /// V2 overload of <see cref="ValidateServiceAsync(string, CancellationToken)"/>.
+    /// Validates that a service exists in the canonical Metadata v2 graph.
     /// </summary>
     Task<ResourceValidationResult<MetadataV2Service>> ValidateServiceV2Async(
         string serviceId,
@@ -100,8 +52,8 @@ public interface IResourceValidator
             $"{GetType().Name} does not yet implement Metadata v2 ValidateServiceV2Async.");
 
     /// <summary>
-    /// V2 overload of <see cref="ValidateServiceLayerAsync(string, int, CancellationToken)"/>.
-    /// Returns the resolved (service, publication, resource) triple — publications carry
+    /// Validates that a service and layer exist in the canonical Metadata v2 graph.
+    /// Returns the resolved (service, publication, resource) triple; publications carry
     /// the protocol-facing service-local LayerIndex so callers that need it have it.
     /// </summary>
     Task<ResourceValidationResult<MetadataV2ServiceLayerTriple>> ValidateServiceLayerV2Async(

@@ -44,15 +44,6 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
     }
 
     /// <summary>
-    /// Translates a filter expression to SQL
-    /// </summary>
-    /// <param name="filter">Filter expression to translate</param>
-    /// <param name="layer">Layer definition for field validation</param>
-    /// <returns>SQL fragment with parameters</returns>
-    public SqlFragment Translate(FilterExpression filter, LayerDefinition layer)
-        => TranslateCore(filter, FilterTranslationContext.FromLayer(layer));
-
-    /// <summary>
     /// Translates a filter expression to SQL using a Metadata v2 resource for
     /// field validation and spatial-reference resolution.
     /// </summary>

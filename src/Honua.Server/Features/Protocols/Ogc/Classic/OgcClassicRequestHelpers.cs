@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Server.Features.Protocols.Ogc.Classic;
@@ -79,20 +78,9 @@ internal static class OgcClassicRequestHelpers
         return false;
     }
 
-    internal static string GetWmsLayerName(LayerDefinition layer)
-    {
-        if (string.IsNullOrWhiteSpace(layer.Name))
-        {
-            return layer.Id.ToString(CultureInfo.InvariantCulture);
-        }
-
-        return TrimNamespacePrefix(layer.Name);
-    }
-
     /// <summary>
-    /// V2 overload of <see cref="GetWmsLayerName(LayerDefinition)"/>. Returns the resource's
-    /// display name with any leading namespace prefix removed, falling back to the
-    /// publication's layer index when the resource has no name.
+    /// Returns the resource's display name with any leading namespace prefix removed,
+    /// falling back to the publication's layer index when the resource has no name.
     /// </summary>
     internal static string GetWmsLayerName(MetadataV2Resource resource, MetadataV2Publication? publication = null)
     {

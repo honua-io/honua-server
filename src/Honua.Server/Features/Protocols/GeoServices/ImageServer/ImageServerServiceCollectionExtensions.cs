@@ -29,6 +29,7 @@ internal static class ImageServerServiceCollectionExtensions
         services.AddScoped<ImageServerAnalyzeHandler>();
 
         // Register supporting services
+        services.AddScoped<IImageServerLayerResolver, MetadataV2ImageServerLayerResolver>();
         services.AddScoped<IImageServerCatalogReader, ImageServerCatalogReader>();
         services.AddSingleton<IImageServerCatalogFilterEvaluator, ImageServerCatalogFilterEvaluator>();
         services.AddSingleton<IImageServerLegendSwatchBuilder, ImageServerLegendSwatchBuilder>();

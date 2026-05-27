@@ -33,6 +33,13 @@ public static class MetadataV2Constants
 /// </summary>
 public sealed record MetadataV2ObjectMetadata
 {
+    private IReadOnlyList<string>? _tags;
+    private IReadOnlyDictionary<string, string>? _labels;
+    private IReadOnlyDictionary<string, string>? _annotations;
+    private IReadOnlyList<string>? _keywords;
+    private IReadOnlyList<string>? _themes;
+    private IReadOnlyList<MetadataV2Link>? _links;
+
     /// <summary>
     /// Stable identifier within the graph.
     /// </summary>
@@ -44,6 +51,12 @@ public sealed record MetadataV2ObjectMetadata
     /// </summary>
     [JsonPropertyName("name")]
     public string Name { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Optional namespace for grouping entities.
+    /// </summary>
+    [JsonPropertyName("namespace")]
+    public string? Namespace { get; init; }
 
     /// <summary>
     /// Human-readable display title.
@@ -58,18 +71,42 @@ public sealed record MetadataV2ObjectMetadata
     public string? Description { get; init; }
 
     /// <summary>
+    /// Tags for discovery.
+    /// </summary>
+    [JsonPropertyName("tags")]
+    public IReadOnlyList<string> Tags
+    {
+        get => _tags ?? Array.Empty<string>();
+        init => _tags = value;
+    }
+
+    /// <summary>
     /// Labels for selection and grouping (Kubernetes-style selectable key/values).
     /// Discovery / search tooling reads these. Express a "tag" as a label with an
     /// empty value: <c>{"public": "", "weather": ""}</c>.
     /// </summary>
     [JsonPropertyName("labels")]
-    public IReadOnlyDictionary<string, string> Labels { get; init; } = new Dictionary<string, string>();
+    public IReadOnlyDictionary<string, string> Labels
+    {
+        get => _labels ?? EmptyStringMap;
+        init => _labels = value;
+    }
 
     /// <summary>
     /// Tooling annotations (Kubernetes-style opaque key/values; not selectable).
     /// </summary>
     [JsonPropertyName("annotations")]
-    public IReadOnlyDictionary<string, string> Annotations { get; init; } = new Dictionary<string, string>();
+    public IReadOnlyDictionary<string, string> Annotations
+    {
+        get => _annotations ?? EmptyStringMap;
+        init => _annotations = value;
+    }
+
+    /// <summary>
+    /// Entity generation for optimistic concurrency.
+    /// </summary>
+    [JsonPropertyName("generation")]
+    public long? Generation { get; init; }
 
     /// <summary>
     /// Timestamp when the entity was created.
@@ -89,7 +126,11 @@ public sealed record MetadataV2ObjectMetadata
     /// documentInfo.Keywords (comma-joined), and OData Org.OData.Core.V1.Tags.
     /// </summary>
     [JsonPropertyName("keywords")]
-    public IReadOnlyList<string> Keywords { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<string> Keywords
+    {
+        get => _keywords ?? Array.Empty<string>();
+        init => _keywords = value;
+    }
 
     /// <summary>
     /// DCAT-style themes/categories (theme URIs or labels). Mapped to
@@ -97,7 +138,11 @@ public sealed record MetadataV2ObjectMetadata
     /// where present.
     /// </summary>
     [JsonPropertyName("themes")]
-    public IReadOnlyList<string> Themes { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<string> Themes
+    {
+        get => _themes ?? Array.Empty<string>();
+        init => _themes = value;
+    }
 
     /// <summary>
     /// BCP-47 language tag (for example <c>en</c>, <c>en-US</c>, <c>de-CH</c>).
@@ -145,7 +190,110 @@ public sealed record MetadataV2ObjectMetadata
     /// &amp; STAC <c>links[]</c> arrays.
     /// </summary>
     [JsonPropertyName("links")]
-    public IReadOnlyList<MetadataV2Link> Links { get; init; } = Array.Empty<MetadataV2Link>();
+    public IReadOnlyList<MetadataV2Link> Links
+    {
+        get => _links ?? Array.Empty<MetadataV2Link>();
+        init => _links = value;
+    }
+
+    private static readonly IReadOnlyDictionary<string, string> EmptyStringMap =
+        new Dictionary<string, string>();
+}
+
+/// <summary>
+/// Lifecycle and observed status shared by Metadata v2 graph entities.
+/// </summary>
+public sealed record MetadataV2Status
+{
+    /// <summary>
+    /// Desired or declared lifecycle state.
+    /// </summary>
+    [JsonPropertyName("lifecycle")]
+    public MetadataV2LifecycleStatus Lifecycle { get; init; } = MetadataV2LifecycleStatus.Draft;
+
+    /// <summary>
+    /// Observed operational state.
+    /// </summary>
+    [JsonPropertyName("state")]
+    public MetadataV2OperationalState State { get; init; } = MetadataV2OperationalState.Unknown;
+
+    /// <summary>
+    /// Reconciliation or validation conditions.
+    /// </summary>
+    [JsonPropertyName("conditions")]
+    public IReadOnlyList<MetadataV2Condition> Conditions { get; init; } = Array.Empty<MetadataV2Condition>();
+
+    /// <summary>
+    /// Last observed timestamp.
+    /// </summary>
+    [JsonPropertyName("observedAt")]
+    public DateTimeOffset? ObservedAt { get; init; }
+}
+
+/// <summary>
+/// A status condition attached to a Metadata v2 entity.
+/// </summary>
+public sealed record MetadataV2Condition
+{
+    /// <summary>
+    /// Condition type.
+    /// </summary>
+    [JsonPropertyName("type")]
+    public string Type { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Condition status.
+    /// </summary>
+    [JsonPropertyName("status")]
+    public string Status { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Machine-readable reason.
+    /// </summary>
+    [JsonPropertyName("reason")]
+    public string? Reason { get; init; }
+
+    /// <summary>
+    /// Human-readable message.
+    /// </summary>
+    [JsonPropertyName("message")]
+    public string? Message { get; init; }
+
+    /// <summary>
+    /// Last transition timestamp.
+    /// </summary>
+    [JsonPropertyName("lastTransitionAt")]
+    public DateTimeOffset? LastTransitionAt { get; init; }
+}
+
+/// <summary>
+/// Named extension point for Metadata v2 tools and plugins.
+/// </summary>
+public sealed record MetadataV2ExtensionPoint
+{
+    /// <summary>
+    /// Extension point identifier.
+    /// </summary>
+    [JsonPropertyName("id")]
+    public string Id { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Graph entity kinds this extension point applies to.
+    /// </summary>
+    [JsonPropertyName("appliesTo")]
+    public IReadOnlyList<string> AppliesTo { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Optional description of the extension point.
+    /// </summary>
+    [JsonPropertyName("description")]
+    public string? Description { get; init; }
+
+    /// <summary>
+    /// Optional JSON schema fragment for extension values.
+    /// </summary>
+    [JsonPropertyName("schema")]
+    public JsonElement? Schema { get; init; }
 }
 
 /// <summary>
@@ -198,6 +346,8 @@ public sealed record MetadataV2Link
 /// </summary>
 public sealed record MetadataV2Field
 {
+    private IReadOnlyList<string>? _semanticRoles;
+
     /// <summary>
     /// Stable semantic identifier for field-level promotion across environments.
     /// </summary>
@@ -238,7 +388,11 @@ public sealed record MetadataV2Field
     /// Semantic role identifiers used by catalog and service projections.
     /// </summary>
     [JsonPropertyName("semanticRoles")]
-    public IReadOnlyList<string> SemanticRoles { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<string> SemanticRoles
+    {
+        get => _semanticRoles ?? Array.Empty<string>();
+        init => _semanticRoles = value;
+    }
 
     /// <summary>
     /// Human-friendly alias. Mapped to Esri-FeatureServer.fields[].alias,
@@ -277,6 +431,12 @@ public sealed record MetadataV2Field
     public MetadataV2FieldDomain? Domain { get; init; }
 
     /// <summary>
+    /// True when the field should be omitted from public protocol metadata and default feature output.
+    /// </summary>
+    [JsonPropertyName("hidden")]
+    public bool Hidden { get; init; }
+
+    /// <summary>
     /// Provider-native SQL type label (e.g. <c>VARCHAR(64)</c>,
     /// <c>NUMERIC(10,2)</c>, <c>TIMESTAMP WITH TIME ZONE</c>). Free-form;
     /// used by $metadata generators and admin diagnostics.
@@ -298,6 +458,12 @@ public sealed record MetadataV2Field
 public sealed record MetadataV2FieldDomain
 {
     /// <summary>
+    /// Stable domain name.
+    /// </summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; init; }
+
+    /// <summary>
     /// Domain kind. Canonical values: <c>codedValue</c> or <c>range</c>.
     /// </summary>
     [JsonPropertyName("type")]
@@ -315,6 +481,18 @@ public sealed record MetadataV2FieldDomain
     /// </summary>
     [JsonPropertyName("range")]
     public IReadOnlyList<JsonElement>? Range { get; init; }
+
+    /// <summary>
+    /// Optional merge policy metadata for clients that understand Esri-style domains.
+    /// </summary>
+    [JsonPropertyName("mergePolicy")]
+    public string? MergePolicy { get; init; }
+
+    /// <summary>
+    /// Optional split policy metadata for clients that understand Esri-style domains.
+    /// </summary>
+    [JsonPropertyName("splitPolicy")]
+    public string? SplitPolicy { get; init; }
 }
 
 /// <summary>

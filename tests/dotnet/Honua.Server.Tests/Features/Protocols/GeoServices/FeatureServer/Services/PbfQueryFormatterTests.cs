@@ -4,14 +4,12 @@
 using System.Collections.Immutable;
 using FluentAssertions;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
-using GeometryType = Honua.Core.Features.Catalog.Domain.GeometryType;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
@@ -130,14 +128,14 @@ public sealed class PbfQueryFormatterTests
     {
         var fields = new[]
         {
-            new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false),
-            new FieldDefinition("name", FieldType.String, 255),
-            new FieldDefinition("population", FieldType.Integer),
-            new FieldDefinition("area", FieldType.Double),
-            new FieldDefinition("active", FieldType.Boolean),
-            new FieldDefinition("created", FieldType.DateTime)
+            new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false },
+            new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 255 },
+            new MetadataV2Field { Name = "population", Type = MetadataV2FieldType.Integer },
+            new MetadataV2Field { Name = "area", Type = MetadataV2FieldType.Double },
+            new MetadataV2Field { Name = "active", Type = MetadataV2FieldType.Boolean },
+            new MetadataV2Field { Name = "created", Type = MetadataV2FieldType.DateTime }
         };
-        var layer = CreateLayer(fields, GeometryType.Point);
+        var layer = CreateLayer(fields, MetadataV2GeometryType.Point);
         var attrs = new Dictionary<string, object?>
         {
             ["objectid"] = 42L,
@@ -213,8 +211,8 @@ public sealed class PbfQueryFormatterTests
     public void FormatAsPbf_WithPolygonGeometry_DoesNotThrow()
     {
         var layer = CreateLayer(
-            [new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false)],
-            GeometryType.Polygon);
+            [new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false }],
+            MetadataV2GeometryType.Polygon);
 
         var polygon = new Polygon(new LinearRing(
         [
@@ -243,8 +241,8 @@ public sealed class PbfQueryFormatterTests
     public void FormatAsPbf_WithLineStringGeometry_DoesNotThrow()
     {
         var layer = CreateLayer(
-            [new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false)],
-            GeometryType.LineString);
+            [new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false }],
+            MetadataV2GeometryType.LineString);
 
         var line = new LineString(
         [
@@ -409,27 +407,53 @@ public sealed class PbfQueryFormatterTests
 
     // ── Helpers ─────────────────────────────────────────────────
 
-    private static LayerDefinition CreatePointLayer() =>
+    private static MetadataV2Resource CreatePointLayer() =>
         CreateLayer(
-            [new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false)],
-            GeometryType.Point);
+            [new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false }],
+            MetadataV2GeometryType.Point);
 
-    private static LayerDefinition CreateLayerWithStringField() =>
+    private static MetadataV2Resource CreateLayerWithStringField() =>
         CreateLayer(
             [
-                new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false),
-                new FieldDefinition("name", FieldType.String, 255)
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 255 }
             ],
-            GeometryType.Point);
+            MetadataV2GeometryType.Point);
 
-    private static LayerDefinition CreateLayer(FieldDefinition[] fields, GeometryType geometryType) =>
-        new(
-            Id: 0,
-            Name: "Test Layer",
-            Description: "Test layer for PBF tests",
-            GeometryType: geometryType,
-            SpatialReference: SpatialReference.Create(4326),
-            Fields: fields);
+    private static MetadataV2Resource CreateLayer(MetadataV2Field[] fields, MetadataV2GeometryType geometryType)
+    {
+        var schemaFields = new List<MetadataV2Field>(fields);
+        if (geometryType is not MetadataV2GeometryType.None)
+        {
+            schemaFields.Add(new MetadataV2Field
+            {
+                Name = "shape",
+                Type = MetadataV2FieldType.Geometry,
+                Nullable = true,
+                SemanticRoles = ["geometry.primary"]
+            });
+        }
+
+        return new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "test-layer",
+                Name = "Test Layer",
+                Description = "Test layer for PBF tests"
+            },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            SchemaFields = schemaFields,
+            Spatial = geometryType is MetadataV2GeometryType.None
+                ? null
+                : new MetadataV2ResourceSpatial
+                {
+                    SpatialReference = MetadataV2SpatialReference.Wgs84,
+                    GeometryType = geometryType,
+                    PrimaryGeometryField = "shape"
+                }
+        };
+    }
 
     private static QueryResult<Feature> CreateSinglePointResult()
     {

@@ -39,8 +39,7 @@ internal sealed class ProjectedExtentLayerCatalog : ILayerCatalog
             Extent: extent,
             MinScale: null,
             MaxScale: null,
-            DefaultVisibility: true,
-            Metadata: null);
+            DefaultVisibility: true);
 
         _service = new ServiceDefinition(
             Name: ServiceId,
@@ -49,8 +48,7 @@ internal sealed class ProjectedExtentLayerCatalog : ILayerCatalog
             SpatialReference: spatialReference,
             SupportedFormats: Array.Empty<string>(),
             Capabilities: Array.Empty<string>(),
-            ServiceExtent: extent,
-            Metadata: null);
+            ServiceExtent: extent);
     }
 
     public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)

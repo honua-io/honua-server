@@ -5,15 +5,16 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Exceptions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Shared.Models;
-using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Protocols.OData.Models;
 
@@ -25,37 +26,38 @@ namespace Honua.Server.Features.Protocols.OData.Services;
 /// </summary>
 internal sealed partial class ODataSearchService
 {
+    private const string ODataProtocol = "OData";
     private const int MaxSearchTerms = 8;
     private const int MaxSearchTermLength = 128;
     private const int MaxSearchableStringFields = 16;
 
-    private readonly IResourceValidator _resourceValidator;
     private readonly IFeatureReader _featureReader;
     private readonly IRelationshipStore _relationshipStore;
     private readonly IStreamingFeatureStore _streamingFeatureStore;
     private readonly IGeometryService _geometryService;
     private readonly ICrsRegistry _crsRegistry;
     private readonly ODataQueryService _queryService;
+    private readonly IMetadataV2GraphProvider _graphProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ODataSearchService"/> class.
     /// </summary>
     public ODataSearchService(
-        IResourceValidator resourceValidator,
         IFeatureReader featureReader,
         IRelationshipStore relationshipStore,
         IStreamingFeatureStore streamingFeatureStore,
         IGeometryService geometryService,
         ICrsRegistry crsRegistry,
-        ODataQueryService queryService)
+        ODataQueryService queryService,
+        IMetadataV2GraphProvider graphProvider)
     {
-        _resourceValidator = resourceValidator;
         _featureReader = featureReader;
         _relationshipStore = relationshipStore;
         _streamingFeatureStore = streamingFeatureStore;
         _geometryService = geometryService;
         _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
         _queryService = queryService;
+        _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
     }
 
     /// <summary>
@@ -110,20 +112,9 @@ internal sealed partial class ODataSearchService
             throw new ArgumentException("$search parameter is required.");
         }
 
-        // Verify layer exists
-        var layerResult = await _resourceValidator.ValidateLayerAsync(layerId, cancellationToken);
-        if (!layerResult.IsValid)
-        {
-            var message = layerResult.ErrorMessage ?? $"Layer {layerId} not found";
-            if (layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
-            {
-                throw new ArgumentException(message);
-            }
-
-            throw new ResourceNotFoundException(message);
-        }
-
-        var layer = layerResult.Resource!;
+        var resolvedLayer = await ResolveODataLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var resource = resolvedLayer.Resource;
+        var srid = resource.ReadSrid() ?? 4326;
 
         // Build a text search query using PostgreSQL full-text search
         var searchTerms = ParseSearchExpression(searchExpression);
@@ -133,18 +124,18 @@ internal sealed partial class ODataSearchService
             throw new ArgumentException($"$search supports at most {MaxSearchTerms} terms.");
         }
 
-        var textSearchFilter = BuildTextSearchCondition(searchTerms, layer);
+        var textSearchFilter = BuildTextSearchCondition(searchTerms, resource);
 
         var (query, queryError) = await _queryService.BuildFeatureQueryAsync(
             filter,
             orderby,
             top ?? 1000,
             skip,
-            layer,
+            resource,
             select,
             expand,
             count,
-            cancellationToken: cancellationToken);
+            cancellationToken: cancellationToken).ConfigureAwait(false);
         if (queryError != null)
         {
             throw new ArgumentException(queryError);
@@ -152,11 +143,12 @@ internal sealed partial class ODataSearchService
 
         query = MergeFilters(query, textSearchFilter);
 
-        var result = await _featureReader.QueryAsync(layerId, query, cancellationToken);
+        // Storage handle is still int-keyed at the IFeatureReader boundary.
+        var result = await _featureReader.QueryAsync(resolvedLayer.StorageLayerId, query, cancellationToken).ConfigureAwait(false);
         var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
             _crsRegistry,
-            layer.SpatialReference.ToSrid(),
-            cancellationToken);
+            srid,
+            cancellationToken).ConfigureAwait(false);
 
         // Convert features to OData format
         var featuresData = result.Items.Select(feature =>
@@ -164,11 +156,11 @@ internal sealed partial class ODataSearchService
             var dict = new Dictionary<string, object?>
             {
                 ["ObjectId"] = feature.Id,
-                ["LayerId"] = layerId,
+                ["LayerId"] = resolvedLayer.PublicLayerId,
                 ["Geometry"] = ODataGeometryConverter.ConvertWkbToGeometry(
                     _geometryService,
                     feature.Geometry,
-                    layer.SpatialReference.ToSrid(),
+                    srid,
                     axisOrder)
             };
 
@@ -189,7 +181,13 @@ internal sealed partial class ODataSearchService
         if (!string.IsNullOrWhiteSpace(expand))
         {
             var objectIds = result.Items.Select(feature => feature.Id).ToArray();
-            var expanded = await ProcessExpandAsync(expand, layer, objectIds, context, cancellationToken);
+            var expanded = await ProcessExpandAsync(
+                expand,
+                resource,
+                resolvedLayer.StorageLayerId,
+                objectIds,
+                context,
+                cancellationToken).ConfigureAwait(false);
 
             foreach (var featureData in featuresData)
             {
@@ -204,9 +202,9 @@ internal sealed partial class ODataSearchService
                     continue;
                 }
 
-                foreach (var (relationshipName, relatedCollection) in relatedValues)
+                foreach (var relation in relatedValues)
                 {
-                    featureData[relationshipName] = relatedCollection;
+                    featureData[relation.Key] = relation.Value;
                 }
             }
         }
@@ -238,26 +236,20 @@ internal sealed partial class ODataSearchService
             throw new ArgumentException("$apply parameter is required.");
         }
 
-        // Verify layer exists via the V2 graph snapshot.
-        var layerResult = await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
-        if (!layerResult.IsValid)
-        {
-            var message = layerResult.ErrorMessage ?? $"Layer {layerId} not found";
-            if (layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
-            {
-                throw new ArgumentException(message);
-            }
-
-            throw new ResourceNotFoundException(message);
-        }
-
-        var resource = layerResult.Resource!;
+        var resolvedLayer = await ResolveODataLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var resource = resolvedLayer.Resource;
         var aggregation = ODataAggregationHandler.ParseApplyExpression(applyExpression);
         ValidateAggregationFields(aggregation, resource);
 
         // Use existing aggregation handler for processing
         var handler = new ODataAggregationHandler(_featureReader, _streamingFeatureStore, _queryService);
-        return await handler.ProcessAggregationAsync(layerId, resource, applyExpression, filter, baseUrl, cancellationToken);
+        return await handler.ProcessAggregationAsync(
+            resolvedLayer.StorageLayerId,
+            resource,
+            applyExpression,
+            filter,
+            baseUrl,
+            cancellationToken);
     }
 
     private static void ValidateAggregationFields(ParsedAggregation aggregation, MetadataV2Resource resource)
@@ -373,16 +365,16 @@ internal sealed partial class ODataSearchService
     /// </summary>
     private static SqlFragment BuildTextSearchCondition(
         List<List<(string term, bool isNegated, bool isPhrase)>> terms,
-        LayerDefinition layer)
+        MetadataV2Resource resource)
     {
         if (terms.Count == 0)
         {
             return new SqlFragment("1=1", Array.Empty<object?>()); // No search terms, match all
         }
 
-        // Get text-searchable fields from the layer
-        var textFields = layer.AttributeFields
-            .Where(f => f.Type == FieldType.String)
+        // Get text-searchable fields from the canonical resource schema.
+        var textFields = resource.SchemaFields
+            .Where(f => f.Type == MetadataV2FieldType.String)
             .Select(f => f.Name)
             .Take(MaxSearchableStringFields)
             .ToList();
@@ -512,34 +504,168 @@ internal sealed partial class ODataSearchService
         }
     }
 
+    private async Task<ResolvedODataLayer> ResolveODataLayerAsync(
+        int layerId,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+
+        foreach (var publication in snapshot.Graph.Publications
+                     .Where(p => p.LayerIndex == layerId)
+                     .OrderByDescending(p => p.IsPrimary)
+                     .ThenBy(p => ResolveServiceName(snapshot, p), StringComparer.OrdinalIgnoreCase))
+        {
+            if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service))
+            {
+                continue;
+            }
+
+            if (!IsODataProtocolEnabled(service))
+            {
+                continue;
+            }
+
+            var resource = snapshot.ResolveResource(publication);
+            if (resource is null)
+            {
+                continue;
+            }
+
+            var storageLayerId = snapshot.ResolveStorageLayerId(publication)
+                ?? snapshot.ResolveStorageLayerId(resource);
+            if (!storageLayerId.HasValue)
+            {
+                continue;
+            }
+
+            return new ResolvedODataLayer(
+                publication,
+                resource,
+                layerId,
+                storageLayerId.Value);
+        }
+
+        throw new ResourceNotFoundException($"Layer {layerId} not found");
+    }
+
+    private static ResolvedRelatedResource? ResolveRelatedResource(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Relationship relationship,
+        HttpContext? context)
+    {
+        if (string.IsNullOrWhiteSpace(relationship.RelatedResourceId) ||
+            !snapshot.Index.ResourcesById.TryGetValue(relationship.RelatedResourceId, out var resource))
+        {
+            return null;
+        }
+
+        foreach (var publication in snapshot.Index.PublicationsByResource[relationship.RelatedResourceId]
+                     .OrderByDescending(p => p.IsPrimary)
+                     .ThenBy(p => ResolveServiceName(snapshot, p), StringComparer.OrdinalIgnoreCase))
+        {
+            if (!publication.LayerIndex.HasValue)
+            {
+                continue;
+            }
+
+            if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service))
+            {
+                continue;
+            }
+
+            if (!IsODataProtocolEnabled(service))
+            {
+                continue;
+            }
+
+            if (context is not null)
+            {
+                var accessError = AccessPolicyHelpers.RequireResourceAccess(
+                    context,
+                    resource,
+                    service,
+                    AccessScope.Read);
+                if (accessError is not null)
+                {
+                    continue;
+                }
+            }
+
+            var storageLayerId = snapshot.ResolveStorageLayerId(publication)
+                ?? snapshot.ResolveStorageLayerId(resource);
+            if (!storageLayerId.HasValue)
+            {
+                continue;
+            }
+
+            return new ResolvedRelatedResource(
+                resource,
+                publication.LayerIndex.Value,
+                storageLayerId.Value);
+        }
+
+        return null;
+    }
+
+    private static string ResolveServiceName(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication publication)
+    {
+        return snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service)
+            ? service.Metadata.Name
+            : publication.ServiceId;
+    }
+
+    private static bool IsODataProtocolEnabled(MetadataV2Service service)
+    {
+        return service.Protocols.Any(protocol =>
+            string.Equals(protocol, ODataProtocol, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private sealed record ResolvedODataLayer(
+        MetadataV2Publication Publication,
+        MetadataV2Resource Resource,
+        int PublicLayerId,
+        int StorageLayerId);
+
+    private sealed record ResolvedRelatedResource(
+        MetadataV2Resource Resource,
+        int PublicLayerId,
+        int StorageLayerId);
+
     /// <summary>
-    /// Processes $expand to fetch related entities for features.
-    /// Handles relationships and foreign key mappings.
+    /// Processes $expand to fetch related entities for features using metadata-v2
+    /// relationship definitions.
     /// </summary>
     public async Task<Dictionary<long, Dictionary<string, object?[]>>> ProcessExpandAsync(
         string expand,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        int sourceStorageLayerId,
         long[] objectIds,
         CancellationToken cancellationToken)
         => await ProcessExpandAsync(
             expand,
-            layer,
+            resource,
+            sourceStorageLayerId,
             objectIds,
             context: null,
             cancellationToken)
             .ConfigureAwait(false);
 
     /// <summary>
-    /// Processes $expand to fetch related entities for features.
-    /// Handles relationships and foreign key mappings.
+    /// Processes $expand to fetch related entities for features using metadata-v2
+    /// relationship definitions.
     /// </summary>
     public async Task<Dictionary<long, Dictionary<string, object?[]>>> ProcessExpandAsync(
         string expand,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        int sourceStorageLayerId,
         long[] objectIds,
         HttpContext? context,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(resource);
+
         var result = new Dictionary<long, Dictionary<string, object?[]>>();
         var requestedIds = objectIds.ToHashSet();
 
@@ -550,14 +676,15 @@ internal sealed partial class ODataSearchService
 
         // Parse $expand expression and honor supported expand options, e.g. Rel($select=Name).
         var relationshipOptions = ParseExpandRelationshipOptions(expand);
+        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
         // Find matching relationships
-        foreach (var relationship in layer.LayerRelationships)
+        foreach (var relationship in resource.Relationships)
         {
             var sanitizedName = ODataUtilityService.SanitizeIdentifier(relationship.Name);
-            var metadataName = ODataUtilityService.BuildRelationshipMetadataName(
+            var metadataName = ODataUtilityService.BuildRelationshipMetadataNameForV2(
                 relationship.Name,
-                relationship.RelationshipId);
+                relationship.Id);
             if (!TryGetExpandRelationshipOptions(
                     relationshipOptions,
                     relationship.Name,
@@ -569,6 +696,11 @@ internal sealed partial class ODataSearchService
             }
 
             var outputName = expandOptions.Name;
+            var related = ResolveRelatedResource(snapshot, relationship, context);
+            if (related is null)
+            {
+                continue;
+            }
 
             // Ensure expanded navigation properties are emitted even when no related rows exist.
             foreach (var objectId in objectIds)
@@ -582,53 +714,27 @@ internal sealed partial class ODataSearchService
                 relationsDict.TryAdd(outputName, Array.Empty<object?>());
             }
 
-            LayerDefinition? relatedLayer;
-            if (context is not null)
-            {
-                var relatedLayerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-                    context,
-                    relationship.RelatedLayerId,
-                    LayerValidationHelpers.ValidationProtocol.OData,
-                    cancellationToken: cancellationToken);
-                if (!relatedLayerValidation.IsValid)
-                {
-                    continue;
-                }
-
-                relatedLayer = relatedLayerValidation.Layer;
-            }
-            else
-            {
-                var relatedLayerResult = await _resourceValidator.ValidateLayerAsync(
-                    relationship.RelatedLayerId,
-                    cancellationToken);
-                if (!relatedLayerResult.IsValid)
-                {
-                    continue;
-                }
-
-                relatedLayer = relatedLayerResult.Resource;
-            }
-
-            if (relatedLayer == null)
-            {
-                continue;
-            }
-
             var relatedAxisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
                 _crsRegistry,
-                relatedLayer.SpatialReference.ToSrid(),
+                related.Resource.ReadSrid() ?? 4326,
                 cancellationToken);
 
             // Query related features
-            var relatedQuery = RelatedQuery.ForObjects(objectIds, relationship);
-            var relatedResult = await _relationshipStore.QueryRelatedAsync(layer.Id, relatedQuery, cancellationToken);
+            var relatedQuery = RelatedQuery.ForObjects(
+                objectIds,
+                related.StorageLayerId,
+                relationship.OriginField,
+                relationship.DestinationField);
+            var relatedResult = await _relationshipStore.QueryRelatedAsync(
+                sourceStorageLayerId,
+                relatedQuery,
+                cancellationToken);
 
             // Group related features by origin object ID
             foreach (var feature in relatedResult.Items)
             {
                 // Try to get the origin key from the related feature's attributes
-                if (!feature.Attributes.TryGetValue(relationship.DestinationForeignKeyField, out var originKeyValue))
+                if (!feature.Attributes.TryGetValue(relationship.DestinationField, out var originKeyValue))
                 {
                     continue;
                 }
@@ -662,12 +768,12 @@ internal sealed partial class ODataSearchService
                 var relatedGeometry = ODataGeometryConverter.ConvertWkbToGeometry(
                     _geometryService,
                     feature.Geometry,
-                    relatedLayer.SpatialReference.ToSrid(),
+                    related.Resource.ReadSrid() ?? 4326,
                     relatedAxisOrder);
 
                 var relatedAttributes = ODataAttributeSerializer.Serialize(feature.Attributes);
                 var relatedFeatureDict = ODataUtilityService.BuildFeaturePayload(
-                    relatedLayer.Id,
+                    related.PublicLayerId,
                     feature,
                     relatedGeometry,
                     relatedAttributes);

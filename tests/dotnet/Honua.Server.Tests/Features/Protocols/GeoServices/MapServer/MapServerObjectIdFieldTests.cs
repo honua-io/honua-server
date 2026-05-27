@@ -8,6 +8,8 @@ using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Protocols.GeoServices.MapServer.Models;
@@ -18,6 +20,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
@@ -103,11 +106,76 @@ public sealed class MapServerObjectIdFieldTests
                 services.RemoveAll<ILayerCatalog>();
                 services.RemoveAll<ICrsDetectionService>();
                 services.RemoveAll<ICrsRegistry>();
+                services.RemoveAll<IMetadataV2GraphProvider>();
+                services.RemoveAll<IMetadataV2GraphStore>();
                 services.AddScoped<ILayerCatalog, StringIdLayerCatalog>();
                 services.AddSingleton<ICrsDetectionService, NoopCrsDetectionService>();
                 services.AddSingleton<ICrsRegistry, StringIdCrsRegistry>();
+                services.AddSingleton(_ => BuildStringIdGraphProvider());
+                services.AddSingleton<IMetadataV2GraphProvider>(provider =>
+                    provider.GetRequiredService<TestMetadataV2GraphProvider>());
+                services.AddSingleton<IMetadataV2GraphStore>(provider =>
+                    provider.GetRequiredService<TestMetadataV2GraphProvider>());
             });
         });
+
+    private static TestMetadataV2GraphProvider BuildStringIdGraphProvider()
+    {
+        var openAccessPolicy = new Honua.Core.Features.Security.Domain.AccessPolicy
+        {
+            AllowAnonymous = true,
+            AllowAnonymousWrite = true
+        };
+
+        MetadataV2Field[] fields =
+        [
+            new()
+            {
+                Name = "id",
+                Type = MetadataV2FieldType.String,
+                Nullable = false,
+                Length = 64,
+                SemanticRoles = ["id.primary"]
+            },
+            new() { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+            new() { Name = "name", Type = MetadataV2FieldType.String, Length = 255 },
+            new()
+            {
+                Name = "shape",
+                Type = MetadataV2FieldType.Geometry,
+                Nullable = true,
+                SemanticRoles = ["geometry"]
+            }
+        ];
+
+        return new TestMetadataV2GraphBuilder()
+            .AddService(
+                "svc-string-ids",
+                ServiceName,
+                route: $"/rest/services/{ServiceName}/MapServer",
+                protocols: [MetadataV2ServiceProtocols.MapServer],
+                accessPolicy: openAccessPolicy)
+            .AddResource(
+                "res-string-id-layer",
+                "String ID Layer",
+                MetadataV2ResourceType.FeatureDataset,
+                fields: fields,
+                accessPolicy: openAccessPolicy)
+            .AddStorageBinding(
+                "binding-string-id-layer",
+                "res-string-id-layer",
+                $"test.layers.{StringIdLayerId}",
+                storageLayerId: StringIdLayerId)
+            .AddPublication(
+                id: "pub-string-id-layer",
+                serviceId: "svc-string-ids",
+                resourceId: "res-string-id-layer",
+                layerIndex: StringIdLayerId,
+                storageBindingId: "binding-string-id-layer",
+                serviceLocalId: StringIdLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                publicationType: MetadataV2PublicationType.EsriMapLayer)
+            .BuildProvider();
+    }
 
     private sealed class StringIdCrsRegistry : ICrsRegistry
     {
@@ -152,14 +220,6 @@ public sealed class MapServerObjectIdFieldTests
     {
         private static readonly SpatialReference SpatialReference = SpatialReference.Create(4326);
         private static readonly FeatureExtent Extent = FeatureExtent.Create(-180, -90, 180, 90, 4326);
-        private static readonly CatalogMetadata Metadata = new()
-        {
-            AccessPolicy = new AccessPolicy
-            {
-                AllowAnonymous = true,
-                AllowAnonymousWrite = true
-            }
-        };
 
         private static readonly LayerDefinition Layer = new(
             Id: StringIdLayerId,
@@ -176,15 +236,13 @@ public sealed class MapServerObjectIdFieldTests
             Extent: Extent,
             MinScale: null,
             MaxScale: null,
-            DefaultVisibility: true,
-            Metadata: Metadata);
+            DefaultVisibility: true);
 
         private static readonly ServiceDefinition Service = new(
             ServiceName,
             "Feature service for string identifier tests",
             [Layer],
-            SpatialReference,
-            Metadata: Metadata);
+            SpatialReference);
 
         public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
             => Task.FromResult(layerId == StringIdLayerId ? Layer : null);

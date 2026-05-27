@@ -15,6 +15,8 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Geometry.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Events;
@@ -24,12 +26,14 @@ using Honua.Server.Features.Protocols.Ogc.Api.Features;
 using Honua.Server.Features.Protocols.Ogc.Api.Features.Models;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -527,12 +531,9 @@ public sealed class FeatureServerServiceAccessPolicyTests
     {
         using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
             new RbacTestLayerCatalog(
-                alphaLayerMetadata: new CatalogMetadata
+                alphaLayerMetadata: new AccessPolicy
                 {
-                    AccessPolicy = new AccessPolicy
-                    {
-                        AllowAnonymousWrite = true
-                    }
+                    AllowAnonymousWrite = true
                 }));
         using var client = factory.CreateClient();
 
@@ -569,12 +570,9 @@ public sealed class FeatureServerServiceAccessPolicyTests
     {
         using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
             new RbacTestLayerCatalog(
-                alphaLayerMetadata: new CatalogMetadata
+                alphaLayerMetadata: new AccessPolicy
                 {
-                    AccessPolicy = new AccessPolicy
-                    {
-                        AllowAnonymousWrite = true
-                    }
+                    AllowAnonymousWrite = true
                 }));
         using var client = factory.CreateClient();
 
@@ -595,12 +593,9 @@ public sealed class FeatureServerReplicationAccessPolicyTests
     {
         using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
             new RbacTestLayerCatalog(
-                alphaLayerMetadata: new CatalogMetadata
+                alphaLayerMetadata: new AccessPolicy
                 {
-                    AccessPolicy = new AccessPolicy
-                    {
-                        AllowAnonymousWrite = true
-                    }
+                    AllowAnonymousWrite = true
                 }));
         using var client = factory.CreateClient();
 
@@ -652,13 +647,10 @@ public sealed class FeatureServerReplicationAccessPolicyTests
     {
         using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
             new RbacTestLayerCatalog(
-                alphaLayerMetadata: new CatalogMetadata
+                alphaLayerMetadata: new AccessPolicy
                 {
-                    AccessPolicy = new AccessPolicy
-                    {
-                        AllowAnonymous = true,
-                        AllowAnonymousWrite = true
-                    }
+                    AllowAnonymous = true,
+                    AllowAnonymousWrite = true
                 }));
         using var adminClient = ServiceRbacTestFixture.CreateClient(factory, "admin");
         using var anonymousClient = factory.CreateClient();
@@ -691,12 +683,9 @@ public sealed class FeatureServerReplicationAccessPolicyTests
     {
         using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
             new RbacTestLayerCatalog(
-                alphaLayerMetadata: new CatalogMetadata
+                alphaLayerMetadata: new AccessPolicy
                 {
-                    AccessPolicy = new AccessPolicy
-                    {
-                        AllowAnonymousWrite = true
-                    }
+                    AllowAnonymousWrite = true
                 }));
         using var adminClient = ServiceRbacTestFixture.CreateClient(factory, "admin");
         using var anonymousClient = factory.CreateClient();
@@ -730,12 +719,9 @@ public sealed class FeatureServerReplicationAccessPolicyTests
     {
         using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
             new RbacTestLayerCatalog(
-                alphaLayerMetadata: new CatalogMetadata
+                alphaLayerMetadata: new AccessPolicy
                 {
-                    AccessPolicy = new AccessPolicy
-                    {
-                        AllowAnonymousWrite = true
-                    }
+                    AllowAnonymousWrite = true
                 }));
         using var adminClient = ServiceRbacTestFixture.CreateClient(factory, "admin");
         using var anonymousClient = factory.CreateClient();
@@ -794,12 +780,9 @@ public sealed class OgcServiceAccessPolicyTests
     {
         using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
             new RbacTestLayerCatalog(
-                betaServiceMetadata: new CatalogMetadata
+                betaServiceMetadata: new AccessPolicy
                 {
-                    AccessPolicy = new AccessPolicy
-                    {
-                        AllowedWriteRoles = ["beta-writer"]
-                    }
+                    AllowedWriteRoles = ["beta-writer"]
                 }));
         using var client = ServiceRbacTestFixture.CreateClient(factory, "admin");
 
@@ -855,12 +838,9 @@ public sealed class OgcServiceAccessPolicyTests
         using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
             new RbacTestLayerCatalog(
                 alphaServiceMetadata: ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["alpha-reader"]),
-                alphaLayerMetadata: new CatalogMetadata
+                alphaLayerMetadata: new AccessPolicy
                 {
-                    AccessPolicy = new AccessPolicy
-                    {
-                        AllowAnonymous = true
-                    }
+                    AllowAnonymous = true
                 }));
         using var client = factory.CreateClient();
 
@@ -967,12 +947,9 @@ public sealed class ODataServiceRbacTests
     {
         using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
             new RbacTestLayerCatalog(
-                alphaLayerMetadata: new CatalogMetadata
+                alphaLayerMetadata: new AccessPolicy
                 {
-                    AccessPolicy = new AccessPolicy
-                    {
-                        AllowAnonymous = true
-                    }
+                    AllowAnonymous = true
                 }));
         using var client = factory.CreateClient();
 
@@ -1055,12 +1032,9 @@ public sealed class ODataServiceAccessPolicyTests
     {
         using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
             new RbacTestLayerCatalog(
-                betaServiceMetadata: new CatalogMetadata
+                betaServiceMetadata: new AccessPolicy
                 {
-                    AccessPolicy = new AccessPolicy
-                    {
-                        AllowedWriteRoles = ["beta-writer"]
-                    }
+                    AllowedWriteRoles = ["beta-writer"]
                 }));
         using var client = ServiceRbacTestFixture.CreateClient(factory, "admin");
 
@@ -1115,12 +1089,9 @@ public sealed class ODataServiceAccessPolicyTests
     {
         using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
             new RbacTestLayerCatalog(
-                betaServiceMetadata: new CatalogMetadata
+                betaServiceMetadata: new AccessPolicy
                 {
-                    AccessPolicy = new AccessPolicy
-                    {
-                        AllowedWriteRoles = ["beta-writer"]
-                    }
+                    AllowedWriteRoles = ["beta-writer"]
                 }));
         using var client = ServiceRbacTestFixture.CreateClient(factory, "admin");
 
@@ -1402,6 +1373,13 @@ internal static class ServiceRbacTestFixture
                 {
                     services.RemoveAll<ILayerCatalog>();
                     services.AddScoped<ILayerCatalog>(_ => layerCatalogFactory());
+                    services.RemoveAll<IMetadataV2GraphProvider>();
+                    services.RemoveAll<IMetadataV2GraphStore>();
+                    services.AddSingleton(_ => CreateMetadataV2Provider(layerCatalogFactory()));
+                    services.AddSingleton<IMetadataV2GraphProvider>(sp =>
+                        sp.GetRequiredService<TestMetadataV2GraphProvider>());
+                    services.AddSingleton<IMetadataV2GraphStore>(sp =>
+                        sp.GetRequiredService<TestMetadataV2GraphProvider>());
                     services.AddSingleton<ICrsRegistry, TestCrsRegistry>();
                     services.AddSingleton<ICoordinateTransformService, TestCoordinateTransformService>();
                     services.AddSingleton<IGeometryTopologyValidator, NoOpGeometryTopologyValidator>();
@@ -1419,6 +1397,140 @@ internal static class ServiceRbacTestFixture
                 });
             });
     }
+
+    private static TestMetadataV2GraphProvider CreateMetadataV2Provider(ILayerCatalog layerCatalog)
+    {
+        var layers = layerCatalog.ListLayersAsync().GetAwaiter().GetResult()
+            .OrderBy(static layer => layer.Id)
+            .ToArray();
+        var services = layerCatalog.ListServicesAsync().GetAwaiter().GetResult();
+        var policySeed = layerCatalog as IAccessPolicyCatalogSeed;
+
+        var builder = new TestMetadataV2GraphBuilder();
+        foreach (var layer in layers)
+        {
+            var resourceId = BuildResourceId(layer.Id);
+            var bindingId = BuildBindingId(layer.Id);
+            builder
+                .AddResource(
+                    resourceId,
+                    layer.Name,
+                    MetadataV2ResourceType.FeatureDataset,
+                    fields: layer.Fields.Select(MapField),
+                    accessPolicy: policySeed?.GetLayerAccessPolicy(layer.Id),
+                    annotations: BuildResourceAnnotations(layer))
+                .AddStorageBinding(
+                    bindingId,
+                    resourceId,
+                    $"test.layers.{layer.Id.ToString(CultureInfo.InvariantCulture)}",
+                    storageLayerId: layer.Id);
+        }
+
+        foreach (var service in services)
+        {
+            var serviceId = BuildServiceId(service.Name);
+            builder.AddService(
+                serviceId,
+                service.Name,
+                protocols: MetadataV2ServiceProtocols.All,
+                accessPolicy: policySeed?.GetServiceAccessPolicy(service.Name),
+                options: BuildServiceOptions(service));
+
+            foreach (var layer in service.Layers.OrderBy(static layer => layer.Id))
+            {
+                builder.AddPublication(
+                    $"{serviceId}-layer-{layer.Id.ToString(CultureInfo.InvariantCulture)}",
+                    serviceId,
+                    BuildResourceId(layer.Id),
+                    layerIndex: layer.Id,
+                    storageBindingId: BuildBindingId(layer.Id),
+                    publicationType: MetadataV2PublicationType.ODataEntitySet);
+            }
+        }
+
+        return builder.BuildProvider();
+    }
+
+    private static string BuildResourceId(int layerId)
+        => $"res-layer-{layerId.ToString(CultureInfo.InvariantCulture)}";
+
+    private static string BuildBindingId(int layerId)
+        => $"binding-layer-{layerId.ToString(CultureInfo.InvariantCulture)}";
+
+    private static string BuildServiceId(string serviceName)
+        => $"svc-{serviceName}";
+
+    private static MetadataV2Field MapField(FieldDefinition field)
+        => new()
+        {
+            Name = field.Name,
+            Type = MapFieldType(field.Type),
+            Nullable = field.Nullable,
+            Description = field.Description,
+            Alias = field.DisplayName,
+            Length = field.Length,
+            Domain = MapDomain(field.Domain),
+            Hidden = field.IsHidden
+        };
+
+    private static MetadataV2FieldDomain? MapDomain(FieldDomainDefinition? domain)
+        => domain is null
+            ? null
+            : new MetadataV2FieldDomain
+            {
+                Name = domain.Name,
+                Type = domain.Type,
+                CodedValues = domain.CodedValues?
+                    .Select(static codedValue => new MetadataV2CodedValue
+                    {
+                        Code = JsonSerializer.SerializeToElement(codedValue.Code),
+                        Name = codedValue.Name
+                    })
+                    .ToArray() ?? Array.Empty<MetadataV2CodedValue>(),
+                Range = domain.Range is null
+                    ? null
+                    :
+                    [
+                        JsonSerializer.SerializeToElement(domain.Range.MinValue),
+                        JsonSerializer.SerializeToElement(domain.Range.MaxValue)
+                    ],
+                MergePolicy = domain.MergePolicy,
+                SplitPolicy = domain.SplitPolicy
+            };
+
+    private static Dictionary<string, string>? BuildResourceAnnotations(LayerDefinition layer)
+        => layer.SupportsAttachments
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["honua.io/attachments"] = bool.TrueString
+            }
+            : null;
+
+    private static Dictionary<string, JsonElement> BuildServiceOptions(ServiceDefinition service)
+        => new(StringComparer.Ordinal)
+        {
+            ["capabilities"] = JsonSerializer.SerializeToElement(service.Capabilities),
+            ["supportedFormats"] = JsonSerializer.SerializeToElement(service.SupportedFormats)
+        };
+
+    private static MetadataV2FieldType MapFieldType(FieldType fieldType)
+        => fieldType switch
+        {
+            FieldType.String => MetadataV2FieldType.String,
+            FieldType.Integer => MetadataV2FieldType.Integer,
+            FieldType.BigInteger => MetadataV2FieldType.BigInteger,
+            FieldType.Double => MetadataV2FieldType.Double,
+            FieldType.Float => MetadataV2FieldType.Float,
+            FieldType.Boolean => MetadataV2FieldType.Boolean,
+            FieldType.DateTime => MetadataV2FieldType.DateTime,
+            FieldType.Date => MetadataV2FieldType.Date,
+            FieldType.Time => MetadataV2FieldType.Time,
+            FieldType.Json => MetadataV2FieldType.Json,
+            FieldType.Binary => MetadataV2FieldType.Binary,
+            FieldType.Uuid => MetadataV2FieldType.Uuid,
+            FieldType.Geometry => MetadataV2FieldType.Geometry,
+            _ => MetadataV2FieldType.String,
+        };
 
     public static HttpClient CreateClient(WebApplicationFactory<Program> factory, params string[] roles)
     {
@@ -1458,21 +1570,18 @@ internal static class ServiceRbacTestFixture
         return new StringContent(json, Encoding.UTF8, "application/json");
     }
 
-    public static CatalogMetadata CreateServiceMetadata(
+    public static AccessPolicy CreateServiceMetadata(
         string[]? readRoles = null,
         string[]? writeRoles = null,
         bool allowAnonymous = false,
         bool allowAnonymousWrite = false)
     {
-        return new CatalogMetadata
+        return new AccessPolicy
         {
-            AccessPolicy = new AccessPolicy
-            {
-                AllowAnonymous = allowAnonymous,
-                AllowAnonymousWrite = allowAnonymousWrite,
-                AllowedRoles = readRoles,
-                AllowedWriteRoles = writeRoles
-            }
+            AllowAnonymous = allowAnonymous,
+            AllowAnonymousWrite = allowAnonymousWrite,
+            AllowedRoles = readRoles,
+            AllowedWriteRoles = writeRoles
         };
     }
 
@@ -1575,7 +1684,14 @@ internal sealed class TestAuthHandler(
     }
 }
 
-internal sealed class RbacTestLayerCatalog : ILayerCatalog
+internal interface IAccessPolicyCatalogSeed
+{
+    AccessPolicy? GetLayerAccessPolicy(int layerId);
+
+    AccessPolicy? GetServiceAccessPolicy(string serviceName);
+}
+
+internal sealed class RbacTestLayerCatalog : ILayerCatalog, IAccessPolicyCatalogSeed
 {
     private static readonly string[] _supportedFormats = ["JSON", "GeoJSON"];
     private static readonly string[] _capabilities = ["Query", "Create", "Update", "Delete"];
@@ -1585,12 +1701,16 @@ internal sealed class RbacTestLayerCatalog : ILayerCatalog
     private readonly ServiceDefinition[] _services;
     private readonly LayerDefinition _alphaLayer;
     private readonly LayerDefinition _betaLayer;
+    private readonly AccessPolicy? _alphaServiceAccessPolicy;
+    private readonly AccessPolicy? _betaServiceAccessPolicy;
+    private readonly AccessPolicy? _alphaLayerAccessPolicy;
+    private readonly AccessPolicy? _betaLayerAccessPolicy;
 
     public RbacTestLayerCatalog(
-        CatalogMetadata? alphaServiceMetadata = null,
-        CatalogMetadata? betaServiceMetadata = null,
-        CatalogMetadata? alphaLayerMetadata = null,
-        CatalogMetadata? betaLayerMetadata = null,
+        AccessPolicy? alphaServiceMetadata = null,
+        AccessPolicy? betaServiceMetadata = null,
+        AccessPolicy? alphaLayerMetadata = null,
+        AccessPolicy? betaLayerMetadata = null,
         bool betaAlsoIncludesAlphaLayer = false,
         bool reverseServiceOrder = false,
         string? alphaServiceName = null,
@@ -1602,8 +1722,13 @@ internal sealed class RbacTestLayerCatalog : ILayerCatalog
         var spatialRef = SpatialReference.Create(4326);
         var extent = FeatureExtent.Create(-180, -90, 180, 90, 4326);
 
-        _alphaLayer = CreateLayer(ServiceRbacTestFixture.AlphaLayerId, "Alpha Layer", spatialRef, extent, alphaLayerMetadata);
-        _betaLayer = CreateLayer(ServiceRbacTestFixture.BetaLayerId, "Beta Layer", spatialRef, extent, betaLayerMetadata);
+        _alphaServiceAccessPolicy = alphaServiceMetadata;
+        _betaServiceAccessPolicy = betaServiceMetadata;
+        _alphaLayerAccessPolicy = alphaLayerMetadata;
+        _betaLayerAccessPolicy = betaLayerMetadata;
+
+        _alphaLayer = CreateLayer(ServiceRbacTestFixture.AlphaLayerId, "Alpha Layer", spatialRef, extent);
+        _betaLayer = CreateLayer(ServiceRbacTestFixture.BetaLayerId, "Beta Layer", spatialRef, extent);
         var alphaLayers = new[] { _alphaLayer };
         var betaLayers = betaAlsoIncludesAlphaLayer
             ? new[] { _alphaLayer, _betaLayer }
@@ -1616,8 +1741,7 @@ internal sealed class RbacTestLayerCatalog : ILayerCatalog
             SpatialReference: spatialRef,
             SupportedFormats: _supportedFormats,
             Capabilities: _capabilities,
-            ServiceExtent: extent,
-            Metadata: alphaServiceMetadata);
+            ServiceExtent: extent);
 
         _betaService = new ServiceDefinition(
             Name: betaServiceName,
@@ -1626,8 +1750,7 @@ internal sealed class RbacTestLayerCatalog : ILayerCatalog
             SpatialReference: spatialRef,
             SupportedFormats: _supportedFormats,
             Capabilities: _capabilities,
-            ServiceExtent: extent,
-            Metadata: betaServiceMetadata);
+            ServiceExtent: extent);
 
         _services = reverseServiceOrder
             ? [_betaService, _alphaService]
@@ -1679,12 +1802,34 @@ internal sealed class RbacTestLayerCatalog : ILayerCatalog
     public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
         => Task.FromResult(Array.Empty<Relationship>());
 
+    public AccessPolicy? GetLayerAccessPolicy(int layerId)
+        => layerId switch
+        {
+            ServiceRbacTestFixture.AlphaLayerId => _alphaLayerAccessPolicy,
+            ServiceRbacTestFixture.BetaLayerId => _betaLayerAccessPolicy,
+            _ => null
+        };
+
+    public AccessPolicy? GetServiceAccessPolicy(string serviceName)
+    {
+        if (string.Equals(serviceName, _alphaService.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            return _alphaServiceAccessPolicy;
+        }
+
+        if (string.Equals(serviceName, _betaService.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            return _betaServiceAccessPolicy;
+        }
+
+        return null;
+    }
+
     private static LayerDefinition CreateLayer(
         int layerId,
         string name,
         SpatialReference spatialRef,
-        FeatureExtent extent,
-        CatalogMetadata? metadata = null)
+        FeatureExtent extent)
     {
         var fields = new[]
         {
@@ -1700,8 +1845,7 @@ internal sealed class RbacTestLayerCatalog : ILayerCatalog
             SpatialReference: spatialRef,
             Fields: fields,
             Extent: extent,
-            DefaultVisibility: true,
-            Metadata: metadata);
+            DefaultVisibility: true);
     }
 }
 

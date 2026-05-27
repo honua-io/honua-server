@@ -7,7 +7,6 @@ using System.Reflection;
 using System.Text.Json;
 using System.Threading.Channels;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -447,7 +446,7 @@ public sealed class ExportJobServiceTests
             [],
             4326,
             1,
-            GeometryType.None);
+            ExportGeometryType.None);
 
     private sealed class InMemoryUniversalProgressStore : IUniversalProgressStore
     {

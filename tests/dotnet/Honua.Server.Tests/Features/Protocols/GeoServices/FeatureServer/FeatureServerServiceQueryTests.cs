@@ -27,10 +27,10 @@ public sealed class FeatureServerServiceQueryTests : IAsyncLifetime
     {
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/query?where=1=1&f=json");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
         var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, "response body was {0}", content);
+
         using var document = JsonDocument.Parse(content);
         var root = document.RootElement;
 
@@ -56,10 +56,10 @@ public sealed class FeatureServerServiceQueryTests : IAsyncLifetime
         var layerDefs = Uri.EscapeDataString($"{{\"{WebAppFixture.TestLayerId}\":\"1=0\"}}");
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/query?where=1=1&f=json&layerDefs={layerDefs}");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
         var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, "response body was {0}", content);
+
         using var document = JsonDocument.Parse(content);
         var targetLayer = document.RootElement
             .GetProperty("layers")

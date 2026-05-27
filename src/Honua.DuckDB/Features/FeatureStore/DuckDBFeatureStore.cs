@@ -4,7 +4,6 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Runtime.CompilerServices;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.DuckDB.Features.FeatureStore.Services;
@@ -113,9 +112,9 @@ internal sealed class DuckDBFeatureStore :
 
     /// <inheritdoc />
     public async Task<TemporalExtentResult?> GetTemporalExtentAsync(
-        int layerId, string fieldName, FieldType fieldType, CancellationToken cancellationToken = default)
+        int layerId, string fieldName, TemporalPropertyType propertyType, CancellationToken cancellationToken = default)
     {
-        var temporalQuery = _queryBuilder.BuildTemporalExtentQuery(layerId, fieldName, fieldType);
+        var temporalQuery = _queryBuilder.BuildTemporalExtentQuery(layerId, fieldName, propertyType);
         return await _dataAccess.GetTemporalExtentAsync(layerId, temporalQuery, cancellationToken).ConfigureAwait(false);
     }
 

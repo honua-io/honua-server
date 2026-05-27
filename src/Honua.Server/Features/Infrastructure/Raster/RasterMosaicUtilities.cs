@@ -2,26 +2,46 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Server.Features.Infrastructure.Raster;
 
 internal static class RasterMosaicUtilities
 {
-    internal static RasterMergeStrategy ResolveMergeStrategy(CatalogMetadata? metadata, string? mosaicRule = null)
+    internal static RasterMergeStrategy ResolveMergeStrategy(MetadataV2Resource? resource, string? mosaicRule = null)
     {
         if (TryParseMergeStrategy(mosaicRule, out var requestStrategy))
         {
             return requestStrategy;
         }
 
-        if (TryParseMergeStrategy(metadata?.RasterMosaic?.MergeStrategy, out var metadataStrategy))
+        if (resource is not null &&
+            resource.Extensions.TryGetValue("rasterMosaic", out var rasterMosaic) &&
+            rasterMosaic.ValueKind == JsonValueKind.Object &&
+            TryReadStringProperty(rasterMosaic, "mergeStrategy", out var mergeStrategy) &&
+            TryParseMergeStrategy(mergeStrategy, out var resourceStrategy))
         {
-            return metadataStrategy;
+            return resourceStrategy;
         }
 
         return RasterMergeStrategy.Newest;
+    }
+
+    private static bool TryReadStringProperty(JsonElement element, string propertyName, out string? value)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase) &&
+                property.Value.ValueKind == JsonValueKind.String)
+            {
+                value = property.Value.GetString();
+                return true;
+            }
+        }
+
+        value = null;
+        return false;
     }
 
     private static bool TryParseMergeStrategy(string? value, out RasterMergeStrategy strategy)

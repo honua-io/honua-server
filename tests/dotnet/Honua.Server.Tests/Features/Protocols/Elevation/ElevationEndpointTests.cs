@@ -5,7 +5,6 @@ using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -17,6 +16,28 @@ namespace Honua.Server.Tests.Features.Protocols.Elevation;
 public sealed class ElevationEndpointTests : IAsyncLifetime
 {
     private const double WebMercatorExtent = 20037508.342789244;
+    private const string ElevationProtocolName = "Elevation";
+
+    private static readonly string[] AllProtocols =
+    [
+        "FeatureServer",
+        "MapServer",
+        "ImageServer",
+        "GPServer",
+        "OgcFeatures",
+        "OGC-API-Maps",
+        "OGC-API-Coverages",
+        "OGC-API-Tiles",
+        "Wfs20",
+        "Wms",
+        "Wmts",
+        "Wcs",
+        "OData",
+        "Grpc",
+        "Stac",
+        "Terrain",
+        ElevationProtocolName,
+    ];
 
     private readonly WebAppFixture _fixture = new();
 
@@ -241,8 +262,8 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
         var anonymous = new AccessPolicy { AllowAnonymous = true };
         _fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
-            enabledProtocols: ServiceProtocols.All
-                .Where(static protocol => !string.Equals(protocol, ServiceProtocols.Elevation, StringComparison.Ordinal))
+            enabledProtocols: AllProtocols
+                .Where(static protocol => !string.Equals(protocol, ElevationProtocolName, StringComparison.Ordinal))
                 .ToArray(),
             accessPolicy: anonymous);
 
@@ -256,7 +277,7 @@ public sealed class ElevationEndpointTests : IAsyncLifetime
         {
             _fixture.UpdateV2ServiceMetadata(
                 WebAppFixture.TestServiceId,
-                enabledProtocols: ServiceProtocols.All,
+                enabledProtocols: AllProtocols,
                 accessPolicy: anonymous);
         }
     }

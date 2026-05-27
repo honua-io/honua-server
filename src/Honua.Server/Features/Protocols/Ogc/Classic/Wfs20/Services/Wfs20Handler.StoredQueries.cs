@@ -13,8 +13,6 @@ using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -354,7 +352,7 @@ internal sealed partial class Wfs20Handler
         }
 
         var query = await BuildFeatureQueryAsync(
-            descriptor.Layer,
+            descriptor,
             propertyName: null,
             sortBy: null,
             bbox: null,
@@ -366,7 +364,7 @@ internal sealed partial class Wfs20Handler
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
         var result = await _gmlFeatureStore.QueryGmlAsync(
-            descriptor.Layer.Id,
+            descriptor.StorageLayerId,
             query with { Limit = 1 },
             cancellationToken).ConfigureAwait(false);
         if (result.Items.IsDefaultOrEmpty)

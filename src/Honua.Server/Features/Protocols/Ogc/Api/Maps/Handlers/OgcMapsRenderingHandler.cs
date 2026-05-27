@@ -3,7 +3,6 @@
 
 using System.Globalization;
 using System.Text.RegularExpressions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -365,7 +364,10 @@ internal sealed class OgcMapsRenderingHandler
     }
 
     private static bool IsOgcApiMapsEnabled(MetadataV2Service? service)
-        => ServiceProtocols.IsProtocolEnabled(service, OgcApiMapsProtocol);
+        => IsProtocolEnabled(service, OgcApiMapsProtocol);
+
+    private static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)
+        => service?.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase)) == true;
 
     private static (MetadataV2Resource? Resource, MetadataV2Service? Service) ResolveResourceAndService(
         MetadataV2GraphSnapshot snapshot,
@@ -386,7 +388,7 @@ internal sealed class OgcMapsRenderingHandler
             {
                 continue;
             }
-            if (ServiceProtocols.IsProtocolEnabled(candidate, OgcApiMapsProtocol))
+            if (IsProtocolEnabled(candidate, OgcApiMapsProtocol))
             {
                 return candidate;
             }

@@ -31,14 +31,6 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
     }
 
     /// <inheritdoc />
-    public SqlFragment Translate(FilterExpression filter, LayerDefinition layer)
-    {
-        ArgumentNullException.ThrowIfNull(filter);
-        ArgumentNullException.ThrowIfNull(layer);
-        return TranslateCore(filter, FilterTranslationContext.FromLayer(layer));
-    }
-
-    /// <inheritdoc />
     public SqlFragment Translate(FilterExpression filter, MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(filter);

@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Protocols.OData.Models;
@@ -30,37 +29,7 @@ internal sealed class ODataQuerySearchService
     }
 
     /// <summary>
-    /// Builds a feature query from OData parameters with proper validation and conversion.
-    /// </summary>
-    public async Task<(FeatureQuery Query, string? Error)> BuildFeatureQueryAsync(
-        string? filter,
-        string? orderby,
-        int? resultRecordCount,
-        int? resultOffset,
-        LayerDefinition layer,
-        string? select = null,
-        string? expand = null,
-        bool? count = null,
-        string? compute = null,
-        string? format = null,
-        CancellationToken cancellationToken = default)
-    {
-        return await _queryService.BuildFeatureQueryAsync(
-            filter,
-            orderby,
-            resultRecordCount,
-            resultOffset,
-            layer,
-            select,
-            expand,
-            count,
-            compute,
-            format,
-            cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Metadata v2 overload of <see cref="BuildFeatureQueryAsync(string?, string?, int?, int?, LayerDefinition, string?, string?, bool?, string?, string?, CancellationToken)"/>.
+    /// Builds a feature query from OData parameters using metadata-v2 resource schema.
     /// </summary>
     public async Task<(FeatureQuery Query, string? Error)> BuildFeatureQueryAsync(
         string? filter,
@@ -90,13 +59,13 @@ internal sealed class ODataQuerySearchService
     }
 
     /// <summary>
-    /// Applies basic filtering to layer collections using simple OData expressions.
+    /// Applies basic filtering to metadata-v2 OData layer payloads.
     /// </summary>
-    public IEnumerable<LayerDefinition> ApplyBasicFilter(
-        IEnumerable<LayerDefinition> layers,
+    public IEnumerable<Dictionary<string, object?>> ApplyBasicFilter(
+        IEnumerable<Dictionary<string, object?>> layerPayloads,
         string filter)
     {
-        return _queryService.ApplyBasicFilter(layers, filter);
+        return _queryService.ApplyBasicFilter(layerPayloads, filter);
     }
 
     /// <summary>
@@ -108,27 +77,23 @@ internal sealed class ODataQuerySearchService
     }
 
     /// <summary>
-    /// Processes $expand to fetch related entities for features.
+    /// Processes $expand using metadata-v2 relationship metadata.
     /// </summary>
     public async Task<Dictionary<long, Dictionary<string, object?[]>>> ProcessExpandAsync(
         string expand,
-        LayerDefinition layer,
-        long[] objectIds,
-        CancellationToken cancellationToken)
-        => await ProcessExpandAsync(expand, layer, objectIds, context: null, cancellationToken)
-            .ConfigureAwait(false);
-
-    /// <summary>
-    /// Processes $expand to fetch related entities for features.
-    /// </summary>
-    public async Task<Dictionary<long, Dictionary<string, object?[]>>> ProcessExpandAsync(
-        string expand,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        int sourceStorageLayerId,
         long[] objectIds,
         HttpContext? context,
         CancellationToken cancellationToken = default)
     {
-        return await _searchService.ProcessExpandAsync(expand, layer, objectIds, context, cancellationToken);
+        return await _searchService.ProcessExpandAsync(
+            expand,
+            resource,
+            sourceStorageLayerId,
+            objectIds,
+            context,
+            cancellationToken);
     }
 
     /// <summary>

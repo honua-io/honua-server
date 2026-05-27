@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -12,24 +11,7 @@ namespace Honua.Server.Features.Protocols.Ogc.Api.Features.Services;
 
 internal static class OgcFeaturesResponseHelpers
 {
-    public static async Task<Feature?> LoadFeatureForResponseAsync(
-        IFeatureReader featureReader,
-        int layerId,
-        LayerDefinition layer,
-        long objectId,
-        CrsDefinition responseCrs,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(featureReader);
-
-        var layerSrid = layer.SpatialReference.ToSrid();
-        return await LoadFeatureForResponseCoreAsync(
-            featureReader, layerId, layerSrid, objectId, responseCrs, cancellationToken).ConfigureAwait(false);
-    }
-
     /// <summary>
-    /// Metadata v2 overload of
-    /// <see cref="LoadFeatureForResponseAsync(IFeatureReader, int, LayerDefinition, long, CrsDefinition, CancellationToken)"/>.
     /// Reads the storage SRID from <see cref="MetadataV2SpatialExtensions.ReadSrid"/>,
     /// defaulting to <c>4326</c> when the resource declares no SRID.
     /// </summary>

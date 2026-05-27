@@ -6,10 +6,10 @@ using System.Security.Claims;
 using FluentAssertions;
 using Grpc.Core;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
@@ -36,6 +36,9 @@ namespace Honua.Server.Tests.Features.Protocols.Grpc;
 [Operation(Operations.Query)]
 public sealed class GrpcFeatureServiceTests
 {
+    private const string GrpcProtocolName = "Grpc";
+    private const string FeatureServerProtocolName = "FeatureServer";
+
     private readonly IResourceValidator _resourceValidator = Substitute.For<IResourceValidator>();
     private readonly IFeatureReader _featureReader = Substitute.For<IFeatureReader>();
     private readonly IFeatureWriter _featureWriter = Substitute.For<IFeatureWriter>();
@@ -45,20 +48,9 @@ public sealed class GrpcFeatureServiceTests
     private readonly IFeatureChangeEventPublisher _featureChangeEventPublisher = Substitute.For<IFeatureChangeEventPublisher>();
     private readonly HonuaFeatureService _sut;
 
-    private static readonly LayerDefinition _testLayer = new(
-        Id: 0,
-        Name: "test",
-        Description: null,
-        GeometryType: Core.Features.Catalog.Domain.GeometryType.Point,
-        SpatialReference: SpatialReference.WGS84,
-        Fields: new[]
-        {
-            new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-            new FieldDefinition("name", FieldType.String, Length: 255)
-        });
-
-    private static readonly ServiceDefinition _testService = new(
-        "test", "test", new[] { _testLayer }, SpatialReference.WGS84);
+    private static readonly MetadataV2Resource _testResource = CreateResource();
+    private static readonly MetadataV2Service _testService = CreateService("test");
+    private static readonly MetadataV2ServiceLayerTriple _testTriple = CreateTriple(_testService, _testResource);
 
     public GrpcFeatureServiceTests()
     {
@@ -79,8 +71,8 @@ public sealed class GrpcFeatureServiceTests
 
         // Default: valid service/layer
         _resourceValidator
-            .ValidateServiceLayerAsync("test", 0, Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.Success((_testService, _testLayer)));
+            .ValidateServiceLayerV2Async("test", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(_testTriple));
     }
 
     [UnitTest]
@@ -218,17 +210,11 @@ public sealed class GrpcFeatureServiceTests
     [Operation(Operations.ApplyEdits)]
     public async Task ApplyEdits_GrpcDisabled_ThrowsNotFoundRpcException()
     {
-        var grpcDisabledService = _testService with
-        {
-            Metadata = new CatalogMetadata
-            {
-                EnabledProtocols = [ServiceProtocols.FeatureServer]
-            }
-        };
+        var grpcDisabledService = CreateService("grpc-disabled", protocols: [FeatureServerProtocolName]);
 
         _resourceValidator
-            .ValidateServiceLayerAsync("grpc-disabled", 0, Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.Success((grpcDisabledService, _testLayer)));
+            .ValidateServiceLayerV2Async("grpc-disabled", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(CreateTriple(grpcDisabledService, _testResource)));
 
         var request = new Proto.ApplyEditsRequest
         {
@@ -291,16 +277,12 @@ public sealed class GrpcFeatureServiceTests
     [Operation(Operations.ApplyEdits)]
     public async Task ApplyEdits_AnonymousWritePolicyWithoutAuthentication_AllowsWrite()
     {
-        var anonymousWriteService = _testService with
-        {
-            Metadata = new CatalogMetadata
+        var anonymousWriteService = CreateService(
+            "anonymous-write",
+            accessPolicy: new AccessPolicy
             {
-                AccessPolicy = new AccessPolicy
-                {
-                    AllowAnonymousWrite = true
-                }
-            }
-        };
+                AllowAnonymousWrite = true
+            });
         var applyResult = FeatureEditResult.Success(
             createdCount: 1,
             updatedCount: 0,
@@ -308,8 +290,8 @@ public sealed class GrpcFeatureServiceTests
             createResults: ImmutableArray.Create(EditOperationResult.Success(101)));
 
         _resourceValidator
-            .ValidateServiceLayerAsync("anonymous-write", 0, Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.Success((anonymousWriteService, _testLayer)));
+            .ValidateServiceLayerV2Async("anonymous-write", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(CreateTriple(anonymousWriteService, _testResource)));
         _featureWriter
             .ApplyEditsAsync(default, default, default)
             .ReturnsForAnyArgs(Task.FromResult(applyResult));
@@ -335,20 +317,12 @@ public sealed class GrpcFeatureServiceTests
     [Operation(Operations.ApplyEdits)]
     public async Task ApplyEdits_AnonymousWriteLayerPolicyWithoutAuthentication_AllowsWrite()
     {
-        var anonymousWriteLayer = _testLayer with
-        {
-            Metadata = new CatalogMetadata
+        var anonymousWriteResource = CreateResource(
+            accessPolicy: new AccessPolicy
             {
-                AccessPolicy = new AccessPolicy
-                {
-                    AllowAnonymousWrite = true
-                }
-            }
-        };
-        var anonymousWriteService = _testService with
-        {
-            Layers = [anonymousWriteLayer]
-        };
+                AllowAnonymousWrite = true
+            });
+        var anonymousWriteService = CreateService("anonymous-write-layer");
         var applyResult = FeatureEditResult.Success(
             createdCount: 1,
             updatedCount: 0,
@@ -356,8 +330,8 @@ public sealed class GrpcFeatureServiceTests
             createResults: ImmutableArray.Create(EditOperationResult.Success(101)));
 
         _resourceValidator
-            .ValidateServiceLayerAsync("anonymous-write-layer", 0, Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.Success((anonymousWriteService, anonymousWriteLayer)));
+            .ValidateServiceLayerV2Async("anonymous-write-layer", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(CreateTriple(anonymousWriteService, anonymousWriteResource)));
         _featureWriter
             .ApplyEditsAsync(default, default, default)
             .ReturnsForAnyArgs(Task.FromResult(applyResult));
@@ -383,20 +357,12 @@ public sealed class GrpcFeatureServiceTests
     [Operation(Operations.ApplyEdits)]
     public async Task ApplyEdits_LayerWriteRolePolicyWithoutDataEditorRole_AllowsWrite()
     {
-        var roleProtectedLayer = _testLayer with
-        {
-            Metadata = new CatalogMetadata
+        var roleProtectedResource = CreateResource(
+            accessPolicy: new AccessPolicy
             {
-                AccessPolicy = new AccessPolicy
-                {
-                    AllowedWriteRoles = ["layer-writer"]
-                }
-            }
-        };
-        var roleProtectedService = _testService with
-        {
-            Layers = [roleProtectedLayer]
-        };
+                AllowedWriteRoles = ["layer-writer"]
+            });
+        var roleProtectedService = CreateService("layer-write-role");
         var applyResult = FeatureEditResult.Success(
             createdCount: 1,
             updatedCount: 0,
@@ -404,8 +370,8 @@ public sealed class GrpcFeatureServiceTests
             createResults: ImmutableArray.Create(EditOperationResult.Success(101)));
 
         _resourceValidator
-            .ValidateServiceLayerAsync("layer-write-role", 0, Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.Success((roleProtectedService, roleProtectedLayer)));
+            .ValidateServiceLayerV2Async("layer-write-role", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(CreateTriple(roleProtectedService, roleProtectedResource)));
         _featureWriter
             .ApplyEditsAsync(default, default, default)
             .ReturnsForAnyArgs(Task.FromResult(applyResult));
@@ -523,8 +489,8 @@ public sealed class GrpcFeatureServiceTests
     public async Task QueryFeatures_InvalidService_ThrowsNotFoundRpcException()
     {
         _resourceValidator
-            .ValidateServiceLayerAsync("bad", 0, Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.NotFound<(ServiceDefinition, LayerDefinition)>(
+            .ValidateServiceLayerV2Async("bad", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.NotFound<MetadataV2ServiceLayerTriple>(
                 "Service 'bad' not found"));
 
         var request = new Proto.QueryFeaturesRequest
@@ -543,17 +509,11 @@ public sealed class GrpcFeatureServiceTests
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_GrpcDisabled_ThrowsNotFoundRpcException()
     {
-        var grpcDisabledService = _testService with
-        {
-            Metadata = new CatalogMetadata
-            {
-                EnabledProtocols = [ServiceProtocols.FeatureServer]
-            }
-        };
+        var grpcDisabledService = CreateService("grpc-disabled", protocols: [FeatureServerProtocolName]);
 
         _resourceValidator
-            .ValidateServiceLayerAsync("grpc-disabled", 0, Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.Success((grpcDisabledService, _testLayer)));
+            .ValidateServiceLayerV2Async("grpc-disabled", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(CreateTriple(grpcDisabledService, _testResource)));
 
         var request = new Proto.QueryFeaturesRequest
         {
@@ -572,17 +532,11 @@ public sealed class GrpcFeatureServiceTests
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_AnonymousUserOnProtectedService_ThrowsUnauthenticatedRpcException()
     {
-        var protectedService = _testService with
-        {
-            Metadata = new CatalogMetadata
-            {
-                AccessPolicy = new AccessPolicy()
-            }
-        };
+        var protectedService = CreateService("protected", accessPolicy: new AccessPolicy());
 
         _resourceValidator
-            .ValidateServiceLayerAsync("protected", 0, Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.Success((protectedService, _testLayer)));
+            .ValidateServiceLayerV2Async("protected", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(CreateTriple(protectedService, _testResource)));
 
         var request = new Proto.QueryFeaturesRequest
         {
@@ -601,20 +555,16 @@ public sealed class GrpcFeatureServiceTests
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
     public async Task QueryFeatures_UserWithoutRequiredRole_ThrowsPermissionDeniedRpcException()
     {
-        var protectedService = _testService with
-        {
-            Metadata = new CatalogMetadata
+        var protectedService = CreateService(
+            "protected-role",
+            accessPolicy: new AccessPolicy
             {
-                AccessPolicy = new AccessPolicy
-                {
-                    AllowedRoles = ["reader"]
-                }
-            }
-        };
+                AllowedRoles = ["reader"]
+            });
 
         _resourceValidator
-            .ValidateServiceLayerAsync("protected-role", 0, Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.Success((protectedService, _testLayer)));
+            .ValidateServiceLayerV2Async("protected-role", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(CreateTriple(protectedService, _testResource)));
 
         var request = new Proto.QueryFeaturesRequest
         {
@@ -693,7 +643,7 @@ public sealed class GrpcFeatureServiceTests
             0,
             Arg.Is<FeatureQuery>(q =>
                 q.OutputSrid == 3857 &&
-                q.SpatialReferenceSrid == _testLayer.SpatialReference.ToSrid()),
+                q.SpatialReferenceSrid == SpatialReference.WGS84.ToSrid()),
             Arg.Any<CancellationToken>());
     }
 
@@ -1036,17 +986,11 @@ public sealed class GrpcFeatureServiceTests
     [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeaturesStream")]
     public async Task QueryFeaturesStream_AnonymousUserOnProtectedService_ThrowsUnauthenticatedRpcException()
     {
-        var protectedService = _testService with
-        {
-            Metadata = new CatalogMetadata
-            {
-                AccessPolicy = new AccessPolicy()
-            }
-        };
+        var protectedService = CreateService("protected-stream", accessPolicy: new AccessPolicy());
 
         _resourceValidator
-            .ValidateServiceLayerAsync("protected-stream", 0, Arg.Any<CancellationToken>())
-            .Returns(ResourceValidationResult.Success((protectedService, _testLayer)));
+            .ValidateServiceLayerV2Async("protected-stream", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(CreateTriple(protectedService, _testResource)));
 
         var request = new Proto.QueryFeaturesRequest
         {
@@ -1061,6 +1005,80 @@ public sealed class GrpcFeatureServiceTests
         ex.Which.StatusCode.Should().Be(StatusCode.Unauthenticated);
         ex.Which.Status.Detail.Should().Be(AccessPolicyHelpers.AuthRequiredMessage);
     }
+
+    private static MetadataV2Service CreateService(
+        string name,
+        AccessPolicy? accessPolicy = null,
+        IReadOnlyList<string>? protocols = null)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = $"service-{name}",
+                Name = name
+            },
+            AccessPolicy = accessPolicy,
+            SpatialReference = MetadataV2SpatialReference.Wgs84,
+            Protocols = protocols ?? [GrpcProtocolName]
+        };
+
+    private static MetadataV2Resource CreateResource(
+        string name = "test",
+        AccessPolicy? accessPolicy = null)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = $"resource-{name}",
+                Name = name
+            },
+            AccessPolicy = accessPolicy,
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                GeometryType = MetadataV2GeometryType.Point,
+                SpatialReference = MetadataV2SpatialReference.Wgs84
+            },
+            SchemaFields =
+            [
+                new MetadataV2Field
+                {
+                    Name = "objectid",
+                    Type = MetadataV2FieldType.Integer,
+                    Nullable = false,
+                    SemanticRoles = ["id.primary"]
+                },
+                new MetadataV2Field
+                {
+                    Name = "name",
+                    Type = MetadataV2FieldType.String,
+                    Length = 255,
+                    Nullable = true
+                }
+            ]
+        };
+
+    private static MetadataV2ServiceLayerTriple CreateTriple(
+        MetadataV2Service service,
+        MetadataV2Resource resource)
+        => new(
+            service,
+            new MetadataV2Publication
+            {
+                Metadata = new MetadataV2ObjectMetadata
+                {
+                    Id = $"publication-{service.Metadata.Name}-{resource.Metadata.Name}",
+                    Name = resource.Metadata.Name
+                },
+                ServiceId = service.Metadata.Id,
+                ResourceId = resource.Metadata.Id,
+                Identifier = new MetadataV2PublicationIdentifier
+                {
+                    Value = "0",
+                    IsNumeric = true
+                },
+                IsPrimary = true
+            },
+            resource);
 
     private static TestServerCallContext CreateCallContext(ClaimsPrincipal? user = null)
     {

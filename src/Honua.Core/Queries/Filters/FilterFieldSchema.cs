@@ -10,35 +10,23 @@ namespace Honua.Core.Queries.Filters;
 
 /// <summary>
 /// Abstraction over the field-schema lookup that the filter normalizer / translator
-/// needs. Lets the filter pipeline accept either a v1 <see cref="LayerDefinition"/> or
-/// a Metadata v2 <see cref="MetadataV2Resource"/> without duplicating the recursive
-/// normalization logic.
+/// needs. Wraps a Metadata v2 <see cref="MetadataV2Resource"/> without leaking
+/// graph details into the recursive normalization logic.
 /// </summary>
 /// <remarks>
-/// The struct is constructed via <see cref="From(LayerDefinition)"/> or
-/// <see cref="From(MetadataV2Resource)"/>. <see cref="TryGetFieldType"/> returns the
-/// field's canonical <see cref="FieldType"/>; the implementation handles the
+/// The struct is constructed via <see cref="From(MetadataV2Resource)"/>.
+/// <see cref="TryGetFieldType"/> returns the field's canonical <see cref="FieldType"/>;
+/// the implementation handles the
 /// well-known synthetic fields (<c>objectid</c>, <c>layerid</c>, <c>geometry</c>,
 /// <c>shape</c>, <c>created_at</c>, <c>updated_at</c>) before consulting the schema.
 /// </remarks>
 public readonly struct FilterFieldSchema
 {
-    private readonly LayerDefinition? _layer;
     private readonly MetadataV2Resource? _resource;
 
-    private FilterFieldSchema(LayerDefinition? layer, MetadataV2Resource? resource)
+    private FilterFieldSchema(MetadataV2Resource? resource)
     {
-        _layer = layer;
         _resource = resource;
-    }
-
-    /// <summary>
-    /// Wraps a v1 layer for the filter pipeline.
-    /// </summary>
-    public static FilterFieldSchema From(LayerDefinition layer)
-    {
-        ArgumentNullException.ThrowIfNull(layer);
-        return new FilterFieldSchema(layer, null);
     }
 
     /// <summary>
@@ -48,13 +36,13 @@ public readonly struct FilterFieldSchema
     public static FilterFieldSchema From(MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
-        return new FilterFieldSchema(null, resource);
+        return new FilterFieldSchema(resource);
     }
 
     /// <summary>
     /// True when this schema does not wrap any underlying type (default-constructed).
     /// </summary>
-    public bool IsEmpty => _layer is null && _resource is null;
+    public bool IsEmpty => _resource is null;
 
     /// <summary>
     /// Returns the canonical <see cref="FieldType"/> for the named field, applying the
@@ -88,17 +76,7 @@ public readonly struct FilterFieldSchema
             return true;
         }
 
-        if (_layer is not null)
-        {
-            var match = _layer.Fields.FirstOrDefault(f =>
-                f.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
-            if (match is not null)
-            {
-                fieldType = match.Type;
-                return true;
-            }
-        }
-        else if (_resource is not null)
+        if (_resource is not null)
         {
             foreach (var schemaField in _resource.SchemaFields)
             {

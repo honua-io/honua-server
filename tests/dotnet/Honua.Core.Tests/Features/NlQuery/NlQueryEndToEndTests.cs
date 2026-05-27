@@ -3,10 +3,9 @@
 
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.NlQuery.Domain;
 using Honua.Core.Features.NlQuery.Services;
-using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -21,48 +20,42 @@ namespace Honua.Core.Tests.Features.NlQuery;
 [Protocol(Protocols.TestQuality)]
 public sealed class NlQueryEndToEndTests
 {
-    private readonly LayerDefinition _parcelsLayer;
-    private readonly LayerDefinition _sensorLayer;
+    private readonly MetadataV2Resource _parcelsResource;
+    private readonly MetadataV2Resource _sensorResource;
 
     public NlQueryEndToEndTests()
     {
-        _parcelsLayer = new LayerDefinition(
-            Id: 1,
-            Name: "parcels",
-            Description: "Land parcels with zoning and assessment data",
-            GeometryType: GeometryType.Polygon,
-            SpatialReference: SpatialReference.WGS84,
-            Fields:
+        _parcelsResource = CreateResource(
+            "parcels",
+            MetadataV2GeometryType.Polygon,
             [
-                new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                new FieldDefinition("parcel_id", FieldType.String, Length: 20),
-                new FieldDefinition("owner_name", FieldType.String, Length: 200),
-                new FieldDefinition("zoning", FieldType.String, Length: 10),
-                new FieldDefinition("assessed_value", FieldType.Double),
-                new FieldDefinition("area_sqft", FieldType.Double),
-                new FieldDefinition("year_built", FieldType.Integer),
-                new FieldDefinition("last_sale_date", FieldType.DateTime),
-                new FieldDefinition("is_vacant", FieldType.Boolean),
-                new FieldDefinition("shape", FieldType.Geometry)
-            ]);
+                Field("objectid", MetadataV2FieldType.Integer, nullable: false, roles: ["id.primary"]),
+                Field("parcel_id", MetadataV2FieldType.String, length: 20),
+                Field("owner_name", MetadataV2FieldType.String, length: 200),
+                Field("zoning", MetadataV2FieldType.String, length: 10),
+                Field("assessed_value", MetadataV2FieldType.Double),
+                Field("area_sqft", MetadataV2FieldType.Double),
+                Field("year_built", MetadataV2FieldType.Integer),
+                Field("last_sale_date", MetadataV2FieldType.DateTime),
+                Field("is_vacant", MetadataV2FieldType.Boolean),
+                Field("shape", MetadataV2FieldType.Geometry, roles: ["geometry.primary"])
+            ],
+            description: "Land parcels with zoning and assessment data");
 
-        _sensorLayer = new LayerDefinition(
-            Id: 2,
-            Name: "air_quality_sensors",
-            Description: "Air quality monitoring sensors",
-            GeometryType: GeometryType.Point,
-            SpatialReference: SpatialReference.WGS84,
-            Fields:
+        _sensorResource = CreateResource(
+            "air_quality_sensors",
+            MetadataV2GeometryType.Point,
             [
-                new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                new FieldDefinition("sensor_id", FieldType.String, Length: 50),
-                new FieldDefinition("station_name", FieldType.String, Length: 100),
-                new FieldDefinition("pollutant", FieldType.String, Length: 20),
-                new FieldDefinition("aqi_value", FieldType.Integer),
-                new FieldDefinition("reading_time", FieldType.DateTime),
-                new FieldDefinition("is_active", FieldType.Boolean),
-                new FieldDefinition("shape", FieldType.Geometry)
-            ]);
+                Field("objectid", MetadataV2FieldType.Integer, nullable: false, roles: ["id.primary"]),
+                Field("sensor_id", MetadataV2FieldType.String, length: 50),
+                Field("station_name", MetadataV2FieldType.String, length: 100),
+                Field("pollutant", MetadataV2FieldType.String, length: 20),
+                Field("aqi_value", MetadataV2FieldType.Integer),
+                Field("reading_time", MetadataV2FieldType.DateTime),
+                Field("is_active", MetadataV2FieldType.Boolean),
+                Field("shape", MetadataV2FieldType.Geometry, roles: ["geometry.primary"])
+            ],
+            description: "Air quality monitoring sensors");
     }
 
     /// <summary>
@@ -83,7 +76,7 @@ public sealed class NlQueryEndToEndTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _parcelsLayer);
+        var result = FilterPlanCompiler.Compile(plan, _parcelsResource);
 
         result.IsSuccess.Should().BeTrue(result.ErrorMessage);
         var and = result.Expression.Should().BeOfType<BinaryExpression>().Subject;
@@ -112,7 +105,7 @@ public sealed class NlQueryEndToEndTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _parcelsLayer);
+        var result = FilterPlanCompiler.Compile(plan, _parcelsResource);
 
         result.IsSuccess.Should().BeTrue(result.ErrorMessage);
         var and = result.Expression.Should().BeOfType<BinaryExpression>().Subject;
@@ -147,7 +140,7 @@ public sealed class NlQueryEndToEndTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _parcelsLayer);
+        var result = FilterPlanCompiler.Compile(plan, _parcelsResource);
 
         result.IsSuccess.Should().BeTrue(result.ErrorMessage);
         var spatial = result.Expression.Should().BeOfType<SpatialPredicate>().Subject;
@@ -184,7 +177,7 @@ public sealed class NlQueryEndToEndTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _parcelsLayer);
+        var result = FilterPlanCompiler.Compile(plan, _parcelsResource);
 
         result.IsSuccess.Should().BeTrue(result.ErrorMessage);
         var and = result.Expression.Should().BeOfType<BinaryExpression>().Subject;
@@ -214,7 +207,7 @@ public sealed class NlQueryEndToEndTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _parcelsLayer);
+        var result = FilterPlanCompiler.Compile(plan, _parcelsResource);
 
         result.IsSuccess.Should().BeTrue(result.ErrorMessage);
         var binary = result.Expression.Should().BeOfType<BinaryExpression>().Subject;
@@ -246,7 +239,7 @@ public sealed class NlQueryEndToEndTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _parcelsLayer);
+        var result = FilterPlanCompiler.Compile(plan, _parcelsResource);
 
         result.IsSuccess.Should().BeTrue(result.ErrorMessage);
         var and = result.Expression.Should().BeOfType<BinaryExpression>().Subject;
@@ -273,7 +266,7 @@ public sealed class NlQueryEndToEndTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _sensorLayer);
+        var result = FilterPlanCompiler.Compile(plan, _sensorResource);
 
         result.IsSuccess.Should().BeTrue(result.ErrorMessage);
         var and = result.Expression.Should().BeOfType<BinaryExpression>().Subject;
@@ -298,7 +291,7 @@ public sealed class NlQueryEndToEndTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _parcelsLayer);
+        var result = FilterPlanCompiler.Compile(plan, _parcelsResource);
 
         result.IsSuccess.Should().BeTrue(result.ErrorMessage);
         var binary = result.Expression.Should().BeOfType<BinaryExpression>().Subject;
@@ -336,7 +329,7 @@ public sealed class NlQueryEndToEndTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _sensorLayer);
+        var result = FilterPlanCompiler.Compile(plan, _sensorResource);
 
         result.IsSuccess.Should().BeTrue(result.ErrorMessage);
         // Three clauses with AND: ((is_active = true AND dwithin) AND reading_time after ...)
@@ -371,7 +364,7 @@ public sealed class NlQueryEndToEndTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _parcelsLayer);
+        var result = FilterPlanCompiler.Compile(plan, _parcelsResource);
 
         result.IsSuccess.Should().BeTrue(result.ErrorMessage);
         var temporal = result.Expression.Should().BeOfType<TemporalPredicate>().Subject;
@@ -385,4 +378,46 @@ public sealed class NlQueryEndToEndTests
         return JsonSerializer.Deserialize<FilterPlan>(json)
             ?? throw new InvalidOperationException("Failed to deserialize filter plan fixture.");
     }
+
+    private static MetadataV2Resource CreateResource(
+        string name,
+        MetadataV2GeometryType geometryType,
+        IReadOnlyList<MetadataV2Field> fields,
+        string? description = null)
+    {
+        var geometryField = fields.FirstOrDefault(field =>
+            field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography);
+
+        return new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = $"resource:{name}",
+                Name = name,
+                Description = description,
+            },
+            SchemaFields = fields,
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = MetadataV2SpatialReference.Wgs84,
+                GeometryType = geometryType,
+                PrimaryGeometryField = geometryField?.Name,
+            },
+        };
+    }
+
+    private static MetadataV2Field Field(
+        string name,
+        MetadataV2FieldType type,
+        bool nullable = true,
+        int? length = null,
+        IReadOnlyList<string>? roles = null)
+        => new()
+        {
+            Name = name,
+            Type = type,
+            Nullable = nullable,
+            Length = length,
+            SemanticRoles = roles ?? [],
+        };
 }

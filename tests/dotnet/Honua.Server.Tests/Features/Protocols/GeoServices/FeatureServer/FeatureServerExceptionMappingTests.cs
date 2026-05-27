@@ -4,9 +4,9 @@
 using System.Collections.Immutable;
 using System.Net;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
@@ -186,7 +186,8 @@ public sealed class FeatureServerExceptionMappingTests
         public RelatedQuery BuildRelatedQuery(
             QueryRelatedRecordsParameters queryParams,
             long[] objectIds,
-            Relationship relationship,
+            MetadataV2Relationship relationship,
+            int relatedStorageLayerId,
             SqlFragment? sqlFilter)
         {
             throw _exceptionFactory();
@@ -203,7 +204,7 @@ public sealed class FeatureServerExceptionMappingTests
         public RelatedRecordGroup[] GroupRelatedRecords(
             QueryResult<Feature> result,
             long[] objectIds,
-            Relationship relationship,
+            MetadataV2Relationship relationship,
             string objectIdFieldName,
             bool returnGeometry,
             int? outputSrid,

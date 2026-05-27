@@ -276,7 +276,6 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
 
         var spatialReference = SpatialReference.Create(srid);
 
-        var metadata = ReadMetadata(reader, "metadata");
         var storageMapping = ReadStorageMapping(reader, srid);
 
         return new LayerDefinition(
@@ -290,7 +289,6 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
             minScale,
             maxScale,
             defaultVisibility,
-            Metadata: metadata,
             StorageMapping: storageMapping);
     }
 
@@ -310,8 +308,6 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
 
         var spatialReference = SpatialReference.Create(srid);
 
-        var metadata = ReadMetadata(reader, "metadata");
-
         return new ServiceDefinition(
             name,
             description,
@@ -320,7 +316,6 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
             supportedFormats,
             capabilities,
             extent,
-            Metadata: metadata,
             ConnectionId: connectionId);
     }
 
@@ -774,23 +769,6 @@ internal sealed class PostgresLayerCatalog : ILayerCatalog
 
         return JsonSerializer.Deserialize(json, CatalogJsonContext.Default.DictionaryStringString)
             ?? new Dictionary<string, string>();
-    }
-
-    private static CatalogMetadata? ReadMetadata(NpgsqlDataReader reader, string columnName)
-    {
-        var ordinal = reader.GetOrdinal(columnName);
-        if (reader.IsDBNull(ordinal))
-        {
-            return null;
-        }
-
-        var json = reader.GetString(ordinal);
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return null;
-        }
-
-        return JsonSerializer.Deserialize(json, CatalogJsonContext.Default.CatalogMetadata);
     }
 
 }

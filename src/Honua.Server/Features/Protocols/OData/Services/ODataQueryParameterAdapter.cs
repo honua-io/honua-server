@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
@@ -52,148 +51,7 @@ internal sealed class ODataQueryParameterAdapter(
 
     public ProtocolLimits DefaultLimits => ProtocolLimits.OData;
 
-    public Task<QueryAdapterResult> ConvertAsync(
-        ODataQueryParameters parameters,
-        LayerDefinition layer,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            QueryFilter? filter = null;
-            if (!string.IsNullOrWhiteSpace(parameters.Filter))
-            {
-                var parseResult = _filterExpressionService.Parse(FilterLanguage.OData, parameters.Filter);
-                if (!parseResult.IsSuccess || parseResult.Expression == null)
-                {
-                    return Task.FromResult(QueryAdapterResult.Failure(
-                        parseResult.ErrorMessage ?? "Invalid OData filter expression."));
-                }
-
-                var translationResult = _filterExpressionService.Translate(parseResult.Expression, layer);
-                if (!translationResult.IsSuccess || translationResult.SqlFilter == null)
-                {
-                    return Task.FromResult(QueryAdapterResult.Failure(
-                        translationResult.ErrorMessage ?? "Invalid OData filter expression."));
-                }
-
-                filter = QueryFilter.FromSql(
-                    translationResult.SqlFilter,
-                    new FilterSource(parameters.Filter, FilterLanguage.OData, ProtocolName));
-            }
-
-            var outFields = ResolveSelectedFields(
-                parameters.Select,
-                parameters.Expand,
-                parameters.Compute,
-                layer,
-                out var selectError);
-            if (selectError != null)
-            {
-                return Task.FromResult(QueryAdapterResult.Failure(selectError));
-            }
-
-            var orderBy = OrderByParsing.ParseODataOrderBy(parameters.OrderBy, layer);
-            if (!orderBy.HasValue || orderBy.Value.IsDefaultOrEmpty)
-            {
-                orderBy = ImmutableArray.Create(new OrderByClause(
-                    FieldNames.ObjectId,
-                    ascending: true,
-                    fieldType: FieldType.BigInteger));
-            }
-
-            var metadata = new Dictionary<string, object>
-            {
-                ["format"] = parameters.Format ?? "application/json",
-                ["count"] = parameters.Count ?? false
-            };
-
-            if (!string.IsNullOrWhiteSpace(parameters.Expand))
-            {
-                metadata["expand"] = parameters.Expand;
-            }
-
-            if (!string.IsNullOrWhiteSpace(parameters.Compute))
-            {
-                metadata["compute"] = parameters.Compute;
-            }
-
-            var unifiedQuery = new UnifiedQuery
-            {
-                Filter = filter,
-                OutFields = outFields,
-                Offset = parameters.Skip,
-                Limit = parameters.Top,
-                OrderBy = orderBy,
-                Hints = QueryHints.Create(
-                    preferStreaming: (parameters.Top ?? DefaultLimits.DefaultResultCount) > DefaultLimits.DefaultResultCount,
-                    enableCaching: string.IsNullOrWhiteSpace(parameters.Expand),
-                    requireExactCount: parameters.Count == true)
-            };
-
-            return Task.FromResult(QueryAdapterResult.Success(unifiedQuery, metadata));
-        }
-        catch (ArgumentException ex)
-        {
-            ODataPreparedAdaptersLog.InvalidQueryParameters(_logger, ex);
-            return Task.FromResult(QueryAdapterResult.Failure(ex.Message));
-        }
-        catch (Exception ex)
-        {
-            ODataPreparedAdaptersLog.QueryParameterConversionFailed(_logger, ex);
-            return Task.FromResult(QueryAdapterResult.Failure("Invalid OData query parameters."));
-        }
-    }
-
-    private static ImmutableArray<string>? ResolveSelectedFields(
-        string? select,
-        string? expand,
-        string? compute,
-        LayerDefinition layer,
-        out string? error)
-    {
-        error = null;
-
-        if (string.IsNullOrWhiteSpace(select) || string.Equals(select.Trim(), "*", StringComparison.Ordinal))
-        {
-            return null;
-        }
-
-        var availableFields = layer.AttributeFields.ToDictionary(
-            field => field.Name,
-            StringComparer.OrdinalIgnoreCase);
-        var allowedVirtualSelections = GetAllowedVirtualSelections(expand, compute);
-        var builder = ImmutableArray.CreateBuilder<string>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var segment in select.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            if (string.IsNullOrWhiteSpace(segment))
-            {
-                continue;
-            }
-
-            if (allowedVirtualSelections.Contains(segment))
-            {
-                continue;
-            }
-
-            if (!availableFields.TryGetValue(segment, out var field))
-            {
-                error = $"Unknown field in $select: {segment}";
-                return null;
-            }
-
-            if (seen.Add(field.Name))
-            {
-                builder.Add(field.Name);
-            }
-        }
-
-        return builder.Count == 0 ? ImmutableArray<string>.Empty : builder.ToImmutable();
-    }
-
     /// <summary>
-    /// Metadata v2 overload of <see cref="ConvertAsync(ODataQueryParameters, LayerDefinition, CancellationToken)"/>.
     /// Parses the OData filter into a <see cref="FilterExpression"/> using the V2-aware
     /// <see cref="IFilterExpressionService.ParseAndNormalize"/> overload, validates $select against
     /// <see cref="MetadataV2Resource.SchemaFields"/>, and stores the filter as a
@@ -243,8 +101,7 @@ internal sealed class ODataQueryParameterAdapter(
             {
                 orderBy = ImmutableArray.Create(new OrderByClause(
                     FieldNames.ObjectId,
-                    ascending: true,
-                    fieldType: FieldType.BigInteger));
+                    ascending: true));
             }
 
             var metadata = new Dictionary<string, object>

@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
@@ -141,27 +140,6 @@ internal sealed class FeatureQueryValidationService
         return EditLimitsValidationResult.Valid();
     }
 
-    /// <summary>
-    /// Validates that a service and layer exist
-    /// </summary>
-    public static ServiceLayerValidationResult ValidateServiceAndLayer(
-        ServiceDefinition? service,
-        LayerDefinition? layer,
-        string serviceId,
-        int layerId)
-    {
-        if (service == null)
-        {
-            return ServiceLayerValidationResult.ServiceNotFound($"Service '{serviceId}' not found");
-        }
-
-        if (layer == null)
-        {
-            return ServiceLayerValidationResult.LayerNotFound($"Layer {layerId} not found in service '{serviceId}'");
-        }
-
-        return ServiceLayerValidationResult.Valid(service, layer);
-    }
 }
 
 /// <summary>
@@ -242,26 +220,4 @@ public sealed record EditLimitsValidationResult
 
     public static EditLimitsValidationResult Invalid(string errorMessage, string? errorDetail = null) =>
         new() { IsValid = false, ErrorMessage = errorMessage, ErrorDetail = errorDetail };
-}
-
-/// <summary>
-/// Result of service and layer validation
-/// </summary>
-public sealed record ServiceLayerValidationResult
-{
-    public bool IsValid { get; init; }
-    public string? ErrorMessage { get; init; }
-    public bool IsServiceNotFound { get; init; }
-    public bool IsLayerNotFound { get; init; }
-    public ServiceDefinition? Service { get; init; }
-    public LayerDefinition? Layer { get; init; }
-
-    public static ServiceLayerValidationResult Valid(ServiceDefinition service, LayerDefinition layer) =>
-        new() { IsValid = true, Service = service, Layer = layer };
-
-    public static ServiceLayerValidationResult ServiceNotFound(string errorMessage) =>
-        new() { IsValid = false, ErrorMessage = errorMessage, IsServiceNotFound = true };
-
-    public static ServiceLayerValidationResult LayerNotFound(string errorMessage) =>
-        new() { IsValid = false, ErrorMessage = errorMessage, IsLayerNotFound = true };
 }

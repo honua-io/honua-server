@@ -5,8 +5,8 @@ using System.Diagnostics.Metrics;
 using System.Globalization;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Spec.Domain;
 using Honua.ServiceDefaults;
 using Honua.Server.Features.Grounding.Spec;
@@ -145,9 +145,9 @@ public sealed class SpecGroundingServiceTests
                 "Parcels",
                 fields:
                 [
-                    new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                    new FieldDefinition("status_code", FieldType.String, Length: 32),
-                    new FieldDefinition("status_label", FieldType.String, Length: 64)
+                    SpecGroundingTestSupport.Field("objectid", MetadataV2FieldType.Integer, nullable: false),
+                    SpecGroundingTestSupport.Field("status_code", MetadataV2FieldType.String, length: 32),
+                    SpecGroundingTestSupport.Field("status_label", MetadataV2FieldType.String, length: 64)
                 ]));
 
         var result = await harness.Service.MutateAsync(
@@ -178,10 +178,10 @@ public sealed class SpecGroundingServiceTests
                 "Parcels",
                 fields:
                 [
-                    new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                    new FieldDefinition("status_code", FieldType.String, Length: 32),
-                    new FieldDefinition("status_label", FieldType.String, Length: 64),
-                    new FieldDefinition("category", FieldType.String, Length: 64)
+                    SpecGroundingTestSupport.Field("objectid", MetadataV2FieldType.Integer, nullable: false),
+                    SpecGroundingTestSupport.Field("status_code", MetadataV2FieldType.String, length: 32),
+                    SpecGroundingTestSupport.Field("status_label", MetadataV2FieldType.String, length: 64),
+                    SpecGroundingTestSupport.Field("category", MetadataV2FieldType.String, length: 64)
                 ]));
 
         var currentSpec = harness.Parse(
@@ -227,8 +227,8 @@ public sealed class SpecGroundingServiceTests
                 "Parcels",
                 fields:
                 [
-                    new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                    new FieldDefinition("zone", FieldType.String, Length: 16)
+                    SpecGroundingTestSupport.Field("objectid", MetadataV2FieldType.Integer, nullable: false),
+                    SpecGroundingTestSupport.Field("zone", MetadataV2FieldType.String, length: 16)
                 ]));
 
         var result = await harness.Service.MutateAsync(
@@ -259,8 +259,8 @@ public sealed class SpecGroundingServiceTests
                 "Parcels",
                 fields:
                 [
-                    new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                    new FieldDefinition("zone", FieldType.String, Length: 16)
+                    SpecGroundingTestSupport.Field("objectid", MetadataV2FieldType.Integer, nullable: false),
+                    SpecGroundingTestSupport.Field("zone", MetadataV2FieldType.String, length: 16)
                 ]));
 
         var currentSpec = harness.Parse(
@@ -309,8 +309,8 @@ public sealed class SpecGroundingServiceTests
                 "Parcels",
                 fields:
                 [
-                    new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                    new FieldDefinition("zone", FieldType.String, Length: 16)
+                    SpecGroundingTestSupport.Field("objectid", MetadataV2FieldType.Integer, nullable: false),
+                    SpecGroundingTestSupport.Field("zone", MetadataV2FieldType.String, length: 16)
                 ]));
 
         var result = await harness.Service.MutateAsync(
@@ -829,7 +829,7 @@ public sealed class SpecGroundingServiceTests
         ]);
     }
 
-    private static SpecGroundingHarness CreateHarness(params LayerDefinition[] layers)
+    private static SpecGroundingHarness CreateHarness(params MetadataV2Resource[] layers)
         => new(layers);
 
     private static ClarificationResponse CreateClarificationResponse(

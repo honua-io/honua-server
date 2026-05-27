@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -65,12 +64,6 @@ internal sealed class OgcFeaturesEditParameterAdapter(
     public ProtocolEditLimits DefaultLimits => ProtocolEditLimits.OgcFeatures;
 
     public TransactionSemantics TransactionSemantics => TransactionSemantics.OgcFeatures;
-
-    public Task<EditAdapterResult> ConvertAsync(
-        OgcFeaturesEditRequest protocolRequest,
-        LayerDefinition layer,
-        CancellationToken cancellationToken = default)
-        => ConvertCoreAsync(protocolRequest, cancellationToken);
 
     public Task<EditAdapterResult> ConvertAsync(
         OgcFeaturesEditRequest protocolRequest,

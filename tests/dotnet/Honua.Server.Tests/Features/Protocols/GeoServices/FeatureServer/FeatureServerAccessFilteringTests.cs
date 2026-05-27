@@ -8,6 +8,7 @@ using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Tests.Features.Security;
 using Honua.TestKit.Attributes;
@@ -120,7 +121,7 @@ public sealed class FeatureServerAccessFilteringTests
             static services => services.AddSingleton<IAttachmentStore, TestAttachmentStore>());
 }
 
-internal sealed class FeatureServerAccessFilteringCatalog : ILayerCatalog
+internal sealed class FeatureServerAccessFilteringCatalog : ILayerCatalog, IAccessPolicyCatalogSeed
 {
     private static readonly string[] SupportedFormats = ["JSON", "GeoJSON"];
     private static readonly string[] Capabilities = ["Query", "Extract"];
@@ -128,6 +129,8 @@ internal sealed class FeatureServerAccessFilteringCatalog : ILayerCatalog
     private readonly LayerDefinition _visibleLayer;
     private readonly LayerDefinition _hiddenLayer;
     private readonly ServiceDefinition _service;
+    private readonly AccessPolicy _hiddenLayerPolicy;
+    private readonly AccessPolicy _servicePolicy;
 
     public FeatureServerAccessFilteringCatalog()
     {
@@ -176,6 +179,9 @@ internal sealed class FeatureServerAccessFilteringCatalog : ILayerCatalog
             Relationships: [hiddenRelationship],
             SupportsAttachments: true);
 
+        _hiddenLayerPolicy = ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["hidden-reader"]);
+        _servicePolicy = ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["reader"]);
+
         _hiddenLayer = new LayerDefinition(
             Id: ServiceRbacTestFixture.BetaLayerId,
             Name: "Hidden Audit Layer",
@@ -189,8 +195,7 @@ internal sealed class FeatureServerAccessFilteringCatalog : ILayerCatalog
                 new FieldDefinition("hidden_status", FieldType.String, 32, true, null, "Hidden Status", Domain: hiddenDomain)
             ],
             Extent: extent,
-            SupportsAttachments: true,
-            Metadata: ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["hidden-reader"]));
+            SupportsAttachments: true);
 
         _service = new ServiceDefinition(
             Name: ServiceRbacTestFixture.AlphaService,
@@ -199,8 +204,7 @@ internal sealed class FeatureServerAccessFilteringCatalog : ILayerCatalog
             SpatialReference: spatialReference,
             SupportedFormats: SupportedFormats,
             Capabilities: Capabilities,
-            ServiceExtent: extent,
-            Metadata: ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["reader"]));
+            ServiceExtent: extent);
     }
 
     public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
@@ -241,4 +245,12 @@ internal sealed class FeatureServerAccessFilteringCatalog : ILayerCatalog
 
     public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
         => Task.FromResult(layerId == ServiceRbacTestFixture.AlphaLayerId ? _visibleLayer.LayerRelationships : []);
+
+    public AccessPolicy? GetLayerAccessPolicy(int layerId)
+        => layerId == ServiceRbacTestFixture.BetaLayerId ? _hiddenLayerPolicy : null;
+
+    public AccessPolicy? GetServiceAccessPolicy(string serviceName)
+        => string.Equals(serviceName, ServiceRbacTestFixture.AlphaService, StringComparison.OrdinalIgnoreCase)
+            ? _servicePolicy
+            : null;
 }

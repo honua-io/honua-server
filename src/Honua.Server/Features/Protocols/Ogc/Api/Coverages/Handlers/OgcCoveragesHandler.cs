@@ -3,7 +3,6 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -34,7 +33,7 @@ internal sealed class OgcCoveragesHandler
     private const string CoverageItemType = "coverage";
     private const string GeoTiffContentType = "image/tiff";
     private const string PngContentType = "image/png";
-    private const string CoveragesProtocol = ServiceProtocols.OgcApiCoverages;
+    private const string CoveragesProtocol = "OGC-API-Coverages";
 
     private static readonly ImmutableHashSet<string> MetadataQueryParameters =
         ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "f");
@@ -235,7 +234,7 @@ internal sealed class OgcCoveragesHandler
                 {
                     continue;
                 }
-                if (!ServiceProtocols.IsProtocolEnabled(service, CoveragesProtocol))
+                if (!IsProtocolEnabled(service, CoveragesProtocol))
                 {
                     continue;
                 }
@@ -1701,6 +1700,9 @@ internal sealed class OgcCoveragesHandler
 
     private static string CreateEpsgUri(int srid)
         => FormattableString.Invariant($"http://www.opengis.net/def/crs/EPSG/0/{srid}");
+
+    private static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)
+        => service?.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase)) == true;
 
     private static string FormatContentCrsHeader(int srid)
         => FormattableString.Invariant($"<https://www.opengis.net/def/crs/EPSG/0/{srid}>");

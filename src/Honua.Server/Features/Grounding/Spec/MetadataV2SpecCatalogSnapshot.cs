@@ -1,23 +1,22 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Spec.Abstractions;
 using Honua.Core.Features.Spec.Domain;
 
 namespace Honua.Server.Features.Grounding.Spec;
 
-internal sealed class LayerCatalogSpecCatalogSnapshot : ISpecCatalogSnapshot
+internal sealed class MetadataV2SpecCatalogSnapshot : ISpecCatalogSnapshot
 {
-    private readonly Dictionary<int, LayerDefinition> _layersById;
-    private readonly Dictionary<string, LayerDefinition> _layersByName;
+    private readonly Dictionary<int, GroundingCatalogLayer> _layersById;
+    private readonly Dictionary<string, GroundingCatalogLayer> _layersByName;
 
-    public LayerCatalogSpecCatalogSnapshot(IReadOnlyList<LayerDefinition> layers)
+    public MetadataV2SpecCatalogSnapshot(IReadOnlyList<GroundingCatalogLayer> layers)
     {
         ArgumentNullException.ThrowIfNull(layers);
 
-        Version = $"layers-{layers.Count}";
-        _layersById = layers.ToDictionary(layer => layer.Id);
+        Version = $"metadata-v2-layers-{layers.Count}";
+        _layersById = layers.ToDictionary(layer => layer.LayerId);
         _layersByName = layers
             .GroupBy(layer => layer.Name, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
@@ -33,7 +32,7 @@ internal sealed class LayerCatalogSpecCatalogSnapshot : ISpecCatalogSnapshot
             return null;
         }
 
-        LayerDefinition? layer = null;
+        GroundingCatalogLayer? layer = null;
         if (TryParseCatalogLayerRef(sourceRef, out var layerId))
         {
             _layersById.TryGetValue(layerId, out layer);
@@ -56,7 +55,7 @@ internal sealed class LayerCatalogSpecCatalogSnapshot : ISpecCatalogSnapshot
         return new TypeRef(
             SpecTypeKind.Dataset,
             fields,
-            layer.SpatialReference.Wkid > 0 ? $"EPSG:{layer.SpatialReference.Wkid}" : null);
+            layer.SpatialReferenceId is > 0 ? $"EPSG:{layer.SpatialReferenceId.Value}" : null);
     }
 
     private static string? TryGetLiteral(ObjectExpression expression, string key)

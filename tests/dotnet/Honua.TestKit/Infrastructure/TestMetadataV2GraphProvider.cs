@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
@@ -11,7 +12,7 @@ namespace Honua.TestKit.Infrastructure;
 /// In-memory <see cref="IMetadataV2GraphProvider"/> for tests. Holds a single graph
 /// snapshot supplied at construction; callers can swap the snapshot at any time.
 /// </summary>
-public sealed class TestMetadataV2GraphProvider : IMetadataV2GraphProvider
+public sealed class TestMetadataV2GraphProvider : IMetadataV2GraphStore
 {
     private MetadataV2GraphSnapshot _snapshot;
 
@@ -41,6 +42,25 @@ public sealed class TestMetadataV2GraphProvider : IMetadataV2GraphProvider
 
     public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
         => new(_snapshot.Graph.Revision == revision ? _snapshot : null);
+
+    public Task<MetadataV2GraphSnapshot> SaveAsync(
+        MetadataV2Graph graph,
+        string? expectedEtag,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        if (expectedEtag is not null &&
+            !string.Equals(expectedEtag, _snapshot.Etag, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Metadata v2 graph ETag mismatch.");
+        }
+
+        _snapshot = new MetadataV2GraphSnapshot(
+            graph,
+            $"\"test-{graph.Revision}\"",
+            DateTimeOffset.UtcNow);
+        return Task.FromResult(_snapshot);
+    }
 }
 
 /// <summary>
@@ -90,14 +110,26 @@ public sealed class TestMetadataV2GraphBuilder
         string name,
         MetadataV2ResourceType type = MetadataV2ResourceType.FeatureDataset,
         IEnumerable<MetadataV2Field>? fields = null,
-        AccessPolicy? accessPolicy = null)
+        AccessPolicy? accessPolicy = null,
+        MetadataV2ResourceSpatial? spatial = null,
+        MetadataV2ResourceTemporal? temporal = null,
+        IReadOnlyDictionary<string, string>? annotations = null,
+        IReadOnlyDictionary<string, JsonElement>? extensions = null)
     {
         _resources.Add(new MetadataV2Resource
         {
-            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = id,
+                Name = name,
+                Annotations = annotations ?? new Dictionary<string, string>()
+            },
             Type = type,
             SchemaFields = fields?.ToArray() ?? Array.Empty<MetadataV2Field>(),
             AccessPolicy = accessPolicy,
+            Spatial = spatial,
+            Temporal = temporal,
+            Extensions = extensions ?? new Dictionary<string, JsonElement>(),
         });
         return this;
     }
@@ -140,7 +172,8 @@ public sealed class TestMetadataV2GraphBuilder
         string name,
         string? route = null,
         IReadOnlyList<string>? protocols = null,
-        AccessPolicy? accessPolicy = null)
+        AccessPolicy? accessPolicy = null,
+        IReadOnlyDictionary<string, JsonElement>? options = null)
     {
         _services.Add(new MetadataV2Service
         {
@@ -148,6 +181,7 @@ public sealed class TestMetadataV2GraphBuilder
             Route = route,
             Protocols = protocols ?? Array.Empty<string>(),
             AccessPolicy = accessPolicy,
+            Options = options ?? new Dictionary<string, JsonElement>(),
         });
         return this;
     }

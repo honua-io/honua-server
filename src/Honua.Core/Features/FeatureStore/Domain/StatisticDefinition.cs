@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.FeatureStore.Domain;
 
@@ -32,7 +32,7 @@ public readonly record struct StatisticDefinition
     /// JSON-backed fields without changing the public request contract.
     /// </summary>
     [JsonIgnore]
-    public FieldType? FieldType { get; init; }
+    public MetadataV2FieldType? FieldType { get; init; }
 }
 
 /// <summary>

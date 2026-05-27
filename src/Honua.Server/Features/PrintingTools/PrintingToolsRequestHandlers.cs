@@ -5,13 +5,13 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Security.Claims;
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
@@ -55,6 +55,7 @@ internal static class PrintingToolsRequestHandlers
         string templateName,
         int dpi,
         IResourceValidator resourceValidator,
+        IMetadataV2GraphProvider metadataGraphProvider,
         IFeatureReader featureReader,
         ILayerStyleCatalog styleCatalog,
         ILogger logger,
@@ -84,7 +85,13 @@ internal static class PrintingToolsRequestHandlers
             // Resolve visible layers once — shared by both map-frame rendering and legend
             // building to avoid duplicate service validation and style catalog calls.
             var resolvedLayers = await MaterializeVisibleLayersAsync(
-                webMap, resourceValidator, styleCatalog, callerPrincipal, accessPolicyEvaluator, cancellationToken);
+                webMap,
+                resourceValidator,
+                metadataGraphProvider,
+                styleCatalog,
+                callerPrincipal,
+                accessPolicyEvaluator,
+                cancellationToken);
 
             // Render map frame
             var mapFrameBytes = await RenderMapFrameAsync(
@@ -210,14 +217,13 @@ internal static class PrintingToolsRequestHandlers
 
         foreach (var resolved in resolvedLayers)
         {
-            if (!resolved.Layer.HasGeometry) continue;
+            if (resolved.GeometryType is MetadataV2GeometryType.None) continue;
+            var renderGeometryType = resolved.GeometryType;
 
             var styleLayers = resolved.StyleLayers;
 
             // Query features for the (potentially scale-adjusted) render extent
-            var serviceSrid = resolved.Service.SpatialReference.Srid;
-            var maxFeatures = resolved.Service.Metadata?.MapServer?.MaxFeaturesPerLayer ?? MaxFeaturesPerLayer;
-
+            var serviceSrid = ResolveServiceSrid(resolved.Service, resolved.Resource);
             var spatialFilter = SpatialFilterHelpers.CreateBboxSpatialFilter(
                 renderExtent.MinX, renderExtent.MinY, renderExtent.MaxX, renderExtent.MaxY, extentSrid);
             var featureQuery = new FeatureQuery
@@ -225,9 +231,9 @@ internal static class PrintingToolsRequestHandlers
                 SpatialFilter = spatialFilter,
                 SpatialReferenceSrid = serviceSrid,
                 OutputSrid = extentSrid,
-                Limit = maxFeatures
+                Limit = MaxFeaturesPerLayer
             };
-            var queryResult = await featureReader.QueryAsync(resolved.Layer.Id, featureQuery, cancellationToken);
+            var queryResult = await featureReader.QueryAsync(resolved.StorageLayerId, featureQuery, cancellationToken);
 
             if (queryResult.Items.Length == 0) continue;
 
@@ -237,12 +243,12 @@ internal static class PrintingToolsRequestHandlers
             {
                 using var opacityPaint = new SKPaint { Color = SKColors.White.WithAlpha((byte)(resolved.OperationalLayer.Opacity.Value * 255)) };
                 var count = canvas.SaveLayer(opacityPaint);
-                renderer.RenderFeaturesOnCanvas(canvas, queryResult.Items, styleLayers, renderExtent, imageWidth, imageHeight, resolved.Layer.GeometryType);
+                renderer.RenderFeaturesOnCanvas(canvas, queryResult.Items, styleLayers, renderExtent, imageWidth, imageHeight, renderGeometryType);
                 canvas.RestoreToCount(count);
             }
             else
             {
-                renderer.RenderFeaturesOnCanvas(canvas, queryResult.Items, styleLayers, renderExtent, imageWidth, imageHeight, resolved.Layer.GeometryType);
+                renderer.RenderFeaturesOnCanvas(canvas, queryResult.Items, styleLayers, renderExtent, imageWidth, imageHeight, renderGeometryType);
             }
         }
 
@@ -263,14 +269,19 @@ internal static class PrintingToolsRequestHandlers
         foreach (var resolved in resolvedLayers)
         {
             var styleLayers = resolved.StyleLayers;
+            var renderGeometryType = resolved.GeometryType;
+            var label = resolved.OperationalLayer.Title
+                ?? resolved.Publication.TitleOverride
+                ?? resolved.Resource.Metadata.Title
+                ?? resolved.Resource.Metadata.Name;
 
             if (styleLayers.Length == 0)
             {
                 var defaultSwatch = SkiaMapRenderer.RenderLegendSwatch(
-                    new MapLibreStyleLayer { Type = "default" }, resolved.Layer.GeometryType);
+                    new MapLibreStyleLayer { Type = "default" }, renderGeometryType);
                 entries.Add(new LegendSwatchEntry
                 {
-                    Label = resolved.OperationalLayer.Title ?? resolved.Layer.Name,
+                    Label = label,
                     SwatchBytes = defaultSwatch
                 });
             }
@@ -279,10 +290,10 @@ internal static class PrintingToolsRequestHandlers
                 foreach (var sl in styleLayers)
                 {
                     if (sl.Type is null or "background") continue;
-                    var swatch = SkiaMapRenderer.RenderLegendSwatch(sl, resolved.Layer.GeometryType);
+                    var swatch = SkiaMapRenderer.RenderLegendSwatch(sl, renderGeometryType);
                     entries.Add(new LegendSwatchEntry
                     {
-                        Label = sl.Id ?? resolved.OperationalLayer.Title ?? resolved.Layer.Name,
+                        Label = sl.Id ?? label,
                         SwatchBytes = swatch
                     });
                 }
@@ -300,17 +311,24 @@ internal static class PrintingToolsRequestHandlers
     private static async Task<IReadOnlyList<ResolvedLayer>> MaterializeVisibleLayersAsync(
         WebMapDefinition webMap,
         IResourceValidator resourceValidator,
+        IMetadataV2GraphProvider metadataGraphProvider,
         ILayerStyleCatalog styleCatalog,
         ClaimsPrincipal? callerPrincipal,
         IAccessPolicyEvaluator? accessPolicyEvaluator,
         CancellationToken cancellationToken)
     {
         var layers = new List<ResolvedLayer>();
+        var snapshot = await metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         await foreach (var resolved in ResolveVisibleLayersAsync(
-            webMap, resourceValidator, callerPrincipal, accessPolicyEvaluator, cancellationToken))
+            webMap,
+            resourceValidator,
+            snapshot,
+            callerPrincipal,
+            accessPolicyEvaluator,
+            cancellationToken))
         {
             // Pre-fetch and parse style so both render and legend paths share the result
-            var style = await styleCatalog.GetLayerStyleAsync(resolved.Layer.Id, cancellationToken);
+            var style = await styleCatalog.GetLayerStyleAsync(resolved.StorageLayerId, cancellationToken);
             var styleLayers = StyleTranslator.ParseStyleLayers(style?.MapLibreStyleJson);
             layers.Add(resolved with { StyleLayers = styleLayers });
         }
@@ -318,12 +336,13 @@ internal static class PrintingToolsRequestHandlers
     }
 
     /// <summary>
-    /// Resolves visible operational layers to their service and layer definitions,
-    /// handling URL parsing, service validation, target-layer resolution, and access policy.
+    /// Resolves visible operational layers to their service publications and resources,
+    /// handling URL parsing, service validation, storage-layer resolution, and access policy.
     /// </summary>
     private static async IAsyncEnumerable<ResolvedLayer> ResolveVisibleLayersAsync(
         WebMapDefinition webMap,
         IResourceValidator resourceValidator,
+        MetadataV2GraphSnapshot snapshot,
         ClaimsPrincipal? callerPrincipal,
         IAccessPolicyEvaluator? accessPolicyEvaluator,
         [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -337,34 +356,77 @@ internal static class PrintingToolsRequestHandlers
             ResolveLayerFromUrl(opLayer);
             if (opLayer.ResolvedServiceId is null) continue;
 
-            var serviceResult = await resourceValidator.ValidateServiceAsync(
+            var serviceResult = await resourceValidator.ValidateServiceV2Async(
                 opLayer.ResolvedServiceId, cancellationToken);
             if (!serviceResult.IsValid || serviceResult.Resource is null) continue;
 
+            var service = serviceResult.Resource;
             var targetLayers = opLayer.ResolvedLayerId.HasValue
-                ? serviceResult.Resource.Layers.Where(l => l.Id == opLayer.ResolvedLayerId.Value)
-                : serviceResult.Resource.Layers.Where(l => l.DefaultVisibility);
+                ? ResolveSinglePublication(snapshot, service.Metadata.Id, opLayer.ResolvedLayerId.Value)
+                : snapshot.Index.PublicationsByService[service.Metadata.Id]
+                    .Where(publication => ResolveResource(snapshot, publication)?.Display?.DefaultVisibility ?? true);
 
-            foreach (var layer in targetLayers)
+            foreach (var publication in targetLayers)
             {
+                var resource = ResolveResource(snapshot, publication);
+                if (resource is null) continue;
+
+                var storageLayerId = snapshot.ResolveStorageLayerId(publication)
+                    ?? snapshot.ResolveStorageLayerId(resource);
+                if (!storageLayerId.HasValue) continue;
+
                 if (callerPrincipal is not null && accessPolicyEvaluator is not null &&
-                    !accessPolicyEvaluator.Evaluate(callerPrincipal, layer.Metadata?.AccessPolicy,
-                        serviceResult.Resource.Metadata?.AccessPolicy).IsAllowed)
+                    !accessPolicyEvaluator.Evaluate(
+                        callerPrincipal,
+                        resource.AccessPolicy,
+                        service.AccessPolicy).IsAllowed)
                     continue;
 
-                yield return new ResolvedLayer(opLayer, serviceResult.Resource, layer, []);
+                yield return new ResolvedLayer(
+                    opLayer,
+                    service,
+                    publication,
+                    resource,
+                    storageLayerId.Value,
+                    resource.ReadGeometryType(),
+                    []);
             }
         }
     }
 
+    private static IEnumerable<MetadataV2Publication> ResolveSinglePublication(
+        MetadataV2GraphSnapshot snapshot,
+        string serviceId,
+        int layerIndex)
+    {
+        var publication = snapshot.FindPublicationByLayerIndex(serviceId, layerIndex);
+        if (publication is not null)
+        {
+            yield return publication;
+        }
+    }
+
+    private static MetadataV2Resource? ResolveResource(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication publication)
+        => snapshot.ResolveResource(publication);
+
+    private static int ResolveServiceSrid(MetadataV2Service service, MetadataV2Resource resource)
+        => service.SpatialReference?.ResolveSrid()
+            ?? resource.ReadSrid()
+            ?? 4326;
+
     /// <summary>
-    /// A resolved operational layer with its parent service, target layer definition,
+    /// A resolved operational layer with its parent service, target publication/resource,
     /// and pre-fetched style layers to avoid duplicate catalog lookups.
     /// </summary>
     private readonly record struct ResolvedLayer(
         WebMapOperationalLayer OperationalLayer,
-        ServiceDefinition Service,
-        LayerDefinition Layer,
+        MetadataV2Service Service,
+        MetadataV2Publication Publication,
+        MetadataV2Resource Resource,
+        int StorageLayerId,
+        MetadataV2GeometryType GeometryType,
         MapLibreStyleLayer[] StyleLayers);
 
     /// <summary>

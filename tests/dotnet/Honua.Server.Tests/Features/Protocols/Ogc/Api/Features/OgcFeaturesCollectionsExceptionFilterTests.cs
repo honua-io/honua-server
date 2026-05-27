@@ -3,10 +3,9 @@
 
 using System.Net;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
-using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
@@ -16,12 +15,9 @@ public sealed class OgcFeaturesCollectionsExceptionFilterTests : IAsyncLifetime
 
     public OgcFeaturesCollectionsExceptionFilterTests()
     {
-        var catalog = Substitute.For<ILayerCatalog>();
-        catalog.GetLayerAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns<Task<LayerDefinition?>>(_ => throw new ArgumentException("Invalid Parse failure"));
-
         _fixture = new WebAppFixture()
-            .ReplaceService<ILayerCatalog>(catalog);
+            .ReplaceService<IMetadataV2GraphProvider>(
+                new ThrowingMetadataV2GraphProvider(() => new ArgumentException("Invalid Parse failure")));
     }
 
     public Task InitializeAsync() => _fixture.InitializeAsync();
@@ -29,7 +25,7 @@ public sealed class OgcFeaturesCollectionsExceptionFilterTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [Fact]
-    public async Task GetCollection_WhenCatalogThrowsArgumentException_Returns500()
+    public async Task GetCollection_WhenMetadataGraphThrowsArgumentException_Returns500()
     {
         var response = await _fixture.Client.GetAsync("/ogc/features/collections/0");
 
@@ -39,12 +35,21 @@ public sealed class OgcFeaturesCollectionsExceptionFilterTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task GetQueryables_WhenCatalogThrowsArgumentException_Returns500()
+    public async Task GetQueryables_WhenMetadataGraphThrowsArgumentException_Returns500()
     {
         var response = await _fixture.Client.GetAsync("/ogc/features/collections/0/queryables");
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         var payload = await response.Content.ReadAsStringAsync();
         payload.Should().NotContain("Invalid Parse failure");
+    }
+
+    private sealed class ThrowingMetadataV2GraphProvider(Func<Exception> exceptionFactory) : IMetadataV2GraphProvider
+    {
+        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
+            => new(Task.FromException<MetadataV2GraphSnapshot>(exceptionFactory()));
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
+            => new(Task.FromException<MetadataV2GraphSnapshot?>(exceptionFactory()));
     }
 }

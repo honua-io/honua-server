@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
@@ -11,6 +10,7 @@ using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Server.Features.Admin;
 
@@ -19,6 +19,14 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal static class ServiceSettingsEndpoints
 {
+    private const int DefaultMapServerMaxImageWidth = 4096;
+    private const int DefaultMapServerMaxImageHeight = 4096;
+    private const int DefaultMapServerImageWidth = 400;
+    private const int DefaultMapServerImageHeight = 400;
+    private const int DefaultMapServerDpi = 96;
+    private const string DefaultMapServerFormat = "png";
+    private const int DefaultMapServerMaxFeaturesPerLayer = 10_000;
+
     /// <summary>
     /// Log category for service settings endpoints.
     /// </summary>
@@ -69,8 +77,7 @@ internal static class ServiceSettingsEndpoints
     {
         try
         {
-            // V2 cutover: list services from the canonical graph rather than the v1
-            // ILayerCatalog projection. Multiple V2 service entries can share a display
+            // V2 cutover: list services from the canonical graph. Multiple V2 service entries can share a display
             // name when the same logical service is exposed under different protocols
             // (FeatureServer / MapServer / Stac all named "test" for the same dataset);
             // the v1 admin response collapsed those into one row keyed by name, so we
@@ -96,7 +103,7 @@ internal static class ServiceSettingsEndpoints
                         ServiceName = representative.Metadata.Name,
                         Description = representative.Metadata.Description ?? string.Empty,
                         LayerCount = layerCount,
-                        EnabledProtocols = enabled.Length == 0 ? ServiceProtocols.All : enabled,
+                        EnabledProtocols = enabled.Length == 0 ? MetadataV2ServiceProtocols.All : enabled,
                     };
                 })
                 .ToArray();
@@ -168,11 +175,11 @@ internal static class ServiceSettingsEndpoints
             }
 
             // Validate protocol names
-            var invalid = normalizedProtocols.Except(ServiceProtocols.All, StringComparer.Ordinal).ToArray();
+            var invalid = normalizedProtocols.Except(MetadataV2ServiceProtocols.All, StringComparer.Ordinal).ToArray();
             if (invalid.Length > 0)
             {
                 return TypedResults.BadRequest(ApiResponse<object>.Failure(
-                    $"Invalid protocol(s): {string.Join(", ", invalid)}. Valid values: {string.Join(", ", ServiceProtocols.All)}"));
+                    $"Invalid protocol(s): {string.Join(", ", invalid)}. Valid values: {string.Join(", ", MetadataV2ServiceProtocols.All)}"));
             }
 
             var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
@@ -211,12 +218,11 @@ internal static class ServiceSettingsEndpoints
             ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
-        // GAP (#1035 cutover 72/N): the v1 MapServer settings block (max image
-        // width/height, default DPI, transparent flag, max features per layer) lived on
-        // CatalogMetadata.MapServer. The Metadata v2 graph does not have a typed home
-        // for these knobs yet — they have no equivalent on MetadataV2Service. Until a
-        // V2 MapServer extension lands the endpoint refuses the operation honestly
-        // rather than silently dropping the payload.
+        // GAP (#1035 cutover 72/N): the legacy MapServer settings block (max image
+        // width/height, default DPI, transparent flag, max features per layer) does not
+        // have a typed V2 home for the full shape yet. Until a V2 MapServer extension
+        // lands the endpoint refuses the operation honestly rather than silently
+        // dropping the payload.
         _ = request;
         ServiceSettingsLog.UpdateMapServerSettingsFailed(
             logger,
@@ -373,8 +379,7 @@ internal static class ServiceSettingsEndpoints
             }
 
             // Patch time info off the V2 Temporal block (StartTimeField / EndTimeField /
-            // TrackIdField); v1 LayerTimeInfo and V2 MetadataV2ResourceTemporal share the
-            // same three field-name slots, so the patch shape is identical.
+            // TrackIdField).
             var existingTemporal = resource.Temporal;
             string? startTimeField = existingTemporal?.StartTimeField;
             string? endTimeField = existingTemporal?.EndTimeField;
@@ -386,15 +391,15 @@ internal static class ServiceSettingsEndpoints
                 endTimeField = incomingTimeInfo.EndTimeField is "" ? null : (incomingTimeInfo.EndTimeField ?? endTimeField);
                 trackIdField = incomingTimeInfo.TrackIdField is "" ? null : (incomingTimeInfo.TrackIdField ?? trackIdField);
             }
-            var updatedTimeInfo = temporalRequested || existingTemporal is not null
-                ? new LayerTimeInfo { StartTimeField = startTimeField, EndTimeField = endTimeField, TrackIdField = trackIdField }
+            var updatedTemporal = temporalRequested || existingTemporal is not null
+                ? ToV2Temporal(startTimeField, endTimeField, trackIdField, existing: existingTemporal)
                 : null;
 
-            // RasterMosaic has no V2 home yet — we keep echoing the requested merge
+            // RasterMosaic has no typed V2 home yet — we keep echoing the requested merge
             // strategy in the response (so PUT semantics are preserved for callers), but
             // it does not round-trip through the graph store. Documented in the mutator
             // below.
-            RasterMosaicSettings? updatedRasterMosaic = null;
+            RasterMosaicResponse? updatedRasterMosaic = null;
             if (request.RasterMosaic is not null)
             {
                 string? mergeStrategy;
@@ -411,7 +416,7 @@ internal static class ServiceSettingsEndpoints
                     TryNormalizeMergeStrategy(request.RasterMosaic.MergeStrategy, out var canonical);
                     mergeStrategy = canonical;
                 }
-                updatedRasterMosaic = new RasterMosaicSettings { MergeStrategy = mergeStrategy };
+                updatedRasterMosaic = new RasterMosaicResponse { MergeStrategy = mergeStrategy };
             }
 
             await MutateResourcesForLayerAsync(
@@ -426,9 +431,9 @@ internal static class ServiceSettingsEndpoints
                     }
                     next = next with
                     {
-                        Temporal = ToV2Temporal(updatedTimeInfo, existing: next.Temporal),
+                        Temporal = updatedTemporal,
                     };
-                    // RasterMosaic has no V2 home yet — silently drop until the V2
+                    // RasterMosaic has no typed V2 home yet — silently drop until the V2
                     // raster extension lands. The v1 admin shape is preserved so
                     // GET responses can still echo what the caller PUT.
                     return next;
@@ -440,7 +445,7 @@ internal static class ServiceSettingsEndpoints
                 layerId,
                 resource.Metadata.Name,
                 updatedAccessPolicy,
-                updatedTimeInfo,
+                updatedTemporal,
                 updatedRasterMosaic);
             return TypedResults.Ok(ApiResponse<LayerMetadataResponse>.CreateSuccess(response));
         }
@@ -488,16 +493,15 @@ internal static class ServiceSettingsEndpoints
             .ToArray();
         if (enabledProtocols.Length == 0)
         {
-            enabledProtocols = ServiceProtocols.All;
+            enabledProtocols = MetadataV2ServiceProtocols.All;
         }
         var accessPolicy = services.Select(s => s.AccessPolicy).FirstOrDefault(p => p is not null);
-        var mapConfig = new MapServerConfig();
 
         return new ServiceSettingsResponse
         {
             ServiceName = serviceName,
             EnabledProtocols = enabledProtocols,
-            AvailableProtocols = ServiceProtocols.All,
+            AvailableProtocols = MetadataV2ServiceProtocols.All,
             AccessPolicy = accessPolicy is not null ? new AccessPolicyResponse
             {
                 AllowAnonymous = accessPolicy.AllowAnonymous,
@@ -511,14 +515,14 @@ internal static class ServiceSettingsEndpoints
             TimeInfo = null,
             MapServer = new MapServerSettingsResponse
             {
-                MaxImageWidth = mapConfig.MaxImageWidth,
-                MaxImageHeight = mapConfig.MaxImageHeight,
-                DefaultImageWidth = mapConfig.DefaultImageWidth,
-                DefaultImageHeight = mapConfig.DefaultImageHeight,
-                DefaultDpi = mapConfig.DefaultDpi,
-                DefaultFormat = mapConfig.DefaultFormat,
-                DefaultTransparent = mapConfig.DefaultTransparent,
-                MaxFeaturesPerLayer = mapConfig.MaxFeaturesPerLayer
+                MaxImageWidth = DefaultMapServerMaxImageWidth,
+                MaxImageHeight = DefaultMapServerMaxImageHeight,
+                DefaultImageWidth = DefaultMapServerImageWidth,
+                DefaultImageHeight = DefaultMapServerImageHeight,
+                DefaultDpi = DefaultMapServerDpi,
+                DefaultFormat = DefaultMapServerFormat,
+                DefaultTransparent = true,
+                MaxFeaturesPerLayer = DefaultMapServerMaxFeaturesPerLayer
             }
         };
     }
@@ -527,8 +531,8 @@ internal static class ServiceSettingsEndpoints
         int layerId,
         string layerName,
         AccessPolicy? accessPolicy,
-        LayerTimeInfo? timeInfo,
-        RasterMosaicSettings? rasterMosaic)
+        MetadataV2ResourceTemporal? timeInfo,
+        RasterMosaicResponse? rasterMosaic)
     {
         return new LayerMetadataResponse
         {
@@ -547,10 +551,7 @@ internal static class ServiceSettingsEndpoints
                 EndTimeField = timeInfo.EndTimeField,
                 TrackIdField = timeInfo.TrackIdField
             } : null,
-            RasterMosaic = rasterMosaic is not null ? new RasterMosaicResponse
-            {
-                MergeStrategy = rasterMosaic.MergeStrategy
-            } : null
+            RasterMosaic = rasterMosaic
         };
     }
 
@@ -597,8 +598,8 @@ internal static class ServiceSettingsEndpoints
 
         try
         {
-            // V2 cutover: resolve the service's layer ids from the canonical graph rather
-            // than the v1 ServiceDefinition. Layer ids come from the publication
+            // V2 cutover: resolve the service's layer ids from numeric publications
+            // in the canonical graph. Layer ids come from the publication
             // LayerIndex for every numeric publication on a matching service.
             var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
             var serviceIds = snapshot.Graph.Services
@@ -716,27 +717,29 @@ internal static class ServiceSettingsEndpoints
     }
 
     /// <summary>
-    /// Bridges the v1 <see cref="LayerTimeInfo"/> shape to the V2
-    /// <see cref="MetadataV2ResourceTemporal"/>. Treats an entirely-empty time info as
+    /// Creates the V2 <see cref="MetadataV2ResourceTemporal"/> block. Treats an entirely-empty time info as
     /// "clear temporal" — returns null so the resource turns non-temporal — to preserve
-    /// the v1 clear-on-empty-PUT semantics. Preserves an existing declared extent when
+    /// clear-on-empty-PUT semantics. Preserves an existing declared extent when
     /// only the field names are changing.
     /// </summary>
-    private static MetadataV2ResourceTemporal? ToV2Temporal(LayerTimeInfo? timeInfo, MetadataV2ResourceTemporal? existing)
+    private static MetadataV2ResourceTemporal? ToV2Temporal(
+        string? startTimeField,
+        string? endTimeField,
+        string? trackIdField,
+        MetadataV2ResourceTemporal? existing)
     {
-        if (timeInfo is null
-            || (string.IsNullOrEmpty(timeInfo.StartTimeField)
-                && string.IsNullOrEmpty(timeInfo.EndTimeField)
-                && string.IsNullOrEmpty(timeInfo.TrackIdField)))
+        if (string.IsNullOrEmpty(startTimeField)
+            && string.IsNullOrEmpty(endTimeField)
+            && string.IsNullOrEmpty(trackIdField))
         {
             return null;
         }
 
         return new MetadataV2ResourceTemporal
         {
-            StartTimeField = timeInfo.StartTimeField,
-            EndTimeField = timeInfo.EndTimeField,
-            TrackIdField = timeInfo.TrackIdField,
+            StartTimeField = startTimeField,
+            EndTimeField = endTimeField,
+            TrackIdField = trackIdField,
             Extent = existing?.Extent,
         };
     }

@@ -3,9 +3,9 @@
 
 using System.Runtime.CompilerServices;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Core.Features.Tiles;
@@ -25,13 +25,13 @@ internal sealed partial class MySqlFeatureQueryBuilder
 
     /// <inheritdoc />
     public ParameterizedQuery BuildSelectFlatGeobufQuery(
-        LayerDefinition layer, int layerId, FeatureQuery query,
+        MetadataV2Resource resource, int layerId, FeatureQuery query,
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry)
         => ThrowNotSupported();
 
     /// <inheritdoc />
     public ParameterizedQuery BuildSelectGeobufQuery(
-        LayerDefinition layer, int layerId, FeatureQuery query,
+        MetadataV2Resource resource, int layerId, FeatureQuery query,
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry)
         => ThrowNotSupported();
 
@@ -66,7 +66,7 @@ internal sealed partial class MySqlFeatureQueryBuilder
         => ThrowNotSupported();
 
     /// <inheritdoc />
-    public ParameterizedQuery BuildTemporalExtentQuery(int layerId, string fieldName, FieldType fieldType)
+    public ParameterizedQuery BuildTemporalExtentQuery(int layerId, string fieldName, TemporalPropertyType propertyType)
         => ThrowNotSupported();
 
     /// <inheritdoc />

@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
@@ -32,9 +31,8 @@ internal sealed partial class ODataBatchHandler
         var createRequests = new Dictionary<int, List<(string requestId, Feature feature, bool geometryChanged)>>();
         var updateRequests = new Dictionary<int, List<(string requestId, long objectId, Feature feature, bool geometryChanged)>>();
         var deleteRequests = new Dictionary<int, List<(string requestId, long objectId, Feature existingFeature)>>();
-        var reads = new List<(string requestId, int layerId, long? objectId)>();
         var writeLayerIds = new HashSet<int>();
-        var layerCache = new Dictionary<int, LayerDefinition>();
+        var layerCache = new Dictionary<int, ODataBatchLayerContext>();
 
         foreach (var request in requests)
         {
@@ -111,49 +109,25 @@ internal sealed partial class ODataBatchHandler
                 var objectId = parsed.ObjectId;
                 if (!layerCache.TryGetValue(layerId.Value, out var layer))
                 {
-                    layer = await _layerCatalog.GetLayerAsync(layerId.Value, cancellationToken);
-                    if (layer == null)
+                    var resolvedLayer = await ResolveBatchLayerContextAsync(
+                        context,
+                        request.Id,
+                        layerId.Value,
+                        request.Method,
+                        cancellationToken).ConfigureAwait(false);
+                    if (resolvedLayer.Error != null || resolvedLayer.Layer == null)
                     {
-                        responses.Add(CreateErrorResponse(
+                        responses.Add(resolvedLayer.Error ?? CreateErrorResponse(
                             request.Id,
                             404,
                             "ResourceNotFound",
-                            $"Layer {layerId} not found."));
+                            $"Layer {layerId.Value} not found."));
                         rollback = true;
                         continue;
                     }
 
+                    layer = resolvedLayer.Layer;
                     layerCache[layerId.Value] = layer;
-                }
-
-                var service = await LayerValidationHelpers.ResolvePrimaryServiceAsync(
-                    context,
-                    layerId.Value,
-                    ServiceProtocols.OData,
-                    cancellationToken);
-                if (!IsODataEnabled(layer, service))
-                {
-                    responses.Add(CreateErrorResponse(
-                        request.Id,
-                        404,
-                        "ResourceNotFound",
-                        "OData is not enabled for this service."));
-                    rollback = true;
-                    continue;
-                }
-
-                var accessError = await ValidateBatchRequestAccessAsync(
-                    context,
-                    request.Id,
-                    layer,
-                    service,
-                    request.Method,
-                    cancellationToken);
-                if (accessError != null)
-                {
-                    responses.Add(accessError);
-                    rollback = true;
-                    continue;
                 }
 
                 switch (request.Method.ToUpperInvariant())
@@ -199,7 +173,7 @@ internal sealed partial class ODataBatchHandler
                             }
 
                             var createValidation = await BuildValidatedEditBatchAsync(
-                                layer,
+                                layer.Resource,
                                 CreateEditRequestFromFeature(ODataOperation.Create, parsedFeature),
                                 rollbackOnFailure: true,
                                 cancellationToken);
@@ -224,7 +198,7 @@ internal sealed partial class ODataBatchHandler
                             }
 
                             createList.Add((request.Id, feature, requestGeometryChanged));
-                            writeLayerIds.Add(layerId.Value);
+                            writeLayerIds.Add(layer.PublicLayerId);
                             break;
                         }
 
@@ -254,7 +228,7 @@ internal sealed partial class ODataBatchHandler
                                 break;
                             }
 
-                            var existing = await _featureReader.GetAsync(layerId.Value, objectId.Value, cancellationToken);
+                            var existing = await _featureReader.GetAsync(layer.StorageLayerId, objectId.Value, cancellationToken);
                             if (!existing.HasValue)
                             {
                                 responses.Add(CreateErrorResponse(
@@ -309,7 +283,7 @@ internal sealed partial class ODataBatchHandler
                             }
 
                             var updateValidation = await BuildValidatedEditBatchAsync(
-                                layer,
+                                layer.Resource,
                                 CreateEditRequestFromFeature(
                                     isPatch ? ODataOperation.Patch : ODataOperation.Update,
                                     parsedFeature,
@@ -339,7 +313,7 @@ internal sealed partial class ODataBatchHandler
                             }
 
                             updateList.Add((request.Id, objectId.Value, feature, requestGeometryChanged));
-                            writeLayerIds.Add(layerId.Value);
+                            writeLayerIds.Add(layer.PublicLayerId);
                             break;
                         }
 
@@ -356,7 +330,7 @@ internal sealed partial class ODataBatchHandler
                                 break;
                             }
 
-                            var existing = await _featureReader.GetAsync(layerId.Value, objectId.Value, cancellationToken);
+                            var existing = await _featureReader.GetAsync(layer.StorageLayerId, objectId.Value, cancellationToken);
                             if (!existing.HasValue)
                             {
                                 responses.Add(CreateErrorResponse(
@@ -381,7 +355,7 @@ internal sealed partial class ODataBatchHandler
                             }
 
                             var deleteValidation = await BuildValidatedEditBatchAsync(
-                                layer,
+                                layer.Resource,
                                 new ODataEditRequest
                                 {
                                     Operation = ODataOperation.Delete,
@@ -412,7 +386,7 @@ internal sealed partial class ODataBatchHandler
                             }
 
                             deleteList.Add((request.Id, deleteValidation.Batch.Value.Deletes[0], existing.Value));
-                            writeLayerIds.Add(layerId.Value);
+                            writeLayerIds.Add(layer.PublicLayerId);
                             break;
                         }
 
@@ -491,53 +465,6 @@ internal sealed partial class ODataBatchHandler
             return responses.ToImmutableArray();
         }
 
-        // Process reads first (they don't need transactions)
-        foreach (var (requestId, layerId, objectId) in reads)
-        {
-            try
-            {
-                if (!layerCache.TryGetValue(layerId, out var layer))
-                {
-                    layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
-                    if (layer != null)
-                    {
-                        layerCache[layerId] = layer;
-                    }
-                }
-
-                if (layer == null)
-                {
-                    responses.Add(CreateErrorResponse(requestId, 404, "ResourceNotFound", $"Layer {layerId} not found."));
-                    continue;
-                }
-
-                if (objectId.HasValue)
-                {
-                    var feature = await _featureReader.GetAsync(layerId, objectId.Value, cancellationToken);
-                    if (feature.HasValue)
-                    {
-                        var axisOrder = await ResolveAxisOrderAsync(layer, cancellationToken);
-                        var payload = FeatureToBody(feature.Value, layer, axisOrder, baseUrl, out var etag);
-                        responses.Add(CreateSuccessResponse(
-                            requestId,
-                            200,
-                            payload,
-                            new Dictionary<string, string> { ["ETag"] = etag }));
-                    }
-                    else
-                    {
-                        responses.Add(CreateErrorResponse(requestId, 404, "ResourceNotFound", $"Feature {objectId} not found."));
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.BatchReadFailed(_logger, requestId, ex);
-                // Use safe error message to avoid leaking internal details
-                responses.Add(CreateErrorResponse(requestId, 500, "InternalError", "An error occurred while reading the feature."));
-            }
-        }
-
         // Process writes in a batch with rollback on failure
         try
         {
@@ -548,15 +475,6 @@ internal sealed partial class ODataBatchHandler
             foreach (var layerId in layerIds)
             {
                 if (!layerCache.TryGetValue(layerId, out var layer))
-                {
-                    layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
-                    if (layer != null)
-                    {
-                        layerCache[layerId] = layer;
-                    }
-                }
-
-                if (layer == null)
                 {
                     continue;
                 }
@@ -636,16 +554,13 @@ internal sealed partial class ODataBatchHandler
                     context,
                     layerId,
                     HonuaTelemetry.Protocols.OData,
-                    serviceProtocol: ServiceProtocols.OData,
-                    // Match the inline path: ToSrid() returns LatestWkid ?? Wkid so
-                    // the outbox enrichment fallback emits the latest SRID for layers
-                    // like Wkid=102100/LatestWkid=3857.
-                    layerSrid: layer.SpatialReference.ToSrid(),
+                    serviceProtocol: ODataProtocol,
+                    layerSrid: layer.Srid,
                     perOperationRequestIds: perOperationRequestIds,
                     perOperationGeometryChanged: perOperationGeometryChanged,
                     cancellationToken: cancellationToken).ConfigureAwait(false);
                 using var atomicOutboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(atomicOutboxScopeData);
-                var result = await _featureWriter.ApplyEditsAsync(layerId, batch, cancellationToken);
+                var result = await _featureWriter.ApplyEditsAsync(layer.StorageLayerId, batch, cancellationToken);
 
                 if (layerCreates != null)
                 {
@@ -656,7 +571,7 @@ internal sealed partial class ODataBatchHandler
 
                         if (createResult.IsSuccess && createResult.ObjectId.HasValue)
                         {
-                            var createdFeature = await _featureReader.GetAsync(layerId, createResult.ObjectId.Value, cancellationToken).ConfigureAwait(false);
+                            var createdFeature = await _featureReader.GetAsync(layer.StorageLayerId, createResult.ObjectId.Value, cancellationToken).ConfigureAwait(false);
                             if (!createdFeature.HasValue)
                             {
                                 responses.Add(CreateErrorResponse(
@@ -671,9 +586,9 @@ internal sealed partial class ODataBatchHandler
 
                             var headers = new Dictionary<string, string>
                             {
-                                ["Location"] = $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={createResult.ObjectId})",
-                                ["OData-EntityId"] = $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={createResult.ObjectId})",
-                                ["EntityId"] = $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={createResult.ObjectId})",
+                                ["Location"] = $"{baseUrl}/odata/Features(LayerId={layer.PublicLayerId},ObjectId={createResult.ObjectId})",
+                                ["OData-EntityId"] = $"{baseUrl}/odata/Features(LayerId={layer.PublicLayerId},ObjectId={createResult.ObjectId})",
+                                ["EntityId"] = $"{baseUrl}/odata/Features(LayerId={layer.PublicLayerId},ObjectId={createResult.ObjectId})",
                                 ["ETag"] = etag
                             };
 
@@ -700,7 +615,7 @@ internal sealed partial class ODataBatchHandler
                         if (updateResult.IsSuccess)
                         {
                             var persistedObjectId = updateResult.ObjectId ?? updatedFeature.Id;
-                            var persistedFeature = await _featureReader.GetAsync(layerId, persistedObjectId, cancellationToken).ConfigureAwait(false);
+                            var persistedFeature = await _featureReader.GetAsync(layer.StorageLayerId, persistedObjectId, cancellationToken).ConfigureAwait(false);
                             if (!persistedFeature.HasValue)
                             {
                                 responses.Add(CreateErrorResponse(

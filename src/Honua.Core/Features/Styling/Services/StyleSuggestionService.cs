@@ -2,8 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
 using Microsoft.Extensions.Logging;
@@ -25,9 +25,12 @@ internal sealed partial class StyleSuggestionService : IStyleSuggestionService
         "classification", "land_use", "landuse", "use", "code", "subtype"
     };
 
-    private static readonly HashSet<FieldType> ExcludedFieldTypes =
+    private static readonly HashSet<MetadataV2FieldType> ExcludedFieldTypes =
     [
-        FieldType.Geometry, FieldType.Binary, FieldType.Json
+        MetadataV2FieldType.Geometry,
+        MetadataV2FieldType.Geography,
+        MetadataV2FieldType.Binary,
+        MetadataV2FieldType.Json
     ];
 
     private readonly IFieldProfilingService _profilingService;
@@ -42,43 +45,45 @@ internal sealed partial class StyleSuggestionService : IStyleSuggestionService
     }
 
     public async Task<StyleSuggestion> SuggestAsync(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        int storageLayerId,
         StyleSuggestionOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(layer);
+        ArgumentNullException.ThrowIfNull(resource);
         options ??= new StyleSuggestionOptions();
 
-        var candidates = GetProfilingCandidates(layer, options);
+        var geometryType = resource.ReadGeometryType();
+        var candidates = GetProfilingCandidates(resource, options);
         if (candidates.Length == 0)
         {
             var fallbackReason = !string.IsNullOrEmpty(options.PreferredField)
                 ? $"preferred field '{options.PreferredField}' not found or not eligible for classification"
                 : "no candidate fields";
-            LogGeometryOnlyFallback(_logger, layer.Id, fallbackReason);
-            return BuildGeometryOnlySuggestion(layer, fallbackReason, options.Edition);
+            LogGeometryOnlyFallback(_logger, storageLayerId, fallbackReason);
+            return BuildGeometryOnlySuggestion(resource, storageLayerId, geometryType, fallbackReason, options.Edition);
         }
 
-        LogProfilingCandidates(_logger, layer.Id, candidates.Length);
+        LogProfilingCandidates(_logger, storageLayerId, candidates.Length);
 
         var profiles = await _profilingService.ProfileFieldsAsync(
-            layer.Id, candidates, SampleLimit, cancellationToken).ConfigureAwait(false);
+            storageLayerId, candidates, SampleLimit, cancellationToken).ConfigureAwait(false);
 
         if (profiles.Count == 0)
         {
-            LogGeometryOnlyFallback(_logger, layer.Id, "profiling returned no results");
-            return BuildGeometryOnlySuggestion(layer, "profiling returned no results", options.Edition);
+            LogGeometryOnlyFallback(_logger, storageLayerId, "profiling returned no results");
+            return BuildGeometryOnlySuggestion(resource, storageLayerId, geometryType, "profiling returned no results", options.Edition);
         }
 
-        var selectedProfile = SelectBestField(profiles, layer.GeometryType, options);
+        var selectedProfile = SelectBestField(profiles, geometryType, options);
         if (selectedProfile == null)
         {
-            LogGeometryOnlyFallback(_logger, layer.Id, "no field scored above threshold");
-            return BuildGeometryOnlySuggestion(layer, "no field scored above threshold", options.Edition);
+            LogGeometryOnlyFallback(_logger, storageLayerId, "no field scored above threshold");
+            return BuildGeometryOnlySuggestion(resource, storageLayerId, geometryType, "no field scored above threshold", options.Edition);
         }
 
         var (reason, classification) = await ClassifyFieldAsync(
-            layer.Id, selectedProfile, options, cancellationToken).ConfigureAwait(false);
+            storageLayerId, selectedProfile, options, cancellationToken).ConfigureAwait(false);
 
         var palette = ResolvePalette(selectedProfile, classification.Method, options);
 
@@ -91,12 +96,12 @@ internal sealed partial class StyleSuggestionService : IStyleSuggestionService
 
         var legend = BuildLegend(selectedProfile.FieldName, classification, colors,
             selectedProfile.MinValue, selectedProfile.MaxValue);
-        var observations = BuildObservations(layer, selectedProfile, classification, palette);
+        var observations = BuildObservations(geometryType, selectedProfile, classification, palette);
 
         return new StyleSuggestion
         {
-            LayerId = layer.Id,
-            GeometryType = layer.GeometryType,
+            LayerId = storageLayerId,
+            GeometryType = geometryType,
             SuggestedField = new FieldSuggestion
             {
                 Name = selectedProfile.FieldName,
@@ -113,13 +118,13 @@ internal sealed partial class StyleSuggestionService : IStyleSuggestionService
         };
     }
 
-    private static FieldDefinition[] GetProfilingCandidates(
-        LayerDefinition layer, StyleSuggestionOptions options)
+    private static MetadataV2Field[] GetProfilingCandidates(
+        MetadataV2Resource resource, StyleSuggestionOptions options)
     {
-        var fields = layer.AttributeFields
+        var fields = resource.SchemaFields
             .Where(f => !ExcludedFieldTypes.Contains(f.Type))
-            .Where(f => f.Type != FieldType.Uuid)
-            .Where(f => f.Type != FieldType.Boolean);
+            .Where(f => f.Type != MetadataV2FieldType.Uuid)
+            .Where(f => f.Type != MetadataV2FieldType.Boolean);
 
         // If a preferred field is specified, only profile that one
         if (!string.IsNullOrEmpty(options.PreferredField))
@@ -134,7 +139,7 @@ internal sealed partial class StyleSuggestionService : IStyleSuggestionService
 
     private static FieldProfile? SelectBestField(
         IReadOnlyList<FieldProfile> profiles,
-        GeometryType geometryType,
+        MetadataV2GeometryType geometryType,
         StyleSuggestionOptions options)
     {
         if (!string.IsNullOrEmpty(options.PreferredField))
@@ -153,7 +158,7 @@ internal sealed partial class StyleSuggestionService : IStyleSuggestionService
         return scored.Count > 0 ? scored[0].Profile : null;
     }
 
-    private static double ScoreField(FieldProfile profile, GeometryType geometryType)
+    private static double ScoreField(FieldProfile profile, MetadataV2GeometryType geometryType)
     {
         var score = 0d;
 
@@ -171,22 +176,23 @@ internal sealed partial class StyleSuggestionService : IStyleSuggestionService
         // Geometry-type preferences
         switch (geometryType)
         {
-            case GeometryType.Polygon:
-            case GeometryType.MultiPolygon:
-            case GeometryType.GeometryCollection:
+            case MetadataV2GeometryType.Polygon:
+            case MetadataV2GeometryType.MultiPolygon:
+            case MetadataV2GeometryType.GeometryCollection:
+            case MetadataV2GeometryType.Mixed:
                 // Polygons (and GeometryCollection, treated as polygon-like): prefer numeric for choropleth
                 if (isNumeric) score += 3;
                 break;
 
-            case GeometryType.Point:
-            case GeometryType.MultiPoint:
+            case MetadataV2GeometryType.Point:
+            case MetadataV2GeometryType.MultiPoint:
                 // Points: prefer low-cardinality categorical
                 if (isLowCardinality) score += 3;
                 if (!isNumeric) score += 1;
                 break;
 
-            case GeometryType.LineString:
-            case GeometryType.MultiLineString:
+            case MetadataV2GeometryType.LineString:
+            case MetadataV2GeometryType.MultiLineString:
                 // Lines: prefer categorical, then numeric
                 if (isLowCardinality) score += 2;
                 if (!isNumeric) score += 1;
@@ -389,14 +395,14 @@ internal sealed partial class StyleSuggestionService : IStyleSuggestionService
     }
 
     private static List<string> BuildObservations(
-        LayerDefinition layer,
+        MetadataV2GeometryType geometryType,
         FieldProfile profile,
         ClassificationResult classification,
         ColorPalette palette)
     {
         var obs = new List<string>
         {
-            $"Geometry type: {layer.GeometryType}.",
+            $"Geometry type: {geometryType}.",
             $"Selected field: '{profile.FieldName}' ({profile.FieldType}).",
             $"Field statistics: {profile.DistinctCount} distinct values, {profile.NullPercentage:P0} nulls."
         };
@@ -411,7 +417,9 @@ internal sealed partial class StyleSuggestionService : IStyleSuggestionService
     }
 
     private static StyleSuggestion BuildGeometryOnlySuggestion(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        int storageLayerId,
+        MetadataV2GeometryType geometryType,
         string fallbackReason,
         HonuaEdition edition)
     {
@@ -419,20 +427,20 @@ internal sealed partial class StyleSuggestionService : IStyleSuggestionService
 
         return new StyleSuggestion
         {
-            LayerId = layer.Id,
-            GeometryType = layer.GeometryType,
+            LayerId = storageLayerId,
+            GeometryType = geometryType,
             SuggestedField = null,
             Classification = null,
             PaletteName = "Default",
             PaletteColors = [defaultColor],
             Legend = new LegendInfo
             {
-                Title = layer.Name,
-                Entries = [new LegendEntry { Label = layer.Name, Color = defaultColor }]
+                Title = resource.Metadata.Name,
+                Entries = [new LegendEntry { Label = resource.Metadata.Name, Color = defaultColor }]
             },
             Observations =
             [
-                $"Geometry type: {layer.GeometryType}.",
+                $"Geometry type: {geometryType}.",
                 $"Using enhanced geometry-aware defaults ({fallbackReason})."
             ],
             Edition = edition

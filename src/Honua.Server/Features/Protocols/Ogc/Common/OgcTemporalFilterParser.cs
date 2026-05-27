@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 
@@ -10,46 +9,7 @@ namespace Honua.Server.Features.Protocols.Ogc.Common;
 
 internal static class OgcTemporalFilterParser
 {
-    public static bool TryParse(
-        string? datetime,
-        LayerDefinition layer,
-        out TemporalFilter? temporalFilter,
-        out string? errorMessage)
-    {
-        temporalFilter = null;
-
-        if (!TryParseRange(datetime, out var start, out var end, out errorMessage))
-        {
-            return false;
-        }
-
-        if (start is null && end is null)
-        {
-            return true;
-        }
-
-        if (!TryResolveTemporalFields(layer, out var startField, out var endField))
-        {
-            errorMessage = "No temporal field is available for filtering.";
-            return false;
-        }
-        var resolvedField = startField!;
-
-        temporalFilter = new TemporalFilter
-        {
-            PropertyName = resolvedField.Name,
-            PropertyType = resolvedField.Type == FieldType.Date ? TemporalPropertyType.Date : TemporalPropertyType.DateTime,
-            EndPropertyName = endField?.Name,
-            Start = start,
-            End = end
-        };
-
-        return true;
-    }
-
     /// <summary>
-    /// Metadata v2 overload of
-    /// <see cref="TryParse(string, LayerDefinition, out TemporalFilter?, out string?)"/>.
     /// Resolves the start/end temporal fields from the V2 resource via
     /// <see cref="MetadataV2SpatialExtensions.ReadTemporalFields"/> and the resource schema
     /// fields, defaulting to the first DateTime/Date schema field when the resource declares
@@ -77,7 +37,7 @@ internal static class OgcTemporalFilterParser
         if (!TryResolveTemporalFieldsV2(
                 resource,
                 out var startName,
-                out var startType,
+                out var propertyType,
                 out var endName))
         {
             errorMessage = "No temporal field is available for filtering.";
@@ -87,7 +47,7 @@ internal static class OgcTemporalFilterParser
         temporalFilter = new TemporalFilter
         {
             PropertyName = startName!,
-            PropertyType = startType == FieldType.Date ? TemporalPropertyType.Date : TemporalPropertyType.DateTime,
+            PropertyType = propertyType,
             EndPropertyName = endName,
             Start = start,
             End = end
@@ -182,68 +142,14 @@ internal static class OgcTemporalFilterParser
             DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
             out parsed);
 
-    private static bool TryResolveTemporalFields(
-        LayerDefinition layer,
-        out FieldDefinition? startField,
-        out FieldDefinition? endField)
-    {
-        startField = null;
-        endField = null;
-
-        var timeInfo = layer.Metadata?.TimeInfo;
-        var startFieldName = timeInfo?.StartTimeField;
-        if (!string.IsNullOrWhiteSpace(startFieldName))
-        {
-            startField = layer.AttributeFields.FirstOrDefault(field =>
-                field.Name.Equals(startFieldName, StringComparison.OrdinalIgnoreCase) &&
-                field.Type is FieldType.DateTime or FieldType.Date);
-            if (startField is null)
-            {
-                return false;
-            }
-
-            // Optional EndTimeField, when configured, is propagated so the
-            // shared filter pipeline applies interval-intersection semantics
-            // (see TemporalFilter.EndPropertyName); ignore the configured end
-            // field if it does not resolve to a Date/DateTime attribute. Fields
-            // must share the same temporal type so the COALESCE in the SQL
-            // builder produces a homogeneous expression.
-            var endFieldName = timeInfo?.EndTimeField;
-            if (!string.IsNullOrWhiteSpace(endFieldName))
-            {
-                var startFieldType = startField.Type;
-                var candidate = layer.AttributeFields.FirstOrDefault(field =>
-                    field.Name.Equals(endFieldName, StringComparison.OrdinalIgnoreCase) &&
-                    field.Type == startFieldType);
-                if (candidate is not null)
-                {
-                    endField = candidate;
-                }
-            }
-
-            return true;
-        }
-
-        startField = layer.AttributeFields.FirstOrDefault(field =>
-            field.Type is FieldType.DateTime or FieldType.Date);
-        return startField != null;
-    }
-
-    /// <summary>
-    /// Metadata v2 equivalent of <see cref="TryResolveTemporalFields(LayerDefinition, out FieldDefinition?, out FieldDefinition?)"/>.
-    /// Reads the configured start/end fields from
-    /// <see cref="MetadataV2SpatialExtensions.ReadTemporalFields"/>, validates each against
-    /// the resource schema, and falls back to the first DateTime/Date schema field when no
-    /// explicit configuration is present.
-    /// </summary>
     private static bool TryResolveTemporalFieldsV2(
         MetadataV2Resource resource,
         out string? startFieldName,
-        out FieldType startFieldType,
+        out TemporalPropertyType propertyType,
         out string? endFieldName)
     {
         startFieldName = null;
-        startFieldType = FieldType.DateTime;
+        propertyType = TemporalPropertyType.DateTime;
         endFieldName = null;
 
         var temporal = resource.ReadTemporalFields();
@@ -256,7 +162,7 @@ internal static class OgcTemporalFilterParser
             }
 
             startFieldName = configuredStartName;
-            startFieldType = startType;
+            propertyType = startType;
 
             // Optional EndTimeField, when configured, is propagated so the
             // shared filter pipeline applies interval-intersection semantics.
@@ -280,7 +186,7 @@ internal static class OgcTemporalFilterParser
             if (TryResolveTemporalTypeLabel(field.Type, out var inferredType))
             {
                 startFieldName = field.Name;
-                startFieldType = inferredType;
+                propertyType = inferredType;
                 return true;
             }
         }
@@ -291,7 +197,7 @@ internal static class OgcTemporalFilterParser
     private static bool TryResolveSchemaTemporalType(
         MetadataV2Resource resource,
         string fieldName,
-        out FieldType type)
+        out TemporalPropertyType type)
     {
         foreach (var field in resource.SchemaFields)
         {
@@ -306,22 +212,22 @@ internal static class OgcTemporalFilterParser
             }
         }
 
-        type = FieldType.DateTime;
+        type = TemporalPropertyType.DateTime;
         return false;
     }
 
-    private static bool TryResolveTemporalTypeLabel(MetadataV2FieldType typeLabel, out FieldType type)
+    private static bool TryResolveTemporalTypeLabel(MetadataV2FieldType typeLabel, out TemporalPropertyType type)
     {
         switch (typeLabel)
         {
             case MetadataV2FieldType.DateTime:
-                type = FieldType.DateTime;
+                type = TemporalPropertyType.DateTime;
                 return true;
             case MetadataV2FieldType.Date:
-                type = FieldType.Date;
+                type = TemporalPropertyType.Date;
                 return true;
             default:
-                type = FieldType.DateTime;
+                type = TemporalPropertyType.DateTime;
                 return false;
         }
     }

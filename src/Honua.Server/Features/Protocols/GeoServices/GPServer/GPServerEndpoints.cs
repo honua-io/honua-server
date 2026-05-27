@@ -3,7 +3,6 @@
 
 using System.Diagnostics;
 using Honua.Core.Features.Authorization.Domain;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
@@ -24,6 +23,7 @@ namespace Honua.Server.Features.Protocols.GeoServices.GPServer;
 internal static class GPServerEndpoints
 {
     private const string RouteBase = "/rest/services/{serviceId}/GPServer";
+    private const string ProtocolName = "GPServer";
     private static readonly HashSet<string> FormContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "application/x-www-form-urlencoded",
@@ -579,17 +579,17 @@ internal static class GPServerEndpoints
     // Shared helpers
     // -----------------------------------------------------------------------
 
-    private static Task<ServiceResourceValidationHelpers.ServiceValidationResult> ValidateServiceAsync(
+    private static Task<ServiceResourceValidationHelpers.ServiceValidationV2Result> ValidateServiceAsync(
         HttpContext context,
         string serviceId,
         ILogger logger,
         CancellationToken cancellationToken)
     {
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        return ServiceResourceValidationHelpers.ValidateServiceAsync(
+        return ServiceResourceValidationHelpers.ValidateServiceV2Async(
             resourceValidator,
             serviceId,
-            ServiceProtocols.GPServer,
+            ProtocolName,
             context,
             id => GPServerLog.ServiceNotFound(logger, id),
             requireServiceAccess: true,

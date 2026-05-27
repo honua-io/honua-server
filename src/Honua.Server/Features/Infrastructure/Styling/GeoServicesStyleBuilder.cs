@@ -1,14 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Server.Features.Infrastructure.Styling;
 
 internal static class GeoServicesStyleBuilder
 {
     public static Dictionary<string, object?> BuildSymbol(
-        GeometryType geometryType,
+        MetadataV2GeometryType geometryType,
         StyleColor fillColor,
         StyleColor? outlineColor,
         double? lineWidth,
@@ -16,8 +16,8 @@ internal static class GeoServicesStyleBuilder
     {
         switch (geometryType)
         {
-            case GeometryType.Point:
-            case GeometryType.MultiPoint:
+            case MetadataV2GeometryType.Point:
+            case MetadataV2GeometryType.MultiPoint:
                 return new Dictionary<string, object?>
                 {
                     ["type"] = "esriSMS",
@@ -28,8 +28,8 @@ internal static class GeoServicesStyleBuilder
                         ? BuildOutlineSymbol(outlineColor.Value, lineWidth ?? StyleDefaults.DefaultOutlineWidth)
                         : null
                 };
-            case GeometryType.LineString:
-            case GeometryType.MultiLineString:
+            case MetadataV2GeometryType.LineString:
+            case MetadataV2GeometryType.MultiLineString:
                 return new Dictionary<string, object?>
                 {
                     ["type"] = "esriSLS",
@@ -37,9 +37,10 @@ internal static class GeoServicesStyleBuilder
                     ["color"] = fillColor.ToArray(),
                     ["width"] = lineWidth ?? StyleDefaults.DefaultLineWidth
                 };
-            case GeometryType.Polygon:
-            case GeometryType.MultiPolygon:
-            case GeometryType.GeometryCollection:
+            case MetadataV2GeometryType.Polygon:
+            case MetadataV2GeometryType.MultiPolygon:
+            case MetadataV2GeometryType.GeometryCollection:
+            case MetadataV2GeometryType.Mixed:
                 return new Dictionary<string, object?>
                 {
                     ["type"] = "esriSFS",

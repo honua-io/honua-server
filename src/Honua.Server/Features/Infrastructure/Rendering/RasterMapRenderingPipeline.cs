@@ -5,10 +5,10 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Data.Common;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
@@ -58,42 +58,16 @@ internal static class RasterMapRenderingPipeline
     /// <summary>
     /// Lightweight descriptor used by <see cref="RenderRasterTileCoreAsync"/> for one render layer.
     /// </summary>
-    internal readonly record struct RenderLayerDescriptor(int LayerId, bool HasGeometry, GeometryType GeometryType);
+    internal readonly record struct RenderLayerDescriptor(int LayerId, bool HasGeometry, MetadataV2GeometryType GeometryType);
 
-    internal static Task<RasterTileRenderResult> RenderRasterTileAsync(
-        HttpContext context,
-        ServiceDefinition service,
-        IReadOnlyList<LayerDefinition> renderLayers,
-        int z,
-        int y,
-        int x,
-        int maxFeatures,
-        CancellationToken cancellationToken,
-        IReadOnlyList<TemporalFilter?>? layerTemporalFilters = null)
-    {
-        var descriptors = new RenderLayerDescriptor[renderLayers.Count];
-        for (var i = 0; i < renderLayers.Count; i++)
-        {
-            var layer = renderLayers[i];
-            descriptors[i] = new RenderLayerDescriptor(layer.Id, layer.HasGeometry, layer.GeometryType);
-        }
-
-        return RenderRasterTileCoreAsync(
-            context,
-            service.SpatialReference.Srid,
-            descriptors,
-            z, y, x,
-            maxFeatures,
-            cancellationToken,
-            layerTemporalFilters);
-    }
+    internal static RenderLayerDescriptor CreateRenderLayerDescriptorFromV2(
+        int layerId,
+        bool hasGeometry,
+        MetadataV2GeometryType geometryType)
+        => new(layerId, hasGeometry, geometryType);
 
     /// <summary>
-    /// V2 overload of <see cref="RenderRasterTileAsync(HttpContext, ServiceDefinition, IReadOnlyList{LayerDefinition}, int, int, int, int, CancellationToken, IReadOnlyList{TemporalFilter?}?)"/>.
-    /// Callers resolve the source spatial-reference SRID up front (from the
-    /// MetadataV2Service or its publications) and pass per-resource render descriptors
-    /// (storage layer id + geometry capability) so this method does not need access to v1
-    /// catalog types.
+    /// Renders a raster tile from v2 resource render descriptors.
     /// </summary>
     internal static Task<RasterTileRenderResult> RenderRasterTileV2Async(
         HttpContext context,
@@ -157,7 +131,7 @@ internal static class RasterMapRenderingPipeline
                 TileSize,
                 true,
                 null,
-                GeometryType.None);
+                MetadataV2GeometryType.None);
 
             return RasterTileRenderResult.Success(emptyImage, 0);
         }
@@ -239,7 +213,7 @@ internal static class RasterMapRenderingPipeline
         ImmutableArray<Feature> features,
         MapLibreStyleLayer[] styleLayers,
         Func<double, double, SKPoint> transform,
-        GeometryType geometryType)
+        MetadataV2GeometryType geometryType)
     {
         if (styleLayers.Length > 0)
         {
@@ -276,7 +250,7 @@ internal static class RasterMapRenderingPipeline
             var (fill, stroke) = StyleTranslator.CreateDefaultPaints(geometryType);
             try
             {
-                if (geometryType == GeometryType.Point)
+                if (geometryType == MetadataV2GeometryType.Point)
                 {
                     RenderDefaultPoints(canvas, features, transform, fill);
                     return;
@@ -702,7 +676,7 @@ internal static class RasterMapRenderingPipeline
         SKCanvas canvas,
         IFeatureReader featureReader,
         int layerId,
-        GeometryType geometryType,
+        MetadataV2GeometryType geometryType,
         RasterStylePlan stylePlan,
         FeatureQuery featureQuery,
         SkiaMapRenderer.RenderExtent renderExtent,
@@ -736,7 +710,7 @@ internal static class RasterMapRenderingPipeline
     }
 
     private static bool TryCreateRasterPointFastPathQuery(
-        GeometryType geometryType,
+        MetadataV2GeometryType geometryType,
         RasterStylePlan stylePlan,
         FeatureQuery featureQuery,
         SkiaMapRenderer.RenderExtent renderExtent,
@@ -748,7 +722,7 @@ internal static class RasterMapRenderingPipeline
         pointQuery = default;
         circleStyle = default!;
 
-        if (geometryType != GeometryType.Point ||
+        if (geometryType != MetadataV2GeometryType.Point ||
             stylePlan.SimpleCircleStyle is null ||
             !featureQuery.ExcludeAttributes ||
             imageWidth <= 0 ||

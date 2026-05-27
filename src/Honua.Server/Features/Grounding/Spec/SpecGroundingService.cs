@@ -8,12 +8,13 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Spec.Abstractions;
 using Honua.Core.Features.Spec.Domain;
 using Honua.ServiceDefaults;
+using Honua.Server.Features.Grounding;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Grounding.Spec;
@@ -65,7 +66,7 @@ internal sealed partial class SpecGroundingService
         var layers = await LoadLayersAsync(warnings, cancellationToken).ConfigureAwait(false);
         var catalogSnapshot = layers.Count == 0
             ? StaticSpecCatalogSnapshot.Empty
-            : new LayerCatalogSpecCatalogSnapshot(layers);
+            : new MetadataV2SpecCatalogSnapshot(layers);
 
         var inputDiagnostics = _validator.Validate(currentSpec, catalogSnapshot).Diagnostics;
         warnings.AddRange(inputDiagnostics.Where(diagnostic => diagnostic.Severity != SpecDiagnosticSeverity.Error));
@@ -250,7 +251,7 @@ internal sealed partial class SpecGroundingService
         string clause,
         SpecGroundingContext context,
         ClarificationResponse? clarificationAnswer,
-        IReadOnlyList<LayerDefinition> layers,
+        IReadOnlyList<GroundingCatalogLayer> layers,
         CancellationToken cancellationToken)
     {
         _ = cancellationToken;
@@ -565,7 +566,7 @@ internal sealed partial class SpecGroundingService
         SpecDocument document,
         string tail,
         SpecGroundingContext context,
-        IReadOnlyList<LayerDefinition> layers,
+        IReadOnlyList<GroundingCatalogLayer> layers,
         ClarificationResponse? clarificationAnswer)
 #pragma warning restore CA1822
     {
@@ -586,7 +587,7 @@ internal sealed partial class SpecGroundingService
         }
 
         var stringFields = layer.Fields
-            .Where(field => field.Type == FieldType.String)
+            .Where(field => field.IsString)
             .ToArray();
 
         if (stringFields.Length == 0)
@@ -624,7 +625,7 @@ internal sealed partial class SpecGroundingService
             resolvedValue = valueCandidates.Length > 0 ? valueCandidates[0] : tail.Trim();
         }
 
-        FieldDefinition? field;
+        GroundingCatalogField? field;
         if (fieldCandidates.Length > 1)
         {
             var clarification = CreateColumnClarification(fieldCandidates);
@@ -671,7 +672,7 @@ internal sealed partial class SpecGroundingService
         SpecDocument document,
         string sourcePhrase,
         string? sourceIdHint,
-        IReadOnlyList<LayerDefinition> layers,
+        IReadOnlyList<GroundingCatalogLayer> layers,
         ClarificationResponse? clarificationAnswer)
     {
         var resolution = await ResolveSourceReferenceAsync(
@@ -689,7 +690,7 @@ internal sealed partial class SpecGroundingService
         SpecDocument document,
         string sourcePhrase,
         string? sourceIdHint,
-        IReadOnlyList<LayerDefinition> layers,
+        IReadOnlyList<GroundingCatalogLayer> layers,
         ClarificationResponse? clarificationAnswer)
 #pragma warning restore CA1822
     {
@@ -732,7 +733,7 @@ internal sealed partial class SpecGroundingService
                 new AddSourceMutation(
                     selectedSourceId,
                     "layer",
-                    $"catalog:layer:{selectedLayer.Id}",
+                    $"catalog:layer:{selectedLayer.LayerId}",
                     selectedLayer.Name));
         }
 
@@ -740,30 +741,31 @@ internal sealed partial class SpecGroundingService
         var sourceId = ResolveSourceId(document, sourceIdHint ?? NormalizeIdentifier(layer.Name));
         return SourceResolution.Success(
             sourceId,
-            new AddSourceMutation(sourceId, "layer", $"catalog:layer:{layer.Id}", layer.Name));
+            new AddSourceMutation(sourceId, "layer", $"catalog:layer:{layer.LayerId}", layer.Name));
     }
 
-    private async Task<IReadOnlyList<LayerDefinition>> LoadLayersAsync(
+    private async Task<IReadOnlyList<GroundingCatalogLayer>> LoadLayersAsync(
         List<SpecDiagnostic> warnings,
         CancellationToken cancellationToken)
     {
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            var catalog = scope.ServiceProvider.GetService<ILayerCatalog>();
-            if (catalog is null)
+            var graphProvider = scope.ServiceProvider.GetService<IMetadataV2GraphProvider>();
+            if (graphProvider is null)
             {
                 return [];
             }
 
-            return await catalog.ListLayersAsync(cancellationToken).ConfigureAwait(false);
+            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            return MetadataV2GroundingCatalog.BuildLayers(snapshot);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             SpecGroundingLog.CatalogUnavailable(_logger, ex.Message);
             warnings.Add(SpecDiagnostic.Warning(
                 SpecDiagnosticCode.CatalogUnavailable,
-                $"Layer catalog unavailable: {ex.Message}",
+                $"Metadata graph unavailable: {ex.Message}",
                 SourceSpan.Synthetic));
             return [];
         }
@@ -884,9 +886,9 @@ internal sealed partial class SpecGroundingService
         return document.Sources.Length == 1 ? document.Sources[0].Id : null;
     }
 
-    private static LayerDefinition? TryResolveLayerForSource(
+    private static GroundingCatalogLayer? TryResolveLayerForSource(
         SpecDocument document,
-        IReadOnlyList<LayerDefinition> layers,
+        IReadOnlyList<GroundingCatalogLayer> layers,
         string sourceId)
     {
         var source = document.Sources.FirstOrDefault(candidate => string.Equals(candidate.Id, sourceId, StringComparison.Ordinal));
@@ -904,7 +906,7 @@ internal sealed partial class SpecGroundingService
         if (sourceRef.StartsWith("catalog:layer:", StringComparison.OrdinalIgnoreCase) &&
             int.TryParse(sourceRef["catalog:layer:".Length..], out var layerId))
         {
-            return layers.FirstOrDefault(layer => layer.Id == layerId);
+            return layers.FirstOrDefault(layer => layer.LayerId == layerId);
         }
 
         return layers.FirstOrDefault(layer => string.Equals(layer.Name, sourceRef, StringComparison.OrdinalIgnoreCase));
@@ -965,7 +967,7 @@ internal sealed partial class SpecGroundingService
     }
 
     private static IEnumerable<LayerMatch> ResolveLayerCandidates(
-        IReadOnlyList<LayerDefinition> layers,
+        IReadOnlyList<GroundingCatalogLayer> layers,
         string phrase)
     {
         var tokens = GroundingTokenizer.TokenizeToSet(phrase);
@@ -991,7 +993,7 @@ internal sealed partial class SpecGroundingService
             .Take(4);
     }
 
-    private static double ScoreLayer(LayerDefinition layer, string phrase, ICollection<string> tokens)
+    private static double ScoreLayer(GroundingCatalogLayer layer, string phrase, ICollection<string> tokens)
     {
         var score = 0d;
         if (layer.Name.Contains(phrase, StringComparison.OrdinalIgnoreCase))
@@ -1010,7 +1012,7 @@ internal sealed partial class SpecGroundingService
         return score;
     }
 
-    private static FieldDefinition[] ResolveFieldCandidates(FieldDefinition[] fields, string text)
+    private static GroundingCatalogField[] ResolveFieldCandidates(GroundingCatalogField[] fields, string text)
     {
         var textTokens = GroundingTokenizer.TokenizeToSet(text);
         var matches = fields
@@ -1040,14 +1042,14 @@ internal sealed partial class SpecGroundingService
     }
 
     private static bool TryResolveLayerBySelection(
-        IReadOnlyList<LayerDefinition> layers,
+        IReadOnlyList<GroundingCatalogLayer> layers,
         string selection,
-        out LayerDefinition layer)
+        out GroundingCatalogLayer layer)
     {
         if (selection.StartsWith("catalog:layer:", StringComparison.OrdinalIgnoreCase) &&
             int.TryParse(selection["catalog:layer:".Length..], out var layerId))
         {
-            layer = layers.FirstOrDefault(candidate => candidate.Id == layerId)!;
+            layer = layers.FirstOrDefault(candidate => candidate.LayerId == layerId)!;
             return layer is not null;
         }
 
@@ -1060,7 +1062,7 @@ internal sealed partial class SpecGroundingService
         ClarificationResponse? clarificationAnswer,
         string expectedIntentId,
         IReadOnlyList<LayerMatch> candidates,
-        out LayerDefinition layer)
+        out GroundingCatalogLayer layer)
     {
         layer = null!;
         return TryGetSingleAnswer(clarificationAnswer, expectedIntentId, "dataset.selection", out var selection) &&
@@ -1070,8 +1072,8 @@ internal sealed partial class SpecGroundingService
     private static bool TryGetSelectedField(
         ClarificationResponse? clarificationAnswer,
         string expectedIntentId,
-        IReadOnlyList<FieldDefinition> candidates,
-        out FieldDefinition field)
+        IReadOnlyList<GroundingCatalogField> candidates,
+        out GroundingCatalogField field)
     {
         field = null!;
         if (!TryGetSingleAnswer(clarificationAnswer, expectedIntentId, "column.selection", out var selection))
@@ -1167,15 +1169,15 @@ internal sealed partial class SpecGroundingService
             "Which dataset should be used?",
             list.Select(match => new ClarificationOption
             {
-                Id = $"catalog:layer:{match.Layer.Id}",
+                Id = $"catalog:layer:{match.Layer.LayerId}",
                 Label = match.Layer.Name
             }).ToArray(),
             list.Select(match => new SpecClarificationCandidate
             {
                 CandidateType = "dataset",
-                Id = $"catalog:layer:{match.Layer.Id}",
+                Id = $"catalog:layer:{match.Layer.LayerId}",
                 Label = match.Layer.Name,
-                CatalogRef = $"catalog:layer:{match.Layer.Id}",
+                CatalogRef = $"catalog:layer:{match.Layer.LayerId}",
                 SchemaPreview = match.Layer.Fields
                     .Where(field => !field.IsGeometry)
                     .Take(5)
@@ -1184,7 +1186,7 @@ internal sealed partial class SpecGroundingService
             }).ToArray());
     }
 
-    private static SpecClarificationEnvelope CreateColumnClarification(IEnumerable<FieldDefinition> fields)
+    private static SpecClarificationEnvelope CreateColumnClarification(IEnumerable<GroundingCatalogField> fields)
     {
         var list = fields.ToArray();
         var questionId = "column.selection";
@@ -1708,7 +1710,7 @@ internal sealed partial class SpecGroundingService
     [GeneratedRegex(@"^reproject\s+(?<target>@?[a-z0-9_]+)(?:\s+to\s+(?<crs>epsg:\d+))?(?:\s+as\s+(?<id>[a-z0-9_]+))?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ReprojectPattern();
 
-    private sealed record LayerMatch(LayerDefinition Layer, double Score);
+    private sealed record LayerMatch(GroundingCatalogLayer Layer, double Score);
 
     private sealed record SourceResolution
     {

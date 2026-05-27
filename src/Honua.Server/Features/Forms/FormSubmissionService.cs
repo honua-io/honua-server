@@ -10,12 +10,11 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.AuditLog.Abstractions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Forms.Packages;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Security;
@@ -33,7 +32,7 @@ internal sealed class FormSubmissionService
     private static readonly TimeSpan _terminalPersistenceTimeout = TimeSpan.FromSeconds(30);
     private readonly IFormPackageStore _store;
     private readonly FormPackageValidator _validator;
-    private readonly ILayerCatalog _catalog;
+    private readonly IFormTargetMetadataResolver _targetMetadataResolver;
     private readonly IEditProcessor _editProcessor;
     private readonly IFeatureWriter _featureWriter;
     private readonly IAttachmentStore _attachmentStore;
@@ -45,7 +44,7 @@ internal sealed class FormSubmissionService
     public FormSubmissionService(
         IFormPackageStore store,
         FormPackageValidator validator,
-        ILayerCatalog catalog,
+        IFormTargetMetadataResolver targetMetadataResolver,
         IEditProcessor editProcessor,
         IFeatureWriter featureWriter,
         IAttachmentStore attachmentStore,
@@ -56,7 +55,7 @@ internal sealed class FormSubmissionService
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _validator = validator ?? throw new ArgumentNullException(nameof(validator));
-        _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+        _targetMetadataResolver = targetMetadataResolver ?? throw new ArgumentNullException(nameof(targetMetadataResolver));
         _editProcessor = editProcessor ?? throw new ArgumentNullException(nameof(editProcessor));
         _featureWriter = featureWriter ?? throw new ArgumentNullException(nameof(featureWriter));
         _attachmentStore = attachmentStore ?? throw new ArgumentNullException(nameof(attachmentStore));
@@ -92,18 +91,19 @@ internal sealed class FormSubmissionService
         activity?.SetTag("honua.forms.version", packageVersion.Version);
         activity?.SetTag("honua.forms.operation", request.Operation);
 
-        var service = await _catalog.GetServiceAsync(packageVersion.Package.Target?.ServiceId ?? string.Empty, context.RequestAborted)
+        var targetMetadata = await _targetMetadataResolver.ResolveAsync(packageVersion.Package.Target, context.RequestAborted)
             .ConfigureAwait(false);
-        var layer = service?.GetLayer(packageVersion.Package.Target?.LayerId ?? -1);
-        if (service is null || layer is null)
+        if (targetMetadata.Service is null ||
+            targetMetadata.Resource is null ||
+            targetMetadata.StorageLayerId is not int storageLayerId)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status404NotFound, "Target service or layer for the form package was not found.");
         }
 
-        var authorizationFailure = await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
+        var authorizationFailure = await RequireTargetWriteAccessAsync(
             context,
-            service,
-            layer,
+            targetMetadata,
+            targetMetadata.Service.Metadata.Name,
             context.RequestAborted).ConfigureAwait(false);
         if (authorizationFailure is not null)
         {
@@ -189,8 +189,8 @@ internal sealed class FormSubmissionService
                 return Results.Json(rejected, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: statusCode);
             }
 
-            var editRequest = BuildEditRequest(packageVersion.Package, request, layer);
-            var editValidation = _editProcessor.ValidateEdit(editRequest, layer);
+            var editRequest = BuildEditRequest(packageVersion.Package, request, targetMetadata.Resource);
+            var editValidation = _editProcessor.ValidateEdit(editRequest, targetMetadata.Resource);
             if (!editValidation.IsValid)
             {
                 var rejected = BuildRejectedResponse(
@@ -208,12 +208,12 @@ internal sealed class FormSubmissionService
                 return Results.Json(rejected, FormPackageJsonContext.Default.FormSubmissionResponse, statusCode: StatusCodes.Status400BadRequest);
             }
 
-            var optimized = _editProcessor.OptimizeEdit(editRequest, layer);
-            var batch = _editProcessor.ToFeatureEditBatch(optimized, layer);
-            var editResult = await _featureWriter.ApplyEditsAsync(layer.Id, batch, postClaimToken).ConfigureAwait(false);
+            var optimized = _editProcessor.OptimizeEdit(editRequest, targetMetadata.Resource);
+            var batch = _editProcessor.ToFeatureEditBatch(optimized, targetMetadata.Resource);
+            var editResult = await _featureWriter.ApplyEditsAsync(storageLayerId, batch, postClaimToken).ConfigureAwait(false);
             var targetFeatureId = ResolveTargetFeatureId(request, editResult);
             var attachmentOutcomes = ShouldUploadAttachments(request, editResult)
-                ? await UploadAttachmentsAsync(context, packageVersion, request, parseResult.Files, layer, targetFeatureId, submissionId, postClaimToken)
+                ? await UploadAttachmentsAsync(context, packageVersion, request, parseResult.Files, storageLayerId, targetFeatureId, submissionId, postClaimToken)
                     .ConfigureAwait(false)
                 : [];
             var response = new FormSubmissionResponse
@@ -292,6 +292,36 @@ internal sealed class FormSubmissionService
 
         return await _store.GetCurrentVersionAsync(formId, FormPackageStatus.Published, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    private static async Task<IResult?> RequireTargetWriteAccessAsync(
+        HttpContext context,
+        FormTargetMetadataResolution target,
+        string fallbackServiceId,
+        CancellationToken cancellationToken)
+    {
+        var (service, _, resource, _) = target;
+        if (resource is not null)
+        {
+            return await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+                context,
+                resource,
+                service,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        if (service is not null)
+        {
+            return await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
+                context,
+                service,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return await ServiceDataEditorAuthorization.RequireServiceDataEditorAsync(
+            context,
+            fallbackServiceId,
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<IResult> ResolveClaimConflictAsync(
@@ -546,10 +576,13 @@ internal sealed class FormSubmissionService
         };
     }
 
-    private static UnifiedEditRequest BuildEditRequest(FormPackageDocument package, FormSubmissionRequest request, LayerDefinition layer)
+    private static UnifiedEditRequest BuildEditRequest(
+        FormPackageDocument package,
+        FormSubmissionRequest request,
+        MetadataV2Resource resource)
     {
-        var attributes = BuildAttributes(package, request, layer);
-        var geometry = BuildGeometryWkb(request.Geometry, layer);
+        var attributes = BuildAttributes(package, request, resource);
+        var geometry = BuildGeometryWkb(request.Geometry, resource);
         return request.Operation.ToLowerInvariant() switch
         {
             FormSubmissionOperations.Create => UnifiedEditRequest.WithCreates(
@@ -564,9 +597,9 @@ internal sealed class FormSubmissionService
     private static ImmutableDictionary<string, object?> BuildAttributes(
         FormPackageDocument package,
         FormSubmissionRequest request,
-        LayerDefinition layer)
+        MetadataV2Resource resource)
     {
-        var targetFields = layer.Fields.ToDictionary(static field => field.Name, StringComparer.OrdinalIgnoreCase);
+        var targetFields = resource.SchemaFields.ToDictionary(static field => field.Name, StringComparer.OrdinalIgnoreCase);
         var builder = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
         foreach (var field in package.Fields)
         {
@@ -574,7 +607,7 @@ internal sealed class FormSubmissionService
                 string.IsNullOrWhiteSpace(field.TargetField) ||
                 !request.Values.TryGetValue(field.FieldId, out var value) ||
                 !targetFields.TryGetValue(field.TargetField, out var targetField) ||
-                targetField.IsGeometry ||
+                IsGeometryField(targetField) ||
                 IsAttachmentField(field))
             {
                 continue;
@@ -586,7 +619,7 @@ internal sealed class FormSubmissionService
         return builder.ToImmutable();
     }
 
-    private static object? ConvertJsonValue(JsonElement value, FieldType fieldType)
+    private static object? ConvertJsonValue(JsonElement value, MetadataV2FieldType fieldType)
     {
         if (value.ValueKind == JsonValueKind.Null)
         {
@@ -595,22 +628,22 @@ internal sealed class FormSubmissionService
 
         return fieldType switch
         {
-            FieldType.String or FieldType.Uuid or FieldType.Time => value.ValueKind == JsonValueKind.String ? value.GetString() : value.GetRawText(),
-            FieldType.Integer => value.GetInt32(),
-            FieldType.BigInteger => value.GetInt64(),
-            FieldType.Double => value.GetDouble(),
-            FieldType.Float => value.GetSingle(),
-            FieldType.Boolean => value.GetBoolean(),
-            FieldType.Date or FieldType.DateTime => value.ValueKind == JsonValueKind.String &&
+            MetadataV2FieldType.String or MetadataV2FieldType.Uuid or MetadataV2FieldType.Time => value.ValueKind == JsonValueKind.String ? value.GetString() : value.GetRawText(),
+            MetadataV2FieldType.Integer => value.GetInt32(),
+            MetadataV2FieldType.BigInteger => value.GetInt64(),
+            MetadataV2FieldType.Double => value.GetDouble(),
+            MetadataV2FieldType.Float => value.GetSingle(),
+            MetadataV2FieldType.Boolean => value.GetBoolean(),
+            MetadataV2FieldType.Date or MetadataV2FieldType.DateTime => value.ValueKind == JsonValueKind.String &&
                 DateTimeOffset.TryParse(value.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var timestamp)
                     ? timestamp
                     : value.GetString(),
-            FieldType.Json => value.GetRawText(),
+            MetadataV2FieldType.Json => value.GetRawText(),
             _ => value.GetRawText()
         };
     }
 
-    private static byte[]? BuildGeometryWkb(JsonElement? geometry, LayerDefinition layer)
+    private static byte[]? BuildGeometryWkb(JsonElement? geometry, MetadataV2Resource resource)
     {
         if (geometry is null)
         {
@@ -628,11 +661,15 @@ internal sealed class FormSubmissionService
             return null;
         }
 
-        var point = new GeometryFactory(new PrecisionModel(), layer.SpatialReference.Wkid)
+        var srid = resource.Spatial?.SpatialReference?.ResolveSrid() ?? 4326;
+        var point = new GeometryFactory(new PrecisionModel(), srid)
             .CreatePoint(new Coordinate(longitude, latitude));
-        point.SRID = layer.SpatialReference.Wkid;
+        point.SRID = srid;
         return new WKBWriter(ByteOrder.LittleEndian, handleSRID: true).Write(point);
     }
+
+    private static bool IsGeometryField(MetadataV2Field field)
+        => field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography;
 
     private static bool TryReadFiniteDouble(JsonElement value, out double result)
     {
@@ -675,7 +712,7 @@ internal sealed class FormSubmissionService
         FormPackageVersion packageVersion,
         FormSubmissionRequest request,
         IFormFileCollection files,
-        LayerDefinition layer,
+        int storageLayerId,
         long? targetFeatureId,
         Guid submissionId,
         CancellationToken cancellationToken)
@@ -698,7 +735,7 @@ internal sealed class FormSubmissionService
             return outcomes.ToArray();
         }
 
-        var existing = await _attachmentStore.ListAsync(layer.Id, targetFeatureId.Value, cancellationToken).ConfigureAwait(false);
+        var existing = await _attachmentStore.ListAsync(storageLayerId, targetFeatureId.Value, cancellationToken).ConfigureAwait(false);
         if (existing.Length + request.Attachments.Length > _attachmentLimits.MaxAttachmentsPerFeature)
         {
             foreach (var descriptor in request.Attachments)
@@ -726,7 +763,7 @@ internal sealed class FormSubmissionService
             {
                 await using var stream = file.OpenReadStream();
                 var attachment = await _attachmentStore.UploadAsync(
-                    layer.Id,
+                    storageLayerId,
                     targetFeatureId.Value,
                     FileUploadSecurity.SanitizeFileName(GetEffectiveFileName(descriptor, file)),
                     descriptor.ContentType ?? file.ContentType,

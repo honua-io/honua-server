@@ -575,7 +575,8 @@ internal static class SearchEndpoints
         out ImmutableArray<OrderByClause> orderBy,
         out string? error)
     {
-        var availableFields = resource.SchemaFields.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
+        var schemaFields = resource.SchemaFields ?? Array.Empty<MetadataV2Field>();
+        var availableFields = schemaFields.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
         var orderByBuilder = ImmutableArray.CreateBuilder<OrderByClause>(sortby.Length);
 
         foreach (var sort in sortby)
@@ -638,7 +639,8 @@ internal static class SearchEndpoints
         out StacFieldProjection? projection,
         out string? error)
     {
-        var availableFields = resource.SchemaFields
+        var schemaFields = resource.SchemaFields ?? Array.Empty<MetadataV2Field>();
+        var availableFields = schemaFields
             .Where(field => field.Type != MetadataV2FieldType.Geometry)
             .ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
 
@@ -756,7 +758,7 @@ internal static class SearchEndpoints
             ? default
             : selected.Length == 0
                 ? ImmutableArray<string>.Empty
-                : resource.SchemaFields
+                : schemaFields
                     .Where(field => selected.Contains(field.Name))
                     .Select(field => field.Name)
                     .ToImmutableArray();

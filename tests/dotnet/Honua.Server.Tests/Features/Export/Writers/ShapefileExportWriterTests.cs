@@ -5,13 +5,12 @@ using System.Collections.Immutable;
 using System.IO.Compression;
 using System.Reflection;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Server.Features.Export;
 using Honua.Server.Features.Export.Writers;
 using Microsoft.Extensions.Logging.Abstractions;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using NetTopologySuite.IO.Esri;
-using CatalogGeometryType = Honua.Core.Features.Catalog.Domain.GeometryType;
 using Feature = Honua.Core.Features.FeatureStore.Domain.Feature;
 using WkbWriter = NetTopologySuite.IO.WKBWriter;
 
@@ -38,8 +37,8 @@ public sealed class ShapefileExportWriterTests
         var result = await ShapefileExportWriter.WriteAsync(
             output,
             ToAsyncEnumerable(feature),
-            [new FieldDefinition("name", FieldType.String)],
-            CatalogGeometryType.Polygon,
+            [new ExportField("name", ExportFieldType.String, true)],
+            ExportGeometryType.Polygon,
             prjWkt: null,
             NullLogger.Instance,
             CancellationToken.None);
@@ -80,10 +79,10 @@ public sealed class ShapefileExportWriterTests
 
         var fields = new[]
         {
-            new FieldDefinition("abcdefghij", FieldType.String),
-            new FieldDefinition("ABCDEFGHIJ", FieldType.String),
-            new FieldDefinition("very_long_field_alpha", FieldType.String),
-            new FieldDefinition("very_long_field_beta", FieldType.String)
+            new ExportField("abcdefghij", ExportFieldType.String, true),
+            new ExportField("ABCDEFGHIJ", ExportFieldType.String, true),
+            new ExportField("very_long_field_alpha", ExportFieldType.String, true),
+            new ExportField("very_long_field_beta", ExportFieldType.String, true)
         };
         var warnings = new List<string>();
 

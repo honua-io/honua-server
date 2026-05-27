@@ -320,7 +320,6 @@ public sealed class ODataBatchOperationHandlerTests
         };
 
         var dependencies = new ODataBatchDependencies(
-            layerCatalog,
             Substitute.For<IFeatureReader>(),
             Substitute.For<IFeatureWriter>(),
             Substitute.For<IGeometryService>(),

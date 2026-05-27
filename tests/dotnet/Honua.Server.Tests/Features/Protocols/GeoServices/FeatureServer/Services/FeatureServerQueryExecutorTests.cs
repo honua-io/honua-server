@@ -2,15 +2,17 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -33,18 +35,11 @@ public sealed class FeatureServerQueryExecutorTests
         var providerReader = Substitute.For<IFeatureReader>();
         var router = CreateProviderRouter(providerReader);
         var sut = CreateSut(featureReader, providerQueryRouter: router);
-        var layer = CreatePointLayer() with
-        {
-            StorageMapping = new LayerStorageMapping(
-                "features",
-                SchemaName: "honua",
-                PrimaryKeyColumn: FieldNames.ObjectId,
-                GeometryColumn: "geometry",
-                StorageSrid: 4326)
-        };
-        var service = new ServiceDefinition("maps", "Maps", [layer], SpatialReference.WGS84);
+        var service = CreateService();
+        var resource = CreatePointResource();
+        var publication = CreatePublication(service, resource);
 
-        var count = await sut.CountAsync(service, layer, new FeatureQuery(), CancellationToken.None);
+        var count = await sut.CountAsync(service, resource, publication, 7, new FeatureQuery(), CancellationToken.None);
 
         count.Should().Be(3L);
         await providerReader.DidNotReceive()
@@ -59,23 +54,17 @@ public sealed class FeatureServerQueryExecutorTests
         providerReader.CountAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(5L);
         var router = CreateProviderRouter(providerReader);
-        var sut = CreateSut(featureReader, providerQueryRouter: router);
-        var layer = CreatePointLayer() with
-        {
-            StorageMapping = new LayerStorageMapping(
-                "roads",
-                SchemaName: "public",
-                PrimaryKeyColumn: FieldNames.ObjectId,
-                GeometryColumn: "shape",
-                StorageSrid: 4326,
-                ProviderOptions: new Dictionary<string, string>
-                {
-                    [LayerStorageMapping.SourceBackedOption] = "true"
-                })
-        };
-        var service = new ServiceDefinition("maps", "Maps", [layer], SpatialReference.WGS84);
+        var service = CreateService();
+        var resource = CreatePointResource(storageBindingIds: ["binding-roads"]);
+        var publication = CreatePublication(service, resource, storageBindingId: "binding-roads");
+        var graphProvider = CreateGraphProvider(
+            service,
+            resource,
+            publication,
+            CreateStorageBinding(resource, "binding-roads"));
+        var sut = CreateSut(featureReader, providerQueryRouter: router, metadataGraphProvider: graphProvider);
 
-        var count = await sut.CountAsync(service, layer, new FeatureQuery(), CancellationToken.None);
+        var count = await sut.CountAsync(service, resource, publication, 7, new FeatureQuery(), CancellationToken.None);
 
         count.Should().Be(5L);
         await featureReader.DidNotReceive()
@@ -272,14 +261,19 @@ public sealed class FeatureServerQueryExecutorTests
             .Returns(Task.FromResult(PagedQueryResult<RawGeoServicesFeature>.Create(rawFeatures)));
 
         var sut = CreateSut(featureReader);
+        var service = CreateService();
+        var resource = CreatePointResourceWithCustomObjectId();
+        var publication = CreatePublication(service, resource);
 
         var (payload, count) = await sut.QueryRawGeoServicesPointJsonWithValidationAsync(
+            service,
+            resource,
+            publication,
             7,
             new FeatureQuery { Limit = 1 },
-            CreatePointLayerWithCustomObjectId(),
             returnGeometry: true,
             outputSrid: null,
-            CancellationToken.None);
+            cancellationToken: CancellationToken.None);
 
         count.Should().Be(1);
         using var document = JsonDocument.Parse(payload);
@@ -303,14 +297,19 @@ public sealed class FeatureServerQueryExecutorTests
             .Returns(Task.FromResult(PagedQueryResult<RawGeoServicesFeature>.Create(rawFeatures)));
 
         var sut = CreateSut(featureReader);
+        var service = CreateService();
+        var resource = CreatePointResource();
+        var publication = CreatePublication(service, resource);
 
         var (payload, count) = await sut.QueryRawGeoServicesPointJsonWithValidationAsync(
+            service,
+            resource,
+            publication,
             7,
             new FeatureQuery { Limit = 1 },
-            CreatePointLayer(),
             returnGeometry: true,
             outputSrid: null,
-            CancellationToken.None);
+            cancellationToken: CancellationToken.None);
 
         count.Should().Be(1);
         using var document = JsonDocument.Parse(payload);
@@ -336,14 +335,19 @@ public sealed class FeatureServerQueryExecutorTests
             .Returns(Task.FromResult(PagedQueryResult<RawGeoServicesFeature>.Create(rawFeatures)));
 
         var sut = CreateSut(featureReader);
+        var service = CreateService();
+        var resource = CreatePointResourceWithCustomObjectId();
+        var publication = CreatePublication(service, resource);
 
         var (payload, count) = await sut.QueryRawGeoServicesPointJsonWithValidationAsync(
+            service,
+            resource,
+            publication,
             7,
             new FeatureQuery { Limit = 1 },
-            CreatePointLayerWithCustomObjectId(),
             returnGeometry: false,
             outputSrid: null,
-            CancellationToken.None);
+            cancellationToken: CancellationToken.None);
 
         count.Should().Be(1);
         using var document = JsonDocument.Parse(payload);
@@ -375,15 +379,20 @@ public sealed class FeatureServerQueryExecutorTests
 
         var sut = CreateSut(featureReader, streamingStore);
         var context = CreateHttpContext();
+        var service = CreateService();
+        var resource = CreateResource();
+        var publication = CreatePublication(service, resource);
 
         await sut.StreamQueryAsync(
+            service,
+            resource,
+            publication,
             7,
             new FeatureQuery { Limit = 2 },
-            CreateLayer(),
             new QueryParameters { F = "geojson", ReturnGeometry = false },
             outputSrid: null,
-            context,
-            CancellationToken.None);
+            context: context,
+            cancellationToken: CancellationToken.None);
 
         capturedQuery.Should().NotBeNull();
         capturedQuery!.Value.Limit.Should().Be(3);
@@ -412,15 +421,20 @@ public sealed class FeatureServerQueryExecutorTests
 
         var sut = CreateSut(featureReader, streamingStore);
         var context = CreateHttpContext();
+        var service = CreateService();
+        var resource = CreateResource();
+        var publication = CreatePublication(service, resource);
 
         await sut.StreamQueryAsync(
+            service,
+            resource,
+            publication,
             7,
             new FeatureQuery { Limit = 2 },
-            CreateLayer(),
             new QueryParameters { F = "json", ReturnGeometry = false },
             outputSrid: null,
-            context,
-            CancellationToken.None);
+            context: context,
+            cancellationToken: CancellationToken.None);
 
         featureReader.ReceivedCalls().Should().NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureReader.CountAsync));
 
@@ -443,15 +457,20 @@ public sealed class FeatureServerQueryExecutorTests
 
         var sut = CreateSut(featureReader, streamingStore);
         var context = CreateHttpContext();
+        var service = CreateService();
+        var resource = CreatePointResource();
+        var publication = CreatePublication(service, resource);
 
         await sut.StreamQueryAsync(
+            service,
+            resource,
+            publication,
             7,
             new FeatureQuery { Limit = 1 },
-            CreatePointLayer(),
             new QueryParameters { F = "json", ReturnGeometry = true },
             outputSrid: 3857,
-            context,
-            CancellationToken.None);
+            context: context,
+            cancellationToken: CancellationToken.None);
 
         var json = await ReadResponseAsync(context);
         using var document = JsonDocument.Parse(json);
@@ -482,15 +501,20 @@ public sealed class FeatureServerQueryExecutorTests
 
         var sut = CreateSut(featureReader, streamingStore);
         var context = CreateHttpContext();
+        var service = CreateService();
+        var resource = CreatePointResource();
+        var publication = CreatePublication(service, resource);
 
         await sut.StreamQueryAsync(
+            service,
+            resource,
+            publication,
             7,
             new FeatureQuery { Limit = 1 },
-            CreatePointLayer(),
             new QueryParameters { F = "json", ReturnGeometry = true, GeometryPrecision = 2 },
             outputSrid: 4326,
-            context,
-            CancellationToken.None);
+            context: context,
+            cancellationToken: CancellationToken.None);
 
         var json = await ReadResponseAsync(context);
         using var document = JsonDocument.Parse(json);
@@ -514,15 +538,20 @@ public sealed class FeatureServerQueryExecutorTests
 
         var sut = CreateSut(featureReader, streamingStore);
         var context = CreateHttpContext();
+        var service = CreateService();
+        var resource = CreateResource();
+        var publication = CreatePublication(service, resource);
 
         await sut.StreamQueryAsync(
+            service,
+            resource,
+            publication,
             7,
             new FeatureQuery { Limit = 1 },
-            CreateLayer(),
             new QueryParameters { F = "geojson", ReturnGeometry = false, OutFields = "name" },
             outputSrid: null,
-            context,
-            CancellationToken.None);
+            context: context,
+            cancellationToken: CancellationToken.None);
 
         var json = await ReadResponseAsync(context);
         using var document = JsonDocument.Parse(json);
@@ -547,15 +576,20 @@ public sealed class FeatureServerQueryExecutorTests
 
         var sut = CreateSut(featureReader, streamingStore);
         var context = CreateHttpContext();
+        var service = CreateService();
+        var resource = CreateResource();
+        var publication = CreatePublication(service, resource);
 
         await sut.StreamQueryAsync(
+            service,
+            resource,
+            publication,
             7,
             new FeatureQuery { Limit = 1 },
-            CreateLayer(),
             new QueryParameters { F = "geojson", ReturnGeometry = false },
             outputSrid: null,
-            context,
-            CancellationToken.None);
+            context: context,
+            cancellationToken: CancellationToken.None);
 
         var json = await ReadResponseAsync(context);
         using var document = JsonDocument.Parse(json);
@@ -570,12 +604,18 @@ public sealed class FeatureServerQueryExecutorTests
     private static FeatureServerQueryExecutor CreateSut(
         IFeatureReader featureReader,
         IStreamingFeatureStore? streamingStore = null,
-        FeatureProviderQueryRouter? providerQueryRouter = null)
+        FeatureProviderQueryRouter? providerQueryRouter = null,
+        IMetadataV2GraphProvider? metadataGraphProvider = null)
     {
         streamingStore ??= Substitute.For<IStreamingFeatureStore>();
         var formatter = new StreamingQueryFormatter(Options.Create(new LimitsOptions()));
 
-        return new FeatureServerQueryExecutor(featureReader, streamingStore, formatter, providerQueryRouter);
+        return new FeatureServerQueryExecutor(
+            featureReader,
+            streamingStore,
+            formatter,
+            providerQueryRouter,
+            metadataGraphProvider);
     }
 
     private static FeatureProviderQueryRouter CreateProviderRouter(IFeatureReader reader)
@@ -584,49 +624,124 @@ public sealed class FeatureServerQueryExecutorTests
         provider.ProviderName.Returns(DataProviderNames.Postgis);
         provider.Capabilities.Returns(FeatureProviderCapabilities.ReadOnlyAnalytical);
         provider.Reader.Returns(reader);
+        var providerRegistry = new FeatureDataProviderRegistry([provider]);
+        var connectionRegistry = Substitute.For<ISecureConnectionRegistry>();
 
-        var resolver = new FeatureProviderBindingResolver(
-            Substitute.For<ISecureConnectionRegistry>(),
-            new FeatureDataProviderRegistry([provider]));
-
-        return new FeatureProviderQueryRouter(resolver);
+        return new FeatureProviderQueryRouter(connectionRegistry, providerRegistry);
     }
 
-    private static LayerDefinition CreateLayer()
-        => new(
-            7,
-            "test-layer",
-            null,
-            Honua.Core.Features.Catalog.Domain.GeometryType.None,
-            SpatialReference.WGS84,
-            [
-                new FieldDefinition(FieldNames.ObjectId, FieldType.Integer, Nullable: false),
-                new FieldDefinition("name", FieldType.String, Length: 128)
-            ]);
+    private static MetadataV2Service CreateService()
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "maps", Name = "Maps" },
+            SpatialReference = MetadataV2SpatialReference.Wgs84
+        };
 
-    private static LayerDefinition CreatePointLayer()
-        => new(
-            7,
-            "test-layer",
-            null,
-            Honua.Core.Features.Catalog.Domain.GeometryType.Point,
-            SpatialReference.WGS84,
-            [
-                new FieldDefinition(FieldNames.ObjectId, FieldType.Integer, Nullable: false),
-                new FieldDefinition("name", FieldType.String, Length: 128)
-            ]);
+    private static MetadataV2Publication CreatePublication(
+        MetadataV2Service service,
+        MetadataV2Resource resource,
+        string? storageBindingId = null)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = $"{service.Metadata.Id}-{resource.Metadata.Id}", Name = resource.Metadata.Name },
+            ServiceId = service.Metadata.Id,
+            ResourceId = resource.Metadata.Id,
+            StorageBindingId = storageBindingId,
+            Identifier = new MetadataV2PublicationIdentifier
+            {
+                Value = "7",
+                IsNumeric = true
+            },
+            PublicationType = MetadataV2PublicationType.EsriFeatureLayer
+        };
 
-    private static LayerDefinition CreatePointLayerWithCustomObjectId()
-        => new(
-            7,
+    private static TestMetadataV2GraphProvider CreateGraphProvider(
+        MetadataV2Service service,
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        MetadataV2StorageBinding? storageBinding = null)
+        => new(new MetadataV2Graph
+        {
+            Revision = 1,
+            Environment = "test",
+            GeneratedAt = DateTimeOffset.UtcNow,
+            Resources = [resource],
+            Services = [service],
+            Publications = [publication],
+            StorageBindings = storageBinding is null ? [] : [storageBinding]
+        });
+
+    private static MetadataV2StorageBinding CreateStorageBinding(
+        MetadataV2Resource resource,
+        string id,
+        int storageLayerId = 7)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id },
+            ResourceId = resource.Metadata.Id,
+            StorageType = MetadataV2StorageType.RelationalTable,
+            Locator = "public.roads",
+            StorageLayerId = storageLayerId
+        };
+
+    private static MetadataV2Resource CreateResource(IReadOnlyList<string>? storageBindingIds = null)
+        => CreateResource(
             "test-layer",
+            MetadataV2GeometryType.None,
+            storageBindingIds,
+            new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+            new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 128 });
+
+    private static MetadataV2Resource CreatePointResource(IReadOnlyList<string>? storageBindingIds = null)
+        => CreateResource(
+            "test-layer",
+            MetadataV2GeometryType.Point,
+            storageBindingIds,
+            new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+            new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 128 });
+
+    private static MetadataV2Resource CreatePointResourceWithCustomObjectId()
+        => CreateResource(
+            "test-layer",
+            MetadataV2GeometryType.Point,
             null,
-            Honua.Core.Features.Catalog.Domain.GeometryType.Point,
-            SpatialReference.WGS84,
-            [
-                new FieldDefinition("id", FieldType.Integer, Nullable: false),
-                new FieldDefinition("name", FieldType.String, Length: 128)
-            ]);
+            new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.Integer, Nullable = false },
+            new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 128 });
+
+    private static MetadataV2Resource CreateResource(
+        string name,
+        MetadataV2GeometryType geometryType,
+        IReadOnlyList<string>? storageBindingIds,
+        params MetadataV2Field[] fields)
+    {
+        var schemaFields = new List<MetadataV2Field>(fields);
+        MetadataV2ResourceSpatial? spatial = null;
+        if (geometryType is not MetadataV2GeometryType.None)
+        {
+            schemaFields.Add(new MetadataV2Field
+            {
+                Name = "shape",
+                Type = MetadataV2FieldType.Geometry,
+                Nullable = true,
+                SemanticRoles = ["geometry.primary"]
+            });
+            spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = MetadataV2SpatialReference.Wgs84,
+                GeometryType = geometryType,
+                PrimaryGeometryField = "shape"
+            };
+        }
+
+        return new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = name, Name = name },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            StorageBindingIds = storageBindingIds ?? [],
+            SchemaFields = schemaFields,
+            Spatial = spatial
+        };
+    }
 
     private static Feature CreateFeature(long id, string name, byte[]? geometry = null)
         => Feature.Create(

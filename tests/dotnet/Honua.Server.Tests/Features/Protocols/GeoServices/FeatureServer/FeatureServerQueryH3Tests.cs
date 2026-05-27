@@ -419,7 +419,7 @@ public sealed class FeatureServerQueryH3Tests : IAsyncLifetime
         public Task<TemporalExtentResult?> GetTemporalExtentAsync(
             int layerId,
             string fieldName,
-            FieldType fieldType,
+            TemporalPropertyType propertyType,
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 

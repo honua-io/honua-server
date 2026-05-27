@@ -7,10 +7,10 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Shared.Models;
@@ -22,7 +22,7 @@ using Npgsql;
 namespace Honua.Postgres.Features.FeatureStore.Services;
 
 /// <summary>
-/// Reads a provider-bound PostGIS table directly from the storage mapping persisted in the catalog.
+/// Reads a provider-bound PostGIS table directly from the storage mapping persisted in Metadata v2.
 /// </summary>
 internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReader, IPagedFeatureReader, IStreamingFeatureStore
 {
@@ -32,26 +32,27 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ObjectPool<Dictionary<string, object?>> _dictionaryPool;
-    private readonly LayerDefinition _layer;
-    private readonly LayerStorageMapping _mapping;
+    private readonly MetadataV2Resource _resource;
+    private readonly FeatureStorageMapping _mapping;
     private readonly DataConnection? _connection;
     private readonly IConnectionEncryptionService? _connectionEncryptionService;
     private readonly string _qualifiedTableName;
     private readonly string _primaryKeyColumn;
     private readonly string? _geometryColumn;
+    private readonly int _storageSrid;
 
     public PostgresStorageMappedFeatureReader(
         IDatabaseConnectionProvider connectionProvider,
         ObjectPool<Dictionary<string, object?>> dictionaryPool,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        FeatureStorageMapping mapping,
         DataConnection? connection,
         IConnectionEncryptionService? connectionEncryptionService)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _dictionaryPool = dictionaryPool ?? throw new ArgumentNullException(nameof(dictionaryPool));
-        _layer = layer ?? throw new ArgumentNullException(nameof(layer));
-        _mapping = layer.StorageMapping
-            ?? throw new InvalidOperationException($"Layer '{layer.Name}' does not define a runtime storage mapping.");
+        _resource = resource ?? throw new ArgumentNullException(nameof(resource));
+        _mapping = mapping ?? throw new ArgumentNullException(nameof(mapping));
         _connection = connection;
         _connectionEncryptionService = connectionEncryptionService;
         _qualifiedTableName = QuoteQualifiedTableName(_mapping);
@@ -59,6 +60,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         _geometryColumn = string.IsNullOrWhiteSpace(_mapping.GeometryColumn)
             ? null
             : ValidateAndQuoteIdentifier(_mapping.GeometryColumn!);
+        _storageSrid = _mapping.StorageSrid ?? _resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
     }
 
     public async Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
@@ -178,7 +180,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             return null;
         }
 
-        var srid = effectiveQuery.OutputSrid ?? _mapping.StorageSrid ?? _layer.SpatialReference.Wkid;
+        var srid = effectiveQuery.OutputSrid ?? _storageSrid;
         return FeatureExtent.Create(
             reader.GetDouble(0),
             reader.GetDouble(1),
@@ -203,7 +205,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     public Task<TemporalExtentResult?> GetTemporalExtentAsync(
         int layerId,
         string fieldName,
-        FieldType fieldType,
+        TemporalPropertyType propertyType,
         CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Temporal extents are not supported for source-backed PostGIS layers yet.");
 
@@ -368,7 +370,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         }
 
         var geometryExpression = $"{_geometryColumn}::geometry";
-        var storageSrid = _mapping.StorageSrid ?? _layer.SpatialReference.Wkid;
+        var storageSrid = _storageSrid;
         if (query.OutputSrid.HasValue && query.OutputSrid.Value != storageSrid)
         {
             geometryExpression = $"ST_Transform({geometryExpression}, {query.OutputSrid.Value})";
@@ -393,7 +395,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return BuildAttributesExpressionText(fields);
     }
 
-    private static string BuildAttributesExpressionText(FieldDefinition[] fields)
+    private static string BuildAttributesExpressionText(MetadataV2Field[] fields)
     {
         var chunks = fields
             .Chunk(MaxJsonbBuildObjectPairs)
@@ -402,7 +404,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return $"({string.Join(" || ", chunks)})::text";
     }
 
-    private static string BuildAttributesExpressionChunk(IEnumerable<FieldDefinition> fields)
+    private static string BuildAttributesExpressionChunk(IEnumerable<MetadataV2Field> fields)
     {
         var parts = new List<string>();
         foreach (var field in fields)
@@ -414,10 +416,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return $"jsonb_build_object({string.Join(", ", parts)})";
     }
 
-    private FieldDefinition[] ResolveAttributeFields(FeatureQuery query)
+    private MetadataV2Field[] ResolveAttributeFields(FeatureQuery query)
     {
-        var declaredFields = _layer.Fields
-            .Where(field => !field.IsGeometry && IsSafeIdentifier(field.Name))
+        var declaredFields = _resource.SchemaFields
+            .Where(field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)
+                && IsSafeIdentifier(field.Name))
             .ToArray();
 
         if (!query.OutFields.HasValue || query.OutFields.Value.IsDefault)
@@ -538,7 +541,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     internal static string BuildStatisticsAggregateExpression(
         StatisticType statisticType,
         string fieldExpression,
-        FieldType fieldType)
+        MetadataV2FieldType fieldType)
     {
         var numericExpression = BuildNullableNumericExpression(fieldExpression);
         var orderedExpression = IsNumericFieldType(fieldType) ? numericExpression : fieldExpression;
@@ -560,8 +563,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private static string BuildNullableNumericExpression(string fieldExpression)
         => $"NULLIF(({fieldExpression})::text, '')::numeric";
 
-    private static bool IsNumericFieldType(FieldType fieldType)
-        => fieldType is FieldType.Integer or FieldType.BigInteger or FieldType.Double or FieldType.Float;
+    private static bool IsNumericFieldType(MetadataV2FieldType fieldType)
+        => fieldType is MetadataV2FieldType.Integer
+            or MetadataV2FieldType.BigInteger
+            or MetadataV2FieldType.Double
+            or MetadataV2FieldType.Float;
 
     private string ConvertSqlFilter(SqlFragment sqlFilter, SqlBuilder sql)
     {
@@ -638,13 +644,13 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             var minY = sql.AddParameter(filter.EnvelopeMinY.Value);
             var maxX = sql.AddParameter(filter.EnvelopeMaxX.Value);
             var maxY = sql.AddParameter(filter.EnvelopeMaxY.Value);
-            var srid = filter.Srid ?? _mapping.StorageSrid ?? _layer.SpatialReference.Wkid;
+            var srid = filter.Srid ?? _storageSrid;
             var envelope = $"ST_MakeEnvelope({minX}, {minY}, {maxX}, {maxY}, {srid})";
             return TransformFilterGeometryIfNeeded(envelope, srid);
         }
 
         var geometryParameter = sql.AddParameter(filter.Geometry);
-        var sourceSrid = filter.Srid ?? _mapping.StorageSrid ?? _layer.SpatialReference.Wkid;
+        var sourceSrid = filter.Srid ?? _storageSrid;
         var rawGeometry = $"ST_GeomFromEWKB({geometryParameter})";
         var geometry = $"ST_SetSRID({rawGeometry}, COALESCE(NULLIF(ST_SRID({rawGeometry}), 0), {sourceSrid}))";
         return TransformFilterGeometryIfNeeded(geometry, sourceSrid);
@@ -652,7 +658,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private string TransformFilterGeometryIfNeeded(string geometryExpression, int sourceSrid)
     {
-        var targetSrid = _mapping.StorageSrid ?? _layer.SpatialReference.Wkid;
+        var targetSrid = _storageSrid;
         return sourceSrid == targetSrid
             ? geometryExpression
             : $"ST_Transform({geometryExpression}, {targetSrid})";
@@ -781,18 +787,18 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             return _primaryKeyColumn;
         }
 
-        var field = _layer.Fields.FirstOrDefault(candidate =>
+        var field = _resource.SchemaFields.FirstOrDefault(candidate =>
             candidate.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
         if (field == null)
         {
-            throw new ArgumentException($"Field '{fieldName}' was not found on layer '{_layer.Name}'.");
+            throw new ArgumentException($"Field '{fieldName}' was not found on resource '{_resource.Metadata.Name}'.");
         }
 
-        if (field.IsGeometry)
+        if (field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)
         {
             if (_geometryColumn == null)
             {
-                throw new ArgumentException($"Layer '{_layer.Name}' does not define a geometry column.");
+                throw new ArgumentException($"Resource '{_resource.Metadata.Name}' does not define a geometry column.");
             }
 
             return _geometryColumn;
@@ -801,17 +807,17 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return ValidateAndQuoteIdentifier(field.Name);
     }
 
-    private FieldDefinition ResolveFieldDefinition(string fieldName)
+    private MetadataV2Field ResolveFieldDefinition(string fieldName)
     {
         if (fieldName.Equals("objectid", StringComparison.OrdinalIgnoreCase) ||
             fieldName.Equals("object_id", StringComparison.OrdinalIgnoreCase))
         {
-            return new FieldDefinition(fieldName, FieldType.BigInteger);
+            return new MetadataV2Field { Name = fieldName, Type = MetadataV2FieldType.BigInteger };
         }
 
-        return _layer.Fields.FirstOrDefault(candidate =>
+        return _resource.SchemaFields.FirstOrDefault(candidate =>
                 candidate.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase))
-            ?? throw new ArgumentException($"Field '{fieldName}' was not found on layer '{_layer.Name}'.");
+            ?? throw new ArgumentException($"Field '{fieldName}' was not found on resource '{_resource.Metadata.Name}'.");
     }
 
     private Feature ReadFeature(NpgsqlDataReader reader)
@@ -935,7 +941,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         };
     }
 
-    private static string QuoteQualifiedTableName(LayerStorageMapping mapping)
+    private static string QuoteQualifiedTableName(FeatureStorageMapping mapping)
     {
         var table = ValidateAndQuoteIdentifier(mapping.TableName);
         if (string.IsNullOrWhiteSpace(mapping.SchemaName))
@@ -1019,7 +1025,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     {
         if (_geometryColumn == null)
         {
-            throw new ArgumentException($"Layer '{_layer.Name}' does not define a geometry column.");
+            throw new ArgumentException($"Resource '{_resource.Metadata.Name}' does not define a geometry column.");
         }
 
         var geometryColumn = $"{_geometryColumn}::geometry";
@@ -1040,7 +1046,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private string BuildGeodesicDistanceExpression(string geometryColumn, string filterGeometry)
     {
-        var storageSrid = _mapping.StorageSrid ?? _layer.SpatialReference.Wkid;
+        var storageSrid = _storageSrid;
         var geographyColumn = ToWgs84Geography(geometryColumn, storageSrid);
         var geographyFilter = ToWgs84Geography(filterGeometry, storageSrid);
         return $"ST_Distance({geographyColumn}, {geographyFilter})";
@@ -1048,7 +1054,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private bool ShouldUseGeodesicNearestNeighbor()
     {
-        var storageSrid = _mapping.StorageSrid ?? _layer.SpatialReference.Wkid;
+        var storageSrid = _storageSrid;
         return IsLikelyGeographicSrid(storageSrid);
     }
 

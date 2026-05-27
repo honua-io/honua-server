@@ -4,9 +4,10 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
@@ -19,6 +20,7 @@ using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.ServiceDefaults;
 using SkiaSharp;
+using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Server.Features.StaticMap;
 
@@ -147,28 +149,22 @@ internal static partial class StaticMapEndpoints
 
         try
         {
-            // Validate service exists
             var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-            var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, context.RequestAborted);
-            if (!serviceResult.IsValid)
+            var serviceV2Result = await ServiceResourceValidationHelpers.ValidateServiceV2Async(
+                resourceValidator,
+                serviceId,
+                MetadataV2ServiceProtocols.MapServer,
+                context,
+                cancellationToken: context.RequestAborted).ConfigureAwait(false);
+            if (!serviceV2Result.IsValid)
             {
-                var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
-                if (serviceResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context, errorMessage);
-                }
-
-                return StandardErrorHelpers.CreateNotFound(context, errorMessage);
+                return serviceV2Result.ErrorResult!;
             }
 
-            var service = serviceResult.Resource!;
-
-            // Validate MapServer protocol is enabled (static map depends on MapServer rendering)
-            var protocolError = ProtocolValidationHelpers.ValidateProtocolEnabled(context, service, ServiceProtocols.MapServer);
-            if (protocolError is not null)
-            {
-                return protocolError;
-            }
+            var service = serviceV2Result.Service!;
+            var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+            var snapshot = await snapshotProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+            var availableLayers = ResolveAvailableLayers(snapshot, service).ToArray();
 
             // Enforce static map entitlement limits before any provider work.
             if (parameters.Width > StaticMapEditionLimits.ProMaxDimension ||
@@ -278,7 +274,10 @@ internal static partial class StaticMapEndpoints
             activity?.SetTag("honua.staticmap.format", parameters.Format);
             activity?.SetTag("honua.staticmap.dpi", parameters.Dpi);
 
-            var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, service.Layers, service);
+            var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+                context,
+                availableLayers.Select(static layer => layer.Resource),
+                service);
             if (accessError != null)
             {
                 return accessError;
@@ -296,7 +295,7 @@ internal static partial class StaticMapEndpoints
             }
 
             // Resolve layers to render (filtered by per-layer access policy)
-            var (renderLayerIds, layerError) = ResolveLayerIds(parameters.Layers, service, context);
+            var (renderLayers, layerError) = ResolveLayers(parameters.Layers, availableLayers, service, context);
             if (layerError is not null)
             {
                 return layerError;
@@ -307,7 +306,6 @@ internal static partial class StaticMapEndpoints
             var styleCatalog = context.RequestServices.GetRequiredService<ILayerStyleCatalog>();
 
             var totalFeatureCount = 0;
-            var serviceSrid = service.SpatialReference.Srid;
             var spatialFilter = CreateBboxSpatialFilter(extent);
 
             await using var renderLease = await context.RequestServices
@@ -349,15 +347,9 @@ internal static partial class StaticMapEndpoints
                 }
             : transform;
 
-            foreach (var layerId in renderLayerIds)
+            foreach (var layer in renderLayers)
             {
                 context.RequestAborted.ThrowIfCancellationRequested();
-
-                var layer = service.Layers.FirstOrDefault(l => l.Id == layerId);
-                if (layer is null || !layer.HasGeometry)
-                {
-                    continue;
-                }
 
                 var (sqlFilter, filterError) = BuildFilterSql(parameters.Filter, layer, context);
                 if (filterError is not null)
@@ -368,13 +360,13 @@ internal static partial class StaticMapEndpoints
                 var featureQuery = new FeatureQuery
                 {
                     SpatialFilter = spatialFilter,
-                    SpatialReferenceSrid = serviceSrid,
+                    SpatialReferenceSrid = ResolveLayerSrid(service, layer.Resource),
                     OutputSrid = renderSrid,
                     Limit = MaxFeaturesPerLayer,
                     SqlFilter = sqlFilter
                 };
 
-                var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, context.RequestAborted);
+                var queryResult = await featureReader.QueryAsync(layer.StorageLayerId, featureQuery, context.RequestAborted);
 
                 if (queryResult.Items.Length == 0)
                 {
@@ -383,7 +375,7 @@ internal static partial class StaticMapEndpoints
 
                 totalFeatureCount += queryResult.Items.Length;
 
-                var style = await styleCatalog.GetLayerStyleAsync(layer.Id, context.RequestAborted);
+                var style = await styleCatalog.GetLayerStyleAsync(layer.StorageLayerId, context.RequestAborted);
                 var styleLayers = StyleTranslator.ParseStyleLayers(style?.MapLibreStyleJson);
 
                 RenderLayerToCanvas(canvas, queryResult.Items, styleLayers, transform, layer.GeometryType);
@@ -721,18 +713,55 @@ internal static partial class StaticMapEndpoints
 
     // ----- Rendering helpers -----
 
-    private static (int[] LayerIds, IResult? Error) ResolveLayerIds(string? layerParam, ServiceDefinition service, HttpContext context)
+    private static IEnumerable<StaticMapRenderLayer> ResolveAvailableLayers(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Service service)
     {
-        var accessibleLayers = service.Layers
-            .Where(l => l.HasGeometry && AccessPolicyHelpers.IsLayerAccessible(context, l, service))
+        foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
+        {
+            var resource = snapshot.ResolveResource(publication);
+            if (resource is null)
+            {
+                continue;
+            }
+
+            var geometryType = resource.ReadGeometryType();
+            if (geometryType is MetadataV2GeometryType.None)
+            {
+                continue;
+            }
+
+            var publicLayerId = publication.LayerIndex;
+            var storageLayerId = snapshot.ResolveStorageLayerId(publication)
+                ?? snapshot.ResolveStorageLayerId(resource);
+            if (!publicLayerId.HasValue || !storageLayerId.HasValue)
+            {
+                continue;
+            }
+
+            yield return new StaticMapRenderLayer(
+                resource,
+                publicLayerId.Value,
+                storageLayerId.Value,
+                geometryType);
+        }
+    }
+
+    private static (StaticMapRenderLayer[] Layers, IResult? Error) ResolveLayers(
+        string? layerParam,
+        IReadOnlyList<StaticMapRenderLayer> availableLayers,
+        MetadataV2Service service,
+        HttpContext context)
+    {
+        var accessibleLayers = availableLayers
+            .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
             .ToArray();
 
         if (string.IsNullOrWhiteSpace(layerParam))
         {
             // Default: accessible layers with default visibility
             return (accessibleLayers
-                .Where(l => l.DefaultVisibility)
-                .Select(l => l.Id)
+                .Where(static layer => layer.Resource.Display?.DefaultVisibility ?? true)
                 .ToArray(), null);
         }
 
@@ -740,7 +769,7 @@ internal static partial class StaticMapEndpoints
         var tokens = layerParam.Split(',', StringSplitOptions.TrimEntries);
         if (tokens.Length == 0 || tokens.Any(string.IsNullOrWhiteSpace))
         {
-            return (Array.Empty<int>(), StandardErrorHelpers.CreateBadRequest(context, "Invalid layers parameter."));
+            return (Array.Empty<StaticMapRenderLayer>(), StandardErrorHelpers.CreateBadRequest(context, "Invalid layers parameter."));
         }
         foreach (var segment in tokens)
         {
@@ -750,20 +779,19 @@ internal static partial class StaticMapEndpoints
                 continue;
             }
 
-            return (Array.Empty<int>(), StandardErrorHelpers.CreateBadRequest(context, $"Invalid layers parameter '{layerParam}'."));
+            return (Array.Empty<StaticMapRenderLayer>(), StandardErrorHelpers.CreateBadRequest(context, $"Invalid layers parameter '{layerParam}'."));
         }
 
-        var accessibleLayerIds = accessibleLayers.Select(layer => layer.Id).ToHashSet();
+        var accessibleLayerIds = accessibleLayers.Select(static layer => layer.PublicLayerId).ToHashSet();
         if (requestedIds.Any(id => !accessibleLayerIds.Contains(id)))
         {
-            return (Array.Empty<int>(), StandardErrorHelpers.CreateBadRequest(
+            return (Array.Empty<StaticMapRenderLayer>(), StandardErrorHelpers.CreateBadRequest(
                 context,
                 "layers parameter references an invalid or inaccessible layer."));
         }
 
         return (accessibleLayers
-            .Where(l => requestedIds.Contains(l.Id))
-            .Select(l => l.Id)
+            .Where(layer => requestedIds.Contains(layer.PublicLayerId))
             .ToArray(), null);
     }
 
@@ -774,7 +802,7 @@ internal static partial class StaticMapEndpoints
     }
 
     private static (SqlFragment? Filter, string? Error) BuildFilterSql(
-        string? filterExpression, LayerDefinition layer, HttpContext context)
+        string? filterExpression, StaticMapRenderLayer layer, HttpContext context)
     {
         if (string.IsNullOrWhiteSpace(filterExpression))
         {
@@ -782,7 +810,13 @@ internal static partial class StaticMapEndpoints
         }
 
         var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-        var result = filterService.Translate(FilterLanguage.Cql2Text, filterExpression, layer);
+        var parseResult = filterService.Parse(FilterLanguage.Cql2Text, filterExpression);
+        if (!parseResult.IsSuccess)
+        {
+            return (null, parseResult.ErrorMessage ?? "Invalid filter expression.");
+        }
+
+        var result = filterService.Translate(parseResult.Expression, layer.Resource);
         if (!result.IsSuccess)
         {
             return (null, result.ErrorMessage ?? "Invalid filter expression.");
@@ -796,7 +830,7 @@ internal static partial class StaticMapEndpoints
         ImmutableArray<Feature> features,
         MapLibreStyleLayer[] styleLayers,
         Func<double, double, SKPoint> transform,
-        GeometryType geometryType)
+        MetadataV2GeometryType geometryType)
     {
         if (styleLayers.Length > 0)
         {
@@ -807,6 +841,17 @@ internal static partial class StaticMapEndpoints
             SkiaMapRenderer.RenderWithDefaults(canvas, features, transform, geometryType);
         }
     }
+
+    private static int ResolveLayerSrid(MetadataV2Service service, MetadataV2Resource resource)
+        => service.SpatialReference?.ResolveSrid()
+            ?? resource.ReadSrid()
+            ?? SpatialReference.WGS84.Wkid;
+
+    private readonly record struct StaticMapRenderLayer(
+        MetadataV2Resource Resource,
+        int PublicLayerId,
+        int StorageLayerId,
+        MetadataV2GeometryType GeometryType);
 
     private static void RenderMarkers(
         SKCanvas canvas,

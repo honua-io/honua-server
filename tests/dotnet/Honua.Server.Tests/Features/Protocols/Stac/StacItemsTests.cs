@@ -4,8 +4,6 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -85,18 +83,12 @@ public sealed class StacItemsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}/items")]
     public async Task GetItems_IncludeDeclaredStacExtensionsWhenConfigured()
     {
-        await UpdateLayerMetadataAsync(new CatalogMetadata
-        {
-            TimeInfo = new LayerTimeInfo { StartTimeField = "timestamp" },
-            Stac = new StacCatalogMetadata
+        await UpdateLayerMetadataAsync(
+            new MetadataV2ResourceTemporal { StartTimeField = "timestamp" },
+            JsonSerializer.SerializeToElement(new
             {
-                Extensions =
-                [
-                    "https://stac-extensions.github.io/eo/v1.1.0/schema.json",
-                    "https://stac-extensions.github.io/view/v1.0.0/schema.json"
-                ]
-            }
-        });
+                extensions = ExpectedItemExtensions
+            }));
 
         var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var response = await _fixture.Client.GetAsync(
@@ -439,26 +431,10 @@ public sealed class StacItemsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    private Task UpdateLayerMetadataAsync(CatalogMetadata metadata)
+    private Task UpdateLayerMetadataAsync(
+        MetadataV2ResourceTemporal? temporal = null,
+        JsonElement? stac = null)
     {
-        // Bridge to the V2 graph (see StacCollectionsTests.UpdateLayerMetadataAsync).
-        JsonElement? stac = null;
-        if (metadata.Stac is not null)
-        {
-            stac = JsonSerializer.SerializeToElement(
-                metadata.Stac,
-                Honua.Core.Features.Catalog.Domain.CatalogJsonContext.Default.StacCatalogMetadata);
-        }
-        MetadataV2ResourceTemporal? temporal = null;
-        if (metadata.TimeInfo is not null)
-        {
-            temporal = new MetadataV2ResourceTemporal
-            {
-                StartTimeField = metadata.TimeInfo.StartTimeField,
-                EndTimeField = metadata.TimeInfo.EndTimeField,
-                TrackIdField = metadata.TimeInfo.TrackIdField,
-            };
-        }
         _fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, stacExtension: stac, temporal: temporal);
         return Task.CompletedTask;
     }

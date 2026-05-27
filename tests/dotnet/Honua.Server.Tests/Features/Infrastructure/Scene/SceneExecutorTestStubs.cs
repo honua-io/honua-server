@@ -4,6 +4,7 @@
 using System.Runtime.CompilerServices;
 using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
 using Microsoft.Extensions.FileProviders;
@@ -46,7 +47,8 @@ internal sealed class StubFeatureSource : ISceneFeatureSource
     public int StreamInvocationCount { get; private set; }
 
     public async IAsyncEnumerable<SceneFeature> StreamAsync(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        int storageLayerId,
         IReadOnlyList<string> includeAttributes,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {

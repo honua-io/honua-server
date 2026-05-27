@@ -4,14 +4,14 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Spec;
 using Honua.Core.Features.Spec.Abstractions;
 using Honua.Core.Features.Spec.Domain;
-using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Grounding.Spec;
+using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -19,24 +19,51 @@ namespace Honua.Server.Tests.Features.Grounding.Spec;
 
 internal static class SpecGroundingTestSupport
 {
-    public static LayerDefinition CreateLayer(
+    public static MetadataV2Resource CreateLayer(
         int id,
         string name,
         string? description = null,
-        params FieldDefinition[] fields)
+        params MetadataV2Field[] fields)
     {
         var layerFields = fields.Length > 0
             ? fields
             : DefaultFields;
 
-        return new LayerDefinition(
-            Id: id,
-            Name: name,
-            Description: description,
-            GeometryType: GeometryType.Point,
-            SpatialReference: SpatialReference.WGS84,
-            Fields: layerFields);
+        var bindingId = $"binding-{id}";
+        return new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = $"layer-{id}",
+                Name = name,
+                Description = description
+            },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            StorageBindingIds = [bindingId],
+            SchemaFields = layerFields,
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = MetadataV2SpatialReference.Wgs84,
+                GeometryType = MetadataV2GeometryType.Point
+            }
+        };
     }
+
+    public static MetadataV2Field Field(
+        string name,
+        MetadataV2FieldType type,
+        int? length = null,
+        bool nullable = true)
+        => new()
+        {
+            Name = name,
+            Type = type,
+            Length = length,
+            Nullable = nullable
+        };
+
+    public static IMetadataV2GraphProvider CreateGraphProvider(params MetadataV2Resource[] layers)
+        => new TestMetadataV2GraphProvider(CreateGraph(layers));
 
     public static JsonElement ParseJsonElement(string json)
     {
@@ -61,24 +88,78 @@ internal static class SpecGroundingTestSupport
     public static string BuildRoundTripTurn(SpecSummary summary)
         => string.Join(" ", summary.Sections.Select(section => section.Text));
 
-    private static readonly FieldDefinition[] DefaultFields =
+    private static readonly MetadataV2Field[] DefaultFields =
     [
-        new("objectid", FieldType.Integer, Nullable: false),
-        new("name", FieldType.String, Length: 128),
-        new("category", FieldType.String, Length: 64)
+        Field("objectid", MetadataV2FieldType.Integer, nullable: false),
+        Field("name", MetadataV2FieldType.String, length: 128),
+        Field("category", MetadataV2FieldType.String, length: 64)
     ];
+
+    private static MetadataV2Graph CreateGraph(IReadOnlyList<MetadataV2Resource> layers)
+    {
+        var bindings = layers.Select(layer =>
+        {
+            var layerId = ParseLayerId(layer);
+            var bindingId = layer.StorageBindingIds[0];
+            return new MetadataV2StorageBinding
+            {
+                Metadata = new MetadataV2ObjectMetadata
+                {
+                    Id = bindingId,
+                    Name = bindingId
+                },
+                ResourceId = layer.Metadata.Id,
+                StorageType = MetadataV2StorageType.RelationalTable,
+                Locator = layer.Metadata.Name,
+                StorageLayerId = layerId
+            };
+        }).ToArray();
+
+        return new MetadataV2Graph
+        {
+            Revision = 1,
+            Environment = "test",
+            GeneratedAt = DateTimeOffset.UtcNow,
+            Resources = layers.ToArray(),
+            StorageBindings = bindings,
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata
+                    {
+                        Id = "grounding-service",
+                        Name = "grounding",
+                        Description = "Grounding test service"
+                    }
+                }
+            ]
+        };
+    }
+
+    private static int ParseLayerId(MetadataV2Resource layer)
+    {
+        const string prefix = "layer-";
+        if (layer.Metadata.Id.StartsWith(prefix, StringComparison.Ordinal) &&
+            int.TryParse(layer.Metadata.Id[prefix.Length..], out var id))
+        {
+            return id;
+        }
+
+        throw new InvalidOperationException($"Test layer '{layer.Metadata.Id}' does not use the expected layer id prefix.");
+    }
 }
 
 internal sealed class SpecGroundingHarness : IDisposable
 {
     private readonly ServiceProvider _services;
 
-    public SpecGroundingHarness(params LayerDefinition[] layers)
+    public SpecGroundingHarness(params MetadataV2Resource[] layers)
     {
         var serviceCollection = new ServiceCollection();
         serviceCollection.AddLogging(builder => builder.SetMinimumLevel(LogLevel.Debug));
         serviceCollection.AddSpecGrounding();
-        serviceCollection.AddSingleton<ILayerCatalog>(new SpecGroundingLayerCatalog(layers));
+        serviceCollection.AddSingleton<IMetadataV2GraphProvider>(SpecGroundingTestSupport.CreateGraphProvider(layers));
         _services = serviceCollection.BuildServiceProvider();
     }
 
@@ -100,49 +181,4 @@ internal sealed class SpecGroundingHarness : IDisposable
     public string ToCanonicalJson(SpecDocument document) => Canonicalizer.ToJson(document);
 
     public void Dispose() => _services.Dispose();
-}
-
-internal sealed class SpecGroundingLayerCatalog : ILayerCatalog
-{
-    private readonly LayerDefinition[] _layers;
-    private readonly ServiceDefinition[] _services;
-
-    public SpecGroundingLayerCatalog(params LayerDefinition[] layers)
-    {
-        _layers = layers;
-        _services =
-        [
-            new ServiceDefinition(
-                "grounding",
-                "Grounding test service",
-                _layers,
-                SpatialReference.WGS84)
-        ];
-    }
-
-    public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
-        => Task.FromResult(_layers.FirstOrDefault(layer => layer.Id == layerId));
-
-    public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
-        => Task.FromResult(_layers);
-
-    public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-        => Task.FromResult(_services.FirstOrDefault(service =>
-            string.Equals(service.Name, serviceName, StringComparison.OrdinalIgnoreCase)));
-
-    public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
-        => Task.FromResult(_services);
-
-    public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
-        => Task.FromResult(_layers.Any(layer => layer.Id == layerId));
-
-    public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
-        => Task.FromResult(_services.Any(service =>
-            string.Equals(service.Name, serviceName, StringComparison.OrdinalIgnoreCase)));
-
-    public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
-        => Task.FromResult<Relationship?>(null);
-
-    public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
-        => Task.FromResult(Array.Empty<Relationship>());
 }

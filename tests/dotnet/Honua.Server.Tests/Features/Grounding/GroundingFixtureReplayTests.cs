@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Grounding.Abstractions;
 using Honua.Core.Features.Grounding.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Grounding;
 using Honua.TestKit.Attributes;
@@ -126,7 +127,7 @@ public sealed class GroundingFixtureReplayTests
             options,
             NullLogger<GroundingService>.Instance,
             serviceScopeFactory: null,
-            layerCatalog: null);
+            metadataGraphProvider: new EmptyMetadataV2GraphProvider());
     }
 
     private static ClaimsPrincipal BuildPrincipal()
@@ -141,6 +142,22 @@ public sealed class GroundingFixtureReplayTests
         < 0.8 => "Medium",
         _ => "High"
     };
+
+    private sealed class EmptyMetadataV2GraphProvider : Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider
+    {
+        private static readonly MetadataV2GraphSnapshot Snapshot = new(
+            new MetadataV2Graph(),
+            "\"test\"",
+            DateTimeOffset.UtcNow);
+
+        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
+            => new(Snapshot);
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(
+            long revision,
+            CancellationToken cancellationToken = default)
+            => new((MetadataV2GraphSnapshot?)null);
+    }
 
     private static TheoryData<GroundingFixtureCase> LoadFixtures()
     {

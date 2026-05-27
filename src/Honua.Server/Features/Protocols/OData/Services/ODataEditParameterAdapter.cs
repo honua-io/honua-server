@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.Metadata.Domain.V2;
 
@@ -52,16 +51,10 @@ internal sealed class ODataEditParameterAdapter(
 
     public TransactionSemantics TransactionSemantics => Core.Features.Edit.TransactionSemantics.OData;
 
-    public Task<EditAdapterResult> ConvertAsync(
-        ODataEditRequest protocolRequest,
-        LayerDefinition layer,
-        CancellationToken cancellationToken = default)
-        => ConvertCoreAsync(protocolRequest);
-
     /// <summary>
-    /// Metadata v2 overload of <see cref="ConvertAsync(ODataEditRequest, LayerDefinition, CancellationToken)"/>.
-    /// The OData edit adapter does not consult layer metadata to build the unified edit, so the
-    /// V2 implementation is functionally identical to the v1 overload.
+    /// Converts the parsed OData edit request into the shared edit model. The OData
+    /// adapter does not need layer metadata to build the unified edit; field-level
+    /// validation happens in the v2 edit processor after conversion.
     /// </summary>
     public Task<EditAdapterResult> ConvertAsync(
         ODataEditRequest protocolRequest,

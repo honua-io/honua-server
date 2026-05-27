@@ -5,7 +5,7 @@ using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Scene.Domain;
 
 namespace Honua.Core.Features.Scene.Generation;
@@ -62,7 +62,7 @@ public static class GeometryTileBuilder
     public static byte[] BuildGlb(
         IReadOnlyList<SceneFeature> features,
         IReadOnlyList<SceneAttributeSchema> metadataAttributes,
-        LayerExtrusionInfo? extrusion,
+        MetadataV2ExtrusionInfo? extrusion,
         string? generatorTag = null,
         IList<string>? warnings = null,
         IReadOnlyList<ResolvedSymbology>? perFeatureSymbology = null)
@@ -224,7 +224,7 @@ public static class GeometryTileBuilder
         SceneFeature feature,
         float featureIndex,
         SceneGeometryKind kind,
-        LayerExtrusionInfo? extrusion,
+        MetadataV2ExtrusionInfo? extrusion,
         List<float> positions,
         List<float> featureIds)
     {
@@ -272,7 +272,7 @@ public static class GeometryTileBuilder
     private static void AppendPolygonTriangles(
         SceneFeature feature,
         float featureIndex,
-        LayerExtrusionInfo? extrusion,
+        MetadataV2ExtrusionInfo? extrusion,
         List<float> positions,
         List<float> featureIds)
     {
@@ -345,13 +345,13 @@ public static class GeometryTileBuilder
         }
     }
 
-    private static double ResolveExtrusionHeight(SceneFeature feature, LayerExtrusionInfo extrusion)
+    private static double ResolveExtrusionHeight(SceneFeature feature, MetadataV2ExtrusionInfo extrusion)
     {
         var raw = LookupNumericAttribute(feature, extrusion.HeightField) ?? extrusion.DefaultHeight ?? 0.0;
         return ConvertVerticalToMeters(raw, extrusion.Unit);
     }
 
-    private static double ResolveBaseHeight(SceneFeature feature, LayerExtrusionInfo extrusion)
+    private static double ResolveBaseHeight(SceneFeature feature, MetadataV2ExtrusionInfo extrusion)
     {
         if (string.IsNullOrEmpty(extrusion.BaseHeightField))
         {
@@ -384,11 +384,11 @@ public static class GeometryTileBuilder
 
     private static double ConvertVerticalToMeters(double value, string? unit)
     {
-        VerticalUnits.TryNormalize(unit, out var normalized);
+        MetadataV2VerticalUnits.TryNormalize(unit, out var normalized);
         return normalized switch
         {
-            VerticalUnits.Feet => value * 0.3048,
-            VerticalUnits.UsSurveyFeet => value * (1200.0 / 3937.0),
+            MetadataV2VerticalUnits.Feet => value * 0.3048,
+            MetadataV2VerticalUnits.UsSurveyFeet => value * (1200.0 / 3937.0),
             _ => value
         };
     }

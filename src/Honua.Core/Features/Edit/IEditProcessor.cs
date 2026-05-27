@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 
@@ -14,83 +13,56 @@ namespace Honua.Core.Features.Edit;
 public interface IEditProcessor
 {
     /// <summary>
-    /// Validates a unified edit request against layer constraints and protocol limits.
+    /// Validates a unified edit request against resource constraints and protocol limits.
     /// </summary>
     /// <param name="editRequest">Unified edit request to validate</param>
-    /// <param name="layer">Target layer definition</param>
+    /// <param name="resource">Target metadata resource</param>
     /// <returns>Validation result with any errors</returns>
-    EditValidationResult ValidateEdit(UnifiedEditRequest editRequest, LayerDefinition layer);
+    EditValidationResult ValidateEdit(UnifiedEditRequest editRequest, MetadataV2Resource resource);
 
     /// <summary>
     /// Optimizes a unified edit request for efficient execution.
     /// </summary>
     /// <param name="editRequest">Edit request to optimize</param>
-    /// <param name="layer">Target layer definition</param>
+    /// <param name="resource">Target metadata resource</param>
     /// <returns>Optimized edit request</returns>
-    UnifiedEditRequest OptimizeEdit(UnifiedEditRequest editRequest, LayerDefinition layer);
+    UnifiedEditRequest OptimizeEdit(UnifiedEditRequest editRequest, MetadataV2Resource resource);
 
     /// <summary>
     /// Converts a unified edit request to a FeatureEditBatch for data access.
     /// </summary>
     /// <param name="editRequest">Unified edit request</param>
-    /// <param name="layer">Target layer definition</param>
+    /// <param name="resource">Target metadata resource</param>
     /// <returns>Feature edit batch for data access layer</returns>
-    FeatureEditBatch ToFeatureEditBatch(UnifiedEditRequest editRequest, LayerDefinition layer);
+    FeatureEditBatch ToFeatureEditBatch(UnifiedEditRequest editRequest, MetadataV2Resource resource);
 
     /// <summary>
     /// Validates edit transaction semantics and constraints.
     /// </summary>
     /// <param name="transaction">Edit transaction to validate</param>
-    /// <param name="layer">Target layer definition</param>
+    /// <param name="resource">Target metadata resource</param>
     /// <returns>Transaction validation result</returns>
-    TransactionValidationResult ValidateTransaction(EditTransaction transaction, LayerDefinition layer);
+    TransactionValidationResult ValidateTransaction(EditTransaction transaction, MetadataV2Resource resource);
 
     /// <summary>
     /// Determines edit execution strategy based on request characteristics.
     /// </summary>
     /// <param name="editRequest">Unified edit request</param>
-    /// <param name="layer">Target layer definition</param>
+    /// <param name="resource">Target metadata resource</param>
     /// <returns>Execution strategy</returns>
-    EditExecutionStrategy DetermineExecutionStrategy(UnifiedEditRequest editRequest, LayerDefinition layer);
+    EditExecutionStrategy DetermineExecutionStrategy(UnifiedEditRequest editRequest, MetadataV2Resource resource);
 
     /// <summary>
     /// Estimates the performance impact of the edit operation.
     /// </summary>
     /// <param name="editRequest">Unified edit request</param>
-    /// <param name="layer">Target layer definition</param>
+    /// <param name="resource">Target metadata resource</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Performance estimate</returns>
     Task<EditPerformanceEstimate> EstimatePerformanceAsync(
         UnifiedEditRequest editRequest,
-        LayerDefinition layer,
-        CancellationToken cancellationToken);
-
-    /// <summary>V2 overload of <c>ValidateEdit</c>.</summary>
-    EditValidationResult ValidateEdit(UnifiedEditRequest editRequest, MetadataV2Resource resource)
-        => throw new NotSupportedException($"{GetType().Name} does not yet implement the Metadata v2 ValidateEdit overload.");
-
-    /// <summary>V2 overload of <c>OptimizeEdit</c>.</summary>
-    UnifiedEditRequest OptimizeEdit(UnifiedEditRequest editRequest, MetadataV2Resource resource)
-        => throw new NotSupportedException($"{GetType().Name} does not yet implement the Metadata v2 OptimizeEdit overload.");
-
-    /// <summary>V2 overload of <c>ToFeatureEditBatch</c>.</summary>
-    FeatureEditBatch ToFeatureEditBatch(UnifiedEditRequest editRequest, MetadataV2Resource resource)
-        => throw new NotSupportedException($"{GetType().Name} does not yet implement the Metadata v2 ToFeatureEditBatch overload.");
-
-    /// <summary>V2 overload of <c>ValidateTransaction</c>.</summary>
-    TransactionValidationResult ValidateTransaction(EditTransaction transaction, MetadataV2Resource resource)
-        => throw new NotSupportedException($"{GetType().Name} does not yet implement the Metadata v2 ValidateTransaction overload.");
-
-    /// <summary>V2 overload of <c>DetermineExecutionStrategy</c>.</summary>
-    EditExecutionStrategy DetermineExecutionStrategy(UnifiedEditRequest editRequest, MetadataV2Resource resource)
-        => throw new NotSupportedException($"{GetType().Name} does not yet implement the Metadata v2 DetermineExecutionStrategy overload.");
-
-    /// <summary>V2 overload of <c>EstimatePerformanceAsync</c>.</summary>
-    Task<EditPerformanceEstimate> EstimatePerformanceAsync(
-        UnifiedEditRequest editRequest,
         MetadataV2Resource resource,
-        CancellationToken cancellationToken)
-        => throw new NotSupportedException($"{GetType().Name} does not yet implement the Metadata v2 EstimatePerformanceAsync overload.");
+        CancellationToken cancellationToken);
 }
 
 /// <summary>

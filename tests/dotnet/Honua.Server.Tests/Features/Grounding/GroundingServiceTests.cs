@@ -3,12 +3,12 @@
 
 using System.Security.Claims;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Grounding.Abstractions;
 using Honua.Core.Features.Grounding.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Publishing.Domain;
 using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.Grounding;
@@ -34,18 +34,19 @@ public sealed class GroundingServiceTests
     private readonly IGroundingEngine _engine = Substitute.For<IGroundingEngine>();
     private readonly IProcessCatalog _processCatalog = Substitute.For<IProcessCatalog>();
     private readonly IGroundingAuthorizationFilter _authorizationFilter = Substitute.For<IGroundingAuthorizationFilter>();
-    private readonly ILayerCatalog _layerCatalog = Substitute.For<ILayerCatalog>();
+    private readonly IMetadataV2GraphProvider _metadataGraphProvider;
     private readonly GroundingOptions _options = new();
+    private MetadataV2GraphSnapshot _metadataSnapshot = CreateSnapshot();
+    private Exception? _metadataGraphException;
 
     private static readonly ClaimsPrincipal Principal = new(new ClaimsIdentity(
         [new Claim(ClaimTypes.Name, "op")], "Test"));
 
     public GroundingServiceTests()
     {
+        _metadataGraphProvider = new DelegatingMetadataV2GraphProvider(GetSnapshotAsync);
         _engine.Name.Returns("test-engine");
         _processCatalog.ListProcesses().Returns([]);
-        _layerCatalog.ListLayersAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<LayerDefinition>());
-        _layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<ServiceDefinition>());
         _authorizationFilter.Filter(Arg.Any<ClaimsPrincipal>(), Arg.Any<IReadOnlyList<GroundingCandidate>>())
             .Returns(callInfo => callInfo.Arg<IReadOnlyList<GroundingCandidate>>());
     }
@@ -363,11 +364,11 @@ public sealed class GroundingServiceTests
     }
 
     [UnitTest]
-    public async Task GroundAsync_MissingLayerCatalog_ReturnsEmptyDatasetsAndNoFailure()
+    public async Task GroundAsync_MissingMetadataGraphProvider_ReturnsEmptyDatasetsAndNoFailure()
     {
         _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
 
-        var service = CreateServiceWithoutLayerCatalog();
+        var service = CreateServiceWithoutMetadataGraphProvider();
 
         var result = await service.GroundAsync(new GroundingRequest { Goal = "buffer" }, Principal);
 
@@ -375,11 +376,10 @@ public sealed class GroundingServiceTests
     }
 
     [UnitTest]
-    public async Task GroundAsync_LayerCatalogListLayersThrows_ThrowsCatalogUnavailable()
+    public async Task GroundAsync_MetadataGraphProviderThrows_ThrowsCatalogUnavailable()
     {
         _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
-        _layerCatalog.ListLayersAsync(Arg.Any<CancellationToken>())
-            .Returns<Task<LayerDefinition[]>>(_ => throw new InvalidOperationException("catalog down"));
+        _metadataGraphException = new InvalidOperationException("catalog down");
 
         var service = CreateService();
 
@@ -391,11 +391,10 @@ public sealed class GroundingServiceTests
     }
 
     [UnitTest]
-    public async Task GroundAsync_LayerCatalogListServicesThrows_ThrowsCatalogUnavailable()
+    public async Task GroundAsync_MetadataGraphProviderServicesUnavailable_ThrowsCatalogUnavailable()
     {
         _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
-        _layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>())
-            .Returns<Task<ServiceDefinition[]>>(_ => throw new InvalidOperationException("services unavailable"));
+        _metadataGraphException = new InvalidOperationException("services unavailable");
 
         var service = CreateService();
 
@@ -407,13 +406,12 @@ public sealed class GroundingServiceTests
     }
 
     [UnitTest]
-    public async Task GroundAsync_LayerCatalogCancellation_IsPropagated()
+    public async Task GroundAsync_MetadataGraphProviderCancellation_IsPropagated()
     {
         _engine.Classify(Arg.Any<GroundingRequest>()).Returns(HighAnalyze);
         using var cts = new CancellationTokenSource();
         cts.Cancel();
-        _layerCatalog.ListLayersAsync(Arg.Any<CancellationToken>())
-            .Returns<Task<LayerDefinition[]>>(_ => throw new OperationCanceledException(cts.Token));
+        _metadataGraphException = new OperationCanceledException(cts.Token);
 
         var service = CreateService();
 
@@ -1296,14 +1294,44 @@ public sealed class GroundingServiceTests
         Options.Create(_options),
         NullLogger<GroundingService>.Instance,
         serviceScopeFactory: null,
-        _layerCatalog);
+        _metadataGraphProvider);
 
-    private GroundingService CreateServiceWithoutLayerCatalog() => new(
+    private GroundingService CreateServiceWithoutMetadataGraphProvider() => new(
         _engine,
         _processCatalog,
         _authorizationFilter,
         Options.Create(_options),
         NullLogger<GroundingService>.Instance,
         serviceScopeFactory: null,
-        layerCatalog: null);
+        metadataGraphProvider: null);
+
+    private ValueTask<MetadataV2GraphSnapshot> GetSnapshotAsync(CancellationToken cancellationToken)
+    {
+        if (_metadataGraphException is OperationCanceledException canceled)
+        {
+            throw canceled;
+        }
+
+        if (_metadataGraphException is not null)
+        {
+            throw _metadataGraphException;
+        }
+
+        return new ValueTask<MetadataV2GraphSnapshot>(_metadataSnapshot);
+    }
+
+    private static MetadataV2GraphSnapshot CreateSnapshot(MetadataV2Graph? graph = null)
+        => new(graph ?? new MetadataV2Graph(), "\"test\"", DateTimeOffset.UtcNow);
+
+    private sealed class DelegatingMetadataV2GraphProvider(
+        Func<CancellationToken, ValueTask<MetadataV2GraphSnapshot>> getCurrent) : IMetadataV2GraphProvider
+    {
+        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
+            => getCurrent(cancellationToken);
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(
+            long revision,
+            CancellationToken cancellationToken = default)
+            => new((MetadataV2GraphSnapshot?)null);
+    }
 }

@@ -10,6 +10,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.ServiceDefaults;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -574,7 +575,9 @@ public sealed class StacSearchTests : IAsyncLifetime
         var stacId = $"fields-{runId}";
         var nestedId = $"nested-{runId}";
         var featureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, $"fields {runId}");
-        await UpsertLayerFieldAsync("id", "String", 255);
+        _fixture.UpdateV2ResourceSchemaField(
+            WebAppFixture.TestLayerId,
+            new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.String, Nullable = true });
         await SetFeatureAttributeAsync(featureId, "stac_id", stacId);
         await SetFeatureAttributeAsync(featureId, "id", nestedId);
 
@@ -657,36 +660,6 @@ public sealed class StacSearchTests : IAsyncLifetime
         await using var reader = await command.ExecuteReaderAsync();
         (await reader.ReadAsync()).Should().BeTrue();
         return (reader.GetDouble(0), reader.GetDouble(1));
-    }
-
-    private async Task UpsertLayerFieldAsync(string fieldName, string fieldType, int? maxLength = null)
-    {
-        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO honua.layer_fields (
-                layer_id,
-                field_name,
-                field_type,
-                field_order,
-                max_length,
-                nullable,
-                description
-            )
-            VALUES (@layerId, @fieldName, @fieldType, 1000, @maxLength, TRUE, @description)
-            ON CONFLICT (layer_id, field_name)
-            DO UPDATE SET
-                field_type = EXCLUDED.field_type,
-                max_length = EXCLUDED.max_length,
-                nullable = EXCLUDED.nullable,
-                description = EXCLUDED.description;
-            """;
-        command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
-        command.Parameters.AddWithValue("fieldName", fieldName);
-        command.Parameters.AddWithValue("fieldType", fieldType);
-        command.Parameters.AddWithValue("maxLength", maxLength.HasValue ? maxLength.Value : DBNull.Value);
-        command.Parameters.AddWithValue("description", $"{fieldName} test field");
-        await command.ExecuteNonQueryAsync();
     }
 
     private async Task SetFeatureAttributeAsync(long featureId, string attributeName, string attributeValue)

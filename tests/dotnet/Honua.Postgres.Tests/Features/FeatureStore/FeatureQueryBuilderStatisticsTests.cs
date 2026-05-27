@@ -2,8 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Postgres.Features.FeatureStore.Services;
 using Microsoft.Extensions.ObjectPool;
 using FeatureStoreStringBuilderPooledObjectPolicy = Honua.Postgres.Features.FeatureStore.Services.StringBuilderPooledObjectPolicy;
@@ -67,14 +67,14 @@ public sealed class FeatureQueryBuilderStatisticsTests
                     StatisticType = StatisticType.Min,
                     OnStatisticField = "bucket",
                     OutStatisticFieldName = "min_bucket",
-                    FieldType = FieldType.Integer
+                    FieldType = MetadataV2FieldType.Integer
                 },
                 new StatisticDefinition
                 {
                     StatisticType = StatisticType.Max,
                     OnStatisticField = "bucket",
                     OutStatisticFieldName = "max_bucket",
-                    FieldType = FieldType.Integer
+                    FieldType = MetadataV2FieldType.Integer
                 })
         };
 

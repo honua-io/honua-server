@@ -3,8 +3,8 @@
 
 using System.Linq;
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Styling.Domain;
+using GeometryType = Honua.Core.Features.Metadata.Domain.V2.MetadataV2GeometryType;
 
 namespace Honua.Server.Features.Infrastructure.Styling;
 
@@ -16,7 +16,7 @@ internal static class GeoServicesToMapLibreConverter
     /// inputs are unsupported, callers still receive a best-effort default MapLibre style
     /// so downstream consumers continue to render.
     /// </summary>
-    public static StyleConversionResult Convert(JsonElement drawingInfo, LayerDefinition layer)
+    public static StyleConversionResult Convert(JsonElement drawingInfo, StyleLayerDescriptor layer)
     {
         var unsupported = new List<UnsupportedSymbolizerInfo>();
 
@@ -99,7 +99,7 @@ internal static class GeoServicesToMapLibreConverter
     /// </summary>
     private static void ValidateSymbolType(
         JsonElement symbol,
-        LayerDefinition layer,
+        StyleLayerDescriptor layer,
         List<UnsupportedSymbolizerInfo> unsupported)
     {
         if (!TryGetSymbolType(symbol, out var symbolType))
@@ -181,7 +181,7 @@ internal static class GeoServicesToMapLibreConverter
 
     private static string ConvertSimpleRenderer(
         JsonElement renderer,
-        LayerDefinition layer,
+        StyleLayerDescriptor layer,
         List<UnsupportedSymbolizerInfo> unsupported)
     {
         if (!renderer.TryGetProperty("symbol", out var symbol) || symbol.ValueKind != JsonValueKind.Object)
@@ -225,7 +225,7 @@ internal static class GeoServicesToMapLibreConverter
 
     private static string ConvertUniqueValueRenderer(
         JsonElement renderer,
-        LayerDefinition layer,
+        StyleLayerDescriptor layer,
         List<UnsupportedSymbolizerInfo> unsupported)
     {
         var fieldName = TryGetRendererField(renderer, out var field)
@@ -328,7 +328,7 @@ internal static class GeoServicesToMapLibreConverter
 
     private static string ConvertClassBreaksRenderer(
         JsonElement renderer,
-        LayerDefinition layer,
+        StyleLayerDescriptor layer,
         List<UnsupportedSymbolizerInfo> unsupported)
     {
         var fieldName = TryGetRendererField(renderer, out var field)
@@ -427,7 +427,7 @@ internal static class GeoServicesToMapLibreConverter
         return StyleJsonUtilities.Serialize(style);
     }
 
-    private static Dictionary<string, object?> BuildPointLayer(LayerDefinition layer, string sourceId, JsonElement symbol)
+    private static Dictionary<string, object?> BuildPointLayer(StyleLayerDescriptor layer, string sourceId, JsonElement symbol)
     {
         _ = TryGetSymbolColor(symbol, out var color);
         var size = TryGetNumber(symbol, "size") ?? StyleDefaults.DefaultPointSize;
@@ -454,7 +454,7 @@ internal static class GeoServicesToMapLibreConverter
         return BuildLayer(layer, sourceId, "circle", paint, "circle");
     }
 
-    private static Dictionary<string, object?> BuildLineLayer(LayerDefinition layer, string sourceId, JsonElement symbol)
+    private static Dictionary<string, object?> BuildLineLayer(StyleLayerDescriptor layer, string sourceId, JsonElement symbol)
     {
         _ = TryGetSymbolColor(symbol, out var color);
         var width = TryGetNumber(symbol, "width") ?? StyleDefaults.DefaultLineWidth;
@@ -473,7 +473,7 @@ internal static class GeoServicesToMapLibreConverter
     }
 
     private static void BuildPolygonLayers(
-        LayerDefinition layer,
+        StyleLayerDescriptor layer,
         string sourceId,
         JsonElement symbol,
         List<Dictionary<string, object?>> layers)
@@ -499,7 +499,7 @@ internal static class GeoServicesToMapLibreConverter
     }
 
     private static List<Dictionary<string, object?>> BuildExpressionLayers(
-        LayerDefinition layer,
+        StyleLayerDescriptor layer,
         string sourceId,
         List<object?> expression,
         double? size,
@@ -567,7 +567,7 @@ internal static class GeoServicesToMapLibreConverter
     }
 
     private static Dictionary<string, object?> BuildLayer(
-        LayerDefinition layer,
+        StyleLayerDescriptor layer,
         string sourceId,
         string idSuffix,
         Dictionary<string, object?> paint,
@@ -582,7 +582,7 @@ internal static class GeoServicesToMapLibreConverter
         };
 
     private static Dictionary<string, object?> BuildSymbolLayer(
-        LayerDefinition layer,
+        StyleLayerDescriptor layer,
         string sourceId,
         Dictionary<string, object?> layout)
         => new()
@@ -595,7 +595,7 @@ internal static class GeoServicesToMapLibreConverter
         };
 
     private static Dictionary<string, object?> BuildPictureMarkerStyle(
-        LayerDefinition layer,
+        StyleLayerDescriptor layer,
         PictureMarkerPayload payload)
     {
         var sourceId = StyleDefaults.GetSourceId(layer);
@@ -640,7 +640,7 @@ internal static class GeoServicesToMapLibreConverter
     }
 
     private static bool TryBuildPictureMarkerUniqueValueStyle(
-        LayerDefinition layer,
+        StyleLayerDescriptor layer,
         string fieldName,
         JsonElement infos,
         JsonElement renderer,
@@ -777,7 +777,7 @@ internal static class GeoServicesToMapLibreConverter
     }
 
     private static bool TryBuildPictureMarkerClassBreakStyle(
-        LayerDefinition layer,
+        StyleLayerDescriptor layer,
         string fieldName,
         JsonElement infos,
         JsonElement renderer,
@@ -948,7 +948,7 @@ internal static class GeoServicesToMapLibreConverter
         return true;
     }
 
-    private static Dictionary<string, object?>? TryBuildOutlinePaint(LayerDefinition layer, JsonElement symbol)
+    private static Dictionary<string, object?>? TryBuildOutlinePaint(StyleLayerDescriptor layer, JsonElement symbol)
     {
         if (layer.GeometryType is GeometryType.LineString or GeometryType.MultiLineString)
         {

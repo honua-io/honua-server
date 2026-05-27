@@ -2,11 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
-using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Styling.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -18,11 +17,11 @@ namespace Honua.Core.Tests.Features.Styling;
 public sealed class StyleSuggestionServiceTests
 {
     [Theory]
-    [InlineData(GeometryType.Polygon)]
-    [InlineData(GeometryType.MultiPolygon)]
-    [InlineData(GeometryType.GeometryCollection)]
+    [InlineData(MetadataV2GeometryType.Polygon)]
+    [InlineData(MetadataV2GeometryType.MultiPolygon)]
+    [InlineData(MetadataV2GeometryType.GeometryCollection)]
     public async Task SuggestAsync_PolygonLikeGeometry_PrefersNumericFieldForChoropleth(
-        GeometryType geometryType)
+        MetadataV2GeometryType geometryType)
     {
         // A numeric field should score higher than a categorical field for
         // polygon-like geometries (including GeometryCollection).
@@ -51,22 +50,18 @@ public sealed class StyleSuggestionServiceTests
             profiles: [numericProfile, categoricalProfile],
             numericValues: [10, 200, 400, 600, 800, 990]);
 
-        var layer = new LayerDefinition(
-            Id: 1,
-            Name: "test",
-            Description: null,
-            GeometryType: geometryType,
-            SpatialReference: SpatialReference.WGS84,
-            Fields:
+        var resource = CreateResource(
+            "test",
+            geometryType,
             [
-                new("objectid", FieldType.Integer),
-                new("shape", FieldType.Geometry),
-                new("population", FieldType.Double),
-                new("status", FieldType.String)
+                Field("objectid", MetadataV2FieldType.Integer, "id.primary"),
+                Field("shape", MetadataV2FieldType.Geometry, "geometry.primary"),
+                Field("population", MetadataV2FieldType.Double),
+                Field("status", MetadataV2FieldType.String)
             ]);
 
         var service = new StyleSuggestionService(stub, NullLogger<StyleSuggestionService>.Instance);
-        var result = await service.SuggestAsync(layer);
+        var result = await service.SuggestAsync(resource, 1);
 
         result.SuggestedField.Should().NotBeNull();
         result.SuggestedField!.Name.Should().Be("population",
@@ -89,14 +84,13 @@ public sealed class StyleSuggestionServiceTests
         };
 
         var stub = new StubFieldProfilingService(profiles: [profile], numericValues: []);
-        var layer = new LayerDefinition(
-            Id: 1, Name: "test", Description: null,
-            GeometryType: GeometryType.Point,
-            SpatialReference: SpatialReference.WGS84,
-            Fields: [new("category", FieldType.String)]);
+        var resource = CreateResource(
+            "test",
+            MetadataV2GeometryType.Point,
+            [Field("category", MetadataV2FieldType.String)]);
 
         var service = new StyleSuggestionService(stub, NullLogger<StyleSuggestionService>.Instance);
-        var result = await service.SuggestAsync(layer, new StyleSuggestionOptions { Edition = edition });
+        var result = await service.SuggestAsync(resource, 1, new StyleSuggestionOptions { Edition = edition });
 
         result.Edition.Should().Be(edition);
     }
@@ -106,16 +100,56 @@ public sealed class StyleSuggestionServiceTests
     {
         // Layer with no eligible fields triggers geometry-only fallback
         var stub = new StubFieldProfilingService(profiles: [], numericValues: []);
-        var layer = new LayerDefinition(
-            Id: 1, Name: "test", Description: null,
-            GeometryType: GeometryType.Point,
-            SpatialReference: SpatialReference.WGS84,
-            Fields: [new("shape", FieldType.Geometry)]);
+        var resource = CreateResource(
+            "test",
+            MetadataV2GeometryType.Point,
+            [Field("shape", MetadataV2FieldType.Geometry, "geometry.primary")]);
 
         var service = new StyleSuggestionService(stub, NullLogger<StyleSuggestionService>.Instance);
-        var result = await service.SuggestAsync(layer, new StyleSuggestionOptions { Edition = HonuaEdition.Enterprise });
+        var result = await service.SuggestAsync(
+            resource,
+            1,
+            new StyleSuggestionOptions { Edition = HonuaEdition.Enterprise });
 
         result.Edition.Should().Be(HonuaEdition.Enterprise);
+    }
+
+    private static MetadataV2Resource CreateResource(
+        string name,
+        MetadataV2GeometryType geometryType,
+        IReadOnlyList<MetadataV2Field> fields)
+    {
+        return new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = name,
+                Name = name,
+                Title = name
+            },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            SchemaFields = fields,
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = MetadataV2SpatialReference.Wgs84,
+                GeometryType = geometryType,
+                PrimaryGeometryField = fields.FirstOrDefault(field =>
+                    field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)?.Name
+            }
+        };
+    }
+
+    private static MetadataV2Field Field(
+        string name,
+        MetadataV2FieldType type,
+        params string[] semanticRoles)
+    {
+        return new MetadataV2Field
+        {
+            Name = name,
+            Type = type,
+            SemanticRoles = semanticRoles
+        };
     }
 
     /// <summary>
@@ -127,7 +161,7 @@ public sealed class StyleSuggestionServiceTests
         double[] numericValues) : IFieldProfilingService
     {
         public Task<IReadOnlyList<FieldProfile>> ProfileFieldsAsync(
-            int layerId, IReadOnlyList<FieldDefinition> fields, int sampleLimit,
+            int layerId, IReadOnlyList<MetadataV2Field> fields, int sampleLimit,
             CancellationToken cancellationToken = default)
         {
             // Return only profiles whose field name matches the requested fields

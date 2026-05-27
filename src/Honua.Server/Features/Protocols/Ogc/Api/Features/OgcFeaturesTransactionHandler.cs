@@ -7,7 +7,6 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Exceptions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -47,6 +46,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     private readonly FeatureMutationValidator _mutationValidator = dependencies.MutationValidator;
     private readonly FeatureMutationEventService _mutationEventService = dependencies.MutationEventService;
     private readonly ILogger<OgcFeaturesTransactionHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private const string OgcFeaturesProtocolName = "OgcFeatures";
 
     /// <summary>
     /// Handles batch feature operations in a single transaction.
@@ -242,7 +242,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         eventOperation,
                         HonuaTelemetry.Protocols.OgcFeatures,
                         CancellationToken.None,
-                        serviceProtocol: ServiceProtocols.OgcFeatures,
+                        serviceProtocol: OgcFeaturesProtocolName,
                         requestId: $"{context.TraceIdentifier}:{operation.Id ?? "batch"}",
                         mutationFeature: preparedOperation?.OperationKind == BatchOperationKind.Delete
                             ? null
@@ -476,7 +476,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                     HonuaTelemetry.Protocols.OgcFeatures,
                     CancellationToken.None,
                     mutationFeature: updated.Value,
-                    serviceProtocol: ServiceProtocols.OgcFeatures,
+                    serviceProtocol: OgcFeaturesProtocolName,
                     geometryChanged: geometryChangedForReplace).ConfigureAwait(false);
                 HonuaTelemetry.SetSuccess(activity);
                 return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
@@ -778,7 +778,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                     HonuaTelemetry.Protocols.OgcFeatures,
                     CancellationToken.None,
                     mutationFeature: updated.Value,
-                    serviceProtocol: ServiceProtocols.OgcFeatures).ConfigureAwait(false);
+                    serviceProtocol: OgcFeaturesProtocolName).ConfigureAwait(false);
                 HonuaTelemetry.SetSuccess(activity);
                 return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
             }
@@ -875,7 +875,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             context,
             layerId,
             HonuaTelemetry.Protocols.OgcFeatures,
-            serviceProtocol: ServiceProtocols.OgcFeatures,
+            serviceProtocol: OgcFeaturesProtocolName,
             // V2 storage SRID is read from MetadataV2SpatialExtensions.ReadSrid so the
             // outbox enrichment fallback matches the inline-publish path.
             layerSrid: resource.ReadSrid(),

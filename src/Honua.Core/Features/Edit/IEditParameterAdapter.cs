@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Edit;
@@ -13,19 +12,6 @@ namespace Honua.Core.Features.Edit;
 public interface IEditParameterAdapter<in TProtocolEditRequest>
 {
     /// <summary>
-    /// Converts protocol-specific edit request to a unified edit request.
-    /// </summary>
-    /// <param name="protocolRequest">Protocol-specific edit request</param>
-    /// <param name="layer">Target layer definition</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Unified edit request or error result</returns>
-    Task<EditAdapterResult> ConvertAsync(
-        TProtocolEditRequest protocolRequest,
-        LayerDefinition layer,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// V2 overload of <see cref="ConvertAsync(TProtocolEditRequest, LayerDefinition, CancellationToken)"/>.
     /// Converts protocol-specific edit requests using a Metadata v2 canonical resource as the target
     /// schema. Implementations should validate fields against <see cref="MetadataV2Resource.SchemaFields"/>
     /// and produce <see cref="UnifiedEditRequest"/>s keyed by the resource id.
