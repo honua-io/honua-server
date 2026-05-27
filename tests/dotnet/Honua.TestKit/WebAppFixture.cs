@@ -1321,6 +1321,58 @@ public sealed class WebAppFixture : IAsyncLifetime
     }
 
     /// <summary>
+    /// Toggles the runtime visibility of the Metadata v2 publications/resources bound to the
+    /// supplied layer index by flipping their status (Retired when disabled, runtime-ready when
+    /// enabled), so access/visibility tests observe an enabled/disabled layer.
+    /// </summary>
+    public void SetV2LayerEnabled(int layerIndex, bool enabled)
+    {
+        var provider = GetService<IMetadataV2GraphProvider>() as Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider
+            ?? throw new InvalidOperationException(
+                "Test V2 graph provider not registered as TestMetadataV2GraphProvider.");
+
+        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
+        var affectedResourceIds = snapshot.Graph.Publications
+            .Where(publication => publication.LayerIndex == layerIndex)
+            .Select(publication => publication.ResourceId)
+            .ToHashSet(StringComparer.Ordinal);
+        if (affectedResourceIds.Count == 0)
+        {
+            return;
+        }
+
+        var status = enabled
+            ? new MetadataV2Status
+            {
+                Lifecycle = MetadataV2LifecycleStatus.Active,
+                State = MetadataV2OperationalState.Ready,
+            }
+            : new MetadataV2Status
+            {
+                Lifecycle = MetadataV2LifecycleStatus.Retired,
+                State = MetadataV2OperationalState.Ready,
+            };
+
+        var resources = snapshot.Graph.Resources
+            .Select(resource => affectedResourceIds.Contains(resource.Metadata.Id)
+                ? resource with { Status = status }
+                : resource)
+            .ToArray();
+        var publications = snapshot.Graph.Publications
+            .Select(publication => publication.LayerIndex == layerIndex
+                ? publication with { Status = status }
+                : publication)
+            .ToArray();
+
+        provider.SetGraph(snapshot.Graph with
+        {
+            Resources = resources,
+            Publications = publications,
+            Revision = snapshot.Graph.Revision + 1,
+        });
+    }
+
+    /// <summary>
     /// Adds the Metadata v2 mirror for <c>tests/seed/admin-sample-feature-server.yaml</c>.
     /// The SQL seed is applied after the fixture starts, so tests that use it must update
     /// the in-memory v2 graph explicitly.

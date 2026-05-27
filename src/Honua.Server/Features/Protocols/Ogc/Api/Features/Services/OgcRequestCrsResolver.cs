@@ -63,57 +63,6 @@ internal static class OgcRequestCrsResolver
         return (true, definition, null);
     }
 
-    /// <summary>
-    /// Metadata v2 overload of
-    /// <see cref="TryResolveInputCrsAsync(HttpRequest, LayerDefinition, ICrsRegistry, CancellationToken)"/>.
-    /// Reads the storage SRID from the V2 resource via
-    /// <see cref="MetadataV2SpatialExtensions.ReadSrid"/>, defaulting to CRS84 when the
-    /// resource declares no SRID.
-    /// </summary>
-    internal static async Task<(bool IsValid, CrsDefinition Definition, string? Error)> TryResolveInputCrsAsync(
-        HttpRequest request,
-        MetadataV2Resource resource,
-        ICrsRegistry crsRegistry,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(resource);
-        ArgumentNullException.ThrowIfNull(crsRegistry);
-
-        var contentCrs = request.Headers.TryGetValue("Content-Crs", out var values)
-            ? values.ToString()
-            : null;
-        var resourceSrid = resource.ReadSrid();
-        CrsDefinition definition;
-        var supportedCrs = await OgcFeaturesUtilities.GetSupportedCrsDefinitionsAsync(
-                resource,
-                crsRegistry,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        if (string.IsNullOrWhiteSpace(contentCrs))
-        {
-            var defaultCrs = !resourceSrid.HasValue || resourceSrid.Value == 4326
-                ? OgcFeaturesUtilities.Crs84Uri
-                : resourceSrid.Value.ToOgcCrs();
-
-            if (!OgcFeaturesUtilities.TryResolveCrs(defaultCrs, supportedCrs, out definition, out var defaultError))
-            {
-                return (false, default, defaultError ?? $"Unsupported CRS '{defaultCrs}'.");
-            }
-        }
-        else
-        {
-            var normalized = NormalizeContentCrs(contentCrs);
-            if (!OgcFeaturesUtilities.TryResolveCrs(normalized, supportedCrs, out definition, out var resolveError))
-            {
-                return (false, default, resolveError ?? $"Unsupported CRS '{contentCrs}'.");
-            }
-        }
-
-        return (true, definition, null);
-    }
-
     private static string NormalizeContentCrs(string contentCrs)
     {
         var trimmed = contentCrs.Trim();

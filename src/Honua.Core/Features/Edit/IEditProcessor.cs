@@ -63,33 +63,6 @@ public interface IEditProcessor
         UnifiedEditRequest editRequest,
         MetadataV2Resource resource,
         CancellationToken cancellationToken);
-
-    /// <summary>V2 overload of <c>ValidateEdit</c>.</summary>
-    EditValidationResult ValidateEdit(UnifiedEditRequest editRequest, MetadataV2Resource resource)
-        => throw new NotSupportedException($"{GetType().Name} does not yet implement the Metadata v2 ValidateEdit overload.");
-
-    /// <summary>V2 overload of <c>OptimizeEdit</c>.</summary>
-    UnifiedEditRequest OptimizeEdit(UnifiedEditRequest editRequest, MetadataV2Resource resource)
-        => throw new NotSupportedException($"{GetType().Name} does not yet implement the Metadata v2 OptimizeEdit overload.");
-
-    /// <summary>V2 overload of <c>ToFeatureEditBatch</c>.</summary>
-    FeatureEditBatch ToFeatureEditBatch(UnifiedEditRequest editRequest, MetadataV2Resource resource)
-        => throw new NotSupportedException($"{GetType().Name} does not yet implement the Metadata v2 ToFeatureEditBatch overload.");
-
-    /// <summary>V2 overload of <c>ValidateTransaction</c>.</summary>
-    TransactionValidationResult ValidateTransaction(EditTransaction transaction, MetadataV2Resource resource)
-        => throw new NotSupportedException($"{GetType().Name} does not yet implement the Metadata v2 ValidateTransaction overload.");
-
-    /// <summary>V2 overload of <c>DetermineExecutionStrategy</c>.</summary>
-    EditExecutionStrategy DetermineExecutionStrategy(UnifiedEditRequest editRequest, MetadataV2Resource resource)
-        => throw new NotSupportedException($"{GetType().Name} does not yet implement the Metadata v2 DetermineExecutionStrategy overload.");
-
-    /// <summary>V2 overload of <c>EstimatePerformanceAsync</c>.</summary>
-    Task<EditPerformanceEstimate> EstimatePerformanceAsync(
-        UnifiedEditRequest editRequest,
-        MetadataV2Resource resource,
-        CancellationToken cancellationToken)
-        => throw new NotSupportedException($"{GetType().Name} does not yet implement the Metadata v2 EstimatePerformanceAsync overload.");
 }
 
 /// <summary>

@@ -147,19 +147,20 @@ internal static class VisibilityAnalysisEndpoints
             return validation.ErrorResult!;
         }
 
-        var layer = validation.Layer!;
-        var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(layer.Metadata, request.MosaicRule);
+        var resource = validation.Resource!;
+        var layerId = validation.Publication?.LayerIndex ?? 0;
+        var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(resource, request.MosaicRule);
 
         using var activity = HonuaTelemetry.StartActivity("honua.elevation.line_of_sight");
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Elevation);
         activity?.SetTag(HonuaTelemetry.Tags.Operation, "elevation.line-of-sight");
-        activity?.SetTag(HonuaTelemetry.Tags.LayerId, layer.Id);
+        activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
         activity?.SetTag(HonuaTelemetry.Tags.CollectionId, datasetId);
 
         try
         {
             var result = await visibilityService.ComputeLineOfSightAsync(
-                layer.Id,
+                layerId,
                 new VisibilityPoint { Longitude = observerLon, Latitude = observerLat, HeightOffsetMeters = observerHeight },
                 new VisibilityPoint { Longitude = targetLon, Latitude = targetLat, HeightOffsetMeters = targetHeight },
                 request.SampleCount,
@@ -253,13 +254,14 @@ internal static class VisibilityAnalysisEndpoints
             return validation.ErrorResult!;
         }
 
-        var layer = validation.Layer!;
-        var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(layer.Metadata, request.MosaicRule);
+        var resource = validation.Resource!;
+        var layerId = validation.Publication?.LayerIndex ?? 0;
+        var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(resource, request.MosaicRule);
 
         using var activity = HonuaTelemetry.StartActivity("honua.elevation.viewshed");
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Elevation);
         activity?.SetTag(HonuaTelemetry.Tags.Operation, "elevation.viewshed");
-        activity?.SetTag(HonuaTelemetry.Tags.LayerId, layer.Id);
+        activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
         activity?.SetTag(HonuaTelemetry.Tags.CollectionId, datasetId);
 
         try
@@ -274,7 +276,7 @@ internal static class VisibilityAnalysisEndpoints
             };
 
             var result = await visibilityService.ComputeViewshedAsync(
-                layer.Id,
+                layerId,
                 new VisibilityPoint { Longitude = observerLon, Latitude = observerLat, HeightOffsetMeters = observerHeight },
                 options,
                 mergeStrategy,
@@ -334,26 +336,27 @@ internal static class VisibilityAnalysisEndpoints
         return true;
     }
 
-    private static Task<LayerValidationHelpers.LayerValidationResult> ValidateDatasetAsync(
+    private static Task<LayerValidationHelpers.MetadataV2ValidationResult> ValidateDatasetAsync(
         HttpContext context,
         string datasetId,
         CancellationToken cancellationToken)
     {
         if (int.TryParse(datasetId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
         {
-            return LayerValidationHelpers.ValidateLayerWithAccessAsync(
+            return LayerValidationHelpers.ValidateLayerWithAccessV2Async(
                 context,
                 layerId,
+                LayerValidationHelpers.ValidationProtocol.OgcFeatures,
                 AccessScope.Read,
-                ServiceProtocols.Elevation,
+                Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols.Elevation,
                 cancellationToken);
         }
 
-        return LayerValidationHelpers.ValidateCollectionWithAccessAsync(
+        return LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
             context,
             datasetId,
             AccessScope.Read,
-            ServiceProtocols.Elevation,
+            Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols.Elevation,
             cancellationToken);
     }
 
