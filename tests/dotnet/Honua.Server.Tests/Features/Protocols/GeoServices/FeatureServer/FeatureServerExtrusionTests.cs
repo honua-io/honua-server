@@ -233,20 +233,14 @@ public sealed class FeatureServerExtrusionTests : IAsyncLifetime
         await SetRawMetadataJsonAsync(json);
     }
 
-    private async Task SetRawMetadataJsonAsync(string metadataJson)
+    private Task SetRawMetadataJsonAsync(string metadataJson)
     {
-        var schema = _fixture.CurrentSchema
-            ?? throw new InvalidOperationException("Test schema must be initialized.");
-
-        await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            UPDATE honua.layers
-            SET metadata = @metadata::jsonb
-            WHERE layer_id = @layerId;
-            """;
-        command.Parameters.AddWithValue("metadata", metadataJson);
-        command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
-        await command.ExecuteNonQueryAsync();
+        var metadata = JsonSerializer.Deserialize(metadataJson, CatalogJsonContext.Default.CatalogMetadata)
+            ?? new CatalogMetadata();
+        _fixture.UpdateV2ResourceMetadata(
+            WebAppFixture.TestLayerId,
+            extrusion: metadata.Extrusion,
+            clearExtrusion: metadata.Extrusion is null);
+        return Task.CompletedTask;
     }
 }

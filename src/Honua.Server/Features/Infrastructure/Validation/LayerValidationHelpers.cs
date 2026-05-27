@@ -584,10 +584,27 @@ internal static class LayerValidationHelpers
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
 
         bool MatchesCollectionId(MetadataV2Publication p)
-            => string.Equals(p.ServiceLocalId, collectionId, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(p.Path, collectionId, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(p.Metadata.Name, collectionId, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(p.Metadata.Id, collectionId, StringComparison.OrdinalIgnoreCase);
+        {
+            var resource = snapshot.ResolveResource(p);
+            return string.Equals(p.ServiceLocalId, collectionId, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(p.Path, collectionId, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(p.Metadata.Name, collectionId, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(p.Metadata.Id, collectionId, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(resource?.Metadata.Name, collectionId, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(resource?.Metadata.Title, collectionId, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(resource?.Metadata.Id, collectionId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        bool IsVisiblePublication(MetadataV2Publication p)
+        {
+            var resource = snapshot.ResolveResource(p);
+            var service = snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var resolvedService)
+                ? resolvedService
+                : null;
+            return IsRuntimeVisible(p.Status) &&
+                   IsRuntimeVisible(resource?.Status) &&
+                   IsRuntimeVisible(service?.Status);
+        }
 
         MetadataV2Publication? publication = null;
 
@@ -598,11 +615,12 @@ internal static class LayerValidationHelpers
         if (!string.IsNullOrWhiteSpace(requiredProtocol))
         {
             publication = snapshot.Graph.Publications.FirstOrDefault(p =>
+                IsVisiblePublication(p) &&
                 MatchesCollectionId(p) &&
                 snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var s) &&
                 ServiceProtocols.IsProtocolEnabled(s, requiredProtocol));
         }
-        publication ??= snapshot.Graph.Publications.FirstOrDefault(MatchesCollectionId);
+        publication ??= snapshot.Graph.Publications.FirstOrDefault(p => IsVisiblePublication(p) && MatchesCollectionId(p));
 
         if (publication is null)
         {
@@ -665,11 +683,20 @@ internal static class LayerValidationHelpers
         var byLayer = new Dictionary<int, (MetadataV2Publication Publication, MetadataV2Service Service)>();
         foreach (var pub in snapshot.Graph.Publications)
         {
-            if (!pub.LayerIndex.HasValue)
+            if (!pub.LayerIndex.HasValue || !IsRuntimeVisible(pub.Status))
             {
                 continue;
             }
             if (!snapshot.Index.ServicesById.TryGetValue(pub.ServiceId, out var service))
+            {
+                continue;
+            }
+            if (!IsRuntimeVisible(service.Status))
+            {
+                continue;
+            }
+            var resource = snapshot.ResolveResource(pub);
+            if (!IsRuntimeVisible(resource?.Status))
             {
                 continue;
             }
@@ -761,8 +788,11 @@ internal static class LayerValidationHelpers
         MetadataV2Service? chosen = null;
         foreach (var pub in snapshot.Graph.Publications)
         {
-            if (pub.LayerIndex != layerId) continue;
+            if (pub.LayerIndex != layerId || !IsRuntimeVisible(pub.Status)) continue;
             if (!snapshot.Index.ServicesById.TryGetValue(pub.ServiceId, out var service)) continue;
+            if (!IsRuntimeVisible(service.Status)) continue;
+            var resource = snapshot.ResolveResource(pub);
+            if (!IsRuntimeVisible(resource?.Status)) continue;
 
             if (!string.IsNullOrWhiteSpace(requiredProtocol) &&
                 !ServiceProtocols.IsProtocolEnabled(service, requiredProtocol))
@@ -787,6 +817,11 @@ internal static class LayerValidationHelpers
         return await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    private static bool IsRuntimeVisible(MetadataV2Status? status)
+        => status is null ||
+           (status.Lifecycle is not (MetadataV2LifecycleStatus.Retired or MetadataV2LifecycleStatus.Archived) &&
+            status.State is not MetadataV2OperationalState.Failed);
+
     private static (MetadataV2Publication? Publication, MetadataV2Resource? Resource, MetadataV2Service? Service)
         ResolveV2Triple(
             MetadataV2GraphSnapshot snapshot,
@@ -799,7 +834,19 @@ internal static class LayerValidationHelpers
         //   3. publication.IsPrimary
         //   4. lexicographically earliest by service name
         var candidatePublications = snapshot.Graph.Publications
-            .Where(p => p.LayerIndex == layerId)
+            .Where(p =>
+            {
+                if (p.LayerIndex != layerId || !IsRuntimeVisible(p.Status))
+                {
+                    return false;
+                }
+
+                var resource = snapshot.ResolveResource(p);
+                var service = snapshot.Index.ServicesById.TryGetValue(p.ServiceId, out var resolvedService)
+                    ? resolvedService
+                    : null;
+                return IsRuntimeVisible(resource?.Status) && IsRuntimeVisible(service?.Status);
+            })
             .ToList();
 
         if (!string.IsNullOrWhiteSpace(requiredProtocol))
@@ -921,10 +968,11 @@ internal static class LayerValidationHelpers
         if (!string.IsNullOrWhiteSpace(requiredProtocol))
         {
             service = snapshot.Graph.Services.FirstOrDefault(s =>
+                IsRuntimeVisible(s.Status) &&
                 ServiceProtocols.IsProtocolEnabled(s, requiredProtocol) &&
                 string.Equals(s.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase));
         }
-        service ??= snapshot.Index.ServicesByName.TryGetValue(serviceName, out var s) ? s : null;
+        service ??= snapshot.Index.ServicesByName.TryGetValue(serviceName, out var s) && IsRuntimeVisible(s.Status) ? s : null;
 
         if (service is null)
         {
@@ -948,12 +996,18 @@ internal static class LayerValidationHelpers
             return new MetadataV2ServiceValidationResult(false, service, [], [], serviceAccessError);
         }
 
-        var publications = snapshot.PublicationsForService(service.Metadata.Id);
-        var resources = new List<MetadataV2Resource>(publications.Count);
+        var publications = snapshot.PublicationsForService(service.Metadata.Id)
+            .Where(publication => IsRuntimeVisible(publication.Status))
+            .ToArray();
+        var resources = new List<MetadataV2Resource>(publications.Length);
         foreach (var pub in publications)
         {
             var resource = snapshot.ResolveResource(pub);
             if (resource is null)
+            {
+                continue;
+            }
+            if (!IsRuntimeVisible(resource.Status))
             {
                 continue;
             }

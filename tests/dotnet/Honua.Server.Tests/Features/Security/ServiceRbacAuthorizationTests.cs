@@ -1455,7 +1455,9 @@ internal static class ServiceRbacTestFixture
                 MetadataV2ServiceId(service),
                 service.Name,
                 protocols: ServiceProtocols.All,
-                accessPolicy: service.Metadata?.AccessPolicy);
+                accessPolicy: service.Metadata?.AccessPolicy,
+                description: service.Description,
+                options: MapMetadataV2ServiceOptions(service));
         }
 
         foreach (var (layer, service) in canonicalLayers.Values.OrderBy(entry => entry.Layer.Id))
@@ -1469,7 +1471,14 @@ internal static class ServiceRbacTestFixture
                     layer.Name,
                     fields: MapMetadataV2Fields(layer),
                     accessPolicy: layer.Metadata?.AccessPolicy,
-                    spatial: MapMetadataV2Spatial(layer))
+                    spatial: MapMetadataV2Spatial(layer),
+                    description: layer.Description,
+                    editing: new MetadataV2ResourceEditing
+                    {
+                        CanModify = true,
+                        SupportsAttachments = layer.SupportsAttachments,
+                    },
+                    relationships: MapMetadataV2Relationships(layer))
                 .AddStorageBinding(
                     bindingId,
                     resourceId,
@@ -1506,7 +1515,13 @@ internal static class ServiceRbacTestFixture
                 Name = field.Name,
                 Type = MapMetadataV2FieldType(field.Type),
                 Nullable = field.Nullable,
+                Alias = field.DisplayName,
+                Editable = !field.IsGeometry,
+                Length = field.Length,
+                DefaultValue = field.DefaultValue is null ? null : JsonSerializer.SerializeToElement(field.DefaultValue),
                 Description = field.Description,
+                Domain = MapMetadataV2Domain(field.Domain),
+                Extensions = MapMetadataV2FieldExtensions(field.Domain),
                 SemanticRoles = field.Name.Equals("objectid", StringComparison.OrdinalIgnoreCase)
                     ? ["id.primary"]
                     : [],
@@ -1525,6 +1540,77 @@ internal static class ServiceRbacTestFixture
                 SemanticRoles = ["geometry.primary"],
             };
         }
+    }
+
+    private static Dictionary<string, JsonElement> MapMetadataV2ServiceOptions(ServiceDefinition service)
+        => new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+        {
+            ["capabilities"] = JsonSerializer.SerializeToElement(service.Capabilities),
+            ["supportedFormats"] = JsonSerializer.SerializeToElement(service.SupportedFormats),
+        };
+
+    private static MetadataV2Relationship[] MapMetadataV2Relationships(LayerDefinition layer)
+        => layer.LayerRelationships
+            .Select(relationship => new MetadataV2Relationship
+            {
+                Id = relationship.RelationshipId.ToString(CultureInfo.InvariantCulture),
+                Name = relationship.Name,
+                Description = relationship.Description,
+                RelatedResourceId = $"res-layer-{relationship.RelatedLayerId}",
+                Role = relationship.RelationshipType,
+                OriginField = relationship.OriginForeignKeyField,
+                DestinationField = relationship.DestinationForeignKeyField,
+                EsriRelationshipId = relationship.RelationshipId,
+            })
+            .ToArray();
+
+    private static MetadataV2FieldDomain? MapMetadataV2Domain(FieldDomainDefinition? domain)
+    {
+        if (domain is null)
+        {
+            return null;
+        }
+
+        return new MetadataV2FieldDomain
+        {
+            Type = domain.Type,
+            CodedValues = domain.CodedValues?
+                .Select(static codedValue => new MetadataV2CodedValue
+                {
+                    Name = codedValue.Name,
+                    Code = JsonSerializer.SerializeToElement(codedValue.Code),
+                })
+                .ToArray() ?? Array.Empty<MetadataV2CodedValue>(),
+            Range = domain.Range is null
+                ? null
+                :
+                [
+                    JsonSerializer.SerializeToElement(domain.Range.MinValue),
+                    JsonSerializer.SerializeToElement(domain.Range.MaxValue),
+                ],
+        };
+    }
+
+    private static Dictionary<string, JsonElement> MapMetadataV2FieldExtensions(FieldDomainDefinition? domain)
+    {
+        if (domain is null)
+        {
+            return new Dictionary<string, JsonElement>();
+        }
+
+        var extensions = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+        {
+            ["honua.io/geoservices/domainName"] = JsonSerializer.SerializeToElement(domain.Name),
+        };
+        if (!string.IsNullOrWhiteSpace(domain.MergePolicy))
+        {
+            extensions["honua.io/geoservices/domainMergePolicy"] = JsonSerializer.SerializeToElement(domain.MergePolicy);
+        }
+        if (!string.IsNullOrWhiteSpace(domain.SplitPolicy))
+        {
+            extensions["honua.io/geoservices/domainSplitPolicy"] = JsonSerializer.SerializeToElement(domain.SplitPolicy);
+        }
+        return extensions;
     }
 
     private static MetadataV2FieldType MapMetadataV2FieldType(FieldType type)

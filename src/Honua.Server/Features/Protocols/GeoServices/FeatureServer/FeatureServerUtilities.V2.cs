@@ -33,6 +33,15 @@ namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
 /// </summary>
 internal static partial class FeatureServerEndpoints
 {
+    private const string GeoServicesDrawingInfoExtensionKey = "honua.io/geoservices/drawingInfo";
+    private const string GeoServicesLegacyDrawingInfoExtensionKey = "geoservices:drawingInfo";
+    private const string GeoServicesExtrusionExtensionKey = "honua.io/geoservices/extrusion";
+    private const string GeoServicesLegacyExtrusionExtensionKey = "geoservices:extrusion";
+    private const string GeoServicesDomainNameExtensionKey = "honua.io/geoservices/domainName";
+    private const string GeoServicesDomainMergePolicyExtensionKey = "honua.io/geoservices/domainMergePolicy";
+    private const string GeoServicesDomainSplitPolicyExtensionKey = "honua.io/geoservices/domainSplitPolicy";
+    private const string EsriDrawingInfoStyleEncoding = "esri-drawing-info";
+
     /// <summary>
     /// V2 overload of
     /// <see cref="MapServiceToResponse(ServiceDefinition, QueryLimits, bool, bool)"/>.
@@ -217,13 +226,10 @@ internal static partial class FeatureServerEndpoints
         {
             Id = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(resource) ?? -1,
             Name = resource.Metadata.Name,
-            // V2 has no default-visibility / min-scale / max-scale slot on the canonical
-            // resource. Esri clients require the keys present, so we emit the conservative
-            // defaults that match what the v1 path emitted for layers without scale ranges.
-            DefaultVisibility = true,
+            DefaultVisibility = resource.Display?.DefaultVisibility ?? true,
             SubLayerIds = null,
-            MinScale = null,
-            MaxScale = null,
+            MinScale = resource.Display?.MinScale,
+            MaxScale = resource.Display?.MaxScale,
             GeometryType = MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None)
         };
     }
@@ -245,20 +251,100 @@ internal static partial class FeatureServerEndpoints
             Name = field.Name,
             Type = geoServicesType,
             SqlType = sqlType,
-            Alias = field.Title ?? field.Name,
-            // V2 has no length slot on the canonical field model (length lives in the
-            // storage binding when needed). Pass null so the response omits the key.
-            Length = null,
+            Alias = field.Alias ?? field.Title ?? field.Name,
+            Length = field.Length,
             Nullable = field.Nullable,
-            Editable = !isGeometry,
-            // V2 has no default-value slot on the canonical field; the catalog/admin layer
-            // owns insertion defaults.
-            DefaultValue = null,
-            // V2 doesn't model coded-value domains on the canonical field — that's an Esri-
-            // specific projection that lives in admin-time configuration. Leaving null preserves
-            // the v1 contract for resources without domains.
-            Domain = null
+            Editable = field.Editable && !isGeometry,
+            DefaultValue = field.DefaultValue.HasValue ? ConvertJsonElementToObject(field.DefaultValue.Value) : null,
+            Domain = MapFieldDomainInfoV2(field, geoServicesType)
         };
+    }
+
+    private static JsonElement? ResolveDrawingInfoV2(MetadataV2Resource resource, MetadataV2GraphSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        if (TryReadJsonExtension(resource.Extensions, GeoServicesDrawingInfoExtensionKey, out var drawingInfo) ||
+            TryReadJsonExtension(resource.Extensions, GeoServicesLegacyDrawingInfoExtensionKey, out drawingInfo) ||
+            TryReadJsonExtension(resource.Extensions, "drawingInfo", out drawingInfo))
+        {
+            return drawingInfo;
+        }
+
+        foreach (var styleResourceId in resource.StyleResourceIds)
+        {
+            if (!snapshot.Index.ResourcesById.TryGetValue(styleResourceId, out var styleResource) ||
+                styleResource.Type != MetadataV2ResourceType.Style ||
+                styleResource.Style is null)
+            {
+                continue;
+            }
+
+            foreach (var encoding in styleResource.Style.Encodings)
+            {
+                if (!string.Equals(encoding.Encoding, EsriDrawingInfoStyleEncoding, StringComparison.OrdinalIgnoreCase) ||
+                    string.IsNullOrWhiteSpace(encoding.Body))
+                {
+                    continue;
+                }
+
+                using var document = JsonDocument.Parse(encoding.Body);
+                return document.RootElement.Clone();
+            }
+        }
+
+        return null;
+    }
+
+    private static FeatureServerExtrusionInfo? BuildExtrusionInfoV2(
+        MetadataV2Resource resource,
+        out IReadOnlyList<string> validationErrors)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+
+        var extrusion = ReadLayerExtrusionInfoV2(resource);
+        if (extrusion is null)
+        {
+            validationErrors = Array.Empty<string>();
+            return null;
+        }
+
+        validationErrors = ValidateExtrusionV2(extrusion, resource.SchemaFields);
+        if (validationErrors.Count > 0)
+        {
+            return null;
+        }
+
+        VerticalUnits.TryNormalize(extrusion.Unit, out var unitWire);
+        return new FeatureServerExtrusionInfo
+        {
+            Enabled = true,
+            HeightField = extrusion.HeightField,
+            BaseHeightField = extrusion.BaseHeightField,
+            Unit = unitWire,
+            DefaultHeight = extrusion.DefaultHeight,
+            MaterialHint = extrusion.MaterialHint
+        };
+    }
+
+    private static LayerExtrusionInfo? ReadLayerExtrusionInfoV2(MetadataV2Resource resource)
+    {
+        if (!TryReadJsonExtension(resource.Extensions, GeoServicesExtrusionExtensionKey, out var element) &&
+            !TryReadJsonExtension(resource.Extensions, GeoServicesLegacyExtrusionExtensionKey, out element) &&
+            !TryReadJsonExtension(resource.Extensions, "extrusion", out element))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize(element.GetRawText(), CatalogJsonContext.Default.LayerExtrusionInfo);
+        }
+        catch (JsonException)
+        {
+            return new LayerExtrusionInfo();
+        }
     }
 
     /// <summary>
@@ -372,13 +458,19 @@ internal static partial class FeatureServerEndpoints
 
     /// <summary>
     /// V2 overload of <see cref="ResolveDisplayFieldFromLayer(LayerDefinition, string)"/>.
-    /// Prefers a field named "name", then the first string-type field, then objectIdField.
+    /// Prefers the resource display hint, then a field named "name", then the first string-type
+    /// field, then objectIdField.
     /// </summary>
     private static string ResolveDisplayFieldFromResource(MetadataV2Resource resource, string objectIdField)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
         var visibleAttributes = ResolveVisibleAttributeFieldsV2(resource).ToArray();
+        if (!string.IsNullOrWhiteSpace(resource.Display?.DisplayField) &&
+            visibleAttributes.Any(field => field.Name.Equals(resource.Display.DisplayField, StringComparison.OrdinalIgnoreCase)))
+        {
+            return resource.Display.DisplayField;
+        }
 
         var preferredNameField = visibleAttributes.FirstOrDefault(
             field => field.Name.Equals("name", StringComparison.OrdinalIgnoreCase));
@@ -393,9 +485,9 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// V2 overload of <c>layer.VisibleFields</c>. V2 has no per-field <c>IsHidden</c> slot, so
-    /// every schema field is treated as visible. Centralised here so callers don't depend on
-    /// that contract directly.
+    /// V2 overload of <c>layer.VisibleFields</c>. Metadata V2 carries protocol-facing
+    /// fields on <see cref="MetadataV2Resource.SchemaFields"/>; admin-only hidden-field
+    /// projections are applied before building the runtime graph.
     /// </summary>
     private static IEnumerable<MetadataV2Field> ResolveVisibleFieldsV2(MetadataV2Resource resource)
     {
@@ -566,9 +658,18 @@ internal static partial class FeatureServerEndpoints
 
         return
         [
-            ..layers.Where(pair => AccessPolicyHelpers.IsResourceAccessible(context, pair.Resource, service))
+            ..layers.Where(pair =>
+                IsRuntimeVisibleV2(service.Status) &&
+                IsRuntimeVisibleV2(pair.Publication.Status) &&
+                IsRuntimeVisibleV2(pair.Resource.Status) &&
+                AccessPolicyHelpers.IsResourceAccessible(context, pair.Resource, service))
         ];
     }
+
+    private static bool IsRuntimeVisibleV2(MetadataV2Status? status)
+        => status is null ||
+           (status.Lifecycle is not (MetadataV2LifecycleStatus.Retired or MetadataV2LifecycleStatus.Archived) &&
+            status.State is not MetadataV2OperationalState.Failed);
 
     /// <summary>
     /// V2 overload of <see cref="BuildRelationshipResponse(LayerDefinition)"/>.
@@ -700,6 +801,201 @@ internal static partial class FeatureServerEndpoints
             _ => "TEXT"
         };
 
+    private static Dictionary<string, object?>? MapFieldDomainInfoV2(MetadataV2Field field, string fieldType)
+    {
+        if (field.Domain is null)
+        {
+            return null;
+        }
+
+        var fieldDomain = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["type"] = field.Domain.Type,
+            ["name"] = ReadStringExtension(field.Extensions, GeoServicesDomainNameExtensionKey) ?? field.Domain.Type,
+            ["fieldType"] = fieldType
+        };
+
+        if (field.Domain.CodedValues.Count > 0)
+        {
+            fieldDomain["codedValues"] = field.Domain.CodedValues
+                .Select(static codedValue => new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["name"] = codedValue.Name,
+                    ["code"] = ConvertJsonElementToObject(codedValue.Code)
+                })
+                .ToArray();
+        }
+
+        if (field.Domain.Range is { Count: > 0 })
+        {
+            fieldDomain["range"] = field.Domain.Range
+                .Select(ConvertJsonElementToObject)
+                .ToArray();
+        }
+
+        var mergePolicy = ReadStringExtension(field.Extensions, GeoServicesDomainMergePolicyExtensionKey);
+        if (!string.IsNullOrWhiteSpace(mergePolicy))
+        {
+            fieldDomain["mergePolicy"] = mergePolicy;
+        }
+
+        var splitPolicy = ReadStringExtension(field.Extensions, GeoServicesDomainSplitPolicyExtensionKey);
+        if (!string.IsNullOrWhiteSpace(splitPolicy))
+        {
+            fieldDomain["splitPolicy"] = splitPolicy;
+        }
+
+        return fieldDomain;
+    }
+
+    private static DomainInfo? MapQueryDomainInfoV2(
+        MetadataV2Publication publication,
+        MetadataV2Resource resource,
+        MetadataV2Field field,
+        MetadataV2GraphSnapshot snapshot)
+    {
+        if (field.Domain is null)
+        {
+            return null;
+        }
+
+        var layerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(resource) ?? -1;
+        return new DomainInfo
+        {
+            Type = field.Domain.Type,
+            Name = ReadStringExtension(field.Extensions, GeoServicesDomainNameExtensionKey) ?? field.Domain.Type,
+            FieldName = field.Name,
+            FieldType = MapFieldTypeToGeoServicesV2(field.Type),
+            LayerId = layerId,
+            CodedValues = field.Domain.CodedValues.Count == 0
+                ? null
+                :
+                [
+                    .. field.Domain.CodedValues.Select(static codedValue => new DomainCodedValueInfo
+                    {
+                        Name = codedValue.Name,
+                        Code = ConvertJsonElementToObject(codedValue.Code),
+                    })
+                ],
+            Range = field.Domain.Range is { Count: > 0 }
+                ? [.. field.Domain.Range.Select(static value => ConvertJsonElementToObject(value) ?? string.Empty)]
+                : null,
+            MergePolicy = ReadStringExtension(field.Extensions, GeoServicesDomainMergePolicyExtensionKey),
+            SplitPolicy = ReadStringExtension(field.Extensions, GeoServicesDomainSplitPolicyExtensionKey),
+        };
+    }
+
+    private static List<string> ValidateExtrusionV2(
+        LayerExtrusionInfo extrusion,
+        IReadOnlyList<MetadataV2Field> fields)
+    {
+        var errors = new List<string>(capacity: 4);
+
+        if (string.IsNullOrWhiteSpace(extrusion.HeightField))
+        {
+            errors.Add(ExtrusionErrorCodes.HeightFieldMissing);
+        }
+        else
+        {
+            var heightField = FindFieldV2(fields, extrusion.HeightField);
+            if (heightField is null)
+            {
+                errors.Add(ExtrusionErrorCodes.HeightFieldNotFound);
+            }
+            else if (!IsSupportedExtrusionNumericTypeV2(heightField.Type))
+            {
+                errors.Add(ExtrusionErrorCodes.HeightFieldTypeInvalid);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(extrusion.BaseHeightField))
+        {
+            var baseField = FindFieldV2(fields, extrusion.BaseHeightField);
+            if (baseField is null)
+            {
+                errors.Add(ExtrusionErrorCodes.BaseFieldNotFound);
+            }
+            else if (!IsSupportedExtrusionNumericTypeV2(baseField.Type))
+            {
+                errors.Add(ExtrusionErrorCodes.BaseFieldTypeInvalid);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(extrusion.Unit) &&
+            !VerticalUnits.TryNormalize(extrusion.Unit, out _))
+        {
+            errors.Add(ExtrusionErrorCodes.UnitUnrecognized);
+        }
+
+        if (extrusion.DefaultHeight is { } defaultHeight && defaultHeight < 0)
+        {
+            errors.Add(ExtrusionErrorCodes.NegativeDefaultHeight);
+        }
+
+        return errors;
+    }
+
+    private static MetadataV2Field? FindFieldV2(IReadOnlyList<MetadataV2Field> fields, string name)
+    {
+        for (var i = 0; i < fields.Count; i++)
+        {
+            if (string.Equals(fields[i].Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                return fields[i];
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsSupportedExtrusionNumericTypeV2(MetadataV2FieldType type)
+        => type is MetadataV2FieldType.Integer
+            or MetadataV2FieldType.BigInteger
+            or MetadataV2FieldType.Double
+            or MetadataV2FieldType.Float;
+
+    private static bool TryReadJsonExtension(
+        IReadOnlyDictionary<string, JsonElement> extensions,
+        string key,
+        out JsonElement value)
+    {
+        if (extensions.TryGetValue(key, out var element) &&
+            element.ValueKind is not JsonValueKind.Undefined and not JsonValueKind.Null)
+        {
+            value = element.Clone();
+            return true;
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static string? ReadStringExtension(IReadOnlyDictionary<string, JsonElement> extensions, string key)
+    {
+        if (!extensions.TryGetValue(key, out var element) || element.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        return element.GetString();
+    }
+
+    private static object? ConvertJsonElementToObject(JsonElement element)
+        => element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number when element.TryGetInt64(out var integer) => integer,
+            JsonValueKind.Number when element.TryGetDouble(out var number) => number,
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null => null,
+            JsonValueKind.Undefined => null,
+            JsonValueKind.Object or JsonValueKind.Array => JsonSerializer.Deserialize<object>(
+                element.GetRawText(),
+                FeatureServerJsonContext.Default.Object),
+            _ => element.GetRawText()
+        };
+
     /// <summary>
     /// Reads the service's declared capability list from <c>service.Options["capabilities"]</c>.
     /// Defaults to <c>["Query"]</c> when the option is absent or not a string array — matching
@@ -776,12 +1072,15 @@ internal static partial class FeatureServerEndpoints
             .Any(capability => capability.Equals("Query", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
-    /// V2 equivalent of <c>layer.SupportsAttachments</c>. V2 doesn't model attachments on the
-    /// canonical resource shape; the resource opts in via <c>resource.Metadata.Annotations</c>
-    /// (<c>honua.io/attachments=true</c>) or the legacy <c>"supportsAttachments"</c> annotation.
+    /// V2 equivalent of <c>layer.SupportsAttachments</c>.
     /// </summary>
     private static bool ResourceSupportsAttachmentsV2(MetadataV2Resource resource)
     {
+        if (resource.Editing?.SupportsAttachments == true)
+        {
+            return true;
+        }
+
         // Canonical annotation key. Keep the legacy spelling alongside so resources migrated
         // verbatim from v1 still resolve.
         return TryReadBoolAnnotation(resource.Metadata.Annotations, "honua.io/attachments") ??
