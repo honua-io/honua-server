@@ -3,8 +3,8 @@
 
 using System.Net;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Validation.Abstractions;
 using Honua.TestKit;
 using NSubstitute;
 
@@ -16,12 +16,13 @@ public sealed class OgcFeaturesCollectionsExceptionFilterTests : IAsyncLifetime
 
     public OgcFeaturesCollectionsExceptionFilterTests()
     {
-        var catalog = Substitute.For<ILayerCatalog>();
-        catalog.GetLayerAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns<Task<LayerDefinition?>>(_ => throw new ArgumentException("Invalid Parse failure"));
+        var resourceValidator = Substitute.For<IResourceValidator>();
+        resourceValidator.ValidateCollectionV2Async(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromException<ResourceValidationResult<MetadataV2Resource>>(
+                new ArgumentException("Invalid Parse failure")));
 
         _fixture = new WebAppFixture()
-            .ReplaceService<ILayerCatalog>(catalog);
+            .ReplaceService<IResourceValidator>(resourceValidator);
     }
 
     public Task InitializeAsync() => _fixture.InitializeAsync();

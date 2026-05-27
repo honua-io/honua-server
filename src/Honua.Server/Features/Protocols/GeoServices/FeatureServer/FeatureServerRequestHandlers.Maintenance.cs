@@ -482,14 +482,12 @@ internal static partial class FeatureServerEndpoints
             return accessError;
         }
 
-        // The V2 canonical schema (MetadataV2Field) does not carry coded-value /
-        // range domains; domain info is a v1-only annotation surfaced from the
-        // catalog FieldDomainDefinition. Under V2 the queryDomains endpoint
-        // returns an empty domain list — clients that need domain metadata can
-        // continue to read it from the v1 catalog endpoints. A future task can
-        // add a typed domain extension to MetadataV2Field and surface it here.
-        _ = FilterAccessibleLayersV2(context, service, selectedLayers);
-        var domains = Array.Empty<DomainInfo>();
+        var domains = FilterAccessibleLayersV2(context, service, selectedLayers)
+            .SelectMany(pair => ResolveVisibleFieldsV2(pair.Resource)
+                .Select(field => MapQueryDomainInfoV2(pair.Publication, pair.Resource, field, snapshot)))
+            .Where(domain => domain is not null)
+            .Select(domain => domain!)
+            .ToArray();
 
         var response = new QueryDomainsResponse
         {

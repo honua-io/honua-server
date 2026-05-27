@@ -265,11 +265,16 @@ internal static partial class FeatureServerEndpoints
                 snapshot,
                 featureReader,
                 cancellationToken).ConfigureAwait(false);
+            var extrusionInfo = BuildExtrusionInfoV2(resource, out var extrusionErrors);
+            if (extrusionErrors.Count > 0)
+            {
+                return StandardErrorHelpers.CreateUnprocessableEntity(
+                    context,
+                    "Invalid extrusion metadata.",
+                    extrusionErrors);
+            }
 
-            // V2 has no extrusion or drawing-info model on the canonical resource; these
-            // remain v1-only concepts surfaced via the catalog/style services. The V2
-            // response builder tolerates null for both, mirroring the v1 path for layers
-            // without configured extrusion/style.
+            var drawingInfo = ResolveDrawingInfoV2(resource, snapshot);
             LayerResponse response = MapLayerToResponseV2(
                 service,
                 resource,
@@ -277,8 +282,8 @@ internal static partial class FeatureServerEndpoints
                 snapshot,
                 limits,
                 timeInfo,
-                drawingInfo: null,
-                extrusionInfo: null,
+                drawingInfo,
+                extrusionInfo,
                 supportsGeobufOutput: featureReader is IGeobufFeatureStore,
                 supportsAttachmentUploads: supportsAttachmentUploads);
 

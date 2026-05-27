@@ -59,6 +59,7 @@ public sealed class LayerEnablementIntegrationTests : IAsyncLifetime
             disableRequest);
 
         toggleResponse.Be200Ok();
+        _fixture.SetV2LayerEnabled(WebAppFixture.TestLayerId, enabled: false);
 
         var featureServerResponse = await _client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}");

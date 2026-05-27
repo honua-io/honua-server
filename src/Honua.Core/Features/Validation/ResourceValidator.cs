@@ -166,6 +166,11 @@ public sealed class ResourceValidator : IResourceValidator
         // Match by resource name (case-insensitive) or resource id.
         foreach (var resource in snapshot.Graph.Resources)
         {
+            if (!IsRuntimeVisible(resource.Status))
+            {
+                continue;
+            }
+
             if (string.Equals(resource.Metadata.Name, collectionId, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(resource.Metadata.Id, collectionId, StringComparison.Ordinal))
             {
@@ -199,11 +204,13 @@ public sealed class ResourceValidator : IResourceValidator
         }
 
         var snapshot = await RequireV2SnapshotAsync(cancellationToken).ConfigureAwait(false);
-        if (snapshot.Index.ServicesByName.TryGetValue(serviceId, out var byName))
+        if (snapshot.Index.ServicesByName.TryGetValue(serviceId, out var byName) &&
+            IsRuntimeVisible(byName.Status))
         {
             return ResourceValidationResult.Success(byName);
         }
-        if (snapshot.Index.ServicesById.TryGetValue(serviceId, out var byId))
+        if (snapshot.Index.ServicesById.TryGetValue(serviceId, out var byId) &&
+            IsRuntimeVisible(byId.Status))
         {
             return ResourceValidationResult.Success(byId);
         }
@@ -229,14 +236,20 @@ public sealed class ResourceValidator : IResourceValidator
         var snapshot = await RequireV2SnapshotAsync(cancellationToken).ConfigureAwait(false);
         foreach (var pub in snapshot.Index.PublicationsByService[service.Metadata.Id])
         {
-            if (pub.LayerIndex != layerId) continue;
+            if (pub.LayerIndex != layerId || !IsRuntimeVisible(pub.Status)) continue;
             var resource = snapshot.ResolveResource(pub);
             if (resource is null) continue;
+            if (!IsRuntimeVisible(resource.Status)) continue;
             return ResourceValidationResult.Success(new MetadataV2ServiceLayerTriple(service, pub, resource));
         }
         return ResourceValidationResult.NotFound<MetadataV2ServiceLayerTriple>(
             ErrorMessages.NotFound.FormatLayerInService(layerId, serviceId));
     }
+
+    private static bool IsRuntimeVisible(MetadataV2Status? status)
+        => status is null ||
+           (status.Lifecycle is not (MetadataV2LifecycleStatus.Retired or MetadataV2LifecycleStatus.Archived) &&
+            status.State is not MetadataV2OperationalState.Failed);
 
     private async Task<MetadataV2GraphSnapshot> RequireV2SnapshotAsync(CancellationToken cancellationToken)
     {

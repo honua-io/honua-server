@@ -4,10 +4,8 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -218,35 +216,40 @@ public sealed class StacCollectionsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}")]
     public async Task GetCollection_WithProjectedExtent_UsesTransformFallbackForSpatialBbox()
     {
-        var fixture = new WebAppFixture()
-            .ReplaceService<ILayerCatalog>(new ProjectedExtentLayerCatalog());
+        _fixture.UpdateV2ResourceMetadata(
+            WebAppFixture.TestLayerId,
+            spatial: new MetadataV2ResourceSpatial
+            {
+                SpatialReference = MetadataV2SpatialReference.WebMercator,
+                StorageCrs = MetadataV2SpatialReference.WebMercator,
+                GeometryType = MetadataV2GeometryType.Point,
+                PrimaryGeometryField = "shape",
+                Bbox = new MetadataV2Bbox
+                {
+                    West = -13_630_000d,
+                    South = 4_540_000d,
+                    East = -13_620_000d,
+                    North = 4_550_000d,
+                },
+            });
 
-        try
-        {
-            await fixture.InitializeAsync();
+        var response = await _fixture.Client.GetAsync($"/stac/collections/{WebAppFixture.TestLayerId}");
 
-            var response = await fixture.Client.GetAsync($"/stac/collections/{ProjectedExtentLayerCatalog.LayerId}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var bbox = json.RootElement
+            .GetProperty("extent")
+            .GetProperty("spatial")
+            .GetProperty("bbox")[0];
 
-            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var bbox = json.RootElement
-                .GetProperty("extent")
-                .GetProperty("spatial")
-                .GetProperty("bbox")[0];
-
-            bbox[0].GetDouble().Should().BeNegative();
-            bbox[1].GetDouble().Should().BeGreaterThan(0d);
-            bbox[2].GetDouble().Should().BeNegative();
-            bbox[2].GetDouble().Should().BeGreaterThan(bbox[0].GetDouble());
-            bbox[3].GetDouble().Should().BeGreaterThan(bbox[1].GetDouble());
-            bbox[1].GetDouble().Should().NotBe(-90d);
-            bbox[3].GetDouble().Should().NotBe(90d);
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
+        bbox[0].GetDouble().Should().BeNegative();
+        bbox[1].GetDouble().Should().BeGreaterThan(0d);
+        bbox[2].GetDouble().Should().BeNegative();
+        bbox[2].GetDouble().Should().BeGreaterThan(bbox[0].GetDouble());
+        bbox[3].GetDouble().Should().BeGreaterThan(bbox[1].GetDouble());
+        bbox[1].GetDouble().Should().NotBe(-90d);
+        bbox[3].GetDouble().Should().NotBe(90d);
     }
 
     private Task UpdateLayerMetadataAsync(CatalogMetadata metadata)

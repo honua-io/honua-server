@@ -106,7 +106,7 @@ internal static class AdminLayerFilterConfigurationEndpoints
 
     /// <summary>
     /// Writes the per-layer permanent filter onto every V2 resource that this layer id
-    /// publishes through. Slice 51/N moved <c>LayerMetadata.PermanentFilter</c> to
+    /// publishes through. Slice 51/N moved the legacy layer permanent-filter field to
     /// <see cref="MetadataV2Resource.PermanentFilter"/>; this endpoint is the migrated
     /// admin write-path. Passing <c>null</c> clears the filter.
     /// </summary>
