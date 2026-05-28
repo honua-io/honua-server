@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -15,7 +14,7 @@ namespace Honua.Core.Queries.Filters;
 /// </summary>
 /// <remarks>
 /// The struct is constructed via <see cref="From(MetadataV2Resource)"/>.
-/// <see cref="TryGetFieldType"/> returns the field's canonical <see cref="FieldType"/>;
+/// <see cref="TryGetFieldType"/> returns the field's canonical <see cref="MetadataV2FieldType"/>;
 /// the implementation handles the
 /// well-known synthetic fields (<c>objectid</c>, <c>layerid</c>, <c>geometry</c>,
 /// <c>shape</c>, <c>created_at</c>, <c>updated_at</c>) before consulting the schema.
@@ -45,34 +44,34 @@ public readonly struct FilterFieldSchema
     public bool IsEmpty => _resource is null;
 
     /// <summary>
-    /// Returns the canonical <see cref="FieldType"/> for the named field, applying the
+    /// Returns the canonical <see cref="MetadataV2FieldType"/> for the named field, applying the
     /// synthetic-field overrides (objectid → BigInteger, geometry/shape → Geometry, etc.).
     /// </summary>
-    public bool TryGetFieldType(string fieldName, out FieldType fieldType)
+    public bool TryGetFieldType(string fieldName, out MetadataV2FieldType fieldType)
     {
         ArgumentNullException.ThrowIfNull(fieldName);
 
         if (fieldName.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
         {
-            fieldType = FieldType.BigInteger;
+            fieldType = MetadataV2FieldType.BigInteger;
             return true;
         }
         if (fieldName.Equals("layerid", StringComparison.OrdinalIgnoreCase) ||
             fieldName.Equals("layer_id", StringComparison.OrdinalIgnoreCase))
         {
-            fieldType = FieldType.Integer;
+            fieldType = MetadataV2FieldType.Integer;
             return true;
         }
         if (fieldName.Equals("geometry", StringComparison.OrdinalIgnoreCase) ||
             fieldName.Equals("shape", StringComparison.OrdinalIgnoreCase))
         {
-            fieldType = FieldType.Geometry;
+            fieldType = MetadataV2FieldType.Geometry;
             return true;
         }
         if (fieldName.Equals("created_at", StringComparison.OrdinalIgnoreCase) ||
             fieldName.Equals("updated_at", StringComparison.OrdinalIgnoreCase))
         {
-            fieldType = FieldType.DateTime;
+            fieldType = MetadataV2FieldType.DateTime;
             return true;
         }
 
@@ -82,32 +81,25 @@ public readonly struct FilterFieldSchema
             {
                 if (string.Equals(schemaField.Name, fieldName, StringComparison.OrdinalIgnoreCase))
                 {
-                    fieldType = MapV2FieldType(schemaField.Type);
+                    fieldType = NormalizeFieldType(schemaField.Type);
                     return true;
                 }
             }
         }
 
-        fieldType = FieldType.String;
+        fieldType = MetadataV2FieldType.String;
         return false;
     }
 
-    private static FieldType MapV2FieldType(MetadataV2FieldType type) => type switch
+    /// <summary>
+    /// Normalizes a schema field type for the filter pipeline: collapses the spatial
+    /// <see cref="MetadataV2FieldType.Geography"/> alias to <see cref="MetadataV2FieldType.Geometry"/>
+    /// and maps <see cref="MetadataV2FieldType.Unknown"/> to <see cref="MetadataV2FieldType.String"/>.
+    /// </summary>
+    private static MetadataV2FieldType NormalizeFieldType(MetadataV2FieldType type) => type switch
     {
-        MetadataV2FieldType.String => FieldType.String,
-        MetadataV2FieldType.Integer => FieldType.Integer,
-        MetadataV2FieldType.BigInteger => FieldType.BigInteger,
-        MetadataV2FieldType.Double => FieldType.Double,
-        MetadataV2FieldType.Float => FieldType.Float,
-        MetadataV2FieldType.Boolean => FieldType.Boolean,
-        MetadataV2FieldType.DateTime => FieldType.DateTime,
-        MetadataV2FieldType.Date => FieldType.Date,
-        MetadataV2FieldType.Time => FieldType.Time,
-        MetadataV2FieldType.Json => FieldType.Json,
-        MetadataV2FieldType.Binary => FieldType.Binary,
-        MetadataV2FieldType.Uuid => FieldType.Uuid,
-        MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography => FieldType.Geometry,
-        _ => FieldType.String,
+        MetadataV2FieldType.Geography => MetadataV2FieldType.Geometry,
+        MetadataV2FieldType.Unknown => MetadataV2FieldType.String,
+        _ => type,
     };
-
 }

@@ -25,10 +25,10 @@ public readonly struct FilterTranslationContext
     /// A single field exposed by <see cref="FilterTranslationContext.Fields"/>.
     /// </summary>
     /// <param name="Name">Stable source field name.</param>
-    /// <param name="Type">Canonical <see cref="FieldType"/> (v1 enum).</param>
+    /// <param name="Type">Canonical <see cref="MetadataV2FieldType"/>.</param>
     /// <param name="IsGeometry">True when the field carries the resource's geometry column.</param>
     /// <param name="IsPrimaryKey">True when the field is the resource's primary key.</param>
-    public readonly record struct ContextField(string Name, FieldType Type, bool IsGeometry, bool IsPrimaryKey);
+    public readonly record struct ContextField(string Name, MetadataV2FieldType Type, bool IsGeometry, bool IsPrimaryKey);
 
     private FilterTranslationContext(
         IReadOnlyList<ContextField> fields,
@@ -85,7 +85,7 @@ public readonly struct FilterTranslationContext
             var isPk = primaryKey is not null && string.Equals(f.Name, primaryKey.Name, StringComparison.OrdinalIgnoreCase);
             var isGeom = f.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography ||
                 (geometryField is not null && string.Equals(f.Name, geometryField.Name, StringComparison.OrdinalIgnoreCase));
-            fields[i] = new ContextField(f.Name, MapFieldType(f.Type), isGeom, isPk);
+            fields[i] = new ContextField(f.Name, NormalizeFieldType(f.Type), isGeom, isPk);
         }
 
         var srid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
@@ -101,23 +101,16 @@ public readonly struct FilterTranslationContext
             resource.Metadata.Name);
     }
 
-    /// <summary>Maps a Metadata v2 field type to the v1 <see cref="FieldType"/> used by the translators.</summary>
-    private static FieldType MapFieldType(MetadataV2FieldType type) => type switch
+    /// <summary>
+    /// Normalizes a schema field type for the translators: collapses the spatial
+    /// <see cref="MetadataV2FieldType.Geography"/> alias to <see cref="MetadataV2FieldType.Geometry"/>
+    /// and maps <see cref="MetadataV2FieldType.Unknown"/> to <see cref="MetadataV2FieldType.String"/>.
+    /// </summary>
+    private static MetadataV2FieldType NormalizeFieldType(MetadataV2FieldType type) => type switch
     {
-        MetadataV2FieldType.String => FieldType.String,
-        MetadataV2FieldType.Integer => FieldType.Integer,
-        MetadataV2FieldType.BigInteger => FieldType.BigInteger,
-        MetadataV2FieldType.Double => FieldType.Double,
-        MetadataV2FieldType.Float => FieldType.Float,
-        MetadataV2FieldType.Boolean => FieldType.Boolean,
-        MetadataV2FieldType.DateTime => FieldType.DateTime,
-        MetadataV2FieldType.Date => FieldType.Date,
-        MetadataV2FieldType.Time => FieldType.Time,
-        MetadataV2FieldType.Json => FieldType.Json,
-        MetadataV2FieldType.Binary => FieldType.Binary,
-        MetadataV2FieldType.Uuid => FieldType.Uuid,
-        MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography => FieldType.Geometry,
-        _ => FieldType.String,
+        MetadataV2FieldType.Geography => MetadataV2FieldType.Geometry,
+        MetadataV2FieldType.Unknown => MetadataV2FieldType.String,
+        _ => type,
     };
 
     private static GeometryType MapGeometryType(MetadataV2GeometryType type) => type switch

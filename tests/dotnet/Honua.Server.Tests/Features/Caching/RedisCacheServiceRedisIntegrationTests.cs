@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Caching;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Shared.Models;
@@ -42,7 +43,7 @@ public sealed class RedisCacheServiceRedisIntegrationTests
         using var cacheA = CreateCacheScope(prefix);
         using var cacheB = CreateCacheScope(prefix);
 
-        await cacheA.Cache.SetAsync("layer:1", new FieldDefinition("objectid", FieldType.Integer, Nullable: false));
+        await cacheA.Cache.SetAsync("layer:1", new FieldDefinition("objectid", MetadataV2FieldType.Integer, Nullable: false));
 
         var result = await cacheB.Cache.GetAsync<FieldDefinition>("layer:1");
 
@@ -59,7 +60,7 @@ public sealed class RedisCacheServiceRedisIntegrationTests
         using var cacheA = CreateCacheScope(prefix);
         using var cacheB = CreateCacheScope(prefix);
 
-        var field = new FieldDefinition("service", FieldType.String, Length: 32);
+        var field = new FieldDefinition("service", MetadataV2FieldType.String, Length: 32);
         await cacheA.Cache.SetAsync("service:1", field);
 
         await cacheB.Cache.RemoveAsync("service:1");
@@ -77,9 +78,9 @@ public sealed class RedisCacheServiceRedisIntegrationTests
         using var cacheA = CreateCacheScope(prefix);
         using var cacheB = CreateCacheScope(prefix);
 
-        await cacheA.Cache.SetAsync("layer:1", new FieldDefinition("Layer1", FieldType.String, Length: 10));
-        await cacheA.Cache.SetAsync("layer:2", new FieldDefinition("Layer2", FieldType.String, Length: 10));
-        await cacheA.Cache.SetAsync("service:1", new FieldDefinition("Service1", FieldType.String, Length: 10));
+        await cacheA.Cache.SetAsync("layer:1", new FieldDefinition("Layer1", MetadataV2FieldType.String, Length: 10));
+        await cacheA.Cache.SetAsync("layer:2", new FieldDefinition("Layer2", MetadataV2FieldType.String, Length: 10));
+        await cacheA.Cache.SetAsync("service:1", new FieldDefinition("Service1", MetadataV2FieldType.String, Length: 10));
 
         await cacheB.Cache.RemoveByPatternAsync("layer:*");
 

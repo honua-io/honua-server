@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Metadata.Domain.V2;
+
 namespace Honua.Core.Features.Catalog.Domain;
 
 /// <summary>
@@ -16,7 +18,7 @@ namespace Honua.Core.Features.Catalog.Domain;
 /// <param name="IsHidden">Whether public protocol output should omit the field.</param>
 public record FieldDefinition(
     string Name,
-    FieldType Type,
+    MetadataV2FieldType Type,
     int? Length = null,
     bool Nullable = true,
     object? DefaultValue = null,
@@ -32,7 +34,7 @@ public record FieldDefinition(
     /// <summary>
     /// Whether this field is a geometry field
     /// </summary>
-    public bool IsGeometry => Type == FieldType.Geometry;
+    public bool IsGeometry => Type == MetadataV2FieldType.Geometry;
 
     /// <summary>
     /// Whether this field is visible in public protocol metadata and feature output.
@@ -44,19 +46,19 @@ public record FieldDefinition(
     /// </summary>
     public string GeoServicesType => Type switch
     {
-        FieldType.String => "esriFieldTypeString",
-        FieldType.Integer => "esriFieldTypeInteger",
-        FieldType.BigInteger => "esriFieldTypeInteger64",
-        FieldType.Double => "esriFieldTypeDouble",
-        FieldType.Float => "esriFieldTypeSingle",
-        FieldType.Boolean => "esriFieldTypeSmallInteger", // Boolean as 0/1
-        FieldType.DateTime => "esriFieldTypeDate",
-        FieldType.Date => "esriFieldTypeDate",
-        FieldType.Time => "esriFieldTypeString", // Time as formatted string
-        FieldType.Geometry => "esriFieldTypeGeometry",
-        FieldType.Json => "esriFieldTypeString", // JSON as string
-        FieldType.Binary => "esriFieldTypeBlob",
-        FieldType.Uuid => "esriFieldTypeGUID",
+        MetadataV2FieldType.String => "esriFieldTypeString",
+        MetadataV2FieldType.Integer => "esriFieldTypeInteger",
+        MetadataV2FieldType.BigInteger => "esriFieldTypeInteger64",
+        MetadataV2FieldType.Double => "esriFieldTypeDouble",
+        MetadataV2FieldType.Float => "esriFieldTypeSingle",
+        MetadataV2FieldType.Boolean => "esriFieldTypeSmallInteger", // Boolean as 0/1
+        MetadataV2FieldType.DateTime => "esriFieldTypeDate",
+        MetadataV2FieldType.Date => "esriFieldTypeDate",
+        MetadataV2FieldType.Time => "esriFieldTypeString", // Time as formatted string
+        MetadataV2FieldType.Geometry => "esriFieldTypeGeometry",
+        MetadataV2FieldType.Json => "esriFieldTypeString", // JSON as string
+        MetadataV2FieldType.Binary => "esriFieldTypeBlob",
+        MetadataV2FieldType.Uuid => "esriFieldTypeGUID",
         _ => "esriFieldTypeString"
     };
 
@@ -65,20 +67,20 @@ public record FieldDefinition(
     /// </summary>
     public string SqlType => Type switch
     {
-        FieldType.String when Length.HasValue => $"VARCHAR({Length})",
-        FieldType.String => "TEXT",
-        FieldType.Integer => "INTEGER",
-        FieldType.BigInteger => "BIGINT",
-        FieldType.Double => "DOUBLE PRECISION",
-        FieldType.Float => "REAL",
-        FieldType.Boolean => "BOOLEAN",
-        FieldType.DateTime => "TIMESTAMP WITH TIME ZONE",
-        FieldType.Date => "DATE",
-        FieldType.Time => "TIME",
-        FieldType.Geometry => "GEOMETRY", // PostGIS type
-        FieldType.Json => "JSONB",
-        FieldType.Binary => "BYTEA",
-        FieldType.Uuid => "UUID",
+        MetadataV2FieldType.String when Length.HasValue => $"VARCHAR({Length})",
+        MetadataV2FieldType.String => "TEXT",
+        MetadataV2FieldType.Integer => "INTEGER",
+        MetadataV2FieldType.BigInteger => "BIGINT",
+        MetadataV2FieldType.Double => "DOUBLE PRECISION",
+        MetadataV2FieldType.Float => "REAL",
+        MetadataV2FieldType.Boolean => "BOOLEAN",
+        MetadataV2FieldType.DateTime => "TIMESTAMP WITH TIME ZONE",
+        MetadataV2FieldType.Date => "DATE",
+        MetadataV2FieldType.Time => "TIME",
+        MetadataV2FieldType.Geometry => "GEOMETRY", // PostGIS type
+        MetadataV2FieldType.Json => "JSONB",
+        MetadataV2FieldType.Binary => "BYTEA",
+        MetadataV2FieldType.Uuid => "UUID",
         _ => "TEXT"
     };
 
@@ -94,10 +96,10 @@ public record FieldDefinition(
         if (Name.Length > 64)
             return "Field name cannot exceed 64 characters";
 
-        if (Type == FieldType.String && Length.HasValue && Length.Value <= 0)
+        if (Type == MetadataV2FieldType.String && Length.HasValue && Length.Value <= 0)
             return "String field length must be positive";
 
-        if (Type == FieldType.String && Length.HasValue && Length.Value > 8000)
+        if (Type == MetadataV2FieldType.String && Length.HasValue && Length.Value > 8000)
             return "String field length cannot exceed 8000 characters";
 
         return null; // Valid

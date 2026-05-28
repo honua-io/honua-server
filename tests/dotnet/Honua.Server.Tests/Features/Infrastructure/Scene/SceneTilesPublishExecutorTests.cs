@@ -545,10 +545,10 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     {
         var fields = new[]
         {
-            new FieldDefinition("objectid", FieldType.Integer, Length: null, Nullable: false),
-            new FieldDefinition("shape", FieldType.Geometry, Length: null, Nullable: false),
-            new FieldDefinition("name", FieldType.String, Length: 64, Nullable: true),
-            new FieldDefinition("height", FieldType.Integer, Length: null, Nullable: true)
+            new FieldDefinition("objectid", MetadataV2FieldType.Integer, Length: null, Nullable: false),
+            new FieldDefinition("shape", MetadataV2FieldType.Geometry, Length: null, Nullable: false),
+            new FieldDefinition("name", MetadataV2FieldType.String, Length: 64, Nullable: true),
+            new FieldDefinition("height", MetadataV2FieldType.Integer, Length: null, Nullable: true)
         };
         _metadataProvider.SetGraph(BuildSceneGraph(resourceName: "Bâtiments-2026", fields: fields));
         _featureSource.Features = SamplePolygons();
@@ -877,10 +877,10 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         // shadow each other in EXT_structural_metadata.schema.classes.
         var fields = new[]
         {
-            new FieldDefinition("objectid", FieldType.Integer, Length: null, Nullable: false),
-            new FieldDefinition("shape", FieldType.Geometry, Length: null, Nullable: false),
-            new FieldDefinition("a-b", FieldType.String, Length: 64, Nullable: true),
-            new FieldDefinition("a_b", FieldType.String, Length: 64, Nullable: true)
+            new FieldDefinition("objectid", MetadataV2FieldType.Integer, Length: null, Nullable: false),
+            new FieldDefinition("shape", MetadataV2FieldType.Geometry, Length: null, Nullable: false),
+            new FieldDefinition("a-b", MetadataV2FieldType.String, Length: 64, Nullable: true),
+            new FieldDefinition("a_b", MetadataV2FieldType.String, Length: 64, Nullable: true)
         };
         _metadataProvider.SetGraph(BuildSceneGraph(fields: fields));
 
@@ -976,11 +976,11 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     {
         var fields = new[]
         {
-            new FieldDefinition("objectid", FieldType.Integer, Length: null, Nullable: false),
-            new FieldDefinition("shape", FieldType.Geometry, Length: null, Nullable: false),
-            new FieldDefinition("name", FieldType.String, Length: 64, Nullable: true),
-            new FieldDefinition("height", FieldType.Integer, Length: null, Nullable: true),
-            new FieldDefinition("big_id", FieldType.BigInteger, Length: null, Nullable: true)
+            new FieldDefinition("objectid", MetadataV2FieldType.Integer, Length: null, Nullable: false),
+            new FieldDefinition("shape", MetadataV2FieldType.Geometry, Length: null, Nullable: false),
+            new FieldDefinition("name", MetadataV2FieldType.String, Length: 64, Nullable: true),
+            new FieldDefinition("height", MetadataV2FieldType.Integer, Length: null, Nullable: true),
+            new FieldDefinition("big_id", MetadataV2FieldType.BigInteger, Length: null, Nullable: true)
         };
         _metadataProvider.SetGraph(BuildSceneGraph(fields: fields));
 
@@ -1011,10 +1011,10 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
         var sr = spatialReference ?? SpatialReference.Create(4326, 4326);
         var fields = new[]
         {
-            new FieldDefinition("objectid", FieldType.Integer, Length: null, Nullable: false),
-            new FieldDefinition("shape", FieldType.Geometry, Length: null, Nullable: false),
-            new FieldDefinition("name", FieldType.String, Length: 64, Nullable: true),
-            new FieldDefinition("height", FieldType.Integer, Length: null, Nullable: true)
+            new FieldDefinition("objectid", MetadataV2FieldType.Integer, Length: null, Nullable: false),
+            new FieldDefinition("shape", MetadataV2FieldType.Geometry, Length: null, Nullable: false),
+            new FieldDefinition("name", MetadataV2FieldType.String, Length: 64, Nullable: true),
+            new FieldDefinition("height", MetadataV2FieldType.Integer, Length: null, Nullable: true)
         };
         _metadataProvider.SetGraph(BuildSceneGraph(srid: sr.Wkid, accessPolicy: accessPolicy, fields: fields));
     }
@@ -1083,11 +1083,11 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
     {
         fields ??=
         [
-            new FieldDefinition("objectid", FieldType.Integer, Length: null, Nullable: false),
-            new FieldDefinition("shape", FieldType.Geometry, Length: null, Nullable: false),
-            new FieldDefinition("name", FieldType.String, Length: 64, Nullable: true),
-            new FieldDefinition("height", FieldType.Integer, Length: null, Nullable: true),
-            new FieldDefinition("base", FieldType.Integer, Length: null, Nullable: true)
+            new FieldDefinition("objectid", MetadataV2FieldType.Integer, Length: null, Nullable: false),
+            new FieldDefinition("shape", MetadataV2FieldType.Geometry, Length: null, Nullable: false),
+            new FieldDefinition("name", MetadataV2FieldType.String, Length: 64, Nullable: true),
+            new FieldDefinition("height", MetadataV2FieldType.Integer, Length: null, Nullable: true),
+            new FieldDefinition("base", MetadataV2FieldType.Integer, Length: null, Nullable: true)
         ];
 
         return fields.Select(field => new MetadataV2Field
@@ -1095,12 +1095,12 @@ public sealed class SceneTilesPublishExecutorTests : IDisposable
             Name = field.Name,
             Type = field.Type switch
             {
-                FieldType.Integer => MetadataV2FieldType.Integer,
-                FieldType.BigInteger => MetadataV2FieldType.BigInteger,
-                FieldType.Double => MetadataV2FieldType.Double,
-                FieldType.Float => MetadataV2FieldType.Float,
-                FieldType.String => MetadataV2FieldType.String,
-                FieldType.Geometry => MetadataV2FieldType.Geometry,
+                MetadataV2FieldType.Integer => MetadataV2FieldType.Integer,
+                MetadataV2FieldType.BigInteger => MetadataV2FieldType.BigInteger,
+                MetadataV2FieldType.Double => MetadataV2FieldType.Double,
+                MetadataV2FieldType.Float => MetadataV2FieldType.Float,
+                MetadataV2FieldType.String => MetadataV2FieldType.String,
+                MetadataV2FieldType.Geometry => MetadataV2FieldType.Geometry,
                 _ => MetadataV2FieldType.Unknown
             },
             Nullable = field.Nullable,

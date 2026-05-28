@@ -832,7 +832,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         if (expression is PropertyReference propertyReference)
         {
             var field = context.TryGetField(propertyReference.PropertyName);
-            if (field is null || field.Value.Type != FieldType.Json)
+            if (field is null || field.Value.Type != MetadataV2FieldType.Json)
             {
                 throw new ArgumentException($"Array predicates require JSON array fields. '{propertyReference.PropertyName}' is not JSON.");
             }
@@ -875,13 +875,13 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
             case PropertyReference property:
                 {
                     var field = context.TryGetField(property.PropertyName);
-                    if (field?.Type == FieldType.Time)
+                    if (field?.Type == MetadataV2FieldType.Time)
                     {
                         throw new ArgumentException(
                             $"Field '{property.PropertyName}' is a time-only field and cannot be used with temporal interval predicates.");
                     }
 
-                    var kind = field?.Type == FieldType.Date ? TemporalKind.Date : TemporalKind.Timestamp;
+                    var kind = field?.Type == MetadataV2FieldType.Date ? TemporalKind.Date : TemporalKind.Timestamp;
                     var sql = TranslateProperty(property, context);
                     return new TemporalBounds(sql, sql, kind, false, false, false);
                 }
@@ -1004,19 +1004,19 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         Timestamp
     }
 
-    private static string? GetJsonCastType(FieldType fieldType)
+    private static string? GetJsonCastType(MetadataV2FieldType fieldType)
     {
         return fieldType switch
         {
-            FieldType.Integer => "integer",
-            FieldType.BigInteger => "bigint",
-            FieldType.Float => "real",
-            FieldType.Double => "double precision",
-            FieldType.Boolean => "boolean",
-            FieldType.DateTime => "timestamptz",
-            FieldType.Date => "date",
-            FieldType.Time => "time",
-            FieldType.Uuid => "uuid",
+            MetadataV2FieldType.Integer => "integer",
+            MetadataV2FieldType.BigInteger => "bigint",
+            MetadataV2FieldType.Float => "real",
+            MetadataV2FieldType.Double => "double precision",
+            MetadataV2FieldType.Boolean => "boolean",
+            MetadataV2FieldType.DateTime => "timestamptz",
+            MetadataV2FieldType.Date => "date",
+            MetadataV2FieldType.Time => "time",
+            MetadataV2FieldType.Uuid => "uuid",
             _ => null
         };
     }

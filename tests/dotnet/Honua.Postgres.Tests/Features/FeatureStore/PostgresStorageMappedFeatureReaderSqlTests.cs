@@ -3,6 +3,7 @@
 
 using System.Reflection;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Postgres.Features.FeatureStore.Services;
@@ -40,7 +41,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
     public void BuildAttributesExpressionText_WithWideOutFields_ChunksJsonbBuildObjectCalls()
     {
         var fields = Enumerable.Range(1, 51)
-            .Select(index => new FieldDefinition($"field_{index}", FieldType.String))
+            .Select(index => new FieldDefinition($"field_{index}", MetadataV2FieldType.String))
             .ToArray();
 
         var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(

@@ -173,10 +173,10 @@ public static class FilterExpressionNormalizer
 
         return fieldType switch
         {
-            FieldType.DateTime => CoerceDateTimeLiteral(property.PropertyName, literal),
-            FieldType.Date => CoerceDateLiteral(property.PropertyName, literal),
-            FieldType.Boolean => CoerceBooleanLiteral(property.PropertyName, literal),
-            FieldType.Integer or FieldType.BigInteger or FieldType.Float or FieldType.Double
+            MetadataV2FieldType.DateTime => CoerceDateTimeLiteral(property.PropertyName, literal),
+            MetadataV2FieldType.Date => CoerceDateLiteral(property.PropertyName, literal),
+            MetadataV2FieldType.Boolean => CoerceBooleanLiteral(property.PropertyName, literal),
+            MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger or MetadataV2FieldType.Float or MetadataV2FieldType.Double
                 => CoerceNumericLiteral(property.PropertyName, literal),
             _ => literal
         };

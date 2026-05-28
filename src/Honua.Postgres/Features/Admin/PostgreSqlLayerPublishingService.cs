@@ -233,7 +233,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             throw new LayerPublishingException(LayerPublishingErrorKind.Validation, message);
         }
         var primaryKeyType = MapPostgresType(primaryKeyColumn.DataType);
-        if (primaryKeyType is not FieldType.Integer and not FieldType.BigInteger)
+        if (primaryKeyType is not MetadataV2FieldType.Integer and not MetadataV2FieldType.BigInteger)
         {
             throw new LayerPublishingException(
                 LayerPublishingErrorKind.Validation,
@@ -499,7 +499,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             {
                 DisplayField = fields
                     .FirstOrDefault(field =>
-                        field.Type != FieldType.Geometry &&
+                        field.Type != MetadataV2FieldType.Geometry &&
                         !string.Equals(field.Name, primaryKeyColumn, StringComparison.OrdinalIgnoreCase))
                     ?.Name,
                 Queryable = true,
@@ -638,27 +638,27 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             Nullable = field.Nullable,
             SemanticRoles = semanticRoles.ToArray(),
             Alias = field.Name,
-            Editable = field.Type != FieldType.Geometry,
+            Editable = field.Type != MetadataV2FieldType.Geometry,
             Length = field.MaxLength
         };
     }
 
-    private static MetadataV2FieldType MapMetadataV2FieldType(FieldType fieldType)
+    private static MetadataV2FieldType MapMetadataV2FieldType(MetadataV2FieldType fieldType)
         => fieldType switch
         {
-            FieldType.String => MetadataV2FieldType.String,
-            FieldType.Integer => MetadataV2FieldType.Integer,
-            FieldType.BigInteger => MetadataV2FieldType.BigInteger,
-            FieldType.Double => MetadataV2FieldType.Double,
-            FieldType.Float => MetadataV2FieldType.Float,
-            FieldType.Boolean => MetadataV2FieldType.Boolean,
-            FieldType.DateTime => MetadataV2FieldType.DateTime,
-            FieldType.Date => MetadataV2FieldType.Date,
-            FieldType.Time => MetadataV2FieldType.Time,
-            FieldType.Geometry => MetadataV2FieldType.Geometry,
-            FieldType.Json => MetadataV2FieldType.Json,
-            FieldType.Binary => MetadataV2FieldType.Binary,
-            FieldType.Uuid => MetadataV2FieldType.Uuid,
+            MetadataV2FieldType.String => MetadataV2FieldType.String,
+            MetadataV2FieldType.Integer => MetadataV2FieldType.Integer,
+            MetadataV2FieldType.BigInteger => MetadataV2FieldType.BigInteger,
+            MetadataV2FieldType.Double => MetadataV2FieldType.Double,
+            MetadataV2FieldType.Float => MetadataV2FieldType.Float,
+            MetadataV2FieldType.Boolean => MetadataV2FieldType.Boolean,
+            MetadataV2FieldType.DateTime => MetadataV2FieldType.DateTime,
+            MetadataV2FieldType.Date => MetadataV2FieldType.Date,
+            MetadataV2FieldType.Time => MetadataV2FieldType.Time,
+            MetadataV2FieldType.Geometry => MetadataV2FieldType.Geometry,
+            MetadataV2FieldType.Json => MetadataV2FieldType.Json,
+            MetadataV2FieldType.Binary => MetadataV2FieldType.Binary,
+            MetadataV2FieldType.Uuid => MetadataV2FieldType.Uuid,
             _ => MetadataV2FieldType.Unknown
         };
 
@@ -1296,7 +1296,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         {
             fields.Add(new LayerFieldInsert(
                 geometryColumn,
-                FieldType.Geometry,
+                MetadataV2FieldType.Geometry,
                 null,
                 true,
                 "Geometry"));
@@ -1305,32 +1305,32 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         return fields;
     }
 
-    private static FieldType MapPostgresType(string dataType)
+    private static MetadataV2FieldType MapPostgresType(string dataType)
     {
         var normalized = dataType.Trim().ToLowerInvariant();
         return normalized switch
         {
-            "smallint" => FieldType.Integer,
-            "integer" => FieldType.Integer,
-            "bigint" => FieldType.BigInteger,
-            "real" => FieldType.Float,
-            "double precision" => FieldType.Double,
-            "numeric" => FieldType.Double,
-            "decimal" => FieldType.Double,
-            "boolean" => FieldType.Boolean,
-            "date" => FieldType.Date,
-            "timestamp without time zone" => FieldType.DateTime,
-            "timestamp with time zone" => FieldType.DateTime,
-            "time without time zone" => FieldType.Time,
-            "time with time zone" => FieldType.Time,
-            "uuid" => FieldType.Uuid,
-            "json" => FieldType.Json,
-            "jsonb" => FieldType.Json,
-            "bytea" => FieldType.Binary,
-            "character varying" => FieldType.String,
-            "character" => FieldType.String,
-            "text" => FieldType.String,
-            _ => FieldType.String
+            "smallint" => MetadataV2FieldType.Integer,
+            "integer" => MetadataV2FieldType.Integer,
+            "bigint" => MetadataV2FieldType.BigInteger,
+            "real" => MetadataV2FieldType.Float,
+            "double precision" => MetadataV2FieldType.Double,
+            "numeric" => MetadataV2FieldType.Double,
+            "decimal" => MetadataV2FieldType.Double,
+            "boolean" => MetadataV2FieldType.Boolean,
+            "date" => MetadataV2FieldType.Date,
+            "timestamp without time zone" => MetadataV2FieldType.DateTime,
+            "timestamp with time zone" => MetadataV2FieldType.DateTime,
+            "time without time zone" => MetadataV2FieldType.Time,
+            "time with time zone" => MetadataV2FieldType.Time,
+            "uuid" => MetadataV2FieldType.Uuid,
+            "json" => MetadataV2FieldType.Json,
+            "jsonb" => MetadataV2FieldType.Json,
+            "bytea" => MetadataV2FieldType.Binary,
+            "character varying" => MetadataV2FieldType.String,
+            "character" => MetadataV2FieldType.String,
+            "text" => MetadataV2FieldType.String,
+            _ => MetadataV2FieldType.String
         };
     }
 
@@ -1469,7 +1469,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         }
 
         var primaryKeyType = MapPostgresType(primaryKeyColumn.DataType);
-        if (primaryKeyType is not FieldType.Integer and not FieldType.BigInteger)
+        if (primaryKeyType is not MetadataV2FieldType.Integer and not MetadataV2FieldType.BigInteger)
         {
             checks.Add(Error(
                 "primary-key-type",
@@ -2739,7 +2739,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
     private sealed record LayerFieldInsert(
         string Name,
-        FieldType Type,
+        MetadataV2FieldType Type,
         int? MaxLength,
         bool Nullable,
         string? Description,

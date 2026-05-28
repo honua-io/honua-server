@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Core.Tests.Features.Catalog;
@@ -17,7 +18,7 @@ public sealed class FieldDefinitionTests
     [UnitTest]
     public void DisplayName_FallsBackToName_WhenDescriptionMissing()
     {
-        var field = new FieldDefinition("objectid", FieldType.Integer);
+        var field = new FieldDefinition("objectid", MetadataV2FieldType.Integer);
 
         field.DisplayName.Should().Be("objectid");
     }
@@ -25,7 +26,7 @@ public sealed class FieldDefinitionTests
     [UnitTest]
     public void DisplayName_UsesDescriptionWhenProvided()
     {
-        var field = new FieldDefinition("oid", FieldType.Integer, Description: "Object Identifier");
+        var field = new FieldDefinition("oid", MetadataV2FieldType.Integer, Description: "Object Identifier");
 
         field.DisplayName.Should().Be("Object Identifier");
     }
@@ -33,32 +34,32 @@ public sealed class FieldDefinitionTests
     [UnitTest]
     public void IsGeometry_ReflectsType()
     {
-        new FieldDefinition("shape", FieldType.Geometry).IsGeometry.Should().BeTrue();
-        new FieldDefinition("name", FieldType.String).IsGeometry.Should().BeFalse();
+        new FieldDefinition("shape", MetadataV2FieldType.Geometry).IsGeometry.Should().BeTrue();
+        new FieldDefinition("name", MetadataV2FieldType.String).IsGeometry.Should().BeFalse();
     }
 
     [UnitTest]
     public void IsVisible_InvertsIsHidden()
     {
-        new FieldDefinition("a", FieldType.String).IsVisible.Should().BeTrue();
-        new FieldDefinition("a", FieldType.String, IsHidden: true).IsVisible.Should().BeFalse();
+        new FieldDefinition("a", MetadataV2FieldType.String).IsVisible.Should().BeTrue();
+        new FieldDefinition("a", MetadataV2FieldType.String, IsHidden: true).IsVisible.Should().BeFalse();
     }
 
     [Theory]
-    [InlineData(FieldType.String, "esriFieldTypeString")]
-    [InlineData(FieldType.Integer, "esriFieldTypeInteger")]
-    [InlineData(FieldType.BigInteger, "esriFieldTypeInteger64")]
-    [InlineData(FieldType.Double, "esriFieldTypeDouble")]
-    [InlineData(FieldType.Float, "esriFieldTypeSingle")]
-    [InlineData(FieldType.Boolean, "esriFieldTypeSmallInteger")]
-    [InlineData(FieldType.DateTime, "esriFieldTypeDate")]
-    [InlineData(FieldType.Date, "esriFieldTypeDate")]
-    [InlineData(FieldType.Time, "esriFieldTypeString")]
-    [InlineData(FieldType.Geometry, "esriFieldTypeGeometry")]
-    [InlineData(FieldType.Json, "esriFieldTypeString")]
-    [InlineData(FieldType.Binary, "esriFieldTypeBlob")]
-    [InlineData(FieldType.Uuid, "esriFieldTypeGUID")]
-    public void GeoServicesType_MapsEveryFieldType(FieldType type, string expected)
+    [InlineData(MetadataV2FieldType.String, "esriFieldTypeString")]
+    [InlineData(MetadataV2FieldType.Integer, "esriFieldTypeInteger")]
+    [InlineData(MetadataV2FieldType.BigInteger, "esriFieldTypeInteger64")]
+    [InlineData(MetadataV2FieldType.Double, "esriFieldTypeDouble")]
+    [InlineData(MetadataV2FieldType.Float, "esriFieldTypeSingle")]
+    [InlineData(MetadataV2FieldType.Boolean, "esriFieldTypeSmallInteger")]
+    [InlineData(MetadataV2FieldType.DateTime, "esriFieldTypeDate")]
+    [InlineData(MetadataV2FieldType.Date, "esriFieldTypeDate")]
+    [InlineData(MetadataV2FieldType.Time, "esriFieldTypeString")]
+    [InlineData(MetadataV2FieldType.Geometry, "esriFieldTypeGeometry")]
+    [InlineData(MetadataV2FieldType.Json, "esriFieldTypeString")]
+    [InlineData(MetadataV2FieldType.Binary, "esriFieldTypeBlob")]
+    [InlineData(MetadataV2FieldType.Uuid, "esriFieldTypeGUID")]
+    public void GeoServicesType_MapsEveryFieldType(MetadataV2FieldType type, string expected)
     {
         var field = new FieldDefinition("f", type);
 
@@ -66,19 +67,19 @@ public sealed class FieldDefinitionTests
     }
 
     [Theory]
-    [InlineData(FieldType.Integer, "INTEGER")]
-    [InlineData(FieldType.BigInteger, "BIGINT")]
-    [InlineData(FieldType.Double, "DOUBLE PRECISION")]
-    [InlineData(FieldType.Float, "REAL")]
-    [InlineData(FieldType.Boolean, "BOOLEAN")]
-    [InlineData(FieldType.DateTime, "TIMESTAMP WITH TIME ZONE")]
-    [InlineData(FieldType.Date, "DATE")]
-    [InlineData(FieldType.Time, "TIME")]
-    [InlineData(FieldType.Geometry, "GEOMETRY")]
-    [InlineData(FieldType.Json, "JSONB")]
-    [InlineData(FieldType.Binary, "BYTEA")]
-    [InlineData(FieldType.Uuid, "UUID")]
-    public void SqlType_PrimitiveMappingIsStable(FieldType type, string expected)
+    [InlineData(MetadataV2FieldType.Integer, "INTEGER")]
+    [InlineData(MetadataV2FieldType.BigInteger, "BIGINT")]
+    [InlineData(MetadataV2FieldType.Double, "DOUBLE PRECISION")]
+    [InlineData(MetadataV2FieldType.Float, "REAL")]
+    [InlineData(MetadataV2FieldType.Boolean, "BOOLEAN")]
+    [InlineData(MetadataV2FieldType.DateTime, "TIMESTAMP WITH TIME ZONE")]
+    [InlineData(MetadataV2FieldType.Date, "DATE")]
+    [InlineData(MetadataV2FieldType.Time, "TIME")]
+    [InlineData(MetadataV2FieldType.Geometry, "GEOMETRY")]
+    [InlineData(MetadataV2FieldType.Json, "JSONB")]
+    [InlineData(MetadataV2FieldType.Binary, "BYTEA")]
+    [InlineData(MetadataV2FieldType.Uuid, "UUID")]
+    public void SqlType_PrimitiveMappingIsStable(MetadataV2FieldType type, string expected)
     {
         new FieldDefinition("f", type).SqlType.Should().Be(expected);
     }
@@ -86,21 +87,21 @@ public sealed class FieldDefinitionTests
     [UnitTest]
     public void SqlType_StringWithLength_RendersVarchar()
     {
-        new FieldDefinition("name", FieldType.String, Length: 80).SqlType.Should().Be("VARCHAR(80)");
+        new FieldDefinition("name", MetadataV2FieldType.String, Length: 80).SqlType.Should().Be("VARCHAR(80)");
     }
 
     [UnitTest]
     public void SqlType_StringWithoutLength_RendersText()
     {
-        new FieldDefinition("name", FieldType.String).SqlType.Should().Be("TEXT");
+        new FieldDefinition("name", MetadataV2FieldType.String).SqlType.Should().Be("TEXT");
     }
 
     [UnitTest]
     public void Validate_NameRequired()
     {
-        new FieldDefinition("", FieldType.String).Validate()
+        new FieldDefinition("", MetadataV2FieldType.String).Validate()
             .Should().Contain("cannot be empty");
-        new FieldDefinition("   ", FieldType.String).Validate()
+        new FieldDefinition("   ", MetadataV2FieldType.String).Validate()
             .Should().Contain("cannot be empty");
     }
 
@@ -109,7 +110,7 @@ public sealed class FieldDefinitionTests
     {
         var name = new string('x', 64);
 
-        new FieldDefinition(name, FieldType.String).Validate().Should().BeNull();
+        new FieldDefinition(name, MetadataV2FieldType.String).Validate().Should().BeNull();
     }
 
     [UnitTest]
@@ -117,7 +118,7 @@ public sealed class FieldDefinitionTests
     {
         var name = new string('x', 65);
 
-        new FieldDefinition(name, FieldType.String).Validate()
+        new FieldDefinition(name, MetadataV2FieldType.String).Validate()
             .Should().Contain("64 characters");
     }
 
@@ -127,20 +128,20 @@ public sealed class FieldDefinitionTests
     [InlineData(-1000)]
     public void Validate_NonPositiveStringLength_ReportsError(int length)
     {
-        new FieldDefinition("name", FieldType.String, Length: length).Validate()
+        new FieldDefinition("name", MetadataV2FieldType.String, Length: length).Validate()
             .Should().Contain("positive");
     }
 
     [UnitTest]
     public void Validate_StringLengthAtBoundary_IsValid()
     {
-        new FieldDefinition("name", FieldType.String, Length: 8000).Validate().Should().BeNull();
+        new FieldDefinition("name", MetadataV2FieldType.String, Length: 8000).Validate().Should().BeNull();
     }
 
     [UnitTest]
     public void Validate_StringLengthAboveBoundary_ReportsError()
     {
-        new FieldDefinition("name", FieldType.String, Length: 8001).Validate()
+        new FieldDefinition("name", MetadataV2FieldType.String, Length: 8001).Validate()
             .Should().Contain("8000 characters");
     }
 
@@ -149,13 +150,13 @@ public sealed class FieldDefinitionTests
     {
         // Length only applies to string fields — supplying it on a numeric
         // field is permitted (and silently ignored by SqlType).
-        new FieldDefinition("levels", FieldType.Integer, Length: 99).Validate().Should().BeNull();
+        new FieldDefinition("levels", MetadataV2FieldType.Integer, Length: 99).Validate().Should().BeNull();
     }
 
     [UnitTest]
     public void Defaults_NullableIsTrue_AndIsHiddenIsFalse()
     {
-        var field = new FieldDefinition("name", FieldType.String);
+        var field = new FieldDefinition("name", MetadataV2FieldType.String);
 
         field.Nullable.Should().BeTrue();
         field.IsHidden.Should().BeFalse();
