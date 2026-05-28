@@ -179,4 +179,86 @@ internal static class FeatureRegistrationExtensions
 
         return endpoints;
     }
+
+    /// <summary>
+    /// Discovers every <see cref="IHonuaProtocolModule"/> implementation in the
+    /// currently-loaded assemblies and invokes its <c>ConfigureServices</c>. The
+    /// optional <paramref name="enabledNames"/> filter (typically bound from
+    /// <c>Protocols:Enabled</c> in configuration) restricts which modules run;
+    /// when null or empty, every discovered module runs.
+    /// </summary>
+    /// <remarks>
+    /// This entry point is additive — it sits alongside
+    /// <see cref="AddServerFeatures"/>, which still owns the canonical direct
+    /// <c>AddXxx</c> wiring. A follow-up PR will migrate the per-protocol
+    /// registrations into modules and remove the duplicated direct calls.
+    /// Today calling this method <em>and</em> <c>AddServerFeatures</c> would
+    /// register the wrapped protocol services twice; callers must pick one
+    /// path until the migration completes.
+    /// </remarks>
+    public static IServiceCollection AddDiscoveredProtocolModules(
+        this IServiceCollection services,
+        Microsoft.Extensions.Configuration.IConfiguration configuration,
+        IReadOnlyCollection<string>? enabledNames = null)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        foreach (var module in DiscoverProtocolModules(enabledNames))
+        {
+            module.ConfigureServices(services, configuration);
+        }
+
+        return services;
+    }
+
+    /// <summary>
+    /// Discovers every <see cref="IHonuaProtocolModule"/> implementation and
+    /// invokes its <c>MapEndpoints</c>. Sequencing mirrors
+    /// <see cref="AddDiscoveredProtocolModules"/>: when the optional filter
+    /// is null or empty, every discovered module runs.
+    /// </summary>
+    /// <remarks>
+    /// This entry point is additive (see <see cref="AddDiscoveredProtocolModules"/>).
+    /// </remarks>
+    public static IEndpointRouteBuilder MapDiscoveredProtocolModules(
+        this IEndpointRouteBuilder endpoints,
+        IReadOnlyCollection<string>? enabledNames = null)
+    {
+        ArgumentNullException.ThrowIfNull(endpoints);
+
+        foreach (var module in DiscoverProtocolModules(enabledNames))
+        {
+            module.MapEndpoints(endpoints);
+        }
+
+        return endpoints;
+    }
+
+    private static IEnumerable<IHonuaProtocolModule> DiscoverProtocolModules(
+        IReadOnlyCollection<string>? enabledNames)
+    {
+        foreach (var module in BuiltInProtocolModules)
+        {
+            if (enabledNames is { Count: > 0 } && !enabledNames.Contains(module.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            yield return module;
+        }
+    }
+
+    // AOT-safe registry of built-in protocol modules. PublishAot=true on
+    // Honua.Server flags reflection-based type discovery + Activator.CreateInstance
+    // with IL2070 / IL2072 (no DynamicallyAccessedMembers annotation); maintaining
+    // an explicit list keeps the trim analyzer happy and surfaces module-add
+    // / module-remove in code review. Protocol-module assemblies extracted in
+    // Phase 1 follow-ups will append their new()-able module here.
+    private static readonly IReadOnlyList<IHonuaProtocolModule> BuiltInProtocolModules = new IHonuaProtocolModule[]
+    {
+        new Modules.ODataProtocolModule(),
+        new Modules.OgcApiProtocolModule(),
+        new Modules.OgcClassicProtocolModule(),
+        new Modules.GeoServicesProtocolModule(),
+    };
 }
