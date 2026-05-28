@@ -31,6 +31,13 @@
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
+    <!-- NetTopologySuite is required by the carved Events / Validation surfaces
+         (FeatureChangeEventEnrichment's WKB→GeoJSON envelope extraction,
+         the unified IGeometryService abstraction surface). The concrete
+         IGeometryService implementation still lives in Server alongside the
+         heavier NTS-IO codecs; only the small thread-static WkbReaderCache
+         and envelope reader are carved into Hosting. -->
+    <PackageReference Include="NetTopologySuite" />
   </ItemGroup>
 
   <ItemGroup>

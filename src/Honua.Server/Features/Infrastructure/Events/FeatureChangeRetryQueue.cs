@@ -10,12 +10,10 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Features.Infrastructure.Events;
 
-internal interface IFeatureChangeRetryQueue
-{
-    Task<string> EnqueueAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default);
-    IAsyncEnumerable<string> ReadQueuedIdsAsync(CancellationToken cancellationToken = default);
-    Task ProcessQueuedAsync(string pendingId, CancellationToken cancellationToken = default);
-}
+// IFeatureChangeRetryQueue (the contract) is defined in
+// src/Honua.Hosting/Features/Events/FeatureChangeRetryContracts.cs so the
+// Hosting-side JSON source-gen context and background service consume it
+// without a back-reference to Honua.Server.
 
 internal sealed partial class FeatureChangeRetryQueue(
     IDistributedCache? pendingCache,
@@ -603,20 +601,15 @@ internal sealed partial class FeatureChangeRetryQueue(
     private static partial void LogRetryClaimLost(ILogger logger);
 }
 
-internal sealed record PendingFeatureChangePublish
-{
-    public required string PendingId { get; init; }
-    public required FeatureChangeEventRequest Request { get; init; }
-    public required DateTimeOffset EnqueuedAt { get; init; }
-    public int AttemptCount { get; init; }
-    public DateTimeOffset? LastAttemptAt { get; init; }
-    public bool BroadcastCompleted { get; init; }
-}
-
-internal sealed record PendingFeatureChangeIndex
-{
-    public string[] PendingIds { get; init; } = [];
-}
+// Audit-A1 / ADR-0044: IFeatureChangeRetryQueue, PendingFeatureChangePublish,
+// PendingFeatureChangeIndex, and PendingFeatureChangeSignal moved to
+// src/Honua.Hosting/Features/Events/FeatureChangeRetryContracts.cs so the
+// JSON source-gen context and the hosted background service compile inside
+// Honua.Hosting without a Server back-edge. The FeatureChangeRetryQueue
+// implementation itself stays here because its constructor takes
+// FeatureStreamSessionManager from Honua.Server.Features.Streaming, which
+// has not been carved into Hosting. BroadcastClaimResult is private to this
+// file's logic.
 
 internal enum BroadcastClaimResult
 {
@@ -624,5 +617,3 @@ internal enum BroadcastClaimResult
     InProgress,
     Completed
 }
-
-internal readonly record struct PendingFeatureChangeSignal(string PendingId);
