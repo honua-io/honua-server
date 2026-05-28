@@ -406,7 +406,8 @@ jobs:
                 max_cpu_count,
                 upload_operator_eval_report,
                 upload_odata_evidence,
-                filter
+                filter,
+                csproj: (.csproj // "")
               })
           ' .github/ci-shards.json)
           if [ "$(printf '%s' "${matrix_include}" | jq 'length')" = "0" ]; then
@@ -678,6 +679,11 @@ jobs:
           HONUA_SERVER_TEST_MAX_CPU_COUNT: ${{ matrix.max_cpu_count }}
           HONUA_SERVER_TEST_RESULTS_DIR: ./tests/TestResults
           HONUA_SERVER_TEST_CONFIGURATION: Release
+          # Phase 2 / ADR-0042: per-protocol test-project routing.
+          # The shard record's optional `csproj` field selects the test
+          # assembly; the shard script defaults to Honua.Server.Tests.csproj
+          # when this env var is empty so legacy shards keep working unchanged.
+          HONUA_SERVER_TEST_CSPROJ: ${{ matrix.csproj }}
         run: |
           scripts/ci/run-server-test-shard.sh
 
