@@ -51,6 +51,68 @@ public sealed class VerticalSliceIsolationTests
     };
 
     /// <summary>
+    /// Sub-areas under <c>Honua.Server.Features.Infrastructure.*</c> that are explicitly
+    /// permitted shared plumbing. The arch test treats these as a closed allow-list so
+    /// future additions to Infrastructure require an intentional update here. See ADR-0044
+    /// for the carve-out that moved Authentication / Caching / Events / Helpers / Models /
+    /// Validation out of Honua.Server.Features.Infrastructure into Honua.Hosting (their
+    /// namespaces are preserved under <c>Honua.Server.Features.Infrastructure.*</c> but
+    /// the source lives in the Hosting assembly).
+    /// </summary>
+    /// <remarks>
+    /// Audit-A1 (structural-audit-2026-05): the audit found Infrastructure had grown to
+    /// 351 files / 42 subdirs with Auth(45), ControlPlane(38), Styling(26), Rendering(16)
+    /// misfiled — entries that should have been their own slices. The Hosting carve moved
+    /// six sub-areas out (Authentication, Caching, Events, Helpers, Models, Validation),
+    /// and ControlPlane / Styling have been extracted to their own slices. Anything not on
+    /// this allow-list is treated as a real feature slice and must comply with vertical
+    /// isolation. Update the list when a new genuinely-shared subsystem is added; reject
+    /// additions that look like a slice in disguise.
+    /// </remarks>
+    private static readonly HashSet<string> _infrastructureAllowedSubAreas =
+        new(StringComparer.Ordinal)
+        {
+            // Genuinely shared plumbing.
+            "Middleware",
+            "Monitoring",
+            "Services",
+            "Abstractions",
+            "Extensions",
+            "Helpers",          // Hosting carve preserves Honua.Server.Features.Infrastructure.Helpers.*
+            // Cross-cutting subsystems.
+            "Analytics",
+            "AuditLog",
+            "Authentication",   // Lives in Honua.Hosting under the preserved namespace.
+            "Caching",          // Lives in Honua.Hosting under the preserved namespace.
+            "Compression",
+            "Configuration",
+            "Coordination",
+            "DataIntegrity",
+            "Events",           // Bulk lives in Honua.Hosting; FeatureChangeRetryQueue remains in Server.
+            "Filtering",
+            "GeoJson",
+            "Geometries",
+            "HealthCheck",
+            "HealthChecks",
+            "Hosting",
+            "Http",
+            "Licensing",
+            "Logging",
+            "Models",           // Lives in Honua.Hosting under the preserved namespace.
+            "MultiTenancy",
+            "Parsing",
+            "Progress",
+            "Raster",
+            "RateLimiting",
+            "Redis",
+            "Rendering",
+            "Resilience",
+            "Scene",
+            "Security",
+            "Validation",       // Lives in Honua.Hosting under the preserved namespace.
+        };
+
+    /// <summary>
     /// Protocol-adapter features that are allowed to consume a specific domain
     /// feature's transport-neutral services. The Mcp operator surface adapts
     /// <c>IGeoprocessingJobService</c> and <c>IAnalysisReportService</c>, but
@@ -96,6 +158,59 @@ public sealed class VerticalSliceIsolationTests
             "Features must maintain vertical slice isolation and not directly reference other features. " +
             "Cross-feature communication should happen through shared abstractions in Core or Infrastructure layers. " +
             "Infrastructure is an exception as it provides shared services.");
+    }
+
+    /// <summary>
+    /// Audit-A1 ratchet: confirms the Infrastructure carve-out is intact. The blanket
+    /// "Infrastructure is exempt" rule is anchored to the explicit
+    /// <see cref="_infrastructureAllowedSubAreas"/> allow-list — any new top-level folder
+    /// under <c>src/Honua.Server/Features/Infrastructure/</c> must be reviewed and either
+    /// (a) extracted to its own slice (preferred for misfiled slices like the historical
+    /// Auth/ControlPlane/Styling sub-areas) or (b) added to the allow-list with a comment
+    /// explaining why it is shared plumbing.
+    /// </summary>
+    /// <remarks>
+    /// See <see cref="_infrastructureAllowedSubAreas"/> for the historical context and
+    /// ADR-0044 for the Hosting carve. This test scans the filesystem (not the assembly)
+    /// so it captures namespaces whose source has moved to Honua.Hosting under the same
+    /// <c>Honua.Server.Features.Infrastructure.*</c> namespace.
+    /// </remarks>
+    [ArchitectureTest]
+    public void Infrastructure_SubAreas_ShouldBeOnExplicitAllowList()
+    {
+        var currentDir = Directory.GetCurrentDirectory();
+        var projectRoot = FindProjectRoot(currentDir);
+        var infraServerPath = Path.Combine(projectRoot, "src", "Honua.Server", "Features", "Infrastructure");
+        var infraHostingPath = Path.Combine(projectRoot, "src", "Honua.Hosting", "Features");
+
+        var observed = new HashSet<string>(StringComparer.Ordinal);
+        AccumulateSubAreaNames(infraServerPath, observed);
+        AccumulateSubAreaNames(infraHostingPath, observed);
+
+        var stowaways = observed
+            .Where(name => !_infrastructureAllowedSubAreas.Contains(name))
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        stowaways.Should().BeEmpty(
+            "Every top-level sub-directory under Honua.Server.Features.Infrastructure (or " +
+            "Honua.Hosting/Features) must be on the audit-A1 allow-list. Add the sub-area " +
+            "to VerticalSliceIsolationTests._infrastructureAllowedSubAreas with a justifying " +
+            "comment, or extract it to its own vertical slice. Unexpected sub-areas: " +
+            string.Join(", ", stowaways));
+
+        static void AccumulateSubAreaNames(string path, HashSet<string> sink)
+        {
+            if (!Directory.Exists(path))
+            {
+                return;
+            }
+
+            foreach (var dir in Directory.GetDirectories(path))
+            {
+                sink.Add(new DirectoryInfo(dir).Name);
+            }
+        }
     }
 
     [ArchitectureTest]
