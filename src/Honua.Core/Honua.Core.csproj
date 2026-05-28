@@ -58,4 +58,8 @@
     <InternalsVisibleTo Include="Honua.SqlServer.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Honua.Core.Abstractions\Honua.Core.Abstractions.csproj" />
+  </ItemGroup>
+
 </Project>

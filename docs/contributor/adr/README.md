@@ -46,6 +46,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0038](0038-geoetl-pipeline-architecture-and-runtime-boundary.md) | GeoETL Pipeline Architecture and Runtime Boundary | Accepted | 2026-05 |
 | [0039](0039-cloud-optimized-hdf-netcdf-reader-strategy.md) | Cloud-Optimized HDF5 / NetCDF4 Reader Strategy | Accepted | 2026-05 |
 | [0040](0040-metadata-v2-canonical-graph.md) | Metadata v2 Canonical Graph Design | Accepted (cutover in progress) | 2026-05 |
+| [0041](0041-core-abstractions-extraction.md) | Honua.Core.Abstractions Extraction | Accepted | 2026-05 |
 
 ## Template
 
