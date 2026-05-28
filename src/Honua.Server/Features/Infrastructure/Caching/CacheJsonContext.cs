@@ -4,6 +4,7 @@
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Styling.Domain;
 
@@ -12,8 +13,8 @@ namespace Honua.Server.Features.Infrastructure.Caching;
 /// <summary>
 /// JSON serialization context for cache-related types (AOT-compatible).
 /// </summary>
-[JsonSerializable(typeof(FieldDefinition))]
-[JsonSerializable(typeof(FieldDefinition[]))]
+[JsonSerializable(typeof(MetadataV2Field))]
+[JsonSerializable(typeof(MetadataV2Field[]))]
 [JsonSerializable(typeof(Honua.Core.Features.Shared.Models.SpatialReference), TypeInfoPropertyName = "CacheSpatialReference")]
 [JsonSerializable(typeof(FeatureExtent))]
 [JsonSerializable(typeof(Relationship))]

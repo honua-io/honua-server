@@ -41,7 +41,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
     public void BuildAttributesExpressionText_WithWideOutFields_ChunksJsonbBuildObjectCalls()
     {
         var fields = Enumerable.Range(1, 51)
-            .Select(index => new FieldDefinition($"field_{index}", MetadataV2FieldType.String))
+            .Select(index => new MetadataV2Field { Name = $"field_{index}", Type = MetadataV2FieldType.String })
             .ToArray();
 
         var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
