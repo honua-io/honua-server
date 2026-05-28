@@ -6,7 +6,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Server.Features.Geoprocessing.Execution;
 using Honua.Server.Features.Infrastructure.Abstractions;
-using Honua.Server.Features.Infrastructure.ControlPlane;
+using Honua.Server.Features.ControlPlane;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;

@@ -6,7 +6,7 @@ using System.Text.Json;
 using Azure.Core;
 using Azure.Identity;
 using FluentAssertions;
-using Honua.Server.Features.Infrastructure.ControlPlane;
+using Honua.Server.Features.ControlPlane;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;

@@ -6,7 +6,7 @@ using Amazon.ElasticLoadBalancingV2;
 using Amazon.Runtime;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Server.Features.Infrastructure.ControlPlane;
+using Honua.Server.Features.ControlPlane;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;

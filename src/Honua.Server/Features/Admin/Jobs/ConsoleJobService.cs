@@ -11,7 +11,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Infrastructure;
 using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.ControlPlane;
+using Honua.Server.Features.ControlPlane;
 
 namespace Honua.Server.Features.Admin.Jobs;
 

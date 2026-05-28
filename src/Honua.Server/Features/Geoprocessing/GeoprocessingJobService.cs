@@ -16,7 +16,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Infrastructure;
-using Honua.Server.Features.Infrastructure.ControlPlane;
+using Honua.Server.Features.ControlPlane;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Geoprocessing;

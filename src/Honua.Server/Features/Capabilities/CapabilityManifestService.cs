@@ -18,7 +18,7 @@ using Honua.Server.Features.Capabilities.Models;
 using Honua.Server.Features.Import;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Authentication.ClientCertificates;
-using Honua.Server.Features.Infrastructure.ControlPlane;
+using Honua.Server.Features.ControlPlane;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Security;
 using Honua.Server.Features.Protocols.Grpc;

@@ -35,7 +35,7 @@ using Honua.Server.Features.Console;
 using Honua.Server.Features.Collaboration.Sessions;
 using Honua.Server.Features.Export;
 using Honua.Server.Features.PrintingTools;
-using Honua.Server.Features.Infrastructure.ControlPlane;
+using Honua.Server.Features.ControlPlane;
 using Honua.Server.Features.FileStorage;
 using Honua.Server.Features.HealthCheck;
 using Honua.Server.Features.Import;

@@ -4,7 +4,7 @@
 using System.Diagnostics.Metrics;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Server.Features.Infrastructure.ControlPlane;
+using Honua.Server.Features.ControlPlane;
 using Honua.Server.Tests.Helpers;
 using Honua.ServiceDefaults;
 using Honua.TestKit.Attributes;
