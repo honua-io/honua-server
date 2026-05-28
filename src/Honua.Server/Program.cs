@@ -479,10 +479,10 @@ builder.Services.AddSingleton<Honua.Server.Features.Protocols.GeoServices.Featur
 // AddXxxServices extensions. Skip the Postgres registration for those providers so the
 // stubs are not overwritten with an implementation that would issue Postgres SQL against
 // a non-Postgres connection.
-var replicaProvider = builder.Configuration.GetValue<string>("DataSource:Provider");
-if (!string.Equals(replicaProvider, "duckdb", StringComparison.OrdinalIgnoreCase) &&
-    !string.Equals(replicaProvider, DataProviderNames.MySql, StringComparison.OrdinalIgnoreCase) &&
-    !string.Equals(replicaProvider, "mariadb", StringComparison.OrdinalIgnoreCase))
+var replicaProvider = DataProviderNames.Normalize(
+    builder.Configuration.GetValue<string>("DataSource:Provider"));
+if (replicaProvider != DataProviderNames.DuckDb &&
+    replicaProvider != DataProviderNames.MySql)
 {
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>(sp =>
         new Honua.Postgres.Features.FeatureStore.Services.PostgresReplicaRepository(
