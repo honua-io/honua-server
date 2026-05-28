@@ -13,19 +13,16 @@ using Honua.Postgres.Features.Infrastructure;
 namespace Honua.Postgres.Queries.Filters;
 
 /// <summary>
-/// Translates filter expressions to parameterized PostgreSQL WHERE clauses
+/// Translates filter expressions to parameterized PostgreSQL WHERE clauses.
+/// Recursion, depth-cap enforcement, parameter accumulation, literal and value-list
+/// translation are inherited from <see cref="SqlFilterExpressionVisitorBase"/>;
+/// this subclass owns the Postgres / PostGIS specifics (JSONB attribute access,
+/// PostGIS function names, geography casts, range types).
 /// </summary>
-internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
+internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISqlFilterTranslator
 {
-    /// <summary>
-    /// Maximum allowed nesting depth for filter expressions.
-    /// Prevents stack overflow from maliciously crafted deeply-nested filters.
-    /// </summary>
-    internal const int MaxExpressionDepth = FilterExpressionNormalizer.MaxExpressionDepth;
+    // MaxExpressionDepth is inherited from SqlFilterExpressionVisitorBase.
 
-    private int _paramIndex;
-    private int _depth;
-    private readonly List<object?> _parameters = [];
     private readonly bool _useJsonAttributes;
     private readonly string _attributesColumn;
     private readonly string _geometryColumn;
@@ -36,6 +33,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         string attributesColumn = DatabaseSchema.AttributesColumn,
         string geometryColumn = DatabaseSchema.GeometryColumn,
         string primaryKeyColumn = DatabaseSchema.ObjectIdColumn)
+        : base(PostgresSqlDialect.Instance)
     {
         _useJsonAttributes = useJsonAttributes;
         _attributesColumn = attributesColumn;
@@ -51,52 +49,9 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
     /// <param name="resource">Metadata v2 resource.</param>
     /// <returns>SQL fragment with parameters.</returns>
     public SqlFragment Translate(FilterExpression filter, MetadataV2Resource resource)
-        => TranslateCore(filter, FilterTranslationContext.FromResource(resource));
+        => Translate(filter, FilterTranslationContext.FromResource(resource));
 
-    private SqlFragment TranslateCore(FilterExpression filter, FilterTranslationContext context)
-    {
-        _paramIndex = 0;
-        _depth = 0;
-        _parameters.Clear();
-
-        var sql = TranslateExpression(filter, context);
-        return new SqlFragment(sql, _parameters);
-    }
-
-    private string TranslateExpression(FilterExpression filter, FilterTranslationContext context)
-    {
-        try
-        {
-            if (++_depth > MaxExpressionDepth)
-            {
-                throw new ArgumentException(
-                    $"Filter expression exceeds the maximum nesting depth of {MaxExpressionDepth}.");
-            }
-
-            return filter switch
-            {
-                BinaryExpression bin => TranslateBinary(bin, context),
-                UnaryExpression un => TranslateUnary(un, context),
-                PropertyReference prop => TranslateProperty(prop, context),
-                Literal lit => TranslateLiteral(lit),
-                SpatialPredicate spatial => TranslateSpatial(spatial, context),
-                SpatialDistancePredicate spatialDistance => TranslateSpatialDistance(spatialDistance, context),
-                TemporalPredicate temporal => TranslateTemporal(temporal, context),
-                ArrayPredicate array => TranslateArrayPredicate(array, context),
-                FunctionCall func => TranslateFunction(func, context),
-                IntervalLiteral interval => TranslateIntervalLiteral(interval),
-                ArrayLiteral arrayLiteral => TranslateArrayLiteral(arrayLiteral),
-                ValueList list => TranslateValueList(list, context),
-                _ => throw new NotSupportedException($"Unknown filter type: {filter.GetType()}")
-            };
-        }
-        finally
-        {
-            _depth--;
-        }
-    }
-
-    private string TranslateBinary(BinaryExpression binary, FilterTranslationContext context)
+    protected override string TranslateBinary(BinaryExpression binary, FilterTranslationContext context)
     {
         if (binary.Right is ValueList valueList && valueList.Values.Count == 0)
         {
@@ -165,7 +120,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         return $"{left} {op} {right}";
     }
 
-    private string TranslateUnary(UnaryExpression unary, FilterTranslationContext context)
+    protected override string TranslateUnary(UnaryExpression unary, FilterTranslationContext context)
     {
         var operand = TranslateExpression(unary.Operand, context);
 
@@ -179,7 +134,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         };
     }
 
-    private string TranslateProperty(PropertyReference property, FilterTranslationContext context)
+    protected override string TranslateProperty(PropertyReference property, FilterTranslationContext context)
     {
         if (_useJsonAttributes && TryMapCoreField(property.PropertyName, context, out var coreExpression))
         {
@@ -221,14 +176,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         return $"{nullSafe}::{castType}";
     }
 
-    private string TranslateLiteral(Literal literal)
-    {
-        var paramName = $"@p{_paramIndex++}";
-        _parameters.Add(literal.Value);
-        return paramName;
-    }
-
-    private string TranslateSpatial(SpatialPredicate spatial, FilterTranslationContext context)
+    protected override string TranslateSpatial(SpatialPredicate spatial, FilterTranslationContext context)
     {
         var left = TranslateGeometryExpression(spatial.Left, context);
         var right = TranslateGeometryExpression(spatial.Right, context);
@@ -248,7 +196,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         return $"{function}({left}, {right})";
     }
 
-    private string TranslateSpatialDistance(SpatialDistancePredicate spatial, FilterTranslationContext context)
+    protected override string TranslateSpatialDistance(SpatialDistancePredicate spatial, FilterTranslationContext context)
     {
         var useGeography = IsGeographicContext(context);
         var left = useGeography
@@ -289,10 +237,8 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         {
             case GeometryLiteral geometry:
                 {
-                    var wkbParam = $"@p{_paramIndex++}";
-                    var sridParam = $"@p{_paramIndex++}";
-                    _parameters.Add(geometry.Wkb);
-                    _parameters.Add(geometry.Srid);
+                    var wkbParam = AddParameter(geometry.Wkb);
+                    var sridParam = AddParameter(geometry.Srid);
 
                     var geometryExpression = $"ST_GeomFromWKB({wkbParam}, {sridParam})";
                     if (geometry.Srid != context.Wkid)
@@ -329,7 +275,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         }
     }
 
-    private string TranslateTemporal(TemporalPredicate temporal, FilterTranslationContext context)
+    protected override string TranslateTemporal(TemporalPredicate temporal, FilterTranslationContext context)
     {
         if (temporal.Operator == TemporalOperator.Before)
         {
@@ -432,7 +378,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         return $"{leftSql} {sqlOperator} {rightSql}";
     }
 
-    private string TranslateArrayPredicate(ArrayPredicate array, FilterTranslationContext context)
+    protected override string TranslateArrayPredicate(ArrayPredicate array, FilterTranslationContext context)
     {
         var left = TranslateArrayExpression(array.Left, context);
         var right = TranslateArrayExpression(array.Right, context);
@@ -447,7 +393,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         };
     }
 
-    private string TranslateFunction(FunctionCall function, FilterTranslationContext context)
+    protected override string TranslateFunction(FunctionCall function, FilterTranslationContext context)
     {
         if (string.Equals(function.FunctionName, "GEODISTANCE", StringComparison.OrdinalIgnoreCase))
         {
@@ -629,10 +575,8 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         {
             case GeometryLiteral geometry:
                 {
-                    var wkbParam = $"@p{_paramIndex++}";
-                    var sridParam = $"@p{_paramIndex++}";
-                    _parameters.Add(geometry.Wkb);
-                    _parameters.Add(geometry.Srid);
+                    var wkbParam = AddParameter(geometry.Wkb);
+                    var sridParam = AddParameter(geometry.Srid);
 
                     var geometryExpression = $"ST_GeomFromWKB({wkbParam}, {sridParam})";
                     var wgs84Srid = SpatialReference.WGS84.Wkid;
@@ -670,7 +614,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         }
     }
 
-    private string TranslateIntervalLiteral(IntervalLiteral interval)
+    protected override string TranslateIntervalLiteral(IntervalLiteral interval)
     {
         var boundsKind = interval.Start?.Type ?? interval.End?.Type ?? LiteralType.DateTime;
         var rangeFunction = boundsKind == LiteralType.Date ? "DATERANGE" : "TSTZRANGE";
@@ -681,12 +625,11 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         return $"{rangeFunction}({startSql}, {endSql}, '[]')";
     }
 
-    private string TranslateArrayLiteral(ArrayLiteral arrayLiteral)
+    protected override string TranslateArrayLiteral(ArrayLiteral arrayLiteral)
     {
         var values = arrayLiteral.Elements.Select(ConvertArrayElement).ToList();
         var json = JsonSerializer.Serialize(values, FeatureAttributesJsonContext.Default.ListObject);
-        var paramName = $"@p{_paramIndex++}";
-        _parameters.Add(json);
+        var paramName = AddParameter(json);
         return $"{paramName}::jsonb";
     }
 
@@ -752,14 +695,11 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         return geometry.OriginalFormat;
     }
 
-    private string TranslateValueList(ValueList valueList, FilterTranslationContext context)
-    {
-        var values = valueList.Values.Select(v => TranslateExpression(v, context));
-        return $"({string.Join(", ", values)})";
-    }
+    // QuoteIdentifier is provided by Dialect (PostgresSqlDialect). The previous local
+    // static is removed; all call sites route through Dialect.QuoteIdentifier to keep
+    // the SQL-injection boundary in one place.
 
-    private static string QuoteIdentifier(string identifier)
-        => $"\"{identifier.Replace("\"", "\"\"")}\"";
+    private string QuoteIdentifier(string identifier) => Dialect.QuoteIdentifier(identifier);
 
     private static string EscapeSqlLiteral(string value)
         => value.Replace("'", "''");
