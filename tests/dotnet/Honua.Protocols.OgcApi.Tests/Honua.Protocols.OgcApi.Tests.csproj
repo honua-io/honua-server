@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!--
+      Phase 2 per-protocol test-project split per ADR-0042. Moves the OGC API
+      Features / Maps / Records / Coverages / Processes / Tiles test files
+      out of the 626-file Honua.Server.Tests monolith.
+    -->
+    <RootNamespace>Honua.Server.Tests.Features.Protocols.Ogc.Api</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Audit-A2 transitional: compile-link small Server.Tests-internal helpers
+      that the moved test files consume. These will move to Honua.TestKit in
+      a follow-up PR. Compile-linking from a single source root means edits
+      to the helpers stay in one place while both projects pick them up.
+    -->
+    <Compile Include="..\Honua.Server.Tests\Helpers\JobStoreTestExtensions.cs" Link="Helpers\JobStoreTestExtensions.cs" />
+    <Compile Include="..\Honua.Server.Tests\Helpers\LocalstackCli.cs" Link="Helpers\LocalstackCli.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="xunit.runner.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Server\Honua.Server.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Postgres\Honua.Postgres.csproj" />
+    <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
+  </ItemGroup>
+
+</Project>

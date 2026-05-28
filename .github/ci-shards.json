@@ -271,9 +271,11 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Features",
       "paths": [
         "src/Honua.Server/Features/Protocols/Ogc/Api/Features/",
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Features/",
         "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Features/"
       ]
     },
@@ -431,12 +433,14 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles",
       "paths": [
         "src/Honua.Server/Features/Protocols/Ogc/Api/Maps/",
         "src/Honua.Server/Features/Protocols/Ogc/Api/Tiles/",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Maps/",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Tiles/"
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Maps/",
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Tiles/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Maps/"
       ]
     },
     {
