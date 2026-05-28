@@ -6,6 +6,10 @@ inputs:
     description: '.NET SDK version'
     required: false
     default: '10.0.x'
+  enable-build-cache:
+    description: 'Restore/save per-project bin/obj across jobs (modularization Phase 3, ADR-0043)'
+    required: false
+    default: 'true'
 
 runs:
   using: composite
@@ -22,6 +26,25 @@ runs:
         key: ${{ github.repository }}-${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
         restore-keys: |
           ${{ github.repository }}-${{ runner.os }}-nuget-
+
+    # ADR-0043 PR #1 — Cross-job binary cache. Restores bin/ and obj/ keyed on
+    # the content hash of every .cs source + every .csproj + the central
+    # package version lock. A cache hit lets `dotnet build --no-restore` skip
+    # compilation for unchanged projects entirely; a miss falls through to a
+    # normal build, so a stale or empty cache never breaks CI.
+    #
+    # Opt-out via `with: enable-build-cache: 'false'` on the calling job for
+    # cases where reproducible-from-scratch is required (e.g. release builds).
+    - name: Cache .NET build outputs
+      if: inputs.enable-build-cache == 'true'
+      uses: actions/cache@v5
+      with:
+        path: |
+          **/bin
+          **/obj
+        key: ${{ github.repository }}-${{ runner.os }}-dotnet-build-${{ hashFiles('**/*.cs', '**/*.csproj', 'Directory.Packages.props', 'Directory.Build.props') }}
+        restore-keys: |
+          ${{ github.repository }}-${{ runner.os }}-dotnet-build-
 
     - name: Configure GitHub Packages
       shell: bash
