@@ -827,6 +827,16 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             return _geometryColumn;
         }
 
+        // When the upstream translator already emitted a JSONB attribute accessor
+        // (`"attributes" ->> 'field'`), our regex passes will re-visit the literal
+        // `"attributes"` token. That is the storage column itself, not a schema
+        // field, so resolve it back to the quoted identifier verbatim.
+        if (!string.IsNullOrWhiteSpace(_mapping.AttributesColumn) &&
+            fieldName.Equals(_mapping.AttributesColumn, StringComparison.OrdinalIgnoreCase))
+        {
+            return ValidateAndQuoteIdentifier(_mapping.AttributesColumn!);
+        }
+
         var field = _resource.SchemaFields.FirstOrDefault(candidate =>
             candidate.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
         if (field == null)
