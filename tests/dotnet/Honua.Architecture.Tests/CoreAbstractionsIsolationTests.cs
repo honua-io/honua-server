@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Reflection;
 using System.Xml.Linq;
 using FluentAssertions;
 using NetArchTest.Rules;
@@ -76,6 +77,74 @@ public sealed class CoreAbstractionsIsolationTests
                     "Honua.Core.Abstractions.csproj must not directly reference {0}",
                     banned);
         }
+    }
+
+    /// <summary>
+    /// Audit C3 goal-state assertion: <c>IDatabaseConnectionProvider</c> must
+    /// not leak <c>System.Data.Common.DbConnection</c> /
+    /// <c>System.Data.Common.DbTransaction</c> through its public surface.
+    /// </summary>
+    /// <remarks>
+    /// Currently skipped. The session abstraction (<c>IDatabaseSession</c> /
+    /// <c>IDatabaseSessionFactory</c>) ships side-by-side with the legacy
+    /// provider; the leaky members will be removed once the follow-on
+    /// row-mapping / typed-parameter / bulk-load facilities land. Remove
+    /// the <c>Skip</c> and update the implementations in lockstep at that
+    /// point. See ADR-0046 for the migration plan and triage rationale.
+    /// </remarks>
+    [Fact(Skip = "Audit C3 deferred — see ADR-0046. Unskip when the leaky members are removed.")]
+    [Trait("Category", "Architecture")]
+    public void DatabaseConnectionProvider_ShouldNotLeak_AdoNetTypes()
+    {
+        var providerInterface = typeof(Honua.Core.Features.Infrastructure.Abstractions.IDatabaseConnectionProvider);
+
+        var bannedTypes = new[]
+        {
+            typeof(System.Data.Common.DbConnection),
+            typeof(System.Data.Common.DbTransaction),
+        };
+
+        var leakyMembers = new List<string>();
+        foreach (var method in providerInterface.GetMethods(BindingFlags.Public | BindingFlags.Instance))
+        {
+            if (MentionsAny(method.ReturnType, bannedTypes))
+            {
+                leakyMembers.Add($"return:{method.Name}");
+            }
+
+            foreach (var parameter in method.GetParameters())
+            {
+                if (MentionsAny(parameter.ParameterType, bannedTypes))
+                {
+                    leakyMembers.Add($"{method.Name}({parameter.Name})");
+                }
+            }
+        }
+
+        leakyMembers.Should().BeEmpty(
+            "IDatabaseConnectionProvider must not leak System.Data.Common types — leaks: {0}",
+            string.Join(", ", leakyMembers));
+    }
+
+    private static bool MentionsAny(Type type, IReadOnlyList<Type> bannedTypes)
+    {
+        if (bannedTypes.Any(banned => banned.IsAssignableFrom(type)))
+        {
+            return true;
+        }
+
+        if (type.IsGenericType)
+        {
+            foreach (var argument in type.GetGenericArguments())
+            {
+                if (MentionsAny(argument, bannedTypes))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     [ArchitectureTest]

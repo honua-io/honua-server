@@ -115,7 +115,7 @@ assert_descriptor \
 
 assert_descriptor \
   "shared-infrastructure" \
-  "src/Honua.Server/Features/Infrastructure/Validation/ValidationExtensions.cs" \
+  "src/Honua.Server/Features/Infrastructure/Hosting/FeatureRegistrationExtensions.cs" \
   "infrastructure_change" \
   "true" \
   "Core"
