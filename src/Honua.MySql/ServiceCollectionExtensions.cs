@@ -66,6 +66,12 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IDatabaseConnectionProvider>(sp =>
             new MySqlConnectionProvider(sp.GetRequiredService<MySqlDataSource>()));
 
+        // Audit-C3 session abstraction registered alongside the legacy provider
+        // during the progressive migration (see ADR 0046).
+        services.AddScoped<IDatabaseSessionFactory>(sp =>
+            new Features.Infrastructure.Session.MySqlDatabaseSessionFactory(
+                sp.GetRequiredService<IDatabaseConnectionProvider>()));
+
         services.AddScoped<IFeatureQueryBuilder>(sp =>
             new MySqlFeatureQueryBuilder(
                 sp.GetRequiredService<MySqlLayerMappingRegistry>(),

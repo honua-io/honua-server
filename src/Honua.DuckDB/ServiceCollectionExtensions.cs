@@ -85,6 +85,12 @@ internal static class ServiceCollectionExtensions
                 sp.GetRequiredService<DuckDBSpatialBootstrap>(),
                 sp.GetRequiredService<ILogger<DuckDBConnectionProvider>>()));
 
+        // Audit-C3 session abstraction registered alongside the legacy provider
+        // during the progressive migration (see ADR 0046).
+        services.AddScoped<IDatabaseSessionFactory>(sp =>
+            new Features.Infrastructure.Session.DuckDbDatabaseSessionFactory(
+                sp.GetRequiredService<IDatabaseConnectionProvider>()));
+
         // Register query builder (scoped — depends on layer registry)
         services.AddScoped<IFeatureQueryBuilder>(sp =>
             new DuckDBFeatureQueryBuilder(

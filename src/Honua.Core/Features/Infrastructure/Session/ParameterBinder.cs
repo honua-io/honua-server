@@ -2,24 +2,29 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections;
+using System.Data.Common;
 using System.Reflection;
-using Npgsql;
 
-namespace Honua.Postgres.Features.Infrastructure.Session;
+namespace Honua.Core.Features.Infrastructure.Session;
 
 /// <summary>
-/// Binds an opaque <c>parameters</c> object to an <see cref="NpgsqlCommand"/>
-/// for the session abstraction. Supports:
+/// Binds an opaque <c>parameters</c> object to a <see cref="DbCommand"/>
+/// for the <see cref="Abstractions.IDatabaseSession"/> abstraction. Supports:
 /// <list type="bullet">
 ///   <item><description><c>null</c> — no parameters.</description></item>
 ///   <item><description><c>IReadOnlyDictionary&lt;string, object?&gt;</c> or any <see cref="IDictionary"/>.</description></item>
 ///   <item><description>Anonymous / POCO objects — public readable properties are read by reflection.</description></item>
 /// </list>
 /// </summary>
-internal static class ParameterBinder
+public static class ParameterBinder
 {
-    public static void Bind(NpgsqlCommand command, object? parameters)
+    /// <summary>
+    /// Binds <paramref name="parameters"/> onto <paramref name="command"/>.
+    /// </summary>
+    public static void Bind(DbCommand command, object? parameters)
     {
+        ArgumentNullException.ThrowIfNull(command);
+
         if (parameters is null)
         {
             return;
@@ -49,7 +54,6 @@ internal static class ParameterBinder
             return;
         }
 
-        // Reflect public readable properties (anonymous / POCO objects).
         var properties = parameters.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public);
         foreach (var property in properties)
         {
@@ -63,7 +67,7 @@ internal static class ParameterBinder
         }
     }
 
-    private static void AddParameter(NpgsqlCommand command, string name, object? value)
+    private static void AddParameter(DbCommand command, string name, object? value)
     {
         var parameter = command.CreateParameter();
         parameter.ParameterName = name;
