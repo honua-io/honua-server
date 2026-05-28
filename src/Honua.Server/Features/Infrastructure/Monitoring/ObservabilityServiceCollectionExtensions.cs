@@ -6,6 +6,7 @@ using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Compression;
+using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -28,6 +29,18 @@ internal static class ObservabilityServiceCollectionExtensions
         services.Configure<RecentErrorBufferOptions>(
             configuration.GetSection(RecentErrorBufferOptions.SectionName));
         services.AddSingleton<RecentErrorBuffer>();
+
+        // Audit-A1 / ADR-0044: RecentErrorBuffer lives in the Server-side
+        // Monitoring sub-area (not yet carved into Honua.Hosting). The
+        // hosting-layer error formatter records errors through this delegate
+        // so the formatter does not take a compile-time reference back to
+        // Server. The delegate resolves the buffer per-request via
+        // HttpContext.RequestServices to preserve the original lifetime.
+        StandardErrorResponseFormatter.RecentErrorBufferRecordOverride = (context, errorResponse) =>
+        {
+            var buffer = context.RequestServices?.GetService<RecentErrorBuffer>();
+            buffer?.Record(context, errorResponse);
+        };
         ConfigureResponseCompression(services);
 
         AddOperateObservability(services);

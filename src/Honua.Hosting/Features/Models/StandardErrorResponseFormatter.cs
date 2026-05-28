@@ -4,7 +4,6 @@
 using System.Globalization;
 using System.Security;
 using Honua.Server.Features.Infrastructure.Middleware;
-using Honua.Server.Features.Infrastructure.Monitoring;
 
 namespace Honua.Server.Features.Infrastructure.Models;
 
@@ -33,6 +32,19 @@ internal static class StandardErrorResponseFormatter
     /// (<c>AddOData</c>) installs the delegate at startup.
     /// </summary>
     internal static Func<HttpContext, StandardErrorResponse, ErrorResponseFormatterOptions, IResult>? ODataErrorFormatterOverride { get; set; }
+
+    /// <summary>
+    /// Optional sink for recording errors into the server-side
+    /// <c>RecentErrorBuffer</c>. When set, every formatted error is also
+    /// recorded via the delegate. The buffer lives in
+    /// <c>Honua.Server.Features.Infrastructure.Monitoring</c> (a Server-side
+    /// sub-area that has not been carved into <c>Honua.Hosting</c>); the
+    /// observability service-registration entry point in Server installs the
+    /// delegate at startup. Mirrors the
+    /// <see cref="ODataErrorFormatterOverride"/> pattern for the
+    /// audit-A1 Hosting-vs-Server boundary.
+    /// </summary>
+    internal static Action<HttpContext, StandardErrorResponse>? RecentErrorBufferRecordOverride { get; set; }
 
     /// <summary>
     /// Formats a StandardErrorResponse into an appropriate IResult based on the request protocol.
@@ -323,15 +335,6 @@ internal static class StandardErrorResponseFormatter
     }
 
     private static void TryRecordRecentError(HttpContext context, StandardErrorResponse errorResponse)
-    {
-        var services = context.RequestServices;
-        if (services is null)
-        {
-            return;
-        }
-
-        var buffer = services.GetService<RecentErrorBuffer>();
-        buffer?.Record(context, errorResponse);
-    }
+        => RecentErrorBufferRecordOverride?.Invoke(context, errorResponse);
 
 }
