@@ -770,10 +770,12 @@ public sealed record MetadataV2Publication
     /// Computed integer layer index (legacy GeoServices-style routing). Returns
     /// the int parsed from <see cref="Identifier"/> when
     /// <see cref="MetadataV2PublicationIdentifier.IsNumeric"/> is true; otherwise <c>null</c>.
-    /// Kept as a derived property so existing call sites that read
-    /// <c>publication.LayerIndex</c> compile unchanged.
+    /// Kept as a JSON-mapped property (not <c>[JsonIgnore]</c>) so graph snapshots written
+    /// before the <c>identifier</c> object existed continue to deserialize into the init
+    /// setter — call sites that read <c>publication.LayerIndex</c> work either way, and
+    /// upgraded deployments keep their FeatureServer/OData/MapServer layer routes.
     /// </summary>
-    [JsonIgnore]
+    [JsonPropertyName("layerIndex")]
     public int? LayerIndex
     {
         get => _layerIndex ?? (Identifier.IsNumeric
@@ -786,10 +788,11 @@ public sealed record MetadataV2Publication
 
     /// <summary>
     /// Computed full URL path override read from <see cref="Identifier"/>.
-    /// Kept as a derived property so existing call sites that read
-    /// <c>publication.Path</c> compile unchanged.
+    /// Kept as a JSON-mapped property so legacy snapshots with a top-level <c>path</c>
+    /// still deserialize correctly; call sites that read <c>publication.Path</c> work
+    /// either way.
     /// </summary>
-    [JsonIgnore]
+    [JsonPropertyName("path")]
     public string? Path
     {
         get => _path ?? Identifier.PathOverride;
@@ -798,10 +801,11 @@ public sealed record MetadataV2Publication
 
     /// <summary>
     /// Computed service-local id read from <see cref="Identifier"/>'s value.
-    /// Kept as a derived property so existing call sites that read
-    /// <c>publication.ServiceLocalId</c> compile unchanged.
+    /// Kept as a JSON-mapped property so legacy snapshots with a top-level
+    /// <c>serviceLocalId</c> still deserialize correctly; call sites that read
+    /// <c>publication.ServiceLocalId</c> work either way.
     /// </summary>
-    [JsonIgnore]
+    [JsonPropertyName("serviceLocalId")]
     public string? ServiceLocalId
     {
         get => _serviceLocalId ?? (string.IsNullOrEmpty(Identifier.Value) ? null : Identifier.Value);

@@ -395,13 +395,26 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// Prefers a field named "name", then the first string-type field, then objectIdField.
+    /// Resolves the FeatureServer display field. Prefers <c>resource.Display.DisplayField</c>
+    /// when it matches a visible attribute (matching MapServer/KML behaviour), then a field
+    /// named "name", then the first string-type field, then <paramref name="objectIdField"/>.
     /// </summary>
     private static string ResolveDisplayFieldFromResource(MetadataV2Resource resource, string objectIdField)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
         var visibleAttributes = ResolveVisibleAttributeFieldsV2(resource).ToArray();
+
+        var configuredDisplayField = resource.Display?.DisplayField;
+        if (!string.IsNullOrWhiteSpace(configuredDisplayField))
+        {
+            var configured = visibleAttributes.FirstOrDefault(
+                field => field.Name.Equals(configuredDisplayField, StringComparison.OrdinalIgnoreCase));
+            if (configured is not null)
+            {
+                return configured.Name;
+            }
+        }
 
         var preferredNameField = visibleAttributes.FirstOrDefault(
             field => field.Name.Equals("name", StringComparison.OrdinalIgnoreCase));
