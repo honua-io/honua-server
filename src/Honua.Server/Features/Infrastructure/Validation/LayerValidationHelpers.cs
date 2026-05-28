@@ -98,7 +98,7 @@ internal static class LayerValidationHelpers
         var snapshot = await GetV2SnapshotAsync(context, effectiveToken).ConfigureAwait(false);
         var (publication, resource, service) = ResolveV2Triple(snapshot, layerId, requiredProtocol);
 
-        if (publication is null || resource is null)
+        if (publication is null || resource is null || IsRetired(publication) || IsRetired(resource))
         {
             var msg = $"Layer {layerId} not found";
             var error = protocol switch
@@ -146,7 +146,7 @@ internal static class LayerValidationHelpers
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
         var (publication, resource, service) = ResolveV2Triple(snapshot, layerId, requiredProtocol);
 
-        if (publication is null || resource is null)
+        if (publication is null || resource is null || IsRetired(publication) || IsRetired(resource))
         {
             var error = StandardErrorHelpers.CreateNotFound(context, $"Layer {layerId} not found");
             return new MetadataV2ValidationResult(false, null, null, null, error);
@@ -228,7 +228,7 @@ internal static class LayerValidationHelpers
         }
         publication ??= snapshot.Graph.Publications.FirstOrDefault(MatchesCollectionId);
 
-        if (publication is null)
+        if (publication is null || IsRetired(publication))
         {
             return new MetadataV2ValidationResult(
                 false,
@@ -243,7 +243,7 @@ internal static class LayerValidationHelpers
             ? resolvedService
             : null;
 
-        if (resource is null)
+        if (resource is null || IsRetired(resource))
         {
             return new MetadataV2ValidationResult(
                 false,
@@ -402,6 +402,19 @@ internal static class LayerValidationHelpers
         }
         return chosen?.Metadata.Name;
     }
+
+    /// <summary>
+    /// Treats a publication or resource whose <see cref="MetadataV2Status.Lifecycle"/> is
+    /// <see cref="MetadataV2LifecycleStatus.Retired"/> as missing. Admin-driven enable/disable
+    /// (and the WebAppFixture <c>SetV2LayerEnabled</c> helper that mirrors it in tests) flip
+    /// the lifecycle to Retired, so route resolution must 404 rather than serving the
+    /// disabled layer.
+    /// </summary>
+    private static bool IsRetired(MetadataV2Resource resource)
+        => resource.Status.Lifecycle == MetadataV2LifecycleStatus.Retired;
+
+    private static bool IsRetired(MetadataV2Publication publication)
+        => publication.Status.Lifecycle == MetadataV2LifecycleStatus.Retired;
 
     private static async Task<MetadataV2GraphSnapshot> GetV2SnapshotAsync(
         HttpContext context,

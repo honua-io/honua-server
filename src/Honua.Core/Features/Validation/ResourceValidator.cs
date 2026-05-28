@@ -127,8 +127,13 @@ public sealed class ResourceValidator : IResourceValidator
         foreach (var pub in snapshot.Index.PublicationsByService[service.Metadata.Id])
         {
             if (pub.LayerIndex != layerId) continue;
+            // Disabled (admin-disabled) publications/resources are flipped to
+            // MetadataV2LifecycleStatus.Retired — skip them so the protocol routes
+            // 404 the layer instead of serving stale metadata for a disabled layer.
+            if (pub.Status.Lifecycle == MetadataV2LifecycleStatus.Retired) continue;
             var resource = snapshot.ResolveResource(pub);
             if (resource is null) continue;
+            if (resource.Status.Lifecycle == MetadataV2LifecycleStatus.Retired) continue;
             return ResourceValidationResult.Success(new MetadataV2ServiceLayerTriple(service, pub, resource));
         }
         return ResourceValidationResult.NotFound<MetadataV2ServiceLayerTriple>(
