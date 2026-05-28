@@ -55,56 +55,82 @@ test projects, Phase 3 CI rework) continue the chain.
 
 ### Scope landed in this PR
 
-This PR scaffolds the assembly and moves the cleanly-isolated outbox
-contract surface:
+This PR scaffolds the assembly and moves the full Phase 0 contract surface:
 
-- `IFeatureChangeOutboxRepository` (already de-leaked in PR #1232)
-- `IOutboxHealth`
-- `IOutboxCapabilityProvider`
-- `FeatureChangeOutboxEntry`
-- `OutboxBacklogMetrics`
-- `OutboxStatuses`
+- **Outbox cluster** — `IFeatureChangeOutboxRepository` (already de-leaked in
+  PR #1232), `IOutboxHealth`, `IOutboxCapabilityProvider`,
+  `FeatureChangeOutboxEntry`, `OutboxBacklogMetrics`, `OutboxStatuses`.
+  `FeatureMutationOutboxScope` stays in Core because it transitively depends
+  on `FeatureStore.Domain.Feature` and a feature-mutation API surface that
+  itself remains in Core.
+- **Metadata v2 graph types** — every file in `Features/Metadata/Domain/V2/`
+  plus `IMetadataV2GraphProvider` and `IMetadataV2GraphStore`.
+- **Console / Scene / Security domain records** — the transitive closure
+  pulled in by Metadata v2 (`Features/Console/Domain/`,
+  `Features/Scene/Domain/`, `Features/Security/Domain/`).
+- **FeatureStore.Domain records** — the entire `Features/FeatureStore/Domain/`
+  directory; verified clean of heavy package refs (the lone identifier match
+  for `FlatGeobuf` was an enum/property name, not a `using`).
+- **Shared/Models support types** — `SpatialReference`, `BoundingBox`,
+  `FieldNames`, `CrsDefinition` (which exports `AxisOrder`).
+- **Catalog.Domain.GeometryType** — the enum used by filter translation.
+- **Filter abstractions** — `FilterExpression`, `SqlFragment`,
+  `FilterOperators` (`BinaryOperator`, `UnaryOperator`, `LiteralType`,
+  `SpatialOperator`, `TemporalOperator`, `ArrayOperator`),
+  `FilterTranslationContext`, `ISqlFilterTranslator`,
+  `IFilterExpressionTranslator`, `IFilterExpressionService` (with its result
+  records `FilterParseResult` / `FilterTranslationResult` and the
+  `FilterLanguage` enum). The impls `FilterExpressionService` and
+  `FilterExpressionTranslator` stay in Core because they depend on
+  parser implementations (Cql2 / GeoServicesSql / OData) and on
+  `FilterExpressionNormalizer` — the impl-file/interface-file split is
+  done in this PR so the abstractions can ship cleanly.
+- **`IDatabaseConnectionProvider`** — moved to Abstractions as-is. Its
+  `DbConnection` / `DbTransaction` surface uses `System.Data.Common`, a
+  BCL assembly which the no-heavy-deps invariant does not ban. The
+  audit-C3 `IDatabaseSession` refactor that fully drops `DbConnection`
+  from the public surface is left as a follow-up because it touches
+  ~125 call sites and is orthogonal to the assembly extraction. See
+  the deferred items below.
 
-All six files retain their `Honua.Core.Features.Infrastructure.Events.Outbox`
-namespace so no caller needs a `using` update. `FeatureMutationOutboxScope`
-stays in `Honua.Core` because it transitively depends on
-`Honua.Core.Features.FeatureStore.Domain.Feature`, which has not yet been
-sequenced for the move (see follow-ups below).
+All moves preserve their original `Honua.Core.*` namespaces (executed as
+`git mv`) so no consumer code needs a `using` update — only the assembly
+that contains the type changes.
+
+`CA1716` (namespace identifier matches reserved keyword "Shared") is added
+to `<NoWarn>` on `Honua.Core` and `Honua.Core.Abstractions` because the
+`Honua.Core.Features.Shared.Models` namespace now spans two assemblies and
+the analyzer fires on the namespace declaration in both. Renaming the
+namespace would touch every consumer; suppressing the rule is the
+proportionate fix.
 
 ### Scope deferred to follow-up PRs
 
-The full Phase 0 spec also calls for moving:
-
-1. **Metadata v2 graph types + `IMetadataV2GraphProvider` / `IMetadataV2GraphStore`.**
-   Survey confirmed these are clean of heavy package refs at the file level,
-   but they pull a transitive closure through `Honua.Core.Features.Console.Domain`,
-   `Honua.Core.Features.Scene.Domain`, `Honua.Core.Features.Security.Domain`,
-   and `Honua.Core.Features.FeatureStore.Domain` — roughly 110 files. None of
-   those targets carry heavy refs (a survey ruled this out), so the cluster
-   is moveable as a single subsequent PR.
-2. **Filter abstractions** (`FilterExpression`, `SqlFragment`,
-   `IFilterExpressionService`, `IFilterExpressionTranslator`,
-   `ISqlFilterTranslator`, `FilterTranslationContext`). These reference
-   `MetadataV2Resource`, so the metadata-v2 move sequences ahead of them.
-   Several interface/impl pairs live in a single file (e.g.
-   `FilterExpressionService.cs` holds both `IFilterExpressionService` and
-   `FilterExpressionService`) and need to be split during the move so the
-   impl can stay in Core (it depends on `FilterParserGuard`, which itself
-   depends on `NetTopologySuite`).
-3. **C3 IDatabaseConnectionProvider de-leak** — the structural audit's
-   `IDatabaseSession` (or equivalent) refactor. The interface surface has
-   ~125 call sites across `Honua.Postgres`, `Honua.MySql`, and `Honua.Server`,
-   and the refactor needs to retain compatibility for secure-mode callers
-   that pass the underlying `DbConnection` directly. This is its own multi-day
-   refactor PR; landing it after the metadata-v2 / filter moves keeps the
-   per-PR review scope bounded.
-4. **`ITableDiscoveryService` stays in Core indefinitely.** Its
+1. **C3 IDatabaseConnectionProvider `IDatabaseSession` de-leak.** The
+   interface is now in Abstractions but still surfaces
+   `DbConnection` / `DbTransaction`. Introducing an
+   `IDatabaseSession` abstraction that replaces the leaky surface (per
+   the structural audit, memory: `structural-audit-2026-05` C3) requires
+   migrating ~125 call sites across `Honua.Postgres`, `Honua.MySql`, and
+   `Honua.Server`, and retaining compatibility for secure-mode callers
+   that pass an already-opened `DbConnection` through to provider code.
+   This refactor is orthogonal to the assembly extraction and is tracked
+   as its own follow-up.
+2. **`ITableDiscoveryService` stays in Core indefinitely.** Its
    `DbConnection`-typed overload is load-bearing for secure-mode (caller
    passes the already-opened secure connection through), and there is no
-   abstraction that would not regress that path.
+   abstraction that would not regress that path. Documenting the
+   exception so the architecture test can be tightened later without
+   churning this interface.
+3. **`FeatureMutationOutboxScope` stays in Core.** It depends on
+   `FeatureStore.Domain.Feature` (which moved) but also on the
+   feature-mutation API surface (`IFeatureWriter` etc.) which remains
+   in Core. Moving the scope class requires either pulling more API
+   surface into Abstractions or splitting the scope's dependencies —
+   neither is required by Phase 1 protocol extractions.
 
-Sequencing rule: each follow-up PR rebases on the previous merge and uses the
-commit prefix `refactor(core-abstractions): ...` for traceability.
+Sequencing rule: each follow-up PR rebases on the previous merge and uses
+the commit prefix `refactor(core-abstractions): ...` for traceability.
 
 ## Consequences
 
