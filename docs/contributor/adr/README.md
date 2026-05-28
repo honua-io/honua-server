@@ -50,6 +50,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0042](0042-per-protocol-test-project-split.md) | Per-Protocol Test Project Split (Modularization Phase 2) | Proposed | 2026-05 |
 | [0043](0043-modularization-ci-rework.md) | Modularization CI Rework (Modularization Phase 3) | Proposed | 2026-05 |
 | [0044](0044-server-infrastructure-decomposition.md) | Server.Features.Infrastructure Decomposition (Audit-A1 / Phase 1 Prerequisite) | Proposed | 2026-05 |
+| [0045](0045-defer-migration-sequence-collision-renumbering.md) | Defer Renumbering of Colliding Migration Sequence Numbers | Accepted | 2026-05 |
 
 ## Template
 
