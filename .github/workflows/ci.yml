@@ -695,15 +695,25 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore
-        run: dotnet restore tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj
+        # Phase 2 / ADR-0042 routing: each shard targets its declared csproj
+        # (matrix.csproj) and falls back to Honua.Server.Tests.csproj for
+        # legacy shards that have not been migrated to a per-protocol project.
+        env:
+          SHARD_CSPROJ: ${{ matrix.csproj }}
+        run: |
+          csproj="${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}"
+          dotnet restore "${csproj}"
 
       - name: Create Test Results Directory
         run: mkdir -p ./tests/TestResults
 
       - name: Build server test binaries
         timeout-minutes: 20
+        env:
+          SHARD_CSPROJ: ${{ matrix.csproj }}
         run: |
-          dotnet build tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+          csproj="${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}"
+          dotnet build "${csproj}" \
             --no-restore \
             --configuration Release
 
