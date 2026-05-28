@@ -242,7 +242,10 @@ internal sealed class ODataQueryParameterAdapter(
             }
 
             var resolvedField = schemaFields.TryGetValue(field, out var v2Field) ? v2Field.Name : field;
-            clauses.Add(new OrderByClause(resolvedField, ascending));
+            // Pass the schema-declared field type so the SQL builder emits a typed cast
+            // ($orderby=population desc on an integer column must sort numerically, not
+            // lexically — otherwise "20" < "3" via the default TEXT-based attribute path).
+            clauses.Add(new OrderByClause(resolvedField, ascending, v2Field?.Type));
         }
 
         return clauses.Count == 0 ? null : clauses.ToImmutableArray();
