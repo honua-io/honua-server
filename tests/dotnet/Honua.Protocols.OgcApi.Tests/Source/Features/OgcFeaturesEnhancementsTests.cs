@@ -32,7 +32,7 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         await _fixture.InitializeAsync();
 
         // V2 query processor rejects bbox / datetime filters on resources whose Spatial /
-        // Temporal slots are unset. The default test V2 graph (WebAppFixture.BuildDefaultTestGraph)
+        // Temporal slots are unset. The default test V2 graph (WebAppFixtureMetadataV2Mixin.BuildDefaultTestGraph)
         // does not seed those slots; mirror the v1 Postgres seed: layer 0 is a WGS84 point
         // layer with TimeInfo {start: timestamp, end: event_date}.
         _fixture.UpdateV2ResourceMetadata(

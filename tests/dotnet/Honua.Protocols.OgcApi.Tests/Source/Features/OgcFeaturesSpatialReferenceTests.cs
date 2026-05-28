@@ -28,7 +28,7 @@ public sealed class OgcFeaturesSpatialReferenceTests : IAsyncLifetime
         await _fixture.InitializeAsync();
 
         // V2 query processor rejects bbox queries on resources whose Spatial slot is
-        // unset; the default test V2 graph (WebAppFixture.BuildDefaultTestGraph) does
+        // unset; the default test V2 graph (WebAppFixtureMetadataV2Mixin.BuildDefaultTestGraph) does
         // not seed Spatial on layers 101..103. Mirror the v1 SpatialReferenceTestLayerCatalog
         // (EPSG:3857 / Web Mercator) so the V2 OGC API Features paths exercised here
         // can route bbox-crs requests against these layers.

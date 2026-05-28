@@ -230,7 +230,7 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
             // mobile-offline schema fields are persisted in the 'attributes' JSONB column.
             // FeatureStorageMapping.ParseRelationalLocator rejects any locator that
             // contains ':' so use the table name directly and expose the layer/geometry/
-            // attributes columns via Options (matching WebAppFixture.BuildDefaultTestGraph).
+            // attributes columns via Options (matching WebAppFixtureMetadataV2Mixin.BuildDefaultTestGraph).
             Locator = "features",
             StorageLayerId = layerId,
             Options = new Dictionary<string, JsonElement>

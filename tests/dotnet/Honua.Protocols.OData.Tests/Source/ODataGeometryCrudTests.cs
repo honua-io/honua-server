@@ -455,7 +455,7 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
 
         // V2 ProcessGeometryAsync rejects geometry whose CRS SRID does not match the
         // resource's Spatial.SpatialReference.Srid; the default test V2 graph
-        // (WebAppFixture.BuildDefaultTestGraph) does not seed Spatial on the
+        // (WebAppFixtureMetadataV2Mixin.BuildDefaultTestGraph) does not seed Spatial on the
         // spatial-reference fixture layers. Mirror the v1 SpatialReferenceTestLayerCatalog
         // (EPSG:3857 / Web Mercator) so the SRID mismatch path under test
         // (4326 geometry → 3857 layer) fires.
