@@ -830,7 +830,11 @@ jobs:
           cache-dependency-path: tests/python/requirements.txt
 
       - name: Restore
-        run: dotnet restore Honua.sln
+        # Scoped to Honua.Server's transitive ProjectReferences; the Python
+        # fixtures host below only needs the Server runtime built. Full-sln
+        # restore was over-fetching for unrelated projects (DuckDB / SqlServer /
+        # MySql / samples / benchmarks / sibling test projects).
+        run: dotnet restore src/Honua.Server/Honua.Server.csproj
 
       - name: Build server binaries for Python fixtures
         run: |
@@ -1422,7 +1426,10 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore
-        run: dotnet restore Honua.sln
+        # Scoped to Honua.Core's transitive ProjectReferences; the package
+        # job only pack's Honua.Core. Full-sln restore was over-fetching
+        # for the entire repo every run.
+        run: dotnet restore src/Honua.Core/Honua.Core.csproj
 
       - name: Build Honua.Core package
         run: |
@@ -1506,7 +1513,10 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore
-        run: dotnet restore Honua.sln
+        # Scoped to Honua.Server's transitive ProjectReferences; the AOT
+        # publish only targets Honua.Server. Full-sln restore was
+        # over-fetching every other project's package set every run.
+        run: dotnet restore src/Honua.Server/Honua.Server.csproj
 
       - name: Publish AOT
         run: |
