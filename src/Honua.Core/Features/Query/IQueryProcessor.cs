@@ -15,38 +15,57 @@ public interface IQueryProcessor
     /// <summary>
     /// Validates a unified query against resource constraints and protocol limits.
     /// </summary>
-    QueryValidationResult ValidateQuery(UnifiedQuery query, MetadataV2Resource resource)
-        => throw new NotSupportedException($"{GetType().Name} does not yet implement {nameof(ValidateQuery)}.");
+    /// <remarks>
+    /// Audit-C1: abstract (no default body) so the compiler forces every <see cref="IQueryProcessor"/>
+    /// implementation to ship a working override. Previously a default-interface-method that
+    /// threw <see cref="NotSupportedException"/> at runtime; half-migrations were not caught at build time.
+    /// </remarks>
+    QueryValidationResult ValidateQuery(UnifiedQuery query, MetadataV2Resource resource);
 
     /// <summary>
     /// Optimizes a unified query for efficient execution.
     /// </summary>
-    UnifiedQuery OptimizeQuery(UnifiedQuery query, MetadataV2Resource resource)
-        => throw new NotSupportedException($"{GetType().Name} does not yet implement {nameof(OptimizeQuery)}.");
+    /// <remarks>
+    /// Audit-C1: abstract (no default body) so the compiler forces every <see cref="IQueryProcessor"/>
+    /// implementation to ship a working override.
+    /// </remarks>
+    UnifiedQuery OptimizeQuery(UnifiedQuery query, MetadataV2Resource resource);
 
     /// <summary>
     /// Converts a unified query to a FeatureQuery for data access.
     /// </summary>
-    FeatureQuery ToFeatureQuery(UnifiedQuery query, MetadataV2Resource resource)
-        => throw new NotSupportedException($"{GetType().Name} does not yet implement {nameof(ToFeatureQuery)}.");
+    /// <remarks>
+    /// Audit-C1: abstract (no default body) so the compiler forces every <see cref="IQueryProcessor"/>
+    /// implementation to ship a working override.
+    /// </remarks>
+    FeatureQuery ToFeatureQuery(UnifiedQuery query, MetadataV2Resource resource);
 
     /// <summary>
     /// Builds cache key for the given query and resource.
     /// </summary>
-    string BuildCacheKey(UnifiedQuery query, MetadataV2Resource resource, string protocol)
-        => throw new NotSupportedException($"{GetType().Name} does not yet implement {nameof(BuildCacheKey)}.");
+    /// <remarks>
+    /// Audit-C1: abstract (no default body) so the compiler forces every <see cref="IQueryProcessor"/>
+    /// implementation to ship a working override.
+    /// </remarks>
+    string BuildCacheKey(UnifiedQuery query, MetadataV2Resource resource, string protocol);
 
     /// <summary>
     /// Determines if the query should use streaming response.
     /// </summary>
-    bool ShouldUseStreaming(UnifiedQuery query, MetadataV2Resource resource, string outputFormat)
-        => throw new NotSupportedException($"{GetType().Name} does not yet implement {nameof(ShouldUseStreaming)}.");
+    /// <remarks>
+    /// Audit-C1: abstract (no default body) so the compiler forces every <see cref="IQueryProcessor"/>
+    /// implementation to ship a working override.
+    /// </remarks>
+    bool ShouldUseStreaming(UnifiedQuery query, MetadataV2Resource resource, string outputFormat);
 
     /// <summary>
     /// Estimates the result count for the given query without executing it.
     /// </summary>
-    Task<long> EstimateResultCountAsync(UnifiedQuery query, MetadataV2Resource resource, CancellationToken cancellationToken)
-        => throw new NotSupportedException($"{GetType().Name} does not yet implement {nameof(EstimateResultCountAsync)}.");
+    /// <remarks>
+    /// Audit-C1: abstract (no default body) so the compiler forces every <see cref="IQueryProcessor"/>
+    /// implementation to ship a working override.
+    /// </remarks>
+    Task<long> EstimateResultCountAsync(UnifiedQuery query, MetadataV2Resource resource, CancellationToken cancellationToken);
 }
 
 /// <summary>

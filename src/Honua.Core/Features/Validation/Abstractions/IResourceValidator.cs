@@ -27,41 +27,50 @@ public interface IResourceValidator
     /// <summary>
     /// Validates that a protocol-facing layer index resolves to a canonical Metadata v2 resource.
     /// </summary>
+    /// <remarks>
+    /// Audit-C1: abstract (no default body) so the compiler forces every <see cref="IResourceValidator"/>
+    /// implementation to ship a working override. Previously a default-interface-method that
+    /// threw <see cref="NotSupportedException"/> at runtime; half-migrations were not caught at build time.
+    /// </remarks>
     Task<ResourceValidationResult<MetadataV2Resource>> ValidateLayerV2Async(
         int layerId,
-        CancellationToken cancellationToken = default)
-        => throw new NotSupportedException(
-            $"{GetType().Name} does not yet implement Metadata v2 ValidateLayerV2Async.");
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Validates a collection ID against canonical Metadata v2 resources.
     /// </summary>
+    /// <remarks>
+    /// Audit-C1: abstract (no default body) so the compiler forces every <see cref="IResourceValidator"/>
+    /// implementation to ship a working override.
+    /// </remarks>
     Task<ResourceValidationResult<MetadataV2Resource>> ValidateCollectionV2Async(
         string collectionId,
-        CancellationToken cancellationToken = default)
-        => throw new NotSupportedException(
-            $"{GetType().Name} does not yet implement Metadata v2 ValidateCollectionV2Async.");
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Validates that a service exists in the canonical Metadata v2 graph.
     /// </summary>
+    /// <remarks>
+    /// Audit-C1: abstract (no default body) so the compiler forces every <see cref="IResourceValidator"/>
+    /// implementation to ship a working override.
+    /// </remarks>
     Task<ResourceValidationResult<MetadataV2Service>> ValidateServiceV2Async(
         string serviceId,
-        CancellationToken cancellationToken = default)
-        => throw new NotSupportedException(
-            $"{GetType().Name} does not yet implement Metadata v2 ValidateServiceV2Async.");
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Validates that a service and layer exist in the canonical Metadata v2 graph.
     /// Returns the resolved (service, publication, resource) triple; publications carry
     /// the protocol-facing service-local LayerIndex so callers that need it have it.
     /// </summary>
+    /// <remarks>
+    /// Audit-C1: abstract (no default body) so the compiler forces every <see cref="IResourceValidator"/>
+    /// implementation to ship a working override.
+    /// </remarks>
     Task<ResourceValidationResult<MetadataV2ServiceLayerTriple>> ValidateServiceLayerV2Async(
         string serviceId,
         int layerId,
-        CancellationToken cancellationToken = default)
-        => throw new NotSupportedException(
-            $"{GetType().Name} does not yet implement Metadata v2 ValidateServiceLayerV2Async.");
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>

@@ -1189,5 +1189,25 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             string serviceId,
             CancellationToken cancellationToken = default)
             => throw exception;
+
+        // Audit-C1: IResourceValidator V2 methods are now abstract on the interface,
+        // so this throwing test stub must satisfy them explicitly. Only the
+        // ValidateServiceV2Async path is exercised by these tests; the rest forward
+        // the same simulated failure for completeness.
+        public Task<ResourceValidationResult<MetadataV2Resource>> ValidateLayerV2Async(
+            int layerId,
+            CancellationToken cancellationToken = default)
+            => throw exception;
+
+        public Task<ResourceValidationResult<MetadataV2Resource>> ValidateCollectionV2Async(
+            string collectionId,
+            CancellationToken cancellationToken = default)
+            => throw exception;
+
+        public Task<ResourceValidationResult<MetadataV2ServiceLayerTriple>> ValidateServiceLayerV2Async(
+            string serviceId,
+            int layerId,
+            CancellationToken cancellationToken = default)
+            => throw exception;
     }
 }
