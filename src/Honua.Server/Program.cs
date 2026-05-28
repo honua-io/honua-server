@@ -39,6 +39,9 @@ using Honua.Server.Features.ControlPlane;
 using Honua.Server.Features.FileStorage;
 using Honua.Server.Features.HealthCheck;
 using Honua.Server.Features.Import;
+using Honua.Server.Features.Migration;
+using Honua.Server.Features.FileImport;
+using Honua.Server.Features.RasterImport;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Authentication.ClientCertificates;
 using Honua.Server.Features.Infrastructure.AuditLog;
@@ -331,7 +334,7 @@ builder.Services.AddResilientHttpClient(
     "import-source",
     "import-source",
     HttpResiliencePolicies.SlowServiceDefaults,
-    configureHandler: static () => Honua.Server.Features.Import.ImportHttpClientHelper.CreatePinnedDnsHttpMessageHandler());
+    configureHandler: static () => Honua.Server.Features.FileImport.ImportHttpClientHelper.CreatePinnedDnsHttpMessageHandler());
 builder.Services.AddResilientHttpClient(
     "control-plane-telemetry",
     "control-plane-telemetry",
@@ -568,12 +571,12 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Core.Features.Publishing.Content.Domain.ContentPublicationJsonContext.Default,
         Honua.Server.Features.Admin.Models.DeployControlJsonContext.Default,
         Honua.Server.Features.Infrastructure.Monitoring.MetricsJsonContext.Default,
-        Honua.Server.Features.Import.ImportJsonContext.Default,
-        Honua.Server.Features.Import.RasterImportJsonContext.Default,
-        Honua.Server.Features.Import.GeoservicesImportApiJsonContext.Default,
-        Honua.Server.Features.Import.OgcWfsImportJsonContext.Default,
-        Honua.Server.Features.Import.OgcCoverageImportJsonContext.Default,
-        Honua.Server.Features.Import.OgcWcsImportJsonContext.Default,
+        Honua.Server.Features.FileImport.ImportJsonContext.Default,
+        Honua.Server.Features.RasterImport.RasterImportJsonContext.Default,
+        Honua.Server.Features.Migration.GeoservicesImportApiJsonContext.Default,
+        Honua.Server.Features.Migration.OgcWfsImportJsonContext.Default,
+        Honua.Server.Features.Migration.OgcCoverageImportJsonContext.Default,
+        Honua.Server.Features.Migration.OgcWcsImportJsonContext.Default,
         Honua.Server.Features.Admin.OperationsProgressJsonContext.Default,
         Honua.Server.Features.Admin.FeatureEventReplayJsonContext.Default,
         Honua.Server.Features.Mobile.Auth.MobileAuthJsonContext.Default,

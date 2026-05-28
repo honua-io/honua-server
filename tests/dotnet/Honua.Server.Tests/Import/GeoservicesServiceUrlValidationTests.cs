@@ -5,6 +5,9 @@ using System.Net;
 using System.Net.Sockets;
 using FluentAssertions;
 using Honua.Server.Features.Import;
+using Honua.Server.Features.Migration;
+using Honua.Server.Features.FileImport;
+using Honua.Server.Features.RasterImport;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Import;

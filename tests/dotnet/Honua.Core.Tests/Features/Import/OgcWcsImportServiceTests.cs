@@ -4,7 +4,10 @@
 using System.Net;
 using FluentAssertions;
 using Honua.Core.Features.Import.Domain;
-using Honua.Core.Features.Import.Services;
+using Honua.Core.Features.Migration.Domain;
+using Honua.Core.Features.FileImport.Domain;
+using Honua.Core.Features.Migration.Services;
+using Honua.Core.Features.FileImport.Services;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Microsoft.Extensions.Logging.Abstractions;

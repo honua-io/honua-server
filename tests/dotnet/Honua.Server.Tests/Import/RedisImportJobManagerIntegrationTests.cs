@@ -3,7 +3,12 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Migration.Domain;
+using Honua.Core.Features.FileImport.Domain;
 using Honua.Server.Features.Import;
+using Honua.Server.Features.Migration;
+using Honua.Server.Features.FileImport;
+using Honua.Server.Features.RasterImport;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;

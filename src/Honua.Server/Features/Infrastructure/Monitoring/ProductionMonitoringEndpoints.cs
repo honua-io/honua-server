@@ -11,6 +11,9 @@ using Honua.Postgres.Features.Infrastructure;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Licensing;
 using Honua.Server.Features.Import;
+using Honua.Server.Features.Migration;
+using Honua.Server.Features.FileImport;
+using Honua.Server.Features.RasterImport;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Infrastructure.Monitoring;

@@ -1,8 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Import.Services;
-using Honua.Postgres.Features.Import;
+using Honua.Core.Features.Migration.Services;
+using Honua.Core.Features.FileImport.Services;
+using Honua.Postgres.Features.Migration;
+using Honua.Postgres.Features.FileImport;
 using Honua.Postgres.Features.Infrastructure;
 using Honua.TestKit;
 using Microsoft.Extensions.Logging.Abstractions;

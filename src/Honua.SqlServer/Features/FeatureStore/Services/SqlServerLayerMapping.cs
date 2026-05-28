@@ -74,15 +74,15 @@ internal sealed record SqlServerLayerMapping
         return FromStorage(
             layerId,
             new FeatureStorageMapping(
-                storage.TableName,
-                storage.SchemaName,
-                storage.CatalogName,
-                storage.DatabaseName,
-                storage.PrimaryKeyColumn,
-                storage.GeometryColumn,
-                storage.StorageSrid,
-                storage.TemporalColumn,
-                storage.ProviderOptions));
+                TableName: storage.TableName,
+                SchemaName: storage.SchemaName,
+                CatalogName: storage.CatalogName,
+                DatabaseName: storage.DatabaseName,
+                PrimaryKeyColumn: storage.PrimaryKeyColumn,
+                GeometryColumn: storage.GeometryColumn,
+                StorageSrid: storage.StorageSrid,
+                TemporalColumn: storage.TemporalColumn,
+                ProviderOptions: storage.ProviderOptions));
     }
 
     /// <summary>

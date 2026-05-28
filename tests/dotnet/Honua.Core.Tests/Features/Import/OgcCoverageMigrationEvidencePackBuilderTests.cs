@@ -5,7 +5,10 @@
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Import.Domain;
-using Honua.Core.Features.Import.Services;
+using Honua.Core.Features.Migration.Domain;
+using Honua.Core.Features.FileImport.Domain;
+using Honua.Core.Features.Migration.Services;
+using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Tests.Features.Import;
 

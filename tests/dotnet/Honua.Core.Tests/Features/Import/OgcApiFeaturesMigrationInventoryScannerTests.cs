@@ -6,7 +6,10 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using FluentAssertions;
 using Honua.Core.Features.Import.Domain;
-using Honua.Core.Features.Import.Services;
+using Honua.Core.Features.Migration.Domain;
+using Honua.Core.Features.FileImport.Domain;
+using Honua.Core.Features.Migration.Services;
+using Honua.Core.Features.FileImport.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Import;

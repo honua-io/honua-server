@@ -3,8 +3,10 @@
 
 using System.Text;
 using System.Text.Json;
-using Honua.Core.Features.Import.Services;
-using Honua.Postgres.Features.Import;
+using Honua.Core.Features.Migration.Services;
+using Honua.Core.Features.FileImport.Services;
+using Honua.Postgres.Features.Migration;
+using Honua.Postgres.Features.FileImport;
 
 namespace Honua.Postgres.Tests.Features.Import;
 

@@ -4,7 +4,8 @@
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
-using Honua.Core.Features.Import.Services;
+using Honua.Core.Features.Migration.Services;
+using Honua.Core.Features.FileImport.Services;
 using Moq;
 
 namespace Honua.Core.Tests.Features.Import;

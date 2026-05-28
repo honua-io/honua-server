@@ -5,8 +5,11 @@ using System.Data;
 using System.Data.Common;
 using System.Text;
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Migration.Abstractions;
+using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Postgres.Features.Import;
+using Honua.Postgres.Features.Migration;
+using Honua.Postgres.Features.FileImport;
 using Honua.TestKit;
 using Microsoft.Extensions.Logging.Abstractions;
 

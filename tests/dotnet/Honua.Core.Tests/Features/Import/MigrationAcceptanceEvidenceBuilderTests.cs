@@ -4,7 +4,10 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Import.Domain;
-using Honua.Core.Features.Import.Services;
+using Honua.Core.Features.Migration.Domain;
+using Honua.Core.Features.FileImport.Domain;
+using Honua.Core.Features.Migration.Services;
+using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Tests.Features.Import;
 
@@ -475,10 +478,10 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
             ]
         };
 
-    private static Honua.Core.Features.Import.Services.MigrationAcceptanceStageEvidenceInput[] PassingApplyAndPublishEvidence(string id)
+    private static Honua.Core.Features.Migration.Services.MigrationAcceptanceStageEvidenceInput[] PassingApplyAndPublishEvidence(string id)
         =>
         [
-            new Honua.Core.Features.Import.Services.MigrationAcceptanceStageEvidenceInput
+            new Honua.Core.Features.Migration.Services.MigrationAcceptanceStageEvidenceInput
             {
                 Id = MigrationAcceptanceStageIds.ApplyOrDryRun,
                 State = MigrationEvidenceStates.Pass,
@@ -486,7 +489,7 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
                 ArtifactKinds = ["honua.migration.apply-dry-run-evidence"],
                 EvidenceReferences = [$"artifacts/{id}/apply-dry-run.json"]
             },
-            new Honua.Core.Features.Import.Services.MigrationAcceptanceStageEvidenceInput
+            new Honua.Core.Features.Migration.Services.MigrationAcceptanceStageEvidenceInput
             {
                 Id = MigrationAcceptanceStageIds.Publish,
                 State = MigrationEvidenceStates.Pass,
