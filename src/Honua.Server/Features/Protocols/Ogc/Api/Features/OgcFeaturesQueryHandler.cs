@@ -529,7 +529,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         {
             OgcFeaturesLog.ItemsQueryFailed(_logger, collectionId, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);
-            return StandardErrorHelpers.CreateInternalServerError(context, "DIAG: " + ex.GetType().Name + ": " + ex.Message + " || " + (ex.StackTrace ?? ""));
+            return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving items.");
         }
         finally
         {

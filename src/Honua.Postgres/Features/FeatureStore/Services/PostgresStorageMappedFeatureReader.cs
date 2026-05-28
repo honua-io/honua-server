@@ -813,6 +813,20 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             return _primaryKeyColumn;
         }
 
+        // OGC API Features uses the synthetic property name "geometry" in CQL2 filters
+        // to refer to the primary geometry field regardless of the resource's actual
+        // geometry field name (e.g. "shape", "geom", "wkb_geometry"). Map it here so
+        // SQL fragments emitted by the filter translator resolve to the storage column.
+        if (fieldName.Equals("geometry", StringComparison.OrdinalIgnoreCase) &&
+            !_resource.SchemaFields.Any(f => f.Name.Equals("geometry", StringComparison.OrdinalIgnoreCase)))
+        {
+            if (_geometryColumn == null)
+            {
+                throw new ArgumentException($"Resource '{_resource.Metadata.Name}' does not define a geometry column.");
+            }
+            return _geometryColumn;
+        }
+
         var field = _resource.SchemaFields.FirstOrDefault(candidate =>
             candidate.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
         if (field == null)
