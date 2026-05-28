@@ -101,30 +101,11 @@ internal static class GPServerEndpoints
             .WithDescription("Queues a GP task for background processing and returns a job ID")
             .WithTags("GPServer");
 
-        // Synchronous execute (POST + GET per Esri GP contract). Sync-eligible
-        // tasks (the deterministic geometry.* family) run inline and return
-        // results in the response; async-only tasks return a clear capability
-        // message directing the caller to submitJob.
-        // HANDLER-AUTHORIZED (#1144): the handler calls
-        // IGeoprocessingJobService.EnsureCallerAuthorized before reading the
-        // request body, so 401/403 are returned ahead of 400 for unauth
-        // callers. Marked AllowAnonymous to record the explicit decision.
-        endpoints.MapPost($"{RouteBase}/{{taskName}}/execute",
-                static (HttpContext context, CancellationToken ct) => HandleExecute(context, ct))
-            .WithDisplayName("GPServer Execute")
-            .WithName("GPServerExecute")
-            .WithSummary("Run a synchronous GP task")
-            .WithDescription("Executes a sync-eligible GP task and returns its results inline")
-            .WithTags("GPServer")
-            .AllowAnonymous();
-
-        endpoints.MapGet($"{RouteBase}/{{taskName}}/execute",
-                static (HttpContext context, CancellationToken ct) => HandleExecute(context, ct))
-            .WithDisplayName("GPServer Execute (GET)")
-            .WithName("GPServerExecuteGet")
-            .WithSummary("Run a synchronous GP task using GET")
-            .WithDescription("Executes a sync-eligible GP task and returns its results inline")
-            .WithTags("GPServer");
+        // Note: the generic <c>/{taskName}/execute</c> route is intentionally NOT
+        // published — sync-eligible tasks run via <c>/{taskName}</c> directly, async
+        // tasks via <c>/{taskName}/submitJob</c>. The /execute path is reserved for
+        // future per-task explicit routes (a 404 here is the contract — see
+        // GPServerEndpointTests.ExecuteGet_GenericAsyncTaskRouteIsNotPublished).
 
         // Job status
         endpoints.MapGet($"{RouteBase}/{{taskName}}/jobs/{{jobId}}",
