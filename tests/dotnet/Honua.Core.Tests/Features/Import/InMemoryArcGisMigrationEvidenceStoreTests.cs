@@ -12,7 +12,7 @@ namespace Honua.Core.Tests.Features.Import;
 /// <summary>
 /// Behavioral contract tests for <see cref="InMemoryArcGisMigrationEvidenceStore"/>. The store
 /// is shared with the Postgres-backed implementation through the
-/// <see cref="Core.Features.Import.Abstractions.IArcGisMigrationEvidenceStore"/> seam introduced
+/// <see cref="Core.Features.Migration.Abstractions.IArcGisMigrationEvidenceStore"/> seam introduced
 /// in #1025 slice 6.
 /// </summary>
 public sealed class InMemoryArcGisMigrationEvidenceStoreTests
