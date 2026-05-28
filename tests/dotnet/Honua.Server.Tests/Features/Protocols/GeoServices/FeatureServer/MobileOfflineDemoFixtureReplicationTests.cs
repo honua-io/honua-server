@@ -225,8 +225,19 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
             },
             ResourceId = $"res-layer-{layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
             StorageType = MetadataV2StorageType.RelationalTable,
-            Locator = $"features:{layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+            // The seed's shared 'features' table holds rows for every test layer keyed by a
+            // 'layer_id' discriminator; the geometry lives in the 'geometry' column and the
+            // mobile-offline schema fields are persisted in the 'attributes' JSONB column.
+            // FeatureStorageMapping.ParseRelationalLocator rejects any locator that
+            // contains ':' so use the table name directly and expose the layer/geometry/
+            // attributes columns via Options (matching WebAppFixture.BuildDefaultTestGraph).
+            Locator = "features",
             StorageLayerId = layerId,
+            Options = new Dictionary<string, JsonElement>
+            {
+                ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry"),
+                ["attributesColumn"] = JsonSerializer.SerializeToElement("attributes")
+            },
             Capabilities =
             [
                 MetadataV2StorageBindingCapability.Query,

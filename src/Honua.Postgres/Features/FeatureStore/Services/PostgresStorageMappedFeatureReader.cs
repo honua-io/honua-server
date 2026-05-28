@@ -844,6 +844,17 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             return _geometryColumn;
         }
 
+        // When the storage binding declares an attributes JSONB column, scalar fields
+        // are persisted inside that JSONB blob rather than as individual columns. Route
+        // WHERE/ORDER BY references through the JSONB accessor so the emitted SQL
+        // matches the on-disk shape (the BuildAttributesExpressionChunk projection does
+        // the same on the SELECT side).
+        if (!string.IsNullOrWhiteSpace(_mapping.AttributesColumn))
+        {
+            var jsonbAccessor = ValidateAndQuoteIdentifier(_mapping.AttributesColumn!);
+            return $"({jsonbAccessor} ->> '{EscapeSqlLiteral(field.Name)}')";
+        }
+
         return ValidateAndQuoteIdentifier(field.Name);
     }
 
