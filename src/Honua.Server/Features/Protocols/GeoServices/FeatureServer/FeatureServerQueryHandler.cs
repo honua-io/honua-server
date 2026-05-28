@@ -326,7 +326,7 @@ internal sealed class FeatureServerQueryHandler(
         {
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);
-            return (null, StandardErrorHelpers.CreateInternalServerError(context, "Query execution failed"));
+            return (null, StandardErrorHelpers.CreateInternalServerError(context, "DIAG: " + ex.GetType().Name + ": " + ex.Message + " || " + (ex.StackTrace ?? "")));
         }
         finally
         {
@@ -997,7 +997,7 @@ internal sealed class FeatureServerQueryHandler(
                 return _streamingResult;
             }
 
-            return StandardErrorHelpers.CreateInternalServerError(context, "Query execution failed");
+            return StandardErrorHelpers.CreateInternalServerError(context, "DIAG2: " + ex.GetType().Name + ": " + ex.Message + " || " + (ex.StackTrace ?? ""));
         }
         finally
         {

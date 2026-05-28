@@ -33,8 +33,8 @@ public sealed record FeatureStorageMapping(
     string? GeometryColumn = "geometry",
     int? StorageSrid = null,
     string? TemporalColumn = null,
-    string? AttributesColumn = null,
-    IReadOnlyDictionary<string, string>? ProviderOptions = null)
+    IReadOnlyDictionary<string, string>? ProviderOptions = null,
+    string? AttributesColumn = null)
 {
     /// <summary>
     /// Provider option key indicating that reads should be routed back to the source table.
