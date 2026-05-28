@@ -41,13 +41,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Compile-link McpTestFactory from Server.Tests; 2 consumers in
-         Server.Tests (AiBuilder, Reporting) still reference it. Audit-A2
-         carve will move it to Honua.TestKit. -->
-    <Compile Include="..\Honua.Server.Tests\Features\Protocols\Mcp\McpTestFactory.cs" Link="McpTestFactory.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Server\Honua.Server.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Postgres\Honua.Postgres.csproj" />
