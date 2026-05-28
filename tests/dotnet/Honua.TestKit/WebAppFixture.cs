@@ -324,12 +324,17 @@ public sealed class WebAppFixture : IAsyncLifetime
         // with every protocol enabled. Mirror that on the V2 graph so capability gates
         // (protocol enablement on the OGC API family) match the v1 behaviour.
         var allProtocols = MetadataV2ServiceProtocols.All;
+        // tests/seed/server.yaml's "test" service is open by convention — anonymous
+        // GETs against /rest/services/test/... must return data, matching the v1 default
+        // posture. Set AllowAnonymous = true on the V2 service so the access middleware
+        // doesn't 401 the anonymous fixture endpoints.
         var builder = new Honua.TestKit.Infrastructure.TestMetadataV2GraphBuilder()
             .AddService(
                 "svc-test",
                 "test",
                 route: "/ogc/features",
-                protocols: allProtocols);
+                protocols: allProtocols,
+                accessPolicy: new AccessPolicy { AllowAnonymous = true });
 
         // server.yaml binds only layers 0..2 to service "test"; do not publish helper
         // resource ids here or service-level FeatureServer queries will drift from the

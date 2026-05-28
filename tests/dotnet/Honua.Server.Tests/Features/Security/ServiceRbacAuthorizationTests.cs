@@ -1644,9 +1644,25 @@ internal sealed class RbacTestLayerCatalog : ITestMetadataV2GraphSource
                 fields:
                 [
                     new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Description = "Object ID" },
-                    new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Length = 255, Description = "Name field" }
+                    new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Length = 255, Description = "Name field" },
+                    new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, Nullable = false, Description = "Geometry" }
                 ],
-                accessPolicy: accessPolicy)
+                accessPolicy: accessPolicy,
+                // WMS / Map render paths gate on resource.Spatial.GeometryType — the
+                // original v1 RbacTestLayerCatalog declared GeometryType.Point, so
+                // mirror that here or every WMS-protocol test against this fixture
+                // resolves zero layers.
+                spatial: new MetadataV2ResourceSpatial
+                {
+                    GeometryType = MetadataV2GeometryType.Point,
+                    SpatialReference = new MetadataV2SpatialReference
+                    {
+                        Srid = 4326,
+                        Crs = "EPSG:4326",
+                        IsGeographic = true
+                    },
+                    PrimaryGeometryField = "shape"
+                })
             .AddStorageBinding(
                 $"binding-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
                 resourceId,
