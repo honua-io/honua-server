@@ -1,14 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Validation;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Services;
 
 namespace Honua.Server.Features.Infrastructure.Validation;
 
@@ -22,6 +20,14 @@ public static class ValidationServiceExtensions
     /// Adds common validation services to the service collection.
     /// Registers all shared validation components used across protocols.
     /// </summary>
+    /// <remarks>
+    /// Audit-A1 / ADR-0044: The unified <c>IGeometryService</c> registration
+    /// (NetTopologySuite-backed concrete implementation) lives in Honua.Server's
+    /// <c>InfrastructureCompositionRoot.AddCoreInfrastructure</c> alongside the
+    /// other heavy-package-graph singletons. Honua.Hosting consumes only the
+    /// <c>IGeometryService</c> abstraction from <c>Honua.Core</c>; the concrete
+    /// type's NTS dependency is not appropriate for the hosting surface.
+    /// </remarks>
     /// <param name="services">Service collection</param>
     /// <returns>Service collection for chaining</returns>
     public static IServiceCollection AddValidationServices(this IServiceCollection services)
@@ -36,9 +42,6 @@ public static class ValidationServiceExtensions
 
         // Register unified resource validator for consistent service/layer/collection checks
         services.AddScoped<IResourceValidator, ResourceValidator>();
-
-        // Register unified geometry service for consistent format conversion and Z/M detection
-        services.AddSingleton<IGeometryService, Services.GeometryService>();
 
         return services;
     }

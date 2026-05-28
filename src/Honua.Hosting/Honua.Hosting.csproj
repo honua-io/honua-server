@@ -25,6 +25,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Packages required by the carved Authentication sub-area. Mirrors the
+         Server csproj's auth-related references so the hosting surface
+         (JWT bearer, OIDC, JWT handler) compiles standalone. -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="Honua.Server" />
     <InternalsVisibleTo Include="Honua.Server.Tests" />
     <InternalsVisibleTo Include="Honua.Architecture.Tests" />

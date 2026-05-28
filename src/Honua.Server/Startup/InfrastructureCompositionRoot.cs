@@ -12,9 +12,11 @@ using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Configuration;
 using Honua.Server.Features.Infrastructure.Monitoring;
+using Honua.Server.Features.Infrastructure.Services;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -72,6 +74,13 @@ internal static class InfrastructureCompositionRoot
 
         // Add centralized configuration management and secret services
         services.AddConfigurationManagement(configuration);
+
+        // Audit-A1 / ADR-0044: IGeometryService's concrete NTS-backed
+        // implementation lives in Server because Honua.Hosting must not
+        // depend on the NetTopologySuite package graph. The hosting-side
+        // validation surface (AddValidationServices) consumes the
+        // IGeometryService abstraction registered here.
+        services.AddSingleton<IGeometryService, GeometryService>();
 
         // Wrap ILayerStyleCatalog with caching decorator
         var innerStyleCatalogDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(ILayerStyleCatalog));
