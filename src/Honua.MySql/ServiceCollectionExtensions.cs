@@ -103,6 +103,8 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<ITileProvider>(_ => new ReadOnlyTileProvider("MySQL/MariaDB"));
         services.AddScoped<IGmlFeatureStore>(_ => new ReadOnlyGmlFeatureStore("MySQL/MariaDB"));
 
+        services.AddSingleton<ISqlDialect>(MySqlSqlDialect.Instance);
+
         services.AddScoped<ISqlFilterTranslator>(sp =>
             new MySqlSqlFilterTranslator(sp.GetRequiredService<MySqlEngineFlavorHolder>().Flavor));
 

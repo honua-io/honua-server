@@ -229,6 +229,9 @@ internal static class ServiceCollectionExtensions
         // Register geometry operation service for buffer/simplify/project
         services.AddScoped<IGeometryOperationService, PostgresGeometryOperationService>();
 
+        // Register SQL dialect (identifier quoting / parameter prefix)
+        services.AddSingleton<ISqlDialect>(PostgresSqlDialect.Instance);
+
         // Register SQL filter translator
         services.AddScoped<ISqlFilterTranslator>(_ => new PostgresSqlFilterTranslator(
             useJsonAttributes: true,

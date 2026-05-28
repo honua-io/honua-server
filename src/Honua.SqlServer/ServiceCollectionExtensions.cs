@@ -2,8 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Queries.Filters;
 using Honua.SqlServer.Features.FeatureStore;
 using Honua.SqlServer.Features.FeatureStore.Services;
+using Honua.SqlServer.Queries.Filters;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -34,6 +36,8 @@ public static class ServiceCollectionExtensions
             .AddOptions<SqlServerOptions>()
             .Bind(configuration.GetSection("SqlServer"))
             .Validate(o => o.CommandTimeoutSeconds > 0, "CommandTimeoutSeconds must be positive.");
+
+        services.AddSingleton<ISqlDialect>(SqlServerSqlDialect.Instance);
 
         services.AddScoped<ISqlServerConnectionFactory, SqlServerConnectionFactory>();
         services.AddScoped<SqlServerFeatureDataAccess>();
