@@ -132,6 +132,46 @@ proportionate fix.
 Sequencing rule: each follow-up PR rebases on the previous merge and uses
 the commit prefix `refactor(core-abstractions): ...` for traceability.
 
+## Phase 1 plug-in host contract
+
+The plug-in host contract that the modularization plan attributes to Phase 1
+landed in this same change set so a subsequent assembly-extraction PR is a
+mechanical move rather than an API redesign:
+
+- `Honua.Server.Features.Infrastructure.Hosting.IHonuaProtocolModule` — the
+  per-protocol interface with `Name`, `ConfigureServices`, and `MapEndpoints`.
+  Lives in `Honua.Server` (not `Honua.Core.Abstractions`) because it depends
+  on ASP.NET Core's `IEndpointRouteBuilder`. Adding the AspNetCore framework
+  reference to the contract-only assembly was rejected as overreach; the
+  trade-off is that extracted protocol assemblies will reference Server's
+  hosting surface alongside `Honua.Core.Abstractions`.
+- Four implementations under
+  `Honua.Server.Features.Infrastructure.Hosting.Modules` — `ODataProtocolModule`,
+  `OgcApiProtocolModule`, `OgcClassicProtocolModule`, `GeoServicesProtocolModule`.
+  Each wraps the existing `AddXxx` / `MapXxxEndpoints` static helpers.
+- `FeatureRegistrationExtensions.AddDiscoveredProtocolModules` /
+  `MapDiscoveredProtocolModules` — composition entry points that iterate the
+  registry, optionally filtered by an `enabledNames` list (modeled on the
+  data-provider pattern's `Protocols:Enabled` shape). The module registry is
+  an explicit `IReadOnlyList` rather than reflection over the assembly so
+  `PublishAot=true` does not flag IL2070 / IL2072 trim warnings.
+
+The new entry points are **additive**. `AddServerFeatures` and
+`MapServerFeatureEndpoints` still own the canonical direct registration calls.
+A follow-up PR will migrate the per-protocol registrations into modules and
+remove the duplicated direct calls so the module path is the single source of
+truth. Today calling both paths would double-register the four wrapped
+protocols.
+
+`Honua.Architecture.Tests.ProtocolModuleCoverageTests` enforces:
+
+1. Every Phase 1 protocol (`OData`, `OgcApi`, `OgcClassic`, `GeoServices`)
+   has an `IHonuaProtocolModule` implementation in the loaded
+   `Honua.Server` assembly.
+2. Every module is `sealed` (one impl per protocol).
+3. Every module has a parameterless constructor (host activates with
+   `new()` from the registry).
+
 ## Consequences
 
 ### Positive
