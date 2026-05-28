@@ -359,8 +359,16 @@ public sealed class WebAppFixture : IAsyncLifetime
                 .AddStorageBinding(
                     bindingId,
                     resourceId,
-                    $"features:{layerIndex}",
-                    storageLayerId: layerIndex);
+                    "features",
+                    storageLayerId: layerIndex,
+                    // The seed's shared 'features' table uses 'geometry' as its
+                    // geometry column; the schema field is named 'shape' (the V2
+                    // logical name). FeatureStorageMapping reads geometryColumn
+                    // from binding options to bridge the two, so add it here.
+                    options: new Dictionary<string, JsonElement>
+                    {
+                        ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry")
+                    });
 
             if (defaultServiceLayerIndices.Contains(layerIndex))
             {
@@ -715,7 +723,7 @@ public sealed class WebAppFixture : IAsyncLifetime
                 .AddStorageBinding(
                     bindingId,
                     resourceId,
-                    $"features:{layerIndex}",
+                    "features",
                     storageLayerId: layerIndex)
                 .AddPublication(
                     id: $"pub-admin-sample-feature-{layerIndex}",
@@ -745,8 +753,12 @@ public sealed class WebAppFixture : IAsyncLifetime
             .AddStorageBinding(
                 bindingId,
                 resourceId,
-                $"features:{layerIndex}",
-                storageLayerId: layerIndex)
+                "features",
+                storageLayerId: layerIndex,
+                options: new Dictionary<string, JsonElement>
+                {
+                    ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry")
+                })
             .AddPublication(
                 id: $"pub-layer-{layerIndex}",
                 serviceId: "svc-test",

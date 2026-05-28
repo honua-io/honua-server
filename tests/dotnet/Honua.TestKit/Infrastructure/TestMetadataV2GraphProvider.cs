@@ -140,7 +140,8 @@ public sealed class TestMetadataV2GraphBuilder
         string locator,
         string? connectionId = null,
         MetadataV2StorageType storageType = MetadataV2StorageType.RelationalTable,
-        int? storageLayerId = null)
+        int? storageLayerId = null,
+        IReadOnlyDictionary<string, JsonElement>? options = null)
     {
         _bindings.Add(new MetadataV2StorageBinding
         {
@@ -150,6 +151,7 @@ public sealed class TestMetadataV2GraphBuilder
             StorageType = storageType,
             Locator = locator,
             StorageLayerId = storageLayerId,
+            Options = options ?? new Dictionary<string, JsonElement>(),
         });
 
         // Attach to the resource's binding list so the graph is internally consistent.
