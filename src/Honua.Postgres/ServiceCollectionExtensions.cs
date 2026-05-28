@@ -263,6 +263,11 @@ internal static class ServiceCollectionExtensions
         // Register enhanced database connection provider with prepared statement caching
         services.AddScoped<IDatabaseConnectionProvider, CachingDatabaseConnectionProvider>();
 
+        // Register the audit-C3 session abstraction alongside the legacy provider.
+        // Consumers migrate from IDatabaseConnectionProvider to IDatabaseSessionFactory
+        // tranche-by-tranche (see ADR 0046).
+        services.AddScoped<IDatabaseSessionFactory, Features.Infrastructure.Session.PostgresDatabaseSessionFactory>();
+
         // Register CRS detection service
         services.AddScoped<ICrsDetectionService>(serviceProvider =>
             new CrsDetectionService(
