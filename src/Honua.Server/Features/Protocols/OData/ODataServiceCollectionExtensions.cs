@@ -31,6 +31,15 @@ internal static class ODataServiceCollectionExtensions
         // re-running AddOData() simply re-assigns the same delegate.
         StandardErrorResponseFormatter.ODataErrorFormatterOverride = ODataErrorFormatter.Format;
 
+        // Audit-A1: install the OData validation-error / cancellation-token
+        // delegates so Infrastructure.Validation.LayerValidationHelpers can
+        // dispatch OData-shaped validation errors without a direct using-clause
+        // dependency on the OData protocol assembly.
+        Honua.Server.Features.Infrastructure.Validation.LayerValidationHelpers.ODataErrorFactoryOverride =
+            (context, errorCode, message, statusCode) => ODataUtilityService.CreateODataError(context, errorCode, message, statusCode);
+        Honua.Server.Features.Infrastructure.Validation.LayerValidationHelpers.ODataCancellationTokenResolverOverride =
+            ODataUtilityService.GetTimeoutAwareCancellationToken;
+
         services.TryAddScoped<IQueryProcessor, QueryProcessor>();
         services.TryAddScoped<IEditProcessor, EditProcessor>();
         services.TryAddScoped<IQueryParameterAdapter<ODataQueryParameters>, ODataQueryParameterAdapter>();

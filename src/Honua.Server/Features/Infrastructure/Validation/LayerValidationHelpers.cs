@@ -6,8 +6,6 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Protocols.OData.Services;
-using Honua.Server.Features.Protocols.Ogc.Api.Features;
 using Microsoft.Extensions.DependencyInjection;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
@@ -17,8 +15,30 @@ namespace Honua.Server.Features.Infrastructure.Validation;
 /// Shared helper methods for layer validation and access checking across CRUD handlers.
 /// Eliminates DRY violations by providing a unified validation pattern for all protocols.
 /// </summary>
+/// <remarks>
+/// Audit-A1: protocol-specific error formatting and cancellation-token resolution
+/// plug in via the static <see cref="ODataErrorFactoryOverride"/> and
+/// <see cref="ODataCancellationTokenResolverOverride"/> delegates so this
+/// Infrastructure.Validation file does not need a using-clause dependency on
+/// any protocol assembly. <c>ODataServiceCollectionExtensions.AddOData</c>
+/// installs both delegates at startup.
+/// </remarks>
 internal static class LayerValidationHelpers
 {
+    /// <summary>
+    /// Builds an OData-formatted error result. Set by
+    /// <c>ODataServiceCollectionExtensions.AddOData</c>; when null, OData
+    /// validation errors fall through to the generic StandardErrorHelpers
+    /// path. Signature: (context, errorCode, message, statusCode) → IResult.
+    /// </summary>
+    internal static Func<HttpContext, string, string, int, IResult>? ODataErrorFactoryOverride { get; set; }
+
+    /// <summary>
+    /// Resolves the OData timeout-aware cancellation token from the request
+    /// pipeline. Set by <c>ODataServiceCollectionExtensions.AddOData</c>;
+    /// when null, the caller's cancellation token is used unchanged.
+    /// </summary>
+    internal static Func<HttpContext, CancellationToken>? ODataCancellationTokenResolverOverride { get; set; }
     /// <summary>
     /// Protocol-specific error format options for layer validation.
     /// </summary>
@@ -58,7 +78,12 @@ internal static class LayerValidationHelpers
             _ => "Error"
         };
 
-        return ODataUtilityService.CreateODataError(context, errorCode, message, statusCode);
+        var factory = ODataErrorFactoryOverride;
+        if (factory is null)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, message);
+        }
+        return factory(context, errorCode, message, statusCode);
     }
 
     /// <summary>
@@ -91,8 +116,8 @@ internal static class LayerValidationHelpers
         string? requiredProtocol = null,
         CancellationToken cancellationToken = default)
     {
-        var effectiveToken = protocol == ValidationProtocol.OData
-            ? ODataUtilityService.GetTimeoutAwareCancellationToken(context)
+        var effectiveToken = protocol == ValidationProtocol.OData && ODataCancellationTokenResolverOverride is not null
+            ? ODataCancellationTokenResolverOverride(context)
             : cancellationToken;
 
         var snapshot = await GetV2SnapshotAsync(context, effectiveToken).ConfigureAwait(false);
