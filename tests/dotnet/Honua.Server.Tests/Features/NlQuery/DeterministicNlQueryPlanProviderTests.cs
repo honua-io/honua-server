@@ -2,10 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.NlQuery.Domain;
 using Honua.Core.Features.NlQuery.Services;
-using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.AiBuilder.Fixtures;
 using Honua.Server.Features.NlQuery;
 using Honua.TestKit.Attributes;
@@ -17,19 +16,7 @@ namespace Honua.Server.Tests.Features.NlQuery;
 [Protocol(TestProtocols.TestQuality)]
 public sealed class DeterministicNlQueryPlanProviderTests
 {
-    private static readonly LayerDefinition TestLayer = new(
-        Id: 1,
-        Name: "critical_facilities",
-        Description: "Fixture critical facilities layer",
-        GeometryType: GeometryType.Point,
-        SpatialReference: SpatialReference.WGS84,
-        Fields:
-        [
-            new FieldDefinition("facility_type", FieldType.String, Length: 50),
-            new FieldDefinition("status", FieldType.String, Length: 20),
-            new FieldDefinition("capacity", FieldType.Integer),
-            new FieldDefinition("shape", FieldType.Geometry)
-        ]);
+    private static readonly MetadataV2Resource TestResource = NlQueryTestResources.CriticalFacilities;
 
     private static DeterministicNlQueryPlanProvider CreateProvider()
     {
@@ -45,7 +32,7 @@ public sealed class DeterministicNlQueryPlanProviderTests
         var provider = CreateProvider();
         var request = new NlQueryPlanRequest(
             Query: "Show open hospitals within 1 km of flood zones as a linked map, table, and chart.",
-            Layer: TestLayer,
+            Resource: TestResource,
             CollectionId: "critical_facilities");
 
         var result = await provider.GeneratePlanAsync(request);
@@ -65,7 +52,7 @@ public sealed class DeterministicNlQueryPlanProviderTests
             && clause.Comparison.Property == "facility_type"
             && clause.Comparison.Operator == "eq");
 
-        var compileResult = FilterPlanCompiler.Compile(result.Plan, TestLayer);
+        var compileResult = FilterPlanCompiler.Compile(result.Plan, TestResource);
         compileResult.IsSuccess.Should().BeTrue(compileResult.ErrorMessage);
     }
 
@@ -76,7 +63,7 @@ public sealed class DeterministicNlQueryPlanProviderTests
         var provider = CreateProvider();
         var request = new NlQueryPlanRequest(
             Query: "  SHOW OPEN HOSPITALS WITHIN 1 KM OF FLOOD ZONES AS A LINKED MAP, TABLE, AND CHART.  ",
-            Layer: TestLayer);
+            Resource: TestResource);
 
         var result = await provider.GeneratePlanAsync(request);
 
@@ -91,7 +78,7 @@ public sealed class DeterministicNlQueryPlanProviderTests
         var provider = CreateProvider();
         var request = new NlQueryPlanRequest(
             Query: "Find shelters near flood zones.",
-            Layer: TestLayer);
+            Resource: TestResource);
 
         var result = await provider.GeneratePlanAsync(request);
 
@@ -106,7 +93,7 @@ public sealed class DeterministicNlQueryPlanProviderTests
         var provider = CreateProvider();
         var request = new NlQueryPlanRequest(
             Query: "Join every road segment to every flood polygon it crosses and summarize by route.",
-            Layer: TestLayer);
+            Resource: TestResource);
 
         var result = await provider.GeneratePlanAsync(request);
 
@@ -121,7 +108,7 @@ public sealed class DeterministicNlQueryPlanProviderTests
         var provider = CreateProvider();
         var request = new NlQueryPlanRequest(
             Query: "totally unrelated utterance that no fixture covers",
-            Layer: TestLayer);
+            Resource: TestResource);
 
         var result = await provider.GeneratePlanAsync(request);
 
@@ -139,7 +126,7 @@ public sealed class DeterministicNlQueryPlanProviderTests
         var provider = CreateProvider();
         var request = new NlQueryPlanRequest(
             Query: "Build an operations dashboard for this saved map showing a map, incident list, incident count, incidents by type chart, and district filter.",
-            Layer: TestLayer);
+            Resource: TestResource);
 
         var result = await provider.GeneratePlanAsync(request);
 

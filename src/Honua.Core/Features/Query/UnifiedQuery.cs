@@ -3,7 +3,6 @@
 
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;

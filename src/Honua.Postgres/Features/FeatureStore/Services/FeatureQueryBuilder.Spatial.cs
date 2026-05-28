@@ -3,8 +3,8 @@
 
 using System.Globalization;
 using System.Text;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Postgres.Features.Infrastructure;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
@@ -180,12 +180,12 @@ internal sealed partial class FeatureQueryBuilder
     private static bool CanUseEnvelopeOnlyPointIntersects(FeatureQuery query, SpatialFilter filter)
         => filter.IsSimpleEnvelope &&
            filter.AllowEnvelopeOnly &&
-           query.GeometryType == GeometryType.Point &&
+           query.GeometryType == MetadataV2GeometryType.Point &&
            !query.IncludeNullGeometry;
 
     private static bool CanUseExactPointEnvelopeIntersects(FeatureQuery query, SpatialFilter filter)
         => filter.IsSimpleEnvelope &&
-           query.GeometryType == GeometryType.Point &&
+           query.GeometryType == MetadataV2GeometryType.Point &&
            !query.IncludeNullGeometry &&
            filter.EnvelopeMinX.HasValue &&
            filter.EnvelopeMinY.HasValue &&

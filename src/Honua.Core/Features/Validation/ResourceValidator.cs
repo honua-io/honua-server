@@ -2,8 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -17,116 +15,15 @@ namespace Honua.Core.Features.Validation;
 /// </summary>
 public sealed class ResourceValidator : IResourceValidator
 {
-    private readonly ILayerCatalog _layerCatalog;
-    private readonly IMetadataV2GraphProvider? _v2Provider;
+    private readonly IMetadataV2GraphProvider _v2Provider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ResourceValidator"/> class.
     /// </summary>
-    /// <param name="layerCatalog">Layer catalog for metadata lookup</param>
-    /// <param name="v2Provider">Optional Metadata v2 graph provider. When provided,
-    /// the V2 overloads return results sourced from the canonical graph; when null,
-    /// the V2 overloads throw <see cref="NotSupportedException"/>.</param>
-    public ResourceValidator(ILayerCatalog layerCatalog, IMetadataV2GraphProvider? v2Provider = null)
+    /// <param name="v2Provider">Metadata v2 graph provider for canonical resource lookup.</param>
+    public ResourceValidator(IMetadataV2GraphProvider v2Provider)
     {
-        _layerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
-        _v2Provider = v2Provider;
-    }
-
-    /// <inheritdoc />
-    public async Task<ResourceValidationResult<LayerDefinition>> ValidateLayerAsync(
-        int layerId,
-        CancellationToken cancellationToken = default)
-    {
-        var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
-
-        if (layer == null)
-        {
-            return ResourceValidationResult.NotFound<LayerDefinition>(ErrorMessages.NotFound.FormatLayer(layerId));
-        }
-
-        return ResourceValidationResult.Success(layer);
-    }
-
-    /// <inheritdoc />
-    public async Task<ResourceValidationResult<LayerDefinition>> ValidateCollectionAsync(
-        string collectionId,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(collectionId))
-        {
-            return ResourceValidationResult.InvalidIdentifier<LayerDefinition>(ErrorMessages.Validation.CollectionIdRequired);
-        }
-
-        var layer = await ResolveLayerByCollectionIdAsync(collectionId, cancellationToken);
-        if (layer == null &&
-            int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
-        {
-            layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken);
-        }
-
-        if (layer == null)
-        {
-            return ResourceValidationResult.NotFound<LayerDefinition>(ErrorMessages.NotFound.FormatCollection(collectionId));
-        }
-
-        return ResourceValidationResult.Success(layer);
-    }
-
-    private async Task<LayerDefinition?> ResolveLayerByCollectionIdAsync(
-        string collectionId,
-        CancellationToken cancellationToken)
-    {
-        var layers = await _layerCatalog.ListLayersAsync(cancellationToken);
-        return layers
-            .OrderBy(layer => layer.Id)
-            .FirstOrDefault(layer => string.Equals(layer.Name, collectionId, StringComparison.OrdinalIgnoreCase));
-    }
-
-    /// <inheritdoc />
-    public async Task<ResourceValidationResult<ServiceDefinition>> ValidateServiceAsync(
-        string serviceId,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(serviceId))
-        {
-            return ResourceValidationResult.InvalidIdentifier<ServiceDefinition>(ErrorMessages.Validation.ServiceIdRequired);
-        }
-
-        var service = await _layerCatalog.GetServiceAsync(serviceId, cancellationToken);
-
-        if (service == null)
-        {
-            return ResourceValidationResult.NotFound<ServiceDefinition>(ErrorMessages.NotFound.FormatService(serviceId));
-        }
-
-        return ResourceValidationResult.Success(service);
-    }
-
-    /// <inheritdoc />
-    public async Task<ResourceValidationResult<(ServiceDefinition Service, LayerDefinition Layer)>> ValidateServiceLayerAsync(
-        string serviceId,
-        int layerId,
-        CancellationToken cancellationToken = default)
-    {
-        var serviceResult = await ValidateServiceAsync(serviceId, cancellationToken);
-        if (!serviceResult.IsValid)
-        {
-            var message = serviceResult.ErrorMessage ?? ErrorMessages.NotFound.FormatService(serviceId);
-            return serviceResult.ErrorCode == ResourceValidationError.InvalidIdentifier
-                ? ResourceValidationResult.InvalidIdentifier<(ServiceDefinition, LayerDefinition)>(message)
-                : ResourceValidationResult.NotFound<(ServiceDefinition, LayerDefinition)>(message);
-        }
-
-        var service = serviceResult.Resource!;
-        var layer = service.Layers.FirstOrDefault(l => l.Id == layerId);
-        if (layer == null)
-        {
-            return ResourceValidationResult.NotFound<(ServiceDefinition, LayerDefinition)>(
-                ErrorMessages.NotFound.FormatLayerInService(layerId, serviceId));
-        }
-
-        return ResourceValidationResult.Success((service, layer));
+        _v2Provider = v2Provider ?? throw new ArgumentNullException(nameof(v2Provider));
     }
 
     /// <inheritdoc />
@@ -166,11 +63,6 @@ public sealed class ResourceValidator : IResourceValidator
         // Match by resource name (case-insensitive) or resource id.
         foreach (var resource in snapshot.Graph.Resources)
         {
-            if (!IsRuntimeVisible(resource.Status))
-            {
-                continue;
-            }
-
             if (string.Equals(resource.Metadata.Name, collectionId, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(resource.Metadata.Id, collectionId, StringComparison.Ordinal))
             {
@@ -204,13 +96,11 @@ public sealed class ResourceValidator : IResourceValidator
         }
 
         var snapshot = await RequireV2SnapshotAsync(cancellationToken).ConfigureAwait(false);
-        if (snapshot.Index.ServicesByName.TryGetValue(serviceId, out var byName) &&
-            IsRuntimeVisible(byName.Status))
+        if (snapshot.Index.ServicesByName.TryGetValue(serviceId, out var byName))
         {
             return ResourceValidationResult.Success(byName);
         }
-        if (snapshot.Index.ServicesById.TryGetValue(serviceId, out var byId) &&
-            IsRuntimeVisible(byId.Status))
+        if (snapshot.Index.ServicesById.TryGetValue(serviceId, out var byId))
         {
             return ResourceValidationResult.Success(byId);
         }
@@ -236,28 +126,22 @@ public sealed class ResourceValidator : IResourceValidator
         var snapshot = await RequireV2SnapshotAsync(cancellationToken).ConfigureAwait(false);
         foreach (var pub in snapshot.Index.PublicationsByService[service.Metadata.Id])
         {
-            if (pub.LayerIndex != layerId || !IsRuntimeVisible(pub.Status)) continue;
+            if (pub.LayerIndex != layerId) continue;
+            // Disabled (admin-disabled) publications/resources are flipped to
+            // MetadataV2LifecycleStatus.Retired — skip them so the protocol routes
+            // 404 the layer instead of serving stale metadata for a disabled layer.
+            if (pub.Status.Lifecycle == MetadataV2LifecycleStatus.Retired) continue;
             var resource = snapshot.ResolveResource(pub);
             if (resource is null) continue;
-            if (!IsRuntimeVisible(resource.Status)) continue;
+            if (resource.Status.Lifecycle == MetadataV2LifecycleStatus.Retired) continue;
             return ResourceValidationResult.Success(new MetadataV2ServiceLayerTriple(service, pub, resource));
         }
         return ResourceValidationResult.NotFound<MetadataV2ServiceLayerTriple>(
             ErrorMessages.NotFound.FormatLayerInService(layerId, serviceId));
     }
 
-    private static bool IsRuntimeVisible(MetadataV2Status? status)
-        => status is null ||
-           (status.Lifecycle is not (MetadataV2LifecycleStatus.Retired or MetadataV2LifecycleStatus.Archived) &&
-            status.State is not MetadataV2OperationalState.Failed);
-
     private async Task<MetadataV2GraphSnapshot> RequireV2SnapshotAsync(CancellationToken cancellationToken)
     {
-        if (_v2Provider is null)
-        {
-            throw new InvalidOperationException(
-                $"{nameof(ResourceValidator)} was constructed without an {nameof(IMetadataV2GraphProvider)}; V2 validation overloads are unavailable.");
-        }
         return await _v2Provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
     }
 }

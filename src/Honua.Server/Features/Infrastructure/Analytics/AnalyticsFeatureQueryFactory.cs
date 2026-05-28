@@ -3,8 +3,8 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
@@ -30,7 +30,7 @@ namespace Honua.Server.Features.Infrastructure.Analytics;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The async state machine generated for <see cref="TryBuildAsync"/> lives under
+/// The async state machine generated for the factory overloads lives under
 /// <c>Honua.Server.Features.Infrastructure.Analytics.AnalyticsFeatureQueryFactory+&lt;TryBuildAsync&gt;d__N</c>,
 /// which <c>VerticalSliceIsolationTests</c> skips because the checker iterates
 /// <c>_featureNames.Where(f =&gt; f is not ("Infrastructure" or "Ogc" or "Wfs20"))</c>.
@@ -71,7 +71,23 @@ internal static class AnalyticsFeatureQueryFactory
     public static async Task<(FeatureQuery? Query, IResult? Error)> TryBuildAsync(
         HttpContext context,
         IReadOnlyDictionary<string, StringValues> values,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        return await TryBuildCoreAsync(
+            context,
+            values,
+            resource,
+            resource.ReadSrid() ?? SpatialReference.WGS84.ToSrid(),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<(FeatureQuery? Query, IResult? Error)> TryBuildCoreAsync(
+        HttpContext context,
+        IReadOnlyDictionary<string, StringValues> values,
+        MetadataV2Resource resource,
+        int spatialReferenceSrid,
         CancellationToken cancellationToken)
     {
         var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
@@ -104,8 +120,7 @@ internal static class AnalyticsFeatureQueryFactory
             var timeRelation = GetValueString(values, SpatialAnalyticsParameters.TimeRelation);
             try
             {
-                temporalExpression = GeoServicesTemporalQueryBuilder.BuildTemporalExpression(
-                    time, timeRelation, layer);
+                temporalExpression = GeoServicesTemporalQueryBuilder.BuildTemporalExpression(time, timeRelation, resource);
             }
             catch (ArgumentException ex)
             {
@@ -129,7 +144,7 @@ internal static class AnalyticsFeatureQueryFactory
         SqlFragment? sqlFilter = null;
         if (combinedExpression != null)
         {
-            var translationResult = filterService.Translate(combinedExpression, layer);
+            var translationResult = filterService.Translate(combinedExpression, resource);
             if (!translationResult.IsSuccess)
             {
                 return (null, StandardErrorHelpers.CreateBadRequest(
@@ -226,10 +241,60 @@ internal static class AnalyticsFeatureQueryFactory
             SqlFilter = sqlFilter,
             ObjectIds = objectIds,
             SpatialFilter = spatialFilter,
-            SpatialReferenceSrid = layer.SpatialReference.ToSrid()
+            SpatialReferenceSrid = spatialReferenceSrid
         };
 
         return (featureQuery, null);
+    }
+
+    /// <summary>
+    /// Enriches parsed statistic definitions with field type metadata from a v2 resource schema.
+    /// </summary>
+    public static ImmutableArray<StatisticDefinition>? ApplyStatisticFieldTypes(
+        ImmutableArray<StatisticDefinition>? outStatistics,
+        MetadataV2Resource resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        if (!outStatistics.HasValue || outStatistics.Value.IsDefaultOrEmpty)
+        {
+            return outStatistics;
+        }
+
+        var builder = ImmutableArray.CreateBuilder<StatisticDefinition>(outStatistics.Value.Length);
+        foreach (var statistic in outStatistics.Value)
+        {
+            builder.Add(statistic with
+            {
+                FieldType = TryResolveFieldType(resource, statistic.OnStatisticField, out var fieldType)
+                    ? fieldType
+                    : statistic.FieldType
+            });
+        }
+
+        return builder.ToImmutable();
+    }
+
+    private static bool TryResolveFieldType(MetadataV2Resource resource, string fieldName, out MetadataV2FieldType fieldType)
+    {
+        var objectIdField = resource.FindPrimaryIdField();
+        if (string.Equals(fieldName, objectIdField?.Name, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(fieldName, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
+        {
+            fieldType = objectIdField?.Type ?? MetadataV2FieldType.Integer;
+            return true;
+        }
+
+        foreach (var field in resource.SchemaFields)
+        {
+            if (string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
+            {
+                fieldType = field.Type;
+                return true;
+            }
+        }
+
+        fieldType = default;
+        return false;
     }
 
     /// <summary>

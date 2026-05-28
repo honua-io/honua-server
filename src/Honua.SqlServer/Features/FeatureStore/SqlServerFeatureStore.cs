@@ -2,11 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
 using Honua.SqlServer.Features.FeatureStore.Services;
 
@@ -21,9 +20,8 @@ namespace Honua.SqlServer.Features.FeatureStore;
 /// MVT, native FlatGeobuf/Geobuf/GML, statistics aggregates, top-features, bins, and H3 are
 /// deliberately disabled on this slice and are advertised as such via
 /// <see cref="FeatureProviderCapabilities"/>.</para>
-/// <para>Layer/storage configuration flows through the existing <see cref="LayerStorageMapping"/>
-/// model resolved from <see cref="ILayerCatalog"/>; the provider does not introduce its own
-/// model types.</para>
+/// <para>Layer/storage configuration flows through the Metadata v2 provider binding passed by
+/// <see cref="FeatureProviderQueryRouter"/>.</para>
 /// </remarks>
 internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureReader, IBindableFeatureDataProvider
 {
@@ -45,24 +43,21 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     };
 
     private readonly SqlServerFeatureDataAccess _dataAccess;
-    private readonly ILayerCatalog _layerCatalog;
+    private readonly FeatureProviderBinding? _binding;
     private readonly DataConnection? _boundConnection;
 
-    public SqlServerFeatureStore(
-        SqlServerFeatureDataAccess dataAccess,
-        ILayerCatalog layerCatalog)
-        : this(dataAccess, layerCatalog, boundConnection: null)
+    public SqlServerFeatureStore(SqlServerFeatureDataAccess dataAccess)
+        : this(dataAccess, binding: null)
     {
     }
 
     private SqlServerFeatureStore(
         SqlServerFeatureDataAccess dataAccess,
-        ILayerCatalog layerCatalog,
-        DataConnection? boundConnection)
+        FeatureProviderBinding? binding)
     {
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
-        _layerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
-        _boundConnection = boundConnection;
+        _binding = binding;
+        _boundConnection = binding?.Connection;
     }
 
     /// <inheritdoc />
@@ -82,12 +77,7 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     {
         ArgumentNullException.ThrowIfNull(binding);
 
-        if (binding.Connection is null)
-        {
-            return this;
-        }
-
-        return new SqlServerFeatureStore(_dataAccess, _layerCatalog, binding.Connection);
+        return new SqlServerFeatureStore(_dataAccess, binding);
     }
 
     /// <inheritdoc />
@@ -169,7 +159,7 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
 
     /// <inheritdoc />
     public Task<TemporalExtentResult?> GetTemporalExtentAsync(
-        int layerId, string fieldName, FieldType fieldType, CancellationToken cancellationToken = default)
+        int layerId, string fieldName, TemporalPropertyType propertyType, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(GetTemporalExtentAsync), layerId);
 
     /// <inheritdoc />
@@ -209,26 +199,28 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
         int layerId, FeatureQuery query, H3AggregationQuery h3Query, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryH3Async), layerId);
 
-    private async Task<(SqlServerLayerMapping Mapping, IReadOnlyList<string> AttributeColumns)> ResolveLayerAsync(
+    private Task<(SqlServerLayerMapping Mapping, IReadOnlyList<string> AttributeColumns)> ResolveLayerAsync(
         int layerId,
         CancellationToken cancellationToken)
     {
-        var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Layer {layerId} is not registered in the catalog.");
-
-        if (layer.StorageMapping is null)
+        _ = cancellationToken;
+        var binding = _binding
+            ?? throw new InvalidOperationException(
+                "SQL Server provider reads require a Metadata v2 provider binding; route requests through FeatureProviderQueryRouter.");
+        if (binding.StorageLayerId != layerId)
         {
             throw new InvalidOperationException(
-                $"Layer {layerId} does not declare a runtime storage mapping; SQL Server provider requires LayerStorageMapping.");
+                $"SQL Server provider binding targets storage layer {binding.StorageLayerId}, not requested layer {layerId}.");
         }
 
-        var mapping = SqlServerLayerMapping.FromStorage(layerId, layer.StorageMapping);
-        var attributeColumns = layer.Fields
-            .Where(f => !f.IsGeometry && !f.Name.Equals(mapping.PrimaryKeyColumn, StringComparison.OrdinalIgnoreCase))
+        var mapping = SqlServerLayerMapping.FromStorage(layerId, binding.StorageMapping);
+        var attributeColumns = binding.Resource.SchemaFields
+            .Where(f => f.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)
+                && !f.Name.Equals(mapping.PrimaryKeyColumn, StringComparison.OrdinalIgnoreCase))
             .Select(f => f.Name)
             .ToArray();
 
-        return (mapping, attributeColumns);
+        return Task.FromResult<(SqlServerLayerMapping, IReadOnlyList<string>)>((mapping, attributeColumns));
     }
 
     private static NotSupportedException NotSupported(string operation, int layerId)

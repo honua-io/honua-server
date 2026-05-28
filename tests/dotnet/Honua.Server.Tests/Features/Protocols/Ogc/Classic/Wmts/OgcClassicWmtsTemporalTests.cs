@@ -14,7 +14,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts;
 
 /// <summary>
 /// Integration tests for the dynamic WMTS time dimension introduced for ticket #379.
-/// Verifies that opt-in <see cref="LayerTimeInfo"/> configuration causes the layer
+/// Verifies that opt-in Metadata V2 temporal configuration causes the layer
 /// to advertise a continuous time dimension in the capabilities document and that
 /// non-time-aware layers do not.
 /// </summary>
@@ -54,7 +54,7 @@ public sealed class OgcClassicWmtsTemporalTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
     public async Task Wmts_GetCapabilities_NonTimeAwareLayer_DoesNotAdvertiseTimeDimension()
     {
-        await ClearLayerTimeInfoAsync();
+        await ClearLayerTemporalAsync();
 
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities");
@@ -116,7 +116,7 @@ public sealed class OgcClassicWmtsTemporalTests : IAsyncLifetime
         // rejected with InvalidParameterValue rather than silently ignored —
         // otherwise the request appears to honor a temporal filter that the
         // capabilities document never advertised.
-        await ClearLayerTimeInfoAsync();
+        await ClearLayerTemporalAsync();
 
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER={WebAppFixture.TestLayerId}&STYLE=default&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=0&TILEROW=0&TILECOL=0&FORMAT=image/png&time=2024-06-15T12:00:00Z");
@@ -136,7 +136,7 @@ public sealed class OgcClassicWmtsTemporalTests : IAsyncLifetime
         // on layers that do not advertise a time dimension. Both paths share
         // the same TryValidateWmtsDimensionParameters validator, so a
         // regression here would also be a regression for GetTile.
-        await ClearLayerTimeInfoAsync();
+        await ClearLayerTemporalAsync();
 
         var url =
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetFeatureInfo&VERSION=1.0.0" +
@@ -281,7 +281,7 @@ public sealed class OgcClassicWmtsTemporalTests : IAsyncLifetime
         // OgcTemporalFilterParser cannot fulfill (the layer's AttributeFields
         // do not contain that field as Date/DateTime). The WMTS handler must
         // therefore gate the dimension on the same opt-in resolvability check
-        // used by TryResolveTemporalRangeAsync.
+        // used by TryResolveTemporalRangeV2Async.
         await ConfigureLayerWithInvalidTimeInfoAsync();
 
         var response = await _fixture.Client.GetAsync(
@@ -334,7 +334,7 @@ public sealed class OgcClassicWmtsTemporalTests : IAsyncLifetime
         return Task.CompletedTask;
     }
 
-    private Task ClearLayerTimeInfoAsync()
+    private Task ClearLayerTemporalAsync()
     {
         _fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, clearTemporal: true);
         return Task.CompletedTask;

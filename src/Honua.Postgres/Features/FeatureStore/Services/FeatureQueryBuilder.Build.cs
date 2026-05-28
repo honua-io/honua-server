@@ -4,9 +4,9 @@
 using System.Globalization;
 using System.Text;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Tiles;
 using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.ObjectPool;
@@ -306,21 +306,21 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
     }
 
     public CoreParameterizedQuery BuildSelectFlatGeobufQuery(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         int layerId,
         FeatureQuery query,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
-        return BuildEncodedBinaryQuery("ST_AsFlatGeobuf", includeIndex: true, layer, query, geometryStorageType);
+        return BuildEncodedBinaryQuery("ST_AsFlatGeobuf", includeIndex: true, resource, query, geometryStorageType);
     }
 
     public CoreParameterizedQuery BuildSelectGeobufQuery(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         int layerId,
         FeatureQuery query,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
     {
-        return BuildEncodedBinaryQuery("ST_AsGeobuf", includeIndex: false, layer, query, geometryStorageType);
+        return BuildEncodedBinaryQuery("ST_AsGeobuf", includeIndex: false, resource, query, geometryStorageType);
     }
 
     public CoreParameterizedQuery BuildOptimizedSelectQuery(
@@ -401,7 +401,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         }
     }
 
-    public CoreParameterizedQuery BuildTemporalExtentQuery(int layerId, string fieldName, FieldType fieldType)
+    public CoreParameterizedQuery BuildTemporalExtentQuery(int layerId, string fieldName, TemporalPropertyType propertyType)
     {
         if (!IsValidFieldName(fieldName))
         {
@@ -414,10 +414,10 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         parameters.Add(fieldName);
 
         var attributeValue = DatabaseSchema.BuildJsonPathParameter(fieldParamIndex);
-        var fieldExpression = fieldType switch
+        var fieldExpression = propertyType switch
         {
-            FieldType.DateTime => $"NULLIF({attributeValue}, '')::timestamptz",
-            FieldType.Date => $"NULLIF({attributeValue}, '')::date",
+            TemporalPropertyType.DateTime => $"NULLIF({attributeValue}, '')::timestamptz",
+            TemporalPropertyType.Date => $"NULLIF({attributeValue}, '')::date",
             _ => attributeValue
         };
 

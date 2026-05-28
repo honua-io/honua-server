@@ -68,10 +68,11 @@ internal sealed partial class ODataAdvancedQueryHandler(
             }
 
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
-            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
                 context,
                 layerId,
                 LayerValidationHelpers.ValidationProtocol.OData,
+                requiredProtocol: ODataProtocolConstants.ProtocolName,
                 cancellationToken: effectiveToken);
             if (!layerValidation.IsValid)
             {
@@ -209,10 +210,11 @@ internal sealed partial class ODataAdvancedQueryHandler(
             }
 
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
-            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
                 context,
                 layerId,
                 LayerValidationHelpers.ValidationProtocol.OData,
+                requiredProtocol: ODataProtocolConstants.ProtocolName,
                 cancellationToken: effectiveToken);
             if (!layerValidation.IsValid)
             {

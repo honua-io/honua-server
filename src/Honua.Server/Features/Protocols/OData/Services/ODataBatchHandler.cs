@@ -3,11 +3,11 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Validation;
@@ -34,8 +34,8 @@ internal sealed partial class ODataBatchHandler
     private const string AtomicGroupPrefix = "atomic:";
     private const int DefaultBatchCollectionTop = 1000;
     private const string AbsoluteBatchRequestUrlMessage = "Absolute batch request URLs are not supported.";
+    private const string ODataProtocol = "OData";
 
-    private readonly ILayerCatalog _layerCatalog;
     private readonly IFeatureReader _featureReader;
     private readonly IFeatureWriter _featureWriter;
     private readonly IGeometryService _geometryService;
@@ -58,7 +58,6 @@ internal sealed partial class ODataBatchHandler
         ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(dependencies);
-        _layerCatalog = dependencies.LayerCatalog;
         _featureReader = dependencies.FeatureReader;
         _featureWriter = dependencies.FeatureWriter;
         _geometryService = dependencies.GeometryService;
@@ -71,6 +70,14 @@ internal sealed partial class ODataBatchHandler
         _mutationEventService = dependencies.MutationEventService;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
+
+    private sealed record ODataBatchLayerContext(
+        int PublicLayerId,
+        int StorageLayerId,
+        int Srid,
+        MetadataV2Publication? Publication,
+        MetadataV2Resource Resource,
+        MetadataV2Service? Service);
 
     /// <summary>
     /// Processes a batch request and returns the aggregated response.

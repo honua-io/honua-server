@@ -13,7 +13,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps;
 /// same slice but its (very large) v1-only test class was left to a follow-up port
 /// per the cutover strategy (do the source port, leave a focused TODO for the test
 /// fixtures, and move on). The original v1 test class verified the collection-,
-/// dataset-, and styled-map paths against ILayerCatalog + LayerDefinition / ServiceDefinition;
+/// dataset-, and styled-map paths against the v1 catalog graph;
 /// rewriting them on the V2 TestMetadataV2GraphBuilder is tracked under task #55
 /// (Port test fixtures off v1).
 /// </summary>

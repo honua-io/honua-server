@@ -7,6 +7,7 @@ on:
     - cron: '0 9 * * *'
   pull_request:
     branches: [trunk]
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
   workflow_dispatch:
     inputs:
       sdk_ref:
@@ -238,8 +239,11 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       non_test_changes: ${{ steps.filter.outputs.non_test_changes }}
+      build_changes: ${{ steps.filter.outputs.build_changes }}
       integration_changes: ${{ steps.filter.outputs.integration_changes }}
       integration_reason: ${{ steps.filter.outputs.integration_reason }}
+      full_ci: ${{ steps.filter.outputs.full_ci }}
+      postgres_matrix: ${{ steps.filter.outputs.postgres_matrix }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -258,15 +262,30 @@ jobs:
 
       - name: Check for non-test changes
         id: filter
+        env:
+          PR_LABELS_JSON: ${{ toJson(github.event.pull_request.labels.*.name) }}
         run: |
+          set -euo pipefail
           CHANGED_FILES=$(git diff --name-only "${{ steps.diff.outputs.range }}" || true)
+          POSTGRES_BASELINE='[{"pg_image":"postgis/postgis:16-3.4","pg_suffix":"16","collect_coverage":true}]'
+          POSTGRES_FULL='[{"pg_image":"postgis/postgis:16-3.4","pg_suffix":"16","collect_coverage":true},{"pg_image":"postgis/postgis:17-3.5","pg_suffix":"17","collect_coverage":false},{"pg_image":"postgis/postgis:18-3.6","pg_suffix":"18","collect_coverage":false}]'
 
           if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "build_changes=true" >> "$GITHUB_OUTPUT"
             echo "non_test_changes=true" >> $GITHUB_OUTPUT
             echo "integration_changes=true" >> "$GITHUB_OUTPUT"
             echo "integration_reason=scheduled_or_manual_full_ci" >> "$GITHUB_OUTPUT"
+            echo "full_ci=true" >> "$GITHUB_OUTPUT"
+            echo "postgres_matrix=${POSTGRES_FULL}" >> "$GITHUB_OUTPUT"
             INTEGRATION_FILES="<full integration event>"
+            BUILD_FILES="<full integration event>"
           else
+            if printf '%s' "${PR_LABELS_JSON:-[]}" | jq -e 'index("ci/full") or index("full-ci")' >/dev/null; then
+              FULL_CI=true
+            else
+              FULL_CI=false
+            fi
+
             # PRs that only touch docs, CI/publish plumbing, package metadata,
             # or NuGet source configuration do not need the full integration
             # fanout. Scheduled/manual CI still runs the full lane.
@@ -277,19 +296,39 @@ jobs:
               echo "non_test_changes=true" >> $GITHUB_OUTPUT
             fi
 
-            INTEGRATION_FILES=$(
+            BUILD_FILES=$(
               printf '%s\n' "$CHANGED_FILES" \
-                | grep -Ev '^($|docs/|README\.md$|\.github/(actions/setup-dotnet-ci/|workflows/[^/]+\.yml$)|NuGet\.config$|src/Honua\.Core/Honua\.Core\.csproj$)' \
+                | grep -Ev '^($|docs/|README\.md$|\.github/(workflows/[^/]+\.yml$|ci-shards\.json$)|scripts/ci/)' \
                 | sed '/^$/d' || true
             )
 
-            if [ -z "$INTEGRATION_FILES" ]; then
+            INTEGRATION_FILES=$(
+              printf '%s\n' "$CHANGED_FILES" \
+                | grep -Ev '^($|docs/|README\.md$|\.github/(actions/setup-dotnet-ci/|workflows/[^/]+\.yml$|ci-shards\.json$)|scripts/ci/|NuGet\.config$|src/Honua\.Core/Honua\.Core\.csproj$)' \
+                | sed '/^$/d' || true
+            )
+
+            if [ "${FULL_CI}" = "true" ]; then
+              echo "build_changes=true" >> "$GITHUB_OUTPUT"
+              echo "integration_changes=true" >> "$GITHUB_OUTPUT"
+              echo "integration_reason=pr_label_ci_full" >> "$GITHUB_OUTPUT"
+              echo "postgres_matrix=${POSTGRES_FULL}" >> "$GITHUB_OUTPUT"
+            elif [ -z "$INTEGRATION_FILES" ]; then
+              if [ -z "$BUILD_FILES" ]; then
+                echo "build_changes=false" >> "$GITHUB_OUTPUT"
+              else
+                echo "build_changes=true" >> "$GITHUB_OUTPUT"
+              fi
               echo "integration_changes=false" >> "$GITHUB_OUTPUT"
               echo "integration_reason=ci_package_or_docs_only" >> "$GITHUB_OUTPUT"
+              echo "postgres_matrix=${POSTGRES_BASELINE}" >> "$GITHUB_OUTPUT"
             else
+              echo "build_changes=true" >> "$GITHUB_OUTPUT"
               echo "integration_changes=true" >> "$GITHUB_OUTPUT"
               echo "integration_reason=runtime_or_test_changes" >> "$GITHUB_OUTPUT"
+              echo "postgres_matrix=${POSTGRES_BASELINE}" >> "$GITHUB_OUTPUT"
             fi
+            echo "full_ci=${FULL_CI}" >> "$GITHUB_OUTPUT"
           fi
 
           echo "Changed files:"
@@ -298,8 +337,14 @@ jobs:
           echo "Non-test files:"
           echo "${NON_TEST_FILES:-<full integration event>}"
           echo ""
+          echo "Build-triggering files:"
+          echo "${BUILD_FILES:-<none>}"
+          echo ""
           echo "Integration-triggering files:"
           echo "${INTEGRATION_FILES:-<none>}"
+          echo ""
+          echo "Full CI:"
+          echo "${FULL_CI:-true}"
 
   # Compute the server-tests shard subset for this PR. Scheduled/manual full
   # integration runs execute every shard. See ADR-0037.
@@ -316,7 +361,7 @@ jobs:
   targeted-shards:
     name: Detect Targeted Server-Tests Shards
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
-    needs: pr-readiness
+    needs: changes
     runs-on: ubuntu-latest
     outputs:
       descriptor: ${{ steps.compute.outputs.descriptor }}
@@ -331,12 +376,17 @@ jobs:
         run: |
           set -euo pipefail
           all_shards_json=$(jq -c '[.shards[].name]' .github/ci-shards.json)
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ needs.changes.outputs.full_ci }}" != "true" ]; then
             git fetch origin "${{ github.base_ref }}" --depth=1
             descriptor=$(scripts/ci/honua-server-targeted-tests.sh --base "origin/${{ github.base_ref }}")
           else
+            reason="scheduled_or_manual_full_ci"
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              reason="pr_label_ci_full"
+            fi
             descriptor=$(jq -nc --argjson shards "${all_shards_json}" \
-              '{run_all: true, shards: $shards, reason: "scheduled_or_manual_full_ci"}')
+              --arg reason "${reason}" \
+              '{run_all: true, shards: $shards, reason: $reason}')
           fi
           echo "Descriptor: ${descriptor}"
 
@@ -367,10 +417,22 @@ jobs:
           echo "descriptor=${descriptor}" >> "$GITHUB_OUTPUT"
           echo "matrix_include=${matrix_include}" >> "$GITHUB_OUTPUT"
 
+  ci-router-validation:
+    name: CI Router Validation
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    needs: changes
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate workflow and shard routing metadata
+        run: scripts/ci/validate-ci-router.sh
+
   build:
     name: Build & Format Check
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
-    needs: pr-readiness
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.build_changes == 'true' }}
+    needs: changes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -536,7 +598,7 @@ jobs:
       # inspected manually from the workflow run.
       - name: Upload coverage to Codecov
         if: ${{ always() && env.CODECOV_TOKEN != '' }}
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v4
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
@@ -555,10 +617,8 @@ jobs:
     # never instantiate a runner job, so per-shard `if:` gating is no longer
     # needed. The PR shard step composes its filter with `&Tier!=Slow` so
     # [EmulatorTest]/[ScaleTest]/[ExternalServiceTest]/[CloudTest] methods
-    # in a shard's namespace stay in nightly-slow-tier.yml. The CI shard step
-    # also opts into `&Tier!=Fast` so Fast tests run only once in
-    # dotnet-foundation-tests, while local pre-PR validation still exercises
-    # every server-test shard.
+    # in a shard's namespace stay in nightly-slow-tier.yml, and `&Tier!=Fast`
+    # so Fast tests run only once in dotnet-foundation-tests.
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
     needs: [build, changes, targeted-shards]
@@ -618,7 +678,6 @@ jobs:
           HONUA_SERVER_TEST_MAX_CPU_COUNT: ${{ matrix.max_cpu_count }}
           HONUA_SERVER_TEST_RESULTS_DIR: ./tests/TestResults
           HONUA_SERVER_TEST_CONFIGURATION: Release
-          HONUA_SERVER_TEST_EXCLUDE_FAST: "true"
         run: |
           scripts/ci/run-server-test-shard.sh
 
@@ -650,7 +709,7 @@ jobs:
 
   python-integration-tests:
     name: Python Integration Tests
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
     runs-on: ubuntu-latest
     needs: [build, changes]
     timeout-minutes: 25
@@ -735,7 +794,7 @@ jobs:
         working-directory: tests/js
 
   test-all:
-    name: Test Suite (.NET + Python + JS + Browser Clients)
+    name: Test Suite Summary
     if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') }}
     runs-on: ubuntu-latest
     needs:
@@ -761,7 +820,7 @@ jobs:
 
   js-integration-tests:
     name: JavaScript Integration Tests
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
     runs-on: ubuntu-latest
     needs: [build, changes]
     timeout-minutes: 15
@@ -840,7 +899,7 @@ jobs:
 
   esri-leaflet-browser-tests:
     name: Esri Leaflet Browser Tests
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
     runs-on: ubuntu-latest
     needs: [build, changes]
     timeout-minutes: 15
@@ -909,7 +968,7 @@ jobs:
 
   maplibre-compat:
     name: MapLibre GL JS Browser Compatibility
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
     runs-on: ubuntu-latest
     needs: [build, changes]
     timeout-minutes: 15
@@ -987,7 +1046,7 @@ jobs:
 
   mcp-certification:
     name: MCP Certification (${{ matrix.transport }})
-    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
+    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
     runs-on: ubuntu-latest
     needs: [build, changes, test-all, core-package-compatibility, postgres-compat]
     timeout-minutes: 15
@@ -1168,15 +1227,11 @@ jobs:
     needs: [build, changes]
     timeout-minutes: 30
     strategy:
-      # Report every PG version's status independently so a PG 16 regression does
-      # not hide PG 17/18 results. Each version is worth ~6 min; fail-fast saves
-      # little and costs triage signal.
+      # Ordinary PRs run the Aurora PG 16 baseline. Scheduled/manual full CI
+      # and PRs labeled `ci/full` run the expanded 16/17/18 matrix.
       fail-fast: false
       matrix:
-        pg_image:
-          - "postgis/postgis:16-3.4"   # Aurora PG 16.x baseline
-          - "postgis/postgis:17-3.5"   # Azure Flex PG 17.x
-          - "postgis/postgis:18-3.6"          # Latest self-hosted
+        include: ${{ fromJson(needs.changes.outputs.postgres_matrix) }}
     services:
       postgres:
         image: ${{ matrix.pg_image }}
@@ -1210,34 +1265,39 @@ jobs:
         env:
           HONUA_TEST_DB_URL: "Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=honua"
           HONUA_TEST_CONFIGURATION: Release
+          COLLECT_COVERAGE: ${{ matrix.collect_coverage }}
         run: |
-          dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj \
-            --configuration Release \
-            --no-build \
-            --logger "console;verbosity=detailed" \
-            --results-directory ./tests/TestResults \
-            --collect:"XPlat Code Coverage" \
-            --settings coverlet.runsettings
+          test_args=(
+            dotnet test tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj
+            --configuration Release
+            --no-build
+            --logger "console;verbosity=detailed"
+            --results-directory ./tests/TestResults
+          )
+          if [ "${COLLECT_COVERAGE}" = "true" ]; then
+            test_args+=(--collect:"XPlat Code Coverage" --settings coverlet.runsettings)
+          fi
+          "${test_args[@]}"
 
       - name: Upload Postgres coverage (cobertura)
         uses: actions/upload-artifact@v7
-        if: always()
+        if: ${{ always() && matrix.collect_coverage }}
         timeout-minutes: 3
         with:
-          name: postgres-coverage-${{ strategy.job-index }}
+          name: postgres-coverage-${{ matrix.pg_suffix }}
           path: tests/TestResults/**/coverage.cobertura.xml
           if-no-files-found: warn
           retention-days: 7
 
       - name: Upload Postgres coverage to Codecov
-        if: ${{ always() && env.CODECOV_TOKEN != '' }}
-        uses: codecov/codecov-action@v6
+        if: ${{ always() && matrix.collect_coverage && env.CODECOV_TOKEN != '' }}
+        uses: codecov/codecov-action@v4
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: tests/TestResults/**/coverage.cobertura.xml
-          flags: postgres-${{ strategy.job-index }}
+          flags: postgres-${{ matrix.pg_suffix }}
           name: postgres-compat
           fail_ci_if_error: false
 
@@ -1327,7 +1387,7 @@ jobs:
 
   aot-build:
     name: AOT Build Verification
-    if: ${{ success() && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
+    if: ${{ success() && needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ubuntu-latest
     needs: [build, changes, test-all, core-package-compatibility, postgres-compat]
     timeout-minutes: 20
@@ -1369,7 +1429,7 @@ jobs:
 
   docker-build:
     name: Docker Build & Integration Test
-    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
+    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ubuntu-latest
     needs: [build, changes]
     timeout-minutes: 15
@@ -1444,9 +1504,9 @@ jobs:
 
       # Run Trivy against the image we just built locally (no double-build:
       # we reuse honua-server:test that the build-push step `load: true`'d
-      # into the docker daemon). Fail the PR gate on any HIGH/CRITICAL CVE
-      # that already has a fix available upstream.
-      - name: Trivy image scan (PR gate, HIGH/CRITICAL, fixed only)
+      # into the docker daemon). Fail full CI on any HIGH/CRITICAL CVE that
+      # already has a fix available upstream.
+      - name: Trivy image scan (full CI, HIGH/CRITICAL, fixed only)
         id: trivy_image
         uses: aquasecurity/trivy-action@master
         with:
@@ -1461,7 +1521,7 @@ jobs:
       # Filesystem scan catches CVEs introduced by the Dockerfile base image
       # / package manifests / lockfiles that the image scan may miss when a
       # vulnerable dependency hasn't shipped to a release artifact yet.
-      - name: Trivy filesystem scan (PR gate, HIGH/CRITICAL, fixed only)
+      - name: Trivy filesystem scan (full CI, HIGH/CRITICAL, fixed only)
         id: trivy_fs
         if: always()
         uses: aquasecurity/trivy-action@master
@@ -1477,7 +1537,7 @@ jobs:
       - name: Trivy failure guidance
         if: failure() && (steps.trivy_image.outcome == 'failure' || steps.trivy_fs.outcome == 'failure')
         run: |
-          echo "::error title=Trivy PR gate failed::One or more HIGH/CRITICAL CVEs with available fixes were detected."
+          echo "::error title=Trivy full CI gate failed::One or more HIGH/CRITICAL CVEs with available fixes were detected."
           echo "::notice::To resolve: review the Trivy output above, then bump the affected dependency / base image to a fixed version. If a CVE is a false positive, add an entry to .trivyignore with a justification and CVE link."
           exit 1
 
@@ -1538,7 +1598,7 @@ jobs:
     # When a newer run supersedes this one via workflow concurrency, avoid
     # publishing a false failing gate from the cancelled run.
     if: ${{ always() && !cancelled() }}
-    needs: [pr-template-check, pr-readiness, changes, targeted-shards, build, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build]
+    needs: [pr-template-check, pr-readiness, changes, targeted-shards, ci-router-validation, build, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build]
     runs-on: ubuntu-latest
     steps:
       - name: Check required job results

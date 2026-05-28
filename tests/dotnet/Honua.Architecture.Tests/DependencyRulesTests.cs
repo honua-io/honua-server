@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Postgres;
 using Honua.Server;
 using Microsoft.AspNetCore.Mvc;
@@ -20,7 +19,7 @@ public sealed class DependencyRulesTests
     [ArchitectureTest]
     public void Core_ShouldNotDependOn_ServerOrPostgres()
     {
-        var coreAssembly = typeof(LayerDefinition).Assembly;
+        var coreAssembly = typeof(Honua.Core.Features.Metadata.Domain.V2.MetadataV2Resource).Assembly;
 
         var result = Types.InAssembly(coreAssembly)
             .ShouldNot()

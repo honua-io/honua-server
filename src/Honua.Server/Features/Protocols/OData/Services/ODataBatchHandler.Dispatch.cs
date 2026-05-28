@@ -3,8 +3,8 @@
 
 using System.Globalization;
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -346,153 +346,102 @@ internal sealed partial class ODataBatchHandler
         return JsonSerializer.Deserialize(element, ODataJsonContext.Default.ODataFeatureRequest) ?? new ODataFeatureRequest();
     }
 
-    private async Task<ODataBatchResponseItem> HandleGetAsync(
-        string requestId,
-        LayerDefinition layer,
-        long? objectId,
-        string requestUrl,
-        ODataPathTailKind tailKind,
-        string baseUrl,
-        CancellationToken cancellationToken)
-    {
-        if (!objectId.HasValue)
-        {
-            if (tailKind != ODataPathTailKind.None)
-            {
-                return CreateErrorResponse(requestId, 400, "InvalidRequest", "$ref and $value require an entity key.");
-            }
-
-            if (!TryParseCollectionQueryOptions(
-                requestUrl,
-                out var top,
-                out var skip,
-                out var count,
-                out var select,
-                out var parseError))
-            {
-                return CreateErrorResponse(requestId, 400, "InvalidRequest", parseError ?? "Invalid collection query options.");
-            }
-
-            var effectiveTop = top ?? DefaultBatchCollectionTop;
-            var effectiveSkip = skip ?? 0;
-            var query = new FeatureQuery
-            {
-                Limit = effectiveTop,
-                Offset = effectiveSkip,
-                SpatialReferenceSrid = layer.SpatialReference.ToSrid()
-            };
-
-            var queryResult = await _featureReader.QueryAsync(layer.Id, query, cancellationToken);
-            var collectionAxisOrder = await ResolveAxisOrderAsync(layer, cancellationToken);
-            var values = queryResult.Items.Select(feature =>
-            {
-                var payload = FeatureToBody(feature, layer, collectionAxisOrder, baseUrl, out _);
-                if (!string.IsNullOrWhiteSpace(select))
-                {
-                    payload = ODataUtilityService.ApplySelect(payload, select);
-                }
-
-                return (object)payload;
-            }).ToArray();
-
-            var response = new ODataResponse
-            {
-                Context = ODataUtilityService.BuildContextUrl(baseUrl, "Features", select: select),
-                Count = count == true ? queryResult.TotalCount : null,
-                Value = values,
-                NextLink = null
-            };
-
-            return CreateSuccessResponse(requestId, 200, response);
-        }
-
-        var feature = await _featureReader.GetAsync(layer.Id, objectId.Value, cancellationToken);
-        if (!feature.HasValue)
-        {
-            return CreateErrorResponse(requestId, 404, "ResourceNotFound", $"Feature {objectId} not found in layer {layer.Id}.");
-        }
-
-        var axisOrder = await ResolveAxisOrderAsync(layer, cancellationToken);
-        var payload = FeatureToBody(feature.Value, layer, axisOrder, baseUrl, out var etag);
-
-        return tailKind switch
-        {
-            ODataPathTailKind.None => CreateSuccessResponse(
-                requestId,
-                200,
-                payload,
-                new Dictionary<string, string> { ["ETag"] = etag }),
-            ODataPathTailKind.Ref => CreateSuccessResponse(
-                requestId,
-                200,
-                new Dictionary<string, object?>
-                {
-                    ["@odata.id"] = ODataUtilityService.CreateLocationHeader(baseUrl, layer.Id, objectId.Value),
-                    ["@odata.editLink"] = ODataUtilityService.CreateLocationHeader(baseUrl, layer.Id, objectId.Value)
-                }),
-            ODataPathTailKind.Value => CreateSuccessResponse(
-                requestId,
-                200,
-                payload,
-                new Dictionary<string, string> { ["ETag"] = etag }),
-            _ => CreateErrorResponse(requestId, 400, "InvalidRequest", $"Unsupported path segment '{tailKind}'.")
-        };
-    }
-
-    private static async Task<ODataBatchResponseItem?> ValidateBatchRequestAccessAsync(
+    private static async Task<(ODataBatchLayerContext? Layer, ODataBatchResponseItem? Error)> ResolveBatchLayerContextAsync(
         HttpContext context,
         string requestId,
-        LayerDefinition layer,
-        ServiceDefinition? service,
+        int layerId,
         string method,
         CancellationToken cancellationToken)
     {
         var scope = IsMutationMethod(method) ? AccessScope.Write : AccessScope.Read;
-        var decision = AccessPolicyHelpers.EvaluateAccess(
+        var validation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
             context,
-            layer.Metadata?.AccessPolicy,
-            service?.Metadata?.AccessPolicy,
-            scope);
-        if (!decision.IsAllowed)
+            layerId,
+            LayerValidationHelpers.ValidationProtocol.OData,
+            scope,
+            ODataProtocol,
+            cancellationToken).ConfigureAwait(false);
+        if (!validation.IsValid || validation.Resource is null)
         {
-            var statusCode = decision.RequiresAuthentication
-                ? StatusCodes.Status401Unauthorized
-                : StatusCodes.Status403Forbidden;
-
-            return CreateErrorResponse(
+            return (null, CreateErrorResponseFromResult(
                 requestId,
-                statusCode,
-                decision.RequiresAuthentication ? "Unauthorized" : "Forbidden",
-                decision.FailureReason
-                    ?? (decision.RequiresAuthentication
-                        ? "Authentication is required to access one or more requested layers."
-                        : "Access to one or more requested layers is forbidden."));
+                validation.ErrorResult,
+                StatusCodes.Status404NotFound,
+                "ResourceNotFound",
+                $"Layer {layerId} not found."));
         }
 
         if (scope == AccessScope.Write)
         {
-            var rbacResult = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
+            var rbacResult = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
                 context,
-                layer,
-                service,
-                cancellationToken);
+                validation.Resource,
+                validation.Service,
+                cancellationToken).ConfigureAwait(false);
             if (rbacResult != null)
             {
-                var statusCode = rbacResult is IStatusCodeHttpResult statusCodeResult && statusCodeResult.StatusCode.HasValue
-                    ? statusCodeResult.StatusCode.Value
-                    : StatusCodes.Status403Forbidden;
-
-                return CreateErrorResponse(
+                return (null, CreateErrorResponseFromResult(
                     requestId,
-                    statusCode,
-                    statusCode == StatusCodes.Status401Unauthorized ? "Unauthorized" : "Forbidden",
-                    statusCode == StatusCodes.Status401Unauthorized
-                        ? "Authentication is required to access one or more requested layers."
-                        : "Access to one or more requested layers is forbidden.");
+                    rbacResult,
+                    StatusCodes.Status403Forbidden,
+                    "Forbidden",
+                    "Access to one or more requested layers is forbidden."));
             }
         }
 
-        return null;
+        var storageLayerId = await ODataV2Lookups.ResolveStorageLayerIdAsync(
+            context,
+            validation.Publication,
+            validation.Resource,
+            cancellationToken).ConfigureAwait(false);
+        if (!storageLayerId.HasValue)
+        {
+            return (null, CreateErrorResponse(
+                requestId,
+                StatusCodes.Status404NotFound,
+                "ResourceNotFound",
+                $"Layer {layerId} not found."));
+        }
+
+        var srid = validation.Resource.ReadSrid() ?? 4326;
+        return (new ODataBatchLayerContext(
+            layerId,
+            storageLayerId.Value,
+            srid,
+            validation.Publication,
+            validation.Resource,
+            validation.Service), null);
+    }
+
+    private static ODataBatchResponseItem CreateErrorResponseFromResult(
+        string requestId,
+        IResult? result,
+        int fallbackStatus,
+        string fallbackCode,
+        string fallbackMessage)
+    {
+        var statusCode = result is IStatusCodeHttpResult statusCodeResult && statusCodeResult.StatusCode.HasValue
+            ? statusCodeResult.StatusCode.Value
+            : fallbackStatus;
+
+        return CreateErrorResponse(
+            requestId,
+            statusCode,
+            statusCode switch
+            {
+                StatusCodes.Status400BadRequest => "InvalidRequest",
+                StatusCodes.Status401Unauthorized => "Unauthorized",
+                StatusCodes.Status403Forbidden => "Forbidden",
+                StatusCodes.Status404NotFound => "ResourceNotFound",
+                StatusCodes.Status412PreconditionFailed => "PreconditionFailed",
+                _ => fallbackCode
+            },
+            statusCode switch
+            {
+                StatusCodes.Status401Unauthorized => "Authentication is required to access one or more requested layers.",
+                StatusCodes.Status403Forbidden => "Access to one or more requested layers is forbidden.",
+                _ => fallbackMessage
+            });
     }
 
     private static bool IsMutationMethod(string? method)
@@ -502,15 +451,6 @@ internal sealed partial class ODataBatchHandler
                 method.Equals("PATCH", StringComparison.OrdinalIgnoreCase) ||
                 method.Equals("DELETE", StringComparison.OrdinalIgnoreCase) ||
                 method.Equals("PUT", StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static bool IsODataEnabled(
-        LayerDefinition layer,
-        ServiceDefinition? service)
-    {
-        return service == null
-            ? ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.OData)
-            : ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.OData);
     }
 
     private static ODataParsedPath ParseUrl(string url)

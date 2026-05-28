@@ -4,18 +4,18 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
-using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Core.Features.Shared.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
+using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
@@ -363,8 +363,31 @@ public class ImageServerBasicTests : IAsyncLifetime
         var fixture = new WebAppFixture()
             .ConfigureServices(services =>
             {
-                services.RemoveAll<ILayerCatalog>();
-                services.AddSingleton<ILayerCatalog>(new NumericLeadingImageServiceCatalog());
+                var graphProvider = new TestMetadataV2GraphBuilder()
+                    .AddResource("res-2024-imagery", "Imagery", MetadataV2ResourceType.RasterDataset)
+                    .AddStorageBinding(
+                        "binding-2024-imagery",
+                        "res-2024-imagery",
+                        "rasters:0",
+                        storageLayerId: 0)
+                    .AddService(
+                        "svc-2024-imagery",
+                        "2024Imagery",
+                        protocols: [MetadataV2ServiceProtocols.ImageServer])
+                    .AddPublication(
+                        "pub-2024-imagery",
+                        "svc-2024-imagery",
+                        "res-2024-imagery",
+                        layerIndex: 0,
+                        serviceLocalId: "Imagery",
+                        publicationType: MetadataV2PublicationType.EsriImageLayer)
+                    .BuildProvider();
+
+                services.RemoveAll<IMetadataV2GraphProvider>();
+                services.RemoveAll<IMetadataV2GraphStore>();
+                services.AddSingleton(graphProvider);
+                services.AddSingleton<IMetadataV2GraphProvider>(graphProvider);
+                services.AddSingleton<IMetadataV2GraphStore>(graphProvider);
             });
         await fixture.InitializeAsync();
 
@@ -397,43 +420,4 @@ public class ImageServerBasicTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    private sealed class NumericLeadingImageServiceCatalog : ILayerCatalog
-    {
-        private const string ServiceName = "2024Imagery";
-        private static readonly SpatialReference SpatialReference = SpatialReference.Create(4326);
-        private static readonly FeatureExtent Extent = FeatureExtent.Create(-180, -90, 180, 90, 4326);
-        private static readonly LayerDefinition Layer = LayerDefinition.CreateBasic(0, "Imagery", GeometryType.Point);
-        private static readonly ServiceDefinition Service = new(
-            ServiceName,
-            "Numeric-leading image service",
-            [Layer],
-            SpatialReference,
-            ["JSON"],
-            ["Image"],
-            Extent);
-
-        public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(layerId == Layer.Id ? Layer : null);
-
-        public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(new[] { Layer });
-
-        public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult(string.Equals(serviceName, ServiceName, StringComparison.OrdinalIgnoreCase) ? Service : null);
-
-        public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(new[] { Service });
-
-        public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(layerId == Layer.Id);
-
-        public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult(string.Equals(serviceName, ServiceName, StringComparison.OrdinalIgnoreCase));
-
-        public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
-            => Task.FromResult<Relationship?>(null);
-
-        public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(Array.Empty<Relationship>());
-    }
 }

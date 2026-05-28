@@ -5,7 +5,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.TestKit;
@@ -46,13 +46,24 @@ public sealed class LayerFieldConfigurationEndpointsTests : IAsyncLifetime
                 {
                     Name = "category",
                     Alias = "Lifecycle category",
-                    Domain = new FieldDomainDefinition(
-                        "category-domain",
-                        "codedValue",
+                    Domain = new MetadataV2FieldDomain
+                    {
+                        Name = "category-domain",
+                        Type = "codedValue",
+                        CodedValues =
                         [
-                            new DomainCodedValueDefinition("active", "Active"),
-                            new DomainCodedValueDefinition("retired", "Retired")
-                        ])
+                            new MetadataV2CodedValue
+                            {
+                                Code = JsonSerializer.SerializeToElement("active"),
+                                Name = "Active"
+                            },
+                            new MetadataV2CodedValue
+                            {
+                                Code = JsonSerializer.SerializeToElement("retired"),
+                                Name = "Retired"
+                            }
+                        ]
+                    }
                 },
                 new LayerFieldConfigurationUpdateItem
                 {
@@ -102,7 +113,7 @@ public sealed class LayerFieldConfigurationEndpointsTests : IAsyncLifetime
             getResponse.Be200Ok();
             var get = await ReadFieldConfigurationResponseAsync(getResponse);
             get.Data!.Fields.Single(field => field.Name == "category").Alias.Should().Be("Lifecycle category");
-            get.Data!.Fields.Single(field => field.Name == "category").Domain!.CodedValues![0].Name.Should().Be("Active");
+            get.Data!.Fields.Single(field => field.Name == "category").Domain!.CodedValues[0].Name.Should().Be("Active");
             get.Data!.Fields.Single(field => field.Name == "description").Hidden.Should().BeTrue();
 
             var featureLayerResponse = await anonymousClient.GetAsync(

@@ -10,6 +10,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Npgsql;
 using SkiaSharp;
+using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
@@ -69,7 +70,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         // V2 cutover (#1035 72/N): protocol gating reads MetadataV2Service.Protocols.
         _fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
-            enabledProtocols: [ServiceProtocols.Wms]);
+            enabledProtocols: [MetadataV2ServiceProtocols.Wms]);
 
         var response = await _fixture.Client.GetAsync(
             $"/ogc/services/{WebAppFixture.TestServiceId}/wms?SERVICE=WMS&REQUEST=GetCapabilities");

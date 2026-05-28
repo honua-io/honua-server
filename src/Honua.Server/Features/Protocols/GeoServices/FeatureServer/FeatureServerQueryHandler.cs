@@ -9,10 +9,11 @@ using System.Text.Json.Serialization.Metadata;
 using System.Text.RegularExpressions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation;
@@ -57,8 +58,17 @@ internal sealed class FeatureServerQueryHandler(
     private readonly CacheOptions _cacheOptions = dependencies.CacheOptions;
     private readonly ILogger<FeatureServerQueryHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private const int StreamingThreshold = 1000;
+    private const string FeatureServerProtocol = "FeatureServer";
+    private const string MapServerProtocol = "MapServer";
     private const string InvalidTimeParameterMessage = "Invalid time parameter.";
     private const string InvalidOutStatisticsJsonMessage = "outStatistics must be a valid JSON array.";
+
+    private sealed record QueryLayerContext(
+        MetadataV2Service Service,
+        MetadataV2Publication Publication,
+        MetadataV2Resource Resource,
+        int PublicLayerId,
+        int StorageLayerId);
 
     /// <summary>
     /// Executes a feature query operation with proper validation and formatting.
@@ -126,6 +136,56 @@ internal sealed class FeatureServerQueryHandler(
             cancellationToken)
             .ConfigureAwait(false);
 
+    private async Task<(QueryLayerContext? Layer, IResult? Error)> ResolveQueryLayerContextV2Async(
+        string serviceId,
+        int layerId,
+        HttpContext context,
+        string? requiredProtocol,
+        CancellationToken cancellationToken)
+    {
+        var resourceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerV2Async(
+            _resourceValidator,
+            serviceId,
+            layerId,
+            context,
+            _logger,
+            requiredProtocol ?? FeatureServerProtocol,
+            cancellationToken).ConfigureAwait(false);
+        if (!resourceValidationResult.IsValid)
+        {
+            return (null, resourceValidationResult.ErrorResult!);
+        }
+
+        var service = resourceValidationResult.Service!;
+        var publication = resourceValidationResult.Publication!;
+        var resource = resourceValidationResult.Resource!;
+
+        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+        if (accessError != null)
+        {
+            return (null, accessError);
+        }
+
+        var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var storageLayerId = snapshot.ResolveStorageLayerId(publication)
+            ?? snapshot.ResolveStorageLayerId(resource)
+            ?? publication.LayerIndex;
+        if (!storageLayerId.HasValue)
+        {
+            return (null, StandardErrorHelpers.CreateNotFound(
+                context,
+                $"Layer {layerId} is not bound to feature storage."));
+        }
+
+        return (new QueryLayerContext(
+            service,
+            publication,
+            resource,
+            publication.LayerIndex ?? layerId,
+            storageLayerId.Value), null);
+    }
+
     public async Task<(QueryResponse? Response, IResult? Error)> HandleServiceQueryLayerAsync(
         string serviceId,
         int layerId,
@@ -145,32 +205,23 @@ internal sealed class FeatureServerQueryHandler(
                 layerId,
                 hasWhereClause);
 
-            var resourceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
-                _resourceValidator,
+            var (layerContext, validationError) = await ResolveQueryLayerContextV2Async(
                 serviceId,
                 layerId,
                 context,
-                _logger,
-                requiredProtocol ?? ServiceProtocols.FeatureServer,
+                requiredProtocol,
                 cancellationToken).ConfigureAwait(false);
-            if (!resourceValidationResult.IsValid)
+            if (validationError != null)
             {
-                return (null, resourceValidationResult.ErrorResult!);
+                return (null, validationError);
             }
 
-            ServiceDefinition service = resourceValidationResult.Service!;
-            LayerDefinition layer = resourceValidationResult.Layer!;
+            var queryLayer = layerContext!;
             var telemetryProtocol = ResolveTelemetryProtocol(requiredProtocol);
             var requestActivity = Activity.Current;
             requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, telemetryProtocol);
             requestActivity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
             requestActivity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId.ToString(CultureInfo.InvariantCulture));
-
-            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
-            if (accessError != null)
-            {
-                return (null, accessError);
-            }
 
             featureActivity = HonuaTelemetry.StartFeatureActivity(
                 "query",
@@ -221,7 +272,7 @@ internal sealed class FeatureServerQueryHandler(
 
             var (query, outputSrid, preparationError) = await PrepareFeatureQueryAsync(
                 context,
-                layer,
+                queryLayer.Resource,
                 validatedParams,
                 queryLimits,
                 "json",
@@ -239,8 +290,7 @@ internal sealed class FeatureServerQueryHandler(
             var response = await ExecuteJsonQueryResponseAsync(
                 serviceId,
                 layerId,
-                service,
-                layer,
+                queryLayer,
                 validatedParams,
                 query.Value,
                 outputSrid,
@@ -303,32 +353,23 @@ internal sealed class FeatureServerQueryHandler(
                 layerId,
                 hasWhereClause);
 
-            var resourceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
-                _resourceValidator,
+            var (layerContext, validationError) = await ResolveQueryLayerContextV2Async(
                 serviceId,
                 layerId,
                 context,
-                _logger,
-                requiredProtocol ?? ServiceProtocols.FeatureServer,
-                cancellationToken);
-            if (!resourceValidationResult.IsValid)
+                requiredProtocol,
+                cancellationToken).ConfigureAwait(false);
+            if (validationError != null)
             {
-                return resourceValidationResult.ErrorResult!;
+                return validationError;
             }
 
-            ServiceDefinition service = resourceValidationResult.Service!;
-            LayerDefinition layer = resourceValidationResult.Layer!;
+            var queryLayer = layerContext!;
             var telemetryProtocol = ResolveTelemetryProtocol(requiredProtocol);
             var requestActivity = Activity.Current;
             requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, telemetryProtocol);
             requestActivity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
             requestActivity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId.ToString(CultureInfo.InvariantCulture));
-
-            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
-            if (accessError != null)
-            {
-                return accessError;
-            }
 
             featureActivity = HonuaTelemetry.StartFeatureActivity(
                 "query",
@@ -468,7 +509,7 @@ internal sealed class FeatureServerQueryHandler(
 
             var (preparedQuery, outputSrid, preparationError) = await PrepareFeatureQueryAsync(
                 context,
-                layer,
+                queryLayer.Resource,
                 validatedParams,
                 queryLimits,
                 format,
@@ -492,7 +533,7 @@ internal sealed class FeatureServerQueryHandler(
             // Handle statistics queries (outStatistics)
             if (!string.IsNullOrWhiteSpace(validatedParams.OutStatistics))
             {
-                if (!TryParseStatisticsDefinitions(validatedParams.OutStatistics, layer, out var statisticsDefs, out var statsError))
+                if (!TryParseStatisticsDefinitions(validatedParams.OutStatistics, queryLayer.Resource, out var statisticsDefs, out var statsError))
                 {
                     return StandardErrorHelpers.CreateBadRequest(context,
                         "Invalid outStatistics",
@@ -533,7 +574,13 @@ internal sealed class FeatureServerQueryHandler(
                 }
 
                 var stopwatch = Stopwatch.StartNew();
-                var statisticsRows = await _queryExecutor.QueryStatisticsAsync(service, layer, statisticsQuery, cancellationToken);
+                var statisticsRows = await _queryExecutor.QueryStatisticsAsync(
+                    queryLayer.Service,
+                    queryLayer.Resource,
+                    queryLayer.Publication,
+                    queryLayer.StorageLayerId,
+                    statisticsQuery,
+                    cancellationToken).ConfigureAwait(false);
                 stopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "statistics", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
 
@@ -548,7 +595,7 @@ internal sealed class FeatureServerQueryHandler(
                 return await CreateCachedResultAsync(statisticsResponse, FeatureServerJsonContext.Default.QueryResponse, "application/json");
             }
 
-            var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
+            var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(queryLayer.Resource);
 
             if (validatedParams.ReturnCountOnly)
             {
@@ -559,7 +606,13 @@ internal sealed class FeatureServerQueryHandler(
                 }
 
                 var stopwatch = Stopwatch.StartNew();
-                var count = await _queryExecutor.CountAsync(service, layer, query, cancellationToken);
+                var count = await _queryExecutor.CountAsync(
+                    queryLayer.Service,
+                    queryLayer.Resource,
+                    queryLayer.Publication,
+                    queryLayer.StorageLayerId,
+                    query,
+                    cancellationToken).ConfigureAwait(false);
                 stopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "count", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
                 var safeCount = (int)Math.Min(count, int.MaxValue);
@@ -582,10 +635,16 @@ internal sealed class FeatureServerQueryHandler(
                 }
 
                 var stopwatch = Stopwatch.StartNew();
-                var extent = await _queryExecutor.GetExtentAsync(service, layer, query, cancellationToken);
+                var extent = await _queryExecutor.GetExtentAsync(
+                    queryLayer.Service,
+                    queryLayer.Resource,
+                    queryLayer.Publication,
+                    queryLayer.StorageLayerId,
+                    query,
+                    cancellationToken).ConfigureAwait(false);
                 stopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "extent", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
-                extent ??= await ResolveExtentFallbackAsync(context, validatedParams, layer, outputSrid, cancellationToken);
+                extent ??= await ResolveExtentFallbackAsync(context, validatedParams, queryLayer.Resource, outputSrid, cancellationToken);
                 HonuaTelemetry.SetSuccess(featureActivity);
                 var response = new QueryResponse
                 {
@@ -603,8 +662,10 @@ internal sealed class FeatureServerQueryHandler(
                 if (idsUseStreaming)
                 {
                     await _queryExecutor.StreamIdsAsync(
-                        service,
-                        layer,
+                        queryLayer.Service,
+                        queryLayer.Resource,
+                        queryLayer.Publication,
+                        queryLayer.StorageLayerId,
                         query,
                         objectIdFieldName,
                         context,
@@ -619,7 +680,13 @@ internal sealed class FeatureServerQueryHandler(
                 }
 
                 var stopwatch = Stopwatch.StartNew();
-                QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(service, layer, query, cancellationToken);
+                QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(
+                    queryLayer.Service,
+                    queryLayer.Resource,
+                    queryLayer.Publication,
+                    queryLayer.StorageLayerId,
+                    query,
+                    cancellationToken).ConfigureAwait(false);
                 stopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "ids", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
 
@@ -664,7 +731,12 @@ internal sealed class FeatureServerQueryHandler(
                             ["returnDistinctValues is not supported when f=fgb."]);
                     }
 
-                    if (!await _queryExecutor.SupportsFlatGeobufOutputAsync(service, layer, cancellationToken))
+                    if (!await _queryExecutor.SupportsFlatGeobufOutputAsync(
+                            queryLayer.Service,
+                            queryLayer.Resource,
+                            queryLayer.Publication,
+                            queryLayer.StorageLayerId,
+                            cancellationToken).ConfigureAwait(false))
                     {
                         return StandardErrorHelpers.CreateBadRequest(
                             context,
@@ -673,7 +745,13 @@ internal sealed class FeatureServerQueryHandler(
                     }
 
                     var fgbStopwatch = Stopwatch.StartNew();
-                    var flatGeobufPayload = await _queryExecutor.QueryFlatGeobufWithValidationAsync(service, layer, query, cancellationToken);
+                    var flatGeobufPayload = await _queryExecutor.QueryFlatGeobufWithValidationAsync(
+                        queryLayer.Service,
+                        queryLayer.Resource,
+                        queryLayer.Publication,
+                        queryLayer.StorageLayerId,
+                        query,
+                        cancellationToken).ConfigureAwait(false);
                     fgbStopwatch.Stop();
                     FeatureServerLog.QueryExecuted(_logger, "query_fgb", serviceId, layerId, fgbStopwatch.Elapsed.TotalMilliseconds);
 
@@ -694,7 +772,12 @@ internal sealed class FeatureServerQueryHandler(
                             ["returnDistinctValues is not supported when f=geobuf."]);
                     }
 
-                    if (!await _queryExecutor.SupportsGeobufOutputAsync(service, layer, cancellationToken))
+                    if (!await _queryExecutor.SupportsGeobufOutputAsync(
+                            queryLayer.Service,
+                            queryLayer.Resource,
+                            queryLayer.Publication,
+                            queryLayer.StorageLayerId,
+                            cancellationToken).ConfigureAwait(false))
                     {
                         return StandardErrorHelpers.CreateBadRequest(
                             context,
@@ -703,7 +786,13 @@ internal sealed class FeatureServerQueryHandler(
                     }
 
                     var geobufStopwatch = Stopwatch.StartNew();
-                    var geobufPayload = await _queryExecutor.QueryGeobufWithValidationAsync(service, layer, query, cancellationToken);
+                    var geobufPayload = await _queryExecutor.QueryGeobufWithValidationAsync(
+                        queryLayer.Service,
+                        queryLayer.Resource,
+                        queryLayer.Publication,
+                        queryLayer.StorageLayerId,
+                        query,
+                        cancellationToken).ConfigureAwait(false);
                     geobufStopwatch.Stop();
                     FeatureServerLog.QueryExecuted(_logger, "query_geobuf", serviceId, layerId, geobufStopwatch.Elapsed.TotalMilliseconds);
 
@@ -731,13 +820,20 @@ internal sealed class FeatureServerQueryHandler(
                     outFields = parsed.Length == 0 ? null : parsed;
                 }
                 var shouldApplyDistinct = validatedParams.ReturnDistinctValues && outFields is { Length: > 0 };
-                if (CanUseRawGeoServicesPointFastPath(layer, validatedParams, query, outputSrid, format) &&
-                    await _queryExecutor.SupportsRawGeoServicesPointOutputAsync(service, layer, cancellationToken))
+                if (CanUseRawGeoServicesPointFastPath(queryLayer.Resource, validatedParams, query, outputSrid, format) &&
+                    await _queryExecutor.SupportsRawGeoServicesPointOutputAsync(
+                        queryLayer.Service,
+                        queryLayer.Resource,
+                        queryLayer.Publication,
+                        queryLayer.StorageLayerId,
+                        cancellationToken).ConfigureAwait(false))
                 {
                     var rawStopwatch = Stopwatch.StartNew();
                     var (payload, featureCount) = await _queryExecutor.QueryRawGeoServicesPointJsonWithValidationAsync(
-                        service,
-                        layer,
+                        queryLayer.Service,
+                        queryLayer.Resource,
+                        queryLayer.Publication,
+                        queryLayer.StorageLayerId,
                         query,
                         validatedParams.ReturnGeometry,
                         outputSrid,
@@ -754,7 +850,13 @@ internal sealed class FeatureServerQueryHandler(
                     ? query with { Limit = null, Offset = null }
                     : query;
                 var queryStopwatch = Stopwatch.StartNew();
-                QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(service, layer, queryForExecution, cancellationToken);
+                QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(
+                    queryLayer.Service,
+                    queryLayer.Resource,
+                    queryLayer.Publication,
+                    queryLayer.StorageLayerId,
+                    queryForExecution,
+                    cancellationToken).ConfigureAwait(false);
                 queryStopwatch.Stop();
                 var queryOperation = isParquet ? "query_parquet" : isArrow ? "query_arrow" : "query";
                 FeatureServerLog.QueryExecuted(_logger, queryOperation, serviceId, layerId, queryStopwatch.Elapsed.TotalMilliseconds);
@@ -767,7 +869,7 @@ internal sealed class FeatureServerQueryHandler(
 
                 (object? formattedResponse, string? contentType) = await _queryServices.FormatQueryResultAsync(
                     result,
-                    layer,
+                    queryLayer.Resource,
                     format,
                     validatedParams.ReturnGeometry,
                     outputSrid,
@@ -815,8 +917,10 @@ internal sealed class FeatureServerQueryHandler(
             }
 
             await _queryExecutor.StreamQueryAsync(
-                service,
-                layer,
+                queryLayer.Service,
+                queryLayer.Resource,
+                queryLayer.Publication,
+                queryLayer.StorageLayerId,
                 query,
                 validatedParams,
                 outputSrid,
@@ -893,7 +997,7 @@ internal sealed class FeatureServerQueryHandler(
                 return _streamingResult;
             }
 
-            return StandardErrorHelpers.CreateInternalServerError(context, "Query execution failed");
+            return StandardErrorHelpers.CreateInternalServerError(context, "DIAG2: " + ex.GetType().Name + ": " + ex.Message + " || " + (ex.StackTrace ?? ""));
         }
         finally
         {
@@ -902,7 +1006,7 @@ internal sealed class FeatureServerQueryHandler(
     }
 
     private static bool CanUseRawGeoServicesPointFastPath(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         QueryParameters parameters,
         FeatureQuery query,
         int? outputSrid,
@@ -913,7 +1017,7 @@ internal sealed class FeatureServerQueryHandler(
             return false;
         }
 
-        if (!layer.HasGeometry || layer.GeometryType != GeometryType.Point)
+        if (resource.ReadGeometryType() != MetadataV2GeometryType.Point)
         {
             return false;
         }
@@ -943,7 +1047,7 @@ internal sealed class FeatureServerQueryHandler(
             return false;
         }
 
-        var layerSrid = layer.SpatialReference.ToSrid();
+        var layerSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         if (outputSrid.HasValue && outputSrid.Value != layerSrid)
         {
             return false;
@@ -963,7 +1067,7 @@ internal sealed class FeatureServerQueryHandler(
 
     private async Task<(FeatureQuery? Query, int? OutputSrid, IResult? Error)> PrepareFeatureQueryAsync(
         HttpContext context,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         QueryParameters validatedParams,
         QueryLimits queryLimits,
         string format,
@@ -987,12 +1091,12 @@ internal sealed class FeatureServerQueryHandler(
 
         if (parsedGeometry != null && !inputSrid.HasValue)
         {
-            inputSrid = layer.SpatialReference.ToSrid();
+            inputSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         }
 
         if (parsedGeometry != null && inputSrid.HasValue)
         {
-            var queryGeometrySpatialReference = ResolveAreaLimitSpatialReference(layer, parsedGeometry, inputSrid.Value);
+            var queryGeometrySpatialReference = ResolveAreaLimitSpatialReference(resource, parsedGeometry, inputSrid.Value);
 
             var geometryValidationResult = ValidateGeometryCoordinates(parsedGeometry, queryGeometrySpatialReference);
             if (!geometryValidationResult.IsValid)
@@ -1046,7 +1150,7 @@ internal sealed class FeatureServerQueryHandler(
             && !validatedParams.ReturnExtentOnly
             && !validatedParams.ReturnIdsOnly
             && validatedParams.ReturnGeometry
-            && layer.HasGeometry
+            && resource.ReadGeometryType() != MetadataV2GeometryType.None
             && string.IsNullOrWhiteSpace(validatedParams.OutStatistics);
         if (requiresCloudNativeGeometry)
         {
@@ -1103,7 +1207,7 @@ internal sealed class FeatureServerQueryHandler(
                 temporalExpression = GeoServicesTemporalQueryBuilder.BuildTemporalExpression(
                     validatedParams.Time,
                     validatedParams.TimeRelation,
-                    layer);
+                    resource);
             }
             catch (ArgumentException)
             {
@@ -1122,10 +1226,10 @@ internal sealed class FeatureServerQueryHandler(
             filterExpression ??= temporalExpression;
         }
 
-        var useObjectIdsFastPath = ShouldUseInternalObjectIdsFastPath(layer);
+        var useObjectIdsFastPath = ShouldUseInternalObjectIdsFastPath(resource);
         if (!useObjectIdsFastPath &&
             validatedParams.ObjectIds is { Length: > 0 } objectIds &&
-            TryCreateObjectIdsExpression(layer, objectIds, out var objectIdsExpression))
+            TryCreateObjectIdsExpression(resource, objectIds, out var objectIdsExpression))
         {
             filterExpression = filterExpression is null
                 ? objectIdsExpression
@@ -1135,7 +1239,7 @@ internal sealed class FeatureServerQueryHandler(
         SqlFragment? sqlFilter = null;
         if (filterExpression != null)
         {
-            var translationResult = _filterExpressionService.Translate(filterExpression, layer);
+            var translationResult = _filterExpressionService.Translate(filterExpression, resource);
             if (!translationResult.IsSuccess)
             {
                 return (null, null, StandardErrorHelpers.CreateBadRequest(context,
@@ -1157,7 +1261,7 @@ internal sealed class FeatureServerQueryHandler(
                 SqlFilter = sqlFilter,
                 UseObjectIdsFastPath = useObjectIdsFastPath
             },
-            layer,
+            resource,
             cancellationToken).ConfigureAwait(false);
         if (!queryAdapterResult.IsSuccess || queryAdapterResult.Query == null)
         {
@@ -1166,8 +1270,8 @@ internal sealed class FeatureServerQueryHandler(
                 [queryAdapterResult.ErrorMessage ?? "Invalid query parameters."]));
         }
 
-        var unifiedQuery = _queryProcessor.OptimizeQuery(queryAdapterResult.Query.Value, layer);
-        var unifiedQueryValidation = _queryProcessor.ValidateQuery(unifiedQuery, layer);
+        var unifiedQuery = _queryProcessor.OptimizeQuery(queryAdapterResult.Query.Value, resource);
+        var unifiedQueryValidation = _queryProcessor.ValidateQuery(unifiedQuery, resource);
         if (!unifiedQueryValidation.IsValid)
         {
             return (null, null, StandardErrorHelpers.CreateBadRequest(context,
@@ -1175,26 +1279,26 @@ internal sealed class FeatureServerQueryHandler(
                 [unifiedQueryValidation.ErrorMessage ?? "Invalid query parameters."]));
         }
 
-        var query = _queryProcessor.ToFeatureQuery(unifiedQuery, layer) with
+        var query = _queryProcessor.ToFeatureQuery(unifiedQuery, resource) with
         {
             Where = validatedParams.Where,
-            PublicIdAttributeName = GeoServicesObjectIdFieldResolver.ResolveObjectIdAttributeName(layer)
+            PublicIdAttributeName = GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource)?.Name
         };
         return (query, outputSrid, null);
     }
 
-    private static bool ShouldUseInternalObjectIdsFastPath(LayerDefinition layer)
-        => GeoServicesObjectIdFieldResolver.ResolveObjectIdField(layer)?.Name.Equals(
+    private static bool ShouldUseInternalObjectIdsFastPath(MetadataV2Resource resource)
+        => GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource)?.Name.Equals(
             FieldNames.ObjectId,
             StringComparison.OrdinalIgnoreCase) != false;
 
     private static bool TryCreateObjectIdsExpression(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         IReadOnlyCollection<long> objectIds,
         out FilterExpression expression)
     {
         expression = null!;
-        var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdField(layer);
+        var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource);
         if (objectIdField is null)
         {
             return false;
@@ -1247,8 +1351,7 @@ internal sealed class FeatureServerQueryHandler(
     private async Task<QueryResponse> ExecuteJsonQueryResponseAsync(
         string serviceId,
         int layerId,
-        ServiceDefinition service,
-        LayerDefinition layer,
+        QueryLayerContext queryLayer,
         QueryParameters validatedParams,
         FeatureQuery query,
         int? outputSrid,
@@ -1257,7 +1360,7 @@ internal sealed class FeatureServerQueryHandler(
     {
         if (!string.IsNullOrWhiteSpace(validatedParams.OutStatistics))
         {
-            if (!TryParseStatisticsDefinitions(validatedParams.OutStatistics, layer, out var statisticsDefs, out var statsError))
+            if (!TryParseStatisticsDefinitions(validatedParams.OutStatistics, queryLayer.Resource, out var statisticsDefs, out var statsError))
             {
                 throw new ArgumentException(statsError ?? InvalidOutStatisticsJsonMessage);
             }
@@ -1288,7 +1391,13 @@ internal sealed class FeatureServerQueryHandler(
             };
 
             var stopwatch = Stopwatch.StartNew();
-            var statisticsRows = await _queryExecutor.QueryStatisticsAsync(service, layer, statisticsQuery, cancellationToken).ConfigureAwait(false);
+            var statisticsRows = await _queryExecutor.QueryStatisticsAsync(
+                queryLayer.Service,
+                queryLayer.Resource,
+                queryLayer.Publication,
+                queryLayer.StorageLayerId,
+                statisticsQuery,
+                cancellationToken).ConfigureAwait(false);
             stopwatch.Stop();
             FeatureServerLog.QueryExecuted(_logger, "statistics", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
 
@@ -1301,12 +1410,18 @@ internal sealed class FeatureServerQueryHandler(
             return new QueryResponse { Features = statisticsFeatures };
         }
 
-        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(queryLayer.Resource);
 
         if (validatedParams.ReturnCountOnly)
         {
             var stopwatch = Stopwatch.StartNew();
-            var count = await _queryExecutor.CountAsync(service, layer, query, cancellationToken).ConfigureAwait(false);
+            var count = await _queryExecutor.CountAsync(
+                queryLayer.Service,
+                queryLayer.Resource,
+                queryLayer.Publication,
+                queryLayer.StorageLayerId,
+                query,
+                cancellationToken).ConfigureAwait(false);
             stopwatch.Stop();
             FeatureServerLog.QueryExecuted(_logger, "count", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
             return new QueryResponse
@@ -1319,10 +1434,16 @@ internal sealed class FeatureServerQueryHandler(
         if (validatedParams.ReturnExtentOnly)
         {
             var stopwatch = Stopwatch.StartNew();
-            var extent = await _queryExecutor.GetExtentAsync(service, layer, query, cancellationToken).ConfigureAwait(false);
+            var extent = await _queryExecutor.GetExtentAsync(
+                queryLayer.Service,
+                queryLayer.Resource,
+                queryLayer.Publication,
+                queryLayer.StorageLayerId,
+                query,
+                cancellationToken).ConfigureAwait(false);
             stopwatch.Stop();
             FeatureServerLog.QueryExecuted(_logger, "extent", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
-            extent ??= await ResolveExtentFallbackAsync(context, validatedParams, layer, outputSrid, cancellationToken).ConfigureAwait(false);
+            extent ??= await ResolveExtentFallbackAsync(context, validatedParams, queryLayer.Resource, outputSrid, cancellationToken).ConfigureAwait(false);
             return new QueryResponse
             {
                 Extent = extent.HasValue ? extent.Value.ToExtentInfo() : null,
@@ -1333,7 +1454,13 @@ internal sealed class FeatureServerQueryHandler(
         if (validatedParams.ReturnIdsOnly)
         {
             var stopwatch = Stopwatch.StartNew();
-            QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(service, layer, query, cancellationToken).ConfigureAwait(false);
+            QueryResult<Feature> result = await _queryExecutor.QueryWithValidationAsync(
+                queryLayer.Service,
+                queryLayer.Resource,
+                queryLayer.Publication,
+                queryLayer.StorageLayerId,
+                query,
+                cancellationToken).ConfigureAwait(false);
             stopwatch.Stop();
             FeatureServerLog.QueryExecuted(_logger, "ids", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
 
@@ -1367,7 +1494,13 @@ internal sealed class FeatureServerQueryHandler(
             ? query with { Limit = null, Offset = null }
             : query;
         var queryStopwatch = Stopwatch.StartNew();
-        QueryResult<Feature> queryResult = await _queryExecutor.QueryWithValidationAsync(service, layer, queryForExecution, cancellationToken).ConfigureAwait(false);
+        QueryResult<Feature> queryResult = await _queryExecutor.QueryWithValidationAsync(
+            queryLayer.Service,
+            queryLayer.Resource,
+            queryLayer.Publication,
+            queryLayer.StorageLayerId,
+            queryForExecution,
+            cancellationToken).ConfigureAwait(false);
         queryStopwatch.Stop();
         FeatureServerLog.QueryExecuted(_logger, "query", serviceId, layerId, queryStopwatch.Elapsed.TotalMilliseconds);
 
@@ -1379,7 +1512,7 @@ internal sealed class FeatureServerQueryHandler(
 
         (object? formattedResponse, _) = await _queryServices.FormatQueryResultAsync(
             queryResult,
-            layer,
+            queryLayer.Resource,
             "json",
             validatedParams.ReturnGeometry,
             outputSrid,
@@ -1407,19 +1540,26 @@ internal sealed class FeatureServerQueryHandler(
     internal static async ValueTask<FeatureExtent?> ResolveExtentFallbackAsync(
         HttpContext context,
         QueryParameters queryParams,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         int? outputSrid,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(queryParams);
+        ArgumentNullException.ThrowIfNull(resource);
 
-        if (!CanFallbackToLayerExtent(queryParams) || !layer.Extent.HasValue)
+        var bbox = resource.ReadBbox();
+        if (!CanFallbackToLayerExtent(queryParams) || bbox is null)
         {
             return null;
         }
 
-        var layerExtent = layer.Extent.Value;
+        var layerExtent = FeatureExtent.Create(
+            bbox.West,
+            bbox.South,
+            bbox.East,
+            bbox.North,
+            resource.ReadSrid() ?? SpatialReference.WGS84.Wkid);
         if (!outputSrid.HasValue || outputSrid.Value == layerExtent.SpatialReference)
         {
             return layerExtent;
@@ -1768,7 +1908,7 @@ internal sealed class FeatureServerQueryHandler(
             : $"Unsupported {parameterName} value: {rawValue}";
 
     private static SpatialReference ResolveAreaLimitSpatialReference(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         GeoServicesGeometry geometry,
         int srid)
     {
@@ -1783,9 +1923,9 @@ internal sealed class FeatureServerQueryHandler(
                 geometrySpatialReference.Wkt);
         }
 
-        if (layer.SpatialReference.ToSrid() == srid)
+        if (resource.ReadSrid() == srid)
         {
-            return layer.SpatialReference;
+            return SpatialReference.Create(srid);
         }
 
         return srid switch
@@ -1932,7 +2072,7 @@ internal sealed class FeatureServerQueryHandler(
 
     private static bool TryParseStatisticsDefinitions(
         string outStatisticsJson,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         out ImmutableArray<StatisticDefinition> definitions,
         out string? error)
     {
@@ -1950,7 +2090,7 @@ internal sealed class FeatureServerQueryHandler(
 
             var defs = new List<StatisticDefinition>();
             var fieldNames = new HashSet<string>(
-                layer.Fields.Select(f => f.Name),
+                resource.SchemaFields.Select(f => f.Name),
                 StringComparer.OrdinalIgnoreCase);
             // Also allow objectid
             fieldNames.Add(FieldNames.ObjectId);
@@ -2104,7 +2244,7 @@ internal sealed class FeatureServerQueryHandler(
     }
 
     private static string ResolveTelemetryProtocol(string? requiredProtocol)
-        => string.Equals(requiredProtocol, ServiceProtocols.MapServer, StringComparison.OrdinalIgnoreCase)
+        => string.Equals(requiredProtocol, MapServerProtocol, StringComparison.OrdinalIgnoreCase)
             ? HonuaTelemetry.Protocols.MapServer
             : HonuaTelemetry.Protocols.FeatureServer;
 

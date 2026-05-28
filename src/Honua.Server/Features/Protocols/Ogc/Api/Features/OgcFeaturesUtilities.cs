@@ -4,7 +4,6 @@
 using System.Collections.Frozen;
 using System.Collections.Immutable;
 using System.Globalization;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -103,52 +102,7 @@ internal static class OgcFeaturesUtilities
         => string.Concat(baseUrl, GmlApplicationSchemaPath);
 
     /// <summary>
-    /// Returns the supported CRS URIs for a collection.
-    /// </summary>
-    public static async Task<ImmutableArray<string>> GetSupportedCrsUrisAsync(
-        LayerDefinition layer,
-        ICrsRegistry crsRegistry,
-        CancellationToken cancellationToken)
-    {
-        var definitions = await GetSupportedCrsDefinitionsAsync(layer, crsRegistry, cancellationToken).ConfigureAwait(false);
-        return definitions.Keys
-            .OrderBy(static uri => uri, StringComparer.OrdinalIgnoreCase)
-            .ToImmutableArray();
-    }
-
-    /// <summary>
-    /// Builds CRS definitions for a collection.
-    /// </summary>
-    public static async Task<IReadOnlyDictionary<string, CrsDefinition>> GetSupportedCrsDefinitionsAsync(
-        LayerDefinition layer,
-        ICrsRegistry crsRegistry,
-        CancellationToken cancellationToken)
-    {
-        var definitions = new Dictionary<string, CrsDefinition>(StringComparer.OrdinalIgnoreCase);
-        foreach (var crsIdentifier in _defaultCrsIdentifiers)
-        {
-            var definition = await crsRegistry.ResolveAsync(crsIdentifier, cancellationToken).ConfigureAwait(false);
-            if (definition.HasValue)
-            {
-                definitions[definition.Value.Uri] = definition.Value;
-            }
-        }
-
-        var storageCrs = layer.SpatialReference.ToOgcCrs();
-        var storageDefinition = await crsRegistry.ResolveAsync(storageCrs, cancellationToken).ConfigureAwait(false);
-        if (storageDefinition.HasValue)
-        {
-            definitions[storageDefinition.Value.Uri] = storageDefinition.Value;
-        }
-
-        return definitions;
-    }
-
-    /// <summary>
-    /// Metadata v2 overload of
-    /// <see cref="GetSupportedCrsDefinitionsAsync(LayerDefinition, ICrsRegistry, CancellationToken)"/>.
-    /// Resolves the storage CRS from <see cref="MetadataV2SpatialExtensions.ReadSrid"/> on the
-    /// V2 resource and unions it with the default CRS list.
+    /// Builds supported CRS definitions for a Metadata V2 collection.
     /// </summary>
     public static async Task<IReadOnlyDictionary<string, CrsDefinition>> GetSupportedCrsDefinitionsAsync(
         MetadataV2Resource resource,
@@ -183,8 +137,7 @@ internal static class OgcFeaturesUtilities
     }
 
     /// <summary>
-    /// Metadata v2 overload of
-    /// <see cref="GetSupportedCrsUrisAsync(LayerDefinition, ICrsRegistry, CancellationToken)"/>.
+    /// Returns supported CRS URIs for a Metadata V2 collection.
     /// </summary>
     public static async Task<ImmutableArray<string>> GetSupportedCrsUrisAsync(
         MetadataV2Resource resource,
@@ -257,47 +210,7 @@ internal static class OgcFeaturesUtilities
     }
 
     /// <summary>
-    /// Validates query parameters for items requests including queryable fields
-    /// </summary>
-    public static BadRequest<string>? ValidateItemsQueryParameters(
-        HttpRequest request,
-        LayerDefinition layer)
-    {
-        var allowed = new HashSet<string>(AllowedQueryParameters.Items, StringComparer.OrdinalIgnoreCase);
-
-        foreach (var field in layer.VisibleAttributeFields)
-        {
-            if (IsSimpleQueryableField(field))
-            {
-                allowed.Add(field.Name);
-            }
-        }
-
-        var validator = request.HttpContext.RequestServices.GetRequiredService<ICommonQueryValidator>();
-        var error = QueryParameterValidationHelpers.GetValidationError(
-            validator,
-            request.Query.Keys.ToArray(),
-            allowed);
-        return error == null ? null : TypedResults.BadRequest(error);
-    }
-
-    /// <summary>
-    /// Determines if a field is queryable for simple parameter filtering
-    /// </summary>
-    public static bool IsSimpleQueryableField(FieldDefinition field)
-        => field.Type is FieldType.String
-            or FieldType.Integer
-            or FieldType.BigInteger
-            or FieldType.Double
-            or FieldType.Float
-            or FieldType.Boolean
-            or FieldType.DateTime
-            or FieldType.Date
-            or FieldType.Time
-            or FieldType.Uuid;
-
-    /// <summary>
-    /// Metadata v2 overload of <see cref="IsSimpleQueryableField(FieldDefinition)"/>.
+    /// Determines whether a Metadata V2 field is queryable for simple parameter filtering.
     /// </summary>
     public static bool IsSimpleQueryableField(MetadataV2Field field)
     {
@@ -315,9 +228,7 @@ internal static class OgcFeaturesUtilities
     }
 
     /// <summary>
-    /// Metadata v2 overload of <see cref="ValidateItemsQueryParameters(HttpRequest, LayerDefinition)"/>.
-    /// Builds the allowed query-parameter set from <see cref="MetadataV2Resource.SchemaFields"/>
-    /// instead of the v1 <c>VisibleAttributeFields</c>.
+    /// Validates items query parameters against the Metadata V2 queryable field set.
     /// </summary>
     public static BadRequest<string>? ValidateItemsQueryParameters(
         HttpRequest request,
@@ -344,35 +255,8 @@ internal static class OgcFeaturesUtilities
         return error == null ? null : TypedResults.BadRequest(error);
     }
 
-    public static async Task<TemporalExtent?> BuildTemporalExtentAsync(
-        LayerDefinition layer,
-        IFeatureReader featureReader,
-        CancellationToken cancellationToken)
-    {
-        var temporalRange = await TemporalExtentHelpers.TryResolveTemporalRangeAsync(
-            layer,
-            featureReader,
-            cancellationToken).ConfigureAwait(false);
-        if (temporalRange == null || !temporalRange.Value.HasExtent)
-        {
-            return null;
-        }
-
-        var range = temporalRange.Value;
-        return new TemporalExtent
-        {
-            Interval = ImmutableArray.Create(ImmutableArray.Create(
-                FormatTemporalValue(range.Min),
-                FormatTemporalValue(range.Max)))
-        };
-    }
-
     /// <summary>
-    /// Metadata v2 overload of <see cref="BuildTemporalExtentAsync(LayerDefinition, IFeatureReader, CancellationToken)"/>.
-    /// Resolves temporal fields from the V2 <see cref="MetadataV2Resource.Temporal"/> extension
-    /// and probes the underlying feature store keyed on <paramref name="layerIndex"/>. Returns
-    /// <c>null</c> when the resource declares no usable temporal fields, or when the store
-    /// reports no extent.
+    /// Builds a temporal extent from the Metadata V2 temporal declaration and feature store values.
     /// </summary>
     /// <param name="resource">V2 resource carrying the temporal field declaration.</param>
     /// <param name="layerIndex">Service-local integer layer id used by the feature reader.</param>
@@ -453,15 +337,15 @@ internal static class OgcFeaturesUtilities
     public static bool TryResolveTemporalFieldsV2(
         MetadataV2Resource resource,
         out string? startFieldName,
-        out FieldType startFieldType,
+        out TemporalPropertyType startPropertyType,
         out string? endFieldName,
-        out FieldType endFieldType)
+        out TemporalPropertyType endPropertyType)
     {
         ArgumentNullException.ThrowIfNull(resource);
         startFieldName = null;
         endFieldName = null;
-        startFieldType = FieldType.DateTime;
-        endFieldType = FieldType.DateTime;
+        startPropertyType = TemporalPropertyType.DateTime;
+        endPropertyType = TemporalPropertyType.DateTime;
 
         var fields = resource.ReadTemporalFields();
         if (string.IsNullOrWhiteSpace(fields.StartTimeField))
@@ -475,7 +359,7 @@ internal static class OgcFeaturesUtilities
         }
 
         startFieldName = fields.StartTimeField;
-        startFieldType = startType;
+        startPropertyType = startType;
 
         if (string.IsNullOrWhiteSpace(fields.EndTimeField))
         {
@@ -484,21 +368,21 @@ internal static class OgcFeaturesUtilities
 
         if (!TryResolveSchemaTemporalType(resource, fields.EndTimeField, out var endType))
         {
-            // End field is configured but not in schema: behave like v1 — fail the whole resolution.
+            // End field is configured but not in schema: fail the whole resolution.
             startFieldName = null;
-            startFieldType = FieldType.DateTime;
+            startPropertyType = TemporalPropertyType.DateTime;
             return false;
         }
 
         endFieldName = fields.EndTimeField;
-        endFieldType = endType;
+        endPropertyType = endType;
         return true;
     }
 
     private static bool TryResolveSchemaTemporalType(
         MetadataV2Resource resource,
         string fieldName,
-        out FieldType type)
+        out TemporalPropertyType type)
     {
         foreach (var field in resource.SchemaFields)
         {
@@ -510,15 +394,15 @@ internal static class OgcFeaturesUtilities
             switch (field.Type)
             {
                 case MetadataV2FieldType.DateTime:
-                    type = FieldType.DateTime;
+                    type = TemporalPropertyType.DateTime;
                     return true;
                 case MetadataV2FieldType.Date:
-                    type = FieldType.Date;
+                    type = TemporalPropertyType.Date;
                     return true;
             }
         }
 
-        type = FieldType.DateTime;
+        type = TemporalPropertyType.DateTime;
         return false;
     }
 

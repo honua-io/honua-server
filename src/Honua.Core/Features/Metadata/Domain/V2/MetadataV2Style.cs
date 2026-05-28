@@ -14,6 +14,8 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 /// </summary>
 public sealed record MetadataV2ResourceStyle
 {
+    private IReadOnlyList<MetadataV2StyleEncoding>? _encodings;
+
     /// <summary>Human-readable style title.</summary>
     [JsonPropertyName("title")]
     public string? Title { get; init; }
@@ -32,8 +34,11 @@ public sealed record MetadataV2ResourceStyle
 
     /// <summary>Encoded representations of this style. Must contain at least one entry.</summary>
     [JsonPropertyName("encodings")]
-    public IReadOnlyList<MetadataV2StyleEncoding> Encodings { get; init; } =
-        Array.Empty<MetadataV2StyleEncoding>();
+    public IReadOnlyList<MetadataV2StyleEncoding> Encodings
+    {
+        get => _encodings ?? Array.Empty<MetadataV2StyleEncoding>();
+        init => _encodings = value;
+    }
 }
 
 /// <summary>

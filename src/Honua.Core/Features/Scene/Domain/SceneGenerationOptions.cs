@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Scene.Domain;
 
@@ -30,10 +30,10 @@ public sealed record SceneGenerationOptions
     public IReadOnlyList<string> IncludeAttributes { get; init; } = [];
 
     /// <summary>
-    /// Optional per-job extrusion override. When null the executor falls
-    /// back to the layer's catalog <see cref="LayerExtrusionInfo"/>.
+    /// Optional per-job extrusion override. When null the executor falls back to the resource's
+    /// <see cref="MetadataV2ExtrusionInfo"/> from the Metadata v2 graph.
     /// </summary>
-    public LayerExtrusionInfo? ExtrusionOverride { get; init; }
+    public MetadataV2ExtrusionInfo? ExtrusionOverride { get; init; }
 
     /// <summary>
     /// Recommended Cache-Control max-age applied to the generated dataset

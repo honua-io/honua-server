@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Security.Domain;
 
 namespace Honua.Core.Features.Scene.Domain;
 
@@ -49,10 +49,10 @@ public sealed record SceneDataset
     public string TilesetFileName { get; init; } = "tileset.json";
 
     /// <summary>
-    /// Optional catalog metadata (access policy, etc.) applied to scene root
-    /// and asset requests. Public scenes leave this null.
+    /// Optional access policy applied to scene root and asset requests.
+    /// Public scenes leave this null.
     /// </summary>
-    public CatalogMetadata? Metadata { get; init; }
+    public AccessPolicy? AccessPolicy { get; init; }
 
     /// <summary>
     /// Per-dataset cache directives surfaced to clients and shared caches.

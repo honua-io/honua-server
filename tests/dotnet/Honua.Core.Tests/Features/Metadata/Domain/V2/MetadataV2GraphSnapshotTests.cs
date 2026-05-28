@@ -149,6 +149,7 @@ public sealed class MetadataV2GraphSnapshotTests
                     ConnectionId = "conn.postgres",
                     StorageType = MetadataV2StorageType.RelationalTable,
                     Locator = "public.parcels",
+                    StorageLayerId = 0,
                 }
             ],
             Services =

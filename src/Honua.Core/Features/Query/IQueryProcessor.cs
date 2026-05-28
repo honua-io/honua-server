@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 
@@ -14,79 +13,40 @@ namespace Honua.Core.Features.Query;
 public interface IQueryProcessor
 {
     /// <summary>
-    /// Validates a unified query against layer constraints and protocol limits.
+    /// Validates a unified query against resource constraints and protocol limits.
     /// </summary>
-    /// <param name="query">Unified query to validate</param>
-    /// <param name="layer">Target layer definition</param>
-    /// <returns>Validation result with any errors</returns>
-    QueryValidationResult ValidateQuery(UnifiedQuery query, LayerDefinition layer);
+    QueryValidationResult ValidateQuery(UnifiedQuery query, MetadataV2Resource resource)
+        => throw new NotSupportedException($"{GetType().Name} does not yet implement {nameof(ValidateQuery)}.");
 
     /// <summary>
     /// Optimizes a unified query for efficient execution.
     /// </summary>
-    /// <param name="query">Query to optimize</param>
-    /// <param name="layer">Target layer definition</param>
-    /// <returns>Optimized query</returns>
-    UnifiedQuery OptimizeQuery(UnifiedQuery query, LayerDefinition layer);
+    UnifiedQuery OptimizeQuery(UnifiedQuery query, MetadataV2Resource resource)
+        => throw new NotSupportedException($"{GetType().Name} does not yet implement {nameof(OptimizeQuery)}.");
 
     /// <summary>
     /// Converts a unified query to a FeatureQuery for data access.
     /// </summary>
-    /// <param name="query">Unified query</param>
-    /// <param name="layer">Target layer definition</param>
-    /// <returns>Feature query for data access layer</returns>
-    FeatureQuery ToFeatureQuery(UnifiedQuery query, LayerDefinition layer);
+    FeatureQuery ToFeatureQuery(UnifiedQuery query, MetadataV2Resource resource)
+        => throw new NotSupportedException($"{GetType().Name} does not yet implement {nameof(ToFeatureQuery)}.");
 
     /// <summary>
-    /// Builds cache key for the given query and layer.
+    /// Builds cache key for the given query and resource.
     /// </summary>
-    /// <param name="query">Unified query</param>
-    /// <param name="layer">Target layer definition</param>
-    /// <param name="protocol">Protocol-specific identifier</param>
-    /// <returns>Cache key string</returns>
-    string BuildCacheKey(UnifiedQuery query, LayerDefinition layer, string protocol);
+    string BuildCacheKey(UnifiedQuery query, MetadataV2Resource resource, string protocol)
+        => throw new NotSupportedException($"{GetType().Name} does not yet implement {nameof(BuildCacheKey)}.");
 
     /// <summary>
     /// Determines if the query should use streaming response.
     /// </summary>
-    /// <param name="query">Unified query</param>
-    /// <param name="layer">Target layer definition</param>
-    /// <param name="outputFormat">Requested output format</param>
-    /// <returns>True if streaming should be used</returns>
-    bool ShouldUseStreaming(UnifiedQuery query, LayerDefinition layer, string outputFormat);
+    bool ShouldUseStreaming(UnifiedQuery query, MetadataV2Resource resource, string outputFormat)
+        => throw new NotSupportedException($"{GetType().Name} does not yet implement {nameof(ShouldUseStreaming)}.");
 
     /// <summary>
     /// Estimates the result count for the given query without executing it.
     /// </summary>
-    /// <param name="query">Unified query</param>
-    /// <param name="layer">Target layer definition</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Estimated result count</returns>
-    Task<long> EstimateResultCountAsync(UnifiedQuery query, LayerDefinition layer, CancellationToken cancellationToken);
-
-    /// <summary>V2 overload of <c>ValidateQuery</c>.</summary>
-    QueryValidationResult ValidateQuery(UnifiedQuery query, MetadataV2Resource resource)
-        => throw new NotSupportedException($"{GetType().Name} does not yet implement the Metadata v2 ValidateQuery overload.");
-
-    /// <summary>V2 overload of <c>OptimizeQuery</c>.</summary>
-    UnifiedQuery OptimizeQuery(UnifiedQuery query, MetadataV2Resource resource)
-        => throw new NotSupportedException($"{GetType().Name} does not yet implement the Metadata v2 OptimizeQuery overload.");
-
-    /// <summary>V2 overload of <c>ToFeatureQuery</c>.</summary>
-    FeatureQuery ToFeatureQuery(UnifiedQuery query, MetadataV2Resource resource)
-        => throw new NotSupportedException($"{GetType().Name} does not yet implement the Metadata v2 ToFeatureQuery overload.");
-
-    /// <summary>V2 overload of <c>BuildCacheKey</c>.</summary>
-    string BuildCacheKey(UnifiedQuery query, MetadataV2Resource resource, string protocol)
-        => throw new NotSupportedException($"{GetType().Name} does not yet implement the Metadata v2 BuildCacheKey overload.");
-
-    /// <summary>V2 overload of <c>ShouldUseStreaming</c>.</summary>
-    bool ShouldUseStreaming(UnifiedQuery query, MetadataV2Resource resource, string outputFormat)
-        => throw new NotSupportedException($"{GetType().Name} does not yet implement the Metadata v2 ShouldUseStreaming overload.");
-
-    /// <summary>V2 overload of <c>EstimateResultCountAsync</c>.</summary>
     Task<long> EstimateResultCountAsync(UnifiedQuery query, MetadataV2Resource resource, CancellationToken cancellationToken)
-        => throw new NotSupportedException($"{GetType().Name} does not yet implement the Metadata v2 EstimateResultCountAsync overload.");
+        => throw new NotSupportedException($"{GetType().Name} does not yet implement {nameof(EstimateResultCountAsync)}.");
 }
 
 /// <summary>

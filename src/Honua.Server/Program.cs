@@ -8,7 +8,6 @@ using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;

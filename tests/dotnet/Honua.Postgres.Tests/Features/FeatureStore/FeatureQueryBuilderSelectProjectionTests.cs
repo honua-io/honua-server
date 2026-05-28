@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.FeatureStore.Services;
 using Microsoft.Extensions.ObjectPool;
@@ -139,7 +140,7 @@ public sealed class FeatureQueryBuilderSelectProjectionTests
         var query = new FeatureQuery
         {
             Limit = 10,
-            OrderBy = ImmutableArray.Create(new OrderByClause("id", ascending: true, fieldType: FieldType.String))
+            OrderBy = ImmutableArray.Create(new OrderByClause("id", ascending: true, fieldType: MetadataV2FieldType.String))
         };
 
         var result = queryBuilder.BuildSelectQuery(layerId: 1, query);

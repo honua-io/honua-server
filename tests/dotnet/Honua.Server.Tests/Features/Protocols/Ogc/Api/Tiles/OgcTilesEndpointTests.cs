@@ -6,7 +6,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Protocols.Ogc.Common;
 using Honua.Server.Features.Protocols.Ogc.Api.Tiles.Models;
 using Honua.TestKit;

@@ -14,9 +14,9 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
 /// <summary>
 /// Integration tests for the temporal extent endpoint introduced for ticket #379.
-/// Discovery is opt-in: layers without an explicit <see cref="LayerTimeInfo"/>
+/// Discovery is opt-in: layers without explicit Metadata V2 temporal metadata
 /// configuration must not surface a temporal extent even if they have a Date /
-/// DateTime column. The happy path therefore configures TimeInfo via the
+/// DateTime column. The happy path therefore configures temporal metadata via the
 /// admin metadata updater before issuing the request.
 /// </summary>
 [Collection("Database")]
@@ -116,13 +116,13 @@ public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
     {
         // Discovery is opt-in: a layer with a Date / DateTime column but no
         // TimeInfo.StartTimeField must NOT surface a temporal extent. The
-        // shared TryResolveTemporalRangeAsync helper falls back to the first
+        // shared TryResolveTemporalRangeV2Async helper falls back to the first
         // temporal attribute for OGC API Features collection metadata; the
         // FeatureServer endpoint guards against that fallback so SDK clients
         // do not infer "time-aware" from arbitrary date columns. Other tests
         // in the shared `Database` collection (WMS / WMTS temporal suites)
         // may leave TimeInfo set on the same layer, so clear it first.
-        await ClearLayerTimeInfoAsync();
+        await ClearLayerTemporalAsync();
 
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/temporalExtent?f=json");
@@ -143,7 +143,7 @@ public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
         // clients would infer "time-aware" from arbitrary date columns and
         // diverge from the temporalExtent endpoint and the WMS/WMTS time
         // dimension contract that already gate on opt-in.
-        await ClearLayerTimeInfoAsync();
+        await ClearLayerTemporalAsync();
 
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}?f=json");
@@ -173,7 +173,7 @@ public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
         // DateTime attribute when TimeInfo was absent, silently filtering on
         // a non-temporal column instead of rejecting the request — same gap
         // the MVT path used to have.
-        await ClearLayerTimeInfoAsync();
+        await ClearLayerTemporalAsync();
 
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query"
@@ -190,7 +190,7 @@ public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
         // Non-regression: time=null,null is the documented no-op (treated as
         // "no temporal filter") — it must not trip the new opt-in gate so
         // SDK clients can pass a parameter unconditionally.
-        await ClearLayerTimeInfoAsync();
+        await ClearLayerTemporalAsync();
 
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query"
@@ -232,7 +232,7 @@ public sealed class FeatureServerTemporalExtentEndpointTests : IAsyncLifetime
         return Task.CompletedTask;
     }
 
-    private Task ClearLayerTimeInfoAsync()
+    private Task ClearLayerTemporalAsync()
     {
         _fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, clearTemporal: true);
         return Task.CompletedTask;

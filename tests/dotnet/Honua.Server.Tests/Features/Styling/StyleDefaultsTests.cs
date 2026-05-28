@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Styling;
 
 namespace Honua.Server.Tests.Features.Styling;
@@ -13,12 +13,12 @@ namespace Honua.Server.Tests.Features.Styling;
 public class StyleDefaultsTests
 {
     [Theory]
-    [InlineData(GeometryType.Point, "circle")]
-    [InlineData(GeometryType.LineString, "line")]
-    [InlineData(GeometryType.Polygon, "fill")]
-    public void BuildDefaultMapLibreStyle_ProducesValidV8Document(GeometryType geometryType, string expectedLayerType)
+    [InlineData(MetadataV2GeometryType.Point, "circle")]
+    [InlineData(MetadataV2GeometryType.LineString, "line")]
+    [InlineData(MetadataV2GeometryType.Polygon, "fill")]
+    public void BuildDefaultMapLibreStyle_ProducesValidV8Document(MetadataV2GeometryType geometryType, string expectedLayerType)
     {
-        var layer = LayerDefinition.CreateBasic(42, "sample", geometryType);
+        var layer = new StyleLayerDescriptor(42, "sample", geometryType);
 
         var style = StyleDefaults.BuildDefaultMapLibreStyle(layer);
         var json = StyleJsonUtilities.Serialize(style);
@@ -49,7 +49,7 @@ public class StyleDefaultsTests
     [Fact]
     public void GeoServicesSimpleRenderer_RoundTripsToValidV8Document()
     {
-        var layer = LayerDefinition.CreateBasic(7, "districts", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(7, "districts", MetadataV2GeometryType.Polygon);
         const string drawingInfoJson = """
         {
           "renderer": {

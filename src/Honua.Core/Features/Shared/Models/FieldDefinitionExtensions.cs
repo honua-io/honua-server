@@ -1,8 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
-
 namespace Honua.Core.Features.Shared.Models;
 
 /// <summary>
@@ -32,34 +30,6 @@ public static class FieldDefinitionExtensions
             "ESRIFIELDTYPEBLOB" => "BYTEA",
             "ESRIFIELDTYPEXML" => "XML",
             "ESRIFIELDTYPEGEOMETRY" => "GEOMETRY",
-            _ => "TEXT"
-        };
-    }
-
-    /// <summary>
-    /// Converts a FieldType enum to the corresponding PostgreSQL type
-    /// </summary>
-    /// <param name="fieldType">The FieldType enum value</param>
-    /// <param name="length">The field length for variable-length types</param>
-    /// <returns>The corresponding PostgreSQL type declaration</returns>
-    public static string ToPostgresType(this FieldType fieldType, int? length = null)
-    {
-        return fieldType switch
-        {
-            FieldType.String when length.HasValue => $"VARCHAR({length})",
-            FieldType.String => "TEXT",
-            FieldType.Integer => "INTEGER",
-            FieldType.BigInteger => "BIGINT",
-            FieldType.Double => "DOUBLE PRECISION",
-            FieldType.Float => "REAL",
-            FieldType.Boolean => "BOOLEAN",
-            FieldType.DateTime => "TIMESTAMP WITH TIME ZONE",
-            FieldType.Date => "DATE",
-            FieldType.Time => "TIME",
-            FieldType.Geometry => "GEOMETRY", // PostGIS type
-            FieldType.Json => "JSONB",
-            FieldType.Binary => "BYTEA",
-            FieldType.Uuid => "UUID",
             _ => "TEXT"
         };
     }

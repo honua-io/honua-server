@@ -2,14 +2,15 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Protocols.GeoServices.MapServer.Models;
 using Honua.Server.Features.Infrastructure.Rendering;
+using Honua.Server.Features.Protocols.GeoServices.MapServer.Models;
 
 namespace Honua.Server.Features.Protocols.GeoServices.MapServer;
 
@@ -17,6 +18,14 @@ internal static partial class MapServerEndpoints
 {
     private const int DefaultLegendSwatchWidth = 20;
     private const int DefaultLegendSwatchHeight = 20;
+
+    private sealed record LegendLayerDescriptor(
+        int LayerId,
+        string LayerName,
+        MetadataV2GeometryType GeometryType,
+        double? MinScale,
+        double? MaxScale,
+        MetadataV2Resource Resource);
 
     /// <summary>
     /// Handle MapServer legend requests.
@@ -41,26 +50,26 @@ internal static partial class MapServerEndpoints
         MapServerLog.LegendRequested(logger, serviceId);
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
+        var serviceResult = await ServiceResourceValidationHelpers.ValidateServiceV2Async(
+            resourceValidator,
+            serviceId,
+            ServiceProtocols.MapServer,
+            context,
+            cancellationToken: cancellationToken);
         if (!serviceResult.IsValid)
         {
-            var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
-            if (serviceResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
-            {
-                return StandardErrorHelpers.CreateBadRequest(context, errorMessage);
-            }
-
-            return StandardErrorHelpers.CreateNotFound(context, errorMessage);
+            return serviceResult.ErrorResult!;
         }
 
-        var service = serviceResult.Resource!;
-        var protocolError = ProtocolValidationHelpers.ValidateProtocolEnabled(context, service, ServiceProtocols.MapServer);
-        if (protocolError is not null)
-        {
-            return protocolError;
-        }
+        var service = serviceResult.Service!;
+        var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var legendLayerDescriptors = ResolveLegendLayers(snapshot, service);
 
-        var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, service.Layers, service);
+        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+            context,
+            legendLayerDescriptors.Select(static layer => layer.Resource),
+            service);
         if (accessError != null)
         {
             return accessError;
@@ -72,26 +81,29 @@ internal static partial class MapServerEndpoints
         }
 
         var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
-        if (!TryParseDynamicLayers(context.Request.Query.TryGetValue("dynamicLayers", out var dlValues) ? dlValues.ToString() : null, service, queryValidator, out var dynamicLayers, out var dynamicLayersError))
+        var knownLayerIds = legendLayerDescriptors
+            .Select(static layer => layer.LayerId)
+            .ToHashSet();
+        if (!TryParseDynamicLayers(context.Request.Query.TryGetValue("dynamicLayers", out var dlValues) ? dlValues.ToString() : null, knownLayerIds, queryValidator, out var dynamicLayers, out var dynamicLayersError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 dynamicLayersError ?? "Invalid dynamicLayers parameter.");
         }
 
-        LayerDefinition[] visibleLayers;
+        LegendLayerDescriptor[] visibleLayers;
         if (dynamicLayers.Count > 0)
         {
-            var layerLookup = service.Layers.ToDictionary(l => l.Id);
+            var layerLookup = legendLayerDescriptors.ToDictionary(static layer => layer.LayerId);
             visibleLayers = dynamicLayers
-                .Where(dl => layerLookup.ContainsKey(dl.MapLayerId))
-                .Select(dl => layerLookup[dl.MapLayerId])
-                .Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer, service))
+                .Where(dynamicLayer => layerLookup.ContainsKey(dynamicLayer.MapLayerId))
+                .Select(dynamicLayer => layerLookup[dynamicLayer.MapLayerId])
+                .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
                 .ToArray();
         }
         else
         {
-            visibleLayers = service.Layers
-                .Where(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer, service))
+            visibleLayers = legendLayerDescriptors
+                .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
                 .ToArray();
         }
 
@@ -100,15 +112,15 @@ internal static partial class MapServerEndpoints
 
         foreach (var layer in visibleLayers)
         {
-            var style = await styleCatalog.GetLayerStyleAsync(layer.Id, cancellationToken);
+            var style = await styleCatalog.GetLayerStyleAsync(layer.LayerId, cancellationToken);
             var styleLayers = StyleTranslator.ParseStyleLayers(style?.MapLibreStyleJson);
 
             var entries = BuildLegendEntries(styleLayers, layer.GeometryType, swatchWidth, swatchHeight);
 
             legendLayers.Add(new LegendLayerInfo
             {
-                LayerId = layer.Id,
-                LayerName = layer.Name,
+                LayerId = layer.LayerId,
+                LayerName = layer.LayerName,
                 LayerType = MapGeometryTypeToLayerType(layer.GeometryType),
                 MinScale = layer.MinScale,
                 MaxScale = layer.MaxScale,
@@ -120,6 +132,38 @@ internal static partial class MapServerEndpoints
 
         var response = new LegendResponse { Layers = [.. legendLayers] };
         return Results.Json(response, MapServerJsonContext.Default.LegendResponse, contentType: "application/json");
+    }
+
+    private static LegendLayerDescriptor[] ResolveLegendLayers(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Service service)
+    {
+        var descriptors = new List<LegendLayerDescriptor>();
+        foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
+        {
+            if (publication.LayerIndex is not int layerId)
+            {
+                continue;
+            }
+
+            var resource = snapshot.ResolveResource(publication);
+            if (resource is null)
+            {
+                continue;
+            }
+
+            descriptors.Add(new LegendLayerDescriptor(
+                layerId,
+                string.IsNullOrWhiteSpace(resource.Metadata.Name)
+                    ? publication.Metadata.Name
+                    : resource.Metadata.Name,
+                resource.ReadGeometryType(),
+                resource.Display?.MinScale,
+                resource.Display?.MaxScale,
+                resource));
+        }
+
+        return [.. descriptors.OrderBy(static layer => layer.LayerId)];
     }
 
     private static bool TryParseLegendSwatchSize(
@@ -175,7 +219,7 @@ internal static partial class MapServerEndpoints
 
     private static List<LegendEntry> BuildLegendEntries(
         MapLibreStyleLayer[] styleLayers,
-        GeometryType geometryType,
+        MetadataV2GeometryType geometryType,
         int swatchWidth = DefaultLegendSwatchWidth,
         int swatchHeight = DefaultLegendSwatchHeight)
     {
@@ -209,7 +253,11 @@ internal static partial class MapServerEndpoints
                 continue;
             }
 
-            var swatchBytes = SkiaMapRenderer.RenderLegendSwatch(styleLayer, geometryType, swatchWidth, swatchHeight);
+            var swatchBytes = SkiaMapRenderer.RenderLegendSwatch(
+                styleLayer,
+                geometryType,
+                swatchWidth,
+                swatchHeight);
 
             entries.Add(new LegendEntry
             {
@@ -224,13 +272,13 @@ internal static partial class MapServerEndpoints
         return entries;
     }
 
-    private static string? MapGeometryTypeToLayerType(GeometryType geometryType)
+    private static string? MapGeometryTypeToLayerType(MetadataV2GeometryType geometryType)
     {
         return geometryType switch
         {
-            GeometryType.Point or GeometryType.MultiPoint => "Feature Layer",
-            GeometryType.LineString or GeometryType.MultiLineString => "Feature Layer",
-            GeometryType.Polygon or GeometryType.MultiPolygon => "Feature Layer",
+            MetadataV2GeometryType.Point or MetadataV2GeometryType.MultiPoint => "Feature Layer",
+            MetadataV2GeometryType.LineString or MetadataV2GeometryType.MultiLineString => "Feature Layer",
+            MetadataV2GeometryType.Polygon or MetadataV2GeometryType.MultiPolygon => "Feature Layer",
             _ => "Feature Layer"
         };
     }

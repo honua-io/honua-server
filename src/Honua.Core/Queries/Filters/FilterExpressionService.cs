@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters.Cql2;
 using Honua.Core.Queries.Filters.GeoServicesSql;
@@ -117,40 +116,23 @@ public interface IFilterExpressionService
     FilterParseResult Parse(FilterLanguage language, string? filter);
 
     /// <summary>
-    /// Parses and translates a filter string into a SQL fragment.
-    /// </summary>
-    /// <param name="language">Filter language.</param>
-    /// <param name="filter">Filter string.</param>
-    /// <param name="layer">Layer definition for validation and coercion.</param>
-    /// <returns>Translation result with SQL fragment or error.</returns>
-    FilterTranslationResult Translate(FilterLanguage language, string? filter, LayerDefinition layer);
-
-    /// <summary>
-    /// Translates a filter expression into a SQL fragment.
-    /// </summary>
-    /// <param name="expression">Filter expression (null yields success with no SQL filter).</param>
-    /// <param name="layer">Layer definition for validation and coercion.</param>
-    /// <returns>Translation result with SQL fragment or error.</returns>
-    FilterTranslationResult Translate(FilterExpression? expression, LayerDefinition layer);
-
-    /// <summary>
     /// V2 overload of <see cref="Parse"/> + <see cref="Normalize(FilterExpression, MetadataV2Resource)"/>.
     /// Returns the normalized expression with field types resolved from
-    /// <see cref="MetadataV2Resource.SchemaFields"/>. Does NOT produce a SQL fragment —
-    /// the provider-specific SQL backends still take <see cref="LayerDefinition"/>;
-    /// callers that need a <see cref="SqlFragment"/> route via the v1 overload.
+    /// <see cref="MetadataV2Resource.SchemaFields"/>. Call
+    /// <see cref="Translate(FilterExpression?, MetadataV2Resource)"/> when the
+    /// normalized expression also needs a provider SQL fragment.
     /// </summary>
     FilterParseResult ParseAndNormalize(FilterLanguage language, string? filter, MetadataV2Resource resource);
 
     /// <summary>
-    /// V2 overload of normalisation. Resolves field types from the resource's
+    /// Normalises an expression. Resolves field types from the resource's
     /// <see cref="MetadataV2Resource.SchemaFields"/> and returns the normalised
     /// expression.
     /// </summary>
     FilterExpression Normalize(FilterExpression expression, MetadataV2Resource resource);
 
     /// <summary>
-    /// V2 overload that normalises an expression and produces a SQL fragment using
+    /// Normalises an expression and produces a SQL fragment using
     /// the resource's schema fields and spatial reference. Returns success with no
     /// SQL filter when <paramref name="expression"/> is null.
     /// </summary>
@@ -204,41 +186,6 @@ public sealed class FilterExpressionService : IFilterExpressionService
         catch (NotSupportedException ex)
         {
             return FilterParseResult.Failure(ex.Message);
-        }
-    }
-
-    /// <inheritdoc />
-    public FilterTranslationResult Translate(FilterLanguage language, string? filter, LayerDefinition layer)
-    {
-        var parseResult = Parse(language, filter);
-        if (!parseResult.IsSuccess)
-        {
-            return FilterTranslationResult.Failure(parseResult.ErrorMessage ?? "Invalid filter expression.");
-        }
-
-        return Translate(parseResult.Expression, layer);
-    }
-
-    /// <inheritdoc />
-    public FilterTranslationResult Translate(FilterExpression? expression, LayerDefinition layer)
-    {
-        if (expression == null)
-        {
-            return FilterTranslationResult.Success(null, null);
-        }
-
-        try
-        {
-            var sqlFilter = _translator.Translate(expression, layer);
-            return FilterTranslationResult.Success(expression, sqlFilter);
-        }
-        catch (ArgumentException ex)
-        {
-            return FilterTranslationResult.Failure(ex.Message);
-        }
-        catch (NotSupportedException ex)
-        {
-            return FilterTranslationResult.Failure(ex.Message);
         }
     }
 

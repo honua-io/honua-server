@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.SqlServer.Features.FeatureStore.Services;
 
@@ -68,6 +69,27 @@ internal sealed record SqlServerLayerMapping
     /// validating identifiers and resolving SQL Server-specific provider options.
     /// </summary>
     public static SqlServerLayerMapping FromStorage(int layerId, LayerStorageMapping storage)
+    {
+        ArgumentNullException.ThrowIfNull(storage);
+        return FromStorage(
+            layerId,
+            new FeatureStorageMapping(
+                storage.TableName,
+                storage.SchemaName,
+                storage.CatalogName,
+                storage.DatabaseName,
+                storage.PrimaryKeyColumn,
+                storage.GeometryColumn,
+                storage.StorageSrid,
+                storage.TemporalColumn,
+                storage.ProviderOptions));
+    }
+
+    /// <summary>
+    /// Builds a <see cref="SqlServerLayerMapping"/> from a Metadata v2 feature storage mapping,
+    /// validating identifiers and resolving SQL Server-specific provider options.
+    /// </summary>
+    public static SqlServerLayerMapping FromStorage(int layerId, FeatureStorageMapping storage)
     {
         ArgumentNullException.ThrowIfNull(storage);
 

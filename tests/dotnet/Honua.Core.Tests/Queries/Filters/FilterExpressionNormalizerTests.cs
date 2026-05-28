@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.TestKit.Attributes;
@@ -14,24 +14,23 @@ public sealed class FilterExpressionNormalizerTests
     [UnitTest]
     public void Normalize_DateTimeTextWithoutOffset_AssumesUtc()
     {
-        var layer = new LayerDefinition(
-            Id: 1,
-            Name: "Temporal Layer",
-            Description: null,
-            GeometryType: GeometryType.None,
-            SpatialReference: SpatialReference.WGS84,
-            Fields:
+        var resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-temporal", Name = "Temporal Layer" },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            SchemaFields =
             [
-                new FieldDefinition(FieldNames.ObjectId, FieldType.Integer, Nullable: false),
-                new FieldDefinition("event_time", FieldType.DateTime)
-            ]);
+                new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+                new MetadataV2Field { Name = "event_time", Type = MetadataV2FieldType.DateTime },
+            ],
+        };
 
         var expression = new BinaryExpression(
             new PropertyReference("event_time"),
             BinaryOperator.Equal,
             new Literal("2024-02-16T10:00:00", LiteralType.Text));
 
-        var normalized = FilterExpressionNormalizer.Normalize(expression, layer);
+        var normalized = FilterExpressionNormalizer.Normalize(expression, resource);
 
         var binary = normalized.Should().BeOfType<BinaryExpression>().Subject;
         var literal = binary.Right.Should().BeOfType<Literal>().Subject;
@@ -45,18 +44,17 @@ public sealed class FilterExpressionNormalizerTests
     [UnitTest]
     public void Normalize_DeeplyNestedExpression_ThrowsArgumentException()
     {
-        var layer = new LayerDefinition(
-            Id: 1,
-            Name: "Nested Layer",
-            Description: null,
-            GeometryType: GeometryType.None,
-            SpatialReference: SpatialReference.WGS84,
-            Fields:
+        var resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-nested", Name = "Nested Layer" },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            SchemaFields =
             [
-                new FieldDefinition(FieldNames.ObjectId, FieldType.Integer, Nullable: false),
-                new FieldDefinition("name", FieldType.String, Length: 255),
-                new FieldDefinition("age", FieldType.Integer)
-            ]);
+                new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String },
+                new MetadataV2Field { Name = "age", Type = MetadataV2FieldType.Integer },
+            ],
+        };
 
         FilterExpression expression = new BinaryExpression(
             new PropertyReference("name"),
@@ -74,7 +72,7 @@ public sealed class FilterExpressionNormalizerTests
                     new Literal(i, LiteralType.Number)));
         }
 
-        var act = () => FilterExpressionNormalizer.Normalize(expression, layer);
+        var act = () => FilterExpressionNormalizer.Normalize(expression, resource);
 
         act.Should().Throw<ArgumentException>()
             .WithMessage($"*maximum nesting depth of {FilterExpressionNormalizer.MaxExpressionDepth}*");

@@ -3,7 +3,6 @@
 
 using FluentAssertions;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
@@ -51,19 +50,9 @@ public sealed class RelatedRecordsServiceTests
     }
 
     private static RelatedQuery CreateRelatedQuery()
-    {
-        var relationship = Relationship.Create(
-            relationshipId: 1,
-            name: "test",
+        => RelatedQuery.ForObjects(
+            [1],
             relatedLayerId: 2,
-            relationshipType: "esriRelRoleOrigin",
             originForeignKeyField: "origin_id",
             destinationForeignKeyField: "destination_id");
-
-        return new RelatedQuery
-        {
-            ObjectIds = [1],
-            Relationship = relationship
-        };
-    }
 }

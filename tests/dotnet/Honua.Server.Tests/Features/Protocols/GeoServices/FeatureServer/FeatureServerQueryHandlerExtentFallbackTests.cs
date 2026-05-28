@@ -2,9 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
@@ -76,15 +76,16 @@ public sealed class FeatureServerQueryHandlerExtentFallbackTests
             Where = "1=1",
             ReturnExtentOnly = true
         };
-        var layer = CreateLayer(FeatureExtent.Create(-122.5, 37.7, -122.35, 37.84, 4326));
+        var expectedExtent = FeatureExtent.Create(-122.5, 37.7, -122.35, 37.84, 4326);
+        var resource = CreateResource(expectedExtent);
 
         var extent = await FeatureServerQueryHandler.ResolveExtentFallbackAsync(
             httpContext,
             queryParams,
-            layer,
+            resource,
             outputSrid: null);
 
-        extent.Should().Be(layer.Extent);
+        extent.Should().Be(expectedExtent);
     }
 
     [Fact]
@@ -102,12 +103,12 @@ public sealed class FeatureServerQueryHandlerExtentFallbackTests
             Where = "1=1",
             ReturnExtentOnly = true
         };
-        var layer = CreateLayer(FeatureExtent.Create(-122.5, 37.7, -122.35, 37.84, 4326));
+        var resource = CreateResource(FeatureExtent.Create(-122.5, 37.7, -122.35, 37.84, 4326));
 
         var extent = await FeatureServerQueryHandler.ResolveExtentFallbackAsync(
             httpContext,
             queryParams,
-            layer,
+            resource,
             outputSrid: 3857);
 
         extent.Should().NotBeNull();
@@ -118,19 +119,34 @@ public sealed class FeatureServerQueryHandlerExtentFallbackTests
         extent.Value.MaxY.Should().Be(4556748.2);
     }
 
-    private static LayerDefinition CreateLayer(FeatureExtent extent)
-        => new(
-            Id: 0,
-            Name: "Test Layer",
-            Description: null,
-            GeometryType.Point,
-            SpatialReference.WGS84,
-            Fields:
+    private static MetadataV2Resource CreateResource(FeatureExtent extent)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "res-test",
+                Name = "Test Layer"
+            },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            SchemaFields =
             [
-                new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                new FieldDefinition("shape", FieldType.Geometry, Nullable: true)
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+                new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, Nullable = true }
             ],
-            Extent: extent);
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = MetadataV2SpatialReference.Wgs84,
+                GeometryType = MetadataV2GeometryType.Point,
+                PrimaryGeometryField = "shape",
+                Bbox = new MetadataV2Bbox
+                {
+                    West = extent.MinX,
+                    South = extent.MinY,
+                    East = extent.MaxX,
+                    North = extent.MaxY
+                }
+            }
+        };
 
     private sealed class StubCoordinateTransformService(
         (double MinX, double MinY, double MaxX, double MaxY)? transformedExtent) : ICoordinateTransformService

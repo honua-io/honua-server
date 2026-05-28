@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Query;
@@ -46,18 +45,17 @@ internal readonly record struct Wfs20EditRequest
 /// Converts prepared WFS query inputs into the unified query model.
 /// </summary>
 internal sealed class Wfs20QueryParameterAdapter(
-    ILogger<Wfs20QueryParameterAdapter> logger) : IQueryParameterAdapter<Wfs20QueryRequest>
+    ILogger<Wfs20QueryParameterAdapter> logger)
 {
     private readonly ILogger<Wfs20QueryParameterAdapter> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
 
-    public string ProtocolName => "WFS-2.0";
+    public static string ProtocolName => "WFS-2.0";
 
-    public ProtocolLimits DefaultLimits => ProtocolLimits.Wfs20;
+    public static ProtocolLimits DefaultLimits => ProtocolLimits.Wfs20;
 
     public Task<QueryAdapterResult> ConvertAsync(
         Wfs20QueryRequest parameters,
-        LayerDefinition layer,
         CancellationToken cancellationToken = default)
     {
         try
@@ -98,20 +96,19 @@ internal sealed class Wfs20QueryParameterAdapter(
 /// Converts prepared WFS transaction operations into the unified edit model.
 /// </summary>
 internal sealed class Wfs20EditParameterAdapter(
-    ILogger<Wfs20EditParameterAdapter> logger) : IEditParameterAdapter<Wfs20EditRequest>
+    ILogger<Wfs20EditParameterAdapter> logger)
 {
     private readonly ILogger<Wfs20EditParameterAdapter> _logger = logger
         ?? throw new ArgumentNullException(nameof(logger));
 
-    public string ProtocolName => "WFS20";
+    public static string ProtocolName => "WFS20";
 
-    public ProtocolEditLimits DefaultLimits => ProtocolEditLimits.Wfs20;
+    public static ProtocolEditLimits DefaultLimits => ProtocolEditLimits.Wfs20;
 
-    public TransactionSemantics TransactionSemantics => TransactionSemantics.Wfs20;
+    public static TransactionSemantics TransactionSemantics => TransactionSemantics.Wfs20;
 
     public Task<EditAdapterResult> ConvertAsync(
         Wfs20EditRequest protocolRequest,
-        LayerDefinition layer,
         CancellationToken cancellationToken = default)
     {
         try

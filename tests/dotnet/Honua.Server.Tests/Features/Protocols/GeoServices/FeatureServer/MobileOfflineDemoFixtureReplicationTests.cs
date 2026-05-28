@@ -5,12 +5,17 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Infrastructure;
+using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -28,6 +33,11 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
     private const string ServiceId = "mobile_offline_demo";
     private const int OfflineSitesLayerId = 68910;
     private const int UpdateControlObjectId = 6891001;
+    private static readonly string[] MobileOfflineCapabilities =
+    [
+        "Query", "Extract", "Create", "Update", "Delete", "Editing", "Sync"
+    ];
+    private static readonly string[] MobileOfflineSupportedFormats = ["JSON", "GeoJSON"];
 
     private readonly WebAppFixture _fixture = new();
 
@@ -45,9 +55,235 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
         await using var command = connection.CreateCommand();
         command.CommandText = seedSql;
         await command.ExecuteNonQueryAsync();
+
+        await PublishMobileOfflineMetadataV2Async();
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    private async Task PublishMobileOfflineMetadataV2Async()
+    {
+        var provider = _fixture.GetService<IMetadataV2GraphProvider>() as TestMetadataV2GraphProvider
+            ?? throw new InvalidOperationException(
+                "Test V2 graph provider not registered as TestMetadataV2GraphProvider.");
+        var snapshot = await provider.GetCurrentAsync();
+        var graph = snapshot.Graph;
+
+        var accessPolicy = new AccessPolicy
+        {
+            AllowAnonymous = true,
+            AllowAnonymousWrite = true
+        };
+
+        var service = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "svc-mobile-offline-demo-feature",
+                Name = ServiceId,
+                Title = ServiceId,
+                Description = "Deterministic SDK-backed mobile offline field operations fixture"
+            },
+            ServiceType = MetadataV2ServiceType.EsriFeatureService,
+            Route = $"/rest/services/{ServiceId}/FeatureServer",
+            Protocols = [MetadataV2ServiceProtocols.FeatureServer],
+            AccessPolicy = accessPolicy,
+            SpatialReference = MetadataV2SpatialReference.Wgs84,
+            Options = new Dictionary<string, JsonElement>
+            {
+                ["capabilities"] = JsonSerializer.SerializeToElement(MobileOfflineCapabilities),
+                ["supportedFormats"] = JsonSerializer.SerializeToElement(MobileOfflineSupportedFormats)
+            }
+        };
+
+        var siteResource = CreateMobileOfflineResource(
+            layerId: OfflineSitesLayerId,
+            name: "Offline Field Sites",
+            description: "Mobile-editable point layer for SDK offline create, update, delete, and conflict scenarios.",
+            geometryType: MetadataV2GeometryType.Point,
+            bbox: new MetadataV2Bbox { West = -158.1250, South = 21.2600, East = -157.8500, North = 21.4300 },
+            displayField: "site_name",
+            temporalField: "inspection_date",
+            fields:
+            [
+                Field("objectid", MetadataV2FieldType.Integer, nullable: false, "Object ID", ["id.primary"]),
+                Field("globalid", MetadataV2FieldType.String, nullable: false, "Stable mobile client/global identifier", length: 64),
+                Field("site_name", MetadataV2FieldType.String, nullable: false, "Field site name", length: 128),
+                Field("status", MetadataV2FieldType.String, nullable: false, "Workflow status", length: 32),
+                Field("priority", MetadataV2FieldType.String, nullable: false, "Dispatch priority", length: 32),
+                Field("assigned_to", MetadataV2FieldType.String, nullable: true, "Assigned mobile user", length: 64),
+                Field("inspection_date", MetadataV2FieldType.DateTime, nullable: false, "Inspection timestamp"),
+                Field("sync_version", MetadataV2FieldType.Integer, nullable: false, "Deterministic offline conflict token"),
+                Field("offline_action", MetadataV2FieldType.String, nullable: false, "Fixture role for offline harness", length: 32),
+                Field("notes", MetadataV2FieldType.String, nullable: true, "Operator notes", length: 1024),
+                Field("shape", MetadataV2FieldType.Geometry, nullable: true, "Geometry", ["geometry.primary"])
+            ],
+            accessPolicy);
+
+        var zoneResource = CreateMobileOfflineResource(
+            layerId: 68920,
+            name: "Offline Work Zones",
+            description: "Polygon context layer included in the offline package as readonly operational context.",
+            geometryType: MetadataV2GeometryType.Polygon,
+            bbox: new MetadataV2Bbox { West = -158.1250, South = 21.2600, East = -157.7000, North = 21.5200 },
+            displayField: "zone_name",
+            temporalField: null,
+            fields:
+            [
+                Field("objectid", MetadataV2FieldType.Integer, nullable: false, "Object ID", ["id.primary"]),
+                Field("globalid", MetadataV2FieldType.String, nullable: false, "Stable zone identifier", length: 64),
+                Field("zone_name", MetadataV2FieldType.String, nullable: false, "Work zone name", length: 128),
+                Field("zone_status", MetadataV2FieldType.String, nullable: false, "Zone status", length: 32),
+                Field("sync_version", MetadataV2FieldType.Integer, nullable: false, "Readonly context generation token"),
+                Field("notes", MetadataV2FieldType.String, nullable: true, "Zone notes", length: 1024),
+                Field("shape", MetadataV2FieldType.Geometry, nullable: true, "Geometry", ["geometry.primary"])
+            ],
+            accessPolicy);
+
+        var storageBindings = new[]
+        {
+            CreateMobileOfflineStorageBinding(OfflineSitesLayerId),
+            CreateMobileOfflineStorageBinding(68920)
+        };
+        var publications = new[]
+        {
+            CreateMobileOfflinePublication(OfflineSitesLayerId),
+            CreateMobileOfflinePublication(68920)
+        };
+
+        provider.SetGraph(graph with
+        {
+            Revision = graph.Revision + 1,
+            Services = graph.Services
+                .Where(static existing => existing.Metadata.Id != "svc-mobile-offline-demo-feature")
+                .Append(service)
+                .ToArray(),
+            Resources = graph.Resources
+                .Where(static existing => existing.Metadata.Id is not ("res-layer-68910" or "res-layer-68920"))
+                .Append(siteResource)
+                .Append(zoneResource)
+                .ToArray(),
+            StorageBindings = graph.StorageBindings
+                .Where(static existing => existing.Metadata.Id is not ("binding-layer-68910" or "binding-layer-68920"))
+                .Concat(storageBindings)
+                .ToArray(),
+            Publications = graph.Publications
+                .Where(static existing => existing.Metadata.Id is not ("pub-mobile-offline-feature-68910" or "pub-mobile-offline-feature-68920"))
+                .Concat(publications)
+                .ToArray()
+        });
+    }
+
+    private static MetadataV2Resource CreateMobileOfflineResource(
+        int layerId,
+        string name,
+        string description,
+        MetadataV2GeometryType geometryType,
+        MetadataV2Bbox bbox,
+        string displayField,
+        string? temporalField,
+        IReadOnlyList<MetadataV2Field> fields,
+        AccessPolicy accessPolicy)
+    {
+        var bindingId = $"binding-layer-{layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+        return new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = $"res-layer-{layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+                Name = name,
+                Title = name,
+                Description = description
+            },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            StorageBindingIds = [bindingId],
+            PrimaryStorageBindingId = bindingId,
+            AccessPolicy = accessPolicy,
+            SchemaFields = fields,
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = MetadataV2SpatialReference.Wgs84,
+                GeometryType = geometryType,
+                Bbox = bbox,
+                PrimaryGeometryField = "shape"
+            },
+            Temporal = temporalField is null
+                ? null
+                : new MetadataV2ResourceTemporal { StartTimeField = temporalField },
+            Display = new MetadataV2ResourceDisplay { DisplayField = displayField },
+            Editing = new MetadataV2ResourceEditing { CanModify = true },
+        };
+    }
+
+    private static MetadataV2StorageBinding CreateMobileOfflineStorageBinding(int layerId)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = $"binding-layer-{layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+                Name = $"binding-layer-{layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+            },
+            ResourceId = $"res-layer-{layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+            StorageType = MetadataV2StorageType.RelationalTable,
+            // The seed's shared 'features' table holds rows for every test layer keyed by a
+            // 'layer_id' discriminator; the geometry lives in the 'geometry' column and the
+            // mobile-offline schema fields are persisted in the 'attributes' JSONB column.
+            // FeatureStorageMapping.ParseRelationalLocator rejects any locator that
+            // contains ':' so use the table name directly and expose the layer/geometry/
+            // attributes columns via Options (matching WebAppFixture.BuildDefaultTestGraph).
+            Locator = "features",
+            StorageLayerId = layerId,
+            Options = new Dictionary<string, JsonElement>
+            {
+                ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry"),
+                ["attributesColumn"] = JsonSerializer.SerializeToElement("attributes")
+            },
+            Capabilities =
+            [
+                MetadataV2StorageBindingCapability.Query,
+                MetadataV2StorageBindingCapability.Filter,
+                MetadataV2StorageBindingCapability.Sort,
+                MetadataV2StorageBindingCapability.Aggregate,
+                MetadataV2StorageBindingCapability.Edit,
+                MetadataV2StorageBindingCapability.Transactions
+            ]
+        };
+
+    private static MetadataV2Publication CreateMobileOfflinePublication(int layerId)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = $"pub-mobile-offline-feature-{layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+                Name = layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            },
+            ServiceId = "svc-mobile-offline-demo-feature",
+            ResourceId = $"res-layer-{layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+            StorageBindingId = $"binding-layer-{layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+            Identifier = new MetadataV2PublicationIdentifier
+            {
+                Value = layerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                IsNumeric = true
+            },
+            PublicationType = MetadataV2PublicationType.EsriFeatureLayer
+        };
+
+    private static MetadataV2Field Field(
+        string name,
+        MetadataV2FieldType type,
+        bool nullable,
+        string description,
+        IReadOnlyList<string>? semanticRoles = null,
+        int? length = null)
+        => new()
+        {
+            Name = name,
+            Type = type,
+            Nullable = nullable,
+            Description = description,
+            SemanticRoles = semanticRoles ?? [],
+            Length = length
+        };
 
     [IntegrationTest]
     [Operation(Operations.CreateReplica)]

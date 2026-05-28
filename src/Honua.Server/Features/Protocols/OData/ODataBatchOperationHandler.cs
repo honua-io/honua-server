@@ -6,7 +6,6 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Models;
@@ -600,7 +599,7 @@ internal sealed partial class ODataBatchOperationHandler(
                 Honua.ServiceDefaults.HonuaTelemetry.Protocols.OData,
                 CancellationToken.None,
                 mutationFeature: responseItem.MutationFeature,
-                serviceProtocol: ServiceProtocols.OData,
+                serviceProtocol: ODataProtocolConstants.ProtocolName,
                 requestId: $"{context.TraceIdentifier}:{responseItem.Id}").ConfigureAwait(false);
         }
     }

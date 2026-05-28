@@ -3,9 +3,9 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Protocols.GeoServices;
@@ -30,12 +30,14 @@ internal interface IRelatedRecordsService
     /// <param name="queryParams">Query parameters for related records</param>
     /// <param name="objectIds">Object IDs to find related records for</param>
     /// <param name="relationship">Relationship definition</param>
+    /// <param name="relatedStorageLayerId">Storage layer id of the related resource</param>
     /// <param name="sqlFilter">Optional SQL filter fragment to apply</param>
     /// <returns>Configured RelatedQuery</returns>
     RelatedQuery BuildRelatedQuery(
         QueryRelatedRecordsParameters queryParams,
         long[] objectIds,
-        Relationship relationship,
+        MetadataV2Relationship relationship,
+        int relatedStorageLayerId,
         SqlFragment? sqlFilter);
 
     /// <summary>
@@ -68,7 +70,7 @@ internal interface IRelatedRecordsService
     RelatedRecordGroup[] GroupRelatedRecords(
         QueryResult<Feature> result,
         long[] objectIds,
-        Relationship relationship,
+        MetadataV2Relationship relationship,
         string objectIdFieldName,
         bool returnGeometry,
         int? outputSrid,
@@ -99,13 +101,16 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
     public RelatedQuery BuildRelatedQuery(
         QueryRelatedRecordsParameters queryParams,
         long[] objectIds,
-        Relationship relationship,
+        MetadataV2Relationship relationship,
+        int relatedStorageLayerId,
         SqlFragment? sqlFilter)
     {
-        var query = new RelatedQuery
+        var query = RelatedQuery.ForObjects(
+            objectIds,
+            relatedStorageLayerId,
+            relationship.OriginField,
+            relationship.DestinationField) with
         {
-            ObjectIds = objectIds,
-            Relationship = relationship,
             Where = queryParams.Where,
             SqlFilter = sqlFilter,
             Limit = queryParams.ResultRecordCount,
@@ -164,7 +169,7 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
     public RelatedRecordGroup[] GroupRelatedRecords(
         QueryResult<Feature> result,
         long[] objectIds,
-        Relationship relationship,
+        MetadataV2Relationship relationship,
         string objectIdFieldName,
         bool returnGeometry,
         int? outputSrid,
@@ -190,7 +195,7 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
 
         foreach (var feature in result.Items)
         {
-            if (feature.Attributes?.TryGetValue(relationship.DestinationForeignKeyField, out object? fkValue) == true &&
+            if (feature.Attributes?.TryGetValue(relationship.DestinationField, out object? fkValue) == true &&
                 FeatureServerValueParser.TryConvertToLong(fkValue, out var originId))
             {
                 if (!featuresByOriginId.TryGetValue(originId, out var bucket))

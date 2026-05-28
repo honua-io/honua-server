@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -23,6 +22,7 @@ namespace Honua.Server.Features.Protocols.Ogc.Api.Maps.Handlers;
 internal sealed class OgcMapsTileSetHandler
 {
     private const string OgcApiMapsProtocol = "OGC-API-Maps";
+    private const string OgcApiTilesProtocol = "OGC-API-Tiles";
 
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly ILogger<OgcMapsTileSetHandler> _logger;
@@ -284,10 +284,13 @@ internal sealed class OgcMapsTileSetHandler
             : $"{basePathPrefix}{relativePath}";
 
     private static bool IsOgcApiMapsEnabled(MetadataV2Service? service)
-        => ServiceProtocols.IsProtocolEnabled(service, OgcApiMapsProtocol);
+        => IsProtocolEnabled(service, OgcApiMapsProtocol);
 
     private static bool IsOgcApiTilesEnabled(MetadataV2Service? service)
-        => ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.OgcApiTiles);
+        => IsProtocolEnabled(service, OgcApiTilesProtocol);
+
+    private static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)
+        => service?.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase)) == true;
 
     private async Task<(MetadataV2Resource? Resource, MetadataV2Service? Service)> ResolveResourceAndServiceAsync(
         int storageLayerId,
@@ -307,7 +310,7 @@ internal sealed class OgcMapsTileSetHandler
             {
                 continue;
             }
-            if (ServiceProtocols.IsProtocolEnabled(candidate, OgcApiMapsProtocol))
+            if (IsProtocolEnabled(candidate, OgcApiMapsProtocol))
             {
                 service = candidate;
                 break;

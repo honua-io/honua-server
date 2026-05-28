@@ -5,6 +5,8 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.Server.Tests.Features.Licensing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -23,7 +25,8 @@ namespace Honua.Server.Tests.Features.SpatialAnalytics;
 [Protocol(TestProtocols.SpatialAnalytics)]
 public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture()
+        .WithTestLicense(HonuaEdition.Pro);
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
 

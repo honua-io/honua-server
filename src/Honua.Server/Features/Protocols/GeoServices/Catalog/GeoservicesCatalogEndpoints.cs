@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
@@ -20,6 +19,9 @@ internal static class GeoservicesCatalogEndpoints
     private const string JsonFormat = "json";
     private const string PrettyJsonFormat = "pjson";
     private const string JsonContentType = "application/json";
+    private const string FeatureServerProtocolName = "FeatureServer";
+    private const string MapServerProtocolName = "MapServer";
+    private const string ImageServerProtocolName = "ImageServer";
 
     /// <summary>
     /// Maps root catalog endpoints under /rest.
@@ -179,13 +181,13 @@ internal static class GeoservicesCatalogEndpoints
     {
         switch (primaryProtocol)
         {
-            case ServiceProtocols.FeatureServer:
+            case FeatureServerProtocolName:
                 directoryType = "FeatureServer";
                 return true;
-            case ServiceProtocols.MapServer:
+            case MapServerProtocolName:
                 directoryType = "MapServer";
                 return true;
-            case ServiceProtocols.ImageServer:
+            case ImageServerProtocolName:
                 directoryType = "ImageServer";
                 return true;
             default:

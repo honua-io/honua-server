@@ -3,7 +3,6 @@
 
 using System.Net;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -29,7 +28,6 @@ public class ApiSurfaceComplianceTests : IAsyncLifetime
     public ApiSurfaceComplianceTests(ITestOutputHelper output)
     {
         _output = output;
-        _fixture.ReplaceService<ILayerCatalog, Honua.Postgres.Features.Catalog.PostgresLayerCatalog>();
     }
 
     public async Task InitializeAsync()

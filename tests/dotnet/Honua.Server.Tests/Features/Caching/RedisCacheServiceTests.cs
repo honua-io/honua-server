@@ -5,7 +5,7 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using FluentAssertions;
 using Honua.Core.Features.Caching;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Caching;
@@ -61,7 +61,7 @@ public sealed class RedisCacheServiceTests : IDisposable
     public async Task GetAsync_WhenKeyNotFound_ReturnsNull()
     {
         // Act
-        var result = await _cacheService.GetAsync<FieldDefinition>("nonexistent");
+        var result = await _cacheService.GetAsync<MetadataV2Field>("nonexistent");
 
         // Assert
         result.Should().BeNull();
@@ -82,7 +82,7 @@ public sealed class RedisCacheServiceTests : IDisposable
             NullLogger<RedisCacheService>.Instance,
             performanceMonitor);
 
-        _ = await cache.GetAsync<FieldDefinition>("layer:42:token=secret");
+        _ = await cache.GetAsync<MetadataV2Field>("layer:42:token=secret");
 
         operationScope.Received().WithTag("cache_type", "layer-catalog");
         operationScope.Received().WithTag("key_family", "layer");
@@ -116,7 +116,7 @@ public sealed class RedisCacheServiceTests : IDisposable
             NullLogger<RedisCacheService>.Instance,
             performanceMonitor);
 
-        _ = await cache.GetAsync<FieldDefinition>("layer:42:token=secret");
+        _ = await cache.GetAsync<MetadataV2Field>("layer:42:token=secret");
 
         performanceMonitor.Received().RecordErrorWithContext(
             "cache_error",
@@ -130,16 +130,16 @@ public sealed class RedisCacheServiceTests : IDisposable
     public async Task SetAsync_ThenGetAsync_ReturnsCachedValue()
     {
         // Arrange
-        var item = new FieldDefinition("objectid", FieldType.Integer, Nullable: false);
+        var item = new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false };
 
         // Act
         await _cacheService.SetAsync("item:1", item);
-        var result = await _cacheService.GetAsync<FieldDefinition>("item:1");
+        var result = await _cacheService.GetAsync<MetadataV2Field>("item:1");
 
         // Assert
         result.Should().NotBeNull();
         result!.Name.Should().Be("objectid");
-        result.Type.Should().Be(FieldType.Integer);
+        result.Type.Should().Be(MetadataV2FieldType.Integer);
     }
 
     [UnitTest]
@@ -151,13 +151,13 @@ public sealed class RedisCacheServiceTests : IDisposable
         try
         {
             schemaContext.CurrentSchema = "alpha";
-            await _cacheService.SetAsync("layer:1", new FieldDefinition("Alpha", FieldType.String, Length: 10));
+            await _cacheService.SetAsync("layer:1", new MetadataV2Field { Name = "Alpha", Type = MetadataV2FieldType.String, Length = 10 });
 
             schemaContext.CurrentSchema = "beta";
-            var betaResult = await _cacheService.GetAsync<FieldDefinition>("layer:1");
+            var betaResult = await _cacheService.GetAsync<MetadataV2Field>("layer:1");
 
             schemaContext.CurrentSchema = "alpha";
-            var alphaResult = await _cacheService.GetAsync<FieldDefinition>("layer:1");
+            var alphaResult = await _cacheService.GetAsync<MetadataV2Field>("layer:1");
 
             betaResult.Should().BeNull();
             alphaResult.Should().NotBeNull();
@@ -180,7 +180,7 @@ public sealed class RedisCacheServiceTests : IDisposable
             schemaContext.CurrentSchema = "alpha";
             await _cacheService.SetAsync(
                 "scope:schema:alpha:layer:1",
-                new FieldDefinition("Scoped", FieldType.String, Length: 10));
+                new MetadataV2Field { Name = "Scoped", Type = MetadataV2FieldType.String, Length = 10 });
 
             GetFallbackCacheKeys().Should().ContainSingle()
                 .Which.Should().Be("test:scope:schema:alpha:layer:1");
@@ -196,7 +196,7 @@ public sealed class RedisCacheServiceTests : IDisposable
     public async Task SetAsync_WithTtl_ExpiresAfterTtl()
     {
         // Arrange
-        var item = new FieldDefinition("objectid", FieldType.Integer, Nullable: false);
+        var item = new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false };
         var shortTtl = TimeSpan.FromMilliseconds(50);
 
         // Act
@@ -205,7 +205,7 @@ public sealed class RedisCacheServiceTests : IDisposable
         // Wait for expiration
         await Task.Delay(100);
 
-        var result = await _cacheService.GetAsync<FieldDefinition>("item:short");
+        var result = await _cacheService.GetAsync<MetadataV2Field>("item:short");
 
         // Assert
         result.Should().BeNull();
@@ -225,12 +225,12 @@ public sealed class RedisCacheServiceTests : IDisposable
     public async Task RemoveAsync_RemovesCachedValue()
     {
         // Arrange
-        var item = new FieldDefinition("objectid", FieldType.Integer, Nullable: false);
+        var item = new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false };
         await _cacheService.SetAsync("item:remove", item);
 
         // Act
         await _cacheService.RemoveAsync("item:remove");
-        var result = await _cacheService.GetAsync<FieldDefinition>("item:remove");
+        var result = await _cacheService.GetAsync<MetadataV2Field>("item:remove");
 
         // Assert
         result.Should().BeNull();
@@ -244,10 +244,10 @@ public sealed class RedisCacheServiceTests : IDisposable
         var factoryCalled = false;
 
         // Act
-        var result = await _cacheService.GetOrSetAsync<FieldDefinition>("item:factory", async ct =>
+        var result = await _cacheService.GetOrSetAsync<MetadataV2Field>("item:factory", async ct =>
         {
             factoryCalled = true;
-            return new FieldDefinition("fromFactory", FieldType.String, Length: 20);
+            return new MetadataV2Field { Name = "fromFactory", Type = MetadataV2FieldType.String, Length = 20 };
         });
 
         // Assert
@@ -261,15 +261,15 @@ public sealed class RedisCacheServiceTests : IDisposable
     public async Task GetOrSetAsync_WhenCached_DoesNotCallFactory()
     {
         // Arrange
-        var item = new FieldDefinition("cached", FieldType.Integer, Nullable: false);
+        var item = new MetadataV2Field { Name = "cached", Type = MetadataV2FieldType.Integer, Nullable = false };
         await _cacheService.SetAsync("item:cached", item);
         var factoryCalled = false;
 
         // Act
-        var result = await _cacheService.GetOrSetAsync<FieldDefinition>("item:cached", async ct =>
+        var result = await _cacheService.GetOrSetAsync<MetadataV2Field>("item:cached", async ct =>
         {
             factoryCalled = true;
-            return new FieldDefinition("notUsed", FieldType.String, Length: 20);
+            return new MetadataV2Field { Name = "notUsed", Type = MetadataV2FieldType.String, Length = 20 };
         });
 
         // Assert
@@ -283,17 +283,17 @@ public sealed class RedisCacheServiceTests : IDisposable
     public async Task RemoveByPatternAsync_RemovesMatchingKeys()
     {
         // Arrange
-        await _cacheService.SetAsync("layer:1", new FieldDefinition("Layer1", FieldType.String, Length: 10));
-        await _cacheService.SetAsync("layer:2", new FieldDefinition("Layer2", FieldType.String, Length: 10));
-        await _cacheService.SetAsync("service:1", new FieldDefinition("Service1", FieldType.String, Length: 10));
+        await _cacheService.SetAsync("layer:1", new MetadataV2Field { Name = "Layer1", Type = MetadataV2FieldType.String, Length = 10 });
+        await _cacheService.SetAsync("layer:2", new MetadataV2Field { Name = "Layer2", Type = MetadataV2FieldType.String, Length = 10 });
+        await _cacheService.SetAsync("service:1", new MetadataV2Field { Name = "Service1", Type = MetadataV2FieldType.String, Length = 10 });
 
         // Act
         await _cacheService.RemoveByPatternAsync("layer:*");
 
         // Assert
-        var layer1 = await _cacheService.GetAsync<FieldDefinition>("layer:1");
-        var layer2 = await _cacheService.GetAsync<FieldDefinition>("layer:2");
-        var service1 = await _cacheService.GetAsync<FieldDefinition>("service:1");
+        var layer1 = await _cacheService.GetAsync<MetadataV2Field>("layer:1");
+        var layer2 = await _cacheService.GetAsync<MetadataV2Field>("layer:2");
+        var service1 = await _cacheService.GetAsync<MetadataV2Field>("service:1");
 
         layer1.Should().BeNull();
         layer2.Should().BeNull();
@@ -339,19 +339,19 @@ public sealed class RedisCacheServiceTests : IDisposable
             _performanceMonitor);
 
         // Act - Add more entries than limit
-        await cache.SetAsync("a", new FieldDefinition("A", FieldType.String, Length: 10));
-        await cache.SetAsync("b", new FieldDefinition("B", FieldType.String, Length: 10));
-        await cache.SetAsync("c", new FieldDefinition("C", FieldType.String, Length: 10));
-        await cache.SetAsync("d", new FieldDefinition("D", FieldType.String, Length: 10));
+        await cache.SetAsync("a", new MetadataV2Field { Name = "A", Type = MetadataV2FieldType.String, Length = 10 });
+        await cache.SetAsync("b", new MetadataV2Field { Name = "B", Type = MetadataV2FieldType.String, Length = 10 });
+        await cache.SetAsync("c", new MetadataV2Field { Name = "C", Type = MetadataV2FieldType.String, Length = 10 });
+        await cache.SetAsync("d", new MetadataV2Field { Name = "D", Type = MetadataV2FieldType.String, Length = 10 });
 
         // Assert - Newest entries should be present
-        var d = await cache.GetAsync<FieldDefinition>("d");
+        var d = await cache.GetAsync<MetadataV2Field>("d");
         d.Should().NotBeNull();
 
         // At least one old entry should have been evicted
-        var a = await cache.GetAsync<FieldDefinition>("a");
-        var b = await cache.GetAsync<FieldDefinition>("b");
-        var c = await cache.GetAsync<FieldDefinition>("c");
+        var a = await cache.GetAsync<MetadataV2Field>("a");
+        var b = await cache.GetAsync<MetadataV2Field>("b");
+        var c = await cache.GetAsync<MetadataV2Field>("c");
 
         // Total should not exceed limit
         var presentCount = new[] { a, b, c, d }.Count(x => x != null);
@@ -379,11 +379,11 @@ public sealed class RedisCacheServiceTests : IDisposable
             _performanceMonitor);
 
         // Fill to capacity and trigger eviction
-        await cache.SetAsync("a", new FieldDefinition("A", FieldType.String, Length: 10), TimeSpan.FromSeconds(60));
-        await cache.SetAsync("b", new FieldDefinition("B", FieldType.String, Length: 10), TimeSpan.FromSeconds(60));
-        await cache.SetAsync("c", new FieldDefinition("C", FieldType.String, Length: 10), TimeSpan.FromSeconds(60));
-        await cache.SetAsync("d", new FieldDefinition("D", FieldType.String, Length: 10), TimeSpan.FromSeconds(60));
-        await cache.SetAsync("e", new FieldDefinition("E", FieldType.String, Length: 10), TimeSpan.FromSeconds(60));
+        await cache.SetAsync("a", new MetadataV2Field { Name = "A", Type = MetadataV2FieldType.String, Length = 10 }, TimeSpan.FromSeconds(60));
+        await cache.SetAsync("b", new MetadataV2Field { Name = "B", Type = MetadataV2FieldType.String, Length = 10 }, TimeSpan.FromSeconds(60));
+        await cache.SetAsync("c", new MetadataV2Field { Name = "C", Type = MetadataV2FieldType.String, Length = 10 }, TimeSpan.FromSeconds(60));
+        await cache.SetAsync("d", new MetadataV2Field { Name = "D", Type = MetadataV2FieldType.String, Length = 10 }, TimeSpan.FromSeconds(60));
+        await cache.SetAsync("e", new MetadataV2Field { Name = "E", Type = MetadataV2FieldType.String, Length = 10 }, TimeSpan.FromSeconds(60));
 
         // Verify write metadata dictionary is bounded alongside fallback cache
         var writeMetadataField = typeof(RedisCacheService)
@@ -427,7 +427,7 @@ public sealed class RedisCacheServiceTests : IDisposable
             NullLogger<RedisCacheService>.Instance,
             _performanceMonitor);
 
-        await cache.SetAsync("layer:1", new FieldDefinition("Recovered", FieldType.String, Length: 10));
+        await cache.SetAsync("layer:1", new MetadataV2Field { Name = "Recovered", Type = MetadataV2FieldType.String, Length = 10 });
 
         cache.IsUsingFallback.Should().BeTrue();
         GetFallbackCacheKeys(cache).Should().ContainSingle();
@@ -459,8 +459,8 @@ public sealed class RedisCacheServiceTests : IDisposable
             _performanceMonitor);
 
         // Act
-        await disabledCache.SetAsync("key", new FieldDefinition("Test", FieldType.String, Length: 10));
-        var result = await disabledCache.GetAsync<FieldDefinition>("key");
+        await disabledCache.SetAsync("key", new MetadataV2Field { Name = "Test", Type = MetadataV2FieldType.String, Length = 10 });
+        var result = await disabledCache.GetAsync<MetadataV2Field>("key");
 
         // Assert
         result.Should().BeNull();
@@ -554,12 +554,12 @@ public sealed class RedisCacheServiceTests : IDisposable
     public async Task GetWithMetadataAsync_WhenKeyExists_ReturnsValueWithPositiveRemainingTtl()
     {
         // Arrange
-        var item = new FieldDefinition("objectid", FieldType.Integer, Nullable: false);
+        var item = new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false };
         var ttl = TimeSpan.FromSeconds(60);
         await _cacheService.SetAsync("meta:1", item, ttl);
 
         // Act
-        var result = await _cacheService.GetWithMetadataAsync<FieldDefinition>("meta:1");
+        var result = await _cacheService.GetWithMetadataAsync<MetadataV2Field>("meta:1");
 
         // Assert
         result.HasValue.Should().BeTrue();
@@ -574,7 +574,7 @@ public sealed class RedisCacheServiceTests : IDisposable
     public async Task GetWithMetadataAsync_WhenKeyNotFound_ReturnsMiss()
     {
         // Act
-        var result = await _cacheService.GetWithMetadataAsync<FieldDefinition>("meta:nonexistent");
+        var result = await _cacheService.GetWithMetadataAsync<MetadataV2Field>("meta:nonexistent");
 
         // Assert
         result.HasValue.Should().BeFalse();
@@ -587,14 +587,14 @@ public sealed class RedisCacheServiceTests : IDisposable
     public async Task GetWithMetadataAsync_WhenExpired_ReturnsMiss()
     {
         // Arrange
-        var item = new FieldDefinition("objectid", FieldType.Integer, Nullable: false);
+        var item = new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false };
         await _cacheService.SetAsync("meta:short", item, TimeSpan.FromMilliseconds(50));
 
         // Wait for expiration
         await Task.Delay(100);
 
         // Act
-        var result = await _cacheService.GetWithMetadataAsync<FieldDefinition>("meta:short");
+        var result = await _cacheService.GetWithMetadataAsync<MetadataV2Field>("meta:short");
 
         // Assert
         result.HasValue.Should().BeFalse();
@@ -613,7 +613,7 @@ public sealed class RedisCacheServiceTests : IDisposable
             _performanceMonitor);
 
         // Act
-        var result = await disabledCache.GetWithMetadataAsync<FieldDefinition>("meta:1");
+        var result = await disabledCache.GetWithMetadataAsync<MetadataV2Field>("meta:1");
 
         // Assert
         result.HasValue.Should().BeFalse();
@@ -625,12 +625,12 @@ public sealed class RedisCacheServiceTests : IDisposable
     {
         // Arrange: cache service with no IConnectionMultiplexer (simulates startup Redis failure)
         // — write metadata is the only TTL source, verifying Finding 1 fix.
-        var item = new FieldDefinition("objectid", FieldType.Integer, Nullable: false);
+        var item = new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false };
         var ttl = TimeSpan.FromSeconds(60);
         await _cacheService.SetAsync("meta:nomux", item, ttl);
 
         // Act
-        var result = await _cacheService.GetWithMetadataAsync<FieldDefinition>("meta:nomux");
+        var result = await _cacheService.GetWithMetadataAsync<MetadataV2Field>("meta:nomux");
 
         // Assert: remaining TTL is derived from write metadata, not MaxValue
         result.HasValue.Should().BeTrue();
@@ -645,12 +645,12 @@ public sealed class RedisCacheServiceTests : IDisposable
     public async Task GetWithMetadataAsync_AfterRemove_ReturnsMiss()
     {
         // Arrange: set and then remove to verify write metadata is cleaned up
-        var item = new FieldDefinition("objectid", FieldType.Integer, Nullable: false);
+        var item = new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false };
         await _cacheService.SetAsync("meta:removed", item, TimeSpan.FromSeconds(60));
         await _cacheService.RemoveAsync("meta:removed");
 
         // Act
-        var result = await _cacheService.GetWithMetadataAsync<FieldDefinition>("meta:removed");
+        var result = await _cacheService.GetWithMetadataAsync<MetadataV2Field>("meta:removed");
 
         // Assert
         result.HasValue.Should().BeFalse();
@@ -663,9 +663,9 @@ public sealed class RedisCacheServiceTests : IDisposable
         // Arrange: simulate a warm Redis entry written by another node. This node has
         // no IConnectionMultiplexer (startup failure) and no _writeMetadata for the key.
         // ResolveRemainingTtlAsync should return Zero so background refresh self-corrects.
-        var item = new FieldDefinition("objectid", FieldType.Integer, Nullable: false);
+        var item = new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false };
         var serialized = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
-            item, CacheJsonContext.Default.FieldDefinition);
+            item, CacheJsonContext.Default.MetadataV2Field);
 
         var distributedCache = Substitute.For<IDistributedCache>();
         distributedCache
@@ -688,7 +688,7 @@ public sealed class RedisCacheServiceTests : IDisposable
             distributedCacheKeyPrefix: null);
 
         // Act
-        var result = await cache.GetWithMetadataAsync<FieldDefinition>("meta:warm");
+        var result = await cache.GetWithMetadataAsync<MetadataV2Field>("meta:warm");
 
         // Assert: entry found, TTL is zero (triggers near-expiry / background refresh)
         result.HasValue.Should().BeTrue();
@@ -720,7 +720,7 @@ public sealed class RedisCacheServiceTests : IDisposable
             _performanceMonitor,
             redis);
 
-        await cache.SetAsync("layer:42", new FieldDefinition("objectid", FieldType.Integer, Nullable: false), TimeSpan.FromSeconds(30));
+        await cache.SetAsync("layer:42", new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false }, TimeSpan.FromSeconds(30));
 
         database.Received(1).CreateTransaction();
         _ = transaction.Received(1).ExecuteAsync(Arg.Any<CommandFlags>());

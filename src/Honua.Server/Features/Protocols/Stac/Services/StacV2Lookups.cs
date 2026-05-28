@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -37,7 +36,7 @@ internal static class StacV2Lookups
 
     /// <summary>
     /// Enumerates the STAC publications visible to the caller. A publication is visible
-    /// when it lives on a service exposing the <see cref="ServiceProtocols.Stac"/> protocol
+    /// when it lives on a service exposing the STAC protocol
     /// and the access policy on the resource (and the service it is published through)
     /// allows the current principal to read it.
     /// </summary>
@@ -50,7 +49,7 @@ internal static class StacV2Lookups
         var snapshot = await GetSnapshotAsync(context, cancellationToken).ConfigureAwait(false);
 
         var stacServiceIds = snapshot.Graph.Services
-            .Where(s => ServiceProtocols.IsProtocolEnabled(s, ServiceProtocols.Stac))
+            .Where(StacProtocolConstants.IsEnabled)
             .Select(s => s.Metadata.Id)
             .ToHashSet(StringComparer.Ordinal);
 
@@ -63,6 +62,10 @@ internal static class StacV2Lookups
         foreach (var pub in snapshot.Graph.Publications)
         {
             if (!pub.LayerIndex.HasValue)
+            {
+                continue;
+            }
+            if (!IsStacCollectionPublication(pub))
             {
                 continue;
             }
@@ -89,8 +92,7 @@ internal static class StacV2Lookups
             resolved.Add(new ResolvedStacPublication(pub, resource, service, pub.LayerIndex.Value));
         }
 
-        // Deterministic order keyed on layer index keeps catalog child links stable
-        // across requests, matching the v1 behaviour driven by ILayerCatalog ordering.
+        // Deterministic order keyed on layer index keeps catalog child links stable.
         resolved.Sort(static (a, b) => a.LayerIndex.CompareTo(b.LayerIndex));
         return resolved.ToArray();
     }
@@ -129,12 +131,16 @@ internal static class StacV2Lookups
             {
                 continue;
             }
+            if (!IsStacCollectionPublication(pub))
+            {
+                continue;
+            }
 
             if (!snapshot.Index.ServicesById.TryGetValue(pub.ServiceId, out var service))
             {
                 continue;
             }
-            if (!ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.Stac))
+            if (!StacProtocolConstants.IsEnabled(service))
             {
                 continue;
             }
@@ -168,6 +174,9 @@ internal static class StacV2Lookups
 
         return numericId.HasValue && publication.LayerIndex == numericId.Value;
     }
+
+    private static bool IsStacCollectionPublication(MetadataV2Publication publication)
+        => publication.PublicationType == MetadataV2PublicationType.StacCollection;
 
     private static async Task<MetadataV2GraphSnapshot> GetSnapshotAsync(
         HttpContext context,

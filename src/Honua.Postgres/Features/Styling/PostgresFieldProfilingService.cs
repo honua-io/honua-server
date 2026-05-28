@@ -3,8 +3,8 @@
 
 using System.Diagnostics;
 using System.Globalization;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
 using Honua.Postgres.Features.FeatureStore.Services;
@@ -47,7 +47,7 @@ internal sealed partial class PostgresFieldProfilingService : IFieldProfilingSer
     /// <inheritdoc />
     public async Task<IReadOnlyList<FieldProfile>> ProfileFieldsAsync(
         int layerId,
-        IReadOnlyList<FieldDefinition> fields,
+        IReadOnlyList<MetadataV2Field> fields,
         int sampleLimit,
         CancellationToken cancellationToken = default)
     {
@@ -121,7 +121,7 @@ internal sealed partial class PostgresFieldProfilingService : IFieldProfilingSer
     private async Task<FieldProfile?> ProfileSingleFieldAsync(
         NpgsqlConnection connection,
         int layerId,
-        FieldDefinition field,
+        MetadataV2Field field,
         int sampleLimit,
         CancellationToken cancellationToken)
     {
@@ -130,8 +130,8 @@ internal sealed partial class PostgresFieldProfilingService : IFieldProfilingSer
 
         var textPath = DatabaseSchema.BuildJsonPath(field.Name);
         var jsonbPath = DatabaseSchema.BuildJsonbAccessor(field.Name);
-        var isNumeric = field.Type is FieldType.Integer or FieldType.BigInteger
-            or FieldType.Double or FieldType.Float;
+        var isNumeric = field.Type is MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger
+            or MetadataV2FieldType.Double or MetadataV2FieldType.Float;
 
         // Build statistics query — CTE bounds the scan to sampleLimit rows.
         // Aggregates on the sample are approximate but sufficient for styling decisions.

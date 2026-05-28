@@ -370,7 +370,7 @@ public class SceneDatasetEndpointsTests : IAsyncLifetime
         Assert.Equal(initial.Id, resolved!.Id);
         Assert.Equal(initial.AssetRoot, resolved.AssetRoot);
         Assert.Equal("tileset.json", resolved.TilesetFileName);
-        Assert.Null(resolved.Metadata); // public scene → no access policy
+        Assert.Null(resolved.AccessPolicy); // public scene -> no access policy
     }
 
     [IntegrationTest]
@@ -405,10 +405,9 @@ public class SceneDatasetEndpointsTests : IAsyncLifetime
         var resolved = await registry.FindAsync(detail.Id);
 
         Assert.NotNull(resolved);
-        Assert.NotNull(resolved!.Metadata);
-        Assert.NotNull(resolved.Metadata!.AccessPolicy);
-        Assert.False(resolved.Metadata.AccessPolicy!.AllowAnonymous);
-        Assert.Contains("admin", resolved.Metadata.AccessPolicy.AllowedRoles!);
+        Assert.NotNull(resolved!.AccessPolicy);
+        Assert.False(resolved.AccessPolicy!.AllowAnonymous);
+        Assert.Contains("admin", resolved.AccessPolicy.AllowedRoles!);
     }
 
     private async Task<SceneDatasetDetail> CreateAsync(RegisterSceneDatasetRequest request)

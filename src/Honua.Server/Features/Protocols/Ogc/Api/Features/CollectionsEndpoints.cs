@@ -4,7 +4,6 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Exceptions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -28,6 +27,9 @@ namespace Honua.Server.Features.Protocols.Ogc.Api.Features;
 internal static class CollectionsEndpoints
 {
     internal const int MaxCollectionProjectionConcurrency = 8;
+    private const string OgcFeaturesProtocolName = "OgcFeatures";
+    private const string OgcApiMapsProtocolName = "OGC-API-Maps";
+    private const string OgcApiTilesProtocolName = "OGC-API-Tiles";
 
     private static readonly IReadOnlyDictionary<string, string> _queryablesFormatParameters =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -120,9 +122,35 @@ internal static class CollectionsEndpoints
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
             // Walk OGC API Features publications: each is a (resource, service) pair gated
-            // on protocol enablement + access policy. Use BuildPrimaryServiceMapV2 to pick
-            // the canonical service per layer index when a resource is published through
-            // more than one service.
+            // on protocol enablement + access policy. Enforce the canonical-service
+            // boundary: a resource only appears here through its IsPrimary publication —
+            // showing a layer only because the caller has access to a secondary, non-
+            // canonical publication leaks the canonical boundary (see
+            // OgcServiceBoundaryTests.GetCollections_WithSharedLayerInSecondaryService_DoesNotLeakCanonicalBoundary).
+            // First pass: discover the canonical (IsPrimary) OgcFeatures publication per resource.
+            var canonicalByResource = new Dictionary<string, (MetadataV2Publication Publication, MetadataV2Service Service)>(StringComparer.OrdinalIgnoreCase);
+            foreach (var publication in snapshot.Graph.Publications)
+            {
+                if (!publication.IsPrimary)
+                {
+                    continue;
+                }
+                if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service))
+                {
+                    continue;
+                }
+                if (!IsProtocolEnabled(service, OgcFeaturesProtocolName))
+                {
+                    continue;
+                }
+                var resource = snapshot.ResolveResource(publication);
+                if (resource is null)
+                {
+                    continue;
+                }
+                canonicalByResource[resource.Metadata.Id] = (publication, service);
+            }
+
             var publicationsByResource = new Dictionary<string, (MetadataV2Publication Publication, MetadataV2Service Service, MetadataV2Resource Resource)>(StringComparer.OrdinalIgnoreCase);
             foreach (var publication in snapshot.Graph.Publications)
             {
@@ -130,7 +158,7 @@ internal static class CollectionsEndpoints
                 {
                     continue;
                 }
-                if (!ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.OgcFeatures))
+                if (!IsProtocolEnabled(service, OgcFeaturesProtocolName))
                 {
                     continue;
                 }
@@ -143,9 +171,27 @@ internal static class CollectionsEndpoints
                 {
                     continue;
                 }
-                // Prefer the publication explicitly flagged primary; otherwise first wins.
-                if (!publicationsByResource.TryGetValue(resource.Metadata.Id, out var existing) ||
-                    (publication.IsPrimary && !existing.Publication.IsPrimary))
+
+                // Canonical-boundary enforcement: when a resource has an IsPrimary
+                // publication, only surface the layer if the caller can read THAT
+                // canonical publication. Otherwise hide it (the resource may also be
+                // exposed via a secondary service the caller has access to, but
+                // surfacing it there would leak across canonical boundaries).
+                if (canonicalByResource.TryGetValue(resource.Metadata.Id, out var canonical))
+                {
+                    if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, canonical.Service))
+                    {
+                        continue;
+                    }
+                    if (!publicationsByResource.ContainsKey(resource.Metadata.Id))
+                    {
+                        publicationsByResource[resource.Metadata.Id] = (canonical.Publication, canonical.Service, resource);
+                    }
+                    continue;
+                }
+
+                // No canonical publication exists for this resource — first match wins.
+                if (!publicationsByResource.ContainsKey(resource.Metadata.Id))
                 {
                     publicationsByResource[resource.Metadata.Id] = (publication, service, resource);
                 }
@@ -266,7 +312,7 @@ internal static class CollectionsEndpoints
             var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
                 context,
                 collectionId,
-                requiredProtocol: ServiceProtocols.OgcFeatures,
+                requiredProtocol: OgcFeaturesProtocolName,
                 cancellationToken: cancellationToken);
             if (!validation.IsValid)
             {
@@ -388,7 +434,7 @@ internal static class CollectionsEndpoints
             var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
                 context,
                 collectionId,
-                requiredProtocol: ServiceProtocols.OgcFeatures,
+                requiredProtocol: OgcFeaturesProtocolName,
                 cancellationToken: effectiveToken);
             if (!validation.IsValid)
             {
@@ -494,7 +540,7 @@ internal static class CollectionsEndpoints
             type: MediaTypes.GeoJson,
             title: "Data"));
 
-        if (service is not null && ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.OgcApiMaps))
+        if (IsProtocolEnabled(service, OgcApiMapsProtocolName))
         {
             collectionLinks.Add(Link.Create(
                 href: $"{baseUrl}/ogc/maps/collections/{collectionSegment}/map",
@@ -528,7 +574,7 @@ internal static class CollectionsEndpoints
                 title: "Style"));
         }
 
-        if (service is not null && ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.OgcApiTiles))
+        if (IsProtocolEnabled(service, OgcApiTilesProtocolName))
         {
             collectionLinks.Add(Link.Create(
                 href: $"{baseUrl}/ogc/tiles/collections/{collectionSegment}/tiles",
@@ -808,6 +854,9 @@ internal static class CollectionsEndpoints
         bool Found,
         string ResolvedCollectionId,
         IResult? ErrorResult);
+
+    private static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)
+        => service?.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase)) == true;
 
 }
 

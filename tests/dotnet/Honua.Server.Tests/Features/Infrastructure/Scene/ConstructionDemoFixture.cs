@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Core.Features.Shared.Models;
 
@@ -56,34 +57,63 @@ internal static class ConstructionDemoFixture
     /// <summary>Field name driving extrusion height.</summary>
     public const string HeightField = "height_m";
 
-    /// <summary>Layer attribute fields surfaced into the catalog and metadata schema.</summary>
-    public static FieldDefinition[] BuildFields() =>
-    [
-        new FieldDefinition("objectid", FieldType.Integer, Length: null, Nullable: false),
-        new FieldDefinition("shape", FieldType.Geometry, Length: null, Nullable: false),
-        new FieldDefinition("name", FieldType.String, Length: 64, Nullable: false),
-        new FieldDefinition("height_m", FieldType.Double, Length: null, Nullable: false),
-        new FieldDefinition("phase", FieldType.String, Length: 32, Nullable: false),
-        new FieldDefinition("work_package_id", FieldType.String, Length: 32, Nullable: false)
-    ];
-
-    /// <summary>Extrusion configuration matching the layer's <c>height_m</c> field.</summary>
-    public static LayerExtrusionInfo Extrusion { get; } = new()
+    /// <summary>Metadata v2 extrusion configuration matching the layer's <c>height_m</c> field.</summary>
+    public static MetadataV2ExtrusionInfo Extrusion { get; } = new()
     {
         HeightField = HeightField,
-        Unit = VerticalUnits.Meters,
+        Unit = MetadataV2VerticalUnits.Meters,
         DefaultHeight = 10.0
     };
 
-    /// <summary>Layer definition wired with the demo extrusion metadata.</summary>
-    public static LayerDefinition BuildLayer() => new(
-        LayerId,
-        LayerName,
-        Description: "Demo-grade NVIDIA construction site footprints for #899.",
-        GeometryType.Polygon,
-        SpatialReference.Create(4326, 4326),
-        BuildFields(),
-        Metadata: new CatalogMetadata { Extrusion = Extrusion });
+    /// <summary>Metadata v2 graph carrying the demo resource extrusion metadata.</summary>
+    public static MetadataV2Graph BuildMetadataGraph(bool includeExtrusion = true)
+    {
+        const string resourceId = "res-construction-demo";
+        const string bindingId = "binding-construction-demo";
+
+        return new MetadataV2Graph
+        {
+            Revision = 1,
+            Environment = "test",
+            GeneratedAt = DateTimeOffset.UtcNow,
+            Resources =
+            [
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = resourceId, Name = LayerName },
+                    Type = MetadataV2ResourceType.FeatureDataset,
+                    StorageBindingIds = [bindingId],
+                    SchemaFields =
+                    [
+                        new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+                        new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, Nullable = false },
+                        new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = false, Length = 64 },
+                        new MetadataV2Field { Name = "height_m", Type = MetadataV2FieldType.Double, Nullable = false },
+                        new MetadataV2Field { Name = "phase", Type = MetadataV2FieldType.String, Nullable = false, Length = 32 },
+                        new MetadataV2Field { Name = "work_package_id", Type = MetadataV2FieldType.String, Nullable = false, Length = 32 }
+                    ],
+                    Spatial = new MetadataV2ResourceSpatial
+                    {
+                        SpatialReference = MetadataV2SpatialReference.Wgs84,
+                        GeometryType = MetadataV2GeometryType.Polygon,
+                        PrimaryGeometryField = "shape"
+                    },
+                    Extrusion = includeExtrusion ? Extrusion : null
+                }
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = bindingId, Name = bindingId },
+                    ResourceId = resourceId,
+                    StorageType = MetadataV2StorageType.RelationalTable,
+                    Locator = $"features:{LayerId}",
+                    StorageLayerId = LayerId
+                }
+            ]
+        };
+    }
 
     /// <summary>Five deterministic polygon footprints covering all three work packages.</summary>
     public static IReadOnlyList<SceneFeature> Features { get; } = BuildFeatures();

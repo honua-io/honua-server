@@ -8,7 +8,6 @@ using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.HealthCheck.Abstractions;
@@ -52,7 +51,6 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             services.RemoveAll<IReplicaStore>();
             services.AddSingleton<IChangeTracker, InMemoryChangeTracker>();
             services.AddSingleton<IReplicaStore, InMemoryReplicaStore>();
-            services.AddScoped<ILayerCatalog>(_ => new TestLayerCatalog());
             services.AddScoped<ISecureConnectionRegistry, NullSecureConnectionRegistry>();
             services.AddScoped<IConnectionEncryptionService, NullConnectionEncryptionService>();
             services.AddScoped<ISecureConnectionResolver, NullSecureConnectionResolver>();
@@ -268,7 +266,7 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 
     private sealed class AllowAllSqlFilterTranslator : ISqlFilterTranslator
     {
-        public SqlFragment Translate(FilterExpression filter, Core.Features.Catalog.Domain.LayerDefinition layer)
+        public SqlFragment Translate(FilterExpression filter, Core.Features.Metadata.Domain.V2.MetadataV2Resource resource)
             => new("1=1", Array.Empty<object?>());
     }
 

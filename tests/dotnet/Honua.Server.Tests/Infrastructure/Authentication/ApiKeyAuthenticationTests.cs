@@ -2,13 +2,14 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text;
-using Honua.Core.Features.Catalog.Abstractions;
+using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -39,6 +40,8 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     private const string TestBasicPassword = "TestBasicPassword123!";
     private const string TestBasicPriorityPassword = "TestBasicPriority123!";
     private const string CaseSensitiveAdminPassword = "TestPassword123!";
+    private static readonly string[] FeatureServerCapabilities = ["Query", "Extract"];
+    private static readonly string[] FeatureServerSupportedFormats = ["JSON", "GeoJSON"];
     private readonly ITestOutputHelper _output;
     private readonly WebAppFixture _fixture = new();
 
@@ -101,6 +104,84 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
             });
     }
 
+    private static void AddFeatureServerTestServices(
+        IServiceCollection services,
+        AccessPolicy? servicePolicy = null)
+    {
+        services.RemoveAll<NpgsqlDataSource>();
+        services.RemoveAll<IDatabaseConnectionProvider>();
+        services.RemoveAll<IMetadataV2GraphProvider>();
+        services.RemoveAll<IMetadataV2GraphStore>();
+
+        var metadataProvider = BuildFeatureServerMetadataProvider(servicePolicy);
+        services.AddSingleton(metadataProvider);
+        services.AddSingleton<IMetadataV2GraphProvider>(provider =>
+            provider.GetRequiredService<TestMetadataV2GraphProvider>());
+        services.AddSingleton<IMetadataV2GraphStore>(provider =>
+            provider.GetRequiredService<TestMetadataV2GraphProvider>());
+
+        services.AddScoped<TestFeatureStore>();
+        services.AddScoped<IFeatureReader>(provider => provider.GetRequiredService<TestFeatureStore>());
+        services.AddScoped<IFeatureWriter>(provider => provider.GetRequiredService<TestFeatureStore>());
+        services.AddScoped<ITileProvider>(provider => provider.GetRequiredService<TestFeatureStore>());
+        services.AddScoped<IRelationshipStore>(provider => provider.GetRequiredService<TestFeatureStore>());
+        services.AddScoped<IStreamingFeatureStore>(provider => provider.GetRequiredService<TestFeatureStore>());
+    }
+
+    private static TestMetadataV2GraphProvider BuildFeatureServerMetadataProvider(AccessPolicy? servicePolicy)
+    {
+        var options = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+        {
+            ["capabilities"] = JsonSerializer.SerializeToElement(FeatureServerCapabilities),
+            ["supportedFormats"] = JsonSerializer.SerializeToElement(FeatureServerSupportedFormats)
+        };
+
+        return new TestMetadataV2GraphBuilder()
+            .AddResource(
+                "res-test-layer-0",
+                "Test Layer",
+                MetadataV2ResourceType.FeatureDataset,
+                fields:
+                [
+                    new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Alias = "Object ID" },
+                    new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Alias = "Name field", Length = 255 },
+                    new MetadataV2Field { Name = "description", Type = MetadataV2FieldType.String, Nullable = true, Alias = "Description", Length = 500 },
+                    new MetadataV2Field { Name = "category", Type = MetadataV2FieldType.String, Nullable = true, Alias = "Category", Length = 255 },
+                    new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime, Nullable = true, Alias = "Timestamp" }
+                ],
+                spatial: new MetadataV2ResourceSpatial
+                {
+                    SpatialReference = MetadataV2SpatialReference.Wgs84,
+                    GeometryType = MetadataV2GeometryType.Point,
+                    Bbox = new MetadataV2Bbox
+                    {
+                        West = -180,
+                        South = -90,
+                        East = 180,
+                        North = 90
+                    }
+                })
+            .AddStorageBinding(
+                "binding-test-layer-0",
+                "res-test-layer-0",
+                "test.layers.0",
+                storageLayerId: 0)
+            .AddService(
+                "svc-test",
+                "test",
+                protocols: [ServiceProtocols.FeatureServer],
+                accessPolicy: servicePolicy,
+                options: options)
+            .AddPublication(
+                "pub-test-layer-0",
+                "svc-test",
+                "res-test-layer-0",
+                layerIndex: 0,
+                storageBindingId: "binding-test-layer-0",
+                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+            .BuildProvider();
+    }
+
     private static string TestPostgresConnectionString => TestConnectionStrings.DefaultPostgresConnectionString;
 
     private sealed class AlwaysCompatibleDatabaseCompatibilityChecker : IDatabaseCompatibilityChecker
@@ -113,60 +194,6 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
                 "3.6.2",
                 "3.6.2",
                 ["postgis", "postgis_raster"]));
-    }
-
-    private static void AddFeatureServerMetadataV2Graph(IServiceCollection services, bool allowAnonymous)
-    {
-        var accessPolicy = allowAnonymous ? new AccessPolicy { AllowAnonymous = true } : null;
-        var graph = new TestMetadataV2GraphBuilder()
-            .AddService(
-                "svc-test-feature",
-                "test",
-                protocols: [ServiceProtocols.FeatureServer],
-                accessPolicy: accessPolicy)
-            .AddResource(
-                "res-layer-0",
-                "Test Layer",
-                fields:
-                [
-                    new MetadataV2Field
-                    {
-                        Name = "objectid",
-                        Type = MetadataV2FieldType.Integer,
-                        Nullable = false,
-                        SemanticRoles = ["id.primary"],
-                    },
-                    new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true },
-                    new MetadataV2Field
-                    {
-                        Name = "shape",
-                        Type = MetadataV2FieldType.Geometry,
-                        Nullable = true,
-                        Editable = false,
-                        SemanticRoles = ["geometry.primary"],
-                    },
-                ],
-                accessPolicy: accessPolicy,
-                spatial: new MetadataV2ResourceSpatial
-                {
-                    SpatialReference = MetadataV2SpatialReference.Wgs84,
-                    GeometryType = MetadataV2GeometryType.Point,
-                    PrimaryGeometryField = "shape",
-                    SupportedCrs = [MetadataV2SpatialReference.Wgs84],
-                })
-            .AddStorageBinding("binding-layer-0", "res-layer-0", "features:0", storageLayerId: 0)
-            .AddPublication(
-                id: "pub-layer-0",
-                serviceId: "svc-test-feature",
-                resourceId: "res-layer-0",
-                layerIndex: 0,
-                storageBindingId: "binding-layer-0",
-                serviceLocalId: "0",
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
-            .Build();
-
-        services.RemoveAll<IMetadataV2GraphProvider>();
-        services.AddSingleton<IMetadataV2GraphProvider>(_ => new TestMetadataV2GraphProvider(graph));
     }
 
     #region Development Bypass Tests
@@ -619,19 +646,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
 
             builder.ConfigureTestServices(services =>
             {
-                // Remove the real PostgreSQL services
-                services.RemoveAll<Npgsql.NpgsqlDataSource>();
-                services.RemoveAll<IDatabaseConnectionProvider>();
-
-                // Add mock implementations for services needed by FeatureServer
-                services.AddScoped<ILayerCatalog>(provider => new TestLayerCatalog());
-                services.AddScoped<TestFeatureStore>();
-                services.AddScoped<IFeatureReader>(provider => provider.GetRequiredService<TestFeatureStore>());
-                services.AddScoped<IFeatureWriter>(provider => provider.GetRequiredService<TestFeatureStore>());
-                services.AddScoped<ITileProvider>(provider => provider.GetRequiredService<TestFeatureStore>());
-                services.AddScoped<IRelationshipStore>(provider => provider.GetRequiredService<TestFeatureStore>());
-                services.AddScoped<IStreamingFeatureStore>(provider => provider.GetRequiredService<TestFeatureStore>());
-                AddFeatureServerMetadataV2Graph(services, allowAnonymous: false);
+                AddFeatureServerTestServices(services);
             });
         });
         using var client = factory.CreateClient();
@@ -656,20 +671,9 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
 
             builder.ConfigureTestServices(services =>
             {
-                // Remove the real PostgreSQL services
-                services.RemoveAll<Npgsql.NpgsqlDataSource>();
-                services.RemoveAll<IDatabaseConnectionProvider>();
-
-                // Add mock implementations for services needed by FeatureServer
-                services.AddScoped<ILayerCatalog>(_ => new TestLayerCatalog(
-                    servicePolicy: new AccessPolicy { AllowAnonymous = true }));
-                services.AddScoped<TestFeatureStore>();
-                services.AddScoped<IFeatureReader>(provider => provider.GetRequiredService<TestFeatureStore>());
-                services.AddScoped<IFeatureWriter>(provider => provider.GetRequiredService<TestFeatureStore>());
-                services.AddScoped<ITileProvider>(provider => provider.GetRequiredService<TestFeatureStore>());
-                services.AddScoped<IRelationshipStore>(provider => provider.GetRequiredService<TestFeatureStore>());
-                services.AddScoped<IStreamingFeatureStore>(provider => provider.GetRequiredService<TestFeatureStore>());
-                AddFeatureServerMetadataV2Graph(services, allowAnonymous: true);
+                AddFeatureServerTestServices(
+                    services,
+                    servicePolicy: new AccessPolicy { AllowAnonymous = true });
             });
         });
         using var client = factory.CreateClient();

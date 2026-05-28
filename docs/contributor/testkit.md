@@ -283,7 +283,7 @@ maps to the CI schedule defined in ADR-0037 (`docs/contributor/adr/0037-unified-
 | Attribute | Category | Tier | When it runs |
 |-----------|----------|------|--------------|
 | `[UnitTest]` | `Unit` | `Fast` | Every PR (no DB, no HTTP, no Testcontainers). |
-| `[IntegrationTest]` | `Integration` | `Integration` | Targeted shards on PRs; full matrix on scheduled/manual full integration runs. PR shard step composes `(matrix.filter)&Tier!=Slow` so a Slow-tagged sibling in the same shard namespace skips. |
+| `[IntegrationTest]` | `Integration` | `Integration` | Targeted shards on PRs; full matrix on scheduled/manual full integration runs and PRs labeled `ci/full`. PR shard step composes `(matrix.filter)&Tier!=Slow&Tier!=Fast` so Slow-tagged siblings skip and Fast tests run only once in the foundation lane. |
 | `[EmulatorTest]` | `Integration,Emulator` | `Slow` | `nightly-slow-tier.yml` — runs `Tier=Slow&Category=Emulator` against LocalStack S3 + Azurite + Postgres. |
 | `[ScaleTest]` | `Integration,Scale` | `Slow` | Currently **not** scheduled. Multi-node compose fixtures are tracked as a separate workflow; the trait is in place for the future workflow to opt in. |
 | `[ExternalServiceTest]` | `Integration,External` | `Slow` | Currently **not** scheduled. External service credentials (e.g. Esri Geoportal) are tracked as a separate workflow. |

@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -22,6 +21,7 @@ internal static class TileJsonEndpoints
     private const string TileJsonVersion = "3.0.0";
     private const string TileScheme = "xyz";
     private const string JsonContentType = "application/json";
+    private const string FeatureServerProtocolName = "FeatureServer";
 
     public static IEndpointRouteBuilder MapTileJsonEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -51,7 +51,7 @@ internal static class TileJsonEndpoints
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
             context,
             layerId,
-            requiredProtocol: ServiceProtocols.FeatureServer,
+            requiredProtocol: FeatureServerProtocolName,
             cancellationToken: cancellationToken);
         if (!layerValidation.IsValid)
         {

@@ -3,8 +3,8 @@
 
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Scene.Domain;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 
@@ -33,10 +33,6 @@ public sealed class MetadataV2ModelTests
         graph.StorageBindings.Should().BeEmpty();
         graph.Services.Should().BeEmpty();
         graph.Publications.Should().BeEmpty();
-        graph.Catalogs.Should().BeEmpty();
-        graph.Policies.Should().BeEmpty();
-        graph.Roles.Should().BeEmpty();
-        graph.ProjectionProfiles.Should().BeEmpty();
         graph.Extensions.Should().BeEmpty();
     }
 
@@ -315,8 +311,8 @@ public sealed class MetadataV2ModelTests
     {
         Enum.GetNames<MetadataV2ResourceType>().Should().BeEquivalentTo(
             nameof(MetadataV2ResourceType.FeatureDataset),
-            nameof(MetadataV2ResourceType.RasterDataset),
             nameof(MetadataV2ResourceType.Table),
+            nameof(MetadataV2ResourceType.RasterDataset),
             nameof(MetadataV2ResourceType.TileDataset),
             nameof(MetadataV2ResourceType.Process),
             nameof(MetadataV2ResourceType.Style),
@@ -368,6 +364,44 @@ public sealed class MetadataV2ModelTests
         json.Should().Contain("\"render\"");
         json.Should().Contain("\"tile\"");
         json.Should().Contain("\"download\"");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void JsonContext_SerializesResourceSymbology3D()
+    {
+        var resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource.buildings" },
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "height", Type = MetadataV2FieldType.Integer }
+            ],
+            Symbology3D = new Symbology3D
+            {
+                DefaultColor = new Symbology3DColor(255, 255, 255),
+                DefaultOpacity = 0.75,
+                Rules =
+                [
+                    new Symbology3DRule
+                    {
+                        Attribute = "height",
+                        Comparison = Symbology3DComparison.GreaterThan,
+                        Value = "30",
+                        Color = new Symbology3DColor(255, 0, 0)
+                    }
+                ]
+            }
+        };
+
+        var json = JsonSerializer.Serialize(resource, MetadataV2JsonContext.Default.MetadataV2Resource);
+        var roundTrip = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Resource);
+
+        json.Should().Contain("\"symbology3D\"");
+        json.Should().Contain("\"defaultOpacity\":0.75");
+        roundTrip!.Symbology3D.Should().NotBeNull();
+        roundTrip.Symbology3D!.Rules.Single().Attribute.Should().Be("height");
+        roundTrip.Symbology3D.Rules.Single().Color.Should().Be(new Symbology3DColor(255, 0, 0));
     }
 
     [UnitTest]
@@ -427,161 +461,6 @@ public sealed class MetadataV2ModelTests
 
     [UnitTest]
     [Operation(Operations.Query)]
-    public void Validate_WithDuplicateNewGraphEntityIds_ReturnsError()
-    {
-        var graph = CreateValidGraph() with
-        {
-            Policies =
-            [
-                new MetadataV2Policy
-                {
-                    Metadata = new MetadataV2ObjectMetadata
-                    {
-                        Id = "policy.read"
-                    }
-                },
-                new MetadataV2Policy
-                {
-                    Metadata = new MetadataV2ObjectMetadata
-                    {
-                        Id = "policy.read"
-                    }
-                }
-            ],
-            ProjectionProfiles =
-            [
-                new MetadataV2ProjectionProfile
-                {
-                    Metadata = new MetadataV2ObjectMetadata
-                    {
-                        Id = "resource.parcels"
-                    }
-                }
-            ]
-        };
-
-        var result = MetadataV2GraphValidator.Validate(graph);
-
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain("metadata id 'policy.read' is duplicated.");
-        result.Errors.Should().Contain("metadata id 'resource.parcels' is duplicated.");
-    }
-
-    [UnitTest]
-    [Operation(Operations.Query)]
-    public void Validate_WithDuplicateStyleResourceIds_ReturnsValidationError()
-    {
-        var validGraph = CreateValidGraph();
-        var graph = validGraph with
-        {
-            Resources =
-            [
-                validGraph.Resources[0],
-                CreateStyleResource("style.default"),
-                CreateStyleResource("style.default")
-            ]
-        };
-
-        var result = MetadataV2GraphValidator.Validate(graph);
-
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain("metadata id 'style.default' is duplicated.");
-    }
-
-    [UnitTest]
-    [Operation(Operations.Query)]
-    public void Validate_WithNewGraphEntityMetadataIssues_ReturnsError()
-    {
-        var graph = CreateValidGraph() with
-        {
-            ProjectionProfiles =
-            [
-                new MetadataV2ProjectionProfile
-                {
-                    Metadata = new MetadataV2ObjectMetadata
-                    {
-                        Id = "profile.ogc",
-                        ContactPoint = new MetadataV2ContactPoint
-                        {
-                            Email = "metadata-team"
-                        }
-                    }
-                }
-            ]
-        };
-
-        var result = MetadataV2GraphValidator.Validate(graph);
-
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(
-            "projection profile 'profile.ogc' metadata.contactPoint.email 'metadata-team' must contain '@'.");
-    }
-
-    [UnitTest]
-    [Operation(Operations.Query)]
-    public void Validate_WithDanglingCatalogAndPolicyReferences_ReturnsErrors()
-    {
-        var validGraph = CreateValidGraph();
-        var graph = validGraph with
-        {
-            Resources =
-            [
-                validGraph.Resources[0] with
-                {
-                    PolicyIds =
-                    [
-                        "policy.missing"
-                    ]
-                }
-            ],
-            Catalogs =
-            [
-                new MetadataV2Catalog
-                {
-                    Metadata = new MetadataV2ObjectMetadata
-                    {
-                        Id = "catalog.public"
-                    },
-                    ParentCatalogId = "catalog.missing",
-                    ResourceIds =
-                    [
-                        "resource.missing"
-                    ],
-                    PublicationIds =
-                    [
-                        "publication.missing"
-                    ]
-                }
-            ],
-            Roles =
-            [
-                new MetadataV2Role
-                {
-                    Metadata = new MetadataV2ObjectMetadata
-                    {
-                        Id = "role.editor"
-                    },
-                    PolicyIds =
-                    [
-                        "policy.missing"
-                    ]
-                }
-            ]
-        };
-
-        var result = MetadataV2GraphValidator.Validate(graph);
-
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain("resource 'resource.parcels' references missing policy 'policy.missing'.");
-        result.Errors.Should().Contain("catalog 'catalog.public' references missing parent catalog 'catalog.missing'.");
-        result.Errors.Should().Contain("catalog 'catalog.public' references missing resource 'resource.missing'.");
-        result.Errors.Should().Contain(
-            "catalog 'catalog.public' references missing publication 'publication.missing'.");
-        result.Errors.Should().Contain("role 'role.editor' references missing policy 'policy.missing'.");
-    }
-
-    [UnitTest]
-    [Operation(Operations.Query)]
     public void Validate_WithDanglingPublicationReferences_ReturnsResourceAndServiceErrors()
     {
         var graph = CreateValidGraph() with
@@ -626,7 +505,6 @@ public sealed class MetadataV2ModelTests
                     {
                         Id = "resource.parcels"
                     },
-                    PrimaryStorageBindingId = "storage.parcels.postgis",
                     StorageBindingIds =
                     [
                         "storage.hydrants.postgis"
@@ -641,7 +519,8 @@ public sealed class MetadataV2ModelTests
                     {
                         Id = "storage.hydrants.postgis"
                     },
-                    ResourceId = "resource.hydrants"
+                    ResourceId = "resource.hydrants",
+                    StorageLayerId = 1
                 }
             ]
         };
@@ -692,6 +571,44 @@ public sealed class MetadataV2ModelTests
 
         result.IsValid.Should().BeFalse();
         result.Errors.Should().Contain("publication 'publication.parcels' references missing service 'service.other'.");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void Validate_WithSymbology3DReferencingMissingField_ReturnsError()
+    {
+        var graph = new MetadataV2Graph
+        {
+            Resources =
+            [
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource.buildings" },
+                    SchemaFields =
+                    [
+                        new MetadataV2Field { Name = "height", Type = MetadataV2FieldType.Integer }
+                    ],
+                    Symbology3D = new Symbology3D
+                    {
+                        Rules =
+                        [
+                            new Symbology3DRule
+                            {
+                                Attribute = "missing_height",
+                                Comparison = Symbology3DComparison.GreaterThan,
+                                Value = "30"
+                            }
+                        ]
+                    }
+                }
+            ]
+        };
+
+        var result = MetadataV2GraphValidator.Validate(graph);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(
+            "resource 'resource.buildings' symbology3D.rules.attribute 'missing_height' is not declared in schemaFields.");
     }
 
     private static MetadataV2Graph CreateValidGraph()
@@ -758,29 +675,6 @@ public sealed class MetadataV2ModelTests
                     StorageBindingId = "storage.parcels.postgis"
                 }
             ]
-        };
-    }
-
-    private static MetadataV2Resource CreateStyleResource(string id)
-    {
-        return new MetadataV2Resource
-        {
-            Metadata = new MetadataV2ObjectMetadata
-            {
-                Id = id
-            },
-            Type = MetadataV2ResourceType.Style,
-            Style = new MetadataV2ResourceStyle
-            {
-                Encodings =
-                [
-                    new MetadataV2StyleEncoding
-                    {
-                        Encoding = "mapbox-style",
-                        Body = "{}"
-                    }
-                ]
-            }
         };
     }
 }

@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Helpers;
@@ -35,25 +34,11 @@ internal static class GeoServicesTemporalQueryBuilder
     }
 
     /// <summary>
-    /// Builds a temporal filter expression from raw time values.
-    /// </summary>
-    internal static FilterExpression? BuildTemporalExpression(string? time, string? timeRelation, LayerDefinition layer)
-    {
-        if (string.IsNullOrWhiteSpace(time))
-        {
-            return null;
-        }
-
-        return BuildTemporalExpressionCore(time, timeRelation, layer);
-    }
-
-    /// <summary>
-    /// V2 overload of <see cref="BuildTemporalExpression(string?, string?, LayerDefinition)"/>.
     /// Builds a temporal filter expression from raw time values against a Metadata v2
-    /// canonical resource. Mirrors the v1 routing logic: the resource must be configured
-    /// as opt-in time-aware (start-time field declared on the temporal extension and
-    /// resolving to a date/datetime schema field) before a non-empty time= filter is
-    /// honored. The <c>time=null,null</c> no-op form returns null without throwing.
+    /// canonical resource. The resource must be configured as opt-in time-aware
+    /// (start-time field declared on the temporal extension and resolving to a
+    /// date/datetime schema field) before a non-empty time= filter is honored.
+    /// The <c>time=null,null</c> no-op form returns null without throwing.
     /// </summary>
     internal static FilterExpression? BuildTemporalExpression(
         string? time,
@@ -142,52 +127,6 @@ internal static class GeoServicesTemporalQueryBuilder
         }
 
         return new Literal(value.Value, LiteralType.DateTime);
-    }
-
-    private static FilterExpression? BuildTemporalExpressionCore(string time, string? timeRelation, LayerDefinition layer)
-    {
-        if (!TryParseTimeParameter(time, out var startTime, out var endTime))
-        {
-            throw new ArgumentException($"Invalid time parameter format: {time}");
-        }
-
-        // time=null,null parses as both bounds null (documented no-op).
-        // Skip temporal field resolution so non-time-aware layers do not
-        // throw for the no-op form and so the documented contract holds.
-        if (startTime is null && endTime is null)
-        {
-            return null;
-        }
-
-        // Strict opt-in: a non-empty time= filter requires explicit
-        // TimeInfo.StartTimeField (and any configured EndTimeField) to resolve
-        // against real Date/DateTime attributes. The fallback to the first
-        // Date/DateTime attribute would silently filter on a non-temporal
-        // column on layers that temporalExtent and WMS/WMTS treat as
-        // not-time-aware (docs/gis/temporal-animation-api.md).
-        if (!TemporalExtentHelpers.TryResolveOptInTemporalFields(layer, out var selection))
-        {
-            throw new ArgumentException(
-                $"Layer '{layer.Name}' is not configured as time-aware.");
-        }
-
-        var relation = ParseTimeRelation(timeRelation);
-        var temporalType = selection.StartField.Type;
-        var queryStart = ToTemporalLiteral(startTime, temporalType);
-        var queryEnd = ToTemporalLiteral(endTime, temporalType);
-
-        var startExpression = new PropertyReference(selection.StartField.Name);
-        FilterExpression endExpression = selection.EndField == null
-            ? startExpression
-            : new FunctionCall(
-                "COALESCE",
-                new FilterExpression[]
-                {
-                    new PropertyReference(selection.EndField.Name),
-                    startExpression
-                });
-
-        return BuildTemporalRelationExpression(relation, startExpression, endExpression, queryStart, queryEnd);
     }
 
     internal static TimeRelation ParseTimeRelation(string? timeRelation)
@@ -351,21 +290,6 @@ internal static class GeoServicesTemporalQueryBuilder
         }
 
         return new BinaryExpression(left, BinaryOperator.Or, right);
-    }
-
-    internal static Literal? ToTemporalLiteral(DateTimeOffset? value, FieldType fieldType)
-    {
-        if (!value.HasValue)
-        {
-            return null;
-        }
-
-        if (fieldType == FieldType.Date)
-        {
-            return new Literal(DateOnly.FromDateTime(value.Value.UtcDateTime), LiteralType.Date);
-        }
-
-        return new Literal(value.Value, LiteralType.DateTime);
     }
 
     /// <summary>

@@ -5,8 +5,8 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
@@ -169,7 +169,7 @@ public sealed class QueryFormatterTests
     }
 
     [Fact]
-    public async Task FormatQueryResultAsync_WithHiddenDeclaredField_ExcludesFromJsonAndGeoJson()
+    public async Task FormatQueryResultAsync_WithDeclaredField_IncludesInJsonAndGeoJson()
     {
         var limitsOptions = Options.Create(new LimitsOptions());
         var formatter = new QueryFormatter(
@@ -186,11 +186,11 @@ public sealed class QueryFormatterTests
                 ["name"] = "alpha",
                 ["secret"] = "hidden"
             }.ToImmutableDictionary());
-        var layer = CreatePointLayerWithHiddenField();
+        var resource = CreatePointResourceWithExtraField();
 
         var (jsonResponse, jsonContentType) = await formatter.FormatQueryResultAsync(
             QueryResult<Feature>.Create(1, [feature]),
-            layer,
+            resource,
             format: "json",
             returnGeometry: false,
             outputSrid: null,
@@ -201,13 +201,13 @@ public sealed class QueryFormatterTests
 
         jsonContentType.Should().Be("application/json");
         var queryResponse = jsonResponse.Should().BeOfType<QueryResponse>().Subject;
-        queryResponse.Fields.Should().NotContain(field => field.Name == "secret");
+        queryResponse.Fields.Should().Contain(field => field.Name == "secret");
         queryResponse.Features.Should().ContainSingle();
-        queryResponse.Features[0].Attributes.Should().NotContainKey("secret");
+        queryResponse.Features[0].Attributes.Should().Contain("secret", "hidden");
 
         var (geoJsonResponse, geoJsonContentType) = await formatter.FormatQueryResultAsync(
             QueryResult<Feature>.Create(1, [feature]),
-            layer,
+            resource,
             format: "geojson",
             returnGeometry: false,
             outputSrid: null,
@@ -219,7 +219,7 @@ public sealed class QueryFormatterTests
         geoJsonContentType.Should().Be("application/geo+json");
         var geoJson = geoJsonResponse.Should().BeOfType<GeoJsonFeatureSet>().Subject;
         geoJson.Features.Should().ContainSingle();
-        geoJson.Features[0].Properties.Should().NotContainKey("secret");
+        geoJson.Features[0].Properties.Should().Contain("secret", "hidden");
     }
 
     [Fact]
@@ -503,55 +503,58 @@ public sealed class QueryFormatterTests
         queryResponse.Features[0].Attributes.Should().Contain("distance", 12.5);
     }
 
-    private static LayerDefinition CreatePointLayer()
-        => new(
-            7,
+    private static MetadataV2Resource CreatePointLayer()
+        => CreatePointResource(
             "test-layer",
-            null,
-            Honua.Core.Features.Catalog.Domain.GeometryType.Point,
-            SpatialReference.WGS84,
-            [
-                new FieldDefinition(FieldNames.ObjectId, FieldType.Integer, Nullable: false),
-                new FieldDefinition("name", FieldType.String, Length: 128)
-            ]);
+            new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+            new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 128 });
 
-    private static LayerDefinition CreatePointLayerWithHiddenField()
-        => new(
-            10,
-            "hidden-field-test-layer",
-            null,
-            Honua.Core.Features.Catalog.Domain.GeometryType.Point,
-            SpatialReference.WGS84,
-            [
-                new FieldDefinition(FieldNames.ObjectId, FieldType.Integer, Nullable: false),
-                new FieldDefinition("name", FieldType.String, Length: 128),
-                new FieldDefinition("secret", FieldType.String, Length: 128, IsHidden: true)
-            ]);
+    private static MetadataV2Resource CreatePointResourceWithExtraField()
+        => CreatePointResource(
+            "field-test-layer",
+            new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+            new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 128 },
+            new MetadataV2Field { Name = "secret", Type = MetadataV2FieldType.String, Length = 128 });
 
-    private static LayerDefinition CreateIdBackedPointLayer()
-        => new(
-            8,
+    private static MetadataV2Resource CreateIdBackedPointLayer()
+        => CreatePointResource(
             "id-backed-test-layer",
-            null,
-            Honua.Core.Features.Catalog.Domain.GeometryType.Point,
-            SpatialReference.WGS84,
-            [
-                new FieldDefinition("id", FieldType.Integer, Nullable: false),
-                new FieldDefinition("name", FieldType.String, Length: 128)
-            ]);
+            new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.Integer, Nullable = false },
+            new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 128 });
 
-    private static LayerDefinition CreateStringIdPointLayer()
-        => new(
-            9,
+    private static MetadataV2Resource CreateStringIdPointLayer()
+        => CreatePointResource(
             "string-id-test-layer",
-            null,
-            Honua.Core.Features.Catalog.Domain.GeometryType.Point,
-            SpatialReference.WGS84,
+            new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.String, Length = 64, Nullable = false },
+            new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+            new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 128 });
+
+    private static MetadataV2Resource CreatePointResource(string name, params MetadataV2Field[] fields)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = name,
+                Name = name
+            },
+            SchemaFields =
             [
-                new FieldDefinition("id", FieldType.String, Length: 64, Nullable: false),
-                new FieldDefinition(FieldNames.ObjectId, FieldType.Integer, Nullable: false),
-                new FieldDefinition("name", FieldType.String, Length: 128)
-            ]);
+                .. fields,
+                new MetadataV2Field
+                {
+                    Name = "shape",
+                    Type = MetadataV2FieldType.Geometry,
+                    Nullable = true,
+                    SemanticRoles = ["geometry.primary"]
+                }
+            ],
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = MetadataV2SpatialReference.Wgs84,
+                GeometryType = MetadataV2GeometryType.Point,
+                PrimaryGeometryField = "shape"
+            }
+        };
 
     private static byte[] CreatePointGeometry(double x, double y, int srid)
     {

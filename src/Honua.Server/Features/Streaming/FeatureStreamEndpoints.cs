@@ -2,13 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Licensing;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Streaming;
@@ -140,40 +139,34 @@ internal static partial class FeatureStreamEndpoints
             "streaming.feature-subscriptions");
         var edition = streamDecision.Edition;
         var enabled = streamDecision.IsActive;
-        var layers = await deps.LayerCatalog.ListLayersAsync(context.RequestAborted).ConfigureAwait(false);
-        var services = await deps.LayerCatalog.ListServicesAsync(context.RequestAborted).ConfigureAwait(false);
-        // Resolve the primary service per layer so the access check evaluates
-        // both the layer policy and the service policy (matching the OGC API
-        // Collections pattern). Filtering with the layer policy alone would
-        // expose layers whose service-level policy denies anonymous reads.
-        var layerToService = services.Length > 0
-            ? LayerValidationHelpers.BuildPrimaryServiceMap(services)
-            : (IReadOnlyDictionary<int, ServiceDefinition>)new Dictionary<int, ServiceDefinition>();
-        var layerCapabilities = layers
-            .Where(layer => AccessPolicyHelpers.IsLayerAccessible(
-                context,
-                layer,
-                layerToService.TryGetValue(layer.Id, out var svc) ? svc : null))
+        var snapshot = await deps.MetadataV2GraphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+        var layerCapabilities = ResolveAllStreamLayers(snapshot)
+            .Where(layer =>
+                AccessPolicyHelpers.IsResourceAccessible(
+                    context,
+                    layer.Resource,
+                    layer.Service))
             .Select(layer =>
             {
-                var timeInfo = layer.Metadata?.TimeInfo;
-                var temporalFields = timeInfo is null
-                    ? null
-                    : new[] { timeInfo.StartTimeField, timeInfo.EndTimeField }
-                        .Where(field => !string.IsNullOrWhiteSpace(field))
-                        .Select(field => field!)
-                        .ToArray();
+                string[]? temporalFieldNames = null;
+                var temporalFields = layer.Resource.ReadTemporalFields();
+                var configuredFields = new[] { temporalFields.StartTimeField, temporalFields.EndTimeField }
+                    .Where(field => !string.IsNullOrWhiteSpace(field))
+                    .Select(field => field!)
+                    .ToArray();
+                temporalFieldNames = configuredFields is { Length: > 0 } ? configuredFields : null;
+                var supportsTemporalFilters = TemporalExtentHelpers.HasOptInTemporalFields(layer.Resource);
+                var srid = layer.Resource.ReadSrid() ?? 4326;
 
                 return new FeatureStreamLayerCapability
                 {
-                    LayerId = layer.Id,
-                    Name = layer.Name,
+                    LayerId = layer.LayerId,
+                    Name = layer.Resource.Metadata.Name,
                     CanSubscribe = enabled,
-                    SupportsSpatialFilters = layer.HasGeometry,
-                    SupportsTemporalFilters = timeInfo is not null &&
-                        !string.IsNullOrWhiteSpace(timeInfo.StartTimeField),
-                    TemporalFields = temporalFields is { Length: > 0 } ? temporalFields : null,
-                    Crs = $"EPSG:{layer.SpatialReference.Wkid.ToString(CultureInfo.InvariantCulture)}"
+                    SupportsSpatialFilters = layer.Resource.ReadGeometryType() is not MetadataV2GeometryType.None,
+                    SupportsTemporalFilters = supportsTemporalFilters,
+                    TemporalFields = temporalFieldNames,
+                    Crs = $"EPSG:{srid.ToString(CultureInfo.InvariantCulture)}"
                 };
             })
             .ToArray();

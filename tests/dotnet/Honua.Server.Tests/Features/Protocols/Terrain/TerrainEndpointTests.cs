@@ -4,7 +4,6 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit;
@@ -19,6 +18,28 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
 {
     private const double WebMercatorExtent = 20037508.342789244;
     private const int UnregisteredSrid = 999999;
+    private const string TerrainProtocolName = "Terrain";
+
+    private static readonly string[] AllProtocols =
+    [
+        "FeatureServer",
+        "MapServer",
+        "ImageServer",
+        "GPServer",
+        "OgcFeatures",
+        "OGC-API-Maps",
+        "OGC-API-Coverages",
+        "OGC-API-Tiles",
+        "Wfs20",
+        "Wms",
+        "Wmts",
+        "Wcs",
+        "OData",
+        "Grpc",
+        "Stac",
+        TerrainProtocolName,
+        "Elevation",
+    ];
 
     private readonly WebAppFixture _fixture = new();
 
@@ -233,8 +254,8 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
         var anonymous = new AccessPolicy { AllowAnonymous = true };
         _fixture.UpdateV2ServiceMetadata(
             WebAppFixture.TestServiceId,
-            enabledProtocols: ServiceProtocols.All
-                .Where(static protocol => !string.Equals(protocol, ServiceProtocols.Terrain, StringComparison.Ordinal))
+            enabledProtocols: AllProtocols
+                .Where(static protocol => !string.Equals(protocol, TerrainProtocolName, StringComparison.Ordinal))
                 .ToArray(),
             accessPolicy: anonymous);
 
@@ -248,7 +269,7 @@ public sealed class TerrainEndpointTests : IAsyncLifetime
         {
             _fixture.UpdateV2ServiceMetadata(
                 WebAppFixture.TestServiceId,
-                enabledProtocols: ServiceProtocols.All,
+                enabledProtocols: AllProtocols,
                 accessPolicy: anonymous);
         }
     }

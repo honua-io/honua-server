@@ -2,7 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using BenchmarkDotNet.Attributes;
-using Honua.Core.Features.Catalog.Domain;
+using System.Text.Json;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Tiles;
 using Honua.Server.Features.Infrastructure.Raster;
@@ -34,8 +35,8 @@ public class RasterMosaicBenchmarks
         (524287, 524287, 19),
     };
 
-    private CatalogMetadata _metadataMergeNewest = null!;
-    private CatalogMetadata _metadataMergeMax = null!;
+    private MetadataV2Resource _resourceMergeNewest = null!;
+    private MetadataV2Resource _resourceMergeMax = null!;
     private string _jsonMergeRule = null!;
     private string _jsonOperationRule = null!;
 
@@ -44,17 +45,11 @@ public class RasterMosaicBenchmarks
     {
         // Layer metadata with a configured token strategy — the common
         // ImageServer hot path when no per-request mosaicRule is supplied.
-        _metadataMergeNewest = new CatalogMetadata
-        {
-            RasterMosaic = new RasterMosaicSettings { MergeStrategy = "newest" },
-        };
+        _resourceMergeNewest = CreateRasterResource("raster-newest", "newest");
 
         // Layer metadata that falls through to JSON-shaped overrides; covers
         // the heavier System.Text.Json branch that Esri-style clients hit.
-        _metadataMergeMax = new CatalogMetadata
-        {
-            RasterMosaic = new RasterMosaicSettings { MergeStrategy = "max" },
-        };
+        _resourceMergeMax = CreateRasterResource("raster-max", "max");
 
         // Per-request mosaicRule shapes used by ArcGIS clients:
         // either a `mergeStrategy` field or an `operation` field on a JSON
@@ -65,19 +60,19 @@ public class RasterMosaicBenchmarks
 
     [Benchmark(Baseline = true, Description = "ResolveMergeStrategy token (metadata-only)")]
     public RasterMergeStrategy ResolveFromMetadataToken()
-        => RasterMosaicUtilities.ResolveMergeStrategy(_metadataMergeNewest, mosaicRule: null);
+        => RasterMosaicUtilities.ResolveMergeStrategy(_resourceMergeNewest, mosaicRule: null);
 
     [Benchmark(Description = "ResolveMergeStrategy token override (request wins)")]
     public RasterMergeStrategy ResolveFromRequestToken()
-        => RasterMosaicUtilities.ResolveMergeStrategy(_metadataMergeNewest, mosaicRule: "average");
+        => RasterMosaicUtilities.ResolveMergeStrategy(_resourceMergeNewest, mosaicRule: "average");
 
     [Benchmark(Description = "ResolveMergeStrategy JSON mergeStrategy field")]
     public RasterMergeStrategy ResolveFromJsonMergeStrategy()
-        => RasterMosaicUtilities.ResolveMergeStrategy(_metadataMergeMax, mosaicRule: _jsonMergeRule);
+        => RasterMosaicUtilities.ResolveMergeStrategy(_resourceMergeMax, mosaicRule: _jsonMergeRule);
 
     [Benchmark(Description = "ResolveMergeStrategy JSON operation field")]
     public RasterMergeStrategy ResolveFromJsonOperation()
-        => RasterMosaicUtilities.ResolveMergeStrategy(_metadataMergeMax, mosaicRule: _jsonOperationRule);
+        => RasterMosaicUtilities.ResolveMergeStrategy(_resourceMergeMax, mosaicRule: _jsonOperationRule);
 
     [Benchmark(Description = "TileMath.GetTileBounds (WebMercator) x5 zooms")]
     public double TileBoundsWebMercator()
@@ -106,5 +101,24 @@ public class RasterMosaicBenchmarks
         }
 
         return sink;
+    }
+
+    private static MetadataV2Resource CreateRasterResource(string id, string mergeStrategy)
+    {
+        var rasterMosaic = JsonSerializer.Deserialize<JsonElement>($$"""{"mergeStrategy":"{{mergeStrategy}}"}""");
+
+        return new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = id,
+                Name = id
+            },
+            Type = MetadataV2ResourceType.RasterDataset,
+            Extensions = new Dictionary<string, JsonElement>
+            {
+                ["rasterMosaic"] = rasterMosaic
+            }
+        };
     }
 }

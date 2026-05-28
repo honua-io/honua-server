@@ -1,10 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Security.Domain;
+using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.SqlServer;
 using Honua.SqlServer.Features.FeatureStore;
 using Honua.SqlServer.Features.FeatureStore.Services;
@@ -36,7 +36,7 @@ public class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
 
     private string? _connectionString;
     private string _tableName = null!;
-    private SqlServerFeatureStore _store = null!;
+    private IFeatureReader _store = null!;
 
     public static bool ShouldRun => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(ConnectionEnvVar));
 
@@ -75,26 +75,9 @@ public class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
             options,
             NullLogger<SqlServerFeatureDataAccess>.Instance);
 
-        var layer = new LayerDefinition(
-            Id: LayerId,
-            Name: "Test",
-            Description: null,
-            GeometryType: GeometryType.Point,
-            SpatialReference: Honua.Core.Features.Shared.Models.SpatialReference.WGS84,
-            Fields: [
-                new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false),
-                new FieldDefinition("name", FieldType.String),
-                new FieldDefinition("shape", FieldType.Geometry, Nullable: false)
-            ],
-            StorageMapping: new LayerStorageMapping(
-                TableName: _tableName,
-                SchemaName: "dbo",
-                PrimaryKeyColumn: "objectid",
-                GeometryColumn: "shape",
-                StorageSrid: 4326));
-
-        var catalog = new InMemoryLayerCatalog(layer);
-        _store = new SqlServerFeatureStore(dataAccess, catalog);
+        var provider = new SqlServerFeatureStore(dataAccess);
+        var binding = CreateBinding(provider, _tableName);
+        _store = ((IBindableFeatureDataProvider)provider).CreateReaderForBinding(binding);
     }
 
     public async Task DisposeAsync()
@@ -192,31 +175,69 @@ public class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
         await command.ExecuteNonQueryAsync();
     }
 
-    private sealed class InMemoryLayerCatalog(LayerDefinition layer) : ILayerCatalog
+    private static FeatureProviderBinding CreateBinding(SqlServerFeatureStore provider, string tableName)
     {
-        public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult<LayerDefinition?>(layer.Id == layerId ? layer : null);
+        var service = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "svc-test", Name = "Test" },
+            SpatialReference = MetadataV2SpatialReference.Wgs84
+        };
+        var resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-test", Name = "Test" },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            StorageBindingIds = ["binding-test"],
+            SchemaFields =
+            [
+                new MetadataV2Field
+                {
+                    Name = "objectid",
+                    Type = MetadataV2FieldType.BigInteger,
+                    Nullable = false,
+                    SemanticRoles = ["id.primary"]
+                },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String },
+                new MetadataV2Field
+                {
+                    Name = "shape",
+                    Type = MetadataV2FieldType.Geometry,
+                    Nullable = false,
+                    SemanticRoles = ["geometry.primary"]
+                }
+            ],
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = MetadataV2SpatialReference.Wgs84,
+                GeometryType = MetadataV2GeometryType.Point,
+                PrimaryGeometryField = "shape"
+            }
+        };
+        var storageBinding = new MetadataV2StorageBinding
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "binding-test", Name = "binding-test" },
+            ResourceId = resource.Metadata.Id,
+            StorageType = MetadataV2StorageType.RelationalTable,
+            Locator = $"dbo.{tableName}",
+            StorageLayerId = LayerId
+        };
+        var publication = new MetadataV2Publication
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "pub-test", Name = "Test" },
+            ServiceId = service.Metadata.Id,
+            ResourceId = resource.Metadata.Id,
+            StorageBindingId = storageBinding.Metadata.Id,
+            Identifier = new MetadataV2PublicationIdentifier { Value = LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture), IsNumeric = true }
+        };
 
-        public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(new[] { layer });
-
-        public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult<ServiceDefinition?>(null);
-
-        public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(Array.Empty<ServiceDefinition>());
-
-        public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(layer.Id == layerId);
-
-        public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult(false);
-
-        public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
-            => Task.FromResult<Relationship?>(null);
-
-        public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(Array.Empty<Relationship>());
+        return new FeatureProviderBinding(
+            service,
+            resource,
+            publication,
+            storageBinding,
+            FeatureStorageMapping.FromMetadata(resource, storageBinding),
+            LayerId,
+            provider,
+            Connection: null);
     }
 }
 

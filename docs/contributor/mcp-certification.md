@@ -45,7 +45,7 @@ MCP-specific test data lives in `tests/seed/mcp.yaml`. It follows the project's 
 
 ### mcp-certification
 
-- **Trigger:** PR to `trunk` plus scheduled/manual full integration runs, skips dependabot.
+- **Trigger:** scheduled/manual full integration runs and PRs labeled `ci/full`, skips dependabot.
 - **Matrix:** `transport: [grpc-web, rest]` — runs full suite in parallel per transport.
 - **Steps:** checkout honua-server → shared setup (`.github/actions/setup-honua-mcp`) → `test:certification` → `test:certification:artifact` (generate report) → artifact upload.
 - **Artifact:** `mcp-certification-{transport}`, 30-day retention.

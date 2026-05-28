@@ -779,56 +779,48 @@ class PostGISFixture:
         return safe or "default"
 
     @staticmethod
-    def _metadata_geometry_type(value: object) -> str:
-        normalized = "".join(char for char in str(value or "").strip().lower() if char.isalnum())
-        return {
-            "": "none",
-            "none": "none",
-            "point": "point",
-            "multipoint": "multipoint",
-            "line": "linestring",
-            "linestring": "linestring",
-            "polyline": "linestring",
-            "multiline": "multilinestring",
-            "multilinestring": "multilinestring",
-            "polygon": "polygon",
-            "multipolygon": "multipolygon",
-            "geometrycollection": "geometrycollection",
-            "geometry": "mixed",
-            "mixed": "mixed",
-        }.get(normalized, "mixed")
-
-    @staticmethod
-    def _metadata_field_type(value: object) -> str:
-        normalized = "".join(char for char in str(value or "").strip().lower() if char.isalnum())
+    def _metadata_v2_field_type(value: object) -> str:
+        token = str(value).strip().lower().replace("_", "").replace("-", "")
         return {
             "string": "string",
-            "text": "string",
             "integer": "integer",
             "int": "integer",
-            "int32": "integer",
+            "biginteger": "biginteger",
             "long": "biginteger",
-            "bigint": "biginteger",
-            "int64": "biginteger",
             "double": "double",
-            "float64": "double",
             "float": "float",
             "single": "float",
             "boolean": "boolean",
             "bool": "boolean",
             "datetime": "datetime",
-            "timestamp": "datetime",
             "date": "date",
             "time": "time",
             "json": "json",
-            "jsonb": "json",
             "binary": "binary",
-            "bytes": "binary",
             "uuid": "uuid",
             "guid": "uuid",
             "geometry": "geometry",
             "geography": "geography",
-        }.get(normalized, "unknown")
+        }.get(token, "unknown")
+
+    @staticmethod
+    def _metadata_v2_geometry_type(value: object) -> str:
+        token = str(value).strip().lower().replace("_", "").replace("-", "")
+        return {
+            "": "none",
+            "none": "none",
+            "point": "point",
+            "multipoint": "multipoint",
+            "linestring": "linestring",
+            "line": "linestring",
+            "polyline": "linestring",
+            "multilinestring": "multilinestring",
+            "polygon": "polygon",
+            "multipolygon": "multipolygon",
+            "geometrycollection": "geometrycollection",
+            "geometry": "geometrycollection",
+            "mixed": "mixed",
+        }.get(token, "none")
 
     def _seed_metadata_v2_snapshot(self, conn: psycopg.Connection) -> None:
         """Seed a Metadata v2 snapshot that mirrors the v1 compatibility catalog."""
@@ -899,13 +891,11 @@ class PostGISFixture:
             if field_name in {"shape", "geometry"}:
                 semantic_roles.append("geometry.primary")
 
-            metadata_field_type = self._metadata_field_type(field_type)
             fields_by_layer.setdefault(field_layer_id, []).append({
                 "name": field_name,
-                "type": metadata_field_type,
+                "type": self._metadata_v2_field_type(field_type),
                 "description": description,
                 "nullable": bool(nullable),
-                "editable": metadata_field_type not in {"geometry", "geography"},
                 "semanticRoles": semantic_roles,
             })
 
@@ -940,20 +930,18 @@ class PostGISFixture:
             name: str,
             service_type: str,
             route: str | None = None,
-            service_protocols: list[str] | None = None,
         ) -> None:
-            enabled_protocols = service_protocols or protocols
             services_by_id.setdefault(service_id, {
                 "metadata": {"id": service_id, "name": name, "title": name},
                 "serviceType": service_type,
                 "route": route,
-                "publicationIds": [],
-                "protocols": enabled_protocols,
-                "enabledProtocols": enabled_protocols,
-                "options": {},
-                "accessPolicy": {"allowAnonymous": True},
+                "protocols": protocols,
+                "enabledProtocols": protocols,
+                "options": {
+                    "capabilities": ["Query", "Extract", "Create", "Update", "Delete"],
+                    "supportedFormats": ["JSON", "GeoJSON"],
+                },
                 "status": status,
-                "extensions": {},
             })
 
         for (
@@ -978,19 +966,26 @@ class PostGISFixture:
             feature_storage_id = f"storage-layer-{layer_part}"
             image_storage_id = f"storage-image-layer-{layer_part}"
 
-            spatial = {
+            geometry_type_token = self._metadata_v2_geometry_type(geometry_type)
+            feature_spatial = {
                 "spatialReference": {
                     "srid": srid,
                     "crs": f"EPSG:{srid}",
                     "isGeographic": srid == 4326,
                 },
-                "geometryType": self._metadata_geometry_type(geometry_type),
+                "geometryType": geometry_type_token,
+                "primaryGeometryField": "shape",
                 "bbox": {
                     "west": west,
                     "south": south,
                     "east": east,
                     "north": north,
                 },
+            }
+            raster_spatial = {
+                "spatialReference": feature_spatial["spatialReference"],
+                "geometryType": "none",
+                "bbox": feature_spatial["bbox"],
             }
 
             resources_by_id.setdefault(feature_resource_id, {
@@ -1004,11 +999,7 @@ class PostGISFixture:
                 "storageBindingIds": [feature_storage_id],
                 "primaryStorageBindingId": feature_storage_id,
                 "schemaFields": fields_by_layer.get(row_layer_id, []),
-                "relationships": [],
-                "policyIds": [],
-                "styleResourceIds": [],
-                "spatial": spatial,
-                "accessPolicy": {"allowAnonymous": True},
+                "spatial": feature_spatial,
                 "status": status,
                 "extensions": {},
             })
@@ -1022,12 +1013,7 @@ class PostGISFixture:
                 "type": "raster-dataset",
                 "storageBindingIds": [image_storage_id],
                 "primaryStorageBindingId": image_storage_id,
-                "schemaFields": [],
-                "relationships": [],
-                "policyIds": [],
-                "styleResourceIds": [],
-                "spatial": spatial,
-                "accessPolicy": {"allowAnonymous": True},
+                "spatial": raster_spatial,
                 "status": status,
                 "extensions": {},
             })
@@ -1035,6 +1021,7 @@ class PostGISFixture:
             storage_by_id.setdefault(feature_storage_id, {
                 "metadata": {"id": feature_storage_id, "name": feature_storage_id},
                 "resourceId": feature_resource_id,
+                "connectionId": "conn-postgres",
                 "storageType": "relational-table",
                 "locator": f"{table_schema}.{table_name}",
                 "storageLayerId": row_layer_id,
@@ -1051,17 +1038,17 @@ class PostGISFixture:
                 ],
                 "options": {},
                 "status": status,
-                "extensions": {},
             })
             storage_by_id.setdefault(image_storage_id, {
                 "metadata": {"id": image_storage_id, "name": image_storage_id},
                 "resourceId": image_resource_id,
+                "connectionId": "conn-postgres",
                 "storageType": "relational-table",
                 "locator": "honua.raster_data",
+                "storageLayerId": row_layer_id,
                 "capabilities": ["query", "filter", "render", "tile", "download"],
                 "options": {},
                 "status": status,
-                "extensions": {},
             })
 
             feature_service_id = f"svc-{service_part}-feature"
@@ -1070,55 +1057,11 @@ class PostGISFixture:
             ogc_service_id = f"svc-{service_part}-ogc"
             stac_service_id = f"svc-{service_part}-stac"
 
-            add_service(
-                feature_service_id,
-                row_service_name,
-                "esri-feature-service",
-                service_protocols=[
-                    "FeatureServer",
-                    "MapServer",
-                    "OData",
-                    "Grpc",
-                    "OgcFeatures",
-                    "Wfs20",
-                    "Wms",
-                    "Wmts",
-                    "OGC-API-Maps",
-                    "OGC-API-Tiles",
-                ],
-            )
-            add_service(
-                map_service_id,
-                row_service_name,
-                "esri-map-service",
-                service_protocols=[
-                    "MapServer",
-                    "Wms",
-                    "Wmts",
-                    "OGC-API-Maps",
-                    "OGC-API-Tiles",
-                ],
-            )
-            add_service(
-                image_service_id,
-                row_service_name,
-                "esri-image-service",
-                service_protocols=["ImageServer", "Wcs", "OGC-API-Coverages"],
-            )
-            add_service(
-                ogc_service_id,
-                row_service_name,
-                "ogc-api-features",
-                "/ogc/features",
-                service_protocols=["OgcFeatures", "Wfs20"],
-            )
-            add_service(
-                stac_service_id,
-                row_service_name,
-                "stac-api",
-                "/stac",
-                service_protocols=["Stac"],
-            )
+            add_service(feature_service_id, row_service_name, "esri-feature-service")
+            add_service(map_service_id, row_service_name, "esri-map-service")
+            add_service(image_service_id, row_service_name, "esri-image-service")
+            add_service(ogc_service_id, row_service_name, "ogc-api-features", "/ogc/features")
+            add_service(stac_service_id, row_service_name, "stac-api", "/stac")
 
             local_id = str(row_layer_id)
             # ImageServer handlers currently resolve the first layer-index publication,
@@ -1135,9 +1078,11 @@ class PostGISFixture:
                     "serviceId": image_service_id,
                     "storageBindingId": image_storage_id,
                     "publicationType": "esri-image-layer",
-                    "path": local_id,
-                    "layerIndex": row_layer_id,
-                    "serviceLocalId": local_id,
+                    "identifier": {
+                        "value": local_id,
+                        "isNumeric": True,
+                        "pathOverride": local_id,
+                    },
                     "status": status,
                 },
                 {
@@ -1146,9 +1091,11 @@ class PostGISFixture:
                     "serviceId": ogc_service_id,
                     "storageBindingId": feature_storage_id,
                     "publicationType": "ogc-collection",
-                    "path": local_id,
-                    "layerIndex": row_layer_id,
-                    "serviceLocalId": local_id,
+                    "identifier": {
+                        "value": local_id,
+                        "isNumeric": True,
+                        "pathOverride": local_id,
+                    },
                     "status": status,
                 },
                 {
@@ -1157,9 +1104,11 @@ class PostGISFixture:
                     "serviceId": feature_service_id,
                     "storageBindingId": feature_storage_id,
                     "publicationType": "esri-feature-layer",
-                    "path": local_id,
-                    "layerIndex": row_layer_id,
-                    "serviceLocalId": local_id,
+                    "identifier": {
+                        "value": local_id,
+                        "isNumeric": True,
+                        "pathOverride": local_id,
+                    },
                     "status": status,
                 },
                 {
@@ -1168,9 +1117,11 @@ class PostGISFixture:
                     "serviceId": map_service_id,
                     "storageBindingId": feature_storage_id,
                     "publicationType": "esri-map-layer",
-                    "path": local_id,
-                    "layerIndex": row_layer_id,
-                    "serviceLocalId": local_id,
+                    "identifier": {
+                        "value": local_id,
+                        "isNumeric": True,
+                        "pathOverride": local_id,
+                    },
                     "status": status,
                 },
                 {
@@ -1179,18 +1130,14 @@ class PostGISFixture:
                     "serviceId": stac_service_id,
                     "storageBindingId": feature_storage_id,
                     "publicationType": "stac-collection",
-                    "path": local_id,
-                    "layerIndex": row_layer_id,
-                    "serviceLocalId": local_id,
+                    "identifier": {
+                        "value": local_id,
+                        "isNumeric": True,
+                        "pathOverride": local_id,
+                    },
                     "status": status,
                 },
             ])
-
-        for publication in publications:
-            publication.setdefault("supportedFormats", [])
-            publication.setdefault("capabilities", [])
-            publication.setdefault("options", {})
-            publication.setdefault("extensions", {})
 
         graph = {
             "schemaVersion": "2.0.0-alpha.1",
@@ -1211,6 +1158,7 @@ class PostGISFixture:
                     "metadata": {"id": "conn-postgres", "name": "postgres"},
                     "type": "managed",
                     "provider": "postgres",
+                    "options": {},
                     "status": status,
                 }
             ],
@@ -1222,22 +1170,6 @@ class PostGISFixture:
             "roles": [],
             "extensionPoints": [],
         }
-
-        def apply_metadata_defaults(value: object) -> None:
-            if isinstance(value, dict):
-                metadata = value.get("metadata")
-                if isinstance(metadata, dict):
-                    metadata.setdefault("labels", {})
-                    metadata.setdefault("annotations", {})
-                    metadata.setdefault("keywords", [])
-                    metadata.setdefault("themes", [])
-                for child in value.values():
-                    apply_metadata_defaults(child)
-            elif isinstance(value, list):
-                for child in value:
-                    apply_metadata_defaults(child)
-
-        apply_metadata_defaults(graph)
 
         for environment in ("default", "Test", "Development"):
             environment_graph = {**graph, "environment": environment}

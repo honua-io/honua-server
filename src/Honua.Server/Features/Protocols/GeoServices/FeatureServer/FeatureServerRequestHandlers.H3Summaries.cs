@@ -5,9 +5,9 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Models;
@@ -45,14 +45,15 @@ internal static partial class FeatureServerEndpoints
         IReadOnlyDictionary<string, StringValues> values,
         string serviceId,
         int layerId,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        int storageLayerId,
         FeatureQuery featureQuery,
         int resolution,
         int? kRingDistance,
         int maxCells,
         CancellationToken cancellationToken)
     {
-        if (!TryParseSpatialAggregationPlan(context, values, serviceId, layerId, layer, out var plan, out var parseError))
+        if (!TryParseSpatialAggregationPlan(context, values, serviceId, layerId, resource, out var plan, out var parseError))
         {
             return (null, parseError);
         }
@@ -64,7 +65,8 @@ internal static partial class FeatureServerEndpoints
         var totals = plan.IncludeTotals
             ? await BuildSpatialAggregationTotalsAsync(
                 featureReader,
-                layer,
+                resource,
+                storageLayerId,
                 featureQuery,
                 summaryDefinitions,
                 degraded,
@@ -81,7 +83,7 @@ internal static partial class FeatureServerEndpoints
         var cellDefinitions = plan.IncludeCells
             ? await ResolveHistogramCellSummaryBoundsAsync(
                 featureReader,
-                layer,
+                storageLayerId,
                 featureQuery,
                 summaryDefinitions,
                 degraded,
@@ -121,7 +123,7 @@ internal static partial class FeatureServerEndpoints
                     : maxCells
             };
 
-            var rows = await featureReader.QueryH3Async(layer.Id, featureQuery, h3Query, cancellationToken);
+            var rows = await featureReader.QueryH3Async(storageLayerId, featureQuery, h3Query, cancellationToken);
             cells = rows
                 .Select(row => CreateSpatialAggregationCell(row, cellDefinitions, resolution))
                 .ToArray();
@@ -157,7 +159,7 @@ internal static partial class FeatureServerEndpoints
             ? null
             : await BuildGroupedSummariesAsync(
                 featureReader,
-                layer,
+                storageLayerId,
                 featureQuery,
                 summaryDefinitions,
                 plan.GroupBy,
@@ -194,19 +196,19 @@ internal static partial class FeatureServerEndpoints
         IReadOnlyDictionary<string, StringValues> values,
         string serviceId,
         int layerId,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         out SpatialAggregationRequestPlan plan,
         out IResult? error)
     {
         plan = null!;
         error = null;
 
-        if (!TryParseSpatialAggregationSummaries(context, values, layer, out var summaries, out error))
+        if (!TryParseSpatialAggregationSummaries(context, values, resource, out var summaries, out error))
         {
             return false;
         }
 
-        if (!TryParseSpatialAggregationGroupBy(context, values, layer, out var groupBy, out error))
+        if (!TryParseSpatialAggregationGroupBy(context, values, resource, out var groupBy, out error))
         {
             return false;
         }
@@ -245,7 +247,7 @@ internal static partial class FeatureServerEndpoints
     private static bool TryParseSpatialAggregationSummaries(
         HttpContext context,
         IReadOnlyDictionary<string, StringValues> values,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         out ImmutableArray<SpatialAggregationSummaryDefinition> summaries,
         out IResult? error)
     {
@@ -388,7 +390,10 @@ internal static partial class FeatureServerEndpoints
                     Kind = kind,
                     Title = title,
                     Field = field,
-                    FieldType = TryResolveFieldType(layer, field, out var fieldType) ? fieldType : null,
+                    FieldType = !string.IsNullOrWhiteSpace(field) &&
+                        TryResolveSpatialAggregationFieldType(resource, field, out var fieldType)
+                            ? fieldType
+                            : null,
                     Unit = unit,
                     CategoryLimit = Math.Min(limit.GetValueOrDefault(DefaultCategoryLimit), MaxCategoryLimit),
                     IncludeOther = includeOther,
@@ -420,7 +425,7 @@ internal static partial class FeatureServerEndpoints
     private static bool TryParseSpatialAggregationGroupBy(
         HttpContext context,
         IReadOnlyDictionary<string, StringValues> values,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         out ImmutableArray<ParsedGroupBy> groupBy,
         out IResult? error)
     {
@@ -477,12 +482,6 @@ internal static partial class FeatureServerEndpoints
                     return false;
                 }
 
-                if (!TryResolveFieldType(layer, field, out _))
-                {
-                    // Keep execution deterministic for synthetic/test layers
-                    // that do not declare every JSON attribute in metadata.
-                }
-
                 builder.Add(new ParsedGroupBy(field, alias, label, limit, nullLabel));
             }
 
@@ -501,7 +500,8 @@ internal static partial class FeatureServerEndpoints
 
     private static async Task<Dictionary<string, SpatialAggregationSummaryValueResponse>?> BuildSpatialAggregationTotalsAsync(
         IFeatureReader featureReader,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        int storageLayerId,
         FeatureQuery featureQuery,
         ImmutableArray<SpatialAggregationSummaryDefinition> summaries,
         List<SpatialAggregationDegradedReasonResponse> degraded,
@@ -530,7 +530,7 @@ internal static partial class FeatureServerEndpoints
         if (!metricStats.IsDefaultOrEmpty)
         {
             var rows = await featureReader.QueryStatisticsAsync(
-                layer.Id,
+                storageLayerId,
                 featureQuery with { OutStatistics = metricStats },
                 cancellationToken);
             metricRow = rows.FirstOrDefault();
@@ -548,12 +548,13 @@ internal static partial class FeatureServerEndpoints
                     totals[summary.Id] = CreateMetricSummaryValue(summary, metricRow?.GetValueOrDefault(summary.Id));
                     break;
                 case SpatialAggregationSummaryKind.Category:
-                    totals[summary.Id] = await BuildCategoryTotalAsync(featureReader, layer, featureQuery, summary, cancellationToken);
+                    totals[summary.Id] = await BuildCategoryTotalAsync(featureReader, storageLayerId, featureQuery, summary, cancellationToken);
                     break;
                 case SpatialAggregationSummaryKind.Histogram:
                     totals[summary.Id] = await BuildHistogramTotalAsync(
                         featureReader,
-                        layer,
+                        resource,
+                        storageLayerId,
                         featureQuery,
                         summary,
                         degraded,
@@ -562,7 +563,7 @@ internal static partial class FeatureServerEndpoints
                         cancellationToken);
                     break;
                 case SpatialAggregationSummaryKind.Range:
-                    totals[summary.Id] = await BuildRangeTotalAsync(featureReader, layer, featureQuery, summary, context, cancellationToken);
+                    totals[summary.Id] = await BuildRangeTotalAsync(featureReader, resource, storageLayerId, featureQuery, summary, context, cancellationToken);
                     break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(summaries), summary.Kind, "Unsupported summary kind.");
@@ -574,14 +575,14 @@ internal static partial class FeatureServerEndpoints
 
     private static async Task<SpatialAggregationSummaryValueResponse> BuildCategoryTotalAsync(
         IFeatureReader featureReader,
-        LayerDefinition layer,
+        int storageLayerId,
         FeatureQuery featureQuery,
         SpatialAggregationSummaryDefinition summary,
         CancellationToken cancellationToken)
     {
         var countAlias = $"{summary.Id}_count";
         var rows = await featureReader.QueryStatisticsAsync(
-            layer.Id,
+            storageLayerId,
             featureQuery with
             {
                 GroupByFields = ImmutableArray.Create(summary.Field!),
@@ -634,7 +635,8 @@ internal static partial class FeatureServerEndpoints
 
     private static async Task<SpatialAggregationSummaryValueResponse> BuildHistogramTotalAsync(
         IFeatureReader featureReader,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        int storageLayerId,
         FeatureQuery featureQuery,
         SpatialAggregationSummaryDefinition summary,
         List<SpatialAggregationDegradedReasonResponse> degraded,
@@ -642,7 +644,7 @@ internal static partial class FeatureServerEndpoints
         HttpContext context,
         CancellationToken cancellationToken)
     {
-        var (min, max) = await ResolveHistogramBoundsAsync(featureReader, layer, featureQuery, summary, cancellationToken);
+        var (min, max) = await ResolveHistogramBoundsAsync(featureReader, storageLayerId, featureQuery, summary, cancellationToken);
 
         if (!HasFiniteHistogramBounds(min, max))
         {
@@ -675,7 +677,7 @@ internal static partial class FeatureServerEndpoints
             {
                 Min = lower,
                 Max = upper,
-                Count = await CountRangeAsync(featureReader, layer, featureQuery, summary.Field!, range, context, cancellationToken),
+                Count = await CountRangeAsync(featureReader, resource, storageLayerId, featureQuery, summary.Field!, range, context, cancellationToken),
                 IncludeMin = true,
                 IncludeMax = i == bins - 1
             };
@@ -690,7 +692,7 @@ internal static partial class FeatureServerEndpoints
 
     private static async Task<(double? Min, double? Max)> ResolveHistogramBoundsAsync(
         IFeatureReader featureReader,
-        LayerDefinition layer,
+        int storageLayerId,
         FeatureQuery featureQuery,
         SpatialAggregationSummaryDefinition summary,
         CancellationToken cancellationToken)
@@ -703,7 +705,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         var boundsRows = await featureReader.QueryStatisticsAsync(
-            layer.Id,
+            storageLayerId,
             featureQuery with
             {
                 OutStatistics = ImmutableArray.Create(
@@ -739,7 +741,8 @@ internal static partial class FeatureServerEndpoints
 
     private static async Task<SpatialAggregationSummaryValueResponse> BuildRangeTotalAsync(
         IFeatureReader featureReader,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        int storageLayerId,
         FeatureQuery featureQuery,
         SpatialAggregationSummaryDefinition summary,
         HttpContext context,
@@ -758,7 +761,7 @@ internal static partial class FeatureServerEndpoints
                 Max = range.Max,
                 IncludeMin = range.IncludeMin.GetValueOrDefault(true),
                 IncludeMax = range.IncludeMax.GetValueOrDefault(false),
-                Count = await CountRangeAsync(featureReader, layer, featureQuery, summary.Field!, range, context, cancellationToken)
+                Count = await CountRangeAsync(featureReader, resource, storageLayerId, featureQuery, summary.Field!, range, context, cancellationToken)
             };
         }
 
@@ -771,7 +774,8 @@ internal static partial class FeatureServerEndpoints
 
     private static async Task<long> CountRangeAsync(
         IFeatureReader featureReader,
-        LayerDefinition layer,
+        MetadataV2Resource? resource,
+        int storageLayerId,
         FeatureQuery featureQuery,
         string field,
         SpatialAggregationRangeBucketDefinition range,
@@ -781,15 +785,15 @@ internal static partial class FeatureServerEndpoints
         var rangeExpression = BuildRangeFilterExpression(field, range);
         if (rangeExpression == null)
         {
-            return await featureReader.CountAsync(layer.Id, featureQuery, cancellationToken);
+            return await featureReader.CountAsync(storageLayerId, featureQuery, cancellationToken);
         }
 
         var filterService = context?.RequestServices.GetService<IFilterExpressionService>();
-        if (filterService == null)
+        if (filterService == null || resource is null)
         {
             return 0;
         }
-        var translationResult = filterService.Translate(rangeExpression, layer);
+        var translationResult = filterService.Translate(rangeExpression, resource);
         if (!translationResult.IsSuccess || translationResult.SqlFilter == null)
         {
             return 0;
@@ -797,7 +801,7 @@ internal static partial class FeatureServerEndpoints
 
         var combinedFilter = CombineSqlFragments(featureQuery.SqlFilter, translationResult.SqlFilter);
         return await featureReader.CountAsync(
-            layer.Id,
+            storageLayerId,
             featureQuery with { Where = null, SqlFilter = combinedFilter },
             cancellationToken);
     }
@@ -906,7 +910,7 @@ internal static partial class FeatureServerEndpoints
 
     private static async Task<ImmutableArray<SpatialAggregationSummaryDefinition>> ResolveHistogramCellSummaryBoundsAsync(
         IFeatureReader featureReader,
-        LayerDefinition layer,
+        int storageLayerId,
         FeatureQuery featureQuery,
         ImmutableArray<SpatialAggregationSummaryDefinition> summaries,
         List<SpatialAggregationDegradedReasonResponse> degraded,
@@ -923,7 +927,7 @@ internal static partial class FeatureServerEndpoints
                 continue;
             }
 
-            var (min, max) = await ResolveHistogramBoundsAsync(featureReader, layer, featureQuery, summary, cancellationToken);
+            var (min, max) = await ResolveHistogramBoundsAsync(featureReader, storageLayerId, featureQuery, summary, cancellationToken);
             if (!HasFiniteHistogramBounds(min, max))
             {
                 degraded.Add(CreateDegraded(
@@ -1095,7 +1099,7 @@ internal static partial class FeatureServerEndpoints
 
     private static async Task<SpatialAggregationGroupedSummaryResponse[]?> BuildGroupedSummariesAsync(
         IFeatureReader featureReader,
-        LayerDefinition layer,
+        int storageLayerId,
         FeatureQuery featureQuery,
         ImmutableArray<SpatialAggregationSummaryDefinition> summaries,
         ImmutableArray<ParsedGroupBy> groupBy,
@@ -1134,7 +1138,7 @@ internal static partial class FeatureServerEndpoints
             .ToImmutableArray();
 
         var rows = await featureReader.QueryStatisticsAsync(
-            layer.Id,
+            storageLayerId,
             featureQuery with
             {
                 GroupByFields = groupBy.Select(group => group.Field).ToImmutableArray(),
@@ -1603,22 +1607,33 @@ internal static partial class FeatureServerEndpoints
         };
     }
 
-    private static bool TryResolveFieldType(LayerDefinition layer, string? fieldName, out FieldType fieldType)
+    private static string? FieldTypeToValueType<TFieldType>(TFieldType? fieldType)
+        where TFieldType : struct, Enum
     {
-        if (string.IsNullOrWhiteSpace(fieldName))
+        return fieldType?.ToString() switch
         {
-            fieldType = default;
-            return false;
-        }
+            "Integer" or "BigInteger" or "Float" or "Double" => "number",
+            "Boolean" => "boolean",
+            "Date" => "date",
+            "String" => "string",
+            _ => null
+        };
+    }
 
-        if (string.Equals(fieldName, layer.ObjectIdFieldName, StringComparison.OrdinalIgnoreCase) ||
+    private static bool TryResolveSpatialAggregationFieldType(
+        MetadataV2Resource resource,
+        string fieldName,
+        out MetadataV2FieldType fieldType)
+    {
+        var objectIdField = resource.FindPrimaryIdField();
+        if (string.Equals(fieldName, objectIdField?.Name, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(fieldName, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
         {
-            fieldType = layer.PrimaryKeyField?.Type ?? FieldType.Integer;
+            fieldType = objectIdField?.Type ?? MetadataV2FieldType.Integer;
             return true;
         }
 
-        foreach (var field in layer.Fields)
+        foreach (var field in resource.SchemaFields)
         {
             if (string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
             {
@@ -1629,18 +1644,6 @@ internal static partial class FeatureServerEndpoints
 
         fieldType = default;
         return false;
-    }
-
-    private static string? FieldTypeToValueType(FieldType? fieldType)
-    {
-        return fieldType switch
-        {
-            FieldType.Integer or FieldType.BigInteger or FieldType.Float or FieldType.Double => "number",
-            FieldType.Boolean => "boolean",
-            FieldType.Date => "date",
-            FieldType.String => "string",
-            _ => null
-        };
     }
 
     private static bool IsSafeSpatialAggregationFieldName(string fieldName)

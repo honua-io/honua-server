@@ -7,8 +7,8 @@ using Apache.Arrow;
 using Apache.Arrow.Ipc;
 using Apache.Arrow.Types;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
@@ -25,11 +25,11 @@ internal sealed class GeoArrowQueryFormatter
     private const string GeoMetadataKey = "geo";
 
     /// <summary>
-    /// Formats query result as Arrow IPC Stream with GeoArrow metadata.
+    /// Formats query result as Arrow IPC Stream with GeoArrow metadata using Metadata v2 resource metadata.
     /// </summary>
     public static async Task<(byte[] response, string contentType)> FormatAsGeoArrowAsync(
         QueryResult<Feature> result,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         bool returnGeometry,
         int? outputSrid,
         bool returnZ,
@@ -38,20 +38,20 @@ internal sealed class GeoArrowQueryFormatter
         string[]? outFields = null,
         CancellationToken cancellationToken = default)
     {
-        var selectedFields = GeoParquetQueryFormatter.ResolveSelectedFields(layer, outFields);
-        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
-        var includeGeometry = returnGeometry && layer.HasGeometry;
-        var srid = outputSrid ?? layer.SpatialReference.Wkid;
+        ArgumentNullException.ThrowIfNull(resource);
+
+        var selectedFields = GeoParquetQueryFormatter.ResolveSelectedFields(resource, outFields);
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+        var includeGeometry = returnGeometry && HasGeometry(resource);
+        var srid = outputSrid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometrySrid(includeGeometry, srid, "GeoArrow");
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometryMeasures(includeGeometry, returnM, "GeoArrow");
         var features = result.Items;
         var isEmpty = features.Length == 0;
 
-        // Detect runtime-computed attributes (e.g. "distance" from KNN queries)
-        // that exist in the result set but are not declared in the layer schema.
-        var runtimeFields = GeoParquetQueryFormatter.DetectRuntimeFields(features, layer);
+        var runtimeFields = GeoParquetQueryFormatter.DetectRuntimeFields(features, resource);
 
-        var schema = BuildSchema(selectedFields, includeGeometry, layer, srid, returnZ, isEmpty, runtimeFields, outFields);
+        var schema = BuildSchema(selectedFields, includeGeometry, resource, srid, returnZ, isEmpty, runtimeFields, outFields);
         var recordBatch = BuildRecordBatch(
             features,
             selectedFields,
@@ -75,9 +75,9 @@ internal sealed class GeoArrowQueryFormatter
     }
 
     private static Apache.Arrow.Schema BuildSchema(
-        List<FieldDefinition> selectedFields,
+        List<MetadataV2Field> selectedFields,
         bool includeGeometry,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         int srid,
         bool returnZ,
         bool isEmpty,
@@ -93,7 +93,7 @@ internal sealed class GeoArrowQueryFormatter
 
         if (includeGeometry)
         {
-            var extensionMetadata = BuildExtensionMetadata(layer, srid, returnZ, isEmpty);
+            var extensionMetadata = BuildExtensionMetadata(resource, srid, returnZ, isEmpty);
             var geometryField = new Apache.Arrow.Field(
                 GeometryColumnName,
                 BinaryType.Default,
@@ -106,10 +106,6 @@ internal sealed class GeoArrowQueryFormatter
             fields.Add(geometryField);
         }
 
-        // Append runtime-computed attributes (e.g. "distance" from KNN queries) that are
-        // not declared in the layer schema but appear in feature.Attributes.
-        // Only include when outFields is omitted / "*", or the field was explicitly requested,
-        // to match the filtering behavior of JSON/GeoJSON/PBF/GeoParquet formatters.
         if (runtimeFields.Count > 0)
         {
             var includeAllFields = outFields == null || outFields.Length == 0 ||
@@ -123,27 +119,22 @@ internal sealed class GeoArrowQueryFormatter
             }
         }
 
-        var schemaMetadata = BuildSchemaMetadata(layer, includeGeometry, srid, returnZ, isEmpty);
+        var schemaMetadata = BuildSchemaMetadata(resource, includeGeometry, srid, returnZ, isEmpty);
         return new Apache.Arrow.Schema(fields, schemaMetadata);
     }
 
-    private static Apache.Arrow.Field CreateArrowField(FieldDefinition field)
+    private static Apache.Arrow.Field CreateArrowField(MetadataV2Field field)
     {
-        // Note: Date/Time type mappings intentionally diverge from GeoParquet.
-        // Arrow IPC is consumed by analytics clients (PyArrow, DuckDB) that prefer
-        // Timestamp over Date32 for dates, and Time64(μs) over Time32(ms) for times,
-        // because these types offer higher fidelity and are the default in most Arrow
-        // ecosystems. GeoParquet uses Date32/Time32 to match Parquet's native types.
         IArrowType arrowType = field.Type switch
         {
-            FieldType.BigInteger => Int64Type.Default,
-            FieldType.Integer => Int32Type.Default,
-            FieldType.Float => FloatType.Default,
-            FieldType.Double => DoubleType.Default,
-            FieldType.Boolean => BooleanType.Default,
-            FieldType.DateTime or FieldType.Date => new TimestampType(TimeUnit.Millisecond, "UTC"),
-            FieldType.Time => new Time64Type(TimeUnit.Microsecond),
-            FieldType.Binary => BinaryType.Default,
+            MetadataV2FieldType.BigInteger => Int64Type.Default,
+            MetadataV2FieldType.Integer => Int32Type.Default,
+            MetadataV2FieldType.Float => FloatType.Default,
+            MetadataV2FieldType.Double => DoubleType.Default,
+            MetadataV2FieldType.Boolean => BooleanType.Default,
+            MetadataV2FieldType.DateTime or MetadataV2FieldType.Date => new TimestampType(TimeUnit.Millisecond, "UTC"),
+            MetadataV2FieldType.Time => new Time64Type(TimeUnit.Microsecond),
+            MetadataV2FieldType.Binary => BinaryType.Default,
             _ => StringType.Default
         };
 
@@ -152,7 +143,7 @@ internal sealed class GeoArrowQueryFormatter
 
     private static RecordBatch BuildRecordBatch(
         IReadOnlyList<Feature> features,
-        List<FieldDefinition> selectedFields,
+        List<MetadataV2Field> selectedFields,
         string objectIdFieldName,
         bool includeGeometry,
         int outputSrid,
@@ -175,9 +166,6 @@ internal sealed class GeoArrowQueryFormatter
             arrays.Add(BuildGeometryArray(features, outputSrid, geometryLimits, returnZ, returnM));
         }
 
-        // Build arrays for runtime-computed fields (only those included in the schema).
-        // Match schema field names to ensure we only build arrays for fields that passed
-        // the outFields filter in BuildSchema.
         var schemaFieldNames = new HashSet<string>(
             schema.FieldsList.Select(f => f.Name), StringComparer.OrdinalIgnoreCase);
         foreach (var (name, type) in runtimeFields)
@@ -288,29 +276,29 @@ internal sealed class GeoArrowQueryFormatter
 
     private static IArrowArray BuildAttributeArray(
         IReadOnlyList<Feature> features,
-        FieldDefinition field,
+        MetadataV2Field field,
         bool isObjectIdField)
     {
         return field.Type switch
         {
-            FieldType.BigInteger => BuildInt64Array(features, field, isObjectIdField),
-            FieldType.Integer => BuildInt32Array(features, field, isObjectIdField),
-            FieldType.Float => BuildFloatArray(features, field),
-            FieldType.Double => BuildDoubleArray(features, field),
-            FieldType.Boolean => BuildBooleanArray(features, field),
-            FieldType.DateTime or FieldType.Date => BuildTimestampArray(features, field),
-            FieldType.Time => BuildTime64Array(features, field),
-            FieldType.Binary => BuildBinaryArray(features, field),
-            _ => BuildStringArray(features, field)
+            MetadataV2FieldType.BigInteger => BuildInt64Array(features, field.Name, isObjectIdField),
+            MetadataV2FieldType.Integer => BuildInt32Array(features, field.Name, isObjectIdField),
+            MetadataV2FieldType.Float => BuildFloatArray(features, field.Name),
+            MetadataV2FieldType.Double => BuildDoubleArray(features, field.Name),
+            MetadataV2FieldType.Boolean => BuildBooleanArray(features, field.Name),
+            MetadataV2FieldType.DateTime or MetadataV2FieldType.Date => BuildTimestampArray(features, field.Name),
+            MetadataV2FieldType.Time => BuildTime64Array(features, field.Name),
+            MetadataV2FieldType.Binary => BuildBinaryArray(features, field.Name),
+            _ => BuildStringArray(features, field.Name)
         };
     }
 
-    private static Int64Array BuildInt64Array(IReadOnlyList<Feature> features, FieldDefinition field, bool isObjectIdField)
+    private static Int64Array BuildInt64Array(IReadOnlyList<Feature> features, string fieldName, bool isObjectIdField)
     {
         var builder = new Int64Array.Builder();
         for (var i = 0; i < features.Count; i++)
         {
-            var value = GeoParquetQueryFormatter.GetAttributeValue(features[i], field.Name);
+            var value = GeoParquetQueryFormatter.GetAttributeValue(features[i], fieldName);
             var converted = TryConvertInt64(value);
             if (converted.HasValue)
             {
@@ -329,12 +317,12 @@ internal sealed class GeoArrowQueryFormatter
         return builder.Build();
     }
 
-    private static Int32Array BuildInt32Array(IReadOnlyList<Feature> features, FieldDefinition field, bool isObjectIdField)
+    private static Int32Array BuildInt32Array(IReadOnlyList<Feature> features, string fieldName, bool isObjectIdField)
     {
         var builder = new Int32Array.Builder();
         for (var i = 0; i < features.Count; i++)
         {
-            var value = GeoParquetQueryFormatter.GetAttributeValue(features[i], field.Name);
+            var value = GeoParquetQueryFormatter.GetAttributeValue(features[i], fieldName);
             var converted = TryConvertInt32(value);
             if (converted.HasValue)
             {
@@ -353,12 +341,12 @@ internal sealed class GeoArrowQueryFormatter
         return builder.Build();
     }
 
-    private static FloatArray BuildFloatArray(IReadOnlyList<Feature> features, FieldDefinition field)
+    private static FloatArray BuildFloatArray(IReadOnlyList<Feature> features, string fieldName)
     {
         var builder = new FloatArray.Builder();
         for (var i = 0; i < features.Count; i++)
         {
-            var value = TryConvertFloat(GeoParquetQueryFormatter.GetAttributeValue(features[i], field.Name));
+            var value = TryConvertFloat(GeoParquetQueryFormatter.GetAttributeValue(features[i], fieldName));
             if (value.HasValue)
             {
                 builder.Append(value.Value);
@@ -372,12 +360,12 @@ internal sealed class GeoArrowQueryFormatter
         return builder.Build();
     }
 
-    private static DoubleArray BuildDoubleArray(IReadOnlyList<Feature> features, FieldDefinition field)
+    private static DoubleArray BuildDoubleArray(IReadOnlyList<Feature> features, string fieldName)
     {
         var builder = new DoubleArray.Builder();
         for (var i = 0; i < features.Count; i++)
         {
-            var value = TryConvertDouble(GeoParquetQueryFormatter.GetAttributeValue(features[i], field.Name));
+            var value = TryConvertDouble(GeoParquetQueryFormatter.GetAttributeValue(features[i], fieldName));
             if (value.HasValue)
             {
                 builder.Append(value.Value);
@@ -391,12 +379,12 @@ internal sealed class GeoArrowQueryFormatter
         return builder.Build();
     }
 
-    private static BooleanArray BuildBooleanArray(IReadOnlyList<Feature> features, FieldDefinition field)
+    private static BooleanArray BuildBooleanArray(IReadOnlyList<Feature> features, string fieldName)
     {
         var builder = new BooleanArray.Builder();
         for (var i = 0; i < features.Count; i++)
         {
-            var value = TryConvertBoolean(GeoParquetQueryFormatter.GetAttributeValue(features[i], field.Name));
+            var value = TryConvertBoolean(GeoParquetQueryFormatter.GetAttributeValue(features[i], fieldName));
             if (value.HasValue)
             {
                 builder.Append(value.Value);
@@ -410,12 +398,12 @@ internal sealed class GeoArrowQueryFormatter
         return builder.Build();
     }
 
-    private static TimestampArray BuildTimestampArray(IReadOnlyList<Feature> features, FieldDefinition field)
+    private static TimestampArray BuildTimestampArray(IReadOnlyList<Feature> features, string fieldName)
     {
         var builder = new TimestampArray.Builder(new TimestampType(TimeUnit.Millisecond, "UTC"));
         for (var i = 0; i < features.Count; i++)
         {
-            var value = TryConvertDateTimeOffset(GeoParquetQueryFormatter.GetAttributeValue(features[i], field.Name));
+            var value = TryConvertDateTimeOffset(GeoParquetQueryFormatter.GetAttributeValue(features[i], fieldName));
             if (value.HasValue)
             {
                 builder.Append(value.Value);
@@ -429,13 +417,12 @@ internal sealed class GeoArrowQueryFormatter
         return builder.Build();
     }
 
-    private static Time64Array BuildTime64Array(IReadOnlyList<Feature> features, FieldDefinition field)
+    private static Time64Array BuildTime64Array(IReadOnlyList<Feature> features, string fieldName)
     {
-        // Time64 stores microseconds since midnight as int64
         var builder = new Int64Array.Builder();
         for (var i = 0; i < features.Count; i++)
         {
-            var value = TryConvertTimeOnly(GeoParquetQueryFormatter.GetAttributeValue(features[i], field.Name));
+            var value = TryConvertTimeOnly(GeoParquetQueryFormatter.GetAttributeValue(features[i], fieldName));
             if (value.HasValue)
             {
                 var microseconds = value.Value.Ticks / (TimeSpan.TicksPerMillisecond / 1000);
@@ -449,7 +436,6 @@ internal sealed class GeoArrowQueryFormatter
 
         var int64Array = builder.Build();
 
-        // Wrap the raw int64 data in a Time64Array with proper type metadata
         return new Time64Array(
             new Time64Type(TimeUnit.Microsecond),
             int64Array.ValueBuffer,
@@ -459,12 +445,12 @@ internal sealed class GeoArrowQueryFormatter
             int64Array.Offset);
     }
 
-    private static BinaryArray BuildBinaryArray(IReadOnlyList<Feature> features, FieldDefinition field)
+    private static BinaryArray BuildBinaryArray(IReadOnlyList<Feature> features, string fieldName)
     {
         var builder = new BinaryArray.Builder();
         for (var i = 0; i < features.Count; i++)
         {
-            var value = TryConvertBytes(GeoParquetQueryFormatter.GetAttributeValue(features[i], field.Name));
+            var value = TryConvertBytes(GeoParquetQueryFormatter.GetAttributeValue(features[i], fieldName));
             if (value != null)
             {
                 builder.Append(value);
@@ -478,12 +464,12 @@ internal sealed class GeoArrowQueryFormatter
         return builder.Build();
     }
 
-    private static StringArray BuildStringArray(IReadOnlyList<Feature> features, FieldDefinition field)
+    private static StringArray BuildStringArray(IReadOnlyList<Feature> features, string fieldName)
     {
         var builder = new StringArray.Builder();
         for (var i = 0; i < features.Count; i++)
         {
-            var value = ConvertToStringValue(GeoParquetQueryFormatter.GetAttributeValue(features[i], field.Name));
+            var value = ConvertToStringValue(GeoParquetQueryFormatter.GetAttributeValue(features[i], fieldName));
             if (value != null)
             {
                 builder.Append(value);
@@ -522,23 +508,18 @@ internal sealed class GeoArrowQueryFormatter
         return builder.Build();
     }
 
-    private static string BuildExtensionMetadata(LayerDefinition layer, int srid, bool returnZ, bool isEmpty)
+    private static string BuildExtensionMetadata(MetadataV2Resource resource, int srid, bool returnZ, bool isEmpty)
     {
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometrySrid(includeGeometry: true, srid, "GeoArrow");
 
-        // Build JSON manually to avoid AOT issues (no source-generated context for
-        // Dictionary<string, object?>). For EPSG:4326 the `crs` key is omitted,
-        // which implies OGC:CRS84 per GeoParquet 1.1.0.
-        // GeoParquet 1.1.0 §4.1: geometry_types lists types actually present —
-        // an empty result must use [].
         var geometryTypesPart = isEmpty
             ? "[]"
-            : $@"[""{GeoParquetQueryFormatter.MapGeometryTypeToGeoParquet(layer.GeometryType, returnZ)}""]";
+            : $@"[""{GeoParquetQueryFormatter.MapGeometryTypeToGeoParquet(resource.ReadGeometryType(), returnZ)}""]";
         return $@"{{""geometry_types"":{geometryTypesPart},""edges"":""planar""}}";
     }
 
     private static Dictionary<string, string> BuildSchemaMetadata(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         bool includeGeometry,
         int srid,
         bool returnZ,
@@ -552,18 +533,17 @@ internal sealed class GeoArrowQueryFormatter
 
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometrySrid(includeGeometry: true, srid, "GeoArrow");
 
-        // Build JSON manually to avoid AOT issues (matches GeoParquet pattern).
-        // For EPSG:4326 the `crs` key is omitted, which implies OGC:CRS84.
-        // GeoParquet 1.1.0 §4.1: geometry_types lists types actually present —
-        // an empty result must use [].
         var geometryTypesPart = isEmpty
             ? "[]"
-            : $@"[""{GeoParquetQueryFormatter.MapGeometryTypeToGeoParquet(layer.GeometryType, returnZ)}""]";
+            : $@"[""{GeoParquetQueryFormatter.MapGeometryTypeToGeoParquet(resource.ReadGeometryType(), returnZ)}""]";
         var geoJson = $@"{{""version"":""1.1.0"",""primary_column"":""{GeometryColumnName}"",""columns"":{{""{GeometryColumnName}"":{{""encoding"":""WKB"",""geometry_types"":{geometryTypesPart}}}}}}}";
 
         metadata[GeoMetadataKey] = geoJson;
         return metadata;
     }
+
+    private static bool HasGeometry(MetadataV2Resource resource)
+        => resource.ReadGeometryType() != MetadataV2GeometryType.None;
 
     // Type converters — duplicated from GeoParquetQueryFormatter because Arrow builder
     // API (Append/AppendNull) differs from Parquet's column-array model.

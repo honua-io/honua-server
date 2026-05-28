@@ -4,7 +4,6 @@
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit;
@@ -30,7 +29,6 @@ public sealed class GeometryValidationTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _fixture.ReplaceService<ILayerCatalog>(new TestLayerCatalog());
         var featureStore = new TestFeatureStore();
         _fixture.ReplaceService<IFeatureReader>(featureStore);
         _fixture.ReplaceService<IFeatureWriter>(featureStore);

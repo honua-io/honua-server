@@ -6,7 +6,6 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Attachments.Abstractions;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -29,6 +28,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 using Xunit;
 using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
+using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.TestKit;
 
@@ -71,10 +71,25 @@ public sealed class WebAppFixture : IAsyncLifetime
     private const string TestEncryptionSalt = "dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=";
     private const string TestSecureConnectionName = "test";
     private const string TestSecureConnectionCreatedBy = "test-fixture";
-    private const string GeoServicesDrawingInfoExtensionKey = "honua.io/geoservices/drawingInfo";
-    private const string GeoServicesExtrusionExtensionKey = "honua.io/geoservices/extrusion";
-    private static readonly string[] SeededServiceCapabilities = ["Query", "Extract"];
-    private static readonly string[] SeededServiceSupportedFormats = ["JSON", "GeoJSON"];
+    private const string DefaultPointDrawingInfoJson = """
+        {
+          "renderer": {
+            "type": "simple",
+            "symbol": {
+              "type": "esriSMS",
+              "style": "esriSMSCircle",
+              "color": [45, 105, 165, 255],
+              "size": 6,
+              "outline": {
+                "type": "esriSLS",
+                "style": "esriSLSSolid",
+                "color": [45, 105, 165, 255],
+                "width": 1
+              }
+            }
+          }
+        }
+        """;
 
     /// <summary>
     /// Admin password used by <see cref="CreateAdminClient"/> and configured into the
@@ -173,7 +188,6 @@ public sealed class WebAppFixture : IAsyncLifetime
                     services.RemoveAll<IRelationshipStore>();
                     services.RemoveAll<IStreamingFeatureStore>();
                     services.RemoveAll<IAttachmentStore>();
-                    services.RemoveAll<ILayerCatalog>();
                     services.RemoveAll<ITableDiscoveryService>();
                     services.RemoveAll<IDatabaseHealthChecker>();
                     services.RemoveAll<IDatabaseConnectionProvider>();
@@ -206,12 +220,8 @@ public sealed class WebAppFixture : IAsyncLifetime
                         return dataSourceBuilder.Build();
                     });
 
-                    // Override specific services for testing
-                    services.RemoveAll<ILayerCatalog>();
-                    services.AddScoped<ILayerCatalog, Honua.Postgres.Features.Catalog.PostgresLayerCatalog>();
-
                     // Replace the Postgres-backed Metadata v2 provider with an in-memory fixture
-                    // so endpoints that have migrated off ILayerCatalog can read a snapshot without
+                    // so endpoints read the seeded snapshot without
                     // a migrated snapshot row being present in the test database.
                     RegisterDefaultMetadataV2Graph(services);
 
@@ -303,34 +313,38 @@ public sealed class WebAppFixture : IAsyncLifetime
 
     /// <summary>
     /// Builds the default Metadata v2 graph snapshot registered into the test DI container so
-    /// that endpoints which have migrated off <see cref="ILayerCatalog"/> have something to read
-    /// from. Mirrors the layer ids seeded by <c>tests/seed/server.yaml</c> so existence probes
-    /// keyed on the v1 layer id continue to find a matching publication. Tests that need a richer
+    /// that endpoints have a graph to read from. Mirrors the layer ids seeded by
+    /// <c>tests/seed/server.yaml</c> so existence probes keyed on the layer id continue to find a
+    /// matching publication. Tests that need a richer
     /// graph can replace the registration through <see cref="ConfigureServices"/>.
     /// </summary>
     private static MetadataV2Graph BuildDefaultTestGraph()
     {
         // The Postgres test seed (tests/seed/server.yaml) registers a single "test" service
         // with every protocol enabled. Mirror that on the V2 graph so capability gates
-        // (ServiceProtocols.IsProtocolEnabled on the OGC API family) match the v1 behaviour.
-        var allProtocols = Honua.Core.Features.Catalog.Domain.ServiceProtocols.All;
-        var publicSeedPolicy = new AccessPolicy { AllowAnonymous = true };
-        var serviceDescription = "Test service for integration tests";
+        // (protocol enablement on the OGC API family) match the v1 behaviour.
+        var allProtocols = MetadataV2ServiceProtocols.All;
+        // tests/seed/server.yaml's "test" service is open by convention — anonymous
+        // GETs against /rest/services/test/... must return data, matching the v1 default
+        // posture. Set AllowAnonymous = true on the V2 service so the access middleware
+        // doesn't 401 the anonymous fixture endpoints.
         var builder = new Honua.TestKit.Infrastructure.TestMetadataV2GraphBuilder()
             .AddService(
                 "svc-test",
                 "test",
                 route: "/ogc/features",
                 protocols: allProtocols,
-                accessPolicy: publicSeedPolicy,
-                description: serviceDescription,
-                options: BuildSeededServiceOptions(),
-                status: RuntimeReadyStatus());
+                accessPolicy: new AccessPolicy { AllowAnonymous = true });
 
-        // Cover the layer ids inserted by server.yaml (0..2 and the spatial-reference fixtures
-        // at 101..104). Any test that needs a different id range can extend or replace the graph.
-        int[] seededLayerIndices = [0, 1, 2, 3, 4, 5, 101, 102, 103, 104];
-        foreach (var layerIndex in seededLayerIndices)
+        // server.yaml binds only layers 0..2 to service "test"; do not publish helper
+        // resource ids here or service-level FeatureServer queries will drift from the
+        // v1 seed while the query handler cutover is still in progress.
+        int[] defaultServiceLayerIndices = [0, 1, 2];
+
+        // Cover resources inserted by the default seed plus the spatial-reference fixture
+        // resources that BuildSpatialReferenceSeedTestGraph publishes under srid-test.
+        int[] seededResourceLayerIndices = [0, 1, 2, 101, 102, 103];
+        foreach (var layerIndex in seededResourceLayerIndices)
         {
             var resourceId = $"res-layer-{layerIndex}";
             var bindingId = $"binding-layer-{layerIndex}";
@@ -341,46 +355,45 @@ public sealed class WebAppFixture : IAsyncLifetime
                     MetadataV2ResourceType.FeatureDataset,
                     fields: GetSeededLayerSchemaFields(layerIndex),
                     spatial: GetSeededLayerSpatial(layerIndex),
-                    temporal: GetSeededLayerTemporal(layerIndex),
-                    description: GetSeededLayerDescription(layerIndex),
-                    display: GetSeededLayerDisplay(layerIndex),
-                    editing: GetSeededLayerEditing(layerIndex),
-                    extensions: GetSeededLayerExtensions(layerIndex),
-                    status: RuntimeReadyStatus())
+                    temporal: GetSeededLayerTemporal(layerIndex))
                 .AddStorageBinding(
                     bindingId,
                     resourceId,
-                    $"features:{layerIndex}",
-                    storageLayerId: layerIndex)
-                .AddPublication(
+                    "features",
+                    storageLayerId: layerIndex,
+                    // The seed's shared 'features' table uses 'geometry' as its
+                    // geometry column; the schema field is named 'shape' (the V2
+                    // logical name). FeatureStorageMapping reads geometryColumn
+                    // from binding options to bridge the two, so add it here.
+                    options: new Dictionary<string, JsonElement>
+                    {
+                        ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry"),
+                        ["attributesColumn"] = JsonSerializer.SerializeToElement("attributes")
+                    });
+
+            if (defaultServiceLayerIndices.Contains(layerIndex))
+            {
+                builder.AddPublication(
                     id: $"pub-layer-{layerIndex}",
                     serviceId: "svc-test",
                     resourceId: resourceId,
                     layerIndex: layerIndex,
-                    storageBindingId: bindingId,
-                    serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    status: RuntimeReadyStatus());
+                    serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
         }
 
         // ImageServer publications for the canonical raster test layer (TestServiceId/TestLayerId).
         // ImageServer handler tests resolve their layer index against this snapshot.
         builder
             .AddResource("res-image-test", "test-layer", MetadataV2ResourceType.RasterDataset)
-            .AddService(
-                "svc-image-test",
-                TestServiceId,
-                protocols: [ServiceProtocols.ImageServer],
-                description: serviceDescription,
-                options: BuildSeededServiceOptions(),
-                status: RuntimeReadyStatus())
+            .AddService("svc-image-test", TestServiceId, protocols: [MetadataV2ServiceProtocols.ImageServer])
             .AddPublication(
                 id: "pub-image-test",
                 serviceId: "svc-image-test",
                 resourceId: "res-image-test",
                 layerIndex: TestLayerId,
                 serviceLocalId: "test-layer",
-                publicationType: MetadataV2PublicationType.EsriImageLayer,
-                status: RuntimeReadyStatus());
+                publicationType: MetadataV2PublicationType.EsriImageLayer);
 
         // FeatureServer and MapServer publications for the canonical "test" service.
         // The GeoServices REST catalog endpoint enumerates these directly from the V2
@@ -389,10 +402,10 @@ public sealed class WebAppFixture : IAsyncLifetime
         // layer ids that server.yaml seeds so /rest/services has services to return and
         // downstream FeatureServer/MapServer handler ports can resolve them by layer id.
         builder
-            .AddService("svc-test-feature", "test", protocols: [ServiceProtocols.FeatureServer], accessPolicy: publicSeedPolicy, description: serviceDescription, options: BuildSeededServiceOptions(), status: RuntimeReadyStatus())
-            .AddService("svc-test-map", "test", protocols: [ServiceProtocols.MapServer], accessPolicy: publicSeedPolicy, description: serviceDescription, options: BuildSeededServiceOptions(), status: RuntimeReadyStatus())
-            .AddService("svc-test-stac", "test", route: "/stac", protocols: [ServiceProtocols.Stac], accessPolicy: publicSeedPolicy, description: serviceDescription, options: BuildSeededServiceOptions(), status: RuntimeReadyStatus());
-        foreach (var layerIndex in seededLayerIndices)
+            .AddService("svc-test-feature", "test", protocols: [MetadataV2ServiceProtocols.FeatureServer])
+            .AddService("svc-test-map", "test", protocols: [MetadataV2ServiceProtocols.MapServer])
+            .AddService("svc-test-stac", "test", route: "/stac", protocols: [MetadataV2ServiceProtocols.Stac]);
+        foreach (var layerIndex in defaultServiceLayerIndices)
         {
             var resourceId = $"res-layer-{layerIndex}";
             builder
@@ -401,35 +414,161 @@ public sealed class WebAppFixture : IAsyncLifetime
                     serviceId: "svc-test-feature",
                     resourceId: resourceId,
                     layerIndex: layerIndex,
-                    storageBindingId: $"binding-layer-{layerIndex}",
                     serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    publicationType: MetadataV2PublicationType.EsriFeatureLayer,
-                    status: RuntimeReadyStatus())
+                    publicationType: MetadataV2PublicationType.EsriFeatureLayer)
                 .AddPublication(
                     id: $"pub-map-{layerIndex}",
                     serviceId: "svc-test-map",
                     resourceId: resourceId,
                     layerIndex: layerIndex,
-                    storageBindingId: $"binding-layer-{layerIndex}",
                     serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    publicationType: MetadataV2PublicationType.EsriMapLayer,
-                    status: RuntimeReadyStatus());
-
-            if (layerIndex is 0 or 1 or 2)
-            {
-                builder.AddPublication(
+                    publicationType: MetadataV2PublicationType.EsriMapLayer)
+                .AddPublication(
                     id: $"pub-stac-{layerIndex}",
                     serviceId: "svc-test-stac",
                     resourceId: resourceId,
                     layerIndex: layerIndex,
-                    storageBindingId: $"binding-layer-{layerIndex}",
                     serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    publicationType: MetadataV2PublicationType.StacCollection,
-                    status: RuntimeReadyStatus());
-            }
+                    publicationType: MetadataV2PublicationType.StacCollection);
         }
 
-        return builder.Build();
+        var graph = builder.Build();
+        var resources = graph.Resources.ToArray();
+        var services = graph.Services.ToArray();
+        for (var i = 0; i < services.Length; i++)
+        {
+            if (!string.Equals(services[i].Metadata.Name, TestServiceId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            services[i] = services[i] with
+            {
+                Metadata = services[i].Metadata with
+                {
+                    Description = "Test service for integration tests",
+                },
+            };
+        }
+
+        for (var i = 0; i < resources.Length; i++)
+        {
+            if (!string.Equals(resources[i].Metadata.Id, "res-layer-0", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            resources[i] = resources[i] with
+            {
+                StyleResourceIds = resources[i].StyleResourceIds
+                    .Append("style-layer-0-esri")
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray(),
+                Relationships =
+                [
+                    new MetadataV2Relationship
+                    {
+                        Id = "1",
+                        Name = "Test Relationship",
+                        Description = "Test relationship between layer 0 and layer 1",
+                        RelatedResourceId = "res-layer-1",
+                        Role = "esriRelRoleOrigin",
+                        OriginField = "objectid",
+                        DestinationField = "related_id",
+                        EsriRelationshipId = 1
+                    },
+                    new MetadataV2Relationship
+                    {
+                        Id = "2",
+                        Name = "Secondary Relationship",
+                        Description = "Secondary test relationship",
+                        RelatedResourceId = "res-layer-2",
+                        Role = "esriRelRoleOrigin",
+                        OriginField = "objectid",
+                        DestinationField = "secondary_id",
+                        EsriRelationshipId = 2
+                    }
+                ]
+            };
+        }
+
+        resources = resources
+            .Append(new MetadataV2Resource
+            {
+                Metadata = new MetadataV2ObjectMetadata
+                {
+                    Id = "style-layer-0-esri",
+                    Name = "Test Layer Drawing Info",
+                    Description = "Default GeoServices drawingInfo for the seeded test layer",
+                },
+                Type = MetadataV2ResourceType.Style,
+                Style = new MetadataV2ResourceStyle
+                {
+                    Title = "Test Layer Drawing Info",
+                    Encodings =
+                    [
+                        new MetadataV2StyleEncoding
+                        {
+                            Encoding = "esri-drawing-info",
+                            Body = DefaultPointDrawingInfoJson,
+                            ContentType = "application/json",
+                        },
+                    ],
+                },
+            })
+            .ToArray();
+
+        return graph with { Resources = resources, Services = services };
+    }
+
+    private static MetadataV2Graph BuildODataSeedTestGraph()
+    {
+        var allProtocols = MetadataV2ServiceProtocols.All;
+        var builder = new Honua.TestKit.Infrastructure.TestMetadataV2GraphBuilder()
+            .AddService(
+                "svc-test",
+                "test",
+                route: "/odata",
+                protocols: allProtocols);
+
+        AddODataSeedLayer(
+            builder,
+            layerIndex: 0,
+            name: "US Cities");
+        AddODataSeedLayer(
+            builder,
+            layerIndex: 1,
+            name: "City Landmarks");
+
+        var graph = builder.Build();
+        var resources = graph.Resources.ToArray();
+        for (var i = 0; i < resources.Length; i++)
+        {
+            if (!string.Equals(resources[i].Metadata.Id, "res-layer-0", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            resources[i] = resources[i] with
+            {
+                Relationships =
+                [
+                    new MetadataV2Relationship
+                    {
+                        Id = "1",
+                        Name = "Landmarks",
+                        Description = "City to landmark relationship",
+                        RelatedResourceId = "res-layer-1",
+                        Role = "esriRelRoleOrigin",
+                        OriginField = "objectid",
+                        DestinationField = "city_id",
+                        EsriRelationshipId = 1
+                    }
+                ]
+            };
+        }
+
+        return graph with { Resources = resources };
     }
 
     private static MetadataV2Graph BuildSpatialReferenceSeedTestGraph()
@@ -445,7 +584,7 @@ public sealed class WebAppFixture : IAsyncLifetime
                 Id = "svc-srid-feature",
                 Name = SpatialReferenceTestLayerCatalog.ServiceId
             },
-            Protocols = [ServiceProtocols.FeatureServer]
+            Protocols = [MetadataV2ServiceProtocols.FeatureServer]
         });
         services.Add(new MetadataV2Service
         {
@@ -454,7 +593,7 @@ public sealed class WebAppFixture : IAsyncLifetime
                 Id = "svc-srid-odata",
                 Name = SpatialReferenceTestLayerCatalog.ServiceId
             },
-            Protocols = [ServiceProtocols.OData]
+            Protocols = [MetadataV2ServiceProtocols.OData]
         });
         services.Add(new MetadataV2Service
         {
@@ -464,7 +603,17 @@ public sealed class WebAppFixture : IAsyncLifetime
                 Name = SpatialReferenceTestLayerCatalog.ServiceId
             },
             Route = "/stac",
-            Protocols = [ServiceProtocols.Stac]
+            Protocols = [MetadataV2ServiceProtocols.Stac]
+        });
+        services.Add(new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "svc-srid-ogc-features",
+                Name = SpatialReferenceTestLayerCatalog.ServiceId
+            },
+            Route = "/ogc/features",
+            Protocols = [MetadataV2ServiceProtocols.OgcFeatures]
         });
 
         foreach (var layerIndex in new[]
@@ -525,6 +674,23 @@ public sealed class WebAppFixture : IAsyncLifetime
                 },
                 PublicationType = MetadataV2PublicationType.StacCollection
             });
+            publications.Add(new MetadataV2Publication
+            {
+                Metadata = new MetadataV2ObjectMetadata
+                {
+                    Id = $"pub-srid-ogc-features-{layerIndex}",
+                    Name = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                },
+                ServiceId = "svc-srid-ogc-features",
+                ResourceId = $"res-layer-{layerIndex}",
+                StorageBindingId = $"binding-layer-{layerIndex}",
+                Identifier = new MetadataV2PublicationIdentifier
+                {
+                    Value = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    IsNumeric = true
+                },
+                PublicationType = MetadataV2PublicationType.OgcCollection
+            });
         }
 
         return graph with
@@ -534,27 +700,13 @@ public sealed class WebAppFixture : IAsyncLifetime
         };
     }
 
-    private static MetadataV2Status RuntimeReadyStatus()
-        => new()
-        {
-            Lifecycle = MetadataV2LifecycleStatus.Active,
-            State = MetadataV2OperationalState.Ready,
-        };
-
-    private static Dictionary<string, JsonElement> BuildSeededServiceOptions()
-        => new Dictionary<string, JsonElement>(StringComparer.Ordinal)
-        {
-            ["capabilities"] = JsonSerializer.SerializeToElement(SeededServiceCapabilities),
-            ["supportedFormats"] = JsonSerializer.SerializeToElement(SeededServiceSupportedFormats),
-        };
-
     private static MetadataV2Graph BuildAdminSampleMetadataV2Graph()
     {
         var builder = new Honua.TestKit.Infrastructure.TestMetadataV2GraphBuilder()
             .AddService(
                 "svc-admin-sample-feature",
                 "admin_sample",
-                protocols: [ServiceProtocols.FeatureServer],
+                protocols: [MetadataV2ServiceProtocols.FeatureServer],
                 accessPolicy: new AccessPolicy { AllowAnonymous = true });
 
         foreach (var layerIndex in new[] { 3000, 3001, 3002 })
@@ -572,14 +724,13 @@ public sealed class WebAppFixture : IAsyncLifetime
                 .AddStorageBinding(
                     bindingId,
                     resourceId,
-                    $"features:{layerIndex}",
+                    "features",
                     storageLayerId: layerIndex)
                 .AddPublication(
                     id: $"pub-admin-sample-feature-{layerIndex}",
                     serviceId: "svc-admin-sample-feature",
                     resourceId: resourceId,
                     layerIndex: layerIndex,
-                    storageBindingId: bindingId,
                     serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     publicationType: MetadataV2PublicationType.EsriFeatureLayer);
         }
@@ -587,11 +738,49 @@ public sealed class WebAppFixture : IAsyncLifetime
         return builder.Build();
     }
 
+    private static void AddODataSeedLayer(
+        Honua.TestKit.Infrastructure.TestMetadataV2GraphBuilder builder,
+        int layerIndex,
+        string name)
+    {
+        var resourceId = $"res-layer-{layerIndex}";
+        var bindingId = $"binding-layer-{layerIndex}";
+        builder
+            .AddResource(
+                resourceId,
+                name,
+                MetadataV2ResourceType.FeatureDataset,
+                fields: GetSeededLayerSchemaFields(layerIndex))
+            .AddStorageBinding(
+                bindingId,
+                resourceId,
+                "features",
+                storageLayerId: layerIndex,
+                options: new Dictionary<string, JsonElement>
+                {
+                    ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry"),
+                    ["attributesColumn"] = JsonSerializer.SerializeToElement("attributes")
+                })
+            .AddPublication(
+                id: $"pub-layer-{layerIndex}",
+                serviceId: "svc-test",
+                resourceId: resourceId,
+                layerIndex: layerIndex,
+                storageBindingId: bindingId,
+                serviceLocalId: layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                publicationType: MetadataV2PublicationType.ODataEntitySet);
+    }
+
     private static void RegisterDefaultMetadataV2Graph(IServiceCollection services)
     {
         services.RemoveAll<IMetadataV2GraphProvider>();
-        services.AddSingleton<IMetadataV2GraphProvider>(_ =>
+        services.RemoveAll<IMetadataV2GraphStore>();
+        services.AddSingleton(_ =>
             new Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider(BuildDefaultTestGraph()));
+        services.AddSingleton<IMetadataV2GraphProvider>(sp =>
+            sp.GetRequiredService<Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider>());
+        services.AddSingleton<IMetadataV2GraphStore>(sp =>
+            sp.GetRequiredService<Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider>());
     }
 
     private void ApplySeedSpecificMetadataV2Graph()
@@ -606,6 +795,12 @@ public sealed class WebAppFixture : IAsyncLifetime
                 "Test V2 graph provider not registered as TestMetadataV2GraphProvider.");
 
         var seedFile = Path.GetFileName(_seedPath);
+        if (seedFile.Equals("odata.yaml", StringComparison.OrdinalIgnoreCase))
+        {
+            provider.SetGraph(BuildODataSeedTestGraph());
+            return;
+        }
+
         if (seedFile.Equals("spatial-reference.yaml", StringComparison.OrdinalIgnoreCase))
         {
             provider.SetGraph(BuildSpatialReferenceSeedTestGraph());
@@ -613,26 +808,36 @@ public sealed class WebAppFixture : IAsyncLifetime
     }
 
     /// <summary>
-    /// Returns the V2 schema fields for the layers the Postgres test seed
-    /// (tests/seed/server.yaml) populates via the v1 layer_fields table. OGC API
-    /// Features queryables, OData $metadata, STAC properties, and other
-    /// schema-driven endpoints all read this from the V2 resource graph after the
-    /// metadata-v2 cutover. Layers without seeded fields (everything but 0/1/2)
-    /// return an empty list — matching the v1 fixture behavior where those layers
-    /// have no layer_fields rows.
+    /// Returns the V2 schema fields for the layers the Postgres test seeds
+    /// (tests/seed/server.yaml, tests/seed/odata.yaml) populate via the v1
+    /// layer_fields table. Returns the union of all known seed fields so the same
+    /// fixture works for tests selecting different seed files. OGC API Features
+    /// queryables, OData $metadata, STAC properties, and other schema-driven
+    /// endpoints all read this from the V2 resource graph after the metadata-v2
+    /// cutover. Layers without seeded fields (everything but 0/1/2) return an
+    /// empty list — matching the v1 fixture behavior where those layers have no
+    /// layer_fields rows.
     /// </summary>
     private static IEnumerable<MetadataV2Field>? GetSeededLayerSchemaFields(int layerIndex)
         => layerIndex switch
         {
             0 =>
             [
-                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Alias = "Object ID", Description = "Object ID", Editable = false, SemanticRoles = ["id.primary"] },
-                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Alias = "Name", Description = "Name", Length = 255 },
-                new MetadataV2Field { Name = "description", Type = MetadataV2FieldType.String, Nullable = true, Alias = "Description", Description = "Description", Length = 1024 },
-                new MetadataV2Field { Name = "category", Type = MetadataV2FieldType.String, Nullable = true, Alias = "Category", Description = "Category", Length = 255 },
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Description = "Object ID" },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Description = "Name" },
+                new MetadataV2Field { Name = "description", Type = MetadataV2FieldType.String, Nullable = true, Description = "Description" },
+                new MetadataV2Field { Name = "category", Type = MetadataV2FieldType.String, Nullable = true, Description = "Category" },
                 new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime, Nullable = true, Description = "Timestamp" },
                 new MetadataV2Field { Name = "event_date", Type = MetadataV2FieldType.DateTime, Nullable = true, Description = "Event date" },
                 new MetadataV2Field { Name = "created_date", Type = MetadataV2FieldType.Date, Nullable = true, Description = "Created date" },
+                new MetadataV2Field { Name = "population", Type = MetadataV2FieldType.Integer, Nullable = true, Description = "City population" },
+                new MetadataV2Field { Name = "area_sq_km", Type = MetadataV2FieldType.Double, Nullable = true, Description = "Area in square kilometers" },
+                new MetadataV2Field { Name = "is_capital", Type = MetadataV2FieldType.Boolean, Nullable = true, Description = "Whether city is a state capital" },
+                new MetadataV2Field { Name = "state", Type = MetadataV2FieldType.String, Nullable = true, Description = "State name" },
+                new MetadataV2Field { Name = "country", Type = MetadataV2FieldType.String, Nullable = true, Description = "Country name" },
+                new MetadataV2Field { Name = "founded_year", Type = MetadataV2FieldType.Integer, Nullable = true, Description = "Year the city was founded" },
+                new MetadataV2Field { Name = "rating", Type = MetadataV2FieldType.Double, Nullable = true, Description = "City rating" },
+                new MetadataV2Field { Name = "notes", Type = MetadataV2FieldType.String, Nullable = true, Description = "Additional notes" },
                 new MetadataV2Field
                 {
                     Name = "shape",
@@ -644,11 +849,13 @@ public sealed class WebAppFixture : IAsyncLifetime
             ],
             1 =>
             [
-                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Alias = "Object ID", Description = "Object ID", Editable = false, SemanticRoles = ["id.primary"] },
-                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Alias = "Name", Description = "Name field", Length = 255 },
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Description = "Object ID" },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Description = "Name field" },
                 new MetadataV2Field { Name = "related_id", Type = MetadataV2FieldType.Integer, Nullable = true, Description = "Foreign key to origin layer" },
-                new MetadataV2Field { Name = "description", Type = MetadataV2FieldType.String, Nullable = true, Alias = "Description", Description = "Description", Length = 1024 },
-                new MetadataV2Field { Name = "category", Type = MetadataV2FieldType.String, Nullable = true, Alias = "Category", Description = "Category", Length = 255 },
+                new MetadataV2Field { Name = "city_id", Type = MetadataV2FieldType.Integer, Nullable = true, Description = "Origin city ID" },
+                new MetadataV2Field { Name = "description", Type = MetadataV2FieldType.String, Nullable = true, Description = "Description" },
+                new MetadataV2Field { Name = "category", Type = MetadataV2FieldType.String, Nullable = true, Description = "Landmark category" },
+                new MetadataV2Field { Name = "established_year", Type = MetadataV2FieldType.Integer, Nullable = true, Description = "Year established" },
                 new MetadataV2Field
                 {
                     Name = "shape",
@@ -660,10 +867,10 @@ public sealed class WebAppFixture : IAsyncLifetime
             ],
             2 =>
             [
-                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Alias = "Object ID", Description = "Object ID", Editable = false, SemanticRoles = ["id.primary"] },
-                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Alias = "Name", Description = "Name field", Length = 255 },
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Description = "Object ID" },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Description = "Name field" },
                 new MetadataV2Field { Name = "secondary_id", Type = MetadataV2FieldType.Integer, Nullable = true, Description = "Foreign key to origin layer" },
-                new MetadataV2Field { Name = "type", Type = MetadataV2FieldType.String, Nullable = true, Alias = "Type", Description = "Type field", Length = 255 },
+                new MetadataV2Field { Name = "type", Type = MetadataV2FieldType.String, Nullable = true, Description = "Type field" },
                 new MetadataV2Field
                 {
                     Name = "shape",
@@ -673,163 +880,23 @@ public sealed class WebAppFixture : IAsyncLifetime
                     SemanticRoles = ["geometry"],
                 },
             ],
-            SpatialReferenceTestLayerCatalog.PointLayerId
-                or SpatialReferenceTestLayerCatalog.LineLayerId
-                or SpatialReferenceTestLayerCatalog.PolygonLayerId =>
+            SpatialReferenceTestLayerCatalog.PointLayerId or
+            SpatialReferenceTestLayerCatalog.LineLayerId or
+            SpatialReferenceTestLayerCatalog.PolygonLayerId =>
             [
-                new MetadataV2Field
-                {
-                    Name = "objectid",
-                    Type = MetadataV2FieldType.Integer,
-                    Nullable = false,
-                    Description = "Object ID",
-                    SemanticRoles = ["id.primary"],
-                },
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Description = "Object ID" },
                 new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Description = "Name" },
                 new MetadataV2Field
                 {
                     Name = "shape",
                     Type = MetadataV2FieldType.Geometry,
-                    Nullable = true,
+                    Nullable = false,
                     Description = "Geometry",
-                    Editable = false,
-                    SemanticRoles = ["geometry.primary"],
+                    SemanticRoles = ["geometry"],
                 },
             ],
             _ => null,
         };
-
-    private static string GetSeededLayerName(int layerIndex)
-        => layerIndex switch
-        {
-            0 => "Test Layer",
-            1 => "Related Test Layer 1",
-            2 => "Secondary Related Layer",
-            SpatialReferenceTestLayerCatalog.PointLayerId => "SRID Test Points",
-            SpatialReferenceTestLayerCatalog.LineLayerId => "SRID Test Lines",
-            SpatialReferenceTestLayerCatalog.PolygonLayerId => "SRID Test Polygons",
-            _ => $"layer-{layerIndex}",
-        };
-
-    private static string? GetSeededLayerDescription(int layerIndex)
-        => layerIndex switch
-        {
-            0 => "Test layer for integration tests",
-            1 => "Related test layer for integration tests",
-            2 => "Secondary related layer for integration tests",
-            SpatialReferenceTestLayerCatalog.PointLayerId => "Spatial reference point layer",
-            SpatialReferenceTestLayerCatalog.LineLayerId => "Spatial reference line layer",
-            SpatialReferenceTestLayerCatalog.PolygonLayerId => "Spatial reference polygon layer",
-            _ => null,
-        };
-
-    private static MetadataV2ResourceDisplay? GetSeededLayerDisplay(int layerIndex)
-        => layerIndex == 0
-            ? new MetadataV2ResourceDisplay
-            {
-                DisplayField = "name",
-                DefaultVisibility = true,
-            }
-            : null;
-
-    private static MetadataV2ResourceEditing? GetSeededLayerEditing(int layerIndex)
-        => layerIndex == 0
-            ? new MetadataV2ResourceEditing
-            {
-                CanModify = true,
-                SupportsAttachments = false,
-            }
-            : null;
-
-    private static Dictionary<string, JsonElement>? GetSeededLayerExtensions(int layerIndex)
-        => layerIndex == 0
-            ? new Dictionary<string, JsonElement>(StringComparer.Ordinal)
-            {
-                [GeoServicesDrawingInfoExtensionKey] = BuildDefaultDrawingInfoElement(),
-            }
-            : null;
-
-    private static JsonElement BuildDefaultDrawingInfoElement()
-    {
-        using var document = JsonDocument.Parse("""
-            {
-              "renderer": {
-                "type": "simple",
-                "symbol": {
-                  "type": "esriSMS",
-                  "style": "esriSMSCircle",
-                  "color": [0, 122, 194, 255],
-                  "size": 6,
-                  "outline": {
-                    "color": [255, 255, 255, 255],
-                    "width": 1
-                  }
-                }
-              }
-            }
-            """);
-        return document.RootElement.Clone();
-    }
-
-    private static MetadataV2ResourceSpatial? GetSeededLayerSpatial(int layerIndex)
-        => layerIndex switch
-        {
-            0 => new MetadataV2ResourceSpatial
-            {
-                SpatialReference = MetadataV2SpatialReference.Wgs84,
-                GeometryType = MetadataV2GeometryType.Point,
-                PrimaryGeometryField = "shape",
-                Bbox = new MetadataV2Bbox
-                {
-                    West = -123,
-                    South = 37,
-                    East = -122,
-                    North = 38,
-                },
-                SupportedCrs = [MetadataV2SpatialReference.Wgs84],
-            },
-            1 or 2 => new MetadataV2ResourceSpatial
-            {
-                SpatialReference = MetadataV2SpatialReference.Wgs84,
-                GeometryType = MetadataV2GeometryType.Point,
-                PrimaryGeometryField = "shape",
-                SupportedCrs = [MetadataV2SpatialReference.Wgs84],
-            },
-            SpatialReferenceTestLayerCatalog.PointLayerId => new MetadataV2ResourceSpatial
-            {
-                SpatialReference = MetadataV2SpatialReference.WebMercator,
-                StorageCrs = MetadataV2SpatialReference.WebMercator,
-                GeometryType = MetadataV2GeometryType.Point,
-                PrimaryGeometryField = "shape",
-                SupportedCrs = [MetadataV2SpatialReference.WebMercator, MetadataV2SpatialReference.Wgs84],
-            },
-            SpatialReferenceTestLayerCatalog.LineLayerId => new MetadataV2ResourceSpatial
-            {
-                SpatialReference = MetadataV2SpatialReference.WebMercator,
-                StorageCrs = MetadataV2SpatialReference.WebMercator,
-                GeometryType = MetadataV2GeometryType.LineString,
-                PrimaryGeometryField = "shape",
-                SupportedCrs = [MetadataV2SpatialReference.WebMercator, MetadataV2SpatialReference.Wgs84],
-            },
-            SpatialReferenceTestLayerCatalog.PolygonLayerId => new MetadataV2ResourceSpatial
-            {
-                SpatialReference = MetadataV2SpatialReference.WebMercator,
-                StorageCrs = MetadataV2SpatialReference.WebMercator,
-                GeometryType = MetadataV2GeometryType.Polygon,
-                PrimaryGeometryField = "shape",
-                SupportedCrs = [MetadataV2SpatialReference.WebMercator, MetadataV2SpatialReference.Wgs84],
-            },
-            _ => null,
-        };
-
-    private static MetadataV2ResourceTemporal? GetSeededLayerTemporal(int layerIndex)
-        => layerIndex == 0
-            ? new MetadataV2ResourceTemporal
-            {
-                StartTimeField = "timestamp",
-                EndTimeField = "event_date",
-            }
-            : null;
 
     private static IEnumerable<MetadataV2Field> GetAdminSampleSchemaFields(int layerIndex)
         =>
@@ -951,75 +1018,85 @@ public sealed class WebAppFixture : IAsyncLifetime
             },
         };
 
-    /// <summary>
-    /// During the v1→v2 cutover several protocol handlers (WMS/WMTS GetCapabilities,
-    /// FeatureServer temporal extent, etc.) still read TimeInfo / AccessPolicy from the
-    /// v1 Postgres catalog instead of the V2 graph. The Postgres test seed pre-populates
-    /// honua.layers.metadata with a non-empty TimeInfo for the canonical test layer, so
-    /// tests that need to clear or change those slots must also update the v1 jsonb
-    /// column until those handlers migrate. This helper bridges that write to the
-    /// shared honua.layers row (Database:Schema defaults to "honua" in test config
-    /// and the seed seeds the shared honua schema, so all tests already read/write
-    /// the same row — preserving the v1 coupling intentionally during cutover).
-    /// </summary>
-    private void WriteV1LayerCatalogBridge(int layerId, CatalogMetadata? metadata)
-    {
-        var json = metadata is null
-            ? "null"
-            : System.Text.Json.JsonSerializer.Serialize(
-                metadata,
-                Honua.Core.Features.Catalog.Domain.CatalogJsonContext.Default.CatalogMetadata);
+    private static string GetSeededLayerName(int layerIndex)
+        => layerIndex switch
+        {
+            0 => "Test Layer",
+            1 => "Related Test Layer 1",
+            2 => "Secondary Related Layer",
+            SpatialReferenceTestLayerCatalog.PointLayerId => "SRID Test Points",
+            SpatialReferenceTestLayerCatalog.LineLayerId => "SRID Test Lines",
+            SpatialReferenceTestLayerCatalog.PolygonLayerId => "SRID Test Polygons",
+            _ => $"layer-{layerIndex}",
+        };
 
-        using var connection = Postgres.GetConnectionAsync().GetAwaiter().GetResult();
-        using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE honua.layers SET metadata = @metadata::jsonb WHERE layer_id = @layerId";
-        var metadataParam = command.CreateParameter();
-        metadataParam.ParameterName = "@metadata";
-        metadataParam.Value = (object?)json ?? DBNull.Value;
-        command.Parameters.Add(metadataParam);
-        var idParam = command.CreateParameter();
-        idParam.ParameterName = "@layerId";
-        idParam.Value = layerId;
-        command.Parameters.Add(idParam);
-        _ = command.ExecuteNonQuery();
-    }
+    private static MetadataV2ResourceSpatial? GetSeededLayerSpatial(int layerIndex)
+        => layerIndex switch
+        {
+            0 => new MetadataV2ResourceSpatial
+            {
+                SpatialReference = MetadataV2SpatialReference.Wgs84,
+                GeometryType = MetadataV2GeometryType.Point,
+                PrimaryGeometryField = "shape",
+                Bbox = new MetadataV2Bbox
+                {
+                    West = -123,
+                    South = 37,
+                    East = -122,
+                    North = 38,
+                },
+                SupportedCrs = [MetadataV2SpatialReference.Wgs84],
+            },
+            1 or 2 => new MetadataV2ResourceSpatial
+            {
+                SpatialReference = MetadataV2SpatialReference.Wgs84,
+                GeometryType = MetadataV2GeometryType.Point,
+                PrimaryGeometryField = "shape",
+                SupportedCrs = [MetadataV2SpatialReference.Wgs84],
+            },
+            SpatialReferenceTestLayerCatalog.PointLayerId => new MetadataV2ResourceSpatial
+            {
+                SpatialReference = MetadataV2SpatialReference.WebMercator,
+                StorageCrs = MetadataV2SpatialReference.WebMercator,
+                GeometryType = MetadataV2GeometryType.Point,
+                PrimaryGeometryField = "shape",
+                SupportedCrs = [MetadataV2SpatialReference.WebMercator, MetadataV2SpatialReference.Wgs84],
+            },
+            SpatialReferenceTestLayerCatalog.LineLayerId => new MetadataV2ResourceSpatial
+            {
+                SpatialReference = MetadataV2SpatialReference.WebMercator,
+                StorageCrs = MetadataV2SpatialReference.WebMercator,
+                GeometryType = MetadataV2GeometryType.LineString,
+                PrimaryGeometryField = "shape",
+                SupportedCrs = [MetadataV2SpatialReference.WebMercator, MetadataV2SpatialReference.Wgs84],
+            },
+            SpatialReferenceTestLayerCatalog.PolygonLayerId => new MetadataV2ResourceSpatial
+            {
+                SpatialReference = MetadataV2SpatialReference.WebMercator,
+                StorageCrs = MetadataV2SpatialReference.WebMercator,
+                GeometryType = MetadataV2GeometryType.Polygon,
+                PrimaryGeometryField = "shape",
+                SupportedCrs = [MetadataV2SpatialReference.WebMercator, MetadataV2SpatialReference.Wgs84],
+            },
+            _ => null,
+        };
 
-    /// <summary>
-    /// Bridging counterpart to <see cref="WriteV1LayerCatalogBridge"/> for service-level
-    /// CatalogMetadata (EnabledProtocols, AccessPolicy). Same rationale: WMS/WMTS
-    /// GetCapabilities, FeatureServer protocol gating, etc. still consult
-    /// ServiceDefinition.Metadata from Postgres until those handlers move to V2.
-    /// </summary>
-    private void WriteV1ServiceCatalogBridge(string serviceName, CatalogMetadata? metadata)
-    {
-        var json = metadata is null
-            ? "null"
-            : System.Text.Json.JsonSerializer.Serialize(
-                metadata,
-                Honua.Core.Features.Catalog.Domain.CatalogJsonContext.Default.CatalogMetadata);
-
-        using var connection = Postgres.GetConnectionAsync().GetAwaiter().GetResult();
-        using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE honua.services SET metadata = @metadata::jsonb, updated_at = NOW() WHERE LOWER(service_name) = LOWER(@serviceName)";
-        var metadataParam = command.CreateParameter();
-        metadataParam.ParameterName = "@metadata";
-        metadataParam.Value = (object?)json ?? DBNull.Value;
-        command.Parameters.Add(metadataParam);
-        var nameParam = command.CreateParameter();
-        nameParam.ParameterName = "@serviceName";
-        nameParam.Value = serviceName;
-        command.Parameters.Add(nameParam);
-        _ = command.ExecuteNonQuery();
-    }
+    private static MetadataV2ResourceTemporal? GetSeededLayerTemporal(int layerIndex)
+        => layerIndex == 0
+            ? new MetadataV2ResourceTemporal
+            {
+                StartTimeField = "timestamp",
+                EndTimeField = "event_date",
+            }
+            : null;
 
     /// <summary>
     /// V2-aware helper that mirrors the v1 <c>ILayerMetadataUpdater</c> seed surface used
     /// by classic-protocol and STAC tests. Looks up the resource bound to the publication
     /// with <paramref name="layerIndex"/> and applies the supplied access policy, temporal
-    /// metadata, spatial metadata, permanent filter, and/or STAC extension payload.
+    /// metadata, spatial metadata, permanent filter, extrusion metadata, and/or STAC extension payload.
     /// Passing a value writes it; omitting an argument leaves that slot untouched. The
-    /// <c>clear*</c> flags explicitly clear the corresponding slot (mirroring the v1
-    /// "PUT empty CatalogMetadata" semantics).
+    /// <c>clear*</c> flags explicitly clear the corresponding slot.
     /// </summary>
     public void UpdateV2ResourceMetadata(
         int layerIndex,
@@ -1027,18 +1104,12 @@ public sealed class WebAppFixture : IAsyncLifetime
         MetadataV2ResourceTemporal? temporal = null,
         MetadataV2ResourceSpatial? spatial = null,
         MetadataV2PermanentFilter? permanentFilter = null,
+        MetadataV2ExtrusionInfo? extrusion = null,
         JsonElement? stacExtension = null,
-        JsonElement? drawingInfo = null,
-        LayerExtrusionInfo? extrusion = null,
-        MetadataV2ResourceDisplay? display = null,
-        MetadataV2ResourceEditing? editing = null,
-        MetadataV2Status? status = null,
         bool clearAccessPolicy = false,
         bool clearTemporal = false,
         bool clearPermanentFilter = false,
-        bool clearDrawingInfo = false,
-        bool clearExtrusion = false,
-        bool clearStatus = false)
+        bool clearExtrusion = false)
     {
         var provider = GetService<IMetadataV2GraphProvider>() as Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider
             ?? throw new InvalidOperationException(
@@ -1094,6 +1165,15 @@ public sealed class WebAppFixture : IAsyncLifetime
                 next = next with { PermanentFilter = permanentFilter };
             }
 
+            if (clearExtrusion)
+            {
+                next = next with { Extrusion = null };
+            }
+            else if (extrusion is not null)
+            {
+                next = next with { Extrusion = extrusion };
+            }
+
             if (stacExtension.HasValue)
             {
                 var extensions = new Dictionary<string, JsonElement>(next.Extensions, StringComparer.Ordinal)
@@ -1101,51 +1181,6 @@ public sealed class WebAppFixture : IAsyncLifetime
                     ["stac"] = stacExtension.Value,
                 };
                 next = next with { Extensions = extensions };
-            }
-
-            if (clearDrawingInfo || drawingInfo.HasValue || clearExtrusion || extrusion is not null)
-            {
-                var extensions = new Dictionary<string, JsonElement>(next.Extensions, StringComparer.Ordinal);
-                if (clearDrawingInfo)
-                {
-                    extensions.Remove(GeoServicesDrawingInfoExtensionKey);
-                }
-                else if (drawingInfo.HasValue)
-                {
-                    extensions[GeoServicesDrawingInfoExtensionKey] = drawingInfo.Value;
-                }
-
-                if (clearExtrusion)
-                {
-                    extensions.Remove(GeoServicesExtrusionExtensionKey);
-                }
-                else if (extrusion is not null)
-                {
-                    extensions[GeoServicesExtrusionExtensionKey] = JsonSerializer.SerializeToElement(
-                        extrusion,
-                        CatalogJsonContext.Default.LayerExtrusionInfo);
-                }
-
-                next = next with { Extensions = extensions };
-            }
-
-            if (display is not null)
-            {
-                next = next with { Display = display };
-            }
-
-            if (editing is not null)
-            {
-                next = next with { Editing = editing };
-            }
-
-            if (clearStatus)
-            {
-                next = next with { Status = null };
-            }
-            else if (status is not null)
-            {
-                next = next with { Status = status };
             }
 
             resources[i] = next;
@@ -1163,89 +1198,13 @@ public sealed class WebAppFixture : IAsyncLifetime
             Revision = snapshot.Graph.Revision + 1,
         };
         provider.SetGraph(updatedGraph);
-
-        // Cutover bridge: until WMS/WMTS/FeatureServer-temporal handlers migrate off
-        // the v1 catalog, mirror the relevant CatalogMetadata fields onto the v1
-        // honua.layers.metadata JSONB column so v1 reads agree with V2 writes.
-        var bridge = new CatalogMetadata
-        {
-            AccessPolicy = clearAccessPolicy ? null : accessPolicy,
-            TimeInfo = clearTemporal
-                ? null
-                : (temporal is null
-                    ? null
-                    : new LayerTimeInfo
-                    {
-                        StartTimeField = temporal.StartTimeField,
-                        EndTimeField = temporal.EndTimeField,
-                        TrackIdField = temporal.TrackIdField,
-                    }),
-            PermanentFilter = clearPermanentFilter
-                ? null
-                : (permanentFilter is null
-                    ? null
-                    : new LayerPermanentFilter
-                    {
-                        Expression = permanentFilter.Expression,
-                        Language = permanentFilter.Language,
-                    }),
-            Extrusion = clearExtrusion ? null : extrusion,
-        };
-        WriteV1LayerCatalogBridge(layerIndex, bridge);
     }
 
     /// <summary>
-    /// Mirrors a layer enable/disable toggle into the in-memory Metadata v2 graph used by tests.
+    /// Adds or replaces a Metadata v2 schema field on the resource published at
+    /// <paramref name="layerIndex"/>.
     /// </summary>
-    public void SetV2LayerEnabled(int layerIndex, bool enabled)
-    {
-        var provider = GetService<IMetadataV2GraphProvider>() as Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider
-            ?? throw new InvalidOperationException(
-                "Test V2 graph provider not registered as TestMetadataV2GraphProvider.");
-
-        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
-        var affectedResourceIds = snapshot.Graph.Publications
-            .Where(publication => publication.LayerIndex == layerIndex)
-            .Select(publication => publication.ResourceId)
-            .ToHashSet(StringComparer.Ordinal);
-        if (affectedResourceIds.Count == 0)
-        {
-            return;
-        }
-
-        var status = enabled
-            ? RuntimeReadyStatus()
-            : new MetadataV2Status
-            {
-                Lifecycle = MetadataV2LifecycleStatus.Retired,
-                State = MetadataV2OperationalState.Ready,
-            };
-
-        var resources = snapshot.Graph.Resources
-            .Select(resource => affectedResourceIds.Contains(resource.Metadata.Id)
-                ? resource with { Status = status }
-                : resource)
-            .ToArray();
-        var publications = snapshot.Graph.Publications
-            .Select(publication => publication.LayerIndex == layerIndex
-                ? publication with { Status = status }
-                : publication)
-            .ToArray();
-
-        provider.SetGraph(snapshot.Graph with
-        {
-            Resources = resources,
-            Publications = publications,
-            Revision = snapshot.Graph.Revision + 1,
-        });
-    }
-
-    /// <summary>
-    /// Upserts a schema field on the Metadata v2 resource bound to the supplied layer index.
-    /// Test code that still seeds <c>honua.layer_fields</c> directly should call this helper
-    /// so V2 schema-driven endpoints observe the same field set.
-    /// </summary>
-    public void UpsertV2ResourceSchemaField(int layerIndex, MetadataV2Field field)
+    public void UpdateV2ResourceSchemaField(int layerIndex, MetadataV2Field field)
     {
         ArgumentNullException.ThrowIfNull(field);
 
@@ -1283,19 +1242,20 @@ public sealed class WebAppFixture : IAsyncLifetime
             return;
         }
 
-        provider.SetGraph(snapshot.Graph with
+        var updatedGraph = snapshot.Graph with
         {
             Resources = resources,
             Revision = snapshot.Graph.Revision + 1,
-        });
+        };
+        provider.SetGraph(updatedGraph);
     }
 
     /// <summary>
     /// V2-aware helper that renames the canonical resource bound to the publication
     /// with <paramref name="layerIndex"/>. The CITE-conformance WMS tests rename the
     /// v1 <c>honua.layers.layer_name</c> column to drive conformance behaviour keyed on
-    /// the layer's display name (e.g. <c>cite:Autos</c>); once a handler reads its layer
-    /// names from the V2 graph instead of <see cref="ILayerCatalog"/>, the same tests
+    /// the layer's display name (e.g. <c>cite:Autos</c>); since handlers read their layer
+    /// names from the V2 graph, the same tests
     /// must update the V2 resource's <see cref="MetadataV2ObjectMetadata.Name"/> for the
     /// rename to be visible.
     /// </summary>
@@ -1398,15 +1358,58 @@ public sealed class WebAppFixture : IAsyncLifetime
             Revision = snapshot.Graph.Revision + 1,
         };
         provider.SetGraph(updatedGraph);
+    }
 
-        // Cutover bridge: mirror EnabledProtocols / AccessPolicy onto the v1 services
-        // row until protocol gating finishes migrating off the v1 catalog.
-        var bridge = new CatalogMetadata
+    /// <summary>
+    /// Toggles the runtime visibility of the Metadata v2 publications/resources bound to the
+    /// supplied layer index by flipping their status (Retired when disabled, runtime-ready when
+    /// enabled), so access/visibility tests observe an enabled/disabled layer.
+    /// </summary>
+    public void SetV2LayerEnabled(int layerIndex, bool enabled)
+    {
+        var provider = GetService<IMetadataV2GraphProvider>() as Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider
+            ?? throw new InvalidOperationException(
+                "Test V2 graph provider not registered as TestMetadataV2GraphProvider.");
+
+        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
+        var affectedResourceIds = snapshot.Graph.Publications
+            .Where(publication => publication.LayerIndex == layerIndex)
+            .Select(publication => publication.ResourceId)
+            .ToHashSet(StringComparer.Ordinal);
+        if (affectedResourceIds.Count == 0)
         {
-            AccessPolicy = clearAccessPolicy ? null : accessPolicy,
-            EnabledProtocols = enabledProtocols?.ToArray() ?? ServiceProtocols.All,
-        };
-        WriteV1ServiceCatalogBridge(serviceName, bridge);
+            return;
+        }
+
+        var status = enabled
+            ? new MetadataV2Status
+            {
+                Lifecycle = MetadataV2LifecycleStatus.Active,
+                State = MetadataV2OperationalState.Ready,
+            }
+            : new MetadataV2Status
+            {
+                Lifecycle = MetadataV2LifecycleStatus.Retired,
+                State = MetadataV2OperationalState.Ready,
+            };
+
+        var resources = snapshot.Graph.Resources
+            .Select(resource => affectedResourceIds.Contains(resource.Metadata.Id)
+                ? resource with { Status = status }
+                : resource)
+            .ToArray();
+        var publications = snapshot.Graph.Publications
+            .Select(publication => publication.LayerIndex == layerIndex
+                ? publication with { Status = status }
+                : publication)
+            .ToArray();
+
+        provider.SetGraph(snapshot.Graph with
+        {
+            Resources = resources,
+            Publications = publications,
+            Revision = snapshot.Graph.Revision + 1,
+        });
     }
 
     /// <summary>
@@ -1528,7 +1531,6 @@ public sealed class WebAppFixture : IAsyncLifetime
                             services.RemoveAll<IRelationshipStore>();
                             services.RemoveAll<IStreamingFeatureStore>();
                             services.RemoveAll<IAttachmentStore>();
-                            services.RemoveAll<ILayerCatalog>();
                             services.RemoveAll<ITableDiscoveryService>();
                             services.RemoveAll<IDatabaseHealthChecker>();
                             services.RemoveAll<IDatabaseConnectionProvider>();
@@ -1558,13 +1560,9 @@ public sealed class WebAppFixture : IAsyncLifetime
                                 return dataSourceBuilder.Build();
                             });
 
-                            services.RemoveAll<ILayerCatalog>();
-                            services.AddScoped<ILayerCatalog, Honua.Postgres.Features.Catalog.PostgresLayerCatalog>();
-
                             // Replace the Postgres-backed Metadata v2 provider with an in-memory
-                            // fixture so endpoints that have migrated off ILayerCatalog can read a
-                            // snapshot without a migrated snapshot row being present in the test
-                            // database.
+                            // fixture so endpoints read the seeded snapshot without a migrated
+                            // snapshot row being present in the test database.
                             RegisterDefaultMetadataV2Graph(services);
                         });
                     });

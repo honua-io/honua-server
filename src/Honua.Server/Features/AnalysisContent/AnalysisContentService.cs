@@ -11,11 +11,11 @@ using Honua.Core.Exceptions;
 using Honua.Core.Features.AnalysisContent;
 using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AnalysisContent.Domain;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.NlQuery.Services;
 using Honua.Core.Features.Query;
 using Honua.Core.Queries.Filters;
@@ -26,7 +26,7 @@ namespace Honua.Server.Features.AnalysisContent;
 
 internal sealed partial class AnalysisContentService(
     IAnalysisContentStore store,
-    ILayerCatalog layerCatalog,
+    IMetadataV2GraphProvider metadataV2GraphProvider,
     IQueryProcessor queryProcessor,
     IFeatureReader featureReader,
     IGeoprocessingJobService geoprocessingJobService,
@@ -211,14 +211,17 @@ internal sealed partial class AnalysisContentService(
                     contentVersion.Version,
                     contentVersion.VersionId);
 
-                var layer = await layerCatalog.GetLayerAsync(savedQuery.LayerId, cancellationToken).ConfigureAwait(false)
-                    ?? throw new AnalysisContentNotFoundException($"Layer '{savedQuery.LayerId}' was not found.");
+                var snapshot = await metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+                if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(savedQuery.LayerId, out var resource))
+                {
+                    throw new AnalysisContentNotFoundException($"Layer '{savedQuery.LayerId}' was not found.");
+                }
 
                 var previewLimit = ResolveLimit(limit ?? savedQuery.PreviewLimit, DefaultPreviewLimit, MaxPreviewLimit);
                 QueryFilter? filter = null;
                 if (savedQuery.FilterPlan is { Clauses.Length: > 0 } filterPlan)
                 {
-                    var compiled = FilterPlanCompiler.Compile(filterPlan, layer);
+                    var compiled = FilterPlanCompiler.Compile(filterPlan, resource);
                     if (!compiled.IsSuccess || compiled.Expression is null)
                     {
                         throw new AnalysisContentValidationException(
@@ -242,16 +245,16 @@ internal sealed partial class AnalysisContentService(
                         : null
                 };
 
-                var validation = queryProcessor.ValidateQuery(query, layer);
+                var validation = queryProcessor.ValidateQuery(query, resource);
                 if (!validation.IsValid)
                 {
                     throw new AnalysisContentValidationException(
                         validation.ErrorMessage ?? "Saved query preview request is invalid.");
                 }
 
-                var optimized = queryProcessor.OptimizeQuery(query, layer);
-                var featureQuery = queryProcessor.ToFeatureQuery(optimized, layer);
-                var result = await featureReader.QueryAsync(layer.Id, featureQuery, cancellationToken).ConfigureAwait(false);
+                var optimized = queryProcessor.OptimizeQuery(query, resource);
+                var featureQuery = queryProcessor.ToFeatureQuery(optimized, resource);
+                var result = await featureReader.QueryAsync(savedQuery.LayerId, featureQuery, cancellationToken).ConfigureAwait(false);
 
                 var artifactId = CreatePreviewArtifactId();
                 var binding = new ArtifactBindingRef
@@ -275,7 +278,7 @@ internal sealed partial class AnalysisContentService(
                     SourceVersion = contentVersion.Version,
                     SourceVersionId = contentVersion.VersionId,
                     Kind = ArtifactKind.FeatureLayer,
-                    Label = $"{savedQuery.ServiceName ?? layer.Name} preview",
+                    Label = $"{savedQuery.ServiceName ?? resource.Metadata.Name} preview",
                     Uri = $"honua://analysis/artifacts/{artifactId}",
                     ContentType = "application/json",
                     Metadata = new Dictionary<string, string>(StringComparer.Ordinal)

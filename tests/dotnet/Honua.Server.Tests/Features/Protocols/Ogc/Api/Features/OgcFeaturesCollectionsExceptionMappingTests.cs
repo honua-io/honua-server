@@ -4,12 +4,11 @@
 using System.Net;
 using FluentAssertions;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Validation.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 
@@ -20,7 +19,7 @@ public sealed class OgcFeaturesCollectionsExceptionMappingTests
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /ogc/features/collections/{collectionId}")]
-    public async Task GetCollection_WhenCatalogThrowsUnexpectedInvalidOperation_ReturnsInternalServerError()
+    public async Task GetCollection_WhenMetadataGraphThrowsUnexpectedInvalidOperation_ReturnsInternalServerError()
     {
         var fixture = CreateFixtureThatThrows(() => new InvalidOperationException("catalog backend failure"));
         await fixture.InitializeAsync();
@@ -42,7 +41,7 @@ public sealed class OgcFeaturesCollectionsExceptionMappingTests
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /ogc/features/collections/{collectionId}")]
-    public async Task GetCollection_WhenCatalogThrowsResourceNotFound_ReturnsNotFound()
+    public async Task GetCollection_WhenMetadataGraphThrowsResourceNotFound_ReturnsNotFound()
     {
         var fixture = CreateFixtureThatThrows(() => new ResourceNotFoundException("Layer not found."));
         await fixture.InitializeAsync();
@@ -62,7 +61,7 @@ public sealed class OgcFeaturesCollectionsExceptionMappingTests
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /ogc/features/collections/{collectionId}/queryables")]
-    public async Task GetQueryables_WhenCatalogThrowsUnexpectedInvalidOperation_ReturnsInternalServerError()
+    public async Task GetQueryables_WhenMetadataGraphThrowsUnexpectedInvalidOperation_ReturnsInternalServerError()
     {
         var fixture = CreateFixtureThatThrows(() => new InvalidOperationException("catalog backend failure"));
         await fixture.InitializeAsync();
@@ -84,7 +83,7 @@ public sealed class OgcFeaturesCollectionsExceptionMappingTests
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /ogc/features/collections/{collectionId}/queryables")]
-    public async Task GetQueryables_WhenCatalogThrowsResourceNotFound_ReturnsNotFound()
+    public async Task GetQueryables_WhenMetadataGraphThrowsResourceNotFound_ReturnsNotFound()
     {
         var fixture = CreateFixtureThatThrows(() => new ResourceNotFoundException("Layer not found."));
         await fixture.InitializeAsync();
@@ -103,11 +102,17 @@ public sealed class OgcFeaturesCollectionsExceptionMappingTests
 
     private static WebAppFixture CreateFixtureThatThrows(Func<Exception> exceptionFactory)
     {
-        var resourceValidator = Substitute.For<IResourceValidator>();
-        resourceValidator.ValidateCollectionV2Async(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromException<ResourceValidationResult<MetadataV2Resource>>(exceptionFactory()));
-
         return new WebAppFixture()
-            .ReplaceService<IResourceValidator>(resourceValidator);
+            .ReplaceService<IMetadataV2GraphProvider>(
+                new ThrowingMetadataV2GraphProvider(exceptionFactory));
+    }
+
+    private sealed class ThrowingMetadataV2GraphProvider(Func<Exception> exceptionFactory) : IMetadataV2GraphProvider
+    {
+        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
+            => new(Task.FromException<MetadataV2GraphSnapshot>(exceptionFactory()));
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
+            => new(Task.FromException<MetadataV2GraphSnapshot?>(exceptionFactory()));
     }
 }

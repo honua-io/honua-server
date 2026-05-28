@@ -308,7 +308,7 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
     public Task<TemporalExtentResult?> GetTemporalExtentAsync(
         int layerId,
         string fieldName,
-        FieldType fieldType,
+        TemporalPropertyType propertyType,
         CancellationToken cancellationToken = default)
     {
         if (!_layerFeatures.TryGetValue(layerId, out var features))

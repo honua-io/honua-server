@@ -44,7 +44,7 @@ internal static class AttachmentEndpoints
     /// <remarks>
     /// Mutation endpoints use <see cref="AuthorizationEndpointConventionBuilderExtensions.AllowAnonymous"/>
     /// to bypass the application-wide authorization policy so per-layer access checks can run.
-    /// Every handler invokes <c>AccessPolicyHelpers.RequireLayerAccess(... Read|Write)</c>
+    /// Every handler invokes <c>AccessPolicyHelpers.RequireResourceAccess(... Read|Write)</c>
     /// (via <c>TryValidateLayerAccessAsync</c>) before touching storage, which is what returns
     /// 401/403 for unauthenticated or unauthorized callers. Removing <c>AllowAnonymous()</c>
     /// without first moving the per-layer gate into the pipeline would lock out every caller

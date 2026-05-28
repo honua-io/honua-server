@@ -2,45 +2,45 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 
-namespace Honua.Core.Tests.Features.Catalog;
+namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 
 /// <summary>
-/// Unit tests for <see cref="ExtrusionValidator"/>. Confirms that every
+/// Unit tests for <see cref="MetadataV2ExtrusionValidator"/>. Confirms that every
 /// validation branch reports the expected stable error code from
-/// <see cref="ExtrusionErrorCodes"/>.
+/// <see cref="MetadataV2ExtrusionErrorCodes"/>.
 /// </summary>
 [Protocol(Protocols.GeoservicesCatalog)]
-public sealed class ExtrusionValidatorTests
+public sealed class MetadataV2ExtrusionValidatorTests
 {
-    private static readonly FieldDefinition[] _layerFields =
+    private static readonly MetadataV2Field[] _resourceFields =
     [
-        new("objectid", FieldType.Integer, Nullable: false),
-        new("name", FieldType.String, Length: 64),
-        new("height_m", FieldType.Double),
-        new("base_m", FieldType.Float),
-        new("levels", FieldType.Integer),
-        new("levels_64", FieldType.BigInteger),
-        new("active", FieldType.Boolean),
-        new("shape", FieldType.Geometry, Nullable: false)
+        new() { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+        new() { Name = "name", Type = MetadataV2FieldType.String, Length = 64 },
+        new() { Name = "height_m", Type = MetadataV2FieldType.Double },
+        new() { Name = "base_m", Type = MetadataV2FieldType.Float },
+        new() { Name = "levels", Type = MetadataV2FieldType.Integer },
+        new() { Name = "levels_64", Type = MetadataV2FieldType.BigInteger },
+        new() { Name = "active", Type = MetadataV2FieldType.Boolean },
+        new() { Name = "shape", Type = MetadataV2FieldType.Geometry, Nullable = false }
     ];
 
     [UnitTest]
     [Operation(Operations.Metadata)]
     public void Validate_ValidConfig_ReturnsNoErrors()
     {
-        var extrusion = new LayerExtrusionInfo
+        var extrusion = new MetadataV2ExtrusionInfo
         {
             HeightField = "height_m",
             BaseHeightField = "base_m",
-            Unit = VerticalUnits.Meters,
+            Unit = MetadataV2VerticalUnits.Meters,
             DefaultHeight = 3.0
         };
 
-        var errors = ExtrusionValidator.Validate(extrusion, _layerFields);
+        var errors = MetadataV2ExtrusionValidator.Validate(extrusion, _resourceFields);
 
         errors.Should().BeEmpty();
     }
@@ -49,13 +49,13 @@ public sealed class ExtrusionValidatorTests
     [Operation(Operations.Metadata)]
     public void Validate_HeightFieldOnly_NoBaseField_IsValid()
     {
-        var extrusion = new LayerExtrusionInfo
+        var extrusion = new MetadataV2ExtrusionInfo
         {
             HeightField = "levels",
-            Unit = VerticalUnits.Meters
+            Unit = MetadataV2VerticalUnits.Meters
         };
 
-        var errors = ExtrusionValidator.Validate(extrusion, _layerFields);
+        var errors = MetadataV2ExtrusionValidator.Validate(extrusion, _resourceFields);
 
         errors.Should().BeEmpty();
     }
@@ -64,82 +64,82 @@ public sealed class ExtrusionValidatorTests
     [Operation(Operations.Metadata)]
     public void Validate_HeightFieldEmpty_ReportsHeightFieldMissing()
     {
-        var extrusion = new LayerExtrusionInfo
+        var extrusion = new MetadataV2ExtrusionInfo
         {
             HeightField = string.Empty
         };
 
-        var errors = ExtrusionValidator.Validate(extrusion, _layerFields);
+        var errors = MetadataV2ExtrusionValidator.Validate(extrusion, _resourceFields);
 
-        errors.Should().Contain(ExtrusionErrorCodes.HeightFieldMissing);
+        errors.Should().Contain(MetadataV2ExtrusionErrorCodes.HeightFieldMissing);
     }
 
     [UnitTest]
     [Operation(Operations.Metadata)]
     public void Validate_HeightFieldWhitespace_ReportsHeightFieldMissing()
     {
-        var extrusion = new LayerExtrusionInfo
+        var extrusion = new MetadataV2ExtrusionInfo
         {
             HeightField = "   "
         };
 
-        var errors = ExtrusionValidator.Validate(extrusion, _layerFields);
+        var errors = MetadataV2ExtrusionValidator.Validate(extrusion, _resourceFields);
 
-        errors.Should().Contain(ExtrusionErrorCodes.HeightFieldMissing);
+        errors.Should().Contain(MetadataV2ExtrusionErrorCodes.HeightFieldMissing);
     }
 
     [UnitTest]
     [Operation(Operations.Metadata)]
     public void Validate_HeightFieldNotPresent_ReportsHeightFieldNotFound()
     {
-        var extrusion = new LayerExtrusionInfo
+        var extrusion = new MetadataV2ExtrusionInfo
         {
             HeightField = "nonexistent"
         };
 
-        var errors = ExtrusionValidator.Validate(extrusion, _layerFields);
+        var errors = MetadataV2ExtrusionValidator.Validate(extrusion, _resourceFields);
 
-        errors.Should().Contain(ExtrusionErrorCodes.HeightFieldNotFound);
+        errors.Should().Contain(MetadataV2ExtrusionErrorCodes.HeightFieldNotFound);
     }
 
     [UnitTest]
     [Operation(Operations.Metadata)]
     public void Validate_HeightFieldNonNumeric_ReportsHeightFieldTypeInvalid()
     {
-        var extrusion = new LayerExtrusionInfo
+        var extrusion = new MetadataV2ExtrusionInfo
         {
             HeightField = "name"
         };
 
-        var errors = ExtrusionValidator.Validate(extrusion, _layerFields);
+        var errors = MetadataV2ExtrusionValidator.Validate(extrusion, _resourceFields);
 
-        errors.Should().Contain(ExtrusionErrorCodes.HeightFieldTypeInvalid);
+        errors.Should().Contain(MetadataV2ExtrusionErrorCodes.HeightFieldTypeInvalid);
     }
 
     [UnitTest]
     [Operation(Operations.Metadata)]
     public void Validate_HeightFieldGeometry_ReportsHeightFieldTypeInvalid()
     {
-        var extrusion = new LayerExtrusionInfo
+        var extrusion = new MetadataV2ExtrusionInfo
         {
             HeightField = "shape"
         };
 
-        var errors = ExtrusionValidator.Validate(extrusion, _layerFields);
+        var errors = MetadataV2ExtrusionValidator.Validate(extrusion, _resourceFields);
 
-        errors.Should().Contain(ExtrusionErrorCodes.HeightFieldTypeInvalid);
+        errors.Should().Contain(MetadataV2ExtrusionErrorCodes.HeightFieldTypeInvalid);
     }
 
     [UnitTest]
     [Operation(Operations.Metadata)]
     public void Validate_HeightFieldName_IsCaseInsensitive()
     {
-        var extrusion = new LayerExtrusionInfo
+        var extrusion = new MetadataV2ExtrusionInfo
         {
             HeightField = "HEIGHT_M"
         };
 
-        var errors = ExtrusionValidator.Validate(extrusion, _layerFields);
+        var errors = MetadataV2ExtrusionValidator.Validate(extrusion, _resourceFields);
 
         errors.Should().BeEmpty();
     }
@@ -148,30 +148,30 @@ public sealed class ExtrusionValidatorTests
     [Operation(Operations.Metadata)]
     public void Validate_BaseHeightFieldNotPresent_ReportsBaseFieldNotFound()
     {
-        var extrusion = new LayerExtrusionInfo
+        var extrusion = new MetadataV2ExtrusionInfo
         {
             HeightField = "height_m",
             BaseHeightField = "nonexistent"
         };
 
-        var errors = ExtrusionValidator.Validate(extrusion, _layerFields);
+        var errors = MetadataV2ExtrusionValidator.Validate(extrusion, _resourceFields);
 
-        errors.Should().Contain(ExtrusionErrorCodes.BaseFieldNotFound);
+        errors.Should().Contain(MetadataV2ExtrusionErrorCodes.BaseFieldNotFound);
     }
 
     [UnitTest]
     [Operation(Operations.Metadata)]
     public void Validate_BaseHeightFieldNonNumeric_ReportsBaseFieldTypeInvalid()
     {
-        var extrusion = new LayerExtrusionInfo
+        var extrusion = new MetadataV2ExtrusionInfo
         {
             HeightField = "height_m",
             BaseHeightField = "active"
         };
 
-        var errors = ExtrusionValidator.Validate(extrusion, _layerFields);
+        var errors = MetadataV2ExtrusionValidator.Validate(extrusion, _resourceFields);
 
-        errors.Should().Contain(ExtrusionErrorCodes.BaseFieldTypeInvalid);
+        errors.Should().Contain(MetadataV2ExtrusionErrorCodes.BaseFieldTypeInvalid);
     }
 
     [UnitTest]
@@ -180,8 +180,8 @@ public sealed class ExtrusionValidatorTests
     {
         foreach (var fieldName in new[] { "height_m", "base_m", "levels", "levels_64" })
         {
-            var extrusion = new LayerExtrusionInfo { HeightField = fieldName };
-            var errors = ExtrusionValidator.Validate(extrusion, _layerFields);
+            var extrusion = new MetadataV2ExtrusionInfo { HeightField = fieldName };
+            var errors = MetadataV2ExtrusionValidator.Validate(extrusion, _resourceFields);
             errors.Should().BeEmpty($"field '{fieldName}' is numeric and should be accepted");
         }
     }
@@ -190,61 +190,66 @@ public sealed class ExtrusionValidatorTests
     [Operation(Operations.Metadata)]
     public void Validate_NegativeDefaultHeight_ReportsNegativeDefaultHeight()
     {
-        var extrusion = new LayerExtrusionInfo
+        var extrusion = new MetadataV2ExtrusionInfo
         {
             HeightField = "height_m",
             DefaultHeight = -1.5
         };
 
-        var errors = ExtrusionValidator.Validate(extrusion, _layerFields);
+        var errors = MetadataV2ExtrusionValidator.Validate(extrusion, _resourceFields);
 
-        errors.Should().Contain(ExtrusionErrorCodes.NegativeDefaultHeight);
+        errors.Should().Contain(MetadataV2ExtrusionErrorCodes.NegativeDefaultHeight);
     }
 
     [UnitTest]
     [Operation(Operations.Metadata)]
     public void Validate_ZeroDefaultHeight_IsValid()
     {
-        var extrusion = new LayerExtrusionInfo
+        var extrusion = new MetadataV2ExtrusionInfo
         {
             HeightField = "height_m",
             DefaultHeight = 0.0
         };
 
-        var errors = ExtrusionValidator.Validate(extrusion, _layerFields);
+        var errors = MetadataV2ExtrusionValidator.Validate(extrusion, _resourceFields);
 
-        errors.Should().NotContain(ExtrusionErrorCodes.NegativeDefaultHeight);
+        errors.Should().NotContain(MetadataV2ExtrusionErrorCodes.NegativeDefaultHeight);
     }
 
     [UnitTest]
     [Operation(Operations.Metadata)]
     public void Validate_UnknownUnit_ReportsUnitUnrecognized()
     {
-        var extrusion = new LayerExtrusionInfo
+        var extrusion = new MetadataV2ExtrusionInfo
         {
             HeightField = "height_m",
             Unit = "yards"
         };
 
-        var errors = ExtrusionValidator.Validate(extrusion, _layerFields);
+        var errors = MetadataV2ExtrusionValidator.Validate(extrusion, _resourceFields);
 
-        errors.Should().Contain(ExtrusionErrorCodes.UnitUnrecognized);
+        errors.Should().Contain(MetadataV2ExtrusionErrorCodes.UnitUnrecognized);
     }
 
     [UnitTest]
     [Operation(Operations.Metadata)]
     public void Validate_AllRecognizedUnits_AreAccepted()
     {
-        foreach (var unit in new[] { VerticalUnits.Meters, VerticalUnits.Feet, VerticalUnits.UsSurveyFeet })
+        foreach (var unit in new[]
+                 {
+                     MetadataV2VerticalUnits.Meters,
+                     MetadataV2VerticalUnits.Feet,
+                     MetadataV2VerticalUnits.UsSurveyFeet
+                 })
         {
-            var extrusion = new LayerExtrusionInfo
+            var extrusion = new MetadataV2ExtrusionInfo
             {
                 HeightField = "height_m",
                 Unit = unit
             };
 
-            var errors = ExtrusionValidator.Validate(extrusion, _layerFields);
-            errors.Should().NotContain(ExtrusionErrorCodes.UnitUnrecognized,
+            var errors = MetadataV2ExtrusionValidator.Validate(extrusion, _resourceFields);
+            errors.Should().NotContain(MetadataV2ExtrusionErrorCodes.UnitUnrecognized,
                 $"unit {unit} should be recognized");
         }
     }
@@ -255,14 +260,14 @@ public sealed class ExtrusionValidatorTests
     {
         foreach (var unit in new[] { "METERS", "Feet", "USSURVEYFEET" })
         {
-            var extrusion = new LayerExtrusionInfo
+            var extrusion = new MetadataV2ExtrusionInfo
             {
                 HeightField = "height_m",
                 Unit = unit
             };
 
-            var errors = ExtrusionValidator.Validate(extrusion, _layerFields);
-            errors.Should().NotContain(ExtrusionErrorCodes.UnitUnrecognized,
+            var errors = MetadataV2ExtrusionValidator.Validate(extrusion, _resourceFields);
+            errors.Should().NotContain(MetadataV2ExtrusionErrorCodes.UnitUnrecognized,
                 $"unit '{unit}' should be recognized case-insensitively");
         }
     }
@@ -271,22 +276,22 @@ public sealed class ExtrusionValidatorTests
     [Operation(Operations.Metadata)]
     public void Validate_NullUnit_DefaultsToMetersWithNoError()
     {
-        var extrusion = new LayerExtrusionInfo
+        var extrusion = new MetadataV2ExtrusionInfo
         {
             HeightField = "height_m",
             Unit = null
         };
 
-        var errors = ExtrusionValidator.Validate(extrusion, _layerFields);
+        var errors = MetadataV2ExtrusionValidator.Validate(extrusion, _resourceFields);
 
-        errors.Should().NotContain(ExtrusionErrorCodes.UnitUnrecognized);
+        errors.Should().NotContain(MetadataV2ExtrusionErrorCodes.UnitUnrecognized);
     }
 
     [UnitTest]
     [Operation(Operations.Metadata)]
     public void Validate_MultipleViolations_ReportsAllErrors()
     {
-        var extrusion = new LayerExtrusionInfo
+        var extrusion = new MetadataV2ExtrusionInfo
         {
             HeightField = "name",
             BaseHeightField = "active",
@@ -294,11 +299,11 @@ public sealed class ExtrusionValidatorTests
             Unit = "yards"
         };
 
-        var errors = ExtrusionValidator.Validate(extrusion, _layerFields);
+        var errors = MetadataV2ExtrusionValidator.Validate(extrusion, _resourceFields);
 
-        errors.Should().Contain(ExtrusionErrorCodes.HeightFieldTypeInvalid);
-        errors.Should().Contain(ExtrusionErrorCodes.BaseFieldTypeInvalid);
-        errors.Should().Contain(ExtrusionErrorCodes.NegativeDefaultHeight);
-        errors.Should().Contain(ExtrusionErrorCodes.UnitUnrecognized);
+        errors.Should().Contain(MetadataV2ExtrusionErrorCodes.HeightFieldTypeInvalid);
+        errors.Should().Contain(MetadataV2ExtrusionErrorCodes.BaseFieldTypeInvalid);
+        errors.Should().Contain(MetadataV2ExtrusionErrorCodes.NegativeDefaultHeight);
+        errors.Should().Contain(MetadataV2ExtrusionErrorCodes.UnitUnrecognized);
     }
 }

@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
 using Honua.Server.Features.Infrastructure.Styling;
@@ -18,8 +18,9 @@ public class StyleRevisionMetadataTests
     [Fact]
     public async Task UpdateStyleAsync_WithChangeSummary_PopulatesRevisionMetadata()
     {
-        var layer = LayerDefinition.CreateBasic(11, "districts", GeometryType.Polygon);
-        var catalog = new InMemoryLayerStyleCatalog(layer.Id);
+        var layerId = 11;
+        var resource = CreateResource("districts", MetadataV2GeometryType.Polygon);
+        var catalog = new InMemoryLayerStyleCatalog(layerId);
         var service = new LayerStyleService(catalog, NullLogger<LayerStyleService>.Instance);
 
         var drawingInfoJson = """
@@ -36,7 +37,8 @@ public class StyleRevisionMetadataTests
         using var doc = JsonDocument.Parse(drawingInfoJson);
 
         var result = await service.UpdateStyleAsync(
-            layer,
+            resource,
+            layerId,
             mapLibreStyle: null,
             drawingInfo: doc.RootElement,
             revisedBy: "operator@example.com",
@@ -53,8 +55,9 @@ public class StyleRevisionMetadataTests
     [Fact]
     public async Task UpdateStyleAsync_TwoRevisions_IncrementsStyleVersionAndUpdatesMetadata()
     {
-        var layer = LayerDefinition.CreateBasic(12, "lines", GeometryType.LineString);
-        var catalog = new InMemoryLayerStyleCatalog(layer.Id);
+        var layerId = 12;
+        var resource = CreateResource("lines", MetadataV2GeometryType.LineString);
+        var catalog = new InMemoryLayerStyleCatalog(layerId);
         var service = new LayerStyleService(catalog, NullLogger<LayerStyleService>.Instance);
 
         var drawingInfoJson = """
@@ -72,14 +75,16 @@ public class StyleRevisionMetadataTests
         using var doc = JsonDocument.Parse(drawingInfoJson);
 
         var first = await service.UpdateStyleAsync(
-            layer,
+            resource,
+            layerId,
             mapLibreStyle: null,
             drawingInfo: doc.RootElement,
             revisedBy: "alice",
             changeSummary: "First revision.");
 
         var second = await service.UpdateStyleAsync(
-            layer,
+            resource,
+            layerId,
             mapLibreStyle: null,
             drawingInfo: doc.RootElement,
             revisedBy: "bob",
@@ -99,8 +104,9 @@ public class StyleRevisionMetadataTests
     [Fact]
     public async Task GetStyleAsync_AfterUpdate_ReflectsLatestRevisionMetadata()
     {
-        var layer = LayerDefinition.CreateBasic(13, "points", GeometryType.Point);
-        var catalog = new InMemoryLayerStyleCatalog(layer.Id);
+        var layerId = 13;
+        var resource = CreateResource("points", MetadataV2GeometryType.Point);
+        var catalog = new InMemoryLayerStyleCatalog(layerId);
         var service = new LayerStyleService(catalog, NullLogger<LayerStyleService>.Instance);
 
         var drawingInfoJson = """
@@ -118,13 +124,14 @@ public class StyleRevisionMetadataTests
         using var doc = JsonDocument.Parse(drawingInfoJson);
 
         await service.UpdateStyleAsync(
-            layer,
+            resource,
+            layerId,
             mapLibreStyle: null,
             drawingInfo: doc.RootElement,
             revisedBy: "import-bot",
             changeSummary: "Imported from FeatureService.");
 
-        var snapshot = await service.GetStyleAsync(layer);
+        var snapshot = await service.GetStyleAsync(resource, layerId);
         Assert.NotNull(snapshot);
         Assert.Equal("import-bot", snapshot!.RevisedBy);
         Assert.Equal("Imported from FeatureService.", snapshot!.ChangeSummary);
@@ -140,11 +147,12 @@ public class StyleRevisionMetadataTests
         // computed in memory and returned without persistence so the canonical
         // row stays at version 0 with null revision metadata until the first
         // PUT lands.
-        var layer = LayerDefinition.CreateBasic(14, "unstyled", GeometryType.Polygon);
-        var catalog = new InMemoryLayerStyleCatalog(layer.Id);
+        var layerId = 14;
+        var resource = CreateResource("unstyled", MetadataV2GeometryType.Polygon);
+        var catalog = new InMemoryLayerStyleCatalog(layerId);
         var service = new LayerStyleService(catalog, NullLogger<LayerStyleService>.Instance);
 
-        var snapshot = await service.GetStyleAsync(layer);
+        var snapshot = await service.GetStyleAsync(resource, layerId);
         Assert.NotNull(snapshot);
         Assert.Equal(0, snapshot!.StyleVersion);
         Assert.Null(snapshot.RevisedAt);
@@ -153,7 +161,7 @@ public class StyleRevisionMetadataTests
         Assert.NotNull(snapshot.MapLibreStyle);
         Assert.NotNull(snapshot.DrawingInfo);
 
-        var stored = await catalog.GetLayerStyleAsync(layer.Id);
+        var stored = await catalog.GetLayerStyleAsync(layerId);
         Assert.NotNull(stored);
         Assert.Null(stored!.MapLibreStyleJson);
         Assert.Null(stored.DrawingInfoJson);
@@ -166,13 +174,14 @@ public class StyleRevisionMetadataTests
     [Fact]
     public async Task GetStyleAsync_OnUnstyledLayer_RepeatedReadsStayAtVersionZero()
     {
-        var layer = LayerDefinition.CreateBasic(15, "unstyled-repeat", GeometryType.LineString);
-        var catalog = new InMemoryLayerStyleCatalog(layer.Id);
+        var layerId = 15;
+        var resource = CreateResource("unstyled-repeat", MetadataV2GeometryType.LineString);
+        var catalog = new InMemoryLayerStyleCatalog(layerId);
         var service = new LayerStyleService(catalog, NullLogger<LayerStyleService>.Instance);
 
-        var first = await service.GetStyleAsync(layer);
-        var second = await service.GetStyleAsync(layer);
-        var third = await service.GetStyleAsync(layer);
+        var first = await service.GetStyleAsync(resource, layerId);
+        var second = await service.GetStyleAsync(resource, layerId);
+        var third = await service.GetStyleAsync(resource, layerId);
 
         Assert.NotNull(first);
         Assert.NotNull(second);
@@ -189,11 +198,12 @@ public class StyleRevisionMetadataTests
         // The unstyled-read path must not "use up" the first revision: the
         // first PUT on a previously read-only layer must still land as
         // version 1 with the operator-supplied revisedBy/changeSummary.
-        var layer = LayerDefinition.CreateBasic(16, "first-put", GeometryType.Polygon);
-        var catalog = new InMemoryLayerStyleCatalog(layer.Id);
+        var layerId = 16;
+        var resource = CreateResource("first-put", MetadataV2GeometryType.Polygon);
+        var catalog = new InMemoryLayerStyleCatalog(layerId);
         var service = new LayerStyleService(catalog, NullLogger<LayerStyleService>.Instance);
 
-        var preReadSnapshot = await service.GetStyleAsync(layer);
+        var preReadSnapshot = await service.GetStyleAsync(resource, layerId);
         Assert.NotNull(preReadSnapshot);
         Assert.Equal(0, preReadSnapshot!.StyleVersion);
 
@@ -210,7 +220,8 @@ public class StyleRevisionMetadataTests
         """;
         using var doc = JsonDocument.Parse(drawingInfoJson);
         var update = await service.UpdateStyleAsync(
-            layer,
+            resource,
+            layerId,
             mapLibreStyle: null,
             drawingInfo: doc.RootElement,
             revisedBy: "operator",
@@ -221,6 +232,41 @@ public class StyleRevisionMetadataTests
         Assert.Equal("operator", update.Style!.RevisedBy);
         Assert.Equal("First operator-driven revision.", update.Style!.ChangeSummary);
         Assert.NotNull(update.Style!.RevisedAt);
+    }
+
+    private static MetadataV2Resource CreateResource(string name, MetadataV2GeometryType geometryType)
+    {
+        return new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = $"resource.{name}",
+                Name = name
+            },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            SchemaFields =
+            [
+                new MetadataV2Field
+                {
+                    Name = "objectid",
+                    Type = MetadataV2FieldType.Integer,
+                    Nullable = false,
+                    SemanticRoles = ["id.primary"]
+                },
+                new MetadataV2Field
+                {
+                    Name = "geometry",
+                    Type = MetadataV2FieldType.Geometry,
+                    Nullable = false,
+                    SemanticRoles = ["geometry.primary"]
+                }
+            ],
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                GeometryType = geometryType,
+                PrimaryGeometryField = "geometry"
+            }
+        };
     }
 
     private sealed class InMemoryLayerStyleCatalog : ILayerStyleCatalog

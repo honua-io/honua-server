@@ -2,10 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Protocols.OData.Models;
@@ -20,31 +20,31 @@ namespace Honua.Server.Features.Protocols.OData.Services;
 internal sealed partial class ODataBatchHandler
 {
     private async Task<(FeatureEditBatch? Batch, string? ErrorMessage)> BuildValidatedEditBatchAsync(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         ODataEditRequest request,
         bool rollbackOnFailure,
         CancellationToken cancellationToken)
     {
-        var conversion = await _editParameterAdapter.ConvertAsync(request, layer, cancellationToken);
+        var conversion = await _editParameterAdapter.ConvertAsync(request, resource, cancellationToken);
         if (!conversion.IsSuccess || conversion.EditRequest == null || conversion.Transaction == null)
         {
             return (null, conversion.ErrorMessage ?? "Invalid OData edit request.");
         }
 
-        var validation = _editProcessor.ValidateEdit(conversion.EditRequest.Value, layer);
+        var validation = _editProcessor.ValidateEdit(conversion.EditRequest.Value, resource);
         if (!validation.IsValid)
         {
             return (null, validation.ErrorMessage ?? "Invalid OData edit request.");
         }
 
-        var transactionValidation = _editProcessor.ValidateTransaction(conversion.Transaction.Value, layer);
+        var transactionValidation = _editProcessor.ValidateTransaction(conversion.Transaction.Value, resource);
         if (!transactionValidation.IsValid)
         {
             return (null, transactionValidation.ErrorMessage ?? "Invalid OData edit request.");
         }
 
-        var optimizedRequest = _editProcessor.OptimizeEdit(conversion.EditRequest.Value, layer);
-        var editBatch = _editProcessor.ToFeatureEditBatch(optimizedRequest, layer) with
+        var optimizedRequest = _editProcessor.OptimizeEdit(conversion.EditRequest.Value, resource);
+        var editBatch = _editProcessor.ToFeatureEditBatch(optimizedRequest, resource) with
         {
             RollbackOnFailure = rollbackOnFailure
         };
@@ -93,7 +93,7 @@ internal sealed partial class ODataBatchHandler
 
     private async Task<Feature> CreateFeatureFromBodyAsync(
         Dictionary<string, object?> body,
-        LayerDefinition layer,
+        ODataBatchLayerContext layer,
         long? objectId = null,
         Feature? existing = null,
         CancellationToken cancellationToken = default)
@@ -103,7 +103,7 @@ internal sealed partial class ODataBatchHandler
             throw new ArgumentException(payloadError ?? "Invalid request body.");
         }
 
-        if (payload.LayerId.HasValue && payload.LayerId.Value != layer.Id)
+        if (payload.LayerId.HasValue && payload.LayerId.Value != layer.PublicLayerId)
         {
             throw new ArgumentException("LayerId in payload does not match request URL.");
         }
@@ -114,7 +114,7 @@ internal sealed partial class ODataBatchHandler
             var crsResolution = await ODataCrsUtilities.TryResolveGeometryCrsAsync(
                 _crsRegistry,
                 payload.Geometry,
-                layer.SpatialReference.ToSrid(),
+                layer.Srid,
                 cancellationToken);
             if (!crsResolution.IsValid)
             {
@@ -124,7 +124,7 @@ internal sealed partial class ODataBatchHandler
             var conversion = ODataGeometryConverter.ConvertGeometryToWkb(
                 _geometryService,
                 payload.Geometry,
-                layer.SpatialReference.ToSrid(),
+                layer.Srid,
                 crsResolution.Definition);
 
             if (!conversion.IsSuccess)
@@ -154,9 +154,10 @@ internal sealed partial class ODataBatchHandler
         if (payload.Attributes.Count > 0)
         {
             var attributesResult = _mutationValidator.ValidateAttributes(
-                layer,
+                layer.Resource,
                 payload.Attributes,
-                ValidationExtensions.AttributeValidationMode.Strict);
+                ValidationExtensions.AttributeValidationMode.Strict,
+                isUpdate: existing.HasValue || objectId.HasValue);
             if (!attributesResult.IsValid)
             {
                 throw new ArgumentException(attributesResult.ErrorMessage ?? "Invalid attributes.");
@@ -174,23 +175,23 @@ internal sealed partial class ODataBatchHandler
             attributes.ToImmutableDictionary(StringComparer.OrdinalIgnoreCase));
     }
 
-    private async ValueTask<AxisOrder> ResolveAxisOrderAsync(LayerDefinition layer, CancellationToken cancellationToken)
+    private async ValueTask<AxisOrder> ResolveAxisOrderAsync(ODataBatchLayerContext layer, CancellationToken cancellationToken)
     {
-        if (_axisOrderCache.TryGetValue(layer.Id, out var axisOrder))
+        if (_axisOrderCache.TryGetValue(layer.PublicLayerId, out var axisOrder))
         {
             return axisOrder;
         }
 
         axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
             _crsRegistry,
-            layer.SpatialReference.ToSrid(),
+            layer.Srid,
             cancellationToken);
-        _axisOrderCache[layer.Id] = axisOrder;
+        _axisOrderCache[layer.PublicLayerId] = axisOrder;
         return axisOrder;
     }
 
     private async Task<(bool IsValid, string? ErrorMessage)> ValidatePreconditionsAsync(
-        LayerDefinition layer,
+        ODataBatchLayerContext layer,
         Feature feature,
         Dictionary<string, string>? headers,
         CancellationToken cancellationToken)
@@ -207,10 +208,10 @@ internal sealed partial class ODataBatchHandler
         var geometry = ODataGeometryConverter.ConvertWkbToGeometry(
             _geometryService,
             feature.Geometry,
-            layer.SpatialReference.ToSrid(),
+            layer.Srid,
             axisOrder);
         var attributes = ODataAttributeSerializer.Serialize(feature.Attributes);
-        var payload = ODataUtilityService.BuildFeaturePayload(layer.Id, feature, geometry, attributes);
+        var payload = ODataUtilityService.BuildFeaturePayload(layer.PublicLayerId, feature, geometry, attributes);
         var etag = ComputeFeatureEtag(payload);
 
         if (!string.IsNullOrWhiteSpace(ifMatch) &&

@@ -1,8 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Styling.Domain;
 
@@ -17,9 +17,9 @@ public sealed class StyleSuggestion
     public required int LayerId { get; init; }
 
     /// <summary>
-    /// Geometry type of the layer.
+    /// Geometry type of the resource.
     /// </summary>
-    public required GeometryType GeometryType { get; init; }
+    public required MetadataV2GeometryType GeometryType { get; init; }
 
     /// <summary>
     /// Suggested field for classification (null for geometry-only defaults).

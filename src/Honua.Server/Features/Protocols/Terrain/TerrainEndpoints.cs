@@ -1,8 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Security.Domain;
@@ -22,6 +23,7 @@ internal static class TerrainEndpoints
 {
     private const string JsonContentType = "application/json";
     private const string PngContentType = "image/png";
+    private const string TerrainProtocolName = "Terrain";
 
     public static IEndpointRouteBuilder MapTerrainEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -70,10 +72,11 @@ internal static class TerrainEndpoints
             return validation.ErrorResult!;
         }
 
-        var layer = validation.Layer!;
-        var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(layer.Metadata);
+        var resource = validation.Resource!;
+        var layerId = validation.Publication!.LayerIndex!.Value;
+        var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(resource);
         var metadata = await terrainTileService.GetDatasetMetadataAsync(
-            layer.Id,
+            layerId,
             mergeStrategy,
             cancellationToken);
         if (metadata is null)
@@ -84,7 +87,7 @@ internal static class TerrainEndpoints
         }
 
         var (minZoom, maxZoom) = ResolveZoomLimits(limitsOptions.Value.Tiles);
-        var response = BuildMetadataResponse(datasetId, layer, metadata, minZoom, maxZoom, context);
+        var response = BuildMetadataResponse(datasetId, resource, layerId, metadata, minZoom, maxZoom, context);
 
         SetCacheHeader(context, tileOptions.Value.CacheMaxAge);
         return Results.Json(response, TerrainJsonContext.Default.TerrainMetadataResponse, contentType: JsonContentType);
@@ -113,11 +116,12 @@ internal static class TerrainEndpoints
             return validation.ErrorResult!;
         }
 
-        var layer = validation.Layer!;
+        var resource = validation.Resource!;
+        var layerId = validation.Publication!.LayerIndex!.Value;
         using var activity = HonuaTelemetry.StartActivity(HonuaTelemetry.Activities.TileGeneration);
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Terrain);
         activity?.SetTag(HonuaTelemetry.Tags.Operation, "terrain.tile");
-        activity?.SetTag(HonuaTelemetry.Tags.LayerId, layer.Id);
+        activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
         activity?.SetTag(HonuaTelemetry.Tags.CollectionId, datasetId);
         activity?.SetTag(HonuaTelemetry.Tags.TileZ, z);
         activity?.SetTag(HonuaTelemetry.Tags.TileX, x);
@@ -128,11 +132,11 @@ internal static class TerrainEndpoints
             var tile = await terrainTileService.GetTerrainRgbTileAsync(
                 new TerrainTileRequest
                 {
-                    LayerId = layer.Id,
+                    LayerId = layerId,
                     Z = z,
                     X = x,
                     Y = y,
-                    MergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(layer.Metadata)
+                    MergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(resource)
                 },
                 cancellationToken);
 
@@ -151,27 +155,42 @@ internal static class TerrainEndpoints
         }
     }
 
-    private static Task<LayerValidationHelpers.LayerValidationResult> ValidateDatasetAsync(
+    private static async Task<LayerValidationHelpers.MetadataV2ValidationResult> ValidateDatasetAsync(
         HttpContext context,
         string datasetId,
         CancellationToken cancellationToken)
     {
-        if (int.TryParse(datasetId, out var layerId))
+        LayerValidationHelpers.MetadataV2ValidationResult validation;
+        if (int.TryParse(datasetId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
         {
-            return LayerValidationHelpers.ValidateLayerWithAccessAsync(
+            validation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
                 context,
                 layerId,
                 AccessScope.Read,
-                ServiceProtocols.Terrain,
-                cancellationToken);
+                TerrainProtocolName,
+                cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
+                context,
+                datasetId,
+                AccessScope.Read,
+                TerrainProtocolName,
+                cancellationToken).ConfigureAwait(false);
         }
 
-        return LayerValidationHelpers.ValidateCollectionWithAccessAsync(
-            context,
-            datasetId,
-            AccessScope.Read,
-            ServiceProtocols.Terrain,
-            cancellationToken);
+        if (!validation.IsValid || validation.Publication?.LayerIndex is not null)
+        {
+            return validation;
+        }
+
+        return new LayerValidationHelpers.MetadataV2ValidationResult(
+            false,
+            validation.Publication,
+            validation.Resource,
+            validation.Service,
+            StandardErrorHelpers.CreateNotFound(context, $"Dataset '{datasetId}' not found."));
     }
 
     private static IResult? ValidateTileCoordinates(HttpContext context, int z, int x, int y, TileLimits tileLimits)
@@ -204,7 +223,8 @@ internal static class TerrainEndpoints
 
     private static TerrainMetadataResponse BuildMetadataResponse(
         string datasetId,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
+        int layerId,
         TerrainDatasetMetadata metadata,
         int minZoom,
         int maxZoom,
@@ -221,8 +241,8 @@ internal static class TerrainEndpoints
 
         return new TerrainMetadataResponse
         {
-            Name = layer.Name,
-            Description = layer.Description,
+            Name = resource.Metadata.Title ?? resource.Metadata.Name,
+            Description = resource.Metadata.Description,
             Tiles = [tileUrl],
             MinZoom = minZoom,
             MaxZoom = maxZoom,
@@ -232,7 +252,7 @@ internal static class TerrainEndpoints
             Source = new TerrainSourceMetadata
             {
                 DatasetId = datasetId,
-                LayerId = layer.Id,
+                LayerId = layerId,
                 RasterIds = metadata.RasterIds,
                 RasterCount = metadata.RasterCount,
                 SourceSrid = sourceSrid,

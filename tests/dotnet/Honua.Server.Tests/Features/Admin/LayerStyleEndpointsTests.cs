@@ -4,7 +4,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Styling;
 using Honua.Server.Features.Protocols.GeoServices.MapServer.Models;
@@ -81,10 +81,10 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
         unstyled.Data!.RevisedBy.Should().BeNull();
         unstyled.Data!.ChangeSummary.Should().BeNull();
 
-        var layer = LayerDefinition.CreateBasic(
+        var layer = new StyleLayerDescriptor(
             WebAppFixture.TestLayerId,
             "Test Layer",
-            GeometryType.Point);
+            MetadataV2GeometryType.Point);
         var firstStyle = StyleDefaults.BuildDefaultMapLibreStyle(layer);
         var firstRequest = new LayerStyleUpdateRequest
         {
@@ -116,10 +116,10 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
     {
         var client = _fixture.CreateAdminClient();
 
-        var layer = LayerDefinition.CreateBasic(
+        var layer = new StyleLayerDescriptor(
             WebAppFixture.TestLayerId,
             "Test Layer",
-            GeometryType.Point);
+            MetadataV2GeometryType.Point);
 
         var style = StyleDefaults.BuildDefaultMapLibreStyle(layer);
         var updatedName = $"Updated Style {Guid.NewGuid():N}";
@@ -205,10 +205,10 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
     public async Task UpdateLayerStyle_WithInvalidMapLibreColor_ReturnsBadRequest()
     {
         var client = _fixture.CreateAdminClient();
-        var layer = LayerDefinition.CreateBasic(
+        var layer = new StyleLayerDescriptor(
             WebAppFixture.TestLayerId,
             "Test Layer",
-            GeometryType.Point);
+            MetadataV2GeometryType.Point);
         var style = StyleDefaults.BuildDefaultMapLibreStyle(layer);
         var styleLayers = (List<Dictionary<string, object?>>)style["layers"]!;
         var paint = (Dictionary<string, object?>)styleLayers[0]["paint"]!;
@@ -237,10 +237,10 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
 
         var legendBefore = await GetFirstLegendImageAsync(anonymousClient);
 
-        var layer = LayerDefinition.CreateBasic(
+        var layer = new StyleLayerDescriptor(
             WebAppFixture.TestLayerId,
             "Test Layer",
-            GeometryType.Point);
+            MetadataV2GeometryType.Point);
         var style = StyleDefaults.BuildDefaultMapLibreStyle(layer);
         var styleLayers = (List<Dictionary<string, object?>>)style["layers"]!;
         var paint = (Dictionary<string, object?>)styleLayers[0]["paint"]!;
@@ -273,10 +273,10 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
 
         var tileBefore = await GetTileImageAsync(anonymousClient);
 
-        var layer = LayerDefinition.CreateBasic(
+        var layer = new StyleLayerDescriptor(
             WebAppFixture.TestLayerId,
             "Test Layer",
-            GeometryType.Point);
+            MetadataV2GeometryType.Point);
         var style = StyleDefaults.BuildDefaultMapLibreStyle(layer);
         var styleLayers = (List<Dictionary<string, object?>>)style["layers"]!;
         var paint = (Dictionary<string, object?>)styleLayers[0]["paint"]!;

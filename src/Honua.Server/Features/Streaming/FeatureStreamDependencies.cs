@@ -1,8 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.GeometryService.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Events;
 using Microsoft.Extensions.Options;
@@ -21,7 +21,7 @@ internal sealed class FeatureStreamDependencies
         IOptions<FeatureStreamOptions> options,
         IOptions<FeatureChangeEventOptions> eventOptions,
         IFilterExpressionService filterExpressionService,
-        ILayerCatalog layerCatalog,
+        IMetadataV2GraphProvider metadataV2GraphProvider,
         IGeometryOperationService geometryOperationService)
     {
         SessionManager = sessionManager ?? throw new ArgumentNullException(nameof(sessionManager));
@@ -29,7 +29,7 @@ internal sealed class FeatureStreamDependencies
         Options = options ?? throw new ArgumentNullException(nameof(options));
         EventOptions = eventOptions ?? throw new ArgumentNullException(nameof(eventOptions));
         FilterExpressionService = filterExpressionService ?? throw new ArgumentNullException(nameof(filterExpressionService));
-        LayerCatalog = layerCatalog ?? throw new ArgumentNullException(nameof(layerCatalog));
+        MetadataV2GraphProvider = metadataV2GraphProvider ?? throw new ArgumentNullException(nameof(metadataV2GraphProvider));
         GeometryOperationService = geometryOperationService ?? throw new ArgumentNullException(nameof(geometryOperationService));
     }
 
@@ -38,6 +38,6 @@ internal sealed class FeatureStreamDependencies
     public IOptions<FeatureStreamOptions> Options { get; }
     public IOptions<FeatureChangeEventOptions> EventOptions { get; }
     public IFilterExpressionService FilterExpressionService { get; }
-    public ILayerCatalog LayerCatalog { get; }
+    public IMetadataV2GraphProvider MetadataV2GraphProvider { get; }
     public IGeometryOperationService GeometryOperationService { get; }
 }

@@ -2,21 +2,21 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Server.Features.NlQuery.Prompts;
 
 /// <summary>
 /// Builds the system prompt for the NL query plan provider.
-/// The prompt embeds the layer schema and the filter plan JSON schema
+/// The prompt embeds the resource schema and the filter plan JSON schema
 /// so the model can produce valid, grounded structured output.
 /// </summary>
 internal static class NlQuerySystemPrompt
 {
     /// <summary>
-    /// Builds a system prompt for the given layer definition.
+    /// Builds a system prompt for the given Metadata v2 resource.
     /// </summary>
-    public static string Build(LayerDefinition layer)
+    public static string Build(MetadataV2Resource resource)
     {
         var sb = new StringBuilder(2048);
 
@@ -24,18 +24,18 @@ internal static class NlQuerySystemPrompt
         sb.AppendLine("You must ONLY produce a valid JSON object matching the FilterPlan schema. Do NOT produce SQL, CQL, or any other query language.");
         sb.AppendLine();
 
-        sb.AppendLine("## Layer Schema");
+        sb.AppendLine("## Resource Schema");
         sb.AppendLine();
-        sb.Append("Layer name: ").AppendLine(layer.Name);
-        sb.Append("SRID: ").Append(layer.SpatialReference.Srid).AppendLine();
-        sb.Append("Geometry type: ").AppendLine(layer.GeometryType.ToString());
+        sb.Append("Resource name: ").AppendLine(resource.Metadata.Name);
+        sb.Append("SRID: ").Append(resource.ReadSrid()).AppendLine();
+        sb.Append("Geometry type: ").AppendLine(resource.ReadGeometryType().ToString());
         sb.AppendLine();
 
         sb.AppendLine("### Queryable Fields");
         sb.AppendLine();
-        foreach (var field in layer.Fields)
+        foreach (var field in resource.SchemaFields)
         {
-            if (field.IsGeometry)
+            if (field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)
             {
                 continue;
             }

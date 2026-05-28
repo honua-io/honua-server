@@ -2,8 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Core.Features.Tiles;
 
@@ -42,7 +42,7 @@ internal interface IFeatureQueryBuilder
     /// Builds a provider-native FlatGeobuf query.
     /// </summary>
     ParameterizedQuery BuildSelectFlatGeobufQuery(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         int layerId,
         FeatureQuery query,
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
@@ -51,7 +51,7 @@ internal interface IFeatureQueryBuilder
     /// Builds a provider-native Geobuf query.
     /// </summary>
     ParameterizedQuery BuildSelectGeobufQuery(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         int layerId,
         FeatureQuery query,
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry);
@@ -134,7 +134,7 @@ internal interface IFeatureQueryBuilder
     ParameterizedQuery BuildTemporalExtentQuery(
         int layerId,
         string fieldName,
-        FieldType fieldType);
+        TemporalPropertyType propertyType);
 
     /// <summary>
     /// Builds an aggregate statistics query (outStatistics with optional GROUP BY)

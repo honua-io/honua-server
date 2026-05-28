@@ -149,19 +149,20 @@ internal static class SceneAnalysisEndpoints
             return validation.ErrorResult!;
         }
 
-        var layer = validation.Layer!;
-        var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(layer.Metadata, request.MosaicRule);
+        var resource = validation.Resource!;
+        var layerId = validation.Publication?.LayerIndex ?? 0;
+        var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(resource, request.MosaicRule);
 
         using var activity = HonuaTelemetry.StartActivity("honua.elevation.sun_shadow");
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Elevation);
         activity?.SetTag(HonuaTelemetry.Tags.Operation, "elevation.sun-shadow");
-        activity?.SetTag(HonuaTelemetry.Tags.LayerId, layer.Id);
+        activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
         activity?.SetTag(HonuaTelemetry.Tags.CollectionId, datasetId);
 
         try
         {
             var result = await sceneService.ComputeSunShadowAsync(
-                layer.Id,
+                layerId,
                 new ShadowObserver { Longitude = observerLon, Latitude = observerLat, HeightMeters = observerHeight },
                 new SunShadowOptions
                 {
@@ -251,19 +252,20 @@ internal static class SceneAnalysisEndpoints
             return validation.ErrorResult!;
         }
 
-        var layer = validation.Layer!;
-        var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(layer.Metadata, request.MosaicRule);
+        var resource = validation.Resource!;
+        var layerId = validation.Publication?.LayerIndex ?? 0;
+        var mergeStrategy = RasterMosaicUtilities.ResolveMergeStrategy(resource, request.MosaicRule);
 
         using var activity = HonuaTelemetry.StartActivity("honua.elevation.slice");
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Elevation);
         activity?.SetTag(HonuaTelemetry.Tags.Operation, "elevation.slice");
-        activity?.SetTag(HonuaTelemetry.Tags.LayerId, layer.Id);
+        activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
         activity?.SetTag(HonuaTelemetry.Tags.CollectionId, datasetId);
 
         try
         {
             var result = await sceneService.ComputeSliceAsync(
-                layer.Id,
+                layerId,
                 new SlicePlane
                 {
                     StartLongitude = startLon,
@@ -329,26 +331,27 @@ internal static class SceneAnalysisEndpoints
         return true;
     }
 
-    private static Task<LayerValidationHelpers.LayerValidationResult> ValidateDatasetAsync(
+    private static Task<LayerValidationHelpers.MetadataV2ValidationResult> ValidateDatasetAsync(
         HttpContext context,
         string datasetId,
         CancellationToken cancellationToken)
     {
         if (int.TryParse(datasetId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
         {
-            return LayerValidationHelpers.ValidateLayerWithAccessAsync(
+            return LayerValidationHelpers.ValidateLayerWithAccessV2Async(
                 context,
                 layerId,
+                LayerValidationHelpers.ValidationProtocol.OgcFeatures,
                 AccessScope.Read,
-                ServiceProtocols.Elevation,
+                Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols.Elevation,
                 cancellationToken);
         }
 
-        return LayerValidationHelpers.ValidateCollectionWithAccessAsync(
+        return LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
             context,
             datasetId,
             AccessScope.Read,
-            ServiceProtocols.Elevation,
+            Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols.Elevation,
             cancellationToken);
     }
 

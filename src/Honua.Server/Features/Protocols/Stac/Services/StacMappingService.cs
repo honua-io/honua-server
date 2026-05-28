@@ -11,7 +11,6 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.Protocols.Ogc.Api.Features;
-using Honua.Server.Features.Protocols.Ogc.Api.Features.Services;
 using Honua.Server.Features.Protocols.Ogc.Common;
 using Honua.Server.Features.Protocols.Stac.Models;
 using NetTopologySuite.IO;

@@ -7,8 +7,8 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Xml;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters.Fes20;
@@ -185,9 +185,9 @@ internal sealed partial class Wfs20Handler
 
         foreach (var featureType in featureTypes)
         {
-            var resolvedValueReference = ResolveValueReference(featureType.Layer, valueReference);
+            var resolvedValueReference = ResolveValueReference(featureType.Resource, valueReference);
             var query = await BuildValueQueryAsync(
-                featureType.Layer,
+                featureType,
                 resolvedValueReference,
                 bbox,
                 filter,
@@ -197,7 +197,7 @@ internal sealed partial class Wfs20Handler
                 requireResourceIdQualifier: featureTypes.Count > 1,
                 cancellationToken: cancellationToken);
 
-            var layerMatched = await _featureReader.CountAsync(featureType.Layer.Id, query, cancellationToken);
+            var layerMatched = await _featureReader.CountAsync(featureType.StorageLayerId, query, cancellationToken);
             totalMatched += layerMatched;
 
             if (layerMatched == 0)
@@ -239,7 +239,7 @@ internal sealed partial class Wfs20Handler
     }
 
     private async ValueTask<FeatureQuery> BuildValueQueryAsync(
-        LayerDefinition layer,
+        WfsFeatureTypeDescriptor descriptor,
         ValueReferenceResolution valueReference,
         string? bbox,
         string? filter,
@@ -254,13 +254,13 @@ internal sealed partial class Wfs20Handler
             : ImmutableArray.Create(valueReference.CanonicalName);
 
         var (normalizedFilter, normalizedResourceId) = NormalizeFilterInputs(filter, resourceId);
-        var sqlFilter = TranslateFesFilter(layer, normalizedFilter);
-        var spatialFilter = ParseBboxFilter(bbox, layer);
-        var resourceIds = ParseResourceIds(normalizedResourceId, layer, enforceResourceIdTypeMatch, requireResourceIdQualifier);
+        var sqlFilter = TranslateFesFilter(descriptor.Resource, normalizedFilter);
+        var spatialFilter = ParseBboxFilterForResource(bbox, descriptor.Resource);
+        var resourceIds = ParseResourceIds(normalizedResourceId, descriptor, enforceResourceIdTypeMatch, requireResourceIdQualifier);
         sqlFilter = resourceIds.MatchesNothing
             ? CombineSqlFilters(sqlFilter, FalseSqlFilter)
             : sqlFilter;
-        var outputSrid = await ResolveRequestedOutputSridAsync(layer, srsName, cancellationToken).ConfigureAwait(false);
+        var outputSrid = await ResolveRequestedOutputSridAsync(descriptor.Resource, srsName, cancellationToken).ConfigureAwait(false);
         var outputAxisOrder = await ResolveOutputAxisOrderAsync(srsName, outputSrid, cancellationToken).ConfigureAwait(false);
         var queryAdapterResult = await _queryParameterAdapter.ConvertAsync(
             new Wfs20QueryRequest
@@ -271,21 +271,20 @@ internal sealed partial class Wfs20Handler
                 SpatialFilter = spatialFilter,
                 OutputCrs = QueryCrs.Create(outputSrid, outputAxisOrder)
             },
-            layer,
             cancellationToken).ConfigureAwait(false);
         if (!queryAdapterResult.IsSuccess || queryAdapterResult.Query == null)
         {
             throw new ArgumentException(queryAdapterResult.ErrorMessage ?? "Invalid WFS query parameters.");
         }
 
-        var unifiedQuery = _queryProcessor.OptimizeQuery(queryAdapterResult.Query.Value, layer);
-        var validation = _queryProcessor.ValidateQuery(unifiedQuery, layer);
+        var unifiedQuery = _queryProcessor.OptimizeQuery(queryAdapterResult.Query.Value, descriptor.Resource);
+        var validation = _queryProcessor.ValidateQuery(unifiedQuery, descriptor.Resource);
         if (!validation.IsValid)
         {
             throw new ArgumentException(validation.ErrorMessage ?? "Invalid WFS query parameters.");
         }
 
-        return _queryProcessor.ToFeatureQuery(unifiedQuery, layer);
+        return _queryProcessor.ToFeatureQuery(unifiedQuery, descriptor.Resource);
     }
 
     private async Task<(IResult Result, int ReturnedCount)> BuildValueCollectionResultAsync(
@@ -299,13 +298,13 @@ internal sealed partial class Wfs20Handler
         {
             if (plan.ValueReference.IsGeometry)
             {
-                var result = await _gmlFeatureStore.QueryGmlAsync(plan.Descriptor.Layer.Id, plan.Query, cancellationToken);
+                var result = await _gmlFeatureStore.QueryGmlAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken);
                 queryResults.Add((plan, result.Items, null));
                 returnedCount += result.Items.Length;
                 continue;
             }
 
-            var features = await _featureReader.QueryAsync(plan.Descriptor.Layer.Id, plan.Query, cancellationToken);
+            var features = await _featureReader.QueryAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken);
             queryResults.Add((plan, null, features.Items));
             returnedCount += features.Items.Length;
         }
@@ -364,7 +363,7 @@ internal sealed partial class Wfs20Handler
         foreach (var plan in planSet.Plans)
         {
             var axisOrder = plan.Query.OutputAxisOrder ?? AxisOrder.EastNorth;
-            var featureResult = await _featureReader.QueryAsync(plan.Descriptor.Layer.Id, plan.Query, cancellationToken);
+            var featureResult = await _featureReader.QueryAsync(plan.Descriptor.StorageLayerId, plan.Query, cancellationToken);
             foreach (var feature in featureResult.Items)
             {
                 var featureId = BuildFeatureId(plan.Descriptor, feature.Id);
@@ -399,15 +398,18 @@ internal sealed partial class Wfs20Handler
         return (Results.Json(payload, OgcJsonContext.Default.FeatureCollection, contentType: contentType), features.Count);
     }
 
-    private static ValueReferenceResolution ResolveValueReference(LayerDefinition layer, string valueReference)
+    private static ValueReferenceResolution ResolveValueReference(MetadataV2Resource resource, string valueReference)
     {
-        var resolvedName = FilterExpressionHelpers.ResolveFieldName(layer, valueReference, allowGeometryAlias: true)
-            ?? throw new ArgumentException($"Unknown valueReference '{valueReference}' for feature type '{layer.Name}'.");
+        var resolvedName = FilterExpressionHelpers.ResolveFieldName(resource, valueReference, allowGeometryAlias: true)
+            ?? throw new ArgumentException($"Unknown valueReference '{valueReference}' for feature type '{resource.Metadata.Name}'.");
 
-        var isGeometry = layer.GeometryField?.Name.Equals(resolvedName, StringComparison.OrdinalIgnoreCase) == true;
-        var isFeatureId = layer.PrimaryKeyField?.Name.Equals(resolvedName, StringComparison.OrdinalIgnoreCase) == true ||
+        var geometryField = resource.FindPrimaryGeometryField();
+        var primaryKeyField = resource.FindPrimaryIdField();
+        var isGeometry = geometryField?.Name.Equals(resolvedName, StringComparison.OrdinalIgnoreCase) == true;
+        var isFeatureId = primaryKeyField?.Name.Equals(resolvedName, StringComparison.OrdinalIgnoreCase) == true ||
                           resolvedName.Equals("objectid", StringComparison.OrdinalIgnoreCase);
-        var field = layer.AttributeFields.FirstOrDefault(candidate =>
+        var field = resource.SchemaFields.FirstOrDefault(candidate =>
+            candidate.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography) &&
             candidate.Name.Equals(resolvedName, StringComparison.OrdinalIgnoreCase));
 
         return new ValueReferenceResolution(valueReference, resolvedName, isGeometry, isFeatureId, field);
@@ -480,5 +482,5 @@ internal sealed partial class Wfs20Handler
         string CanonicalName,
         bool IsGeometry,
         bool IsFeatureId,
-        FieldDefinition? Field);
+        MetadataV2Field? Field);
 }

@@ -8,11 +8,13 @@ using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Protocols.GeoServices.MapServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
@@ -1193,6 +1195,111 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
             """;
 
         await _fixture.Postgres.ExecuteAsync(sql, schema);
+        SeedGenerateKmlMetadataV2Graph(serviceName);
         return serviceName;
+    }
+
+    private void SeedGenerateKmlMetadataV2Graph(string serviceName)
+    {
+        var provider = _fixture.GetService<TestMetadataV2GraphProvider>();
+        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
+        var serviceId = $"svc-{serviceName}-map";
+
+        var resources = snapshot.Graph.Resources.ToList();
+        var bindings = snapshot.Graph.StorageBindings.ToList();
+        var publications = snapshot.Graph.Publications.ToList();
+
+        AddGenerateKmlLayer(resources, bindings, publications, serviceId, 110, "KML Point Layer", MetadataV2GeometryType.Point, 4326);
+        AddGenerateKmlLayer(resources, bindings, publications, serviceId, 111, "KML Line Layer", MetadataV2GeometryType.LineString, 4326);
+        AddGenerateKmlLayer(resources, bindings, publications, serviceId, 112, "KML Polygon Layer", MetadataV2GeometryType.Polygon, 4326);
+        AddGenerateKmlLayer(resources, bindings, publications, serviceId, 113, "KML Projected Point Layer", MetadataV2GeometryType.Point, 3857);
+
+        provider.SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Resources = resources,
+            StorageBindings = bindings,
+            Services = snapshot.Graph.Services
+                .Append(new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = serviceId, Name = serviceName },
+                    Protocols = [ServiceProtocols.MapServer],
+                    SpatialReference = MetadataV2SpatialReference.Wgs84,
+                    Settings = new MetadataV2ServiceSettings { MaxFeaturesPerLayer = 10_000 },
+                })
+                .ToArray(),
+            Publications = publications,
+        });
+    }
+
+    private static void AddGenerateKmlLayer(
+        List<MetadataV2Resource> resources,
+        List<MetadataV2StorageBinding> bindings,
+        List<MetadataV2Publication> publications,
+        string serviceId,
+        int layerId,
+        string name,
+        MetadataV2GeometryType geometryType,
+        int srid)
+    {
+        var resourceId = $"res-{serviceId}-{layerId}";
+        var bindingId = $"bind-{serviceId}-{layerId}";
+
+        resources.Add(new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = resourceId, Name = name },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            StorageBindingIds = [bindingId],
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true },
+                new MetadataV2Field
+                {
+                    Name = "shape",
+                    Type = MetadataV2FieldType.Geometry,
+                    Nullable = true,
+                    SemanticRoles = ["geometry"],
+                },
+            ],
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = new MetadataV2SpatialReference
+                {
+                    Srid = srid,
+                    Crs = $"EPSG:{srid}",
+                    IsGeographic = srid == 4326,
+                },
+                GeometryType = geometryType,
+                PrimaryGeometryField = "shape",
+            },
+            Display = new MetadataV2ResourceDisplay
+            {
+                DefaultVisibility = true,
+                DisplayField = "name",
+            },
+        });
+
+        bindings.Add(new MetadataV2StorageBinding
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = bindingId, Name = bindingId },
+            ResourceId = resourceId,
+            Locator = "features",
+            StorageLayerId = layerId,
+        });
+
+        publications.Add(new MetadataV2Publication
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = $"pub-{serviceId}-{layerId}", Name = name },
+            ServiceId = serviceId,
+            ResourceId = resourceId,
+            StorageBindingId = bindingId,
+            PublicationType = MetadataV2PublicationType.EsriMapLayer,
+            Identifier = new MetadataV2PublicationIdentifier
+            {
+                Value = layerId.ToString(CultureInfo.InvariantCulture),
+                IsNumeric = true,
+            },
+        });
     }
 }

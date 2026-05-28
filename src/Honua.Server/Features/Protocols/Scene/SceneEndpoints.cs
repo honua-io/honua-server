@@ -152,7 +152,7 @@ internal static partial class SceneEndpoints
             return StandardErrorHelpers.CreateNotFound(context, "Scene was not found.");
         }
 
-        if (scene.Metadata?.AccessPolicy is not { } accessPolicy)
+        if (scene.AccessPolicy is not { } accessPolicy)
         {
             // Public scenes do not need an envelope; returning one would
             // grant an opaque token whose signature carries no incremental
@@ -253,8 +253,8 @@ internal static partial class SceneEndpoints
             return StandardErrorHelpers.CreateNotFound(context, "Scene was not found.");
         }
 
-        var isProtected = scene.Metadata?.AccessPolicy is not null;
-        if (scene.Metadata?.AccessPolicy is { } accessPolicy)
+        var isProtected = scene.AccessPolicy is not null;
+        if (scene.AccessPolicy is { } accessPolicy)
         {
             var deniedResult = AccessPolicyHelpers.RequireAccess(
                 context,
@@ -373,9 +373,9 @@ internal static partial class SceneEndpoints
         // clients cannot attach credentials to nested asset URLs (#849
         // delivers signed-URL handoff). Skip the auth check when the scene
         // explicitly opted out by leaving its access policy unset.
-        var isProtected = scene.Metadata?.AccessPolicy is not null;
+        var isProtected = scene.AccessPolicy is not null;
         var tokenTransport = SceneAccessTokenTransport.None;
-        if (scene.Metadata?.AccessPolicy is { } accessPolicy)
+        if (scene.AccessPolicy is { } accessPolicy)
         {
             var policyDecision = AccessPolicyHelpers.EvaluateAccess(
                 context,

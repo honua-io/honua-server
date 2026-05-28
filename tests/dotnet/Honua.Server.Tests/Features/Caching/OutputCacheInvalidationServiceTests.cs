@@ -14,7 +14,7 @@ using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
-using ServiceProtocols = Honua.Core.Features.Catalog.Domain.ServiceProtocols;
+using ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Server.Tests.Features.Caching;
 

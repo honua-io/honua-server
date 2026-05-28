@@ -3,7 +3,6 @@
 
 using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 
@@ -116,7 +115,7 @@ internal sealed class MySqlFeatureStore :
 
     /// <inheritdoc />
     public Task<TemporalExtentResult?> GetTemporalExtentAsync(
-        int layerId, string fieldName, FieldType fieldType, CancellationToken cancellationToken = default)
+        int layerId, string fieldName, TemporalPropertyType propertyType, CancellationToken cancellationToken = default)
         => throw new NotSupportedException(
             "Temporal extent queries are not supported by the MySQL/MariaDB provider in this slice.");
 

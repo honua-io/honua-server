@@ -1,9 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
@@ -74,6 +75,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
         HttpContext context,
         [FromServices] IResourceValidator resourceValidator,
         [FromServices] ILayerFieldConfigurationStore fieldConfigurationStore,
+        [FromServices] IMetadataV2GraphStore graphStore,
         [FromServices] OutputCacheInvalidationService cacheInvalidator,
         CancellationToken cancellationToken)
     {
@@ -103,6 +105,11 @@ internal static class AdminLayerFieldConfigurationEndpoints
                 cancellationToken)
             .ConfigureAwait(false);
 
+        await WriteResourceFieldConfigurationsAsync(
+            graphStore,
+            layerId,
+            configurations,
+            cancellationToken).ConfigureAwait(false);
         await cacheInvalidator.InvalidateServiceCatalogAsync(null, [layerId], cancellationToken).ConfigureAwait(false);
 
         var response = BuildResponse(layerId, layerResult.Resource, configurations);
@@ -196,7 +203,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
                && field.Name.Equals(primaryIdFieldName, StringComparison.OrdinalIgnoreCase))
            || field.Name.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase);
 
-    private static string? ValidateDomain(string fieldName, FieldDomainDefinition? domain)
+    private static string? ValidateDomain(string fieldName, MetadataV2FieldDomain? domain)
     {
         if (domain == null)
         {
@@ -213,20 +220,20 @@ internal static class AdminLayerFieldConfigurationEndpoints
             return $"Domain for field '{fieldName}' must use type 'codedValue'.";
         }
 
-        if (domain.CodedValues is not { Length: > 0 } codedValues)
+        if (domain.CodedValues.Count == 0)
         {
             return $"Domain for field '{fieldName}' must include at least one coded value.";
         }
 
-        if (codedValues.Length > MaxCodedValues)
+        if (domain.CodedValues.Count > MaxCodedValues)
         {
             return $"Domain for field '{fieldName}' must include {MaxCodedValues} coded values or fewer.";
         }
 
         var seenCodes = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var codedValue in codedValues)
+        foreach (var codedValue in domain.CodedValues)
         {
-            if (codedValue.Code == null)
+            if (codedValue.Code.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
             {
                 return $"Domain code for field '{fieldName}' is required.";
             }
@@ -236,9 +243,9 @@ internal static class AdminLayerFieldConfigurationEndpoints
                 return $"Domain label for field '{fieldName}' must be 1 to {MaxDomainLabelLength} characters.";
             }
 
-            if (!seenCodes.Add(codedValue.Code.ToString() ?? string.Empty))
+            if (!seenCodes.Add(codedValue.Code.GetRawText()))
             {
-                return $"Domain code '{codedValue.Code}' for field '{fieldName}' is duplicated.";
+                return $"Domain code '{codedValue.Code.GetRawText()}' for field '{fieldName}' is duplicated.";
             }
         }
 
@@ -275,6 +282,59 @@ internal static class AdminLayerFieldConfigurationEndpoints
             LayerId = layerId,
             Fields = fields
         };
+    }
+
+    private static async Task WriteResourceFieldConfigurationsAsync(
+        IMetadataV2GraphStore graphStore,
+        int layerId,
+        IReadOnlyList<LayerFieldConfiguration> configurations,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var targetResourceIds = snapshot.Graph.Publications
+            .Where(publication => publication.Identifier.IsNumeric && publication.LayerIndex == layerId)
+            .Select(publication => publication.ResourceId)
+            .ToHashSet(StringComparer.Ordinal);
+        if (targetResourceIds.Count == 0)
+        {
+            return;
+        }
+
+        var configurationMap = configurations.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
+        var resources = snapshot.Graph.Resources.ToArray();
+        var mutated = false;
+        for (var i = 0; i < resources.Length; i++)
+        {
+            if (!targetResourceIds.Contains(resources[i].Metadata.Id))
+            {
+                continue;
+            }
+
+            var fields = resources[i].SchemaFields
+                .Select(field => configurationMap.TryGetValue(field.Name, out var configuration)
+                    ? field with
+                    {
+                        Alias = configuration.Alias,
+                        Domain = configuration.Domain,
+                        Hidden = configuration.Hidden
+                    }
+                    : field)
+                .ToArray();
+            resources[i] = resources[i] with { SchemaFields = fields };
+            mutated = true;
+        }
+
+        if (!mutated)
+        {
+            return;
+        }
+
+        var updated = snapshot.Graph with
+        {
+            Resources = resources,
+            Revision = snapshot.Graph.Revision + 1,
+        };
+        _ = await graphStore.SaveAsync(updated, snapshot.Etag, cancellationToken).ConfigureAwait(false);
     }
 
     private static string? NormalizeAlias(string? alias)

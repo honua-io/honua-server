@@ -205,7 +205,7 @@ internal sealed partial class OutputCacheInvalidationService
         await Task.WhenAll(
             EvictTagsAsync(tags, cancellationToken),
             EvictResponseCacheAsync(responsePatterns, cancellationToken),
-            EvictCatalogMetadataCacheAsync(normalizedServiceId, layerIdList, cancellationToken)).ConfigureAwait(false);
+            EvictCatalogCacheAsync(normalizedServiceId, layerIdList, cancellationToken)).ConfigureAwait(false);
     }
 
     private async Task EvictTagsAsync(IEnumerable<string> tags, CancellationToken cancellationToken)
@@ -253,7 +253,7 @@ internal sealed partial class OutputCacheInvalidationService
         }
     }
 
-    private async Task EvictCatalogMetadataCacheAsync(
+    private async Task EvictCatalogCacheAsync(
         string? serviceId,
         IReadOnlyCollection<int> layerIds,
         CancellationToken cancellationToken)
@@ -265,27 +265,27 @@ internal sealed partial class OutputCacheInvalidationService
 
         var keys = new List<string>
         {
-            CachingLayerCatalog.ServiceListKey,
-            CachingLayerCatalog.LayerListKey
+            CatalogCacheKeys.ServiceListKey,
+            CatalogCacheKeys.LayerListKey
         };
 
         if (!string.IsNullOrWhiteSpace(serviceId))
         {
-            keys.Add($"{CachingLayerCatalog.ServiceKeyPrefix}{serviceId}");
-            keys.Add($"{CachingLayerCatalog.ServiceExistsKeyPrefix}{serviceId}");
+            keys.Add($"{CatalogCacheKeys.ServiceKeyPrefix}{serviceId}");
+            keys.Add($"{CatalogCacheKeys.ServiceExistsKeyPrefix}{serviceId}");
         }
 
         foreach (var layerId in layerIds)
         {
-            keys.Add($"{CachingLayerCatalog.LayerKeyPrefix}{layerId}");
-            keys.Add($"{CachingLayerCatalog.LayerExistsKeyPrefix}{layerId}");
+            keys.Add($"{CatalogCacheKeys.LayerKeyPrefix}{layerId}");
+            keys.Add($"{CatalogCacheKeys.LayerExistsKeyPrefix}{layerId}");
         }
 
         string? currentSchema = SchemaContext.AmbientCurrentSchema;
 
         foreach (var key in keys.Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            string scopedKey = await CachingLayerCatalog.ScopeKeyAsync(
+            string scopedKey = await CatalogCacheKeys.ScopeKeyAsync(
                 _metadataCache,
                 key,
                 currentSchema,

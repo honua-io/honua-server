@@ -367,9 +367,8 @@ internal static partial class WmsRequestHandlers
         }
 
         // Root-layer bbox: union of per-resource CRS84 bboxes when V2 carries any,
-        // otherwise fall back to world bounds. V2 has no service-level extent; v1's
-        // ServiceDefinition.EffectiveExtent defaulted to world (-180,-90,180,90) via
-        // the seed, and WMS clients rely on the root layer carrying *some* extent to
+        // otherwise fall back to world bounds. WMS clients rely on the root layer carrying
+        // *some* extent to
         // bootstrap zoom-to-layer behavior, so the world fallback preserves that
         // contract until graphs carry per-resource bboxes.
         var rootExtent = await TryComputeRootWgs84ExtentAsync(
@@ -505,7 +504,7 @@ internal static partial class WmsRequestHandlers
         string indent,
         bool isWms111)
     {
-        _ = context; // reserved for future transform error reporting; matches v1 signature.
+        _ = context; // reserved for future transform error reporting.
         if (isWms111)
         {
             AppendWms111LatLonBoundingBox(

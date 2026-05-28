@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Scene.Domain;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
@@ -21,12 +22,14 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 [JsonSerializable(typeof(MetadataV2ServiceSettings))]
 [JsonSerializable(typeof(MetadataV2Publication))]
 [JsonSerializable(typeof(MetadataV2Catalog))]
+[JsonSerializable(typeof(MetadataV2ProjectionProfile))]
 [JsonSerializable(typeof(MetadataV2Policy))]
 [JsonSerializable(typeof(MetadataV2Role))]
-[JsonSerializable(typeof(MetadataV2ProjectionProfile))]
+[JsonSerializable(typeof(MetadataV2RuntimeSnapshot))]
 [JsonSerializable(typeof(MetadataV2ObjectMetadata))]
 [JsonSerializable(typeof(MetadataV2Status))]
 [JsonSerializable(typeof(MetadataV2Condition))]
+[JsonSerializable(typeof(MetadataV2ExtensionPoint))]
 [JsonSerializable(typeof(MetadataV2ContactPoint))]
 [JsonSerializable(typeof(MetadataV2Link))]
 [JsonSerializable(typeof(MetadataV2Field))]
@@ -40,6 +43,10 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 [JsonSerializable(typeof(MetadataV2TimeRange))]
 [JsonSerializable(typeof(MetadataV2ResourceTemporal))]
 [JsonSerializable(typeof(MetadataV2PermanentFilter))]
+[JsonSerializable(typeof(MetadataV2ExtrusionInfo))]
+[JsonSerializable(typeof(Symbology3D))]
+[JsonSerializable(typeof(Symbology3DRule))]
+[JsonSerializable(typeof(Symbology3DColor))]
 [JsonSerializable(typeof(IReadOnlyDictionary<string, string>), TypeInfoPropertyName = "ReadOnlyDictionaryStringString")]
 public sealed partial class MetadataV2JsonContext : JsonSerializerContext
 {

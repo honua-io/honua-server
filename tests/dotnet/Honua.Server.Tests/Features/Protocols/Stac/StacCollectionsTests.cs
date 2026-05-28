@@ -4,7 +4,6 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -116,20 +115,15 @@ public sealed class StacCollectionsTests : IAsyncLifetime
     [Endpoint("GET /stac/collections/{collectionId}")]
     public async Task GetCollection_ById_ReturnsDeclaredStacMetadata()
     {
-        await UpdateLayerMetadataAsync(new CatalogMetadata
-        {
-            TimeInfo = new LayerTimeInfo { StartTimeField = "timestamp" },
-            Stac = new StacCatalogMetadata
+        _fixture.UpdateV2ResourceMetadata(
+            WebAppFixture.TestLayerId,
+            temporal: new MetadataV2ResourceTemporal { StartTimeField = "timestamp" },
+            stacExtension: JsonSerializer.SerializeToElement(new
             {
-                License = "CC-BY-4.0",
-                Keywords = ["imagery", "ops-demo"],
-                Extensions =
-                [
-                    "https://stac-extensions.github.io/eo/v1.1.0/schema.json",
-                    "https://stac-extensions.github.io/projection/v1.1.0/schema.json"
-                ]
-            }
-        });
+                license = "CC-BY-4.0",
+                keywords = ExpectedCollectionKeywords,
+                extensions = ExpectedCollectionExtensions
+            }));
 
         var collectionId = WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var response = await _fixture.Client.GetAsync($"/stac/collections/{collectionId}");
@@ -250,34 +244,5 @@ public sealed class StacCollectionsTests : IAsyncLifetime
         bbox[3].GetDouble().Should().BeGreaterThan(bbox[1].GetDouble());
         bbox[1].GetDouble().Should().NotBe(-90d);
         bbox[3].GetDouble().Should().NotBe(90d);
-    }
-
-    private Task UpdateLayerMetadataAsync(CatalogMetadata metadata)
-    {
-        // The legacy v1 ILayerMetadataUpdater wrote CatalogMetadata to the v1 catalog. The
-        // V2-ported STAC endpoints read from resource.Extensions["stac"] and
-        // resource.Temporal. Bridge the test's CatalogMetadata input onto the V2 graph by
-        // serialising the Stac block and temporal field hints into the typed slots.
-        JsonElement? stac = null;
-        if (metadata.Stac is not null)
-        {
-            stac = JsonSerializer.SerializeToElement(
-                metadata.Stac,
-                Honua.Core.Features.Catalog.Domain.CatalogJsonContext.Default.StacCatalogMetadata);
-        }
-
-        MetadataV2ResourceTemporal? temporal = null;
-        if (metadata.TimeInfo is not null)
-        {
-            temporal = new MetadataV2ResourceTemporal
-            {
-                StartTimeField = metadata.TimeInfo.StartTimeField,
-                EndTimeField = metadata.TimeInfo.EndTimeField,
-                TrackIdField = metadata.TimeInfo.TrackIdField,
-            };
-        }
-
-        _fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, stacExtension: stac, temporal: temporal);
-        return Task.CompletedTask;
     }
 }

@@ -3,8 +3,8 @@
 
 using System.Globalization;
 using System.Text;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Postgres.Features.Infrastructure;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
 using CoreParameterizedQuery = Honua.Core.Features.FeatureStore.Domain.ParameterizedQuery;
@@ -16,7 +16,7 @@ internal sealed partial class FeatureQueryBuilder
     private CoreParameterizedQuery BuildEncodedBinaryQuery(
         string encoderFunction,
         bool includeIndex,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         FeatureQuery query,
         CoreGeometryStorageType geometryStorageType)
     {
@@ -54,7 +54,7 @@ internal sealed partial class FeatureQueryBuilder
             sql.Append(" AS ");
             sql.Append(FeatureQueryEncoding.GeometryColumn);
 
-            AppendEncodedBinaryAttributeColumns(sql, layer, query, ref paramIndex, parameters);
+            AppendEncodedBinaryAttributeColumns(sql, resource, query, ref paramIndex, parameters);
 
             sql.Append(CultureInfo.InvariantCulture, $" FROM {_tableName} WHERE {DatabaseSchema.LayerIdColumn} = $1");
             AppendWhereClause(sql, query, ref paramIndex, parameters);
@@ -75,12 +75,12 @@ internal sealed partial class FeatureQueryBuilder
 
     private static void AppendEncodedBinaryAttributeColumns(
         StringBuilder sql,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         FeatureQuery query,
         ref int paramIndex,
         List<object> parameters)
     {
-        foreach (var field in GetEncodedBinaryAttributeFields(layer, query))
+        foreach (var field in GetEncodedBinaryAttributeFields(resource, query))
         {
             if (!IsValidFieldName(field.Name))
             {
@@ -94,13 +94,13 @@ internal sealed partial class FeatureQueryBuilder
         }
     }
 
-    private static IEnumerable<FieldDefinition> GetEncodedBinaryAttributeFields(LayerDefinition layer, FeatureQuery query)
+    private static IEnumerable<MetadataV2Field> GetEncodedBinaryAttributeFields(MetadataV2Resource resource, FeatureQuery query)
     {
         var includeAllFields = !query.OutFields.HasValue || query.OutFields.Value.IsDefaultOrEmpty;
         if (includeAllFields)
         {
-            return layer.AttributeFieldsSpan
-                .ToArray()
+            return resource.SchemaFields
+                .Where(static field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
                 .Where(field => !IsObjectIdField(field.Name));
         }
 
@@ -111,12 +111,12 @@ internal sealed partial class FeatureQueryBuilder
             return [];
         }
 
-        var availableFields = layer.AttributeFieldsSpan
-            .ToArray()
+        var availableFields = resource.SchemaFields
+            .Where(static field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
             .Where(field => !IsObjectIdField(field.Name))
             .ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
 
-        var orderedFields = new List<FieldDefinition>(requestedOutFields.Length);
+        var orderedFields = new List<MetadataV2Field>(requestedOutFields.Length);
         foreach (var fieldName in requestedOutFields)
         {
             if (availableFields.TryGetValue(fieldName, out var field))
@@ -129,7 +129,7 @@ internal sealed partial class FeatureQueryBuilder
     }
 
     private static string BuildEncodedBinaryAttributeExpression(
-        FieldDefinition field,
+        MetadataV2Field field,
         ref int paramIndex,
         List<object> parameters)
     {
@@ -137,16 +137,16 @@ internal sealed partial class FeatureQueryBuilder
 
         return field.Type switch
         {
-            FieldType.Integer => $"NULLIF({attributeValue}, '')::integer",
-            FieldType.BigInteger => $"NULLIF({attributeValue}, '')::bigint",
-            FieldType.Float => $"NULLIF({attributeValue}, '')::real",
-            FieldType.Double => $"NULLIF({attributeValue}, '')::double precision",
-            FieldType.Boolean => $"NULLIF({attributeValue}, '')::boolean",
-            FieldType.DateTime => $"NULLIF({attributeValue}, '')::timestamptz",
-            FieldType.Date => $"NULLIF({attributeValue}, '')::date",
-            FieldType.Time => $"NULLIF({attributeValue}, '')::time",
-            FieldType.Uuid => $"NULLIF({attributeValue}, '')::uuid",
-            FieldType.Json => BuildAttributeJsonExpression(field.Name, ref paramIndex, parameters),
+            MetadataV2FieldType.Integer => $"NULLIF({attributeValue}, '')::integer",
+            MetadataV2FieldType.BigInteger => $"NULLIF({attributeValue}, '')::bigint",
+            MetadataV2FieldType.Float => $"NULLIF({attributeValue}, '')::real",
+            MetadataV2FieldType.Double => $"NULLIF({attributeValue}, '')::double precision",
+            MetadataV2FieldType.Boolean => $"NULLIF({attributeValue}, '')::boolean",
+            MetadataV2FieldType.DateTime => $"NULLIF({attributeValue}, '')::timestamptz",
+            MetadataV2FieldType.Date => $"NULLIF({attributeValue}, '')::date",
+            MetadataV2FieldType.Time => $"NULLIF({attributeValue}, '')::time",
+            MetadataV2FieldType.Uuid => $"NULLIF({attributeValue}, '')::uuid",
+            MetadataV2FieldType.Json => BuildAttributeJsonExpression(field.Name, ref paramIndex, parameters),
             _ => attributeValue
         };
     }

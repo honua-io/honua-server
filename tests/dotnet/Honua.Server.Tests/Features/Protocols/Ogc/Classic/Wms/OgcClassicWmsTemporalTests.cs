@@ -14,7 +14,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
 /// <summary>
 /// Integration tests for the dynamic WMS TIME dimension introduced for ticket #379.
-/// Configures the test layer with explicit <see cref="LayerTimeInfo"/> metadata so
+/// Configures the test layer with explicit Metadata V2 temporal metadata so
 /// the dimension is opt-in (fallback-only layers do not advertise a time dimension)
 /// and exercises both GetCapabilities advertising and GetMap TIME parameter
 /// acceptance/rejection.
@@ -58,7 +58,7 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
     {
         // Without explicit TimeInfo metadata the layer must NOT advertise the time
         // dimension, even though the seeded schema has DateTime/Date columns.
-        await ClearLayerTimeInfoAsync();
+        await ClearLayerTemporalAsync();
 
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities");
@@ -118,7 +118,7 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
     public async Task Wms_GetMap_NonTimeAwareLayer_WithTime_ReturnsServiceException()
     {
-        await ClearLayerTimeInfoAsync();
+        await ClearLayerTemporalAsync();
 
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&TIME=2024-06-15T12:00:00Z");
@@ -150,7 +150,7 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
     {
         // Capabilities-side parity for WMTS: when the configured EndTimeField
         // does not resolve to a Date/DateTime attribute,
-        // TryResolveTemporalRangeAsync returns null and the WMS handler must
+        // TryResolveTemporalRangeV2Async returns null and the WMS handler must
         // not emit a <Dimension name="time">. The contract documented in
         // docs/gis/temporal-animation-api.md says capabilities and the request
         // path agree.
@@ -338,7 +338,7 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
         return Task.CompletedTask;
     }
 
-    private Task ClearLayerTimeInfoAsync()
+    private Task ClearLayerTemporalAsync()
     {
         _fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, clearTemporal: true);
         return Task.CompletedTask;

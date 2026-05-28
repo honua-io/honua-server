@@ -4,11 +4,10 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.NlQuery;
 using Honua.Core.Features.NlQuery.Abstractions;
 using Honua.Core.Features.NlQuery.Domain;
-using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.NlQuery;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -23,23 +22,11 @@ namespace Honua.Server.Tests.Features.NlQuery;
 [Protocol(TestProtocols.TestQuality)]
 public sealed class NlQueryPlanProviderTests
 {
-    private readonly LayerDefinition _testLayer;
+    private readonly MetadataV2Resource _testResource;
 
     public NlQueryPlanProviderTests()
     {
-        _testLayer = new LayerDefinition(
-            Id: 1,
-            Name: "test_parks",
-            Description: "Parks layer",
-            GeometryType: GeometryType.Point,
-            SpatialReference: SpatialReference.WGS84,
-            Fields:
-            [
-                new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                new FieldDefinition("name", FieldType.String, Length: 100),
-                new FieldDefinition("population", FieldType.Integer),
-                new FieldDefinition("shape", FieldType.Geometry)
-            ]);
+        _testResource = NlQueryTestResources.TestParks;
     }
 
     [UnitTest]
@@ -59,7 +46,7 @@ public sealed class NlQueryPlanProviderTests
         """;
 
         var provider = CreateProvider(responseJson, HttpStatusCode.OK);
-        var request = new NlQueryPlanRequest("Show me Portland", _testLayer, "test-collection");
+        var request = new NlQueryPlanRequest("Show me Portland", _testResource, "test-collection");
 
         var result = await provider.GeneratePlanAsync(request);
 
@@ -86,7 +73,7 @@ public sealed class NlQueryPlanProviderTests
         """;
 
         var provider = CreateProvider(responseJson, HttpStatusCode.OK);
-        var request = new NlQueryPlanRequest("Parks within 5 km of downtown Portland", _testLayer, "test-collection");
+        var request = new NlQueryPlanRequest("Parks within 5 km of downtown Portland", _testResource, "test-collection");
 
         var result = await provider.GeneratePlanAsync(request);
 
@@ -111,7 +98,7 @@ public sealed class NlQueryPlanProviderTests
         """;
 
         var provider = CreateProvider(responseJson, HttpStatusCode.OK);
-        var request = new NlQueryPlanRequest("test query", _testLayer);
+        var request = new NlQueryPlanRequest("test query", _testResource);
 
         var result = await provider.GeneratePlanAsync(request);
 
@@ -124,7 +111,7 @@ public sealed class NlQueryPlanProviderTests
     public async Task GeneratePlanAsync_HttpError_ReturnsFailure()
     {
         var provider = CreateProvider("Internal Server Error", HttpStatusCode.InternalServerError);
-        var request = new NlQueryPlanRequest("test query", _testLayer);
+        var request = new NlQueryPlanRequest("test query", _testResource);
 
         var result = await provider.GeneratePlanAsync(request);
 
@@ -144,7 +131,7 @@ public sealed class NlQueryPlanProviderTests
         """;
 
         var provider = CreateProvider(responseJson, HttpStatusCode.OK);
-        var request = new NlQueryPlanRequest("test query", _testLayer);
+        var request = new NlQueryPlanRequest("test query", _testResource);
 
         var result = await provider.GeneratePlanAsync(request);
 
@@ -322,7 +309,7 @@ public sealed class NlQueryPlanProviderTests
 
         var handler = new MockHttpMessageHandler(successResponse, HttpStatusCode.OK);
         var provider = CreateProvider(handler);
-        var request = new NlQueryPlanRequest("test", _testLayer, "schema-test");
+        var request = new NlQueryPlanRequest("test", _testResource, "schema-test");
 
         await provider.GeneratePlanAsync(request);
 

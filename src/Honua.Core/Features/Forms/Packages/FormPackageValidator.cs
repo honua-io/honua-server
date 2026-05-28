@@ -4,9 +4,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
-using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Forms.Packages;
@@ -36,15 +34,15 @@ public sealed class FormPackageValidator
         "minimizeAudit"
     };
 
-    private readonly ILayerCatalog _catalog;
+    private readonly IFormTargetMetadataResolver _targetResolver;
     private readonly AttachmentLimits _attachmentLimits;
 
     /// <summary>
     /// Initializes a new validator.
     /// </summary>
-    public FormPackageValidator(ILayerCatalog catalog, IOptions<LimitsOptions> limitsOptions)
+    public FormPackageValidator(IFormTargetMetadataResolver targetResolver, IOptions<LimitsOptions> limitsOptions)
     {
-        _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+        _targetResolver = targetResolver ?? throw new ArgumentNullException(nameof(targetResolver));
         ArgumentNullException.ThrowIfNull(limitsOptions);
         _attachmentLimits = limitsOptions.Value.Attachments;
     }
@@ -61,13 +59,13 @@ public sealed class FormPackageValidator
         var issues = new List<FormValidationIssue>();
         ValidatePackageShape(package, issues);
 
-        var (service, layer) = await ResolveTargetAsync(package, issues, cancellationToken).ConfigureAwait(false);
-        if (service is not null && layer is not null)
+        var target = await ResolveTargetAsync(package, issues, cancellationToken).ConfigureAwait(false);
+        if (target is { Service: not null, Publication: not null, Resource: not null })
         {
-            ValidateSubmitPolicy(package, service, layer, issues);
-            ValidateFields(package, layer, issues);
+            ValidateSubmitPolicy(package, target.Service, target.Publication, target.Resource, issues);
+            ValidateFields(package, target.Resource, issues);
             ValidateSections(package, issues);
-            ValidateAttachmentPolicy(package, layer, issues);
+            ValidateAttachmentPolicy(package, target.Resource, issues);
             ValidatePrivacyPolicy(package, issues);
             ValidateOfflinePolicy(package, issues);
         }
@@ -93,24 +91,24 @@ public sealed class FormPackageValidator
         }
 
         var package = packageVersion.Package;
-        var (service, layer) = await ResolveTargetAsync(package, issues, cancellationToken).ConfigureAwait(false);
-        if (service is null || layer is null)
+        var target = await ResolveTargetAsync(package, issues, cancellationToken).ConfigureAwait(false);
+        if (target.Resource is null)
         {
             return CreateResult(issues);
         }
 
-        ValidateSubmissionPolicy(package, request, layer, issues);
-        ValidateSubmittedValues(package, request, layer, issues);
-        ValidateSubmittedGeometry(package, request, layer, issues);
-        ValidateSubmittedAttachments(package, request, layer, issues);
+        ValidateSubmissionPolicy(package, request, target.Resource, issues);
+        ValidateSubmittedValues(package, request, target.Resource, issues);
+        ValidateSubmittedGeometry(package, request, target.Resource, issues);
+        ValidateSubmittedAttachments(package, request, target.Resource, issues);
 
         return CreateResult(issues);
     }
 
     /// <summary>
-    /// Resolves the target service and layer for a package.
+    /// Resolves the target service, publication, and resource for a package.
     /// </summary>
-    public async Task<(ServiceDefinition? Service, LayerDefinition? Layer)> ResolveTargetAsync(
+    public async Task<FormTargetMetadataResolution> ResolveTargetAsync(
         FormPackageDocument package,
         List<FormValidationIssue> issues,
         CancellationToken cancellationToken = default)
@@ -122,24 +120,23 @@ public sealed class FormPackageValidator
         if (target is null || string.IsNullOrWhiteSpace(target.ServiceId))
         {
             AddError(issues, "targetRequired", "target.serviceId and target.layerId are required.", path: "target");
-            return (null, null);
+            return default;
         }
 
-        var service = await _catalog.GetServiceAsync(target.ServiceId, cancellationToken).ConfigureAwait(false);
-        if (service is null)
+        var resolved = await _targetResolver.ResolveAsync(target, cancellationToken).ConfigureAwait(false);
+        if (resolved.Service is null)
         {
             AddError(issues, "serviceNotFound", $"Target service '{target.ServiceId}' was not found.", path: "target.serviceId");
-            return (null, null);
+            return default;
         }
 
-        var layer = service.GetLayer(target.LayerId);
-        if (layer is null)
+        if (resolved.Publication is null || resolved.Resource is null)
         {
             AddError(issues, "layerNotFound", $"Target layer '{target.LayerId}' was not found in service '{target.ServiceId}'.", path: "target.layerId");
-            return (service, null);
+            return new FormTargetMetadataResolution(resolved.Service, null, null, null);
         }
 
-        return (service, layer);
+        return resolved;
     }
 
     private static void ValidatePackageShape(FormPackageDocument package, List<FormValidationIssue> issues)
@@ -172,8 +169,9 @@ public sealed class FormPackageValidator
 
     private static void ValidateSubmitPolicy(
         FormPackageDocument package,
-        ServiceDefinition service,
-        LayerDefinition layer,
+        MetadataV2Service service,
+        MetadataV2Publication publication,
+        MetadataV2Resource resource,
         List<FormValidationIssue> issues)
     {
         var allowedOperations = package.SubmitPolicy.AllowedOperations;
@@ -191,30 +189,30 @@ public sealed class FormPackageValidator
                 continue;
             }
 
-            if (!ServiceSupportsOperation(service, operation))
+            if (!TargetSupportsOperation(service, publication, resource, operation))
             {
                 AddError(
                     issues,
                     "targetOperationUnsupported",
-                    $"Target service '{service.Name}' does not advertise '{ToServiceCapability(operation)}' capability.",
+                    $"Target service '{service.Metadata.Name}' does not advertise '{ToServiceCapability(operation)}' capability.",
                     path: "submitPolicy.allowedOperations");
             }
         }
 
-        if (package.SubmitPolicy.RequiresGeometry && layer.GeometryType == GeometryType.None)
+        if (package.SubmitPolicy.RequiresGeometry && ResourceGeometryType(resource) == MetadataV2GeometryType.None)
         {
             AddWarning(issues, "geometryNotAvailable", "submitPolicy.requiresGeometry is true, but the target layer has no geometry.", path: "submitPolicy.requiresGeometry");
         }
     }
 
-    private static void ValidateFields(FormPackageDocument package, LayerDefinition layer, List<FormValidationIssue> issues)
+    private static void ValidateFields(FormPackageDocument package, MetadataV2Resource resource, List<FormValidationIssue> issues)
     {
         var sectionIds = package.Sections
             .Where(static section => !string.IsNullOrWhiteSpace(section.SectionId))
             .Select(static section => section.SectionId!)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var layerFields = layer.Fields.ToDictionary(static field => field.Name, StringComparer.OrdinalIgnoreCase);
+        var layerFields = resource.SchemaFields.ToDictionary(static field => field.Name, StringComparer.OrdinalIgnoreCase);
 
         foreach (var field in package.Fields)
         {
@@ -247,11 +245,11 @@ public sealed class FormPackageValidator
 
             if (!layerFields.TryGetValue(field.TargetField, out var layerField))
             {
-                AddError(issues, "targetFieldNotFound", $"Target field '{field.TargetField}' was not found on layer '{layer.Name}'.", field.FieldId);
+                AddError(issues, "targetFieldNotFound", $"Target field '{field.TargetField}' was not found on layer '{resource.Metadata.Name}'.", field.FieldId);
                 continue;
             }
 
-            if (layerField.IsGeometry || layerField.IsHidden)
+            if (IsGeometryField(layerField) || layerField.Hidden || !layerField.Editable)
             {
                 AddError(issues, "targetFieldNotWritable", $"Target field '{layerField.Name}' is not writable.", field.FieldId);
             }
@@ -284,7 +282,7 @@ public sealed class FormPackageValidator
 
     private static void ValidateFieldDomain(
         FormFieldDefinition field,
-        FieldDefinition layerField,
+        MetadataV2Field layerField,
         List<FormValidationIssue> issues)
     {
         if (field.Domain is null)
@@ -312,10 +310,10 @@ public sealed class FormPackageValidator
                 AddError(issues, "domainChoiceDuplicate", $"Domain choice code '{duplicate.Key}' is duplicated.", field.FieldId);
             }
 
-            if (layerField.Domain?.CodedValues is { Length: > 0 } layerChoices)
+            if (layerField.Domain?.CodedValues is { Count: > 0 } layerChoices)
             {
                 var allowedCodes = layerChoices
-                    .Select(static value => Convert.ToString(value.Code, CultureInfo.InvariantCulture) ?? string.Empty)
+                    .Select(static value => JsonElementToString(value.Code))
                     .ToHashSet(StringComparer.OrdinalIgnoreCase);
                 foreach (var choice in field.Domain.Choices)
                 {
@@ -337,7 +335,7 @@ public sealed class FormPackageValidator
 
     private static void ValidateFieldValidationRules(
         FormFieldDefinition field,
-        FieldDefinition layerField,
+        MetadataV2Field layerField,
         List<FormValidationIssue> issues)
     {
         foreach (var rule in field.Validation)
@@ -446,7 +444,7 @@ public sealed class FormPackageValidator
         }
     }
 
-    private void ValidateAttachmentPolicy(FormPackageDocument package, LayerDefinition layer, List<FormValidationIssue> issues)
+    private void ValidateAttachmentPolicy(FormPackageDocument package, MetadataV2Resource resource, List<FormValidationIssue> issues)
     {
         var attachmentFields = package.Fields.Where(IsAttachmentField).ToArray();
         if (!package.AttachmentPolicy.Enabled && attachmentFields.Length == 0)
@@ -454,9 +452,9 @@ public sealed class FormPackageValidator
             return;
         }
 
-        if (!layer.SupportsAttachments)
+        if (!ResourceSupportsAttachments(resource))
         {
-            AddError(issues, "attachmentsNotSupported", $"Target layer '{layer.Name}' does not support attachments.", path: "attachmentPolicy");
+            AddError(issues, "attachmentsNotSupported", $"Target layer '{resource.Metadata.Name}' does not support attachments.", path: "attachmentPolicy");
         }
 
         if (!package.SubmitPolicy.AllowAttachments)
@@ -600,7 +598,7 @@ public sealed class FormPackageValidator
     private static void ValidateSubmissionPolicy(
         FormPackageDocument package,
         FormSubmissionRequest request,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         List<FormValidationIssue> issues)
     {
         if (!IsKnownOperation(request.Operation))
@@ -629,7 +627,7 @@ public sealed class FormPackageValidator
         }
 
         if (package.SubmitPolicy.RequiresGeometry &&
-            layer.GeometryType != GeometryType.None &&
+            ResourceGeometryType(resource) != MetadataV2GeometryType.None &&
             !OperationEquals(request.Operation, FormSubmissionOperations.Delete) &&
             request.Geometry is null)
         {
@@ -640,13 +638,13 @@ public sealed class FormPackageValidator
     private static void ValidateSubmittedValues(
         FormPackageDocument package,
         FormSubmissionRequest request,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         List<FormValidationIssue> issues)
     {
         var fields = package.Fields
             .Where(static field => !string.IsNullOrWhiteSpace(field.FieldId))
             .ToDictionary(static field => field.FieldId!, StringComparer.OrdinalIgnoreCase);
-        var targetFields = layer.Fields.ToDictionary(static field => field.Name, StringComparer.OrdinalIgnoreCase);
+        var targetFields = resource.SchemaFields.ToDictionary(static field => field.Name, StringComparer.OrdinalIgnoreCase);
 
         foreach (var submittedField in request.Values.Keys)
         {
@@ -697,7 +695,7 @@ public sealed class FormPackageValidator
 
     private static void ValidateSubmittedValueType(
         FormFieldDefinition field,
-        FieldDefinition layerField,
+        MetadataV2Field layerField,
         JsonElement value,
         List<FormValidationIssue> issues)
     {
@@ -706,7 +704,7 @@ public sealed class FormPackageValidator
             AddError(issues, "fieldValueTypeMismatch", $"Submitted value for '{field.FieldId}' is not compatible with target field '{layerField.Name}'.", field.FieldId);
         }
 
-        if (layerField.Type == FieldType.String &&
+        if (layerField.Type == MetadataV2FieldType.String &&
             layerField.Length is int maxLength &&
             value.ValueKind == JsonValueKind.String &&
             value.GetString() is string text &&
@@ -742,7 +740,7 @@ public sealed class FormPackageValidator
     private static void ValidateSubmittedGeometry(
         FormPackageDocument package,
         FormSubmissionRequest request,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         List<FormValidationIssue> issues)
     {
         _ = package;
@@ -772,17 +770,19 @@ public sealed class FormPackageValidator
         }
 
         var submittedSrid = ResolveGeometrySrid(geometry);
-        var layerSrid = layer.SpatialReference.ToSrid();
-        if (submittedSrid is int srid && NormalizeSrid(srid) != NormalizeSrid(layerSrid))
+        var layerSrid = resource.Spatial?.SpatialReference?.ResolveSrid();
+        if (submittedSrid is int srid &&
+            layerSrid is int targetSrid &&
+            NormalizeSrid(srid) != NormalizeSrid(targetSrid))
         {
-            AddError(issues, "geometrySridMismatch", $"Submitted geometry SRID {srid} does not match target layer SRID {layerSrid}.", path: "geometry.spatialReference");
+            AddError(issues, "geometrySridMismatch", $"Submitted geometry SRID {srid} does not match target layer SRID {targetSrid}.", path: "geometry.spatialReference");
         }
     }
 
     private void ValidateSubmittedAttachments(
         FormPackageDocument package,
         FormSubmissionRequest request,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         List<FormValidationIssue> issues)
     {
         if (OperationEquals(request.Operation, FormSubmissionOperations.Delete))
@@ -825,9 +825,9 @@ public sealed class FormPackageValidator
             return;
         }
 
-        if (!layer.SupportsAttachments)
+        if (!ResourceSupportsAttachments(resource))
         {
-            AddError(issues, "attachmentsNotSupported", $"Target layer '{layer.Name}' does not support attachments.", path: "attachments");
+            AddError(issues, "attachmentsNotSupported", $"Target layer '{resource.Metadata.Name}' does not support attachments.", path: "attachments");
         }
 
         var maxCount = package.AttachmentPolicy.MaxAttachmentsPerSubmission ?? _attachmentLimits.MaxAttachmentsPerFeature;
@@ -968,8 +968,73 @@ public sealed class FormPackageValidator
     private static bool OperationEquals(string operation, string expected)
         => string.Equals(operation, expected, StringComparison.OrdinalIgnoreCase);
 
-    private static bool ServiceSupportsOperation(ServiceDefinition service, string operation)
-        => service.Capabilities.Contains(ToServiceCapability(operation), StringComparer.OrdinalIgnoreCase);
+    private static bool TargetSupportsOperation(
+        MetadataV2Service service,
+        MetadataV2Publication publication,
+        MetadataV2Resource resource,
+        string operation)
+    {
+        if (resource.Editing is { CanModify: false })
+        {
+            return false;
+        }
+
+        var capability = ToServiceCapability(operation);
+        return ContainsCapability(publication.Capabilities, capability) ||
+               ContainsCapability(ReadServiceCapabilities(service), capability);
+    }
+
+    private static bool ContainsCapability(IEnumerable<string> capabilities, string capability)
+        => capabilities.Any(candidate =>
+            string.Equals(candidate, capability, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(candidate, $"FeatureServer.{capability}", StringComparison.OrdinalIgnoreCase));
+
+    private static List<string> ReadServiceCapabilities(MetadataV2Service service)
+    {
+        if (service.Options.TryGetValue("capabilities", out var element) &&
+            element.ValueKind == JsonValueKind.Array)
+        {
+            var list = new List<string>(element.GetArrayLength());
+            foreach (var item in element.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.String &&
+                    item.GetString() is { Length: > 0 } value)
+                {
+                    list.Add(value);
+                }
+            }
+
+            if (list.Count > 0)
+            {
+                return list;
+            }
+        }
+
+        return ["Query"];
+    }
+
+    private static bool ResourceSupportsAttachments(MetadataV2Resource resource)
+        => resource.Editing?.SupportsAttachments == true ||
+           (TryReadBoolAnnotation(resource.Metadata.Annotations, "honua.io/attachments") ??
+            TryReadBoolAnnotation(resource.Metadata.Annotations, "supportsAttachments") ??
+            false);
+
+    private static bool? TryReadBoolAnnotation(IReadOnlyDictionary<string, string> annotations, string key)
+    {
+        if (annotations.TryGetValue(key, out var raw) &&
+            bool.TryParse(raw, out var parsed))
+        {
+            return parsed;
+        }
+
+        return null;
+    }
+
+    private static MetadataV2GeometryType ResourceGeometryType(MetadataV2Resource resource)
+        => resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None;
+
+    private static bool IsGeometryField(MetadataV2Field field)
+        => field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography;
 
     private static string ToServiceCapability(string operation)
         => string.Equals(operation, FormSubmissionOperations.Create, StringComparison.OrdinalIgnoreCase)
@@ -978,7 +1043,7 @@ public sealed class FormPackageValidator
                 ? "Update"
                 : "Delete";
 
-    private static bool IsCompatibleFieldType(string? formType, FieldType layerType)
+    private static bool IsCompatibleFieldType(string? formType, MetadataV2FieldType layerType)
     {
         if (string.IsNullOrWhiteSpace(formType))
         {
@@ -987,28 +1052,28 @@ public sealed class FormPackageValidator
 
         return formType.ToLowerInvariant() switch
         {
-            "text" or "string" or "email" or "barcode" or "choice" => layerType == FieldType.String,
-            "integer" or "int" => layerType is FieldType.Integer or FieldType.BigInteger,
-            "number" or "decimal" or "double" => layerType is FieldType.Double or FieldType.Float,
-            "boolean" or "bool" => layerType == FieldType.Boolean,
-            "date" => layerType is FieldType.Date or FieldType.DateTime,
-            "datetime" => layerType == FieldType.DateTime,
-            "uuid" or "guid" => layerType == FieldType.Uuid,
-            "json" => layerType == FieldType.Json,
+            "text" or "string" or "email" or "barcode" or "choice" => layerType == MetadataV2FieldType.String,
+            "integer" or "int" => layerType is MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger,
+            "number" or "decimal" or "double" => layerType is MetadataV2FieldType.Double or MetadataV2FieldType.Float,
+            "boolean" or "bool" => layerType == MetadataV2FieldType.Boolean,
+            "date" => layerType is MetadataV2FieldType.Date or MetadataV2FieldType.DateTime,
+            "datetime" => layerType == MetadataV2FieldType.DateTime,
+            "uuid" or "guid" => layerType == MetadataV2FieldType.Uuid,
+            "json" => layerType == MetadataV2FieldType.Json,
             _ => false
         };
     }
 
-    private static bool IsCompatibleJsonKind(JsonElement value, FieldType layerType)
+    private static bool IsCompatibleJsonKind(JsonElement value, MetadataV2FieldType layerType)
         => layerType switch
         {
-            FieldType.String or FieldType.Uuid or FieldType.Date or FieldType.DateTime or FieldType.Time => value.ValueKind == JsonValueKind.String,
-            FieldType.Integer => value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out _),
-            FieldType.BigInteger => value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out _),
-            FieldType.Double => TryReadFiniteJsonNumber(value, out _),
-            FieldType.Float => value.ValueKind == JsonValueKind.Number && value.TryGetSingle(out var singleValue) && float.IsFinite(singleValue),
-            FieldType.Boolean => value.ValueKind is JsonValueKind.True or JsonValueKind.False,
-            FieldType.Json => true,
+            MetadataV2FieldType.String or MetadataV2FieldType.Uuid or MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time => value.ValueKind == JsonValueKind.String,
+            MetadataV2FieldType.Integer => value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out _),
+            MetadataV2FieldType.BigInteger => value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out _),
+            MetadataV2FieldType.Double => TryReadFiniteJsonNumber(value, out _),
+            MetadataV2FieldType.Float => value.ValueKind == JsonValueKind.Number && value.TryGetSingle(out var singleValue) && float.IsFinite(singleValue),
+            MetadataV2FieldType.Boolean => value.ValueKind is JsonValueKind.True or JsonValueKind.False,
+            MetadataV2FieldType.Json => true,
             _ => true
         };
 

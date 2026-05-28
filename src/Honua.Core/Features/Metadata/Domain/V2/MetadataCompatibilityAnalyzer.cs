@@ -275,8 +275,8 @@ public static class MetadataCompatibilityAnalyzer
                 sourceResource.Metadata.Id,
                 sourceField.Title ?? sourceField.Name,
                 "The target field type does not match the proposed field type.",
-                Value("fieldType", sourceField.Type.ToWireName(), expectedDetails),
-                Value("fieldType", targetField.Type.ToWireName(), FieldDetails(targetResource, targetField)),
+                Value("fieldType", sourceField.Type.ToString(), expectedDetails),
+                Value("fieldType", targetField.Type.ToString(), FieldDetails(targetResource, targetField)),
                 MetadataCompatibilityRequiredAction.UpdateField,
                 MetadataCompatibilityCoverageState.Uncovered));
         }
@@ -401,10 +401,10 @@ public static class MetadataCompatibilityAnalyzer
         List<MetadataCompatibilityFinding> findings)
     {
         var expectedGeometryType = source.ReadGeometryType();
-        if (expectedGeometryType is not MetadataV2GeometryType.None)
+        if (expectedGeometryType != MetadataV2GeometryType.None)
         {
             var actualGeometryType = target.ReadGeometryType();
-            if (actualGeometryType is MetadataV2GeometryType.None)
+            if (actualGeometryType == MetadataV2GeometryType.None)
             {
                 findings.Add(Finding(
                     MetadataCompatibilityCode.SpatialGeometryTypeMismatch,
@@ -1710,7 +1710,7 @@ public static class MetadataCompatibilityAnalyzer
         {
             ["semanticId"] = GetFieldSemanticId(resource, field),
             ["fieldName"] = field.Name,
-            ["type"] = field.Type.ToWireName(),
+            ["type"] = field.Type.ToString(),
             ["nullable"] = field.Nullable.ToString(CultureInfo.InvariantCulture),
             ["resourceId"] = resource.Metadata.Id,
         };

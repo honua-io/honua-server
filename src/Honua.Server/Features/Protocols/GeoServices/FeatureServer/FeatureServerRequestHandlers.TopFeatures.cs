@@ -5,6 +5,8 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Protocols.GeoServices;
@@ -65,7 +67,7 @@ internal static partial class FeatureServerEndpoints
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+        var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerV2Async(
             resourceValidator,
             serviceId,
             layerId,
@@ -78,11 +80,21 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = validationResult.Service!;
-        var layer = validationResult.Layer!;
-        var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service);
+        var publication = validationResult.Publication!;
+        var resource = validationResult.Resource!;
+        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
         if (accessError != null)
         {
             return accessError;
+        }
+
+        var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var storageLayerId = ResolveFeatureServerStorageLayerIdV2(snapshot, publication, resource);
+        if (storageLayerId is null)
+        {
+            return StandardErrorHelpers.CreateNotFound(context,
+                $"Layer '{resource.Metadata.Name ?? layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}' is not bound to a storage layer.");
         }
 
         // Parse topFilter JSON parameter
@@ -105,7 +117,7 @@ internal static partial class FeatureServerEndpoints
         {
             Where = GetValueString(values, "where"),
             TopFilter = topFilter,
-            SpatialReferenceSrid = layer.SpatialReference.ToSrid()
+            SpatialReferenceSrid = resource.ReadSrid()
         };
 
         var outFieldsStr = GetValueString(values, "outFields");
@@ -118,7 +130,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var result = await featureReader.QueryTopFeaturesAsync(layer.Id, query, cancellationToken);
+        var result = await featureReader.QueryTopFeaturesAsync(storageLayerId.Value, query, cancellationToken);
 
         var responseFeatures = result.Items.Select(feature => new GeoServicesFeature
         {
@@ -129,14 +141,16 @@ internal static partial class FeatureServerEndpoints
                 feature.Geometry, null, null, false, false)
         }).ToArray();
 
-        var srid = layer.SpatialReference.Wkid;
+        var geometryType = resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None;
+        var hasGeometry = geometryType is not MetadataV2GeometryType.None;
+        var srid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         var response = new QueryResponse
         {
-            GeometryType = layer.HasGeometry ? MapGeometryType(layer.GeometryType) : null,
-            SpatialReference = layer.HasGeometry
+            GeometryType = hasGeometry ? MapGeometryTypeV2(geometryType) : null,
+            SpatialReference = hasGeometry
                 ? new GeoServicesSpatialReference { Wkid = srid, LatestWkid = srid }
                 : null,
-            Fields = [.. layer.Fields.Select(MapFieldInfo)],
+            Fields = [.. ResolveVisibleFieldsV2(resource).Select(MapFieldInfoV2)],
             Features = responseFeatures,
             ExceededTransferLimit = result.HasMoreResults
         };
@@ -241,4 +255,12 @@ internal static partial class FeatureServerEndpoints
 
         return builder.ToImmutable();
     }
+
+    private static int? ResolveFeatureServerStorageLayerIdV2(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication publication,
+        MetadataV2Resource resource)
+        => snapshot.ResolveStorageLayerId(publication)
+           ?? snapshot.ResolveStorageLayerId(resource)
+           ?? publication.LayerIndex;
 }

@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Scene.Domain;
 using Honua.Core.Features.Security.Domain;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
@@ -55,6 +56,12 @@ public sealed record MetadataV2Graph
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();
 
     /// <summary>
+    /// Catalog definitions that can project canonical resources.
+    /// </summary>
+    [JsonPropertyName("catalogs")]
+    public IReadOnlyList<MetadataV2Catalog> Catalogs { get; init; } = Array.Empty<MetadataV2Catalog>();
+
+    /// <summary>
     /// Canonical resources. Publications expose these resources through services.
     /// </summary>
     [JsonPropertyName("resources")]
@@ -85,29 +92,35 @@ public sealed record MetadataV2Graph
     public IReadOnlyList<MetadataV2Publication> Publications { get; init; } = Array.Empty<MetadataV2Publication>();
 
     /// <summary>
-    /// Optional catalog targets included in release planning and compatibility reports.
+    /// Projection profiles for service and catalog target formats.
     /// </summary>
-    [JsonPropertyName("catalogs")]
-    public IReadOnlyList<MetadataV2Catalog> Catalogs { get; init; } = Array.Empty<MetadataV2Catalog>();
+    [JsonPropertyName("projectionProfiles")]
+    public IReadOnlyList<MetadataV2ProjectionProfile> ProjectionProfiles { get; init; } =
+        Array.Empty<MetadataV2ProjectionProfile>();
 
     /// <summary>
-    /// Metadata-scoped policies referenced by roles and release plans.
+    /// Policy definitions referenced by resources, services, publications, and roles.
     /// </summary>
     [JsonPropertyName("policies")]
     public IReadOnlyList<MetadataV2Policy> Policies { get; init; } = Array.Empty<MetadataV2Policy>();
 
     /// <summary>
-    /// Metadata-scoped roles used by release planning and compatibility checks.
+    /// Role definitions used by metadata access control.
     /// </summary>
     [JsonPropertyName("roles")]
     public IReadOnlyList<MetadataV2Role> Roles { get; init; } = Array.Empty<MetadataV2Role>();
 
     /// <summary>
-    /// Projection profiles that declare target-specific required semantics.
+    /// Runtime snapshot details for cache-safe graph materialization.
     /// </summary>
-    [JsonPropertyName("projectionProfiles")]
-    public IReadOnlyList<MetadataV2ProjectionProfile> ProjectionProfiles { get; init; } =
-        Array.Empty<MetadataV2ProjectionProfile>();
+    [JsonPropertyName("runtime")]
+    public MetadataV2RuntimeSnapshot Runtime { get; init; } = new();
+
+    /// <summary>
+    /// Declared extension points for graph consumers.
+    /// </summary>
+    [JsonPropertyName("extensionPoints")]
+    public IReadOnlyList<MetadataV2ExtensionPoint> ExtensionPoints { get; init; } = Array.Empty<MetadataV2ExtensionPoint>();
 
     /// <summary>
     /// Extension data for the graph document.
@@ -122,6 +135,12 @@ public sealed record MetadataV2Graph
 public sealed record MetadataV2Resource
 {
     private string? _primaryStorageBindingId;
+    private IReadOnlyList<string>? _storageBindingIds;
+    private IReadOnlyList<MetadataV2Field>? _schemaFields;
+    private IReadOnlyList<string>? _policyIds;
+    private IReadOnlyList<MetadataV2Relationship>? _relationships;
+    private IReadOnlyList<string>? _styleResourceIds;
+    private IReadOnlyDictionary<string, JsonElement>? _extensions;
 
     /// <summary>
     /// Resource metadata and identity.
@@ -136,12 +155,6 @@ public sealed record MetadataV2Resource
     public MetadataV2ResourceType Type { get; init; } = MetadataV2ResourceType.FeatureDataset;
 
     /// <summary>
-    /// Lifecycle and observed state for this resource.
-    /// </summary>
-    [JsonPropertyName("status")]
-    public MetadataV2Status? Status { get; init; }
-
-    /// <summary>
     /// Storage bindings that can materialize this canonical resource.
     /// <see cref="StorageBindingIds"/><c>[0]</c> is the primary binding by
     /// convention; secondary bindings (read replicas, alternative backends) come
@@ -149,7 +162,11 @@ public sealed record MetadataV2Resource
     /// physical storage.
     /// </summary>
     [JsonPropertyName("storageBindingIds")]
-    public IReadOnlyList<string> StorageBindingIds { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<string> StorageBindingIds
+    {
+        get => _storageBindingIds ?? Array.Empty<string>();
+        init => _storageBindingIds = value;
+    }
 
     /// <summary>
     /// The primary storage binding id for this resource — i.e.
@@ -159,8 +176,7 @@ public sealed record MetadataV2Resource
     [JsonPropertyName("primaryStorageBindingId")]
     public string? PrimaryStorageBindingId
     {
-        get => _primaryStorageBindingId
-            ?? (StorageBindingIds is { Count: > 0 } storageBindingIds ? storageBindingIds[0] : null);
+        get => _primaryStorageBindingId ?? (StorageBindingIds.Count == 0 ? null : StorageBindingIds[0]);
         init => _primaryStorageBindingId = value;
     }
 
@@ -169,13 +185,31 @@ public sealed record MetadataV2Resource
     /// of truth for the resource's field set.
     /// </summary>
     [JsonPropertyName("schemaFields")]
-    public IReadOnlyList<MetadataV2Field> SchemaFields { get; init; } = Array.Empty<MetadataV2Field>();
+    public IReadOnlyList<MetadataV2Field> SchemaFields
+    {
+        get => _schemaFields ?? Array.Empty<MetadataV2Field>();
+        init => _schemaFields = value;
+    }
+
+    /// <summary>
+    /// Policy identifiers attached to this resource.
+    /// </summary>
+    [JsonPropertyName("policyIds")]
+    public IReadOnlyList<string> PolicyIds
+    {
+        get => _policyIds ?? Array.Empty<string>();
+        init => _policyIds = value;
+    }
 
     /// <summary>
     /// Resource-to-resource relationships exposed by this resource.
     /// </summary>
     [JsonPropertyName("relationships")]
-    public IReadOnlyList<MetadataV2Relationship> Relationships { get; init; } = Array.Empty<MetadataV2Relationship>();
+    public IReadOnlyList<MetadataV2Relationship> Relationships
+    {
+        get => _relationships ?? Array.Empty<MetadataV2Relationship>();
+        init => _relationships = value;
+    }
 
     /// <summary>
     /// Optional access policy controlling who can read/write this resource.
@@ -187,12 +221,6 @@ public sealed record MetadataV2Resource
     /// </summary>
     [JsonPropertyName("accessPolicy")]
     public AccessPolicy? AccessPolicy { get; init; }
-
-    /// <summary>
-    /// Metadata v2 policy identifiers associated with this resource.
-    /// </summary>
-    [JsonPropertyName("policyIds")]
-    public IReadOnlyList<string> PolicyIds { get; init; } = Array.Empty<string>();
 
     /// <summary>
     /// Typed spatial metadata (CRS, geometry type, bbox, primary geometry field).
@@ -210,12 +238,28 @@ public sealed record MetadataV2Resource
 
     /// <summary>
     /// Optional permanent filter applied to every query against this resource.
-    /// Mirrors the legacy layer permanent-filter setting. The storage backends
-    /// (Postgres / MySql / DuckDB / SqlServer FeatureStores) honour this by ANDing
-    /// it with the per-request filter before SQL translation.
+    /// Storage backends honour this by ANDing it with the per-request filter
+    /// before SQL translation.
     /// </summary>
     [JsonPropertyName("permanentFilter")]
     public MetadataV2PermanentFilter? PermanentFilter { get; init; }
+
+    /// <summary>
+    /// Optional extrusion metadata used by FeatureServer layer metadata and 3D Tiles generation.
+    /// </summary>
+    [JsonPropertyName("extrusion")]
+    public MetadataV2ExtrusionInfo? Extrusion { get; init; }
+
+    /// <summary>
+    /// Optional attribute-driven 3D symbology for scene / 3D Tiles generation.
+    /// Null for resources with no thematic 3D styling; the generator then
+    /// bakes a plain opaque-white material. When present, the generator bakes
+    /// the resolved per-feature color into the tile content and emits the
+    /// equivalent <c>3d-tiles-styling</c> style-metadata contract alongside the
+    /// tileset.
+    /// </summary>
+    [JsonPropertyName("symbology3D")]
+    public Symbology3D? Symbology3D { get; init; }
 
     /// <summary>
     /// Style resources that render this resource. <c>[0]</c> is the primary
@@ -223,7 +267,11 @@ public sealed record MetadataV2Resource
     /// <see cref="MetadataV2ResourceType.Style"/>.
     /// </summary>
     [JsonPropertyName("styleResourceIds")]
-    public IReadOnlyList<string> StyleResourceIds { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<string> StyleResourceIds
+    {
+        get => _styleResourceIds ?? Array.Empty<string>();
+        init => _styleResourceIds = value;
+    }
 
     /// <summary>
     /// Style payload — populated on resources whose
@@ -247,10 +295,23 @@ public sealed record MetadataV2Resource
     public MetadataV2ResourceEditing? Editing { get; init; }
 
     /// <summary>
+    /// Lifecycle and observed status.
+    /// </summary>
+    [JsonPropertyName("status")]
+    public MetadataV2Status Status { get; init; } = new();
+
+    /// <summary>
     /// Extension data for the resource.
     /// </summary>
     [JsonPropertyName("extensions")]
-    public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
+    public IReadOnlyDictionary<string, JsonElement> Extensions
+    {
+        get => _extensions ?? EmptyJsonMap;
+        init => _extensions = value;
+    }
+
+    private static readonly IReadOnlyDictionary<string, JsonElement> EmptyJsonMap =
+        new Dictionary<string, JsonElement>();
 }
 
 /// <summary>
@@ -351,12 +412,6 @@ public sealed record MetadataV2Connection
     public MetadataV2ConnectionType Type { get; init; } = MetadataV2ConnectionType.Managed;
 
     /// <summary>
-    /// Lifecycle and observed state for this connection reference.
-    /// </summary>
-    [JsonPropertyName("status")]
-    public MetadataV2Status? Status { get; init; }
-
-    /// <summary>
     /// Provider name, such as postgres, s3, stac, or honua.
     /// </summary>
     [JsonPropertyName("provider")]
@@ -379,6 +434,12 @@ public sealed record MetadataV2Connection
     /// </summary>
     [JsonPropertyName("options")]
     public IReadOnlyDictionary<string, JsonElement> Options { get; init; } = new Dictionary<string, JsonElement>();
+
+    /// <summary>
+    /// Lifecycle and observed status.
+    /// </summary>
+    [JsonPropertyName("status")]
+    public MetadataV2Status Status { get; init; } = new();
 
     /// <summary>
     /// Extension data for the connection.
@@ -417,12 +478,6 @@ public sealed record MetadataV2StorageBinding
     public MetadataV2StorageType StorageType { get; init; } = MetadataV2StorageType.RelationalTable;
 
     /// <summary>
-    /// Lifecycle and observed state for this storage binding.
-    /// </summary>
-    [JsonPropertyName("status")]
-    public MetadataV2Status? Status { get; init; }
-
-    /// <summary>
     /// Storage locator, such as table name, object key, URI, or API route.
     /// </summary>
     [JsonPropertyName("locator")]
@@ -453,6 +508,12 @@ public sealed record MetadataV2StorageBinding
     public IReadOnlyDictionary<string, JsonElement> Options { get; init; } = new Dictionary<string, JsonElement>();
 
     /// <summary>
+    /// Lifecycle and observed status.
+    /// </summary>
+    [JsonPropertyName("status")]
+    public MetadataV2Status Status { get; init; } = new();
+
+    /// <summary>
     /// Extension data for the storage binding.
     /// </summary>
     [JsonPropertyName("extensions")]
@@ -474,7 +535,8 @@ public sealed record MetadataV2StorageBinding
 /// </summary>
 public sealed record MetadataV2Service
 {
-    private IReadOnlyList<string>? _enabledProtocols;
+    private IReadOnlyDictionary<string, JsonElement>? _options;
+    private IReadOnlyDictionary<string, JsonElement>? _extensions;
 
     /// <summary>
     /// Service metadata and identity.
@@ -482,11 +544,13 @@ public sealed record MetadataV2Service
     [JsonPropertyName("metadata")]
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();
 
+    private IReadOnlyList<string>? _protocols;
+
     /// <summary>
-    /// Service category exposed by this service.
+    /// Public service type. This is not a storage type.
     /// </summary>
     [JsonPropertyName("serviceType")]
-    public MetadataV2ServiceType ServiceType { get; init; } = MetadataV2ServiceType.Unknown;
+    public MetadataV2ServiceType ServiceType { get; init; } = MetadataV2ServiceType.OgcApiFeatures;
 
     /// <summary>
     /// Service route or base path.
@@ -495,16 +559,10 @@ public sealed record MetadataV2Service
     public string? Route { get; init; }
 
     /// <summary>
-    /// Publication identifiers attached to this service.
+    /// Optional publication identifiers exposed by this service.
     /// </summary>
     [JsonPropertyName("publicationIds")]
     public IReadOnlyList<string> PublicationIds { get; init; } = Array.Empty<string>();
-
-    /// <summary>
-    /// Lifecycle and observed state for this service.
-    /// </summary>
-    [JsonPropertyName("status")]
-    public MetadataV2Status? Status { get; init; }
 
     /// <summary>
     /// Optional access policy controlling who can read/write this service.
@@ -534,31 +592,36 @@ public sealed record MetadataV2Service
     /// nothing; it does NOT mean "everything".
     /// </summary>
     [JsonPropertyName("protocols")]
-    public IReadOnlyList<string> Protocols { get; init; } = Array.Empty<string>();
-
-    /// <summary>
-    /// Backward-compatible alias for <see cref="Protocols"/> used by release
-    /// compatibility analysis.
-    /// </summary>
-    [JsonPropertyName("enabledProtocols")]
-    public IReadOnlyList<string> EnabledProtocols
+    public IReadOnlyList<string> Protocols
     {
-        get => _enabledProtocols ?? Protocols;
-        init => _enabledProtocols = value;
+        get => _protocols ?? EnabledProtocols ?? Array.Empty<string>();
+        init => _protocols = value;
     }
 
     /// <summary>
+    /// Legacy v2 metadata-release protocol slot retained as an alias during cutover.
+    /// Runtime protocol gating reads <see cref="Protocols"/>, which falls back to this
+    /// list when <c>protocols</c> is not explicitly set.
+    /// </summary>
+    [JsonPropertyName("enabledProtocols")]
+    public IReadOnlyList<string>? EnabledProtocols { get; init; }
+
+    /// <summary>
     /// Primary protocol identifier for routing/display purposes — defined as
-    /// <see cref="EnabledProtocols"/>[0] when present, otherwise null.
+    /// <see cref="Protocols"/>[0] when present, otherwise null.
     /// </summary>
     [JsonIgnore]
-    public string? PrimaryProtocol => EnabledProtocols.Count == 0 ? null : EnabledProtocols[0];
+    public string? PrimaryProtocol => Protocols.Count == 0 ? null : Protocols[0];
 
     /// <summary>
     /// Service-specific options.
     /// </summary>
     [JsonPropertyName("options")]
-    public IReadOnlyDictionary<string, JsonElement> Options { get; init; } = new Dictionary<string, JsonElement>();
+    public IReadOnlyDictionary<string, JsonElement> Options
+    {
+        get => _options ?? EmptyJsonMap;
+        init => _options = value;
+    }
 
     /// <summary>
     /// Optional service-level settings (record/feature/image limits, formats,
@@ -568,10 +631,23 @@ public sealed record MetadataV2Service
     public MetadataV2ServiceSettings? Settings { get; init; }
 
     /// <summary>
+    /// Lifecycle and observed status.
+    /// </summary>
+    [JsonPropertyName("status")]
+    public MetadataV2Status Status { get; init; } = new();
+
+    /// <summary>
     /// Extension data for the service.
     /// </summary>
     [JsonPropertyName("extensions")]
-    public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
+    public IReadOnlyDictionary<string, JsonElement> Extensions
+    {
+        get => _extensions ?? EmptyJsonMap;
+        init => _extensions = value;
+    }
+
+    private static readonly IReadOnlyDictionary<string, JsonElement> EmptyJsonMap =
+        new Dictionary<string, JsonElement>();
 }
 
 /// <summary>
@@ -677,12 +753,6 @@ public sealed record MetadataV2Publication
     public MetadataV2PublicationType PublicationType { get; init; } = MetadataV2PublicationType.OgcCollection;
 
     /// <summary>
-    /// Lifecycle and observed state for this publication.
-    /// </summary>
-    [JsonPropertyName("status")]
-    public MetadataV2Status? Status { get; init; }
-
-    /// <summary>
     /// Optional title override for this service or catalog publication.
     /// </summary>
     [JsonPropertyName("titleOverride")]
@@ -700,8 +770,10 @@ public sealed record MetadataV2Publication
     /// Computed integer layer index (legacy GeoServices-style routing). Returns
     /// the int parsed from <see cref="Identifier"/> when
     /// <see cref="MetadataV2PublicationIdentifier.IsNumeric"/> is true; otherwise <c>null</c>.
-    /// Kept as a derived property so existing call sites that read
-    /// <c>publication.LayerIndex</c> compile unchanged.
+    /// Kept as a JSON-mapped property (not <c>[JsonIgnore]</c>) so graph snapshots written
+    /// before the <c>identifier</c> object existed continue to deserialize into the init
+    /// setter — call sites that read <c>publication.LayerIndex</c> work either way, and
+    /// upgraded deployments keep their FeatureServer/OData/MapServer layer routes.
     /// </summary>
     [JsonPropertyName("layerIndex")]
     public int? LayerIndex
@@ -709,15 +781,16 @@ public sealed record MetadataV2Publication
         get => _layerIndex ?? (Identifier.IsNumeric
             && int.TryParse(Identifier.Value, System.Globalization.NumberStyles.Integer,
                 System.Globalization.CultureInfo.InvariantCulture, out var parsed)
-            ? parsed
-            : null);
+                ? parsed
+                : null);
         init => _layerIndex = value;
     }
 
     /// <summary>
     /// Computed full URL path override read from <see cref="Identifier"/>.
-    /// Kept as a derived property so existing call sites that read
-    /// <c>publication.Path</c> compile unchanged.
+    /// Kept as a JSON-mapped property so legacy snapshots with a top-level <c>path</c>
+    /// still deserialize correctly; call sites that read <c>publication.Path</c> work
+    /// either way.
     /// </summary>
     [JsonPropertyName("path")]
     public string? Path
@@ -728,8 +801,9 @@ public sealed record MetadataV2Publication
 
     /// <summary>
     /// Computed service-local id read from <see cref="Identifier"/>'s value.
-    /// Kept as a derived property so existing call sites that read
-    /// <c>publication.ServiceLocalId</c> compile unchanged.
+    /// Kept as a JSON-mapped property so legacy snapshots with a top-level
+    /// <c>serviceLocalId</c> still deserialize correctly; call sites that read
+    /// <c>publication.ServiceLocalId</c> work either way.
     /// </summary>
     [JsonPropertyName("serviceLocalId")]
     public string? ServiceLocalId
@@ -737,18 +811,6 @@ public sealed record MetadataV2Publication
         get => _serviceLocalId ?? (string.IsNullOrEmpty(Identifier.Value) ? null : Identifier.Value);
         init => _serviceLocalId = value;
     }
-
-    /// <summary>
-    /// Response formats this publication requires or exposes.
-    /// </summary>
-    [JsonPropertyName("supportedFormats")]
-    public IReadOnlyList<string> SupportedFormats { get; init; } = Array.Empty<string>();
-
-    /// <summary>
-    /// Publication-level capabilities used by compatibility checks.
-    /// </summary>
-    [JsonPropertyName("capabilities")]
-    public IReadOnlyList<string> Capabilities { get; init; } = Array.Empty<string>();
 
     /// <summary>
     /// When true, this publication is the primary publication of its resource on
@@ -762,6 +824,24 @@ public sealed record MetadataV2Publication
     public bool IsPrimary { get; init; }
 
     /// <summary>
+    /// Format identifiers supported by this publication.
+    /// </summary>
+    [JsonPropertyName("supportedFormats")]
+    public IReadOnlyList<string> SupportedFormats { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Service-specific field aliases.
+    /// </summary>
+    [JsonPropertyName("fieldAliases")]
+    public IReadOnlyDictionary<string, string> FieldAliases { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>
+    /// Publication capabilities after service and storage validation.
+    /// </summary>
+    [JsonPropertyName("capabilities")]
+    public IReadOnlyList<string> Capabilities { get; init; } = Array.Empty<string>();
+
+    /// <summary>
     /// Publication-specific options. The catch-all bag for publication-shape
     /// extensions that don't deserve a typed slot (per-publication output
     /// formats, capability overrides, field aliases, …). Compare to the
@@ -773,6 +853,12 @@ public sealed record MetadataV2Publication
     public IReadOnlyDictionary<string, JsonElement> Options { get; init; } = new Dictionary<string, JsonElement>();
 
     /// <summary>
+    /// Lifecycle and observed status.
+    /// </summary>
+    [JsonPropertyName("status")]
+    public MetadataV2Status Status { get; init; } = new();
+
+    /// <summary>
     /// Extension data for the publication.
     /// </summary>
     [JsonPropertyName("extensions")]
@@ -780,7 +866,7 @@ public sealed record MetadataV2Publication
 }
 
 /// <summary>
-/// Optional catalog target included in Metadata v2 release planning.
+/// Catalog target that can expose canonical resources.
 /// </summary>
 public sealed record MetadataV2Catalog
 {
@@ -791,122 +877,32 @@ public sealed record MetadataV2Catalog
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();
 
     /// <summary>
-    /// Target catalog or hierarchy identifier.
+    /// Catalog target identifier, such as ogc-records, dcat, stac, or esri-portal.
     /// </summary>
     [JsonPropertyName("target")]
     public string Target { get; init; } = string.Empty;
 
     /// <summary>
-    /// Optional parent catalog identifier.
+    /// Catalog-specific options.
     /// </summary>
-    [JsonPropertyName("parentCatalogId")]
-    public string? ParentCatalogId { get; init; }
+    [JsonPropertyName("options")]
+    public IReadOnlyDictionary<string, JsonElement> Options { get; init; } = new Dictionary<string, JsonElement>();
 
     /// <summary>
-    /// Resources grouped by this catalog target.
-    /// </summary>
-    [JsonPropertyName("resourceIds")]
-    public IReadOnlyList<string> ResourceIds { get; init; } = Array.Empty<string>();
-
-    /// <summary>
-    /// Publications grouped by this catalog target.
-    /// </summary>
-    [JsonPropertyName("publicationIds")]
-    public IReadOnlyList<string> PublicationIds { get; init; } = Array.Empty<string>();
-
-    /// <summary>
-    /// Lifecycle and observed state for this catalog target.
+    /// Lifecycle and observed status.
     /// </summary>
     [JsonPropertyName("status")]
-    public MetadataV2Status? Status { get; init; }
+    public MetadataV2Status Status { get; init; } = new();
 
     /// <summary>
-    /// Extension data for the catalog target.
+    /// Extension data for the catalog.
     /// </summary>
     [JsonPropertyName("extensions")]
     public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
 }
 
 /// <summary>
-/// Metadata v2 policy descriptor used by release readiness and role checks.
-/// </summary>
-public sealed record MetadataV2Policy
-{
-    /// <summary>
-    /// Policy metadata and identity.
-    /// </summary>
-    [JsonPropertyName("metadata")]
-    public MetadataV2ObjectMetadata Metadata { get; init; } = new();
-
-    /// <summary>
-    /// Policy engine or evaluator family.
-    /// </summary>
-    [JsonPropertyName("engine")]
-    public string? Engine { get; init; }
-
-    /// <summary>
-    /// Policy effect, such as allow or deny.
-    /// </summary>
-    [JsonPropertyName("effect")]
-    public string? Effect { get; init; }
-
-    /// <summary>
-    /// Actions granted or evaluated by this policy.
-    /// </summary>
-    [JsonPropertyName("actions")]
-    public IReadOnlyList<string> Actions { get; init; } = Array.Empty<string>();
-
-    /// <summary>
-    /// Lifecycle and observed state for this policy.
-    /// </summary>
-    [JsonPropertyName("status")]
-    public MetadataV2Status? Status { get; init; }
-
-    /// <summary>
-    /// Extension data for the policy.
-    /// </summary>
-    [JsonPropertyName("extensions")]
-    public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
-}
-
-/// <summary>
-/// Metadata v2 role descriptor used by release readiness and policy reference checks.
-/// </summary>
-public sealed record MetadataV2Role
-{
-    /// <summary>
-    /// Role metadata and identity.
-    /// </summary>
-    [JsonPropertyName("metadata")]
-    public MetadataV2ObjectMetadata Metadata { get; init; } = new();
-
-    /// <summary>
-    /// Permissions attached directly to this role.
-    /// </summary>
-    [JsonPropertyName("permissions")]
-    public IReadOnlyList<string> Permissions { get; init; } = Array.Empty<string>();
-
-    /// <summary>
-    /// Policies referenced by this role.
-    /// </summary>
-    [JsonPropertyName("policyIds")]
-    public IReadOnlyList<string> PolicyIds { get; init; } = Array.Empty<string>();
-
-    /// <summary>
-    /// Lifecycle and observed state for this role.
-    /// </summary>
-    [JsonPropertyName("status")]
-    public MetadataV2Status? Status { get; init; }
-
-    /// <summary>
-    /// Extension data for the role.
-    /// </summary>
-    [JsonPropertyName("extensions")]
-    public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
-}
-
-/// <summary>
-/// Target-specific projection profile requirements for compatibility analysis.
+/// Mapping profile for projecting canonical metadata into service or catalog formats.
 /// </summary>
 public sealed record MetadataV2ProjectionProfile
 {
@@ -917,19 +913,157 @@ public sealed record MetadataV2ProjectionProfile
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();
 
     /// <summary>
-    /// Target projection family, such as <c>ogc-api-features</c> or <c>stac</c>.
+    /// Target format identifier.
     /// </summary>
     [JsonPropertyName("target")]
     public string Target { get; init; } = string.Empty;
 
     /// <summary>
-    /// Semantic identifiers required by this projection profile.
+    /// Required semantic keys for this profile.
     /// </summary>
     [JsonPropertyName("requiredSemantics")]
     public IReadOnlyList<string> RequiredSemantics { get; init; } = Array.Empty<string>();
 
     /// <summary>
+    /// Profile-specific options.
+    /// </summary>
+    [JsonPropertyName("options")]
+    public IReadOnlyDictionary<string, JsonElement> Options { get; init; } = new Dictionary<string, JsonElement>();
+
+    /// <summary>
+    /// Lifecycle and observed status.
+    /// </summary>
+    [JsonPropertyName("status")]
+    public MetadataV2Status Status { get; init; } = new();
+
+    /// <summary>
     /// Extension data for the projection profile.
+    /// </summary>
+    [JsonPropertyName("extensions")]
+    public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
+}
+
+/// <summary>
+/// Metadata policy definition.
+/// </summary>
+public sealed record MetadataV2Policy
+{
+    /// <summary>
+    /// Policy metadata and identity.
+    /// </summary>
+    [JsonPropertyName("metadata")]
+    public MetadataV2ObjectMetadata Metadata { get; init; } = new();
+
+    /// <summary>
+    /// Policy engine or policy language identifier.
+    /// </summary>
+    [JsonPropertyName("engine")]
+    public string Engine { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Policy effect, such as allow, deny, mask, or audit.
+    /// </summary>
+    [JsonPropertyName("effect")]
+    public string Effect { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Policy-specific rules.
+    /// </summary>
+    [JsonPropertyName("rules")]
+    public IReadOnlyDictionary<string, JsonElement> Rules { get; init; } = new Dictionary<string, JsonElement>();
+
+    /// <summary>
+    /// Lifecycle and observed status.
+    /// </summary>
+    [JsonPropertyName("status")]
+    public MetadataV2Status Status { get; init; } = new();
+
+    /// <summary>
+    /// Extension data for the policy.
+    /// </summary>
+    [JsonPropertyName("extensions")]
+    public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
+}
+
+/// <summary>
+/// Metadata role definition.
+/// </summary>
+public sealed record MetadataV2Role
+{
+    /// <summary>
+    /// Role metadata and identity.
+    /// </summary>
+    [JsonPropertyName("metadata")]
+    public MetadataV2ObjectMetadata Metadata { get; init; } = new();
+
+    /// <summary>
+    /// Permission identifiers granted by the role.
+    /// </summary>
+    [JsonPropertyName("permissions")]
+    public IReadOnlyList<string> Permissions { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Policy identifiers attached to the role.
+    /// </summary>
+    [JsonPropertyName("policyIds")]
+    public IReadOnlyList<string> PolicyIds { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Lifecycle and observed status.
+    /// </summary>
+    [JsonPropertyName("status")]
+    public MetadataV2Status Status { get; init; } = new();
+
+    /// <summary>
+    /// Extension data for the role.
+    /// </summary>
+    [JsonPropertyName("extensions")]
+    public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
+}
+
+/// <summary>
+/// Runtime metadata for cache-safe graph snapshots.
+/// </summary>
+public sealed record MetadataV2RuntimeSnapshot
+{
+    /// <summary>
+    /// Runtime metadata and identity.
+    /// </summary>
+    [JsonPropertyName("metadata")]
+    public MetadataV2ObjectMetadata Metadata { get; init; } = new();
+
+    /// <summary>
+    /// Cache key for the materialized runtime snapshot.
+    /// </summary>
+    [JsonPropertyName("cacheKey")]
+    public string? CacheKey { get; init; }
+
+    /// <summary>
+    /// Source graph revision represented by this runtime snapshot.
+    /// </summary>
+    [JsonPropertyName("sourceRevision")]
+    public long? SourceRevision { get; init; }
+
+    /// <summary>
+    /// Optional cache entity tag for snapshot consumers.
+    /// </summary>
+    [JsonPropertyName("etag")]
+    public string? ETag { get; init; }
+
+    /// <summary>
+    /// Optional cache expiry for derived runtime snapshots.
+    /// </summary>
+    [JsonPropertyName("expiresAt")]
+    public DateTimeOffset? ExpiresAt { get; init; }
+
+    /// <summary>
+    /// Lifecycle and observed status.
+    /// </summary>
+    [JsonPropertyName("status")]
+    public MetadataV2Status Status { get; init; } = new();
+
+    /// <summary>
+    /// Extension data for the runtime snapshot.
     /// </summary>
     [JsonPropertyName("extensions")]
     public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();

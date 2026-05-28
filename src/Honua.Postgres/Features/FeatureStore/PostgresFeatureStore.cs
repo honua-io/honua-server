@@ -6,8 +6,6 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Honua.Core.Exceptions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
@@ -20,6 +18,7 @@ using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.FeatureStore.Services;
 using Microsoft.Extensions.ObjectPool;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
+using PermanentFilterLanguages = Honua.Core.Features.Metadata.Domain.V2.MetadataV2PermanentFilterLanguages;
 
 namespace Honua.Postgres.Features.FeatureStore;
 
@@ -44,7 +43,6 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
     private readonly IFeatureQueryBuilder _queryBuilder;
     private readonly IFeatureDataAccess _dataAccess;
     private readonly IFeatureCacheManager _cacheManager;
-    private readonly ILayerCatalog? _layerCatalog;
     private readonly IMetadataV2GraphProvider? _v2Provider;
     private readonly IDatabaseConnectionProvider? _connectionProvider;
     private readonly ObjectPool<Dictionary<string, object?>>? _dictionaryPool;
@@ -55,20 +53,10 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         IFeatureQueryBuilder queryBuilder,
         IFeatureDataAccess dataAccess,
         IFeatureCacheManager cacheManager)
-        : this(queryBuilder, dataAccess, cacheManager, layerCatalog: null)
-    {
-    }
-
-    public PostgresFeatureStoreRefactored(
-        IFeatureQueryBuilder queryBuilder,
-        IFeatureDataAccess dataAccess,
-        IFeatureCacheManager cacheManager,
-        ILayerCatalog? layerCatalog)
         : this(
             queryBuilder,
             dataAccess,
             cacheManager,
-            layerCatalog,
             connectionProvider: null,
             dictionaryPool: null,
             connectionEncryptionService: null,
@@ -80,7 +68,6 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         IFeatureQueryBuilder queryBuilder,
         IFeatureDataAccess dataAccess,
         IFeatureCacheManager cacheManager,
-        ILayerCatalog? layerCatalog,
         IDatabaseConnectionProvider? connectionProvider,
         ObjectPool<Dictionary<string, object?>>? dictionaryPool,
         IConnectionEncryptionService? connectionEncryptionService,
@@ -90,7 +77,6 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
         _cacheManager = cacheManager ?? throw new ArgumentNullException(nameof(cacheManager));
-        _layerCatalog = layerCatalog;
         _v2Provider = v2Provider;
         _connectionProvider = connectionProvider;
         _dictionaryPool = dictionaryPool;
@@ -118,7 +104,8 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         return new PostgresStorageMappedFeatureReader(
             _connectionProvider,
             _dictionaryPool,
-            binding.Layer,
+            binding.Resource,
+            binding.StorageMapping,
             binding.Connection,
             _connectionEncryptionService);
     }
@@ -217,8 +204,8 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
     {
         query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
-        var layer = await GetLayerDefinitionAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var selectQuery = _queryBuilder.BuildSelectFlatGeobufQuery(layer, layerId, query, geometryStorageType);
+        var resource = await GetMetadataResourceAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var selectQuery = _queryBuilder.BuildSelectFlatGeobufQuery(resource, layerId, query, geometryStorageType);
         return await _dataAccess.ExecuteSelectFlatGeobufQueryAsync(selectQuery, query, layerId, cancellationToken);
     }
 
@@ -226,8 +213,8 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
     {
         query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
-        var layer = await GetLayerDefinitionAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var selectQuery = _queryBuilder.BuildSelectGeobufQuery(layer, layerId, query, geometryStorageType);
+        var resource = await GetMetadataResourceAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var selectQuery = _queryBuilder.BuildSelectGeobufQuery(resource, layerId, query, geometryStorageType);
         return await _dataAccess.ExecuteSelectGeobufQueryAsync(selectQuery, query, layerId, cancellationToken);
     }
 
@@ -488,10 +475,10 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
     public async Task<TemporalExtentResult?> GetTemporalExtentAsync(
         int layerId,
         string fieldName,
-        FieldType fieldType,
+        TemporalPropertyType propertyType,
         CancellationToken cancellationToken = default)
     {
-        var temporalQuery = _queryBuilder.BuildTemporalExtentQuery(layerId, fieldName, fieldType);
+        var temporalQuery = _queryBuilder.BuildTemporalExtentQuery(layerId, fieldName, propertyType);
         return await _dataAccess.GetTemporalExtentAsync(layerId, temporalQuery, cancellationToken);
     }
 
@@ -857,11 +844,8 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             return query;
         }
 
-        // V2 path: resolve the resource via the storageLayerId→resource index, read
-        // the typed PermanentFilter from the canonical resource. Falls through to the
-        // v1 catalog path when the V2 provider isn't wired in (legacy tests) or the
-        // graph has no entry for this storage layer id (resource hasn't been
-        // migrated yet). The two paths produce identical SqlFragments.
+        // Resolve the resource via the storageLayerId -> resource index and read
+        // the typed PermanentFilter from the canonical Metadata v2 resource.
         if (_v2Provider != null)
         {
             var snapshot = await _v2Provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
@@ -883,18 +867,11 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
                     throw new InvalidOperationException(
                         $"Saved permanent filter for resource '{resource.Metadata.Id}' is invalid: {v2ParseAndNormalize.ErrorMessage ?? "Invalid filter."}");
                 }
-                // SQL last-mile bridge (#1035): the normalized V2 filter still passes
-                // through the v1 SQL translator until ISqlFilterTranslator V2 lands.
-                if (_layerCatalog == null || v2ParseAndNormalize.Expression == null)
+                if (v2ParseAndNormalize.Expression == null)
                 {
                     return query;
                 }
-                var v1Layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-                if (v1Layer == null)
-                {
-                    return query;
-                }
-                var v2Translation = _filterExpressionService.Translate(v2ParseAndNormalize.Expression, v1Layer);
+                var v2Translation = _filterExpressionService.Translate(v2ParseAndNormalize.Expression, resource);
                 if (!v2Translation.IsSuccess)
                 {
                     throw new InvalidOperationException(
@@ -904,55 +881,28 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             }
         }
 
-        if (_layerCatalog == null)
-        {
-            return query;
-        }
-
-        var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var permanentFilter = layer?.Metadata?.PermanentFilter;
-        if (permanentFilter == null || string.IsNullOrWhiteSpace(permanentFilter.Expression))
-        {
-            return query;
-        }
-
-        if (!TryResolveFilterLanguage(permanentFilter.Language, out var filterLanguage))
-        {
-            throw new InvalidOperationException(
-                $"Saved permanent filter for layer {layerId} uses unsupported language '{permanentFilter.Language}'.");
-        }
-
-        var translationResult = _filterExpressionService.Translate(filterLanguage, permanentFilter.Expression, layer!);
-        if (!translationResult.IsSuccess)
-        {
-            throw new InvalidOperationException(
-                $"Saved permanent filter for layer {layerId} is invalid: {translationResult.ErrorMessage ?? "Invalid filter."}");
-        }
-
-        return translationResult.SqlFilter == null
-            ? query
-            : query with { EnforcedSqlFilter = translationResult.SqlFilter };
+        return query;
     }
 
     private static bool TryResolveFilterLanguage(string? language, out FilterLanguage filterLanguage)
     {
         filterLanguage = FilterLanguage.ArcGisSql;
-        var normalized = (language ?? LayerPermanentFilterLanguages.ArcGisSql)
+        var normalized = (language ?? PermanentFilterLanguages.ArcGisSql)
             .Trim()
             .ToLowerInvariant();
 
         switch (normalized)
         {
-            case LayerPermanentFilterLanguages.ArcGisSql:
+            case PermanentFilterLanguages.ArcGisSql:
             case "arcgis":
             case "geoservices-sql":
                 filterLanguage = FilterLanguage.ArcGisSql;
                 return true;
-            case LayerPermanentFilterLanguages.Cql2Text:
+            case PermanentFilterLanguages.Cql2Text:
             case "cql2":
                 filterLanguage = FilterLanguage.Cql2Text;
                 return true;
-            case LayerPermanentFilterLanguages.Cql2Json:
+            case PermanentFilterLanguages.Cql2Json:
                 filterLanguage = FilterLanguage.Cql2Json;
                 return true;
             default:
@@ -960,15 +910,17 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         }
     }
 
-    private async Task<LayerDefinition> GetLayerDefinitionAsync(int layerId, CancellationToken cancellationToken)
+    private async Task<MetadataV2Resource> GetMetadataResourceAsync(int layerId, CancellationToken cancellationToken)
     {
-        if (_layerCatalog == null)
+        if (_v2Provider == null)
         {
-            throw new InvalidOperationException("Layer metadata is required for native binary encoders.");
+            throw new InvalidOperationException("Metadata v2 resources are required for native binary encoders.");
         }
 
-        var layer = await _layerCatalog.GetLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        return layer ?? throw new ResourceNotFoundException($"Layer {layerId} not found.");
+        var snapshot = await _v2Provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        return snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource)
+            ? resource
+            : throw new ResourceNotFoundException($"Metadata resource for storage layer {layerId} not found.");
     }
 
     #endregion

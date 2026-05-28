@@ -3,14 +3,12 @@
 
 using System.IO.Compression;
 using System.Globalization;
-using Honua.Core.Features.Catalog.Domain;
+using System.Collections.Immutable;
 using Honua.Server.Features.Infrastructure.Services;
-using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO.Esri;
 using NetTopologySuite.IO.Esri.Dbf.Fields;
 using NetTopologySuite.IO.Esri.Shapefiles.Writers;
-using NtsFeature = NetTopologySuite.Features.Feature;
 using Feature = Honua.Core.Features.FeatureStore.Domain.Feature;
 
 namespace Honua.Server.Features.Export.Writers;
@@ -26,13 +24,13 @@ internal static class ShapefileExportWriter
     public static async Task<ShapefileWriteResult> WriteAsync(
         Stream output,
         IAsyncEnumerable<Feature> features,
-        FieldDefinition[] fields,
-        GeometryType geometryType,
+        ExportField[] fields,
+        ExportGeometryType geometryType,
         string? prjWkt,
         ILogger logger,
         CancellationToken cancellationToken)
     {
-        if (geometryType is GeometryType.GeometryCollection)
+        if (geometryType is ExportGeometryType.GeometryCollection or ExportGeometryType.Mixed)
         {
             throw new InvalidOperationException(
                 "Shapefile format does not support mixed geometry types (GeometryCollection).");
@@ -49,40 +47,31 @@ internal static class ShapefileExportWriter
 
             // Build DBF field name mappings (unique and <=10 chars)
             var dbfFieldMap = BuildDbfFieldMap(fields, warnings);
+            var dbfFields = BuildDbfFields(fields, dbfFieldMap);
 
-            // Collect features to NTS feature list
-            var ntsFeatures = new List<NtsFeature>();
-            await foreach (var feature in features.WithCancellation(cancellationToken).ConfigureAwait(false))
+            var options = new ShapefileWriterOptions(MapShapeType(geometryType), dbfFields);
+            var writtenCount = 0;
+            using (var shpWriter = Shapefile.OpenWrite(shpPath, options))
             {
-                if (feature.Geometry is null || feature.Geometry.Length == 0)
+                await foreach (var feature in features.WithCancellation(cancellationToken).ConfigureAwait(false))
                 {
-                    skippedNullGeometry++;
-                    continue;
-                }
-
-                var geometry = WkbReaderCache.Get().Read(feature.Geometry);
-                geometry = NormalizeGeometry(geometry, geometryType);
-
-                var attributes = new AttributesTable();
-                foreach (var field in fields)
-                {
-                    if (dbfFieldMap.TryGetValue(field.Name, out var dbfName))
+                    if (feature.Geometry is null || feature.Geometry.Length == 0)
                     {
-                        feature.Attributes.TryGetValue(field.Name, out var value);
-                        attributes.Add(dbfName, NormalizeDbfValue(value, field.Type));
+                        skippedNullGeometry++;
+                        continue;
                     }
-                }
 
-                ntsFeatures.Add(new NtsFeature(geometry, attributes));
+                    shpWriter.Geometry = NormalizeGeometry(WkbReaderCache.Get().Read(feature.Geometry), geometryType);
+                    SetDbfValues(shpWriter.Fields, fields, dbfFieldMap, feature.Attributes);
+                    shpWriter.Write();
+                    writtenCount++;
+                }
             }
 
             if (skippedNullGeometry > 0)
             {
                 warnings.Add($"{skippedNullGeometry} feature(s) skipped due to null geometry.");
             }
-
-            // Write shapefile using NTS — WriteAllFeatures auto-detects shape type from geometry
-            Shapefile.WriteAllFeatures(ntsFeatures, shpPath);
 
             // Write .prj file if CRS WKT available
             if (!string.IsNullOrEmpty(prjWkt))
@@ -111,7 +100,7 @@ internal static class ShapefileExportWriter
             await using var outputZip = File.OpenRead(zipPath);
             await outputZip.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
 
-            return new ShapefileWriteResult(ntsFeatures.Count, skippedNullGeometry, warnings);
+            return new ShapefileWriteResult(writtenCount, skippedNullGeometry, warnings);
         }
         finally
         {
@@ -123,7 +112,7 @@ internal static class ShapefileExportWriter
         }
     }
 
-    private static Dictionary<string, string> BuildDbfFieldMap(FieldDefinition[] fields, List<string> warnings)
+    private static Dictionary<string, string> BuildDbfFieldMap(ExportField[] fields, List<string> warnings)
     {
         var map = new Dictionary<string, string>(fields.Length);
         var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -141,6 +130,71 @@ internal static class ShapefileExportWriter
         }
 
         return map;
+    }
+
+    private static DbfField[] BuildDbfFields(ExportField[] fields, Dictionary<string, string> dbfFieldMap)
+    {
+        var dbfFields = new List<DbfField>(fields.Length);
+
+        foreach (var field in fields)
+        {
+            if (!dbfFieldMap.TryGetValue(field.Name, out var dbfName))
+            {
+                continue;
+            }
+
+            switch (field.Type)
+            {
+                case ExportFieldType.Integer:
+                    dbfFields.AddNumericInt32Field(dbfName);
+                    break;
+                case ExportFieldType.BigInteger:
+                    dbfFields.AddNumericInt64Field(dbfName);
+                    break;
+                case ExportFieldType.Double:
+                    dbfFields.AddNumericDoubleField(dbfName);
+                    break;
+                case ExportFieldType.Float:
+                    dbfFields.AddFloatField(dbfName);
+                    break;
+                case ExportFieldType.Boolean:
+                    dbfFields.AddLogicalField(dbfName);
+                    break;
+                case ExportFieldType.Date:
+                case ExportFieldType.DateTime:
+                    dbfFields.AddDateField(dbfName);
+                    break;
+                default:
+                    dbfFields.AddCharacterField(dbfName, length: 254);
+                    break;
+            }
+        }
+
+        return dbfFields.ToArray();
+    }
+
+    private static void SetDbfValues(
+        DbfFieldCollection writerFields,
+        ExportField[] fields,
+        Dictionary<string, string> dbfFieldMap,
+        ImmutableDictionary<string, object?> attributes)
+    {
+        foreach (var field in fields)
+        {
+            if (!dbfFieldMap.TryGetValue(field.Name, out var dbfName))
+            {
+                continue;
+            }
+
+            var dbfField = writerFields[dbfName];
+            if (dbfField is null)
+            {
+                continue;
+            }
+
+            attributes.TryGetValue(field.Name, out var value);
+            dbfField.Value = NormalizeDbfValue(value, field.Type);
+        }
     }
 
     private static string CreateUniqueDbfFieldName(string name, HashSet<string> usedNames)
@@ -173,33 +227,66 @@ internal static class ShapefileExportWriter
         throw new InvalidOperationException("Unable to generate a unique DBF field name within the 10-character limit.");
     }
 
-    private static Geometry NormalizeGeometry(Geometry geometry, GeometryType targetType)
+    private static Geometry NormalizeGeometry(Geometry geometry, ExportGeometryType targetType)
     {
         return targetType switch
         {
             // Promote single → multi
-            GeometryType.MultiPoint when geometry is Point p => new MultiPoint([p]),
-            GeometryType.MultiLineString when geometry is LineString ls => new MultiLineString([ls]),
-            GeometryType.MultiPolygon when geometry is Polygon pg => new MultiPolygon([pg]),
+            ExportGeometryType.MultiPoint when geometry is Point p => new MultiPoint([p]),
+            ExportGeometryType.MultiLineString when geometry is LineString ls => new MultiLineString([ls]),
+            ExportGeometryType.MultiPolygon when geometry is Polygon pg => new MultiPolygon([pg]),
             // Preserve multipart line and polygon geometries. Shapefile polyline/polygon
             // records support multiple parts, so taking only the first part corrupts data.
-            GeometryType.Point when geometry is MultiPoint =>
+            ExportGeometryType.Point when geometry is MultiPoint =>
                 throw new InvalidOperationException("Shapefile export cannot write MultiPoint geometry from a layer declared as Point without corrupting geometry type."),
             _ => geometry
         };
     }
 
-    private static object? NormalizeDbfValue(object? value, FieldType fieldType)
+    private static ShapeType MapShapeType(ExportGeometryType geometryType) => geometryType switch
+    {
+        ExportGeometryType.Point => ShapeType.Point,
+        ExportGeometryType.MultiPoint => ShapeType.MultiPoint,
+        ExportGeometryType.LineString or ExportGeometryType.MultiLineString => ShapeType.PolyLine,
+        ExportGeometryType.Polygon or ExportGeometryType.MultiPolygon => ShapeType.Polygon,
+        ExportGeometryType.None => ShapeType.NullShape,
+        _ => throw new InvalidOperationException(
+            $"Shapefile format does not support geometry type '{geometryType}'.")
+    };
+
+    private static object? NormalizeDbfValue(object? value, ExportFieldType fieldType)
     {
         if (value is null or DBNull)
             return null;
 
         return fieldType switch
         {
-            FieldType.Boolean when value is bool b => b,
-            FieldType.DateTime when value is DateTimeOffset dto => dto.DateTime,
-            FieldType.Date when value is DateTimeOffset dto => dto.DateTime,
+            ExportFieldType.Boolean when value is bool b => b,
+            ExportFieldType.Boolean when value is string s &&
+                bool.TryParse(s, out var parsedBool) => parsedBool,
+            ExportFieldType.DateTime or ExportFieldType.Date => NormalizeDbfDateValue(value),
+            ExportFieldType.String
+                or ExportFieldType.Time
+                or ExportFieldType.Json
+                or ExportFieldType.Binary
+                or ExportFieldType.Uuid
+                or ExportFieldType.Unknown => Convert.ToString(value, CultureInfo.InvariantCulture),
             _ => value
+        };
+    }
+
+    private static DateTime? NormalizeDbfDateValue(object value)
+    {
+        return value switch
+        {
+            DateTime dt => dt,
+            DateTimeOffset dto => dto.DateTime,
+            string s when DateTimeOffset.TryParse(
+                s,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AllowWhiteSpaces,
+                out var dto) => dto.DateTime,
+            _ => null
         };
     }
 }

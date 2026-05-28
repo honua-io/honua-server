@@ -3,7 +3,6 @@
 
 using System.Buffers;
 using System.Collections.Immutable;
-using System.Data.Common;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Text.Json;
@@ -322,69 +321,57 @@ internal static class SearchEndpoints
                 var projection = layerQueryResult.Projection;
                 var layerId = target.LayerIndex;
 
-                try
+                if (remainingSkip > 0)
                 {
-                    if (remainingSkip > 0)
+                    var layerCount = await featureReader.CountAsync(layerId, query, cancellationToken);
+                    totalMatched += layerCount;
+
+                    if (remainingSkip >= layerCount)
                     {
-                        var layerCount = await featureReader.CountAsync(layerId, query, cancellationToken);
-                        totalMatched += layerCount;
-
-                        if (remainingSkip >= layerCount)
-                        {
-                            remainingSkip -= (int)Math.Min(layerCount, int.MaxValue);
-                            continue;
-                        }
-
-                        var remaining = effectiveLimit - allItems.Count;
-                        query = query with { Offset = remainingSkip, Limit = remaining };
-                        remainingSkip = 0;
-
-                        var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
-                        allItems.AddRange(result.Features
-                            .Select(f => ApplyFieldProjection(
-                                StacMappingService.MapFeatureToItem(
-                                    f,
-                                    target.Resource,
-                                    target.Publication,
-                                    layerId,
-                                    baseUrl,
-                                    projection?.SelectedProperties,
-                                    geometrySrid: Wgs84Srid),
-                                projection)));
+                        remainingSkip -= (int)Math.Min(layerCount, int.MaxValue);
+                        continue;
                     }
-                    else if (allItems.Count < effectiveLimit)
-                    {
-                        var remaining = effectiveLimit - allItems.Count;
-                        query = query with { Limit = remaining };
 
-                        var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
-                        totalMatched += result.TotalCount;
+                    var remaining = effectiveLimit - allItems.Count;
+                    query = query with { Offset = remainingSkip, Limit = remaining };
+                    remainingSkip = 0;
 
-                        allItems.AddRange(result.Features
-                            .Select(f => ApplyFieldProjection(
-                                StacMappingService.MapFeatureToItem(
-                                    f,
-                                    target.Resource,
-                                    target.Publication,
-                                    layerId,
-                                    baseUrl,
-                                    projection?.SelectedProperties,
-                                    geometrySrid: Wgs84Srid),
-                                projection)));
-                    }
-                    else
-                    {
-                        totalMatched += await featureReader.CountAsync(layerId, query, cancellationToken);
-                    }
+                    var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
+                    allItems.AddRange(result.Features
+                        .Select(f => ApplyFieldProjection(
+                            StacMappingService.MapFeatureToItem(
+                                f,
+                                target.Resource,
+                                target.Publication,
+                                layerId,
+                                baseUrl,
+                                projection?.SelectedProperties,
+                                geometrySrid: Wgs84Srid),
+                            projection)));
                 }
-                catch (DbException ex)
+                else if (allItems.Count < effectiveLimit)
                 {
-                    // A single publication whose request bbox cannot be transformed into its storage
-                    // CRS (e.g. PostGIS "transform: tolerance condition error" for a projected CRS whose
-                    // valid area excludes the bbox) must not fail the whole cross-publication search.
-                    // Skip this publication; it contributes no items.
-                    StacLog.SearchPublicationSkipped(logger, layerId, ex);
-                    continue;
+                    var remaining = effectiveLimit - allItems.Count;
+                    query = query with { Limit = remaining };
+
+                    var result = await featureReader.QueryAsync(layerId, query, cancellationToken);
+                    totalMatched += result.TotalCount;
+
+                    allItems.AddRange(result.Features
+                        .Select(f => ApplyFieldProjection(
+                            StacMappingService.MapFeatureToItem(
+                                f,
+                                target.Resource,
+                                target.Publication,
+                                layerId,
+                                baseUrl,
+                                projection?.SelectedProperties,
+                                geometrySrid: Wgs84Srid),
+                            projection)));
+                }
+                else
+                {
+                    totalMatched += await featureReader.CountAsync(layerId, query, cancellationToken);
                 }
             }
 
@@ -588,7 +575,8 @@ internal static class SearchEndpoints
         out ImmutableArray<OrderByClause> orderBy,
         out string? error)
     {
-        var availableFields = resource.SchemaFields.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
+        var schemaFields = resource.SchemaFields ?? Array.Empty<MetadataV2Field>();
+        var availableFields = schemaFields.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
         var orderByBuilder = ImmutableArray.CreateBuilder<OrderByClause>(sortby.Length);
 
         foreach (var sort in sortby)
@@ -636,6 +624,14 @@ internal static class SearchEndpoints
         return true;
     }
 
+    // TODO(#1035 follow-up): the V2 fields lookup is now keyed on
+    // <see cref="MetadataV2Resource.SchemaFields"/>, so query parameters like
+    // <c>fields=+properties.foo</c> only resolve when the V2 graph carries <c>foo</c>
+    // as a schema field. Tests that mutate the v1 <c>honua.layer_fields</c> table
+    // (e.g. WebAppFixture UpsertLayerFieldAsync) currently bypass the V2 snapshot
+    // and will return "Unknown fields include" until the V2 graph is rederived
+    // from the v1 catalog or the fixtures are ported to publish via the V2 builder
+    // directly. See task #55 (Port test fixtures off v1).
     private static bool TryBuildFieldSelection(
         MetadataV2Resource resource,
         StacFieldsExtension fields,
@@ -643,7 +639,8 @@ internal static class SearchEndpoints
         out StacFieldProjection? projection,
         out string? error)
     {
-        var availableFields = resource.SchemaFields
+        var schemaFields = resource.SchemaFields ?? Array.Empty<MetadataV2Field>();
+        var availableFields = schemaFields
             .Where(field => field.Type != MetadataV2FieldType.Geometry)
             .ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
 
@@ -761,7 +758,7 @@ internal static class SearchEndpoints
             ? default
             : selected.Length == 0
                 ? ImmutableArray<string>.Empty
-                : resource.SchemaFields
+                : schemaFields
                     .Where(field => selected.Contains(field.Name))
                     .Select(field => field.Name)
                     .ToImmutableArray();

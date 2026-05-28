@@ -3,7 +3,6 @@
 
 using System.Collections.Frozen;
 using System.Diagnostics.CodeAnalysis;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
 using Microsoft.Extensions.Hosting;
@@ -78,10 +77,6 @@ internal sealed class ConfigurationSceneDatasetRegistry : ISceneDatasetRegistry
         // can match parent walks against this canonical form.
         var canonical = Path.TrimEndingDirectorySeparator(Path.GetFullPath(assetRoot));
 
-        var metadata = entry.AccessPolicy is null
-            ? null
-            : new CatalogMetadata { AccessPolicy = entry.AccessPolicy };
-
         dataset = new SceneDataset
         {
             Id = entry.Id,
@@ -91,7 +86,7 @@ internal sealed class ConfigurationSceneDatasetRegistry : ISceneDatasetRegistry
             TilesetFileName = string.IsNullOrWhiteSpace(entry.TilesetFileName)
                 ? "tileset.json"
                 : entry.TilesetFileName!,
-            Metadata = metadata
+            AccessPolicy = entry.AccessPolicy
         };
         return true;
     }

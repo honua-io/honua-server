@@ -7,6 +7,7 @@ using System.Threading.Channels;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
@@ -331,6 +332,7 @@ internal static class PrintingToolsEndpoints
         var sw = Stopwatch.StartNew();
 
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        var metadataGraphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var styleCatalog = context.RequestServices.GetRequiredService<ILayerStyleCatalog>();
         var accessPolicyEvaluator = context.RequestServices.GetRequiredService<IAccessPolicyEvaluator>();
@@ -340,7 +342,7 @@ internal static class PrintingToolsEndpoints
         {
             result = await PrintingToolsRequestHandlers.ExecuteAsync(
                 req.WebMap, req.Format, req.TemplateName, req.Dpi,
-                resourceValidator, featureReader, styleCatalog, req.Logger, cancellationToken,
+                resourceValidator, metadataGraphProvider, featureReader, styleCatalog, req.Logger, cancellationToken,
                 callerPrincipal: context.User, accessPolicyEvaluator: accessPolicyEvaluator);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

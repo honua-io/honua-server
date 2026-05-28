@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Domain;
 using Honua.Server.Features.Infrastructure.Styling;
 
@@ -16,7 +16,7 @@ public class UnsupportedSymbolizerTests
     [Fact]
     public void Convert_UnknownRendererType_ReturnsStableUnsupportedCode()
     {
-        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -42,7 +42,7 @@ public class UnsupportedSymbolizerTests
     [Fact]
     public void Convert_MissingRenderer_ReturnsPayloadIncompleteCode()
     {
-        var layer = LayerDefinition.CreateBasic(1, "lines", GeometryType.LineString);
+        var layer = new StyleLayerDescriptor(1, "lines", MetadataV2GeometryType.LineString);
         const string drawingInfoJson = """
         {
           "transparency": 0
@@ -60,7 +60,7 @@ public class UnsupportedSymbolizerTests
     [Fact]
     public void Convert_SimpleRenderer_ReportsNoUnsupportedSymbolizers()
     {
-        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -93,7 +93,7 @@ public class UnsupportedSymbolizerTests
     [Fact]
     public void Convert_SimpleRenderer_UnsupportedSymbolType_ReportsSymbolTypeUnsupported()
     {
-        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -118,7 +118,7 @@ public class UnsupportedSymbolizerTests
     [Fact]
     public void Convert_UniqueValueRenderer_NonUniformPictureMarkers_ReportsPictureMarkerPartial()
     {
-        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -170,7 +170,7 @@ public class UnsupportedSymbolizerTests
         // check evaluates all images including defaultSymbol, so icon-offset /
         // icon-rotate would silently fail to be emitted unless the partial check
         // also sees the defaultSymbol payload.
-        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -226,7 +226,7 @@ public class UnsupportedSymbolizerTests
     {
         // Regression mirror of the uniqueValue case for picture-marker classBreaks:
         // stops are uniform but defaultSymbol carries divergent layout hints.
-        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -288,7 +288,7 @@ public class UnsupportedSymbolizerTests
         // PICTURE_MARKER_PARTIAL when at least one esriPMS payload is present
         // but cannot be emitted as a clean picture-marker style, so the
         // no-silent-drop contract holds end-to-end.
-        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -333,7 +333,7 @@ public class UnsupportedSymbolizerTests
     {
         // Regression mirror of the uniqueValue mixed-symbol case for
         // picture-marker classBreaks.
-        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -378,7 +378,7 @@ public class UnsupportedSymbolizerTests
     {
         // Sanity counterpart: when stops AND defaultSymbol all share the same
         // (zero) layout hints the converter must NOT emit PICTURE_MARKER_PARTIAL.
-        var layer = LayerDefinition.CreateBasic(1, "points", GeometryType.Point);
+        var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -420,7 +420,7 @@ public class UnsupportedSymbolizerTests
     [Fact]
     public void Convert_UniqueValueRenderer_UnsupportedNestedSymbolType_ReportsSymbolTypeUnsupported()
     {
-        var layer = LayerDefinition.CreateBasic(1, "lines", GeometryType.LineString);
+        var layer = new StyleLayerDescriptor(1, "lines", MetadataV2GeometryType.LineString);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -449,7 +449,7 @@ public class UnsupportedSymbolizerTests
     [Fact]
     public void Convert_SimpleRenderer_MissingSymbol_ReportsPayloadIncomplete()
     {
-        var layer = LayerDefinition.CreateBasic(1, "polys", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polys", MetadataV2GeometryType.Polygon);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -470,7 +470,7 @@ public class UnsupportedSymbolizerTests
     [Fact]
     public void Convert_UniqueValueRenderer_MissingField_ReportsPayloadIncomplete()
     {
-        var layer = LayerDefinition.CreateBasic(1, "polys", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polys", MetadataV2GeometryType.Polygon);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -491,7 +491,7 @@ public class UnsupportedSymbolizerTests
     [Fact]
     public void Convert_UniqueValueRenderer_MissingInfos_ReportsPayloadIncomplete()
     {
-        var layer = LayerDefinition.CreateBasic(1, "polys", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polys", MetadataV2GeometryType.Polygon);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -512,7 +512,7 @@ public class UnsupportedSymbolizerTests
     [Fact]
     public void Convert_UniqueValueRenderer_NoParseableEntries_ReportsPayloadIncomplete()
     {
-        var layer = LayerDefinition.CreateBasic(1, "polys", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polys", MetadataV2GeometryType.Polygon);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -536,7 +536,7 @@ public class UnsupportedSymbolizerTests
     [Fact]
     public void Convert_ClassBreaksRenderer_MissingField_ReportsPayloadIncomplete()
     {
-        var layer = LayerDefinition.CreateBasic(1, "polys", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polys", MetadataV2GeometryType.Polygon);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -557,7 +557,7 @@ public class UnsupportedSymbolizerTests
     [Fact]
     public void Convert_ClassBreaksRenderer_MissingInfos_ReportsPayloadIncomplete()
     {
-        var layer = LayerDefinition.CreateBasic(1, "polys", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polys", MetadataV2GeometryType.Polygon);
         const string drawingInfoJson = """
         {
           "renderer": {
@@ -578,7 +578,7 @@ public class UnsupportedSymbolizerTests
     [Fact]
     public void Convert_ClassBreaksRenderer_NoParseableEntries_ReportsPayloadIncomplete()
     {
-        var layer = LayerDefinition.CreateBasic(1, "polys", GeometryType.Polygon);
+        var layer = new StyleLayerDescriptor(1, "polys", MetadataV2GeometryType.Polygon);
         const string drawingInfoJson = """
         {
           "renderer": {

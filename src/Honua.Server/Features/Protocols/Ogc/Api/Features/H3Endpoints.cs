@@ -4,9 +4,10 @@
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Protocols.Ogc.Common;
 using Honua.Server.Features.Infrastructure.Helpers;
@@ -23,6 +24,8 @@ namespace Honua.Server.Features.Protocols.Ogc.Api.Features;
 /// </summary>
 internal static class H3Endpoints
 {
+    private const string OgcFeaturesProtocolName = "OgcFeatures";
+
     /// <summary>
     /// Maps H3 aggregation endpoint for OGC API Features collections
     /// </summary>
@@ -77,16 +80,27 @@ internal static class H3Endpoints
         activity?.SetTag("h3.resolution", resolution);
 
         // Validate collection access with OGC protocol check
-        var layerValidation = await LayerValidationHelpers.ValidateCollectionWithAccessAsync(
+        var layerValidation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
             context,
             collectionId,
             cancellationToken: cancellationToken,
-            requiredProtocol: ServiceProtocols.OgcFeatures);
+            requiredProtocol: OgcFeaturesProtocolName);
         if (!layerValidation.IsValid)
         {
             return layerValidation.ErrorResult!;
         }
-        var layer = layerValidation.Layer!;
+        var resource = layerValidation.Resource!;
+        var publication = layerValidation.Publication!;
+
+        var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var storageLayerId = publication.LayerIndex
+            ?? snapshot.ResolveStorageLayerId(publication)
+            ?? snapshot.ResolveStorageLayerId(resource);
+        if (storageLayerId is not { } layerId)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' has no storage binding.");
+        }
 
         // Check h3-pg extension availability
         var h3Error = await H3CapabilityHelpers.ValidateH3AvailabilityAsync(context, cancellationToken);
@@ -104,11 +118,11 @@ internal static class H3Endpoints
 
         var featureQuery = new FeatureQuery
         {
-            SpatialReferenceSrid = layer.SpatialReference.ToSrid()
+            SpatialReferenceSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Srid
         };
 
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var rows = await featureReader.QueryH3Async(layer.Id, featureQuery, h3Query, cancellationToken);
+        var rows = await featureReader.QueryH3Async(layerId, featureQuery, h3Query, cancellationToken);
 
         // Return as GeoJSON FeatureCollection using typed models for AOT safety
         var features = rows.Select(row =>

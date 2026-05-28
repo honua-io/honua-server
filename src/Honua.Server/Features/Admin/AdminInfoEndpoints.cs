@@ -16,8 +16,6 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal static class AdminInfoEndpoints
 {
-    private const string LoggerCategory = "Admin.Info";
-
     public static void MapAdminInfoEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin")
@@ -39,55 +37,31 @@ internal static class AdminInfoEndpoints
             .Produces<ApiResponse<AdminCapabilitiesResponse>>();
     }
 
-    private static IResult HandleGetVersion(HttpContext context, ILoggerFactory loggerFactory)
+    private static IResult HandleGetVersion()
     {
-        try
+        var response = new AdminVersionResponse
         {
-            var response = new AdminVersionResponse
-            {
-                Version = GetServerVersion(),
-                MetadataApiVersion = MetadataV2Constants.ApiVersion,
-                MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
-                ServerTime = DateTimeOffset.UtcNow
-            };
-            return Results.Json(
-                ApiResponse<AdminVersionResponse>.CreateSuccess(response),
-                AdminInfoJsonContext.Default.ApiResponseAdminVersionResponse);
-        }
-        catch (Exception ex)
-        {
-            var logger = loggerFactory.CreateLogger(LoggerCategory);
-            AdminInfoLog.EndpointFailed(logger, "version", ex);
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                context,
-                StatusCodes.Status500InternalServerError,
-                "Admin version information is temporarily unavailable.");
-        }
+            Version = GetServerVersion(),
+            MetadataApiVersion = MetadataV2Constants.ApiVersion,
+            MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
+            ServerTime = DateTimeOffset.UtcNow
+        };
+        return Results.Json(
+            ApiResponse<AdminVersionResponse>.CreateSuccess(response),
+            AdminInfoJsonContext.Default.ApiResponseAdminVersionResponse);
     }
 
-    private static IResult HandleGetCapabilities(HttpContext context, ILoggerFactory loggerFactory)
+    private static IResult HandleGetCapabilities()
     {
-        try
+        var response = new AdminCapabilitiesResponse
         {
-            var response = new AdminCapabilitiesResponse
-            {
-                MetadataApiVersion = MetadataV2Constants.ApiVersion,
-                MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
-                ServerVersion = GetServerVersion()
-            };
-            return Results.Json(
-                ApiResponse<AdminCapabilitiesResponse>.CreateSuccess(response),
-                AdminInfoJsonContext.Default.ApiResponseAdminCapabilitiesResponse);
-        }
-        catch (Exception ex)
-        {
-            var logger = loggerFactory.CreateLogger(LoggerCategory);
-            AdminInfoLog.EndpointFailed(logger, "capabilities", ex);
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                context,
-                StatusCodes.Status500InternalServerError,
-                "Admin capabilities are temporarily unavailable.");
-        }
+            MetadataApiVersion = MetadataV2Constants.ApiVersion,
+            MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
+            ServerVersion = GetServerVersion()
+        };
+        return Results.Json(
+            ApiResponse<AdminCapabilitiesResponse>.CreateSuccess(response),
+            AdminInfoJsonContext.Default.ApiResponseAdminCapabilitiesResponse);
     }
 
     private static string GetServerVersion()
@@ -96,12 +70,6 @@ internal static class AdminInfoEndpoints
         var info = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
         return string.IsNullOrWhiteSpace(info) ? asm.GetName().Version?.ToString() ?? "0.0.0" : info;
     }
-}
-
-internal static partial class AdminInfoLog
-{
-    [LoggerMessage(EventId = 9320, Level = LogLevel.Error, Message = "Admin info endpoint {Operation} failed.")]
-    public static partial void EndpointFailed(ILogger logger, string operation, Exception exception);
 }
 
 public sealed record AdminVersionResponse

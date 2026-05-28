@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -149,7 +151,7 @@ internal static partial class FeatureServerEndpoints
 
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceAsync(
+        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceV2Async(
             resourceValidator,
             serviceId,
             context,
@@ -161,14 +163,16 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = serviceValidationResult.Service!;
-        if (!TryResolveRequestedServiceLayers(service, values, out var selectedLayers, out _, out var selectionError))
+        var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (!TryResolveRequestedServiceLayersV2(service, snapshot, values, out var selectedLayers, out _, out var selectionError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid query parameters",
                 [selectionError ?? "Invalid layer selection."]);
         }
 
-        var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, selectedLayers, service);
+        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(context, selectedLayers.Select(pair => pair.Resource), service);
         if (accessError != null)
         {
             return accessError;
@@ -181,13 +185,20 @@ internal static partial class FeatureServerEndpoints
                 [layerDefsError ?? "Invalid layerDefs parameter."]);
         }
 
-        var accessibleLayers = FilterAccessibleLayers(context, service, selectedLayers);
+        var accessibleLayers = FilterAccessibleLayersV2(context, service, selectedLayers);
         var layerResults = new List<ServiceQueryLayerResponse>(accessibleLayers.Length);
 
-        foreach (var layer in accessibleLayers)
+        foreach (var (publication, resource) in accessibleLayers)
         {
+            var publicLayerId = ResolveServiceQueryLayerId(snapshot, publication, resource);
+            if (publicLayerId < 0)
+            {
+                return StandardErrorHelpers.CreateNotFound(context,
+                    $"Layer '{resource.Metadata.Name}' is not bound to a service layer.");
+            }
+
             var layerQueryParams = queryParams;
-            if (layerDefs.TryGetValue(layer.Id, out var layerDefinitionExpression))
+            if (layerDefs.TryGetValue(publicLayerId, out var layerDefinitionExpression))
             {
                 var layerQueryValues = new Dictionary<string, StringValues>(queryValues, StringComparer.OrdinalIgnoreCase);
                 if (string.IsNullOrWhiteSpace(layerDefinitionExpression))
@@ -209,7 +220,7 @@ internal static partial class FeatureServerEndpoints
 
             var (queryResponse, errorResult) = await queryHandler.HandleServiceQueryLayerAsync(
                 serviceId,
-                layer.Id,
+                publicLayerId,
                 layerQueryParams,
                 context,
                 queryValidator,
@@ -220,7 +231,7 @@ internal static partial class FeatureServerEndpoints
                 return errorResult;
             }
 
-            layerResults.Add(MapServiceQueryLayerResponse(layer.Id, queryResponse!));
+            layerResults.Add(MapServiceQueryLayerResponse(publicLayerId, queryResponse!));
         }
 
         var response = new ServiceQueryResponse
@@ -234,6 +245,15 @@ internal static partial class FeatureServerEndpoints
             FeatureServerJsonContext.Default.ServiceQueryResponse,
             contentType: "application/json");
     }
+
+    private static int ResolveServiceQueryLayerId(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication publication,
+        MetadataV2Resource resource)
+        => publication.LayerIndex
+           ?? snapshot.ResolveStorageLayerId(publication)
+           ?? snapshot.ResolveStorageLayerId(resource)
+           ?? -1;
 
     internal static bool TryParseQueryParameters(
         IReadOnlyDictionary<string, StringValues> values,

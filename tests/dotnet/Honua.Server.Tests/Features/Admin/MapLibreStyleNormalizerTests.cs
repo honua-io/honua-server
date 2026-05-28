@@ -3,7 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Styling;
 using Honua.TestKit.Attributes;
 
@@ -12,7 +12,7 @@ namespace Honua.Server.Tests.Features.Admin;
 [Trait("Component", "Admin")]
 public sealed class MapLibreStyleNormalizerTests
 {
-    private static readonly LayerDefinition _layer = LayerDefinition.CreateBasic(7, "Test Layer", GeometryType.Point);
+    private static readonly StyleLayerDescriptor _layer = new StyleLayerDescriptor(7, "Test Layer", MetadataV2GeometryType.Point);
 
     [UnitTest]
     public void TryNormalize_WithMinimalLayer_AddsHonuaSourceAndSourceLayer()

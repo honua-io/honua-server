@@ -2,8 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Postgres.Features.Infrastructure;
 
 namespace Honua.Postgres.Features.FeatureStore.Services;
@@ -117,16 +117,16 @@ internal sealed partial class FeatureQueryBuilder
 
         return orderBy.FieldType.Value switch
         {
-            FieldType.Integer => $"NULLIF({attributeValue}, '')::integer",
-            FieldType.BigInteger => $"NULLIF({attributeValue}, '')::bigint",
-            FieldType.Float => $"NULLIF({attributeValue}, '')::real",
-            FieldType.Double => $"NULLIF({attributeValue}, '')::double precision",
-            FieldType.Boolean => $"NULLIF({attributeValue}, '')::boolean",
-            FieldType.DateTime => $"NULLIF({attributeValue}, '')::timestamptz",
-            FieldType.Date => $"NULLIF({attributeValue}, '')::date",
-            FieldType.Time => $"NULLIF({attributeValue}, '')::time",
-            FieldType.Uuid => $"NULLIF({attributeValue}, '')::uuid",
-            FieldType.String => attributeValue,
+            MetadataV2FieldType.Integer => $"NULLIF({attributeValue}, '')::integer",
+            MetadataV2FieldType.BigInteger => $"NULLIF({attributeValue}, '')::bigint",
+            MetadataV2FieldType.Float => $"NULLIF({attributeValue}, '')::real",
+            MetadataV2FieldType.Double => $"NULLIF({attributeValue}, '')::double precision",
+            MetadataV2FieldType.Boolean => $"NULLIF({attributeValue}, '')::boolean",
+            MetadataV2FieldType.DateTime => $"NULLIF({attributeValue}, '')::timestamptz",
+            MetadataV2FieldType.Date => $"NULLIF({attributeValue}, '')::date",
+            MetadataV2FieldType.Time => $"NULLIF({attributeValue}, '')::time",
+            MetadataV2FieldType.Uuid => $"NULLIF({attributeValue}, '')::uuid",
+            MetadataV2FieldType.String => attributeValue,
             _ => attributeValue
         };
     }

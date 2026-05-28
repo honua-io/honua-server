@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.FeatureStore.Abstractions;
@@ -84,13 +83,13 @@ public interface IFeatureReader
     /// </summary>
     /// <param name="layerId">Layer identifier to analyze</param>
     /// <param name="fieldName">Temporal field name</param>
-    /// <param name="fieldType">Temporal field type</param>
+    /// <param name="propertyType">Temporal property type</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Temporal extent of the field, null if no values found</returns>
     Task<TemporalExtentResult?> GetTemporalExtentAsync(
         int layerId,
         string fieldName,
-        FieldType fieldType,
+        TemporalPropertyType propertyType,
         CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -3,9 +3,9 @@
 
 using System.Collections.Immutable;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
@@ -21,18 +21,22 @@ namespace Honua.Core.Tests.Features.Query;
 public sealed class QueryProcessorTests
 {
     private readonly QueryProcessor _processor;
-    private readonly LayerDefinition _layer = new(
-        Id: 1,
-        Name: "test",
-        Description: null,
-        GeometryType: GeometryType.Point,
-        SpatialReference: SpatialReference.WGS84,
-        Fields:
+    private readonly MetadataV2Resource _resource = new()
+    {
+        Metadata = new MetadataV2ObjectMetadata { Id = "res.test", Name = "test" },
+        Type = MetadataV2ResourceType.FeatureDataset,
+        Spatial = new MetadataV2ResourceSpatial
+        {
+            GeometryType = MetadataV2GeometryType.Point,
+            SpatialReference = MetadataV2SpatialReference.Wgs84
+        },
+        SchemaFields =
         [
-            new(FieldNames.ObjectId, FieldType.Integer, Nullable: false),
-            new("shape", FieldType.Geometry, Nullable: false),
-            new("name", FieldType.String)
-        ]);
+            new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+            new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, Nullable = false },
+            new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }
+        ]
+    };
 
     public QueryProcessorTests()
     {
@@ -56,7 +60,7 @@ public sealed class QueryProcessorTests
             OutFields = ImmutableArray.Create(payload)
         };
 
-        var result = _processor.ValidateQuery(query, _layer);
+        var result = _processor.ValidateQuery(query, _resource);
 
         result.IsValid.Should().BeFalse();
         result.ErrorMessage.Should().StartWith("Unknown fields:");
@@ -75,7 +79,7 @@ public sealed class QueryProcessorTests
             OrderBy = ImmutableArray.Create(new OrderByClause(payload))
         };
 
-        var result = _processor.ValidateQuery(query, _layer);
+        var result = _processor.ValidateQuery(query, _resource);
 
         result.IsValid.Should().BeFalse();
         result.ErrorMessage.Should().StartWith("Unknown order by fields:");
@@ -92,8 +96,8 @@ public sealed class QueryProcessorTests
         var secondQuery = UnifiedQuery.WithFilter(QueryFilter.FromSql(
             new SqlFragment("name IN (@p0, @p1)", ["a", "b,c"])));
 
-        var firstKey = _processor.BuildCacheKey(firstQuery, _layer, "test");
-        var secondKey = _processor.BuildCacheKey(secondQuery, _layer, "test");
+        var firstKey = _processor.BuildCacheKey(firstQuery, _resource, "test");
+        var secondKey = _processor.BuildCacheKey(secondQuery, _resource, "test");
 
         firstKey.Should().NotBe(secondKey);
     }
@@ -110,8 +114,8 @@ public sealed class QueryProcessorTests
             Extensions = ImmutableDictionary<string, object>.Empty.Add("includeNullGeometry", true)
         };
 
-        var firstKey = _processor.BuildCacheKey(firstQuery, _layer, "OGC-API-Features");
-        var secondKey = _processor.BuildCacheKey(secondQuery, _layer, "OGC-API-Features");
+        var firstKey = _processor.BuildCacheKey(firstQuery, _resource, "OGC-API-Features");
+        var secondKey = _processor.BuildCacheKey(secondQuery, _resource, "OGC-API-Features");
 
         firstKey.Should().NotBe(secondKey);
     }
@@ -128,8 +132,8 @@ public sealed class QueryProcessorTests
             Hints = QueryHints.Create(preferStreaming: true)
         };
 
-        var firstKey = _processor.BuildCacheKey(firstQuery, _layer, "OGC-API-Features");
-        var secondKey = _processor.BuildCacheKey(secondQuery, _layer, "OGC-API-Features");
+        var firstKey = _processor.BuildCacheKey(firstQuery, _resource, "OGC-API-Features");
+        var secondKey = _processor.BuildCacheKey(secondQuery, _resource, "OGC-API-Features");
 
         firstKey.Should().NotBe(secondKey);
     }
@@ -169,8 +173,8 @@ public sealed class QueryProcessorTests
             }
         };
 
-        var instantKey = _processor.BuildCacheKey(instantFilterQuery, _layer, "test");
-        var intervalKey = _processor.BuildCacheKey(intervalFilterQuery, _layer, "test");
+        var instantKey = _processor.BuildCacheKey(instantFilterQuery, _resource, "test");
+        var intervalKey = _processor.BuildCacheKey(intervalFilterQuery, _resource, "test");
 
         instantKey.Should().NotBe(intervalKey);
     }
@@ -183,7 +187,7 @@ public sealed class QueryProcessorTests
             Extensions = ImmutableDictionary<string, object>.Empty.Add("includeNullGeometry", true)
         };
 
-        var featureQuery = _processor.ToFeatureQuery(query, _layer);
+        var featureQuery = _processor.ToFeatureQuery(query, _resource);
 
         featureQuery.IncludeNullGeometry.Should().BeTrue();
     }

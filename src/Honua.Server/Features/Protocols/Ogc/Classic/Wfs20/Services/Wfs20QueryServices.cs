@@ -3,9 +3,9 @@
 
 using Honua.Core.Configuration;
 using Honua.Core.Features.Edit;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Query;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Events;
@@ -21,14 +21,14 @@ namespace Honua.Server.Features.Protocols.Ogc.Classic.Wfs20.Services;
 /// Keeps the handler constructor within the architecture test limit without changing behavior.
 /// </summary>
 internal sealed class Wfs20QueryServices(
-    ILayerCatalog layerCatalog,
     IFeatureReader featureReader,
     IFeatureWriter featureWriter,
     IGmlFeatureStore gmlFeatureStore,
+    IMetadataV2GraphProvider metadataV2GraphProvider,
     IFilterExpressionService filterExpressionService,
-    IQueryParameterAdapter<Wfs20QueryRequest> queryParameterAdapter,
+    Wfs20QueryParameterAdapter queryParameterAdapter,
     IQueryProcessor queryProcessor,
-    IEditParameterAdapter<Wfs20EditRequest> editParameterAdapter,
+    Wfs20EditParameterAdapter editParameterAdapter,
     IEditProcessor editProcessor,
     OgcFeaturesGeometryServices geometryServices,
     FeatureMutationValidator mutationValidator,
@@ -38,21 +38,21 @@ internal sealed class Wfs20QueryServices(
     IOptions<Wfs20Options> wfs20Options,
     IOptions<LimitsOptions> limitsOptions)
 {
-    internal ILayerCatalog LayerCatalog { get; } = layerCatalog;
-
     internal IFeatureReader FeatureReader { get; } = featureReader;
 
     internal IFeatureWriter FeatureWriter { get; } = featureWriter;
 
     internal IGmlFeatureStore GmlFeatureStore { get; } = gmlFeatureStore;
 
+    internal IMetadataV2GraphProvider MetadataV2GraphProvider { get; } = metadataV2GraphProvider;
+
     internal IFilterExpressionService FilterExpressionService { get; } = filterExpressionService;
 
-    internal IQueryParameterAdapter<Wfs20QueryRequest> QueryParameterAdapter { get; } = queryParameterAdapter;
+    internal Wfs20QueryParameterAdapter QueryParameterAdapter { get; } = queryParameterAdapter;
 
     internal IQueryProcessor QueryProcessor { get; } = queryProcessor;
 
-    internal IEditParameterAdapter<Wfs20EditRequest> EditParameterAdapter { get; } = editParameterAdapter;
+    internal Wfs20EditParameterAdapter EditParameterAdapter { get; } = editParameterAdapter;
 
     internal IEditProcessor EditProcessor { get; } = editProcessor;
 

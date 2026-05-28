@@ -3,8 +3,8 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Microsoft.Extensions.Options;
@@ -42,13 +42,9 @@ internal sealed class PbfQueryFormatter
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
     }
 
-    /// <summary>
-    /// Formats a query result as an Esri FeatureCollectionPBuffer.
-    /// </summary>
-    /// <returns>A tuple of the PBF byte array and content type.</returns>
     public (byte[] response, string contentType) FormatAsPbf(
         QueryResult<Feature> result,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         bool returnGeometry,
         int? outputSrid,
         bool returnZ,
@@ -63,17 +59,16 @@ internal sealed class PbfQueryFormatter
             maxAllowableOffset,
             forceSimplify: maxAllowableOffset is > 0);
 
-        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
-        var srid = outputSrid ?? layer.SpatialReference.Wkid;
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+        var srid = outputSrid ?? resource.ReadSrid() ?? 4326;
 
-        // Build the FeatureResult sub-message
         var featureResult = new ProtobufWriter(result.Items.Length * 256);
         try
         {
             WriteFeatureResult(
                 ref featureResult,
                 result,
-                layer,
+                resource,
                 objectIdFieldName,
                 srid,
                 returnGeometry,
@@ -82,19 +77,15 @@ internal sealed class PbfQueryFormatter
                 effectiveLimits,
                 outFields);
 
-            // Wrap in QueryResult → FeatureCollectionPBuffer
             var queryResult = new ProtobufWriter(featureResult.Position + 16);
             try
             {
-                // QueryResult.featureResult = field 1
                 queryResult.WriteMessage(1, ref featureResult);
 
                 var outer = new ProtobufWriter(queryResult.Position + 64);
                 try
                 {
-                    // FeatureCollectionPBuffer.version = field 1
                     outer.WriteString(1, PbfVersion);
-                    // FeatureCollectionPBuffer.queryResult = field 2
                     outer.WriteMessage(2, ref queryResult);
 
                     return (outer.ToArrayAndDispose(), "application/x-protobuf");
@@ -116,13 +107,10 @@ internal sealed class PbfQueryFormatter
         }
     }
 
-    /// <summary>
-    /// Writes a FeatureResult message containing fields, features, and metadata.
-    /// </summary>
     private static void WriteFeatureResult(
         ref ProtobufWriter writer,
         QueryResult<Feature> result,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         string objectIdFieldName,
         int srid,
         bool returnGeometry,
@@ -131,65 +119,55 @@ internal sealed class PbfQueryFormatter
         GeometryLimits geometryLimits,
         string[]? outFields)
     {
-        // field 1: objectIdFieldName
         writer.WriteString(1, objectIdFieldName);
 
-        // field 7: geometryType
-        if (layer.HasGeometry)
+        var geometryType = resource.ReadGeometryType();
+        var hasGeometry = geometryType != MetadataV2GeometryType.None || resource.FindPrimaryGeometryField() is not null;
+        if (hasGeometry)
         {
-            writer.WriteEnum(7, MapPbfGeometryType(layer.GeometryType));
+            writer.WriteEnum(7, MapPbfGeometryType(geometryType));
         }
 
-        // field 8: spatialReference
-        if (layer.HasGeometry)
+        if (hasGeometry)
         {
             var sr = new ProtobufWriter(32);
-            sr.WriteUInt32(1, (uint)srid);       // wkid
-            sr.WriteUInt32(2, (uint)srid);       // latestWkid
+            sr.WriteUInt32(1, (uint)srid);
+            sr.WriteUInt32(2, (uint)srid);
             writer.WriteMessage(8, ref sr);
             sr.Dispose();
         }
 
-        // field 9: exceededTransferLimit
         writer.WriteBool(9, result.HasMoreResults);
-
-        // field 10: hasZ
         writer.WriteBool(10, returnZ);
-
-        // field 11: hasM
         writer.WriteBool(11, returnM);
 
-        // field 12: transform (quantization parameters)
-        if (layer.HasGeometry && returnGeometry)
+        if (hasGeometry && returnGeometry)
         {
             WriteTransform(ref writer, srid);
         }
 
-        // field 13: fields (repeated)
-        var declaredAttributeFields = layer.Fields
-            .Where(field => !field.IsGeometry)
-            .Select(field => field.Name)
+        var declaredAttributeFields = resource.SchemaFields
+            .Where(static field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
+            .Select(static field => field.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var runtimeFields = QueryFormatter.DetectRuntimeFields(result.Items, declaredAttributeFields, objectIdFieldName);
-        var queryFields = QueryFormatter.BuildQueryFields(layer, outFields, objectIdFieldName, runtimeFields);
+        var queryFields = QueryFormatter.BuildQueryFields(resource, outFields, objectIdFieldName, runtimeFields);
         foreach (var field in queryFields)
         {
             var fieldMsg = new ProtobufWriter(64);
-            fieldMsg.WriteString(1, field.Name);                      // name
-            fieldMsg.WriteEnum(2, MapPbfFieldType(field.Type));       // fieldType
-            fieldMsg.WriteString(3, field.Alias ?? field.Name);       // alias
+            fieldMsg.WriteString(1, field.Name);
+            fieldMsg.WriteEnum(2, MapPbfFieldType(field.Type));
+            fieldMsg.WriteString(3, field.Alias ?? field.Name);
             writer.WriteMessage(13, ref fieldMsg);
             fieldMsg.Dispose();
         }
 
-        // Build field name → index map for attribute value encoding
         var fieldIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         for (int i = 0; i < queryFields.Length; i++)
         {
             fieldIndex[queryFields[i].Name] = i;
         }
 
-        // field 15: features (repeated)
         double scale = ComputeScale(geometryLimits);
         foreach (var feature in result.Items)
         {
@@ -564,22 +542,17 @@ internal sealed class PbfQueryFormatter
 
     // ── Enum mapping ──────────────────────────────────────────
 
-    /// <summary>
-    /// Maps Honua GeometryType to Esri PBF GeometryType enum values.
-    /// </summary>
-    private static int MapPbfGeometryType(Honua.Core.Features.Catalog.Domain.GeometryType geometryType)
-    {
-        return geometryType switch
+    private static int MapPbfGeometryType(MetadataV2GeometryType geometryType)
+        => geometryType switch
         {
-            Honua.Core.Features.Catalog.Domain.GeometryType.Point => 0,          // esriGeometryTypePoint
-            Honua.Core.Features.Catalog.Domain.GeometryType.MultiPoint => 1,     // esriGeometryTypeMultipoint
-            Honua.Core.Features.Catalog.Domain.GeometryType.LineString => 2,     // esriGeometryTypePolyline
-            Honua.Core.Features.Catalog.Domain.GeometryType.MultiLineString => 2,// esriGeometryTypePolyline
-            Honua.Core.Features.Catalog.Domain.GeometryType.Polygon => 3,        // esriGeometryTypePolygon
-            Honua.Core.Features.Catalog.Domain.GeometryType.MultiPolygon => 3,   // esriGeometryTypePolygon
-            _ => 127                                                              // esriGeometryTypeNone
+            MetadataV2GeometryType.Point => 0,
+            MetadataV2GeometryType.MultiPoint => 1,
+            MetadataV2GeometryType.LineString => 2,
+            MetadataV2GeometryType.MultiLineString => 2,
+            MetadataV2GeometryType.Polygon => 3,
+            MetadataV2GeometryType.MultiPolygon => 3,
+            _ => 127
         };
-    }
 
     /// <summary>
     /// Maps NTS Geometry to Esri PBF GeometryType enum values.
@@ -599,7 +572,7 @@ internal sealed class PbfQueryFormatter
     }
 
     /// <summary>
-    /// Maps GeoServices field type string to Esri PBF FieldType enum value.
+    /// Maps GeoServices field type string to the Esri PBF field-type enum value.
     /// </summary>
     private static int MapPbfFieldType(string? geoServicesType)
     {

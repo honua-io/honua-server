@@ -5,14 +5,12 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Caching;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
@@ -31,9 +29,10 @@ internal sealed partial class ODataQueryHandler(
     ODataQueryDependencies dependencies,
     ILogger<ODataQueryHandler> logger)
 {
-    private readonly ILayerCatalog _layerCatalog = dependencies?.LayerCatalog
-        ?? throw new ArgumentNullException(nameof(dependencies));
-    private readonly IFeatureReader _featureReader = dependencies.FeatureReader;
+    private const string ODataProtocol = "OData";
+
+    private readonly IFeatureReader _featureReader = (dependencies
+        ?? throw new ArgumentNullException(nameof(dependencies))).FeatureReader;
     private readonly IGeometryService _geometryService = dependencies.GeometryService;
     private readonly ICrsRegistry _crsRegistry = dependencies.CrsRegistry;
     private readonly ODataValidationService _validationService = dependencies.ValidationService;
@@ -104,15 +103,17 @@ internal sealed partial class ODataQueryHandler(
             var visibleLayers = await GetVisibleODataLayersAsync(context, effectiveToken);
 
             // Apply filtering and processing
-            IEnumerable<LayerDefinition> layerQuery = visibleLayers;
+            IEnumerable<Dictionary<string, object?>> layerQuery = visibleLayers
+                .Select(layer => ODataUtilityService.BuildLayerPayload(layer.Resource, layer.LayerIndex))
+                .ToArray();
             if (!string.IsNullOrWhiteSpace(filter))
             {
-                layerQuery = _querySearchService.ApplyBasicFilter((IEnumerable<Core.Features.Catalog.Domain.LayerDefinition>)layerQuery, filter);
+                layerQuery = _querySearchService.ApplyBasicFilter(layerQuery, filter);
             }
 
             if (!string.IsNullOrWhiteSpace(orderby))
             {
-                layerQuery = ApplyLayerOrdering(layerQuery, orderby);
+                layerQuery = ApplyLayerPayloadOrdering(layerQuery, orderby);
             }
 
             // Apply pagination and counting
@@ -131,10 +132,7 @@ internal sealed partial class ODataQueryHandler(
 
             layerQuery = layerQuery.Take(pagination.Limit);
 
-            // Convert to response format
-            var layerData = layerQuery
-                .Select(ODataUtilityService.BuildLayerPayload)
-                .ToArray();
+            var layerData = layerQuery.ToArray();
 
             // Apply field selection if specified
             object[] result = string.IsNullOrWhiteSpace(select)
@@ -210,18 +208,19 @@ internal sealed partial class ODataQueryHandler(
             }
 
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
-            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
                 context,
                 layerId,
                 LayerValidationHelpers.ValidationProtocol.OData,
+                requiredProtocol: ODataProtocol,
                 cancellationToken: effectiveToken);
             if (!layerValidation.IsValid)
             {
                 return layerValidation.ErrorResult!;
             }
-            var layer = layerValidation.Layer!;
 
-            var payload = ODataUtilityService.BuildLayerPayload(layer);
+            var layerIndex = layerValidation.Publication?.LayerIndex ?? layerId;
+            var payload = ODataUtilityService.BuildLayerPayload(layerValidation.Resource!, layerIndex);
             if (!string.IsNullOrWhiteSpace(select))
             {
                 var selected = _querySearchService.ApplyFieldSelection(new[] { payload }, select);
@@ -291,7 +290,9 @@ internal sealed partial class ODataQueryHandler(
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
             var visibleLayers = await GetVisibleODataLayersAsync(context, effectiveToken);
 
-            IEnumerable<LayerDefinition> layerQuery = visibleLayers;
+            IEnumerable<Dictionary<string, object?>> layerQuery = visibleLayers
+                .Select(layer => ODataUtilityService.BuildLayerPayload(layer.Resource, layer.LayerIndex))
+                .ToArray();
             if (!string.IsNullOrWhiteSpace(filter))
             {
                 layerQuery = _querySearchService.ApplyBasicFilter(layerQuery, filter);
@@ -388,25 +389,40 @@ internal sealed partial class ODataQueryHandler(
 
             var pagination = paginationResult.Value!;
             var effectiveToken = ODataUtilityService.GetTimeoutAwareCancellationToken(context);
-            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+            var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
                 context,
                 layerId,
                 LayerValidationHelpers.ValidationProtocol.OData,
+                requiredProtocol: ODataProtocol,
                 cancellationToken: effectiveToken);
             if (!layerValidation.IsValid)
             {
                 return layerValidation.ErrorResult!;
             }
-            var layer = layerValidation.Layer!;
+            var resource = layerValidation.Resource!;
+            var publicLayerId = layerValidation.Publication?.LayerIndex ?? layerId;
+            var storageLayerId = await ResolveStorageLayerIdAsync(
+                context,
+                layerValidation.Publication,
+                resource,
+                effectiveToken).ConfigureAwait(false);
+            if (!storageLayerId.HasValue)
+            {
+                return ODataUtilityService.CreateODataError(
+                    context,
+                    "InternalServerError",
+                    "Layer storage binding is not configured.",
+                    StatusCodes.Status500InternalServerError);
+            }
 
             var requestActivity = Activity.Current;
             requestActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.OData);
-            requestActivity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId.ToString(CultureInfo.InvariantCulture));
+            requestActivity?.SetTag(HonuaTelemetry.Tags.LayerId, publicLayerId.ToString(CultureInfo.InvariantCulture));
 
             featureActivity = HonuaTelemetry.StartFeatureActivity(
                 "query",
                 HonuaTelemetry.Protocols.OData,
-                layerId.ToString(CultureInfo.InvariantCulture),
+                publicLayerId.ToString(CultureInfo.InvariantCulture),
                 context.TraceIdentifier);
 
             var effectiveFilter = deltaSince.HasValue
@@ -419,7 +435,7 @@ internal sealed partial class ODataQueryHandler(
                 orderby,
                 pagination.Limit,
                 pagination.Offset,
-                layer,
+                resource,
                 select,
                 expand,
                 count,
@@ -465,21 +481,22 @@ internal sealed partial class ODataQueryHandler(
             }
 
             // Execute query
-            var queryResult = await _featureReader.QueryAsync(layerId, featureQuery, effectiveToken);
+            var queryResult = await _featureReader.QueryAsync(storageLayerId.Value, featureQuery, effectiveToken);
 
             // Process $expand for related entities
             Dictionary<long, Dictionary<string, object?[]>>? expandedRelations = null;
-            if (!string.IsNullOrWhiteSpace(expand) && layer.HasRelationships)
+            if (!string.IsNullOrWhiteSpace(expand))
             {
                 expandedRelations = await _querySearchService.ProcessExpandAsync(
                     expand,
-                    layer,
+                    resource,
+                    storageLayerId.Value,
                     queryResult.Items.Select(f => f.Id).ToArray(),
                     context,
                     effectiveToken);
             }
 
-            var layerSrid = layer.SpatialReference.ToSrid();
+            var layerSrid = resource.ReadSrid() ?? 4326;
             var axisOrder = await ResolveAxisOrderAsync(layerSrid, effectiveToken);
 
             // Convert features to OData format
@@ -491,7 +508,7 @@ internal sealed partial class ODataQueryHandler(
                     f.Geometry,
                     layerSrid,
                     axisOrder);
-                var dict = ODataUtilityService.BuildFeaturePayload(layerId, f, geometry, attributes);
+                var dict = ODataUtilityService.BuildFeaturePayload(publicLayerId, f, geometry, attributes);
 
                 // Add expanded relations if available
                 if (expandedRelations != null && expandedRelations.TryGetValue(f.Id, out var relations))
@@ -549,7 +566,7 @@ internal sealed partial class ODataQueryHandler(
                 var baseDeltaState = deltaState ?? new ODataDeltaService.DeltaQueryState
                 {
                     Timestamp = DateTimeOffset.UtcNow,
-                    LayerId = layerId,
+                    LayerId = publicLayerId,
                     Filter = filter,
                     Select = select,
                     OrderBy = orderby,
@@ -563,12 +580,12 @@ internal sealed partial class ODataQueryHandler(
                     {
                         Timestamp = baseDeltaState.UpperBoundTimestamp ?? DateTimeOffset.UtcNow,
                         UpperBoundTimestamp = null,
-                        LayerId = layerId,
+                        LayerId = publicLayerId,
                         Count = count
                     }
                     : baseDeltaState with
                     {
-                        LayerId = layerId,
+                        LayerId = publicLayerId,
                         Count = count
                     };
                 deltaLink = ODataUtilityService.GenerateDeltaLink(context.Request, finalDeltaState);
@@ -630,32 +647,12 @@ internal sealed partial class ODataQueryHandler(
         }
     }
 
-    private async Task<LayerDefinition[]> GetVisibleODataLayersAsync(
+    private static async Task<ODataV2Lookups.ResolvedODataPublication[]> GetVisibleODataLayersAsync(
         HttpContext context,
         CancellationToken cancellationToken)
     {
-        var layers = await _layerCatalog.ListLayersAsync(cancellationToken);
-        var services = await _layerCatalog.ListServicesAsync(cancellationToken);
-        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMap(services, ServiceProtocols.OData);
-
-        return layers
-            .Where(layer => IsODataLayerVisible(context, layer, primaryServices))
-            .ToArray();
-    }
-
-    private static bool IsODataLayerVisible(
-        HttpContext context,
-        LayerDefinition layer,
-        IReadOnlyDictionary<int, ServiceDefinition> primaryServices)
-    {
-        if (primaryServices.TryGetValue(layer.Id, out var service) &&
-            ServiceProtocols.IsProtocolEnabled(service.Metadata, ServiceProtocols.OData))
-        {
-            return AccessPolicyHelpers.IsLayerAccessible(context, layer, service);
-        }
-
-        return ServiceProtocols.IsProtocolEnabled(layer.Metadata, ServiceProtocols.OData) &&
-            AccessPolicyHelpers.IsLayerAccessible(context, layer);
+        return await ODataV2Lookups.ResolveVisibleODataPublicationsAsync(context, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private ValueTask<AxisOrder> ResolveAxisOrderAsync(int? srid, CancellationToken cancellationToken)
@@ -663,9 +660,24 @@ internal sealed partial class ODataQueryHandler(
         return ODataCrsUtilities.ResolveAxisOrderAsync(_crsRegistry, srid, cancellationToken);
     }
 
-    private static IEnumerable<LayerDefinition> ApplyLayerOrdering(IEnumerable<LayerDefinition> layers, string orderby)
+    private static async Task<int?> ResolveStorageLayerIdAsync(
+        HttpContext context,
+        MetadataV2Publication? publication,
+        MetadataV2Resource resource,
+        CancellationToken cancellationToken)
     {
-        IOrderedEnumerable<LayerDefinition>? ordered = null;
+        return await ODataV2Lookups.ResolveStorageLayerIdAsync(
+            context,
+            publication,
+            resource,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static IEnumerable<Dictionary<string, object?>> ApplyLayerPayloadOrdering(
+        IEnumerable<Dictionary<string, object?>> layers,
+        string orderby)
+    {
+        IOrderedEnumerable<Dictionary<string, object?>>? ordered = null;
 
         foreach (var segment in orderby.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
@@ -690,33 +702,33 @@ internal sealed partial class ODataQueryHandler(
                     $"Invalid sort direction in $orderby: {parts[1]}. Use 'asc' or 'desc'.");
             }
 
-            ordered = ApplyLayerOrderingClause(ordered, layers, field, ascending);
+            ordered = ApplyLayerPayloadOrderingClause(ordered, layers, field, ascending);
         }
 
         return ordered ?? layers;
     }
 
-    private static IOrderedEnumerable<LayerDefinition> ApplyLayerOrderingClause(
-        IOrderedEnumerable<LayerDefinition>? ordered,
-        IEnumerable<LayerDefinition> layers,
+    private static IOrderedEnumerable<Dictionary<string, object?>> ApplyLayerPayloadOrderingClause(
+        IOrderedEnumerable<Dictionary<string, object?>>? ordered,
+        IEnumerable<Dictionary<string, object?>> layers,
         string field,
         bool ascending)
     {
         return field.ToLowerInvariant() switch
         {
-            "id" => ApplyOrder(ordered, layers, static layer => layer.Id, ascending),
-            "name" => ApplyOrder(ordered, layers, static layer => layer.Name ?? string.Empty, ascending),
-            "description" => ApplyOrder(ordered, layers, static layer => layer.Description ?? string.Empty, ascending),
-            "geometrytype" => ApplyOrder(ordered, layers, static layer => layer.GeometryType.ToString(), ascending),
-            "srid" => ApplyOrder(ordered, layers, static layer => layer.SpatialReference.ToSrid(), ascending),
+            "id" => ApplyOrder(ordered, layers, static layer => Convert.ToInt32(layer["Id"], CultureInfo.InvariantCulture), ascending),
+            "name" => ApplyOrder(ordered, layers, static layer => Convert.ToString(layer["Name"], CultureInfo.InvariantCulture) ?? string.Empty, ascending),
+            "description" => ApplyOrder(ordered, layers, static layer => Convert.ToString(layer["Description"], CultureInfo.InvariantCulture) ?? string.Empty, ascending),
+            "geometrytype" => ApplyOrder(ordered, layers, static layer => Convert.ToString(layer["GeometryType"], CultureInfo.InvariantCulture) ?? string.Empty, ascending),
+            "srid" => ApplyOrder(ordered, layers, static layer => Convert.ToInt32(layer["Srid"], CultureInfo.InvariantCulture), ascending),
             _ => throw new ArgumentException($"Unknown field in $orderby: {field}")
         };
     }
 
-    private static IOrderedEnumerable<LayerDefinition> ApplyOrder<TKey>(
-        IOrderedEnumerable<LayerDefinition>? ordered,
-        IEnumerable<LayerDefinition> layers,
-        Func<LayerDefinition, TKey> selector,
+    private static IOrderedEnumerable<Dictionary<string, object?>> ApplyOrder<TKey>(
+        IOrderedEnumerable<Dictionary<string, object?>>? ordered,
+        IEnumerable<Dictionary<string, object?>> layers,
+        Func<Dictionary<string, object?>, TKey> selector,
         bool ascending)
     {
         if (ordered != null)

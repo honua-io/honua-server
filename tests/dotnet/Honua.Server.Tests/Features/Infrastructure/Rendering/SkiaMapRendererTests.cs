@@ -3,8 +3,8 @@
 
 using System.Collections.Immutable;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.TestKit.Attributes;
 using MapLibreStyleLayer = Honua.Server.Features.Infrastructure.Rendering.MapLibreStyleLayer;
@@ -32,7 +32,7 @@ public class SkiaMapRendererTests
             256,
             transparent: true,
             backgroundColor: null,
-            GeometryType.Point);
+            MetadataV2GeometryType.Point);
 
         result.Should().NotBeEmpty();
         // PNG magic bytes
@@ -65,7 +65,7 @@ public class SkiaMapRendererTests
             256,
             transparent: true,
             backgroundColor: null,
-            GeometryType.Point);
+            MetadataV2GeometryType.Point);
 
         result.Should().NotBeEmpty();
         result[0].Should().Be(0x89); // PNG header
@@ -85,7 +85,7 @@ public class SkiaMapRendererTests
             100,
             transparent: false,
             backgroundColor: SKColors.White,
-            GeometryType.None);
+            MetadataV2GeometryType.None);
 
         result.Should().NotBeEmpty();
     }
@@ -115,7 +115,7 @@ public class SkiaMapRendererTests
             256,
             transparent: true,
             backgroundColor: null,
-            GeometryType.Point);
+            MetadataV2GeometryType.Point);
 
         result.Should().NotBeEmpty();
     }
@@ -142,7 +142,7 @@ public class SkiaMapRendererTests
             64,
             transparent: true,
             backgroundColor: null,
-            GeometryType.Point);
+            MetadataV2GeometryType.Point);
 
         HasNonTransparentPixel(result).Should().BeFalse();
     }
@@ -169,7 +169,7 @@ public class SkiaMapRendererTests
             64,
             transparent: true,
             backgroundColor: null,
-            GeometryType.Point,
+            MetadataV2GeometryType.Point,
             zoom: 4);
         var visible = renderer.RenderMap(
             [feature],
@@ -179,7 +179,7 @@ public class SkiaMapRendererTests
             64,
             transparent: true,
             backgroundColor: null,
-            GeometryType.Point,
+            MetadataV2GeometryType.Point,
             zoom: 6);
 
         HasNonTransparentPixel(hidden).Should().BeFalse();
@@ -191,7 +191,7 @@ public class SkiaMapRendererTests
     {
         var layer = new MapLibreStyleLayer { Type = "fill" };
 
-        var result = SkiaMapRenderer.RenderLegendSwatch(layer, GeometryType.Polygon);
+        var result = SkiaMapRenderer.RenderLegendSwatch(layer, MetadataV2GeometryType.Polygon);
 
         result.Should().NotBeEmpty();
         result[0].Should().Be(0x89); // PNG header
@@ -203,7 +203,7 @@ public class SkiaMapRendererTests
         var layers = StyleTranslator.ParseStyleLayers(
             """[{"id":"l","type":"line","paint":{"line-color":"#0000ff","line-width":2}}]""");
 
-        var result = SkiaMapRenderer.RenderLegendSwatch(layers[0], GeometryType.LineString);
+        var result = SkiaMapRenderer.RenderLegendSwatch(layers[0], MetadataV2GeometryType.LineString);
 
         result.Should().NotBeEmpty();
     }
@@ -214,7 +214,7 @@ public class SkiaMapRendererTests
         var layers = StyleTranslator.ParseStyleLayers(
             """[{"id":"c","type":"circle","paint":{"circle-radius":5,"circle-color":"#00ff00"}}]""");
 
-        var result = SkiaMapRenderer.RenderLegendSwatch(layers[0], GeometryType.Point);
+        var result = SkiaMapRenderer.RenderLegendSwatch(layers[0], MetadataV2GeometryType.Point);
 
         result.Should().NotBeEmpty();
     }
@@ -224,7 +224,7 @@ public class SkiaMapRendererTests
     {
         var layer = new MapLibreStyleLayer { Type = "unknown" };
 
-        var result = SkiaMapRenderer.RenderLegendSwatch(layer, GeometryType.Polygon);
+        var result = SkiaMapRenderer.RenderLegendSwatch(layer, MetadataV2GeometryType.Polygon);
 
         result.Should().NotBeEmpty();
     }
@@ -237,7 +237,7 @@ public class SkiaMapRendererTests
         using var renderer = new SkiaMapRenderer();
         var extent = new SkiaMapRenderer.RenderExtent(0, 0, 1, 1);
 
-        var act = () => renderer.RenderMap([], [], extent, width, 10, true, null, GeometryType.None);
+        var act = () => renderer.RenderMap([], [], extent, width, 10, true, null, MetadataV2GeometryType.None);
 
         act.Should().Throw<ArgumentOutOfRangeException>()
             .Which.ParamName.Should().Be("imageWidth");
@@ -250,7 +250,7 @@ public class SkiaMapRendererTests
     {
         var layer = new MapLibreStyleLayer { Type = "fill" };
 
-        var act = () => SkiaMapRenderer.RenderLegendSwatch(layer, GeometryType.Polygon, width: 20, height: height);
+        var act = () => SkiaMapRenderer.RenderLegendSwatch(layer, MetadataV2GeometryType.Polygon, width: 20, height: height);
 
         act.Should().Throw<ArgumentOutOfRangeException>()
             .Which.ParamName.Should().Be("height");
@@ -386,7 +386,7 @@ public class SkiaMapRendererTests
         renderer.Dispose();
 
         var extent = new SkiaMapRenderer.RenderExtent(0, 0, 1, 1);
-        var act = () => renderer.RenderMap([], [], extent, 10, 10, true, null, GeometryType.None);
+        var act = () => renderer.RenderMap([], [], extent, 10, 10, true, null, MetadataV2GeometryType.None);
 
         act.Should().Throw<ObjectDisposedException>();
     }

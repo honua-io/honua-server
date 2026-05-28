@@ -11,17 +11,17 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Attachments.Domain;
 using Honua.Core.Features.AuditLog;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Forms.Packages;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Forms;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Security;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
@@ -356,11 +356,11 @@ public sealed class FormSubmissionServiceTests
         FakeFeatureWriter writer,
         IAttachmentStore? attachmentStore = null)
     {
-        var catalog = new StaticLayerCatalog(store.Service);
+        var targetMetadataResolver = new FormTargetMetadataResolver(CreateMetadataProvider());
         return new FormSubmissionService(
             store,
-            new FormPackageValidator(catalog, Options.Create(CreateLimitsOptions())),
-            catalog,
+            new FormPackageValidator(targetMetadataResolver, Options.Create(CreateLimitsOptions())),
+            targetMetadataResolver,
             new PassThroughEditProcessor(),
             writer,
             attachmentStore ?? new RecordingAttachmentStore(),
@@ -369,6 +369,62 @@ public sealed class FormSubmissionServiceTests
             NullAuditLog.Instance,
             NullLogger<FormSubmissionService>.Instance);
     }
+
+    private const string TargetServiceName = "test";
+    private const int TargetLayerId = 0;
+
+    private static TestMetadataV2GraphProvider CreateMetadataProvider()
+        => new TestMetadataV2GraphBuilder()
+            .AddConnection("managed", "Managed")
+            .AddResource(
+                "resource-inspections",
+                "Inspections",
+                fields:
+                [
+                    new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Editable = true },
+                    new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 255, Editable = true },
+                    new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, Editable = false }
+                ],
+                spatial: new MetadataV2ResourceSpatial
+                {
+                    GeometryType = MetadataV2GeometryType.Point,
+                    SpatialReference = new MetadataV2SpatialReference
+                    {
+                        Srid = 4326,
+                        Crs = "EPSG:4326",
+                        IsGeographic = true
+                    },
+                    PrimaryGeometryField = "shape"
+                },
+                annotations: new Dictionary<string, string>
+                {
+                    ["honua.io/attachments"] = bool.TrueString
+                })
+            .AddStorageBinding(
+                "binding-inspections",
+                "resource-inspections",
+                "inspections",
+                "managed",
+                storageLayerId: TargetLayerId)
+            .AddService(
+                "service-test",
+                TargetServiceName,
+                protocols: ["FeatureServer"],
+                options: new Dictionary<string, JsonElement>
+                {
+                    ["capabilities"] = JsonArray(["Query", "Extract", "Create", "Update", "Delete"])
+                })
+            .AddPublication(
+                "publication-inspections",
+                "service-test",
+                "resource-inspections",
+                layerIndex: TargetLayerId,
+                storageBindingId: "binding-inspections",
+                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+            .BuildProvider();
+
+    private static JsonElement JsonArray(IEnumerable<string> values)
+        => JsonSerializer.SerializeToElement(values);
 
     private static ServiceProvider CreateRequestServices()
     {
@@ -522,7 +578,6 @@ public sealed class FormSubmissionServiceTests
         };
 
     private static FormPackageVersion CreatePackageVersion(
-        ServiceDefinition service,
         bool includeAttachment = false,
         string[]? allowedOperations = null,
         bool attachmentFieldRequired = false,
@@ -542,8 +597,8 @@ public sealed class FormSubmissionServiceTests
                 Title = "Inspection Form",
                 Target = new FormTargetDefinition
                 {
-                    ServiceId = service.Name,
-                    LayerId = service.Layers[0].Id
+                    ServiceId = TargetServiceName,
+                    LayerId = TargetLayerId
                 },
                 Sections =
                 [
@@ -616,27 +671,6 @@ public sealed class FormSubmissionServiceTests
             }
         };
 
-    private static ServiceDefinition CreateServiceDefinition()
-    {
-        var layer = new LayerDefinition(
-            0,
-            "Inspections",
-            "Field inspections",
-            GeometryType.Point,
-            SpatialReference.WGS84,
-            [
-                new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                new FieldDefinition("name", FieldType.String, Length: 255),
-                new FieldDefinition("shape", FieldType.Geometry)
-            ]);
-        return new ServiceDefinition(
-            "test",
-            "Test service",
-            [layer],
-            SpatialReference.WGS84,
-            Capabilities: ["Query", "Extract", "Create", "Update", "Delete"]);
-    }
-
     private static JsonElement Json(string json)
         => JsonDocument.Parse(json).RootElement.Clone();
 
@@ -650,9 +684,7 @@ public sealed class FormSubmissionServiceTests
             long maxTotalBytes = 2_000_000,
             int fieldAttachmentMaxCount = 1)
         {
-            Service = CreateServiceDefinition();
             PackageVersion = CreatePackageVersion(
-                Service,
                 includeAttachment,
                 allowedOperations,
                 attachmentFieldRequired,
@@ -660,8 +692,6 @@ public sealed class FormSubmissionServiceTests
                 maxTotalBytes,
                 fieldAttachmentMaxCount);
         }
-
-        public ServiceDefinition Service { get; }
 
         public FormPackageVersion PackageVersion { get; }
 
@@ -803,53 +833,26 @@ public sealed class FormSubmissionServiceTests
         }
     }
 
-    private sealed class StaticLayerCatalog(ServiceDefinition service) : ILayerCatalog
-    {
-        public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(service.GetLayer(layerId));
-
-        public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(service.Layers);
-
-        public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult<ServiceDefinition?>(string.Equals(serviceName, service.Name, StringComparison.OrdinalIgnoreCase) ? service : null);
-
-        public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(new[] { service });
-
-        public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(service.GetLayer(layerId) is not null);
-
-        public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult(string.Equals(serviceName, service.Name, StringComparison.OrdinalIgnoreCase));
-
-        public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
-            => Task.FromResult<Relationship?>(null);
-
-        public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(Array.Empty<Relationship>());
-    }
-
     private sealed class PassThroughEditProcessor : IEditProcessor
     {
-        public EditValidationResult ValidateEdit(UnifiedEditRequest editRequest, LayerDefinition layer)
+        public EditValidationResult ValidateEdit(UnifiedEditRequest editRequest, MetadataV2Resource resource)
             => EditValidationResult.Success();
 
-        public UnifiedEditRequest OptimizeEdit(UnifiedEditRequest editRequest, LayerDefinition layer)
+        public UnifiedEditRequest OptimizeEdit(UnifiedEditRequest editRequest, MetadataV2Resource resource)
             => editRequest;
 
-        public FeatureEditBatch ToFeatureEditBatch(UnifiedEditRequest editRequest, LayerDefinition layer)
+        public FeatureEditBatch ToFeatureEditBatch(UnifiedEditRequest editRequest, MetadataV2Resource resource)
             => FeatureEditBatch.Create();
 
-        public TransactionValidationResult ValidateTransaction(EditTransaction transaction, LayerDefinition layer)
+        public TransactionValidationResult ValidateTransaction(EditTransaction transaction, MetadataV2Resource resource)
             => TransactionValidationResult.Success();
 
-        public EditExecutionStrategy DetermineExecutionStrategy(UnifiedEditRequest editRequest, LayerDefinition layer)
+        public EditExecutionStrategy DetermineExecutionStrategy(UnifiedEditRequest editRequest, MetadataV2Resource resource)
             => new();
 
         public Task<EditPerformanceEstimate> EstimatePerformanceAsync(
             UnifiedEditRequest editRequest,
-            LayerDefinition layer,
+            MetadataV2Resource resource,
             CancellationToken cancellationToken)
             => Task.FromResult(new EditPerformanceEstimate());
     }

@@ -82,9 +82,9 @@ default mapping. The mapping is documented in
 
 | Event           | Workflow                              | What runs                                                                                             |
 |-----------------|---------------------------------------|-------------------------------------------------------------------------------------------------------|
-| Pull Request    | `ci.yml`                              | Build + format + Architecture tests + Tier=Fast across all projects + targeted shards (`server-tests`) composed as `(matrix.filter)&Tier!=Slow` so Slow-tagged tests stay out of the PR lane. |
+| Pull Request    | `ci.yml`                              | Build + format + Architecture tests + Tier=Fast across all projects + targeted shards (`server-tests`) composed as `(matrix.filter)&Tier!=Slow&Tier!=Fast` so Slow-tagged tests stay out of the PR lane and Fast tests run only once. |
 | Merge to trunk  | `trunk-sanity.yml`                    | Restore and build only. Heavy integration coverage comes from PR gates plus scheduled/manual full integration runs. |
-| Full integration | `ci.yml` (schedule / workflow_dispatch) | Full configured `server-tests` matrix and the Postgres compat matrix. The `&Tier!=Slow` exclusion still applies — Slow remains nightly-only. |
+| Full integration | `ci.yml` (schedule / workflow_dispatch / PR label `ci/full`) | Full configured `server-tests` matrix, full-CI interop/certification lanes, and the expanded Postgres compat matrix. The `&Tier!=Slow&Tier!=Fast` exclusion still applies — Slow remains nightly-only and Fast remains in the foundation lane. |
 | Nightly (slow)  | `nightly-slow-tier.yml`               | `Tier=Slow&Category=Emulator` (LocalStack S3 + Azurite + Postgres). Scale/Cloud/External slow subfamilies need additional fixtures and are tracked as separate workflows. |
 | Nightly (flake) | `flaky-detection.yml`                 | Re-runs the Integration tier 3× and emits a candidate-flake report.                                   |
 
@@ -152,15 +152,16 @@ already Fast-tier). This honours the "Tier=Fast across all projects on every
 PR" contract and prevents a PR with no matching shard from skipping the fast
 server unit tests.
 
-**Slow tests stay out of PR shards.** `scripts/ci/run-server-test-shard.sh`
-composes the matrix-supplied filter as `(matrix.filter)&Tier!=Slow` before
+**Slow and Fast tests stay out of PR shards.** `scripts/ci/run-server-test-shard.sh`
+composes the matrix-supplied filter as `(matrix.filter)&Tier!=Slow&Tier!=Fast` before
 invoking `dotnet test`. The `ci-shards.json` `filter` field expresses pure
-FQN→shard routing; the Tier exclusion is layered in at a single, reviewable
+FQN→shard routing; the Tier exclusions are layered in at a single, reviewable
 test-invocation entry point shared by CI and `scripts/ci/pre-pr-check.sh`.
 This prevents `[EmulatorTest]`
 / `[ScaleTest]` / `[ExternalServiceTest]` / `[CloudTest]` methods sitting in
 a shard's namespace (e.g. `Honua.Server.Tests.Import.*`) from running on
-PRs. As a consequence, PR shards never need LocalStack/Azurite emulators —
+PRs, and prevents Fast tests from rerunning after the foundation lane. As a
+consequence, PR shards never need LocalStack/Azurite emulators —
 the Slow-only `[EmulatorTest]` tests that drive `EmulatorFixture` cannot
 fire — so `server-tests` does not provision them. Emulator provisioning
 lives exclusively in `EmulatorFixture` (Testcontainers) and only fires
@@ -251,9 +252,11 @@ remove it from the coverage ledger.
 - `dotnet test --filter "Tier=Fast"` and
   `dotnet test --filter "Tier=Integration"` consume the trait directly.
   The PR `server-tests` step composes its filter as
-  `(matrix.filter)&Tier!=Slow` so Slow-tagged tests in a shard's namespace
-  (e.g. `[EmulatorTest]` methods inside `Honua.Server.Tests.Import.*`) do not
-  run on PRs. `Tier!=Slow` is preferred over `Tier=Integration` because a
+  `(matrix.filter)&Tier!=Slow&Tier!=Fast` so Slow-tagged tests in a shard's
+  namespace (e.g. `[EmulatorTest]` methods inside
+  `Honua.Server.Tests.Import.*`) do not run on PRs and Fast tests do not
+  rerun after the foundation lane. `Tier!=Slow` is preferred over
+  `Tier=Integration` because a
   significant fraction of Server.Tests methods are still plain `[Fact]`
   without a Tier trait — those are kept in the PR lane.
 - `FlakyTestAttribute` is `[AttributeUsage(... AllowMultiple = false)]`. A
@@ -272,7 +275,7 @@ remove it from the coverage ledger.
   data (`paths`) and matrix-runtime metadata (`shard_name`,
   `artifact_suffix`, `log_name`, `timeout_minutes`, `test_timeout_minutes`,
   `max_cpu_count`, upload
-  flags, `filter`). The runtime `&Tier!=Slow` composition is applied
+  flags, `filter`). The runtime `&Tier!=Slow&Tier!=Fast` composition is applied
   uniformly to every shard by `scripts/ci/run-server-test-shard.sh` and is
   not encoded in `ci-shards.json`. The shared runner also emits heartbeat
   lines, periodic tails of normal-verbosity test logs, and

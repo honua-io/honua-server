@@ -6,9 +6,7 @@ using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.AutoDocs.Domain;
 using Honua.Core.Features.AutoDocs.Services;
-using Honua.Core.Features.Catalog.Domain;
-using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 
@@ -26,23 +24,21 @@ public sealed class MetadataDocumentGeneratorTests
 
     public MetadataDocumentGeneratorTests()
     {
-        var layer = new LayerDefinition(
-            Id: 1,
-            Name: "land_parcels",
-            Description: "Municipal land parcel boundaries with zoning and assessment data",
-            GeometryType: GeometryType.Polygon,
-            SpatialReference: SpatialReference.WGS84,
-            Fields:
+        var resource = CreateResource(
+            "land_parcels",
+            "Municipal land parcel boundaries with zoning and assessment data",
+            MetadataV2GeometryType.Polygon,
+            MetadataV2SpatialReference.Wgs84,
             [
-                new FieldDefinition("objectid", FieldType.Integer, Nullable: false, Description: "Unique identifier"),
-                new FieldDefinition("parcel_id", FieldType.String, Length: 20, Description: "Parcel identification number"),
-                new FieldDefinition("zoning", FieldType.String, Length: 10, Description: "Zoning classification code"),
-                new FieldDefinition("assessed_value", FieldType.Double, Description: "Assessed property value in USD"),
-                new FieldDefinition("shape", FieldType.Geometry),
+                Field("objectid", MetadataV2FieldType.Integer, nullable: false, description: "Unique identifier"),
+                Field("parcel_id", MetadataV2FieldType.String, length: 20, description: "Parcel identification number"),
+                Field("zoning", MetadataV2FieldType.String, length: 10, description: "Zoning classification code"),
+                Field("assessed_value", MetadataV2FieldType.Double, description: "Assessed property value in USD"),
+                Field("shape", MetadataV2FieldType.Geometry),
             ]);
 
         _request = new MetadataDocumentRequest(
-            Layer: layer,
+            Resource: resource,
             ServiceName: "CityGIS",
             OrganizationName: "City of Portland",
             ContactEmail: "gis@portland.gov",
@@ -154,9 +150,17 @@ public sealed class MetadataDocumentGeneratorTests
     [Operation(Operations.Metadata)]
     public void Generate_MinimalRequest_ProducesValidOutput()
     {
-        var minimalLayer = LayerDefinition.CreateBasic(1, "test", GeometryType.Point);
+        var minimalResource = CreateResource(
+            "test",
+            null,
+            MetadataV2GeometryType.Point,
+            MetadataV2SpatialReference.Wgs84,
+            [
+                Field("objectid", MetadataV2FieldType.Integer, nullable: false),
+                Field("shape", MetadataV2FieldType.Geometry),
+            ]);
         var request = new MetadataDocumentRequest(
-            Layer: minimalLayer,
+            Resource: minimalResource,
             ServiceName: "TestService");
 
         var result = _generator.Generate(request);
@@ -198,28 +202,25 @@ public sealed class MetadataDocumentGeneratorTests
     [Operation(Operations.Metadata)]
     public void Generate_ProjectedCrs_OmitsGeographicBoundingBox()
     {
-        var projectedLayer = new LayerDefinition(
-            Id: 1,
-            Name: "buildings_3857",
-            Description: "Buildings in Web Mercator",
-            GeometryType: GeometryType.Polygon,
-            SpatialReference: SpatialReference.WebMercator,
-            Fields:
+        var projectedResource = CreateResource(
+            "buildings_3857",
+            "Buildings in Web Mercator",
+            MetadataV2GeometryType.Polygon,
+            MetadataV2SpatialReference.WebMercator,
             [
-                new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                new FieldDefinition("shape", FieldType.Geometry),
+                Field("objectid", MetadataV2FieldType.Integer, nullable: false),
+                Field("shape", MetadataV2FieldType.Geometry),
             ],
-            Extent: new FeatureExtent
+            new MetadataV2Bbox
             {
-                MinX = -13656000,
-                MinY = 5700000,
-                MaxX = -13654000,
-                MaxY = 5702000,
-                SpatialReference = 3857,
+                West = -13656000,
+                South = 5700000,
+                East = -13654000,
+                North = 5702000,
             });
 
         var request = new MetadataDocumentRequest(
-            Layer: projectedLayer,
+            Resource: projectedResource,
             ServiceName: "TestService");
 
         var result = _generator.Generate(request);
@@ -244,28 +245,30 @@ public sealed class MetadataDocumentGeneratorTests
     [Operation(Operations.Metadata)]
     public void Generate_GeographicNad83_EmitsBoundingBox()
     {
-        var nad83Layer = new LayerDefinition(
-            Id: 1,
-            Name: "parcels_nad83",
-            Description: "Parcels in NAD83",
-            GeometryType: GeometryType.Polygon,
-            SpatialReference: SpatialReference.Create(4269),
-            Fields:
-            [
-                new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                new FieldDefinition("shape", FieldType.Geometry),
-            ],
-            Extent: new FeatureExtent
+        var nad83Resource = CreateResource(
+            "parcels_nad83",
+            "Parcels in NAD83",
+            MetadataV2GeometryType.Polygon,
+            new MetadataV2SpatialReference
             {
-                MinX = -122.7,
-                MinY = 45.4,
-                MaxX = -122.5,
-                MaxY = 45.6,
-                SpatialReference = 4269,
+                Srid = 4269,
+                Crs = "EPSG:4269",
+                IsGeographic = true,
+            },
+            [
+                Field("objectid", MetadataV2FieldType.Integer, nullable: false),
+                Field("shape", MetadataV2FieldType.Geometry),
+            ],
+            new MetadataV2Bbox
+            {
+                West = -122.7,
+                South = 45.4,
+                East = -122.5,
+                North = 45.6,
             });
 
         var request = new MetadataDocumentRequest(
-            Layer: nad83Layer,
+            Resource: nad83Resource,
             ServiceName: "TestService");
 
         var result = _generator.Generate(request);
@@ -283,5 +286,50 @@ public sealed class MetadataDocumentGeneratorTests
 
         // Reference system should reflect NAD83
         isoDoc.ToString().Should().Contain("EPSG:4269");
+    }
+
+    private static MetadataV2Resource CreateResource(
+        string name,
+        string? description,
+        MetadataV2GeometryType geometryType,
+        MetadataV2SpatialReference spatialReference,
+        IReadOnlyList<MetadataV2Field> fields,
+        MetadataV2Bbox? bbox = null)
+    {
+        return new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = name,
+                Name = name,
+                Description = description,
+            },
+            SchemaFields = fields,
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = spatialReference,
+                GeometryType = geometryType,
+                Bbox = bbox,
+                PrimaryGeometryField = fields.FirstOrDefault(field =>
+                    field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)?.Name,
+            },
+        };
+    }
+
+    private static MetadataV2Field Field(
+        string name,
+        MetadataV2FieldType type,
+        bool nullable = true,
+        int? length = null,
+        string? description = null)
+    {
+        return new MetadataV2Field
+        {
+            Name = name,
+            Type = type,
+            Nullable = nullable,
+            Length = length,
+            Description = description,
+        };
     }
 }

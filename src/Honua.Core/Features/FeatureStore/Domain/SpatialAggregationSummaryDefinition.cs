@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.FeatureStore.Domain;
 
@@ -34,7 +34,7 @@ public readonly record struct SpatialAggregationSummaryDefinition
 
     public string? Field { get; init; }
 
-    public FieldType? FieldType { get; init; }
+    public MetadataV2FieldType? FieldType { get; init; }
 
     public string? Unit { get; init; }
 

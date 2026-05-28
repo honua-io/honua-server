@@ -756,12 +756,7 @@ public sealed class MetadataCompatibilityAnalyzerTests
     {
         var spatial = new MetadataV2ResourceSpatial
         {
-            SpatialReference = new MetadataV2SpatialReference
-            {
-                Srid = srid,
-                Crs = FormattableString.Invariant($"EPSG:{srid}"),
-                IsGeographic = srid == 4326,
-            },
+            SpatialReference = new MetadataV2SpatialReference { Srid = srid },
             GeometryType = MetadataV2GeometryType.Point,
         };
 

@@ -4,7 +4,6 @@
 using System.Reflection;
 using System.Xml;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Postgres;
 using Honua.Server;
 using Xunit;
@@ -22,7 +21,7 @@ public sealed class DocumentationCoverageTests
     [ArchitectureTest]
     public void PublicTypes_ShouldHaveXmlDocumentation_InCoreAssembly()
     {
-        var coreAssembly = typeof(LayerDefinition).Assembly;
+        var coreAssembly = typeof(Honua.Core.Features.Metadata.Domain.V2.MetadataV2Resource).Assembly;
         var violations = GetPublicTypesWithoutDocumentation(coreAssembly);
 
         violations.Should().BeEmpty(

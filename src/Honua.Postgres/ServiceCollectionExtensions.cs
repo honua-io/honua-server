@@ -15,7 +15,6 @@ using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.AutoDocs;
 using Honua.Core.Features.Import;
 using Honua.Core.Features.Attachments.Abstractions;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
@@ -38,7 +37,6 @@ using Honua.Postgres.Features.Alerts;
 using Honua.Postgres.Features.AnalysisContent;
 using Honua.Postgres.Features.AuditLog;
 using Honua.Postgres.Features.Attachments;
-using Honua.Postgres.Features.Catalog;
 using Honua.Postgres.Features.FeatureStore;
 using Honua.Postgres.Features.Geometry;
 using Honua.Postgres.Features.GeometryService;
@@ -106,11 +104,10 @@ internal static class ServiceCollectionExtensions
         services.TryAddScoped<IFeatureDataProviderRegistry>(serviceProvider =>
             new FeatureDataProviderRegistry(serviceProvider.GetServices<IFeatureDataProvider>()));
         services.TryAddScoped(serviceProvider =>
-            new FeatureProviderBindingResolver(
+            new FeatureProviderQueryRouter(
                 serviceProvider.GetRequiredService<ISecureConnectionRegistry>(),
                 serviceProvider.GetRequiredService<IFeatureDataProviderRegistry>(),
                 DataProviderNames.Postgis));
-        services.TryAddScoped<FeatureProviderQueryRouter>();
 
         // Register raster store implementation
         services.AddPostgresRasterStore(configuration["Database:Schema"]);
@@ -155,8 +152,6 @@ internal static class ServiceCollectionExtensions
                     ? "honua"
                     : configuration["Attachments:Schema"]));
 
-        // Register layer catalog implementation
-        services.AddScoped<ILayerCatalog, PostgresLayerCatalog>();
         services.AddScoped<ILayerFieldConfigurationStore, PostgresLayerFieldConfigurationStore>();
 
         // Register FieldCollection mobile sync store (#894)

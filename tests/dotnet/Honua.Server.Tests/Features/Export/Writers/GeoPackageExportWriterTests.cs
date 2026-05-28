@@ -3,8 +3,8 @@
 
 using System.Collections.Immutable;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Server.Features.Export;
 using Honua.Server.Features.Export.Writers;
 using Microsoft.Data.Sqlite;
 using NetTopologySuite.Geometries;
@@ -25,7 +25,7 @@ public sealed class GeoPackageExportWriterTests
                 tempPath,
                 AsAsyncEnumerable(CreateFeature(1, CreatePolygonWkb())),
                 [],
-                Honua.Core.Features.Catalog.Domain.GeometryType.Polygon,
+                ExportGeometryType.Polygon,
                 4326,
                 "EPSG:4326",
                 null,
@@ -53,7 +53,7 @@ public sealed class GeoPackageExportWriterTests
                 tempPath,
                 AsAsyncEnumerable(CreateFeature(1, CreatePointWkbWithZm(10, 20, 30, 40))),
                 [],
-                Honua.Core.Features.Catalog.Domain.GeometryType.Point,
+                ExportGeometryType.Point,
                 4326,
                 "EPSG:4326",
                 null,
@@ -82,7 +82,7 @@ public sealed class GeoPackageExportWriterTests
                     CreateFeature(1, CreatePointWkb(10, 20)),
                     CreateFeature(2, CreatePointWkbWithZ(30, 40, 50))),
                 [],
-                Honua.Core.Features.Catalog.Domain.GeometryType.Point,
+                ExportGeometryType.Point,
                 4326,
                 "EPSG:4326",
                 null,

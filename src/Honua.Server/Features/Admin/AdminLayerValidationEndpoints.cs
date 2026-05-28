@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -35,18 +34,15 @@ internal static class AdminLayerValidationEndpoints
     private static async Task<IResult> HandleGetLayerValidation(
         int layerId,
         HttpContext context,
-        [FromServices] IResourceValidator resourceValidator,
         [FromServices] ILayerValidationService validationService,
         CancellationToken cancellationToken)
     {
-        var layerResult = await resourceValidator.ValidateLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        if (!layerResult.IsValid || layerResult.Resource == null)
+        if (layerId < 0)
         {
-            var statusCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier
-                ? StatusCodes.Status400BadRequest
-                : StatusCodes.Status404NotFound;
-            var message = layerResult.ErrorMessage ?? $"Layer {layerId} not found.";
-            return ProblemDetailsHelpers.CreateAdminProblem(context, statusCode, message);
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status400BadRequest,
+                $"Layer identifier '{layerId}' is invalid.");
         }
 
         var validation = await validationService.ValidateLayerAsync(layerId, cancellationToken).ConfigureAwait(false);

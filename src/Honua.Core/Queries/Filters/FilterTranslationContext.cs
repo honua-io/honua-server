@@ -9,18 +9,15 @@ namespace Honua.Core.Queries.Filters;
 
 /// <summary>
 /// Provider-neutral schema context consumed by <see cref="ISqlFilterTranslator"/>
-/// implementations. Lets a single translator implementation accept either a v1
-/// <see cref="LayerDefinition"/> or a Metadata v2 <see cref="MetadataV2Resource"/>
-/// without duplicating its recursive translation logic.
+/// implementations. Lets translator implementations consume Metadata v2 resources
+/// without duplicating recursive translation logic.
 /// </summary>
 /// <remarks>
 /// The context exposes only the surface the translators actually need: field
 /// metadata (name / type / geometry flag / primary-key flag), the geometry column
 /// name and SRID, and the resource name used in error messages. SRID resolution
-/// follows the v1 contract — when the resource doesn't carry an explicit SRID, the
-/// translator falls back to <see cref="SpatialReference.WGS84"/> (the same default
-/// the v1 <see cref="LayerDefinition.SpatialReference"/> uses when constructed via
-/// <c>CreateBasic</c>).
+/// falls back to <see cref="SpatialReference.WGS84"/> when the resource does not
+/// carry an explicit SRID.
 /// </remarks>
 public readonly struct FilterTranslationContext
 {
@@ -28,10 +25,10 @@ public readonly struct FilterTranslationContext
     /// A single field exposed by <see cref="FilterTranslationContext.Fields"/>.
     /// </summary>
     /// <param name="Name">Stable source field name.</param>
-    /// <param name="Type">Canonical <see cref="FieldType"/> (v1 enum).</param>
+    /// <param name="Type">Canonical <see cref="MetadataV2FieldType"/>.</param>
     /// <param name="IsGeometry">True when the field carries the resource's geometry column.</param>
     /// <param name="IsPrimaryKey">True when the field is the resource's primary key.</param>
-    public readonly record struct ContextField(string Name, FieldType Type, bool IsGeometry, bool IsPrimaryKey);
+    public readonly record struct ContextField(string Name, MetadataV2FieldType Type, bool IsGeometry, bool IsPrimaryKey);
 
     private FilterTranslationContext(
         IReadOnlyList<ContextField> fields,
@@ -73,32 +70,6 @@ public readonly struct FilterTranslationContext
     public string ResourceName { get; }
 
     /// <summary>
-    /// Builds a <see cref="FilterTranslationContext"/> from a v1 <see cref="LayerDefinition"/>.
-    /// </summary>
-    public static FilterTranslationContext FromLayer(LayerDefinition layer)
-    {
-        ArgumentNullException.ThrowIfNull(layer);
-
-        var primaryKey = layer.PrimaryKeyField;
-        var fields = new ContextField[layer.Fields.Length];
-        for (var i = 0; i < layer.Fields.Length; i++)
-        {
-            var f = layer.Fields[i];
-            var isPk = primaryKey is not null && string.Equals(f.Name, primaryKey.Name, StringComparison.OrdinalIgnoreCase);
-            fields[i] = new ContextField(f.Name, f.Type, f.IsGeometry, isPk);
-        }
-
-        return new FilterTranslationContext(
-            fields,
-            primaryKey?.Name,
-            layer.GeometryField?.Name,
-            layer.SpatialReference.Wkid,
-            layer.SpatialReference.IsGeographic,
-            layer.GeometryType,
-            layer.Name);
-    }
-
-    /// <summary>
     /// Builds a <see cref="FilterTranslationContext"/> from a Metadata v2 resource.
     /// </summary>
     public static FilterTranslationContext FromResource(MetadataV2Resource resource)
@@ -114,7 +85,7 @@ public readonly struct FilterTranslationContext
             var isPk = primaryKey is not null && string.Equals(f.Name, primaryKey.Name, StringComparison.OrdinalIgnoreCase);
             var isGeom = f.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography ||
                 (geometryField is not null && string.Equals(f.Name, geometryField.Name, StringComparison.OrdinalIgnoreCase));
-            fields[i] = new ContextField(f.Name, MapFieldType(f.Type), isGeom, isPk);
+            fields[i] = new ContextField(f.Name, NormalizeFieldType(f.Type), isGeom, isPk);
         }
 
         var srid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
@@ -130,23 +101,16 @@ public readonly struct FilterTranslationContext
             resource.Metadata.Name);
     }
 
-    /// <summary>Maps a Metadata v2 field type to the v1 <see cref="FieldType"/> used by the translators.</summary>
-    private static FieldType MapFieldType(MetadataV2FieldType type) => type switch
+    /// <summary>
+    /// Normalizes a schema field type for the translators: collapses the spatial
+    /// <see cref="MetadataV2FieldType.Geography"/> alias to <see cref="MetadataV2FieldType.Geometry"/>
+    /// and maps <see cref="MetadataV2FieldType.Unknown"/> to <see cref="MetadataV2FieldType.String"/>.
+    /// </summary>
+    private static MetadataV2FieldType NormalizeFieldType(MetadataV2FieldType type) => type switch
     {
-        MetadataV2FieldType.String => FieldType.String,
-        MetadataV2FieldType.Integer => FieldType.Integer,
-        MetadataV2FieldType.BigInteger => FieldType.BigInteger,
-        MetadataV2FieldType.Double => FieldType.Double,
-        MetadataV2FieldType.Float => FieldType.Float,
-        MetadataV2FieldType.Boolean => FieldType.Boolean,
-        MetadataV2FieldType.DateTime => FieldType.DateTime,
-        MetadataV2FieldType.Date => FieldType.Date,
-        MetadataV2FieldType.Time => FieldType.Time,
-        MetadataV2FieldType.Json => FieldType.Json,
-        MetadataV2FieldType.Binary => FieldType.Binary,
-        MetadataV2FieldType.Uuid => FieldType.Uuid,
-        MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography => FieldType.Geometry,
-        _ => FieldType.String,
+        MetadataV2FieldType.Geography => MetadataV2FieldType.Geometry,
+        MetadataV2FieldType.Unknown => MetadataV2FieldType.String,
+        _ => type,
     };
 
     private static GeometryType MapGeometryType(MetadataV2GeometryType type) => type switch

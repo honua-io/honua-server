@@ -2,10 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Helpers;
 using NSubstitute;
 
@@ -20,6 +19,8 @@ namespace Honua.Server.Tests.Features.Infrastructure.Helpers;
 /// </summary>
 public sealed class TemporalExtentHelpersTests
 {
+    private const int LayerIndex = 0;
+
     [Fact]
     public void FormatOgcTemporalValue_WholeSecond_UsesSecondPrecision()
     {
@@ -71,25 +72,25 @@ public sealed class TemporalExtentHelpersTests
     }
 
     [Fact]
-    public async Task TryResolveTemporalRangeAsync_EndExtentNull_FallsBackToStartExtentEnd()
+    public async Task TryResolveTemporalRangeV2Async_EndExtentNull_FallsBackToStartExtentEnd()
     {
         // Regression for #379: when EndTimeField is configured but every row
         // has a null end, the Postgres reader returns null for that field's
         // extent. Without the fallback, max collapses to null even though the
         // start field has valid latest values, so temporalExtent /
         // capabilities <Default> would lose the layer's actual maximum.
-        var layer = BuildLayerWithIntervalTimeInfo();
+        var resource = BuildResourceWithIntervalTemporal();
         var startMax = new DateTimeOffset(2024, 12, 31, 23, 59, 59, TimeSpan.Zero);
         var startMin = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
         var reader = Substitute.For<IFeatureReader>();
-        reader.GetTemporalExtentAsync(layer.Id, "start_time", FieldType.DateTime, Arg.Any<CancellationToken>())
+        reader.GetTemporalExtentAsync(LayerIndex, "start_time", TemporalPropertyType.DateTime, Arg.Any<CancellationToken>())
             .Returns(TemporalExtentResult.Create(startMin, startMax));
-        reader.GetTemporalExtentAsync(layer.Id, "end_time", FieldType.DateTime, Arg.Any<CancellationToken>())
+        reader.GetTemporalExtentAsync(LayerIndex, "end_time", TemporalPropertyType.DateTime, Arg.Any<CancellationToken>())
             .Returns((TemporalExtentResult?)null);
 
-        var range = await TemporalExtentHelpers.TryResolveTemporalRangeAsync(
-            layer, reader, CancellationToken.None);
+        var range = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(
+            resource, LayerIndex, reader, CancellationToken.None);
 
         range.Should().NotBeNull();
         range!.Value.Min.Should().Be(startMin);
@@ -98,23 +99,23 @@ public sealed class TemporalExtentHelpersTests
     }
 
     [Fact]
-    public async Task TryResolveTemporalRangeAsync_EndExtentPopulated_PrefersEndExtentEnd()
+    public async Task TryResolveTemporalRangeV2Async_EndExtentPopulated_PrefersEndExtentEnd()
     {
         // Sanity check: when both extents resolve, the canonical max is the
         // configured end column's max (interval-style layer where end > start).
-        var layer = BuildLayerWithIntervalTimeInfo();
+        var resource = BuildResourceWithIntervalTemporal();
         var startMin = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var startMax = new DateTimeOffset(2024, 6, 15, 0, 0, 0, TimeSpan.Zero);
         var endMax = new DateTimeOffset(2024, 12, 31, 23, 59, 59, TimeSpan.Zero);
 
         var reader = Substitute.For<IFeatureReader>();
-        reader.GetTemporalExtentAsync(layer.Id, "start_time", FieldType.DateTime, Arg.Any<CancellationToken>())
+        reader.GetTemporalExtentAsync(LayerIndex, "start_time", TemporalPropertyType.DateTime, Arg.Any<CancellationToken>())
             .Returns(TemporalExtentResult.Create(startMin, startMax));
-        reader.GetTemporalExtentAsync(layer.Id, "end_time", FieldType.DateTime, Arg.Any<CancellationToken>())
+        reader.GetTemporalExtentAsync(LayerIndex, "end_time", TemporalPropertyType.DateTime, Arg.Any<CancellationToken>())
             .Returns(TemporalExtentResult.Create(startMin, endMax));
 
-        var range = await TemporalExtentHelpers.TryResolveTemporalRangeAsync(
-            layer, reader, CancellationToken.None);
+        var range = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(
+            resource, LayerIndex, reader, CancellationToken.None);
 
         range.Should().NotBeNull();
         range!.Value.Min.Should().Be(startMin);
@@ -122,7 +123,7 @@ public sealed class TemporalExtentHelpersTests
     }
 
     [Fact]
-    public async Task TryResolveTemporalRangeAsync_ProviderThrowsNotSupported_ReturnsNull()
+    public async Task TryResolveTemporalRangeV2Async_ProviderThrowsNotSupported_ReturnsNull()
     {
         // Read-only providers (MySQL/MariaDB, SQL Server) throw
         // NotSupportedException from GetTemporalExtentAsync. The shared
@@ -130,67 +131,59 @@ public sealed class TemporalExtentHelpersTests
         // temporalExtent endpoint fall back to their non-time-aware
         // contract (omit time dimension, return 404) instead of escaping
         // a 500 to the public surface (#379).
-        var layer = BuildLayerWithIntervalTimeInfo();
+        var resource = BuildResourceWithIntervalTemporal();
         var reader = Substitute.For<IFeatureReader>();
         reader.GetTemporalExtentAsync(
                 Arg.Any<int>(),
                 Arg.Any<string>(),
-                Arg.Any<FieldType>(),
+                Arg.Any<TemporalPropertyType>(),
                 Arg.Any<CancellationToken>())
             .Returns<TemporalExtentResult?>(_ => throw new NotSupportedException(
                 "Temporal extent queries are not supported by the test provider."));
 
-        var range = await TemporalExtentHelpers.TryResolveTemporalRangeAsync(
-            layer, reader, CancellationToken.None);
+        var range = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(
+            resource, LayerIndex, reader, CancellationToken.None);
 
         range.Should().BeNull();
     }
 
     [Fact]
-    public async Task TryResolveTemporalRangeAsync_EndExtentThrowsNotSupported_ReturnsNull()
+    public async Task TryResolveTemporalRangeV2Async_EndExtentThrowsNotSupported_ReturnsNull()
     {
         // Same contract on the second extent fetch: even when start
         // succeeds, an end-field NotSupportedException must be swallowed
         // and surfaced as "no extent available" so the layer falls back
         // to non-time-aware behavior consistently.
-        var layer = BuildLayerWithIntervalTimeInfo();
+        var resource = BuildResourceWithIntervalTemporal();
         var startMin = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var startMax = new DateTimeOffset(2024, 12, 31, 23, 59, 59, TimeSpan.Zero);
 
         var reader = Substitute.For<IFeatureReader>();
-        reader.GetTemporalExtentAsync(layer.Id, "start_time", FieldType.DateTime, Arg.Any<CancellationToken>())
+        reader.GetTemporalExtentAsync(LayerIndex, "start_time", TemporalPropertyType.DateTime, Arg.Any<CancellationToken>())
             .Returns(TemporalExtentResult.Create(startMin, startMax));
-        reader.GetTemporalExtentAsync(layer.Id, "end_time", FieldType.DateTime, Arg.Any<CancellationToken>())
+        reader.GetTemporalExtentAsync(LayerIndex, "end_time", TemporalPropertyType.DateTime, Arg.Any<CancellationToken>())
             .Returns<TemporalExtentResult?>(_ => throw new NotSupportedException("end-field extent unsupported"));
 
-        var range = await TemporalExtentHelpers.TryResolveTemporalRangeAsync(
-            layer, reader, CancellationToken.None);
+        var range = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(
+            resource, LayerIndex, reader, CancellationToken.None);
 
         range.Should().BeNull();
     }
 
-    private static LayerDefinition BuildLayerWithIntervalTimeInfo()
-    {
-        var fields = new[]
+    private static MetadataV2Resource BuildResourceWithIntervalTemporal()
+        => new()
         {
-            new FieldDefinition("start_time", FieldType.DateTime),
-            new FieldDefinition("end_time", FieldType.DateTime)
-        };
-
-        return new LayerDefinition(
-            Id: 0,
-            Name: "interval_layer",
-            Description: null,
-            GeometryType: GeometryType.None,
-            SpatialReference: SpatialReference.WGS84,
-            Fields: fields,
-            Metadata: new CatalogMetadata
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-layer-0", Name = "interval_layer" },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "start_time", Type = MetadataV2FieldType.DateTime },
+                new MetadataV2Field { Name = "end_time", Type = MetadataV2FieldType.DateTime },
+            ],
+            Temporal = new MetadataV2ResourceTemporal
             {
-                TimeInfo = new LayerTimeInfo
-                {
-                    StartTimeField = "start_time",
-                    EndTimeField = "end_time"
-                }
-            });
-    }
+                StartTimeField = "start_time",
+                EndTimeField = "end_time",
+            },
+        };
 }

@@ -5,9 +5,10 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Collections.Immutable;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
@@ -25,6 +26,13 @@ namespace Honua.Server.Features.Protocols.GeoServices.MapServer;
 internal static partial class MapServerEndpoints
 {
     private const string InvalidFindRequestMessage = "Invalid find request parameters.";
+
+    private sealed record FindLayerDescriptor(
+        int PublicLayerId,
+        int StorageLayerId,
+        string Name,
+        MetadataV2Resource Resource,
+        string? DefinitionExpression);
 
     /// <summary>
     /// Handle MapServer find (cross-layer text search) requests.
@@ -111,24 +119,21 @@ internal static partial class MapServerEndpoints
             }
 
             var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-            var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
+            var serviceResult = await ServiceResourceValidationHelpers.ValidateServiceV2Async(
+                resourceValidator,
+                serviceId,
+                ServiceProtocols.MapServer,
+                context,
+                cancellationToken: cancellationToken);
             if (!serviceResult.IsValid)
             {
-                var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
-                if (serviceResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(context, errorMessage);
-                }
-
-                return StandardErrorHelpers.CreateNotFound(context, errorMessage);
+                return serviceResult.ErrorResult!;
             }
 
-            var service = serviceResult.Resource!;
-            var protocolError = ProtocolValidationHelpers.ValidateProtocolEnabled(context, service, ServiceProtocols.MapServer);
-            if (protocolError is not null)
-            {
-                return protocolError;
-            }
+            var service = serviceResult.Service!;
+            var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var publishedLayers = ResolveFindPublishedLayers(snapshot, service);
 
             var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
             if (!TryParseLayerDefs(layerDefsValue, queryValidator, out var layerDefs, out var layerDefsError))
@@ -137,7 +142,10 @@ internal static partial class MapServerEndpoints
                     layerDefsError ?? "Invalid layerDefs parameter.");
             }
 
-            if (!TryParseDynamicLayers(GetValue(values, "dynamicLayers"), service, queryValidator, out var dynamicLayers, out var dynamicLayersError))
+            var knownLayerIds = publishedLayers
+                .Select(static layer => layer.PublicLayerId)
+                .ToHashSet();
+            if (!TryParseDynamicLayers(GetValue(values, "dynamicLayers"), knownLayerIds, queryValidator, out var dynamicLayers, out var dynamicLayersError))
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
                     dynamicLayersError ?? "Invalid dynamicLayers parameter.");
@@ -153,7 +161,7 @@ internal static partial class MapServerEndpoints
 
             var searchFieldNames = ParseSearchFields(searchFieldsParam);
 
-            var outputSrid = service.SpatialReference.Srid;
+            var outputSrid = service.SpatialReference?.ResolveSrid() ?? SpatialReference.WGS84.Wkid;
             if (!string.IsNullOrWhiteSpace(srValue))
             {
                 var parsed = SpatialReferenceHelpers.TryParseSrid(srValue);
@@ -175,44 +183,50 @@ internal static partial class MapServerEndpoints
 
             var results = new List<FindResult>();
 
-            var findLayers = ResolveFindLayers(service, requestedLayerIds, dynamicLayers, context);
-            var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(
+            var findLayers = ResolveFindLayers(publishedLayers, requestedLayerIds, dynamicLayers);
+            var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
                 context,
-                findLayers.Select(static entry => entry.Layer),
+                findLayers.Select(static entry => entry.Resource),
                 service);
             if (accessError != null)
             {
                 return accessError;
             }
 
-            foreach (var (layer, definitionExpression) in findLayers)
+            foreach (var layer in findLayers)
             {
                 if (results.Count >= maxFindResults)
                 {
                     break;
                 }
 
-                if (!AccessPolicyHelpers.IsLayerAccessible(context, layer, service))
+                if (!AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
                 {
                     continue;
                 }
 
-                var fieldsToSearch = ResolveSearchFields(layer, searchFieldNames);
+                var fieldsToSearch = ResolveSearchFields(layer.Resource, searchFieldNames);
                 if (fieldsToSearch.Length == 0)
                 {
                     continue;
                 }
 
-                layerDefs.TryGetValue(layer.Id, out var rawLayerDef);
-                var layerDef = CombineDefinitionExpressions(definitionExpression, rawLayerDef);
+                layerDefs.TryGetValue(layer.PublicLayerId, out var rawLayerDef);
+                var layerDef = CombineDefinitionExpressions(layer.DefinitionExpression, rawLayerDef);
 
-                var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
-                var displayField = ResolveDisplayField(layer, objectIdField);
+                var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer.Resource);
+                var displayField = ResolveDisplayField(layer.Resource, objectIdField);
 
                 SqlFragment? layerSqlFilter = null;
                 if (!string.IsNullOrWhiteSpace(layerDef))
                 {
-                    var translationResult = filterExpressionService.Translate(FilterLanguage.ArcGisSql, layerDef, layer);
+                    var parseResult = filterExpressionService.Parse(FilterLanguage.ArcGisSql, layerDef);
+                    if (!parseResult.IsSuccess)
+                    {
+                        continue;
+                    }
+
+                    var translationResult = filterExpressionService.Translate(parseResult.Expression, layer.Resource);
                     if (!translationResult.IsSuccess)
                     {
                         continue;
@@ -235,7 +249,7 @@ internal static partial class MapServerEndpoints
                 {
                     var featureQuery = new FeatureQuery
                     {
-                        SpatialReferenceSrid = service.SpatialReference.Srid,
+                        SpatialReferenceSrid = layer.Resource.ReadSrid() ?? SpatialReference.WGS84.Wkid,
                         OutputSrid = outputSrid,
                         Limit = pageSize,
                         Offset = offset,
@@ -243,7 +257,7 @@ internal static partial class MapServerEndpoints
                         SqlFilter = layerSqlFilter
                     };
 
-                    var queryResult = await featureReader.QueryAsync(layer.Id, featureQuery, cancellationToken);
+                    var queryResult = await featureReader.QueryAsync(layer.StorageLayerId, featureQuery, cancellationToken);
                     if (queryResult.Items.Length == 0)
                     {
                         break;
@@ -285,13 +299,13 @@ internal static partial class MapServerEndpoints
 
                             results.Add(new FindResult
                             {
-                                LayerId = layer.Id,
+                                LayerId = layer.PublicLayerId,
                                 LayerName = layer.Name,
                                 DisplayFieldName = displayField,
                                 FoundFieldName = field.Name,
                                 Value = displayValue,
                                 Attributes = attributes,
-                                GeometryType = layer.HasGeometry ? MapGeometryTypeToEsri(layer.GeometryType) : null,
+                                GeometryType = HasFindGeometry(layer.Resource) ? MapGeometryTypeToEsri(layer.Resource.ReadGeometryType()) : null,
                                 Geometry = geometryResult
                             });
 
@@ -342,6 +356,44 @@ internal static partial class MapServerEndpoints
         }
     }
 
+    private static FindLayerDescriptor[] ResolveFindPublishedLayers(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Service service)
+    {
+        var descriptors = new List<FindLayerDescriptor>();
+        foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
+        {
+            if (publication.LayerIndex is not int publicLayerId)
+            {
+                continue;
+            }
+
+            var resource = snapshot.ResolveResource(publication);
+            if (resource is null)
+            {
+                continue;
+            }
+
+            var storageLayerId = snapshot.ResolveStorageLayerId(publication)
+                ?? snapshot.ResolveStorageLayerId(resource)
+                ?? publicLayerId;
+            var layerName = string.IsNullOrWhiteSpace(resource.Metadata.Name)
+                ? publication.Metadata.Name
+                : resource.Metadata.Name;
+
+            descriptors.Add(new FindLayerDescriptor(
+                publicLayerId,
+                storageLayerId,
+                string.IsNullOrWhiteSpace(layerName)
+                    ? publicLayerId.ToString(CultureInfo.InvariantCulture)
+                    : layerName,
+                resource,
+                null));
+        }
+
+        return [.. descriptors.OrderBy(static layer => layer.PublicLayerId)];
+    }
+
     private static HashSet<string>? ParseSearchFields(string? searchFieldsParam)
     {
         if (string.IsNullOrWhiteSpace(searchFieldsParam))
@@ -382,30 +434,29 @@ internal static partial class MapServerEndpoints
         return false;
     }
 
-    private static FieldDefinition[] ResolveSearchFields(LayerDefinition layer, HashSet<string>? requestedFields)
+    private static MetadataV2Field[] ResolveSearchFields(MetadataV2Resource resource, HashSet<string>? requestedFields)
     {
         if (requestedFields is { Count: > 0 })
         {
-            return layer.AttributeFields
-                .Where(f => f.Type == FieldType.String && requestedFields.Contains(f.Name))
+            return resource.SchemaFields
+                .Where(f => f.Type == MetadataV2FieldType.String && requestedFields.Contains(f.Name))
                 .ToArray();
         }
 
-        return layer.AttributeFields
-            .Where(f => f.Type == FieldType.String)
+        return resource.SchemaFields
+            .Where(f => f.Type == MetadataV2FieldType.String)
             .ToArray();
     }
 
-    private static List<(LayerDefinition Layer, string? DefinitionExpression)> ResolveFindLayers(
-        ServiceDefinition service,
+    private static List<FindLayerDescriptor> ResolveFindLayers(
+        IReadOnlyList<FindLayerDescriptor> publishedLayers,
         HashSet<int> requestedLayerIds,
-        IReadOnlyList<DynamicLayerDefinition> dynamicLayers,
-        HttpContext context)
+        IReadOnlyList<DynamicLayerDefinition> dynamicLayers)
     {
         if (dynamicLayers.Count > 0)
         {
-            var layerLookup = service.Layers.ToDictionary(l => l.Id);
-            var result = new List<(LayerDefinition, string?)>();
+            var layerLookup = publishedLayers.ToDictionary(static layer => layer.PublicLayerId);
+            var result = new List<FindLayerDescriptor>();
 
             foreach (var dl in dynamicLayers)
             {
@@ -419,15 +470,14 @@ internal static partial class MapServerEndpoints
                     continue;
                 }
 
-                result.Add((layer, dl.DefinitionExpression));
+                result.Add(layer with { DefinitionExpression = dl.DefinitionExpression });
             }
 
             return result;
         }
 
-        return service.Layers
-            .Where(l => requestedLayerIds.Contains(l.Id))
-            .Select(l => (l, (string?)null))
+        return publishedLayers
+            .Where(l => requestedLayerIds.Contains(l.PublicLayerId))
             .ToList();
     }
 
@@ -447,7 +497,7 @@ internal static partial class MapServerEndpoints
 
     private static bool TryMatchSearchField(
         Feature feature,
-        FieldDefinition field,
+        MetadataV2Field field,
         string searchText,
         bool contains)
     {
@@ -485,5 +535,26 @@ internal static partial class MapServerEndpoints
 
         value = null;
         return false;
+    }
+
+    private static bool HasFindGeometry(MetadataV2Resource resource)
+    {
+        var geometryType = resource.ReadGeometryType();
+        return geometryType != MetadataV2GeometryType.None ||
+               resource.FindPrimaryGeometryField() is not null;
+    }
+
+    private static string? MapGeometryTypeToEsri(MetadataV2GeometryType geometryType)
+    {
+        return geometryType switch
+        {
+            MetadataV2GeometryType.Point => "esriGeometryPoint",
+            MetadataV2GeometryType.MultiPoint => "esriGeometryMultipoint",
+            MetadataV2GeometryType.LineString or
+            MetadataV2GeometryType.MultiLineString => "esriGeometryPolyline",
+            MetadataV2GeometryType.Polygon or
+            MetadataV2GeometryType.MultiPolygon => "esriGeometryPolygon",
+            _ => null
+        };
     }
 }

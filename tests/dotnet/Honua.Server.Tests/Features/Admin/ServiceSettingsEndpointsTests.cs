@@ -159,7 +159,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/mapserver")]
-    public async Task UpdateMapServerSettings_WithValidPayload_ReturnsUpdatedOrNotFound()
+    public async Task UpdateMapServerSettings_WithValidPayload_ReturnsNotImplemented()
     {
         var payload = JsonSerializer.Serialize(new
         {
@@ -172,7 +172,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
 
         var response = await _client.PutAsync("/api/v1/admin/services/test/mapserver", content);
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
     }
 
     [IntegrationTest]
@@ -193,7 +193,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/timeinfo")]
-    public async Task UpdateTimeInfo_WithValidPayload_ReturnsUpdatedOrNotFound()
+    public async Task UpdateTimeInfo_WithValidPayload_ReturnsNotImplemented()
     {
         var body = """
             {
@@ -204,7 +204,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
 
         var response = await _client.PutAsync("/api/v1/admin/services/test/timeinfo", content);
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
     }
 
     [IntegrationTest]

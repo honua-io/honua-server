@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Catalog;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -107,19 +106,6 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<ISqlFilterTranslator>(sp =>
             new MySqlSqlFilterTranslator(sp.GetRequiredService<MySqlEngineFlavorHolder>().Flavor));
 
-        // Uses the shared Core ConfigurationLayerCatalog; the provider-specific initialization
-        // log message is emitted via the onInitialized callback so the log category, event id,
-        // and wording stay MySQL/MariaDB-specific.
-        services.AddScoped<ILayerCatalog>(sp =>
-        {
-            var (layers, serviceDefs) = BuildCatalogEntries(options, mappings);
-            var logger = sp.GetRequiredService<ILogger<ConfigurationLayerCatalog>>();
-            return new ConfigurationLayerCatalog(
-                layers,
-                serviceDefs,
-                (layerCount, serviceCount) => MySqlLog.LayerCatalogInitialized(logger, layerCount, serviceCount));
-        });
-
         return services;
     }
 
@@ -158,117 +144,4 @@ internal static class ServiceCollectionExtensions
         return mappings;
     }
 
-    private static (List<LayerDefinition> Layers, List<ServiceDefinition> Services) BuildCatalogEntries(
-        MySqlOptions options, IReadOnlyList<MySqlLayerMapping> mappings)
-    {
-        var mappingByLayerId = mappings.ToDictionary(m => m.LayerId);
-        var layers = new List<LayerDefinition>(options.Layers.Length);
-        var layerMap = new Dictionary<int, LayerDefinition>();
-
-        foreach (var layerOpt in options.Layers)
-        {
-            var geometryType = Enum.Parse<GeometryType>(layerOpt.GeometryType, ignoreCase: true);
-
-            var srs = SpatialReference.Create(layerOpt.Srid);
-
-            var fields = new List<FieldDefinition>
-            {
-                new(layerOpt.PrimaryKeyColumn, FieldType.BigInteger, Nullable: false, Description: "Unique object identifier")
-            };
-
-            if (geometryType != GeometryType.None)
-            {
-                fields.Add(new(layerOpt.GeometryColumn, FieldType.Geometry, Nullable: false, Description: "Geometry field"));
-            }
-
-            if (mappingByLayerId.TryGetValue(layerOpt.Id, out var mapping))
-            {
-                foreach (var attr in mapping.AttributeColumns)
-                {
-                    var fieldType = mapping.AttributeColumnTypes.TryGetValue(attr, out var typeName)
-                        ? MapMySqlType(typeName)
-                        : FieldType.String;
-                    fields.Add(new FieldDefinition(attr, fieldType));
-                }
-            }
-
-            var layer = new LayerDefinition(
-                layerOpt.Id,
-                layerOpt.Name,
-                layerOpt.Description,
-                geometryType,
-                srs,
-                fields.ToArray(),
-                SupportsAttachments: false,
-                StorageMapping: new LayerStorageMapping(
-                    layerOpt.Table,
-                    SchemaName: layerOpt.Schema,
-                    DatabaseName: layerOpt.Schema,
-                    PrimaryKeyColumn: layerOpt.PrimaryKeyColumn,
-                    GeometryColumn: geometryType == GeometryType.None ? null : layerOpt.GeometryColumn,
-                    StorageSrid: layerOpt.Srid));
-
-            layers.Add(layer);
-            layerMap[layerOpt.Id] = layer;
-        }
-
-        var services = new List<ServiceDefinition>(options.Services.Length);
-        foreach (var svcOpt in options.Services)
-        {
-            var svcLayers = svcOpt.LayerIds
-                .Where(id => layerMap.ContainsKey(id))
-                .Select(id => layerMap[id])
-                .ToArray();
-
-            if (svcLayers.Length == 0)
-            {
-                continue;
-            }
-
-            CatalogMetadata? metadata = null;
-            if (svcOpt.EnabledProtocols is { Length: > 0 })
-            {
-                metadata = new CatalogMetadata { EnabledProtocols = svcOpt.EnabledProtocols };
-            }
-
-            services.Add(new ServiceDefinition(
-                svcOpt.Name,
-                svcOpt.Description ?? $"MySQL/MariaDB feature service: {svcOpt.Name}",
-                svcLayers,
-                svcLayers[0].SpatialReference,
-                Capabilities: svcOpt.Capabilities,
-                Metadata: metadata));
-        }
-
-        return (layers, services);
-    }
-
-    /// <summary>
-    /// Maps a MySQL/MariaDB column type name (case-insensitive) to a <see cref="FieldType"/>.
-    /// Used only for catalog metadata; query parameter binding is value-driven.
-    /// </summary>
-    internal static FieldType MapMySqlType(string mySqlType)
-    {
-        var parenIndex = mySqlType.IndexOf('(', StringComparison.Ordinal);
-        var baseType = (parenIndex >= 0 ? mySqlType[..parenIndex] : mySqlType).Trim();
-
-        return baseType.ToUpperInvariant() switch
-        {
-            "TINYINT" or "SMALLINT" or "MEDIUMINT" or "INT" or "INTEGER" => FieldType.Integer,
-            "BIGINT" or "BIGINT UNSIGNED" => FieldType.BigInteger,
-            "FLOAT" => FieldType.Float,
-            "DOUBLE" or "DOUBLE PRECISION" or "REAL" or "DECIMAL" or "NUMERIC" => FieldType.Double,
-            "BOOLEAN" or "BOOL" or "BIT" => FieldType.Boolean,
-            "CHAR" or "VARCHAR" or "TEXT" or "TINYTEXT" or "MEDIUMTEXT" or "LONGTEXT"
-                or "ENUM" or "SET" or "NVARCHAR" => FieldType.String,
-            "DATE" => FieldType.Date,
-            "TIME" => FieldType.Time,
-            "DATETIME" or "TIMESTAMP" => FieldType.DateTime,
-            "JSON" => FieldType.Json,
-            "BINARY" or "VARBINARY" or "BLOB" or "TINYBLOB" or "MEDIUMBLOB" or "LONGBLOB" => FieldType.Binary,
-            "GEOMETRY" or "POINT" or "LINESTRING" or "POLYGON"
-                or "MULTIPOINT" or "MULTILINESTRING" or "MULTIPOLYGON" or "GEOMETRYCOLLECTION" => FieldType.Geometry,
-            _ => FieldType.String
-        };
-    }
 }

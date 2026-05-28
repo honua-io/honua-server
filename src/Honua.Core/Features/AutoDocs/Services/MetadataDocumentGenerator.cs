@@ -6,7 +6,7 @@ using System.Text;
 using System.Xml;
 using Honua.Core.Features.AutoDocs.Abstractions;
 using Honua.Core.Features.AutoDocs.Domain;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.AutoDocs.Services;
 
@@ -49,7 +49,7 @@ internal sealed class MetadataDocumentGenerator : IMetadataDocumentGenerator
 
         // File identifier
         WriteCharacterString(writer, "gmd", "fileIdentifier", Iso19115Namespace,
-            $"{request.ServiceName}.{request.Layer.Name}");
+            $"{request.ServiceName}.{request.ResourceName}");
 
         // Language
         WriteCharacterString(writer, "gmd", "language", Iso19115Namespace, "eng");
@@ -112,7 +112,7 @@ internal sealed class MetadataDocumentGenerator : IMetadataDocumentGenerator
         writer.WriteStartElement("gmd", "referenceSystemIdentifier", Iso19115Namespace);
         writer.WriteStartElement("gmd", "RS_Identifier", Iso19115Namespace);
         WriteCharacterString(writer, "gmd", "code", Iso19115Namespace,
-            $"EPSG:{request.Layer.SpatialReference.Wkid}");
+            $"EPSG:{ResolveSrid(request)}");
         writer.WriteEndElement(); // RS_Identifier
         writer.WriteEndElement(); // referenceSystemIdentifier
         writer.WriteEndElement(); // MD_ReferenceSystem
@@ -125,7 +125,7 @@ internal sealed class MetadataDocumentGenerator : IMetadataDocumentGenerator
         // Citation
         writer.WriteStartElement("gmd", "citation", Iso19115Namespace);
         writer.WriteStartElement("gmd", "CI_Citation", Iso19115Namespace);
-        WriteCharacterString(writer, "gmd", "title", Iso19115Namespace, request.Layer.Name);
+        WriteCharacterString(writer, "gmd", "title", Iso19115Namespace, request.ResourceName);
         writer.WriteStartElement("gmd", "date", Iso19115Namespace);
         writer.WriteStartElement("gmd", "CI_Date", Iso19115Namespace);
         writer.WriteStartElement("gmd", "date", Iso19115Namespace);
@@ -148,7 +148,7 @@ internal sealed class MetadataDocumentGenerator : IMetadataDocumentGenerator
 
         // Abstract
         WriteCharacterString(writer, "gmd", "abstract", Iso19115Namespace,
-            request.Abstract ?? request.Layer.Description ?? $"Dataset: {request.Layer.Name}");
+            request.Abstract ?? request.ResourceDescription ?? $"Dataset: {request.ResourceName}");
 
         // Purpose
         if (request.Purpose is not null)
@@ -195,16 +195,16 @@ internal sealed class MetadataDocumentGenerator : IMetadataDocumentGenerator
 
         // Extent — EX_GeographicBoundingBox requires decimal degrees per ISO 19115 B.3.1.2.
         // Only emit when the layer CRS is geographic; projected extents would be invalid.
-        if (request.Layer.Extent is not null && request.Layer.SpatialReference.IsGeographic)
+        if (TryGetGeographicBbox(request, out var bbox))
         {
             writer.WriteStartElement("gmd", "extent", Iso19115Namespace);
             writer.WriteStartElement("gmd", "EX_Extent", Iso19115Namespace);
             writer.WriteStartElement("gmd", "geographicElement", Iso19115Namespace);
             writer.WriteStartElement("gmd", "EX_GeographicBoundingBox", Iso19115Namespace);
-            WriteDecimalElement(writer, "westBoundLongitude", request.Layer.Extent.Value.MinX);
-            WriteDecimalElement(writer, "eastBoundLongitude", request.Layer.Extent.Value.MaxX);
-            WriteDecimalElement(writer, "southBoundLatitude", request.Layer.Extent.Value.MinY);
-            WriteDecimalElement(writer, "northBoundLatitude", request.Layer.Extent.Value.MaxY);
+            WriteDecimalElement(writer, "westBoundLongitude", bbox.West);
+            WriteDecimalElement(writer, "eastBoundLongitude", bbox.East);
+            WriteDecimalElement(writer, "southBoundLatitude", bbox.South);
+            WriteDecimalElement(writer, "northBoundLatitude", bbox.North);
             writer.WriteEndElement(); // EX_GeographicBoundingBox
             writer.WriteEndElement(); // geographicElement
             writer.WriteEndElement(); // EX_Extent
@@ -243,14 +243,14 @@ internal sealed class MetadataDocumentGenerator : IMetadataDocumentGenerator
         writer.WriteElementString("origin", request.OrganizationName ?? "Unknown");
         writer.WriteElementString("pubdate",
             DateTimeOffset.UtcNow.ToString("yyyyMMdd", CultureInfo.InvariantCulture));
-        writer.WriteElementString("title", request.Layer.Name);
+        writer.WriteElementString("title", request.ResourceName);
         writer.WriteEndElement(); // citeinfo
         writer.WriteEndElement(); // citation
 
         // Description
         writer.WriteStartElement("descript");
         writer.WriteElementString("abstract",
-            request.Abstract ?? request.Layer.Description ?? $"Dataset: {request.Layer.Name}");
+            request.Abstract ?? request.ResourceDescription ?? $"Dataset: {request.ResourceName}");
         writer.WriteElementString("purpose", request.Purpose ?? "Not specified");
         writer.WriteEndElement(); // descript
 
@@ -262,18 +262,18 @@ internal sealed class MetadataDocumentGenerator : IMetadataDocumentGenerator
 
         // Spatial domain — FGDC bounding coordinates must be decimal degrees per FGDC-STD-001-1998 §1.5.1.2.
         // Only emit when the layer CRS is geographic; projected extents would be invalid.
-        if (request.Layer.Extent is not null && request.Layer.SpatialReference.IsGeographic)
+        if (TryGetGeographicBbox(request, out var bbox))
         {
             writer.WriteStartElement("spdom");
             writer.WriteStartElement("bounding");
             writer.WriteElementString("westbc",
-                request.Layer.Extent.Value.MinX.ToString(CultureInfo.InvariantCulture));
+                bbox.West.ToString(CultureInfo.InvariantCulture));
             writer.WriteElementString("eastbc",
-                request.Layer.Extent.Value.MaxX.ToString(CultureInfo.InvariantCulture));
+                bbox.East.ToString(CultureInfo.InvariantCulture));
             writer.WriteElementString("northbc",
-                request.Layer.Extent.Value.MaxY.ToString(CultureInfo.InvariantCulture));
+                bbox.North.ToString(CultureInfo.InvariantCulture));
             writer.WriteElementString("southbc",
-                request.Layer.Extent.Value.MinY.ToString(CultureInfo.InvariantCulture));
+                bbox.South.ToString(CultureInfo.InvariantCulture));
             writer.WriteEndElement(); // bounding
             writer.WriteEndElement(); // spdom
         }
@@ -302,7 +302,7 @@ internal sealed class MetadataDocumentGenerator : IMetadataDocumentGenerator
         writer.WriteStartElement("spref");
         writer.WriteStartElement("horizsys");
         writer.WriteStartElement("cordsysn");
-        writer.WriteElementString("geogcsn", $"EPSG:{request.Layer.SpatialReference.Wkid}");
+        writer.WriteElementString("geogcsn", $"EPSG:{ResolveSrid(request)}");
         writer.WriteEndElement(); // cordsysn
         writer.WriteEndElement(); // horizsys
         writer.WriteEndElement(); // spref
@@ -311,15 +311,19 @@ internal sealed class MetadataDocumentGenerator : IMetadataDocumentGenerator
         writer.WriteStartElement("eainfo");
         writer.WriteStartElement("detailed");
         writer.WriteStartElement("enttyp");
-        writer.WriteElementString("enttypl", request.Layer.Name);
+        writer.WriteElementString("enttypl", request.ResourceName);
         writer.WriteElementString("enttypd",
-            request.Layer.Description ?? $"Feature class: {request.Layer.Name}");
+            request.ResourceDescription ?? $"Feature class: {request.ResourceName}");
         writer.WriteElementString("enttypds", request.OrganizationName ?? "Unknown");
         writer.WriteEndElement(); // enttyp
 
-        foreach (var field in request.Layer.Fields)
+        foreach (var field in request.Resource.SchemaFields)
         {
-            if (field.IsGeometry) continue;
+            if (IsGeometryField(field))
+            {
+                continue;
+            }
+
             writer.WriteStartElement("attr");
             writer.WriteElementString("attrlabl", field.Name);
             writer.WriteElementString("attrdef", field.Description ?? field.Name);
@@ -353,20 +357,20 @@ internal sealed class MetadataDocumentGenerator : IMetadataDocumentGenerator
     {
         var sb = new StringBuilder();
 
-        sb.Append(CultureInfo.InvariantCulture, $"# Data Dictionary: {request.Layer.Name}").AppendLine();
+        sb.Append(CultureInfo.InvariantCulture, $"# Data Dictionary: {request.ResourceName}").AppendLine();
         sb.AppendLine();
 
-        if (request.Layer.Description is not null)
+        if (request.ResourceDescription is not null)
         {
-            sb.AppendLine(request.Layer.Description);
+            sb.AppendLine(request.ResourceDescription);
             sb.AppendLine();
         }
 
         sb.AppendLine("## Overview");
         sb.AppendLine();
         sb.Append(CultureInfo.InvariantCulture, $"- **Service**: {request.ServiceName}").AppendLine();
-        sb.Append(CultureInfo.InvariantCulture, $"- **Geometry Type**: {request.Layer.GeometryType}").AppendLine();
-        sb.Append(CultureInfo.InvariantCulture, $"- **Spatial Reference**: EPSG:{request.Layer.SpatialReference.Wkid} ({request.Layer.SpatialReference.DisplayName})").AppendLine();
+        sb.Append(CultureInfo.InvariantCulture, $"- **Geometry Type**: {request.Resource.ReadGeometryType()}").AppendLine();
+        sb.Append(CultureInfo.InvariantCulture, $"- **Spatial Reference**: EPSG:{ResolveSrid(request)} ({ResolveCrsDisplayName(request)})").AppendLine();
 
         if (request.OrganizationName is not null)
         {
@@ -384,23 +388,27 @@ internal sealed class MetadataDocumentGenerator : IMetadataDocumentGenerator
         sb.AppendLine("| Field Name | Type | Length | Nullable | Description |");
         sb.AppendLine("|-----------|------|--------|----------|-------------|");
 
-        foreach (var field in request.Layer.Fields)
+        foreach (var field in request.Resource.SchemaFields)
         {
-            if (field.IsGeometry) continue;
+            if (IsGeometryField(field))
+            {
+                continue;
+            }
+
             var lengthStr = field.Length.HasValue ? field.Length.Value.ToString(CultureInfo.InvariantCulture) : "-";
             var nullableStr = field.Nullable ? "Yes" : "No";
             var desc = field.Description ?? "-";
             sb.Append(CultureInfo.InvariantCulture, $"| {field.Name} | {field.Type} | {lengthStr} | {nullableStr} | {desc} |").AppendLine();
         }
 
-        if (request.Layer.HasGeometry && request.Layer.GeometryField is not null)
+        if (request.Resource.FindPrimaryGeometryField() is { } geometryField)
         {
             sb.AppendLine();
             sb.AppendLine("## Geometry");
             sb.AppendLine();
-            sb.Append(CultureInfo.InvariantCulture, $"- **Column**: {request.Layer.GeometryField.Name}").AppendLine();
-            sb.Append(CultureInfo.InvariantCulture, $"- **Type**: {request.Layer.GeometryType}").AppendLine();
-            sb.Append(CultureInfo.InvariantCulture, $"- **SRID**: {request.Layer.SpatialReference.Wkid}").AppendLine();
+            sb.Append(CultureInfo.InvariantCulture, $"- **Column**: {geometryField.Name}").AppendLine();
+            sb.Append(CultureInfo.InvariantCulture, $"- **Type**: {request.Resource.ReadGeometryType()}").AppendLine();
+            sb.Append(CultureInfo.InvariantCulture, $"- **SRID**: {ResolveSrid(request)}").AppendLine();
         }
 
         if (request.Keywords is { Count: > 0 })
@@ -421,6 +429,34 @@ internal sealed class MetadataDocumentGenerator : IMetadataDocumentGenerator
 
         return sb.ToString();
     }
+
+    private static int ResolveSrid(MetadataDocumentRequest request)
+        => request.Resource.ReadSrid() ?? MetadataV2SpatialReference.Wgs84.ResolveSrid()!.Value;
+
+    private static string ResolveCrsDisplayName(MetadataDocumentRequest request)
+    {
+        var spatialReference = request.Resource.Spatial?.SpatialReference;
+        return string.IsNullOrWhiteSpace(spatialReference?.Crs)
+            ? $"EPSG:{ResolveSrid(request)}"
+            : spatialReference.Crs!;
+    }
+
+    private static bool TryGetGeographicBbox(MetadataDocumentRequest request, out MetadataV2Bbox bbox)
+    {
+        var spatial = request.Resource.Spatial;
+        if (spatial?.Bbox is { } declaredBbox &&
+            spatial.SpatialReference?.IsGeographic == true)
+        {
+            bbox = declaredBbox;
+            return true;
+        }
+
+        bbox = new MetadataV2Bbox();
+        return false;
+    }
+
+    private static bool IsGeometryField(MetadataV2Field field)
+        => field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography;
 
     private static void WriteCharacterString(XmlWriter writer, string prefix,
         string localName, string ns, string value)

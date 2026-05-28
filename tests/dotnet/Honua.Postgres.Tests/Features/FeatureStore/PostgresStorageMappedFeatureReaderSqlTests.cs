@@ -3,6 +3,7 @@
 
 using System.Reflection;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Postgres.Features.FeatureStore.Services;
@@ -31,7 +32,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         var expression = PostgresStorageMappedFeatureReader.BuildStatisticsAggregateExpression(
             StatisticType.Avg,
             "\"longitude\"",
-            FieldType.Double);
+            Honua.Core.Features.Metadata.Domain.V2.MetadataV2FieldType.Double);
 
         expression.Should().Be("AVG(NULLIF((\"longitude\")::text, '')::numeric)");
     }
@@ -40,12 +41,15 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
     public void BuildAttributesExpressionText_WithWideOutFields_ChunksJsonbBuildObjectCalls()
     {
         var fields = Enumerable.Range(1, 51)
-            .Select(index => new FieldDefinition($"field_{index}", FieldType.String))
+            .Select(index => new MetadataV2Field { Name = $"field_{index}", Type = MetadataV2FieldType.String })
             .ToArray();
 
         var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
             "BuildAttributesExpressionText",
-            BindingFlags.NonPublic | BindingFlags.Static);
+            BindingFlags.NonPublic | BindingFlags.Static,
+            binder: null,
+            types: [typeof(MetadataV2Field[])],
+            modifiers: null);
 
         method.Should().NotBeNull();
 

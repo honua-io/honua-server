@@ -3,7 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Models;
 
 namespace Honua.Server.Features.Admin.Models;
@@ -25,9 +25,9 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(ApiResponse<LayerFieldConfigurationResponse>))]
 [JsonSerializable(typeof(ApiResponse<LayerFilterConfigurationResponse>))]
 [JsonSerializable(typeof(ApiResponse<object>))]
-[JsonSerializable(typeof(FieldDomainDefinition))]
-[JsonSerializable(typeof(DomainCodedValueDefinition))]
-[JsonSerializable(typeof(DomainCodedValueDefinition[]))]
+[JsonSerializable(typeof(MetadataV2FieldDomain))]
+[JsonSerializable(typeof(MetadataV2CodedValue))]
+[JsonSerializable(typeof(MetadataV2CodedValue[]))]
 [JsonSerializable(typeof(JsonElement))]
 public sealed partial class LayerFieldConfigurationJsonContext : JsonSerializerContext
 {

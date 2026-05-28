@@ -76,8 +76,8 @@ Approximate suite size: `~330+` tests across query, geometry, edits, and metadat
 
 This workspace contains three Playwright lanes:
 
-- `esri-leaflet/` proves that a real browser client can consume Honua through the `leaflet`, `esri-leaflet`, and `esri-leaflet-renderers` packages. It is the merge-blocking Esri Leaflet compatibility lane in `ci.yml` (`esri-leaflet-browser-tests` job).
-- `maplibre/` proves that MapLibre GL JS can load styles, discover TileJSON, fetch MVT tiles, and render vector tiles from Honua. It runs in `ci.yml` as the `maplibre-compat` job.
+- `esri-leaflet/` proves that a real browser client can consume Honua through the `leaflet`, `esri-leaflet`, and `esri-leaflet-renderers` packages. It runs in full CI (`schedule`, `workflow_dispatch`, or PRs labeled `ci/full`) as the `esri-leaflet-browser-tests` job.
+- `maplibre/` proves that MapLibre GL JS can load styles, discover TileJSON, fetch MVT tiles, and render vector tiles from Honua. It runs in full CI as the `maplibre-compat` job.
 - `cesium/` proves that CesiumJS imagery providers (`WebMapServiceImageryProvider`, `WebMapTileServiceImageryProvider`, `UrlTemplateImageryProvider` for OGC API Tiles, `SingleTileImageryProvider` for OGC API Maps) can render against Honua. It runs nightly under the `cesium` lane of `client-interop-nightly.yml` via `docker/client-compat/cesium/`. Cesium does not consume vector-feature endpoints, so the lane records the query/schema/pagination/geometry-fidelity CERT-\* IDs as `not-applicable` and seeds the visual / style slice IDs as `not-applicable` (Cesium consumes server-rendered raster output rather than per-feature drawing info).
 
 Current browser coverage:

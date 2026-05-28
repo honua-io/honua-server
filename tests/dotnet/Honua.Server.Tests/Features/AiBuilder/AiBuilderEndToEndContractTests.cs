@@ -2,14 +2,14 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.NlQuery.Domain;
-using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.AiBuilder.Fixtures;
 using Honua.Server.Features.AiBuilder.Planning;
 using Honua.Server.Features.Geoprocessing;
 using Honua.Server.Features.NlQuery;
 using Honua.Server.Features.Protocols.Mcp.Tools;
+using Honua.Server.Tests.Features.NlQuery;
 using Honua.Server.Tests.Features.Protocols.Mcp;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -35,19 +35,7 @@ public sealed class AiBuilderEndToEndContractTests
     private const string OperationsDashboardPrompt =
         "Build an operations dashboard for this saved map showing a map, incident list, incident count, incidents by type chart, and district filter.";
 
-    private static readonly LayerDefinition FacilitiesLayer = new(
-        Id: 1,
-        Name: "critical_facilities",
-        Description: "Fixture critical facilities layer",
-        GeometryType: GeometryType.Point,
-        SpatialReference: SpatialReference.WGS84,
-        Fields:
-        [
-            new FieldDefinition("facility_type", FieldType.String, Length: 50),
-            new FieldDefinition("status", FieldType.String, Length: 20),
-            new FieldDefinition("capacity", FieldType.Integer),
-            new FieldDefinition("shape", FieldType.Geometry)
-        ]);
+    private static readonly MetadataV2Resource FacilitiesResource = NlQueryTestResources.CriticalFacilities;
 
     private static (DeterministicNlQueryPlanProvider Nl, PlanAnalysisTool Planner) BuildServices()
     {
@@ -69,7 +57,7 @@ public sealed class AiBuilderEndToEndContractTests
 
         // Stage 1: NL planner produces a structured FilterPlan from the prompt.
         var nlResult = await nl.GeneratePlanAsync(
-            new NlQueryPlanRequest(SpatialQueryPrompt, FacilitiesLayer, "critical_facilities"));
+            new NlQueryPlanRequest(SpatialQueryPrompt, FacilitiesResource, "critical_facilities"));
 
         nlResult.IsSuccess.Should().BeTrue();
         nlResult.Plan.Should().NotBeNull();
@@ -79,7 +67,7 @@ public sealed class AiBuilderEndToEndContractTests
 
         var orchestrator = new NlQueryOrchestrator(nl, NullLogger<NlQueryOrchestrator>.Instance);
         var compiled = await orchestrator.ExecuteAsync(
-            new NlQueryPlanRequest(SpatialQueryPrompt, FacilitiesLayer, "critical_facilities"));
+            new NlQueryPlanRequest(SpatialQueryPrompt, FacilitiesResource, "critical_facilities"));
         compiled.IsSuccess.Should().BeTrue(compiled.ErrorMessage);
 
         // Stage 2: same prompt drives plan analysis through MCP. The two
@@ -164,7 +152,7 @@ public sealed class AiBuilderEndToEndContractTests
         // failure carries a fixture-case reason so callers know to fall back
         // to grounding rather than treat the prompt as a hard error.
         var nlResult = await nl.GeneratePlanAsync(
-            new NlQueryPlanRequest("Find shelters near flood zones.", FacilitiesLayer));
+            new NlQueryPlanRequest("Find shelters near flood zones.", FacilitiesResource));
         nlResult.IsSuccess.Should().BeFalse();
         nlResult.ErrorMessage.Should().Contain("ambiguity");
 

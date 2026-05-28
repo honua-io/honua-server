@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -22,6 +21,8 @@ namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
 
 internal static partial class FeatureServerEndpoints
 {
+    private const string FeatureServerProtocolName = "FeatureServer";
+
     private static async Task<IResult> HandleLayerTile(
         int layerId,
         int z,
@@ -57,7 +58,7 @@ internal static partial class FeatureServerEndpoints
         var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
             context,
             layerId,
-            requiredProtocol: ServiceProtocols.FeatureServer,
+            requiredProtocol: FeatureServerProtocolName,
             cancellationToken: cancellationToken);
         if (!layerValidation.IsValid)
         {

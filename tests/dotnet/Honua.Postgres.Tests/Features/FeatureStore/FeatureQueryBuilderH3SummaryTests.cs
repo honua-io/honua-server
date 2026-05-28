@@ -2,8 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Postgres.Features.FeatureStore.Services;
 using Microsoft.Extensions.ObjectPool;
 using FeatureStoreStringBuilderPooledObjectPolicy = Honua.Postgres.Features.FeatureStore.Services.StringBuilderPooledObjectPolicy;
@@ -30,7 +30,7 @@ public sealed class FeatureQueryBuilderH3SummaryTests
                     Id = "populationSum",
                     Kind = SpatialAggregationSummaryKind.Sum,
                     Field = "population",
-                    FieldType = FieldType.Integer
+                    FieldType = MetadataV2FieldType.Integer
                 },
                 new SpatialAggregationSummaryDefinition
                 {
@@ -46,7 +46,7 @@ public sealed class FeatureQueryBuilderH3SummaryTests
                     Id = "scoreHistogram",
                     Kind = SpatialAggregationSummaryKind.Histogram,
                     Field = "score",
-                    FieldType = FieldType.Double,
+                    FieldType = MetadataV2FieldType.Double,
                     HistogramBins = 2,
                     HistogramMin = 0,
                     HistogramMax = 100
@@ -56,7 +56,7 @@ public sealed class FeatureQueryBuilderH3SummaryTests
                     Id = "riskRanges",
                     Kind = SpatialAggregationSummaryKind.Range,
                     Field = "risk",
-                    FieldType = FieldType.Double,
+                    FieldType = MetadataV2FieldType.Double,
                     Ranges = ImmutableArray.Create(
                         new SpatialAggregationRangeBucketDefinition
                         {
@@ -117,7 +117,7 @@ public sealed class FeatureQueryBuilderH3SummaryTests
                     Id = "maxScore",
                     Kind = SpatialAggregationSummaryKind.Max,
                     Field = "score",
-                    FieldType = FieldType.Double
+                    FieldType = MetadataV2FieldType.Double
                 })
         };
 

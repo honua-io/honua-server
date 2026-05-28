@@ -109,7 +109,7 @@ internal static class OpenUsdSceneManifestReader
             SceneId: scene.Id,
             SceneName: scene.Name,
             SceneDescription: scene.Description,
-            IsProtected: scene.Metadata?.AccessPolicy is not null,
+            IsProtected: scene.AccessPolicy is not null,
             Crs: crs,
             Extent: extent,
             Tileset: tileset,

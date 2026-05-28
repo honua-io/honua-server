@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Infrastructure.Progress;
@@ -19,8 +18,10 @@ namespace Honua.Server.Features.Export;
 [JsonSerializable(typeof(ExportAcceptedResponse))]
 [JsonSerializable(typeof(ExportJob))]
 [JsonSerializable(typeof(ExportJobService.PersistedExportJobRequest))]
-[JsonSerializable(typeof(FieldDefinition[]))]
+[JsonSerializable(typeof(ExportField[]))]
 [JsonSerializable(typeof(FeatureQuery))]
+[JsonSerializable(typeof(ExportGeometryType))]
+[JsonSerializable(typeof(ExportFieldType))]
 [JsonSerializable(typeof(OperationType))]
 [JsonSerializable(typeof(OperationStatus))]
 internal sealed partial class ExportJsonContext : JsonSerializerContext

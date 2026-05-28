@@ -4,12 +4,12 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using Honua.Core.Exceptions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Caching;
@@ -83,8 +83,8 @@ internal sealed partial class ODataCrudService
     {
         try
         {
-            // Verify layer exists
-            var layerResult = await _resourceValidator.ValidateLayerAsync(layerId, cancellationToken);
+            // Verify layer exists via the V2 graph snapshot.
+            var layerResult = await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
             if (!layerResult.IsValid)
             {
                 return CreateLayerErrorResult<Dictionary<string, object?>>(layerResult, layerId);
@@ -99,15 +99,16 @@ internal sealed partial class ODataCrudService
 
             // Feature is guaranteed to be non-null after the null check
             var featureValue = feature.Value;
-            var layer = layerResult.Resource!;
+            var resource = layerResult.Resource!;
+            var srid = resource.ReadSrid() ?? 4326;
             var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
                 _crsRegistry,
-                layer.SpatialReference.ToSrid(),
+                srid,
                 cancellationToken);
             var geometry = ODataGeometryConverter.ConvertWkbToGeometry(
                 _geometryService,
                 featureValue.Geometry,
-                layer.SpatialReference.ToSrid(),
+                srid,
                 axisOrder);
             var attributes = ODataAttributeSerializer.Serialize(featureValue.Attributes);
             var response = ODataUtilityService.BuildFeaturePayload(layerId, featureValue, geometry, attributes);
@@ -133,24 +134,24 @@ internal sealed partial class ODataCrudService
     {
         try
         {
-            // Verify layer exists
-            var layerResult = await _resourceValidator.ValidateLayerAsync(layerId, cancellationToken);
+            // Verify layer exists via the V2 graph snapshot.
+            var layerResult = await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
             if (!layerResult.IsValid)
             {
                 return CreateLayerErrorResult<Dictionary<string, object?>>(layerResult, layerId);
             }
 
-            var layer = layerResult.Resource!;
+            var resource = layerResult.Resource!;
+            var srid = resource.ReadSrid() ?? 4326;
 
             // Parse and validate geometry if provided
-            var geometryResult = await ProcessGeometryAsync(payload.Geometry, layer.SpatialReference.ToSrid(), cancellationToken);
+            var geometryResult = await ProcessGeometryAsync(payload.Geometry, srid, cancellationToken);
             if (!geometryResult.IsValid)
             {
                 return ODataCrudResult<Dictionary<string, object?>>.BadRequest(geometryResult.ErrorMessage!);
             }
 
-            var attributesResult = _mutationValidator.ValidateAttributes(
-                layer,
+            var attributesResult = resource.ValidateAttributesV2(
                 payload.Attributes,
                 ValidationExtensions.AttributeValidationMode.Strict);
             if (!attributesResult.IsValid)
@@ -161,7 +162,8 @@ internal sealed partial class ODataCrudService
             var validatedAttributes = attributesResult.Value!;
 
             var editResult = await ExecuteEditAsync(
-                layer,
+                layerId,
+                resource,
                 new ODataEditRequest
                 {
                     Operation = ODataOperation.Create,
@@ -192,12 +194,12 @@ internal sealed partial class ODataCrudService
 
             var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
                 _crsRegistry,
-                layer.SpatialReference.ToSrid(),
+                srid,
                 cancellationToken);
             var responseGeometry = ODataGeometryConverter.ConvertWkbToGeometry(
                 _geometryService,
                 createdFeature.Value.Geometry,
-                layer.SpatialReference.ToSrid(),
+                srid,
                 axisOrder);
             var serializedAttributes = ODataAttributeSerializer.Serialize(createdFeature.Value.Attributes);
             var response = ODataUtilityService.BuildFeaturePayload(layerId, createdFeature.Value, responseGeometry, serializedAttributes);
@@ -238,14 +240,15 @@ internal sealed partial class ODataCrudService
     {
         try
         {
-            // Verify layer exists
-            var layerResult = await _resourceValidator.ValidateLayerAsync(layerId, cancellationToken);
+            // Verify layer exists via the V2 graph snapshot.
+            var layerResult = await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
             if (!layerResult.IsValid)
             {
                 return CreateLayerErrorResult<Dictionary<string, object?>>(layerResult, layerId);
             }
 
-            var layer = layerResult.Resource!;
+            var resource = layerResult.Resource!;
+            var srid = resource.ReadSrid() ?? 4326;
 
             // Get existing feature to merge with update
             var existingFeature = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
@@ -259,12 +262,12 @@ internal sealed partial class ODataCrudService
 
             var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
                 _crsRegistry,
-                layer.SpatialReference.ToSrid(),
+                srid,
                 cancellationToken);
             var currentGeometry = ODataGeometryConverter.ConvertWkbToGeometry(
                 _geometryService,
                 existingFeatureValue.Geometry,
-                layer.SpatialReference.ToSrid(),
+                srid,
                 axisOrder);
             var currentAttributes = ODataAttributeSerializer.Serialize(existingFeatureValue.Attributes);
             var currentEtag = ComputeFeatureEtag(layerId, existingFeatureValue, currentGeometry, currentAttributes);
@@ -287,7 +290,7 @@ internal sealed partial class ODataCrudService
             byte[]? geometryBytes = replace ? null : existingFeatureValue.Geometry;
             if (payload.GeometrySpecified && payload.Geometry != null)
             {
-                var geometryResult = await ProcessGeometryAsync(payload.Geometry, layer.SpatialReference.ToSrid(), cancellationToken);
+                var geometryResult = await ProcessGeometryAsync(payload.Geometry, srid, cancellationToken);
                 if (!geometryResult.IsValid)
                 {
                     return ODataCrudResult<Dictionary<string, object?>>.BadRequest(geometryResult.ErrorMessage!);
@@ -305,10 +308,10 @@ internal sealed partial class ODataCrudService
                 : new Dictionary<string, object?>(existingFeatureValue.Attributes, StringComparer.OrdinalIgnoreCase);
             if (payload.Attributes.Count > 0)
             {
-                var attributesResult = _mutationValidator.ValidateAttributes(
-                    layer,
+                var attributesResult = resource.ValidateAttributesV2(
                     payload.Attributes,
-                    ValidationExtensions.AttributeValidationMode.Strict);
+                    ValidationExtensions.AttributeValidationMode.Strict,
+                    isUpdate: true);
                 if (!attributesResult.IsValid)
                 {
                     return ODataCrudResult<Dictionary<string, object?>>.BadRequest(
@@ -323,7 +326,8 @@ internal sealed partial class ODataCrudService
 
             var operation = replace ? ODataOperation.Update : ODataOperation.Patch;
             var editResult = await ExecuteEditAsync(
-                layer,
+                layerId,
+                resource,
                 new ODataEditRequest
                 {
                     Operation = operation,
@@ -352,7 +356,7 @@ internal sealed partial class ODataCrudService
             var responseGeometry = ODataGeometryConverter.ConvertWkbToGeometry(
                 _geometryService,
                 result.Value.Geometry,
-                layer.SpatialReference.ToSrid(),
+                srid,
                 axisOrder);
             var serializedAttributes = ODataAttributeSerializer.Serialize(result.Value.Attributes);
             var response = ODataUtilityService.BuildFeaturePayload(layerId, result.Value, responseGeometry, serializedAttributes);
@@ -394,12 +398,15 @@ internal sealed partial class ODataCrudService
     {
         try
         {
-            // Verify layer exists
-            var layerResult = await _resourceValidator.ValidateLayerAsync(layerId, cancellationToken);
+            // Verify layer exists via the V2 graph snapshot.
+            var layerResult = await _resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
             if (!layerResult.IsValid)
             {
                 return CreateLayerErrorResult<object>(layerResult, layerId);
             }
+
+            var resource = layerResult.Resource!;
+            var srid = resource.ReadSrid() ?? 4326;
 
             var existingFeature = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
             if (!existingFeature.HasValue)
@@ -409,12 +416,12 @@ internal sealed partial class ODataCrudService
 
             var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
                 _crsRegistry,
-                layerResult.Resource!.SpatialReference.ToSrid(),
+                srid,
                 cancellationToken);
             var currentGeometry = ODataGeometryConverter.ConvertWkbToGeometry(
                 _geometryService,
                 existingFeature.Value.Geometry,
-                layerResult.Resource!.SpatialReference.ToSrid(),
+                srid,
                 axisOrder);
             var currentAttributes = ODataAttributeSerializer.Serialize(existingFeature.Value.Attributes);
             var currentEtag = ComputeFeatureEtag(layerId, existingFeature.Value, currentGeometry, currentAttributes);
@@ -432,7 +439,8 @@ internal sealed partial class ODataCrudService
             }
 
             var editResult = await ExecuteEditAsync(
-                layerResult.Resource!,
+                layerId,
+                resource,
                 new ODataEditRequest
                 {
                     Operation = ODataOperation.Delete,
@@ -463,7 +471,7 @@ internal sealed partial class ODataCrudService
     }
 
     private static ODataCrudResult<T> CreateLayerErrorResult<T>(
-        ResourceValidationResult<LayerDefinition> result,
+        ResourceValidationResult<MetadataV2Resource> result,
         int layerId)
     {
         var message = result.ErrorMessage ?? $"Layer {layerId} not found";
@@ -515,31 +523,37 @@ internal sealed partial class ODataCrudService
     }
 
     private async Task<UnifiedEditResult> ExecuteEditAsync(
-        LayerDefinition layer,
+        int layerId,
+        MetadataV2Resource resource,
         ODataEditRequest request,
         CancellationToken cancellationToken)
     {
-        var conversion = await _editParameterAdapter.ConvertAsync(request, layer, cancellationToken);
+        ArgumentNullException.ThrowIfNull(resource);
+
+        var conversion = await _editParameterAdapter.ConvertAsync(request, resource, cancellationToken)
+            .ConfigureAwait(false);
         if (!conversion.IsSuccess || conversion.EditRequest == null || conversion.Transaction == null)
         {
             return UnifiedEditResult.Failure(conversion.ErrorMessage ?? "Invalid OData edit request.");
         }
 
-        var validation = _editProcessor.ValidateEdit(conversion.EditRequest.Value, layer);
+        var validation = _editProcessor.ValidateEdit(conversion.EditRequest.Value, resource);
         if (!validation.IsValid)
         {
             return UnifiedEditResult.Failure(validation.ErrorMessage ?? "Invalid OData edit request.");
         }
 
-        var transactionValidation = _editProcessor.ValidateTransaction(conversion.Transaction.Value, layer);
+        var transactionValidation = _editProcessor.ValidateTransaction(conversion.Transaction.Value, resource);
         if (!transactionValidation.IsValid)
         {
             return UnifiedEditResult.Failure(transactionValidation.ErrorMessage ?? "Invalid OData edit request.");
         }
 
-        var optimizedRequest = _editProcessor.OptimizeEdit(conversion.EditRequest.Value, layer);
-        var editBatch = _editProcessor.ToFeatureEditBatch(optimizedRequest, layer);
-        var editResult = await _featureWriter.ApplyEditsAsync(layer.Id, editBatch, cancellationToken);
+        var optimizedRequest = _editProcessor.OptimizeEdit(conversion.EditRequest.Value, resource);
+        var editBatch = _editProcessor.ToFeatureEditBatch(optimizedRequest, resource);
+        // Storage handle is still int-keyed at the IFeatureWriter boundary.
+        var editResult = await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken)
+            .ConfigureAwait(false);
 
         return UnifiedEditResult.Success(
             editResult,

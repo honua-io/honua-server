@@ -9,15 +9,12 @@
 
 using System.Globalization;
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Domain;
-using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Protocols.GeoServices;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer.Models;
-using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Server.Features.Protocols.GeoServices.ImageServer.Services;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Features.Protocols.GeoServices.ImageServer;
@@ -309,14 +306,10 @@ internal static class ImageServerEndpoints
             return CreateUnsupportedJsonFormatResult(context);
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context,
-            id,
-            requiredProtocol: ServiceProtocols.ImageServer,
-            cancellationToken: cancellationToken);
-        if (!layerValidation.IsValid)
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
         {
-            return layerValidation.ErrorResult!;
+            return layerError;
         }
 
         return await handler.GetServiceInfoAsync(context, id, cancellationToken);
@@ -405,14 +398,10 @@ internal static class ImageServerEndpoints
             return CreateUnsupportedExportFormatResult(context);
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context,
-            id,
-            requiredProtocol: ServiceProtocols.ImageServer,
-            cancellationToken: cancellationToken);
-        if (!layerValidation.IsValid)
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
         {
-            return layerValidation.ErrorResult!;
+            return layerError;
         }
 
         return await handler.ExportImageAsync(context, id, request, cancellationToken);
@@ -490,14 +479,10 @@ internal static class ImageServerEndpoints
             return CreateUnsupportedJsonFormatResult(context);
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context,
-            id,
-            requiredProtocol: ServiceProtocols.ImageServer,
-            cancellationToken: cancellationToken);
-        if (!layerValidation.IsValid)
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
         {
-            return layerValidation.ErrorResult!;
+            return layerError;
         }
 
         return await handler.IdentifyAsync(context, id, request, cancellationToken);
@@ -512,14 +497,10 @@ internal static class ImageServerEndpoints
         ImageServerCatalogQueryHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context,
-            id,
-            requiredProtocol: ServiceProtocols.ImageServer,
-            cancellationToken: cancellationToken);
-        if (!layerValidation.IsValid)
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
         {
-            return layerValidation.ErrorResult!;
+            return layerError;
         }
 
         var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
@@ -545,14 +526,10 @@ internal static class ImageServerEndpoints
         ImageServerCatalogQueryHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context,
-            id,
-            requiredProtocol: ServiceProtocols.ImageServer,
-            cancellationToken: cancellationToken);
-        if (!layerValidation.IsValid)
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
         {
-            return layerValidation.ErrorResult!;
+            return layerError;
         }
 
         var (bodyValues, readError) = await GeoServicesRequestValueHelpers.TryReadRequestValuesAsync(context.Request, cancellationToken);
@@ -594,14 +571,10 @@ internal static class ImageServerEndpoints
         ImageServerStatisticsHistogramsHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context,
-            id,
-            requiredProtocol: ServiceProtocols.ImageServer,
-            cancellationToken: cancellationToken);
-        if (!layerValidation.IsValid)
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
         {
-            return layerValidation.ErrorResult!;
+            return layerError;
         }
 
         var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
@@ -639,14 +612,10 @@ internal static class ImageServerEndpoints
         ImageServerStatisticsHistogramsHandler handler,
         CancellationToken cancellationToken = default)
     {
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context,
-            id,
-            requiredProtocol: ServiceProtocols.ImageServer,
-            cancellationToken: cancellationToken);
-        if (!layerValidation.IsValid)
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
         {
-            return layerValidation.ErrorResult!;
+            return layerError;
         }
 
         var (bodyValues, readError) = await GeoServicesRequestValueHelpers.TryReadRequestValuesAsync(context.Request, cancellationToken);
@@ -706,14 +675,10 @@ internal static class ImageServerEndpoints
             return CreateUnsupportedJsonFormatResult(context);
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context,
-            id,
-            requiredProtocol: ServiceProtocols.ImageServer,
-            cancellationToken: cancellationToken);
-        if (!layerValidation.IsValid)
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
         {
-            return layerValidation.ErrorResult!;
+            return layerError;
         }
 
         return await handler.GetLegendAsync(context, id, cancellationToken);
@@ -738,14 +703,10 @@ internal static class ImageServerEndpoints
         HttpContext context,
         CancellationToken cancellationToken = default)
     {
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context,
-            id,
-            requiredProtocol: ServiceProtocols.ImageServer,
-            cancellationToken: cancellationToken);
-        if (!layerValidation.IsValid)
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
         {
-            return layerValidation.ErrorResult!;
+            return layerError;
         }
 
         var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
@@ -781,14 +742,10 @@ internal static class ImageServerEndpoints
         HttpContext context,
         CancellationToken cancellationToken = default)
     {
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context,
-            id,
-            requiredProtocol: ServiceProtocols.ImageServer,
-            cancellationToken: cancellationToken);
-        if (!layerValidation.IsValid)
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
         {
-            return layerValidation.ErrorResult!;
+            return layerError;
         }
 
         var (bodyValues, readError) = await GeoServicesRequestValueHelpers.TryReadRequestValuesAsync(context.Request, cancellationToken);
@@ -845,14 +802,10 @@ internal static class ImageServerEndpoints
         string format = "png",
         CancellationToken cancellationToken = default)
     {
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
-            context,
-            id,
-            requiredProtocol: ServiceProtocols.ImageServer,
-            cancellationToken: cancellationToken);
-        if (!layerValidation.IsValid)
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
         {
-            return layerValidation.ErrorResult!;
+            return layerError;
         }
 
         return await handler.GetImageTileAsync(context, id, level, row, col, format, cancellationToken);
@@ -877,39 +830,25 @@ internal static class ImageServerEndpoints
         HttpContext context,
         CancellationToken cancellationToken)
     {
-        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
-        if (!serviceResult.IsValid)
-        {
-            var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
-            if (serviceResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
-            {
-                return (0, StandardErrorHelpers.CreateBadRequest(context, errorMessage));
-            }
+        var resolver = context.RequestServices.GetRequiredService<IImageServerLayerResolver>();
+        var resolution = await resolver.ResolveFirstAccessibleLayerAsync(
+            serviceId,
+            context,
+            cancellationToken).ConfigureAwait(false);
+        return (resolution.LayerId, resolution.ErrorResult);
+    }
 
-            return (0, StandardErrorHelpers.CreateNotFound(context, errorMessage));
-        }
-
-        var service = serviceResult.Resource!;
-        var protocolError = ProtocolValidationHelpers.ValidateProtocolEnabled(context, service, ServiceProtocols.ImageServer);
-        if (protocolError is not null)
-        {
-            return (0, protocolError);
-        }
-
-        var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, service.Layers, service);
-        if (accessError is not null)
-        {
-            return (0, accessError);
-        }
-
-        var layer = service.Layers.FirstOrDefault(layer => AccessPolicyHelpers.IsLayerAccessible(context, layer, service));
-        if (layer is null)
-        {
-            return (0, StandardErrorHelpers.CreateNotFound(context, "Image service has no layers."));
-        }
-
-        return (layer.Id, null);
+    private static async Task<IResult?> ValidateImageLayerAsync(
+        int layerId,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        var resolver = context.RequestServices.GetRequiredService<IImageServerLayerResolver>();
+        var resolution = await resolver.ValidateLayerAsync(
+            layerId,
+            context,
+            cancellationToken).ConfigureAwait(false);
+        return resolution.ErrorResult;
     }
 
     private static bool IsSupportedJsonResponseFormat(string? format)

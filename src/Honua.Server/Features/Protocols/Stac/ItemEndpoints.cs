@@ -3,7 +3,6 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -80,7 +79,7 @@ internal static class ItemEndpoints
         {
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
             var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
-                context, collectionId, requiredProtocol: ServiceProtocols.Stac, cancellationToken: cancellationToken);
+                context, collectionId, requiredProtocol: StacProtocolConstants.ProtocolName, cancellationToken: cancellationToken);
             if (!validation.IsValid)
             {
                 StacTelemetry.SetFailed(activity, "collection_not_found_or_forbidden");
@@ -218,7 +217,7 @@ internal static class ItemEndpoints
         {
             var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
             var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
-                context, collectionId, requiredProtocol: ServiceProtocols.Stac, cancellationToken: cancellationToken);
+                context, collectionId, requiredProtocol: StacProtocolConstants.ProtocolName, cancellationToken: cancellationToken);
             if (!validation.IsValid)
             {
                 StacTelemetry.SetFailed(activity, "collection_not_found_or_forbidden");

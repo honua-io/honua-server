@@ -3,7 +3,6 @@
 
 using System.Globalization;
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -12,11 +11,7 @@ namespace Honua.Server.Features.Protocols.GeoServices;
 
 internal static class GeoServicesObjectIdFieldResolver
 {
-    public static string ResolveObjectIdFieldName(LayerDefinition layer)
-        => ResolveObjectIdField(layer)?.Name ?? FieldNames.ObjectId;
-
     /// <summary>
-    /// V2 overload of <see cref="ResolveObjectIdFieldName(LayerDefinition)"/>.
     /// Resolves the object-id field name from a Metadata v2 canonical resource. Prefers
     /// fields tagged with the <c>id.primary</c> semantic role, then falls back to the
     /// first integer/big-integer field named <c>objectid</c>, <c>id</c>, or <c>fid</c>
@@ -26,9 +21,6 @@ internal static class GeoServicesObjectIdFieldResolver
     public static string ResolveObjectIdFieldName(MetadataV2Resource resource)
         => ResolveObjectIdField(resource)?.Name ?? FieldNames.ObjectId;
 
-    /// <summary>
-    /// V2 overload of <see cref="ResolveObjectIdField(LayerDefinition)"/>.
-    /// </summary>
     public static MetadataV2Field? ResolveObjectIdField(MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -58,26 +50,6 @@ internal static class GeoServicesObjectIdFieldResolver
     private static bool IsObjectIdCompatible(MetadataV2Field field)
         => field.Type is MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger;
 
-    public static string ResolveServiceObjectIdFieldName(ServiceDefinition service)
-    {
-        var candidates = service.Layers
-            .Select(ResolveObjectIdFieldName)
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        return candidates.Length == 1 ? candidates[0] : FieldNames.ObjectId;
-    }
-
-    public static string? ResolveObjectIdAttributeName(LayerDefinition layer)
-        => ResolveObjectIdField(layer)?.Name;
-
-    public static FieldDefinition? ResolveObjectIdField(LayerDefinition layer)
-        => FindNumericField(layer, FieldNames.ObjectId)
-           ?? FindNumericField(layer, "id")
-           ?? FindNumericField(layer, "fid")
-           ?? layer.Fields.FirstOrDefault(IsObjectIdCompatible);
-
     public static long ResolveObjectIdValue(Feature feature, string objectIdFieldName)
     {
         if (!string.IsNullOrWhiteSpace(objectIdFieldName) &&
@@ -89,14 +61,6 @@ internal static class GeoServicesObjectIdFieldResolver
 
         return feature.Id;
     }
-
-    private static FieldDefinition? FindNumericField(LayerDefinition layer, string fieldName)
-        => layer.Fields.FirstOrDefault(field =>
-            field.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase) &&
-            IsObjectIdCompatible(field));
-
-    private static bool IsObjectIdCompatible(FieldDefinition field)
-        => !field.IsGeometry && field.Type is FieldType.Integer or FieldType.BigInteger;
 
     private static bool TryNormalizeObjectId(object? value, out long objectId)
     {

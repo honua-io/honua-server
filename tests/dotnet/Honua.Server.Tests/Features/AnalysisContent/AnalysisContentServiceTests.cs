@@ -5,10 +5,10 @@ using System.Security.Claims;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AnalysisContent.Domain;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Query;
 using Honua.Server.Features.AnalysisContent;
 using Honua.Server.Features.Geoprocessing;
@@ -33,7 +33,7 @@ public sealed class AnalysisContentServiceTests
         var store = new ConflictOnceAnalysisContentStore();
         var sut = new AnalysisContentService(
             store,
-            Substitute.For<ILayerCatalog>(),
+            Substitute.For<IMetadataV2GraphProvider>(),
             Substitute.For<IQueryProcessor>(),
             Substitute.For<IFeatureReader>(),
             Substitute.For<IGeoprocessingJobService>(),
@@ -275,7 +275,7 @@ public sealed class AnalysisContentServiceTests
         IEnumerable<IExecutionLogStore>? logStores = null)
         => new(
             Substitute.For<IAnalysisContentStore>(),
-            Substitute.For<ILayerCatalog>(),
+            Substitute.For<IMetadataV2GraphProvider>(),
             Substitute.For<IQueryProcessor>(),
             Substitute.For<IFeatureReader>(),
             jobService ?? Substitute.For<IGeoprocessingJobService>(),

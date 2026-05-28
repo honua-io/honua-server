@@ -3,7 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Caching;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Caching;
@@ -42,9 +42,9 @@ public sealed class RedisCacheServiceRedisIntegrationTests
         using var cacheA = CreateCacheScope(prefix);
         using var cacheB = CreateCacheScope(prefix);
 
-        await cacheA.Cache.SetAsync("layer:1", new FieldDefinition("objectid", FieldType.Integer, Nullable: false));
+        await cacheA.Cache.SetAsync("layer:1", new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false });
 
-        var result = await cacheB.Cache.GetAsync<FieldDefinition>("layer:1");
+        var result = await cacheB.Cache.GetAsync<MetadataV2Field>("layer:1");
 
         result.Should().NotBeNull();
         result!.Name.Should().Be("objectid");
@@ -59,12 +59,11 @@ public sealed class RedisCacheServiceRedisIntegrationTests
         using var cacheA = CreateCacheScope(prefix);
         using var cacheB = CreateCacheScope(prefix);
 
-        var layer = LayerDefinition.CreateBasic(1, "Layer", GeometryType.Point);
-        var service = new ServiceDefinition("test", "Test Service", [layer], SpatialReference.WGS84);
-        await cacheA.Cache.SetAsync("service:1", service);
+        var field = new MetadataV2Field { Name = "service", Type = MetadataV2FieldType.String, Length = 32 };
+        await cacheA.Cache.SetAsync("service:1", field);
 
         await cacheB.Cache.RemoveAsync("service:1");
-        var result = await cacheA.Cache.GetAsync<ServiceDefinition>("service:1");
+        var result = await cacheA.Cache.GetAsync<MetadataV2Field>("service:1");
 
         result.Should().BeNull();
     }
@@ -78,15 +77,15 @@ public sealed class RedisCacheServiceRedisIntegrationTests
         using var cacheA = CreateCacheScope(prefix);
         using var cacheB = CreateCacheScope(prefix);
 
-        await cacheA.Cache.SetAsync("layer:1", new FieldDefinition("Layer1", FieldType.String, Length: 10));
-        await cacheA.Cache.SetAsync("layer:2", new FieldDefinition("Layer2", FieldType.String, Length: 10));
-        await cacheA.Cache.SetAsync("service:1", new FieldDefinition("Service1", FieldType.String, Length: 10));
+        await cacheA.Cache.SetAsync("layer:1", new MetadataV2Field { Name = "Layer1", Type = MetadataV2FieldType.String, Length = 10 });
+        await cacheA.Cache.SetAsync("layer:2", new MetadataV2Field { Name = "Layer2", Type = MetadataV2FieldType.String, Length = 10 });
+        await cacheA.Cache.SetAsync("service:1", new MetadataV2Field { Name = "Service1", Type = MetadataV2FieldType.String, Length = 10 });
 
         await cacheB.Cache.RemoveByPatternAsync("layer:*");
 
-        (await cacheA.Cache.GetAsync<FieldDefinition>("layer:1")).Should().BeNull();
-        (await cacheA.Cache.GetAsync<FieldDefinition>("layer:2")).Should().BeNull();
-        (await cacheA.Cache.GetAsync<FieldDefinition>("service:1")).Should().NotBeNull();
+        (await cacheA.Cache.GetAsync<MetadataV2Field>("layer:1")).Should().BeNull();
+        (await cacheA.Cache.GetAsync<MetadataV2Field>("layer:2")).Should().BeNull();
+        (await cacheA.Cache.GetAsync<MetadataV2Field>("service:1")).Should().NotBeNull();
     }
 
     private CacheScope CreateCacheScope(string keyPrefix)

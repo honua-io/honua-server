@@ -1,8 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
-using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.MySql.Queries.Filters;
 
@@ -15,23 +14,11 @@ namespace Honua.MySql.Tests;
 public class MySqlSqlFilterTranslatorTests
 {
     private readonly MySqlSqlFilterTranslator _translator = new();
-    private readonly LayerDefinition _layer;
+    private readonly MetadataV2Resource _resource;
 
     public MySqlSqlFilterTranslatorTests()
     {
-        _layer = new LayerDefinition(
-            Id: 1,
-            Name: "parcels",
-            Description: null,
-            GeometryType: GeometryType.Polygon,
-            SpatialReference: SpatialReference.Create(4326),
-            Fields:
-            [
-                new("id", FieldType.BigInteger, Nullable: false),
-                new("name", FieldType.String),
-                new("area", FieldType.Double),
-                new("geometry", FieldType.Geometry, Nullable: false)
-            ]);
+        _resource = CreateResource("parcels", MetadataV2GeometryType.Polygon);
     }
 
     [Fact]
@@ -42,7 +29,7 @@ public class MySqlSqlFilterTranslatorTests
             BinaryOperator.Equal,
             new Literal("Acme", LiteralType.Text));
 
-        var result = _translator.Translate(filter, _layer);
+        var result = _translator.Translate(filter, _resource);
 
         Assert.Equal("`name` = @p0", result.Sql);
         Assert.Single(result.Parameters);
@@ -64,7 +51,7 @@ public class MySqlSqlFilterTranslatorTests
             op,
             new Literal(10.0, LiteralType.Number));
 
-        var result = _translator.Translate(filter, _layer);
+        var result = _translator.Translate(filter, _resource);
 
         Assert.Contains(expectedToken, result.Sql, StringComparison.Ordinal);
     }
@@ -83,7 +70,7 @@ public class MySqlSqlFilterTranslatorTests
                 BinaryOperator.Equal,
                 new Literal("Acme", LiteralType.Text)));
 
-        var result = _translator.Translate(filter, _layer);
+        var result = _translator.Translate(filter, _resource);
 
         Assert.Equal("(`area` > @p0 AND `name` = @p1)", result.Sql);
         Assert.Equal(2, result.Parameters.Count);
@@ -94,7 +81,7 @@ public class MySqlSqlFilterTranslatorTests
     {
         var filter = new UnaryExpression(UnaryOperator.IsNull, new PropertyReference("name"));
 
-        var result = _translator.Translate(filter, _layer);
+        var result = _translator.Translate(filter, _resource);
 
         Assert.Equal("`name` IS NULL", result.Sql);
     }
@@ -107,7 +94,7 @@ public class MySqlSqlFilterTranslatorTests
             new PropertyReference("geometry"),
             new GeometryLiteral([0x01, 0x02], 4326, "POINT"));
 
-        var result = _translator.Translate(filter, _layer);
+        var result = _translator.Translate(filter, _resource);
 
         // Default flavor is Mysql, so the axis-order=long-lat option is emitted on
         // ST_GeomFromWKB to interpret canonical X/Y WKB on geographic SRSes.
@@ -132,7 +119,7 @@ public class MySqlSqlFilterTranslatorTests
             new PropertyReference("geometry"),
             new GeometryLiteral([0x01], 4326, "POINT"));
 
-        var result = _translator.Translate(filter, _layer);
+        var result = _translator.Translate(filter, _resource);
 
         Assert.StartsWith(expectedFunction, result.Sql, StringComparison.Ordinal);
     }
@@ -140,19 +127,9 @@ public class MySqlSqlFilterTranslatorTests
     [Fact]
     public void Translate_DWithinDistance_OnPointLayer_UsesStDistanceSphere()
     {
-        // ST_Distance_Sphere requires a point layer; the polygon-typed default _layer is
+        // ST_Distance_Sphere requires a point resource; the polygon-typed default _resource is
         // covered by Translate_SpatialDistance_OnNonPointLayer_ThrowsNotSupported.
-        var pointLayer = new LayerDefinition(
-            Id: 2,
-            Name: "stations",
-            Description: null,
-            GeometryType: GeometryType.Point,
-            SpatialReference: SpatialReference.Create(4326),
-            Fields:
-            [
-                new("id", FieldType.BigInteger, Nullable: false),
-                new("geometry", FieldType.Geometry, Nullable: false)
-            ]);
+        var pointResource = CreateResource("stations", MetadataV2GeometryType.Point);
 
         var filter = new SpatialDistancePredicate(
             SpatialOperator.DWithin,
@@ -160,30 +137,20 @@ public class MySqlSqlFilterTranslatorTests
             new GeometryLiteral([0x01], 4326, "POINT"),
             new Literal(100.0, LiteralType.Number));
 
-        var result = _translator.Translate(filter, pointLayer);
+        var result = _translator.Translate(filter, pointResource);
 
         Assert.Contains("ST_Distance_Sphere", result.Sql, StringComparison.Ordinal);
         Assert.Contains("<= @p1", result.Sql, StringComparison.Ordinal);
     }
 
     [Theory]
-    [InlineData(GeometryType.Polygon)]
-    [InlineData(GeometryType.MultiPolygon)]
-    [InlineData(GeometryType.LineString)]
-    [InlineData(GeometryType.MultiLineString)]
-    public void Translate_SpatialDistance_OnNonPointLayer_ThrowsNotSupported(GeometryType geometryType)
+    [InlineData(MetadataV2GeometryType.Polygon)]
+    [InlineData(MetadataV2GeometryType.MultiPolygon)]
+    [InlineData(MetadataV2GeometryType.LineString)]
+    [InlineData(MetadataV2GeometryType.MultiLineString)]
+    public void Translate_SpatialDistance_OnNonPointLayer_ThrowsNotSupported(MetadataV2GeometryType geometryType)
     {
-        var nonPointLayer = new LayerDefinition(
-            Id: 3,
-            Name: "non_point",
-            Description: null,
-            GeometryType: geometryType,
-            SpatialReference: SpatialReference.Create(4326),
-            Fields:
-            [
-                new("id", FieldType.BigInteger, Nullable: false),
-                new("geometry", FieldType.Geometry, Nullable: false)
-            ]);
+        var nonPointResource = CreateResource("non_point", geometryType);
 
         var filter = new SpatialDistancePredicate(
             SpatialOperator.DWithin,
@@ -191,7 +158,7 @@ public class MySqlSqlFilterTranslatorTests
             new GeometryLiteral([0x01], 4326, "POINT"),
             new Literal(100.0, LiteralType.Number));
 
-        var ex = Assert.Throws<NotSupportedException>(() => _translator.Translate(filter, nonPointLayer));
+        var ex = Assert.Throws<NotSupportedException>(() => _translator.Translate(filter, nonPointResource));
         Assert.Contains("point layers", ex.Message, StringComparison.Ordinal);
     }
 
@@ -204,24 +171,14 @@ public class MySqlSqlFilterTranslatorTests
             new GeometryLiteral([0x01], 4326, "POINT"),
             new Literal(50.0, LiteralType.Number));
 
-        var ex = Assert.Throws<NotSupportedException>(() => _translator.Translate(filter, _layer));
+        var ex = Assert.Throws<NotSupportedException>(() => _translator.Translate(filter, _resource));
         Assert.Contains("point layers", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Translate_DWithinDistance_OnMultiPointLayer_UsesStDistanceSphere()
     {
-        var multiPointLayer = new LayerDefinition(
-            Id: 4,
-            Name: "swarm",
-            Description: null,
-            GeometryType: GeometryType.MultiPoint,
-            SpatialReference: SpatialReference.Create(4326),
-            Fields:
-            [
-                new("id", FieldType.BigInteger, Nullable: false),
-                new("geometry", FieldType.Geometry, Nullable: false)
-            ]);
+        var multiPointResource = CreateResource("swarm", MetadataV2GeometryType.MultiPoint);
 
         var filter = new SpatialDistancePredicate(
             SpatialOperator.DWithin,
@@ -229,7 +186,7 @@ public class MySqlSqlFilterTranslatorTests
             new GeometryLiteral([0x01], 4326, "POINT"),
             new Literal(100.0, LiteralType.Number));
 
-        var result = _translator.Translate(filter, multiPointLayer);
+        var result = _translator.Translate(filter, multiPointResource);
 
         Assert.Contains("ST_Distance_Sphere", result.Sql, StringComparison.Ordinal);
     }
@@ -244,17 +201,7 @@ public class MySqlSqlFilterTranslatorTests
         // FeatureQuery.SpatialFilter SRID guard so OGC API Features / OData distance
         // predicates against non-WGS84 layers fail with the same descriptive contract
         // instead of leaking ER_INVALID_GIS_DATA from the engine.
-        var layer = new LayerDefinition(
-            Id: 5,
-            Name: "stations",
-            Description: null,
-            GeometryType: GeometryType.Point,
-            SpatialReference: SpatialReference.Create(layerSrid),
-            Fields:
-            [
-                new("id", FieldType.BigInteger, Nullable: false),
-                new("geometry", FieldType.Geometry, Nullable: false)
-            ]);
+        var resource = CreateResource("stations", MetadataV2GeometryType.Point, layerSrid);
 
         var filter = new SpatialDistancePredicate(
             SpatialOperator.DWithin,
@@ -262,7 +209,7 @@ public class MySqlSqlFilterTranslatorTests
             new GeometryLiteral([0x01], layerSrid, "POINT"),
             new Literal(100.0, LiteralType.Number));
 
-        var ex = Assert.Throws<NotSupportedException>(() => _translator.Translate(filter, layer));
+        var ex = Assert.Throws<NotSupportedException>(() => _translator.Translate(filter, resource));
         Assert.Contains("EPSG:4326 or SRID 0", ex.Message, StringComparison.Ordinal);
         Assert.Contains(layerSrid.ToString(System.Globalization.CultureInfo.InvariantCulture), ex.Message, StringComparison.Ordinal);
     }
@@ -273,17 +220,7 @@ public class MySqlSqlFilterTranslatorTests
         // SRID 0 (Cartesian, no SRS) is the second SRID MySQL ST_Distance_Sphere
         // documents as accepted. Mirror the MySqlFeatureQueryBuilder coverage so the
         // CQL2 path is consistent.
-        var srid0Layer = new LayerDefinition(
-            Id: 6,
-            Name: "stations_no_srs",
-            Description: null,
-            GeometryType: GeometryType.Point,
-            SpatialReference: SpatialReference.Create(0),
-            Fields:
-            [
-                new("id", FieldType.BigInteger, Nullable: false),
-                new("geometry", FieldType.Geometry, Nullable: false)
-            ]);
+        var srid0Resource = CreateResource("stations_no_srs", MetadataV2GeometryType.Point, srid: 0);
 
         var filter = new SpatialDistancePredicate(
             SpatialOperator.DWithin,
@@ -291,7 +228,7 @@ public class MySqlSqlFilterTranslatorTests
             new GeometryLiteral([0x01], 0, "POINT"),
             new Literal(100.0, LiteralType.Number));
 
-        var result = _translator.Translate(filter, srid0Layer);
+        var result = _translator.Translate(filter, srid0Resource);
 
         Assert.Contains("ST_Distance_Sphere", result.Sql, StringComparison.Ordinal);
     }
@@ -304,7 +241,7 @@ public class MySqlSqlFilterTranslatorTests
             new PropertyReference("geometry"),
             new GeometryLiteral([0x01], 3857, "POINT"));
 
-        var ex = Assert.Throws<NotSupportedException>(() => _translator.Translate(filter, _layer));
+        var ex = Assert.Throws<NotSupportedException>(() => _translator.Translate(filter, _resource));
         Assert.Contains("Cross-SRID", ex.Message, StringComparison.Ordinal);
     }
 
@@ -316,7 +253,7 @@ public class MySqlSqlFilterTranslatorTests
             new PropertyReference("name"),
             new ArrayLiteral([new Literal("x", LiteralType.Text)]));
 
-        var ex = Assert.Throws<NotSupportedException>(() => _translator.Translate(filter, _layer));
+        var ex = Assert.Throws<NotSupportedException>(() => _translator.Translate(filter, _resource));
         Assert.Contains("ArrayPredicate", ex.Message, StringComparison.Ordinal);
     }
 
@@ -328,7 +265,7 @@ public class MySqlSqlFilterTranslatorTests
             BinaryOperator.Equal,
             new Literal("x", LiteralType.Text));
 
-        Assert.Throws<ArgumentException>(() => _translator.Translate(filter, _layer));
+        Assert.Throws<ArgumentException>(() => _translator.Translate(filter, _resource));
     }
 
     [Fact]
@@ -339,7 +276,7 @@ public class MySqlSqlFilterTranslatorTests
             BinaryOperator.In,
             new ValueList([]));
 
-        var result = _translator.Translate(filter, _layer);
+        var result = _translator.Translate(filter, _resource);
 
         Assert.Equal("FALSE", result.Sql);
     }
@@ -352,7 +289,7 @@ public class MySqlSqlFilterTranslatorTests
             BinaryOperator.NotIn,
             new ValueList([]));
 
-        var result = _translator.Translate(filter, _layer);
+        var result = _translator.Translate(filter, _resource);
 
         Assert.Equal("TRUE", result.Sql);
     }
@@ -370,21 +307,19 @@ public class MySqlSqlFilterTranslatorTests
         // would emit SQL against a non-existent column whenever the backing geometry column
         // has a non-default name. Mirrors the alias handling in spatial-expression paths so
         // attribute and spatial filters agree.
-        var layer = new LayerDefinition(
-            Id: 5,
-            Name: "non_default_geom",
-            Description: null,
-            GeometryType: GeometryType.Polygon,
-            SpatialReference: SpatialReference.Create(4326),
-            Fields:
+        var resource = CreateResource(
+            "non_default_geom",
+            MetadataV2GeometryType.Polygon,
+            geometryFieldName: "the_geom",
+            fields:
             [
-                new("id", FieldType.BigInteger, Nullable: false),
-                new("the_geom", FieldType.Geometry, Nullable: false)
+                Field("id", MetadataV2FieldType.BigInteger, nullable: false, semanticRoles: ["id.primary"]),
+                Field("the_geom", MetadataV2FieldType.Geometry, nullable: false, semanticRoles: ["geometry.primary"]),
             ]);
 
         var filter = new UnaryExpression(UnaryOperator.IsNotNull, new PropertyReference(alias));
 
-        var result = _translator.Translate(filter, layer);
+        var result = _translator.Translate(filter, resource);
 
         Assert.Equal("`the_geom` IS NOT NULL", result.Sql);
     }
@@ -396,17 +331,15 @@ public class MySqlSqlFilterTranslatorTests
         // column is something else), filters referencing "geom" target the attribute, not the
         // geometry. Field-by-name lookup wins over alias resolution to avoid silently
         // redirecting user filters away from the column they explicitly named.
-        var layer = new LayerDefinition(
-            Id: 6,
-            Name: "geom_attribute",
-            Description: null,
-            GeometryType: GeometryType.Polygon,
-            SpatialReference: SpatialReference.Create(4326),
-            Fields:
+        var resource = CreateResource(
+            "geom_attribute",
+            MetadataV2GeometryType.Polygon,
+            geometryFieldName: "the_geom",
+            fields:
             [
-                new("id", FieldType.BigInteger, Nullable: false),
-                new("geom", FieldType.String),
-                new("the_geom", FieldType.Geometry, Nullable: false)
+                Field("id", MetadataV2FieldType.BigInteger, nullable: false, semanticRoles: ["id.primary"]),
+                Field("geom", MetadataV2FieldType.String),
+                Field("the_geom", MetadataV2FieldType.Geometry, nullable: false, semanticRoles: ["geometry.primary"]),
             ]);
 
         var filter = new BinaryExpression(
@@ -414,7 +347,7 @@ public class MySqlSqlFilterTranslatorTests
             BinaryOperator.Equal,
             new Literal("x", LiteralType.Text));
 
-        var result = _translator.Translate(filter, layer);
+        var result = _translator.Translate(filter, resource);
 
         Assert.Equal("`geom` = @p0", result.Sql);
     }
@@ -432,9 +365,52 @@ public class MySqlSqlFilterTranslatorTests
             new PropertyReference("geometry"),
             new GeometryLiteral([0x01, 0x02], 4326, "POINT"));
 
-        var result = translator.Translate(filter, _layer);
+        var result = translator.Translate(filter, _resource);
 
         Assert.Contains("ST_GeomFromWKB(@p0, 4326)", result.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("axis-order", result.Sql, StringComparison.Ordinal);
     }
+
+    private static MetadataV2Resource CreateResource(
+        string name,
+        MetadataV2GeometryType geometryType,
+        int srid = 4326,
+        string geometryFieldName = "geometry",
+        IReadOnlyList<MetadataV2Field>? fields = null)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = $"res-{name}", Name = name },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = new MetadataV2SpatialReference
+                {
+                    Srid = srid,
+                    Crs = $"EPSG:{srid}",
+                    IsGeographic = srid is 4326 or 0,
+                },
+                GeometryType = geometryType,
+                PrimaryGeometryField = geometryFieldName,
+            },
+            SchemaFields = fields ??
+            [
+                Field("id", MetadataV2FieldType.BigInteger, nullable: false, semanticRoles: ["id.primary"]),
+                Field("name", MetadataV2FieldType.String),
+                Field("area", MetadataV2FieldType.Double),
+                Field(geometryFieldName, MetadataV2FieldType.Geometry, nullable: false, semanticRoles: ["geometry.primary"]),
+            ],
+        };
+
+    private static MetadataV2Field Field(
+        string name,
+        MetadataV2FieldType type,
+        bool nullable = true,
+        params string[] semanticRoles)
+        => new()
+        {
+            Name = name,
+            Type = type,
+            Nullable = nullable,
+            SemanticRoles = semanticRoles,
+        };
 }

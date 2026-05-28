@@ -1,10 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
-using System.Text.Json;
 
 namespace Honua.TestKit.Infrastructure;
 
@@ -12,7 +12,7 @@ namespace Honua.TestKit.Infrastructure;
 /// In-memory <see cref="IMetadataV2GraphProvider"/> for tests. Holds a single graph
 /// snapshot supplied at construction; callers can swap the snapshot at any time.
 /// </summary>
-public sealed class TestMetadataV2GraphProvider : IMetadataV2GraphProvider
+public sealed class TestMetadataV2GraphProvider : IMetadataV2GraphStore
 {
     private MetadataV2GraphSnapshot _snapshot;
 
@@ -42,6 +42,25 @@ public sealed class TestMetadataV2GraphProvider : IMetadataV2GraphProvider
 
     public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
         => new(_snapshot.Graph.Revision == revision ? _snapshot : null);
+
+    public Task<MetadataV2GraphSnapshot> SaveAsync(
+        MetadataV2Graph graph,
+        string? expectedEtag,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        if (expectedEtag is not null &&
+            !string.Equals(expectedEtag, _snapshot.Etag, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Metadata v2 graph ETag mismatch.");
+        }
+
+        _snapshot = new MetadataV2GraphSnapshot(
+            graph,
+            $"\"test-{graph.Revision}\"",
+            DateTimeOffset.UtcNow);
+        return Task.FromResult(_snapshot);
+    }
 }
 
 /// <summary>
@@ -94,13 +113,8 @@ public sealed class TestMetadataV2GraphBuilder
         AccessPolicy? accessPolicy = null,
         MetadataV2ResourceSpatial? spatial = null,
         MetadataV2ResourceTemporal? temporal = null,
-        string? description = null,
-        MetadataV2ResourceDisplay? display = null,
-        MetadataV2ResourceEditing? editing = null,
-        IReadOnlyList<MetadataV2Relationship>? relationships = null,
-        IReadOnlyDictionary<string, JsonElement>? extensions = null,
         IReadOnlyDictionary<string, string>? annotations = null,
-        MetadataV2Status? status = null)
+        IReadOnlyDictionary<string, JsonElement>? extensions = null)
     {
         _resources.Add(new MetadataV2Resource
         {
@@ -108,18 +122,13 @@ public sealed class TestMetadataV2GraphBuilder
             {
                 Id = id,
                 Name = name,
-                Description = description,
-                Annotations = annotations ?? new Dictionary<string, string>(),
+                Annotations = annotations ?? new Dictionary<string, string>()
             },
             Type = type,
-            Status = status,
             SchemaFields = fields?.ToArray() ?? Array.Empty<MetadataV2Field>(),
-            Relationships = relationships ?? Array.Empty<MetadataV2Relationship>(),
             AccessPolicy = accessPolicy,
             Spatial = spatial,
             Temporal = temporal,
-            Display = display,
-            Editing = editing,
             Extensions = extensions ?? new Dictionary<string, JsonElement>(),
         });
         return this;
@@ -131,7 +140,8 @@ public sealed class TestMetadataV2GraphBuilder
         string locator,
         string? connectionId = null,
         MetadataV2StorageType storageType = MetadataV2StorageType.RelationalTable,
-        int? storageLayerId = null)
+        int? storageLayerId = null,
+        IReadOnlyDictionary<string, JsonElement>? options = null)
     {
         _bindings.Add(new MetadataV2StorageBinding
         {
@@ -141,6 +151,7 @@ public sealed class TestMetadataV2GraphBuilder
             StorageType = storageType,
             Locator = locator,
             StorageLayerId = storageLayerId,
+            Options = options ?? new Dictionary<string, JsonElement>(),
         });
 
         // Attach to the resource's binding list so the graph is internally consistent.
@@ -164,20 +175,15 @@ public sealed class TestMetadataV2GraphBuilder
         string? route = null,
         IReadOnlyList<string>? protocols = null,
         AccessPolicy? accessPolicy = null,
-        string? description = null,
-        IReadOnlyDictionary<string, JsonElement>? options = null,
-        MetadataV2ServiceSettings? settings = null,
-        MetadataV2Status? status = null)
+        IReadOnlyDictionary<string, JsonElement>? options = null)
     {
         _services.Add(new MetadataV2Service
         {
-            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name, Description = description },
+            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
             Route = route,
             Protocols = protocols ?? Array.Empty<string>(),
-            Status = status,
             AccessPolicy = accessPolicy,
             Options = options ?? new Dictionary<string, JsonElement>(),
-            Settings = settings,
         });
         return this;
     }
@@ -191,7 +197,7 @@ public sealed class TestMetadataV2GraphBuilder
         string? storageBindingId = null,
         string? serviceLocalId = null,
         MetadataV2PublicationType publicationType = MetadataV2PublicationType.OgcCollection,
-        MetadataV2Status? status = null)
+        bool isPrimary = false)
     {
         // The three legacy publication-identification slots collapsed onto one
         // typed MetadataV2PublicationIdentifier in design slice 61/N. Builder
@@ -216,7 +222,6 @@ public sealed class TestMetadataV2GraphBuilder
             ServiceId = serviceId,
             ResourceId = resourceId,
             StorageBindingId = storageBindingId,
-            Status = status,
             Identifier = new MetadataV2PublicationIdentifier
             {
                 Value = idValue,
@@ -224,6 +229,7 @@ public sealed class TestMetadataV2GraphBuilder
                 PathOverride = path,
             },
             PublicationType = publicationType,
+            IsPrimary = isPrimary,
         });
 
         // Service→publication membership is derived from publication.ServiceId

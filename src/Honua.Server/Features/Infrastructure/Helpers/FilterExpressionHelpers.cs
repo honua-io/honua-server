@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 
 namespace Honua.Server.Features.Infrastructure.Helpers;
@@ -32,46 +32,46 @@ internal static class FilterExpressionHelpers
 
     /// <summary>
     /// Recursively walks a filter expression tree and resolves property references
-    /// against a layer definition, normalizing namespace prefixes and field names.
+    /// against a Metadata v2 resource, normalizing namespace prefixes and field names.
     /// </summary>
-    internal static FilterExpression NormalizeFilterPropertyReferences(FilterExpression expression, LayerDefinition layer)
+    internal static FilterExpression NormalizeFilterPropertyReferences(FilterExpression expression, MetadataV2Resource resource)
     {
         return expression switch
         {
             PropertyReference property => new PropertyReference(
-                ResolveFieldName(layer, property.PropertyName, allowGeometryAlias: true) ??
+                ResolveFieldName(resource, property.PropertyName, allowGeometryAlias: true) ??
                 NormalizeIdentifier(property.PropertyName)),
             BinaryExpression binary => new BinaryExpression(
-                NormalizeFilterPropertyReferences(binary.Left, layer),
+                NormalizeFilterPropertyReferences(binary.Left, resource),
                 binary.Operator,
-                NormalizeFilterPropertyReferences(binary.Right, layer)),
+                NormalizeFilterPropertyReferences(binary.Right, resource)),
             UnaryExpression unary => new UnaryExpression(
                 unary.Operator,
-                NormalizeFilterPropertyReferences(unary.Operand, layer)),
+                NormalizeFilterPropertyReferences(unary.Operand, resource)),
             SpatialPredicate spatial => new SpatialPredicate(
                 spatial.Operator,
-                NormalizeFilterPropertyReferences(spatial.Left, layer),
-                NormalizeFilterPropertyReferences(spatial.Right, layer)),
+                NormalizeFilterPropertyReferences(spatial.Left, resource),
+                NormalizeFilterPropertyReferences(spatial.Right, resource)),
             SpatialDistancePredicate distance => new SpatialDistancePredicate(
                 distance.Operator,
-                NormalizeFilterPropertyReferences(distance.Left, layer),
-                NormalizeFilterPropertyReferences(distance.Right, layer),
-                NormalizeFilterPropertyReferences(distance.Distance, layer)),
+                NormalizeFilterPropertyReferences(distance.Left, resource),
+                NormalizeFilterPropertyReferences(distance.Right, resource),
+                NormalizeFilterPropertyReferences(distance.Distance, resource)),
             TemporalPredicate temporal => new TemporalPredicate(
                 temporal.Operator,
-                NormalizeFilterPropertyReferences(temporal.Left, layer),
-                NormalizeFilterPropertyReferences(temporal.Right, layer)),
+                NormalizeFilterPropertyReferences(temporal.Left, resource),
+                NormalizeFilterPropertyReferences(temporal.Right, resource)),
             ArrayPredicate array => new ArrayPredicate(
                 array.Operator,
-                NormalizeFilterPropertyReferences(array.Left, layer),
-                NormalizeFilterPropertyReferences(array.Right, layer)),
+                NormalizeFilterPropertyReferences(array.Left, resource),
+                NormalizeFilterPropertyReferences(array.Right, resource)),
             FunctionCall function => new FunctionCall(
                 function.FunctionName,
-                function.Arguments.Select(argument => NormalizeFilterPropertyReferences(argument, layer)).ToArray()),
+                function.Arguments.Select(argument => NormalizeFilterPropertyReferences(argument, resource)).ToArray()),
             ArrayLiteral arrayLiteral => new ArrayLiteral(
-                arrayLiteral.Elements.Select(element => NormalizeFilterPropertyReferences(element, layer)).ToArray()),
+                arrayLiteral.Elements.Select(element => NormalizeFilterPropertyReferences(element, resource)).ToArray()),
             ValueList valueList => new ValueList(
-                valueList.Values.Select(value => NormalizeFilterPropertyReferences(value, layer)).ToArray()),
+                valueList.Values.Select(value => NormalizeFilterPropertyReferences(value, resource)).ToArray()),
             _ => expression
         };
     }
@@ -103,10 +103,10 @@ internal static class FilterExpressionHelpers
     }
 
     /// <summary>
-    /// Resolves a requested field name against a layer definition, matching
-    /// primary key, geometry, and attribute fields case-insensitively.
+    /// Resolves a requested field name against a Metadata v2 resource, matching
+    /// primary key, geometry, and schema fields case-insensitively.
     /// </summary>
-    internal static string? ResolveFieldName(LayerDefinition layer, string requestedName, bool allowGeometryAlias)
+    internal static string? ResolveFieldName(MetadataV2Resource resource, string requestedName, bool allowGeometryAlias)
     {
         var normalized = NormalizeIdentifier(requestedName);
         if (string.IsNullOrWhiteSpace(normalized))
@@ -114,25 +114,27 @@ internal static class FilterExpressionHelpers
             return null;
         }
 
-        if (layer.PrimaryKeyField is not null &&
+        var primaryKey = resource.FindPrimaryIdField();
+        if (primaryKey is not null &&
             (normalized.Equals("id", StringComparison.OrdinalIgnoreCase) ||
              normalized.Equals("objectid", StringComparison.OrdinalIgnoreCase) ||
              normalized.Equals("fid", StringComparison.OrdinalIgnoreCase) ||
-             normalized.Equals(layer.PrimaryKeyField.Name, StringComparison.OrdinalIgnoreCase)))
+             normalized.Equals(primaryKey.Name, StringComparison.OrdinalIgnoreCase)))
         {
-            return layer.PrimaryKeyField.Name;
+            return primaryKey.Name;
         }
 
+        var geometryField = resource.FindPrimaryGeometryField();
         if (allowGeometryAlias &&
-            layer.GeometryField is not null &&
+            geometryField is not null &&
             (normalized.Equals("geometry", StringComparison.OrdinalIgnoreCase) ||
              normalized.Equals("shape", StringComparison.OrdinalIgnoreCase) ||
-             normalized.Equals(layer.GeometryField.Name, StringComparison.OrdinalIgnoreCase)))
+             normalized.Equals(geometryField.Name, StringComparison.OrdinalIgnoreCase)))
         {
-            return layer.GeometryField.Name;
+            return geometryField.Name;
         }
 
-        return layer.Fields
+        return resource.SchemaFields
             .FirstOrDefault(field => field.Name.Equals(normalized, StringComparison.OrdinalIgnoreCase))
             ?.Name;
     }

@@ -4,8 +4,8 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.SpatialAnalytics.Abstractions;
@@ -53,7 +53,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
             return readError!;
         }
 
-        var (targetLayer, _, resourceError) = await ValidateRestResourceAsync(
+        var (targetLayerId, targetResource, _, resourceError) = await ValidateRestResourceAsync(
             context, serviceId, layerId, cancellationToken);
         if (resourceError != null)
         {
@@ -63,10 +63,11 @@ internal static partial class SpatialAnalyticsRequestHandlers
         return await HandleSpatialJoinCoreAsync(
             context,
             values,
-            targetLayer!,
+            targetLayerId,
+            targetResource!,
             serviceId,
             HonuaTelemetry.Protocols.FeatureServer,
-            ServiceProtocols.FeatureServer,
+            FeatureServerProtocolName,
             logger,
             cancellationToken);
     }
@@ -91,7 +92,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
             return readError!;
         }
 
-        var (targetLayer, resourceError) = await ValidateOgcResourceAsync(context, collectionId, cancellationToken);
+        var (targetLayerId, targetResource, resourceError) = await ValidateOgcResourceAsync(context, collectionId, cancellationToken);
         if (resourceError != null)
         {
             return resourceError;
@@ -100,10 +101,11 @@ internal static partial class SpatialAnalyticsRequestHandlers
         return await HandleSpatialJoinCoreAsync(
             context,
             values,
-            targetLayer!,
+            targetLayerId,
+            targetResource!,
             serviceId: null,
             HonuaTelemetry.Protocols.OgcFeatures,
-            ServiceProtocols.OgcFeatures,
+            OgcFeaturesProtocolName,
             logger,
             cancellationToken);
     }
@@ -111,18 +113,19 @@ internal static partial class SpatialAnalyticsRequestHandlers
     private static async Task<IResult> HandleSpatialJoinCoreAsync(
         HttpContext context,
         IReadOnlyDictionary<string, StringValues> values,
-        LayerDefinition targetLayer,
+        int targetLayerId,
+        MetadataV2Resource targetResource,
         string? serviceId,
         string protocol,
         string catalogProtocol,
         ILogger? logger,
         CancellationToken cancellationToken)
     {
-        using var activity = StartAnalyticsActivity(SpatialJoinOperation, protocol, serviceId, targetLayer.Id);
+        using var activity = StartAnalyticsActivity(SpatialJoinOperation, protocol, serviceId, targetLayerId);
 
         if (logger != null)
         {
-            SpatialAnalyticsLog.RequestReceived(logger, SpatialJoinOperation, targetLayer.Id);
+            SpatialAnalyticsLog.RequestReceived(logger, SpatialJoinOperation, targetLayerId);
         }
 
         var startTimestamp = TimeProvider.System.GetTimestamp();
@@ -139,7 +142,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
                 ["joinLayerId must be an integer layer identifier."]);
         }
 
-        if (joinLayerId == targetLayer.Id)
+        if (joinLayerId == targetLayerId)
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid joinLayerId",
@@ -156,7 +159,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         // could read any layer in the catalog as a join input, even when its
         // parent service is disabled or has stricter access policy than the
         // target.
-        var joinLayerValidation = await LayerValidationHelpers.ValidateLayerWithAccessAsync(
+        var joinLayerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
             context,
             joinLayerId,
             scope: AccessScope.Read,
@@ -172,9 +175,9 @@ internal static partial class SpatialAnalyticsRequestHandlers
         // the two layers live in different CRSs. Without this the join would tag
         // the join geometry with the target's SRID and either silently produce
         // wrong results (mixed CRS comparison) or surface a confusing PostGIS
-        // error at execution. ValidateLayerWithAccessAsync already authorized
+        // error at execution. ValidateLayerWithAccessV2Async already authorized
         // the join layer's parent service so it is safe to read its metadata.
-        var joinLayerSrid = joinLayerValidation.Layer!.SpatialReference.ToSrid();
+        var joinLayerSrid = joinLayerValidation.Resource!.ReadSrid() ?? SpatialReference.WGS84.ToSrid();
 
         // Predicate (default: intersects).
         var predicateStr = GetValueString(values, SpatialAnalyticsParameters.Predicate);
@@ -257,11 +260,11 @@ internal static partial class SpatialAnalyticsRequestHandlers
             return outStatsError!;
         }
 
-        outStatistics = ApplyStatisticFieldTypes(outStatistics, joinLayerValidation.Layer!);
+        outStatistics = AnalyticsFeatureQueryFactory.ApplyStatisticFieldTypes(outStatistics, joinLayerValidation.Resource!);
 
         // Feature query for the target layer (where + SQL filter + objectIds + spatial + temporal).
         var (featureQuery, filterError) = await AnalyticsFeatureQueryFactory.TryBuildAsync(
-            context, values, targetLayer, cancellationToken);
+            context, values, targetResource, cancellationToken);
         if (featureQuery == null)
         {
             return filterError!;
@@ -286,7 +289,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         ImmutableArray<IReadOnlyDictionary<string, object?>> rows;
         try
         {
-            rows = await reader.QuerySpatialJoinAsync(targetLayer.Id, featureQuery.Value, joinQuery, cancellationToken);
+            rows = await reader.QuerySpatialJoinAsync(targetLayerId, featureQuery.Value, joinQuery, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -296,7 +299,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         {
             if (logger != null)
             {
-                SpatialAnalyticsLog.RequestFailed(logger, SpatialJoinOperation, targetLayer.Id, ex.Message, ex);
+                SpatialAnalyticsLog.RequestFailed(logger, SpatialJoinOperation, targetLayerId, ex.Message, ex);
             }
             return CreateReaderFailureResult(context, SpatialJoinOperation, ex);
         }
@@ -308,7 +311,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
             rows.Length, rows.Length, analyticsLimits.MaxInputFeatures, maxOutputRows: null);
         if (inputTruncated && logger != null)
         {
-            SpatialAnalyticsLog.InputTruncated(logger, SpatialJoinOperation, targetLayer.Id, analyticsLimits.MaxInputFeatures);
+            SpatialAnalyticsLog.InputTruncated(logger, SpatialJoinOperation, targetLayerId, analyticsLimits.MaxInputFeatures);
         }
 
         rows = TrimOverflowRows(rows, analyticsLimits.MaxInputFeatures, maxOutputRows: null);
@@ -323,7 +326,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         if (logger != null)
         {
             SpatialAnalyticsLog.RequestCompleted(
-                logger, SpatialJoinOperation, targetLayer.Id, features.Length, elapsed.TotalMilliseconds);
+                logger, SpatialJoinOperation, targetLayerId, features.Length, elapsed.TotalMilliseconds);
         }
 
         var response = new SpatialAnalyticsFeatureCollection

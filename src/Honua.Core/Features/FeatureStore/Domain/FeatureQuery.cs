@@ -3,7 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 
@@ -52,7 +52,7 @@ public readonly record struct FeatureQuery
     /// <summary>
     /// Geometry type of the target layer when known.
     /// </summary>
-    public GeometryType? GeometryType { get; init; }
+    public MetadataV2GeometryType? GeometryType { get; init; }
 
     /// <summary>
     /// Attribute field that should be promoted to the GeoJSON feature id when raw JSON
@@ -402,7 +402,7 @@ public readonly record struct OrderByClause
     /// <summary>
     /// Field type metadata for typed ordering (null when unknown)
     /// </summary>
-    public FieldType? FieldType { get; init; }
+    public MetadataV2FieldType? FieldType { get; init; }
 
     /// <summary>
     /// Initializes a new instance of the OrderByClause struct
@@ -411,7 +411,7 @@ public readonly record struct OrderByClause
     /// <param name="ascending">Sort direction (true = ascending, false = descending)</param>
     /// <param name="fieldType">Optional field type for typed ordering</param>
     [SetsRequiredMembers]
-    public OrderByClause(string field, bool ascending = true, FieldType? fieldType = null)
+    public OrderByClause(string field, bool ascending = true, MetadataV2FieldType? fieldType = null)
     {
         Field = field;
         Ascending = ascending;

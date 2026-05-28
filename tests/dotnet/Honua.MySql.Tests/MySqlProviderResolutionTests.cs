@@ -85,8 +85,8 @@ public sealed class MySqlProviderResolutionTests
     [InlineData(typeof(IDatabaseHealthChecker))]
     public void AddMySqlServices_RegistersProtocolFallbacks_ForAdvertisedProtocolHandlers(Type serviceType)
     {
-        // The MySQL slice advertises EnabledProtocols including FeatureServer, OgcFeatures,
-        // and Grpc. Those protocol handlers require IFeatureWriter and IStreamingFeatureStore
+        // The MySQL slice advertises FeatureServer, OgcFeatures, and Grpc surfaces.
+        // Those protocol handlers require IFeatureWriter and IStreamingFeatureStore
         // (constructor injected), and the WFS 2.0 path requires IGmlFeatureStore. The
         // replica/change-tracking paths require their own segregated services. This test
         // pins the read/query-only fallback contract so DI activation does not regress.

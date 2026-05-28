@@ -4,8 +4,8 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.SpatialAnalytics.Abstractions;
 using Honua.Core.Features.SpatialAnalytics.Domain;
 using Honua.Server.Features.Protocols.GeoServices;
@@ -49,7 +49,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
             return readError!;
         }
 
-        var (layer, _, resourceError) = await ValidateRestResourceAsync(
+        var (validatedLayerId, resource, _, resourceError) = await ValidateRestResourceAsync(
             context, serviceId, layerId, cancellationToken);
         if (resourceError != null)
         {
@@ -59,7 +59,8 @@ internal static partial class SpatialAnalyticsRequestHandlers
         return await HandleDensityCoreAsync(
             context,
             values,
-            layer!,
+            validatedLayerId,
+            resource!,
             serviceId,
             HonuaTelemetry.Protocols.FeatureServer,
             logger,
@@ -86,7 +87,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
             return readError!;
         }
 
-        var (layer, resourceError) = await ValidateOgcResourceAsync(context, collectionId, cancellationToken);
+        var (layerId, resource, resourceError) = await ValidateOgcResourceAsync(context, collectionId, cancellationToken);
         if (resourceError != null)
         {
             return resourceError;
@@ -95,7 +96,8 @@ internal static partial class SpatialAnalyticsRequestHandlers
         return await HandleDensityCoreAsync(
             context,
             values,
-            layer!,
+            layerId,
+            resource!,
             serviceId: null,
             HonuaTelemetry.Protocols.OgcFeatures,
             logger,
@@ -105,17 +107,18 @@ internal static partial class SpatialAnalyticsRequestHandlers
     private static async Task<IResult> HandleDensityCoreAsync(
         HttpContext context,
         IReadOnlyDictionary<string, StringValues> values,
-        LayerDefinition layer,
+        int layerId,
+        MetadataV2Resource resource,
         string? serviceId,
         string protocol,
         ILogger? logger,
         CancellationToken cancellationToken)
     {
-        using var activity = StartAnalyticsActivity(DensityOperation, protocol, serviceId, layer.Id);
+        using var activity = StartAnalyticsActivity(DensityOperation, protocol, serviceId, layerId);
 
         if (logger != null)
         {
-            SpatialAnalyticsLog.RequestReceived(logger, DensityOperation, layer.Id);
+            SpatialAnalyticsLog.RequestReceived(logger, DensityOperation, layerId);
         }
 
         var startTimestamp = TimeProvider.System.GetTimestamp();
@@ -182,7 +185,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
 
         // Feature query (where + SQL filter + objectIds + spatial + temporal).
         var (featureQuery, filterError) = await AnalyticsFeatureQueryFactory.TryBuildAsync(
-            context, values, layer, cancellationToken);
+            context, values, resource, cancellationToken);
         if (featureQuery == null)
         {
             return filterError!;
@@ -205,7 +208,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         ImmutableArray<IReadOnlyDictionary<string, object?>> rows;
         try
         {
-            rows = await reader.QueryDensityAsync(layer.Id, featureQuery.Value, densityQuery, cancellationToken);
+            rows = await reader.QueryDensityAsync(layerId, featureQuery.Value, densityQuery, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -215,7 +218,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         {
             if (logger != null)
             {
-                SpatialAnalyticsLog.RequestFailed(logger, DensityOperation, layer.Id, ex.Message, ex);
+                SpatialAnalyticsLog.RequestFailed(logger, DensityOperation, layerId, ex.Message, ex);
             }
             return CreateReaderFailureResult(context, DensityOperation, ex);
         }
@@ -229,11 +232,11 @@ internal static partial class SpatialAnalyticsRequestHandlers
             inputCount, rows.Length, analyticsLimits.MaxInputFeatures, analyticsLimits.MaxDensityCells);
         if (inputTruncated && logger != null)
         {
-            SpatialAnalyticsLog.InputTruncated(logger, DensityOperation, layer.Id, analyticsLimits.MaxInputFeatures);
+            SpatialAnalyticsLog.InputTruncated(logger, DensityOperation, layerId, analyticsLimits.MaxInputFeatures);
         }
         if (resultTruncated && logger != null)
         {
-            SpatialAnalyticsLog.ResultTruncated(logger, DensityOperation, layer.Id, analyticsLimits.MaxDensityCells);
+            SpatialAnalyticsLog.ResultTruncated(logger, DensityOperation, layerId, analyticsLimits.MaxDensityCells);
         }
 
         rows = TrimOverflowRows(rows, analyticsLimits.MaxInputFeatures, analyticsLimits.MaxDensityCells);
@@ -248,7 +251,7 @@ internal static partial class SpatialAnalyticsRequestHandlers
         if (logger != null)
         {
             SpatialAnalyticsLog.RequestCompleted(
-                logger, DensityOperation, layer.Id, features.Length, elapsed.TotalMilliseconds);
+                logger, DensityOperation, layerId, features.Length, elapsed.TotalMilliseconds);
         }
 
         var response = new SpatialAnalyticsFeatureCollection

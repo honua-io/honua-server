@@ -3,7 +3,6 @@
 
 using System.Diagnostics;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
@@ -30,35 +29,8 @@ internal static class VectorTileExecution
             TemporalFilter = temporalFilter
         };
 
-    internal static async Task<IResult> ExecuteAsync(
-        HttpContext context,
-        ITileProvider tileProvider,
-        LayerDefinition layer,
-        int tileCol,
-        int tileRow,
-        int zoomLevel,
-        FeatureQuery query,
-        TileOptions tileOptions,
-        TileLimits tileLimits,
-        CancellationToken cancellationToken,
-        Activity? activity = null)
-        => await ExecuteAsync(
-            context,
-            tileProvider,
-            layer.Id,
-            tileCol,
-            tileRow,
-            zoomLevel,
-            query,
-            tileOptions,
-            tileLimits,
-            cancellationToken,
-            activity).ConfigureAwait(false);
-
     /// <summary>
-    /// V2 overload of <see cref="ExecuteAsync(HttpContext, ITileProvider, LayerDefinition, int, int, int, FeatureQuery, TileOptions, TileLimits, CancellationToken, Activity?)"/>
-    /// that takes the storage layer id directly (resolved upstream from a V2
-    /// publication via <c>MetadataV2GraphSnapshot.ResolveStorageLayerId</c>).
+    /// Executes vector tile rendering for a storage layer id resolved from metadata v2.
     /// <c>ITileProvider.GetMvtTileAsync</c> consumes <c>int layerId</c> as its
     /// storage abstraction, so no further V2 plumbing is needed here.
     /// </summary>

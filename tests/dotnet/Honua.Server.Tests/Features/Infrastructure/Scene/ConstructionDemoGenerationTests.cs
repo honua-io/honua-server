@@ -10,6 +10,7 @@ using Honua.Core.Features.Publishing.Domain;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Server.Features.Infrastructure.Scene;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -25,17 +26,17 @@ namespace Honua.Server.Tests.Features.Infrastructure.Scene;
 public sealed class ConstructionDemoGenerationTests : IDisposable
 {
     private readonly string _outputRoot;
-    private readonly StubLayerCatalog _catalog;
     private readonly StubFeatureSource _featureSource;
     private readonly StubRegistrationService _registration;
+    private readonly TestMetadataV2GraphProvider _metadataProvider;
     private readonly SceneTilesPublishExecutor _executor;
 
     public ConstructionDemoGenerationTests()
     {
         _outputRoot = Path.Combine(Path.GetTempPath(), $"honua-scene-899-{Guid.NewGuid():N}");
-        _catalog = new StubLayerCatalog { Layer = ConstructionDemoFixture.BuildLayer() };
         _featureSource = new StubFeatureSource { Features = ConstructionDemoFixture.Features };
         _registration = new StubRegistrationService();
+        _metadataProvider = new TestMetadataV2GraphProvider(ConstructionDemoFixture.BuildMetadataGraph());
 
         var options = Options.Create(new SceneGenerationServerOptions
         {
@@ -46,8 +47,8 @@ public sealed class ConstructionDemoGenerationTests : IDisposable
         var environment = new TestHostEnvironment();
 
         _executor = new SceneTilesPublishExecutor(
-            _catalog,
             _featureSource,
+            _metadataProvider,
             environment,
             options,
             NullLogger<SceneTilesPublishExecutor>.Instance,
@@ -212,14 +213,10 @@ public sealed class ConstructionDemoGenerationTests : IDisposable
     [UnitTest]
     public async Task Generate_ConstructionFixture_FlatInputWithoutExtrusionEmitsWarning()
     {
-        // Stripping extrusion from the layer metadata models the legacy
-        // "footprints only, no heights" path. Generation must still succeed
-        // but surface the documented flat-Z=0 warning so operators know the
-        // demo lost vertical fidelity.
-        _catalog.Layer = ConstructionDemoFixture.BuildLayer() with
-        {
-            Metadata = null
-        };
+        // Stripping extrusion from the Metadata v2 resource models the "footprints only,
+        // no heights" path. Generation must still succeed but surface the documented
+        // flat-Z=0 warning so operators know the demo lost vertical fidelity.
+        _metadataProvider.SetGraph(ConstructionDemoFixture.BuildMetadataGraph(includeExtrusion: false));
         // Drop the per-vertex Z values so SawAnyHeight stays false; the
         // fixture vertices already sit at Z=0 but they are non-null and would
         // otherwise mask the warning.

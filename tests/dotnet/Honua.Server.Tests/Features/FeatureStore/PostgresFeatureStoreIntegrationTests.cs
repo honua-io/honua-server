@@ -4,10 +4,9 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Features.FeatureStore;
@@ -21,6 +20,8 @@ using Microsoft.Extensions.ObjectPool;
 using NetTopologySuite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using TestMetadataV2GraphBuilder = Honua.TestKit.Infrastructure.TestMetadataV2GraphBuilder;
+using TestMetadataV2GraphProvider = Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider;
 
 namespace Honua.Server.Tests.Features.FeatureStore;
 
@@ -789,7 +790,15 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
             PerformanceMonitor: null,
             SchemaName: _testSchema));
 
-        return new PostgresFeatureStoreRefactored(queryBuilder, dataAccess, cacheManager, CreateLayerCatalog());
+        return new PostgresFeatureStoreRefactored(
+            queryBuilder,
+            dataAccess,
+            cacheManager,
+            connectionProvider,
+            dictionaryPool,
+            connectionEncryptionService: null,
+            filterExpressionService: null,
+            CreateMetadataProvider());
     }
 
     private static int GetLayerId(string tableName)
@@ -823,80 +832,67 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
         return new WKBWriter().Write(polygon);
     }
 
-    private static StubLayerCatalog CreateLayerCatalog()
-    {
-        var spatialReference = SpatialReference.Create(4326);
-
-        var layers = new Dictionary<int, LayerDefinition>
-        {
-            [PointsLayerId] = new LayerDefinition(
-                PointsLayerId,
+    private static TestMetadataV2GraphProvider CreateMetadataProvider()
+        => new TestMetadataV2GraphBuilder()
+            .AddResource(
+                "res-test-points",
                 "Test Points",
-                null,
-                Honua.Core.Features.Catalog.Domain.GeometryType.Point,
-                spatialReference,
+                fields:
                 [
-                    new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                    new FieldDefinition("shape", FieldType.Geometry),
-                    new FieldDefinition("category", FieldType.String, Length: 64),
-                    new FieldDefinition("value", FieldType.Integer),
-                    new FieldDefinition("active", FieldType.Boolean),
-                    new FieldDefinition("created_date", FieldType.DateTime)
-                ]),
-            [PolygonsLayerId] = new LayerDefinition(
-                PolygonsLayerId,
+                    Field("objectid", MetadataV2FieldType.Integer, nullable: false, semanticRoles: ["id.primary"]),
+                    Field("shape", MetadataV2FieldType.Geometry, nullable: true, semanticRoles: ["geometry.primary"]),
+                    Field("category", MetadataV2FieldType.String),
+                    Field("value", MetadataV2FieldType.Integer),
+                    Field("active", MetadataV2FieldType.Boolean),
+                    Field("created_date", MetadataV2FieldType.DateTime),
+                ],
+                spatial: Spatial(MetadataV2GeometryType.Point))
+            .AddStorageBinding("binding-test-points", "res-test-points", "points", storageLayerId: PointsLayerId)
+            .AddResource(
+                "res-test-polygons",
                 "Test Polygons",
-                null,
-                Honua.Core.Features.Catalog.Domain.GeometryType.Polygon,
-                spatialReference,
+                fields:
                 [
-                    new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                    new FieldDefinition("shape", FieldType.Geometry),
-                    new FieldDefinition("area_name", FieldType.String, Length: 128),
-                    new FieldDefinition("population", FieldType.Integer),
-                    new FieldDefinition("density", FieldType.Double)
-                ]),
-            [LinesLayerId] = new LayerDefinition(
-                LinesLayerId,
+                    Field("objectid", MetadataV2FieldType.Integer, nullable: false, semanticRoles: ["id.primary"]),
+                    Field("shape", MetadataV2FieldType.Geometry, nullable: true, semanticRoles: ["geometry.primary"]),
+                    Field("area_name", MetadataV2FieldType.String),
+                    Field("population", MetadataV2FieldType.Integer),
+                    Field("density", MetadataV2FieldType.Double),
+                ],
+                spatial: Spatial(MetadataV2GeometryType.Polygon))
+            .AddStorageBinding("binding-test-polygons", "res-test-polygons", "polygons", storageLayerId: PolygonsLayerId)
+            .AddResource(
+                "res-test-lines",
                 "Test Lines",
-                null,
-                Honua.Core.Features.Catalog.Domain.GeometryType.LineString,
-                spatialReference,
+                fields:
                 [
-                    new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                    new FieldDefinition("shape", FieldType.Geometry),
-                    new FieldDefinition("road_type", FieldType.String, Length: 64),
-                    new FieldDefinition("length_km", FieldType.Double)
-                ])
+                    Field("objectid", MetadataV2FieldType.Integer, nullable: false, semanticRoles: ["id.primary"]),
+                    Field("shape", MetadataV2FieldType.Geometry, nullable: true, semanticRoles: ["geometry.primary"]),
+                    Field("road_type", MetadataV2FieldType.String),
+                    Field("length_km", MetadataV2FieldType.Double),
+                ],
+                spatial: Spatial(MetadataV2GeometryType.LineString))
+            .AddStorageBinding("binding-test-lines", "res-test-lines", "lines", storageLayerId: LinesLayerId)
+            .BuildProvider();
+
+    private static MetadataV2ResourceSpatial Spatial(MetadataV2GeometryType geometryType)
+        => new()
+        {
+            SpatialReference = MetadataV2SpatialReference.Wgs84,
+            GeometryType = geometryType,
+            PrimaryGeometryField = "shape",
         };
 
-        return new StubLayerCatalog(layers);
-    }
-
-    private sealed class StubLayerCatalog(Dictionary<int, LayerDefinition> layers) : ILayerCatalog
-    {
-        public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(layers.TryGetValue(layerId, out var layer) ? layer : null);
-
-        public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(layers.Values.ToArray());
-
-        public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult<ServiceDefinition?>(null);
-
-        public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(Array.Empty<ServiceDefinition>());
-
-        public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(layers.ContainsKey(layerId));
-
-        public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult(false);
-
-        public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
-            => Task.FromResult<Relationship?>(null);
-
-        public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(Array.Empty<Relationship>());
-    }
+    private static MetadataV2Field Field(
+        string name,
+        MetadataV2FieldType type,
+        bool nullable = true,
+        params string[] semanticRoles)
+        => new()
+        {
+            Name = name,
+            Type = type,
+            Nullable = nullable,
+            SemanticRoles = semanticRoles,
+        };
 }

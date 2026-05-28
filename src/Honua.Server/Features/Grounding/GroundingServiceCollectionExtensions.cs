@@ -11,9 +11,9 @@ namespace Honua.Server.Features.Grounding;
 /// DI registration for the grounding feature slice. The engine and
 /// authorization filter are stateless and compiled against frozen catalogs,
 /// so they register as singletons. <see cref="IGroundingService"/> is also a
-/// singleton; it consumes <see cref="Honua.Core.Features.Catalog.Abstractions.ILayerCatalog"/>
-/// per call through <see cref="IServiceScopeFactory"/> so each request binds
-/// to a fresh scoped catalog (and its scoped database dependencies) without
+/// singleton; it consumes the Metadata V2 graph provider per call through
+/// <see cref="IServiceScopeFactory"/> so each request binds to a fresh scoped
+/// graph reader (and its scoped database dependencies) without
 /// capturing one for the lifetime of the root provider.
 /// </summary>
 internal static class GroundingServiceCollectionExtensions

@@ -5,7 +5,6 @@ using System.Globalization;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
@@ -37,6 +36,7 @@ internal sealed class Wcs20Handler
     private static readonly XNamespace Swe = Wcs20Utilities.SweNamespace;
     private static readonly XNamespace XLink = Wcs20Utilities.XLinkNamespace;
     private static readonly XNamespace Xsi = Wcs20Utilities.XsiNamespace;
+    private const string WcsProtocolName = "Wcs";
 
     private static readonly HashSet<string> _getCoverageAllowedParameters = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -593,7 +593,7 @@ internal sealed class Wcs20Handler
                     $"Service '{serviceId}' was not found."));
         }
 
-        if (!ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.Wcs))
+        if (!IsProtocolEnabled(service, WcsProtocolName))
         {
             return new ServiceResolutionResult(
                 null,
@@ -610,6 +610,9 @@ internal sealed class Wcs20Handler
 
         return new ServiceResolutionResult(service, null);
     }
+
+    private static bool IsProtocolEnabled(MetadataV2Service service, string protocol)
+        => service.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase));
 
     private async Task<RasterInfo?> GetPrimaryRasterWithExtentAsync(int layerId, CancellationToken cancellationToken)
     {

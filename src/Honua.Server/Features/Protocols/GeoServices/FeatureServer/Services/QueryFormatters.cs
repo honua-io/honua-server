@@ -5,8 +5,8 @@ using System.Collections.Immutable;
 using System.IO.Pipelines;
 using System.Text.Json;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Protocols.GeoServices;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
@@ -26,22 +26,11 @@ namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
 internal interface IQueryFormatter
 {
     /// <summary>
-    /// Formats query result into the specified format
+    /// Formats query result into the specified format.
     /// </summary>
-    /// <param name="result">Query result with features</param>
-    /// <param name="layer">Layer definition for metadata</param>
-    /// <param name="format">Output format (json, geojson)</param>
-    /// <param name="returnGeometry">Whether to include geometry</param>
-    /// <param name="outputSrid">Output SRID for geometry</param>
-    /// <param name="returnZ">Whether to include Z values</param>
-    /// <param name="returnM">Whether to include M values</param>
-    /// <param name="geometryPrecision">Coordinate precision override</param>
-    /// <param name="maxAllowableOffset">Generalization tolerance override</param>
-    /// <param name="outFields">Fields to include in output</param>
-    /// <returns>Formatted result and content type</returns>
     ValueTask<(object response, string contentType)> FormatQueryResultAsync(
         QueryResult<Feature> result,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         string format,
         bool returnGeometry,
         int? outputSrid,
@@ -68,12 +57,9 @@ internal sealed class QueryFormatter : IQueryFormatter
         _logger = logger;
     }
 
-    /// <summary>
-    /// Formats query result into the specified format
-    /// </summary>
     public ValueTask<(object response, string contentType)> FormatQueryResultAsync(
         QueryResult<Feature> result,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         string format,
         bool returnGeometry,
         int? outputSrid,
@@ -83,6 +69,8 @@ internal sealed class QueryFormatter : IQueryFormatter
         double? maxAllowableOffset,
         string[]? outFields = null)
     {
+        ArgumentNullException.ThrowIfNull(resource);
+
         var effectiveLimits = GeometryOutputProcessor.CreateEffectiveLimits(
             _geometryLimits,
             geometryPrecision,
@@ -92,29 +80,31 @@ internal sealed class QueryFormatter : IQueryFormatter
         return format.ToLowerInvariant() switch
         {
             "pbf" => ValueTask.FromResult<(object response, string contentType)>(
-                _pbfFormatter.FormatAsPbf(result, layer, returnGeometry, outputSrid, returnZ, returnM, geometryPrecision, maxAllowableOffset, outFields)),
+                _pbfFormatter.FormatAsPbf(result, resource, returnGeometry, outputSrid, returnZ, returnM, geometryPrecision, maxAllowableOffset, outFields)),
+            "geojson" => ValueTask.FromResult<(object response, string contentType)>(
+                FormatAsGeoJson(result, resource, returnGeometry, returnZ, returnM, effectiveLimits, outFields)),
+            "json" => ValueTask.FromResult<(object response, string contentType)>(
+                FormatAsGeoServicesJson(result, resource, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields)),
             "parquet" => ValueTask.FromResult<(object response, string contentType)>(
-                FormatParquet(result, layer, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields)),
+                FormatParquet(result, resource, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields)),
             "arrow" => new ValueTask<(object response, string contentType)>(
                 FormatArrowAsync(
                     result,
-                    layer,
+                    resource,
                     returnGeometry,
                     outputSrid,
                     returnZ,
                     returnM,
                     effectiveLimits,
                     outFields)),
-            "geojson" => ValueTask.FromResult<(object response, string contentType)>(
-                FormatAsGeoJson(result, layer, returnGeometry, returnZ, returnM, effectiveLimits, outFields)),
-            "json" or _ => ValueTask.FromResult<(object response, string contentType)>(
-                FormatAsGeoServicesJson(result, layer, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields))
+            _ => ValueTask.FromResult<(object response, string contentType)>(
+                FormatAsGeoServicesJson(result, resource, returnGeometry, outputSrid, returnZ, returnM, effectiveLimits, outFields))
         };
     }
 
     private (object response, string contentType) FormatParquet(
         QueryResult<Feature> result,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         bool returnGeometry,
         int? outputSrid,
         bool returnZ,
@@ -124,7 +114,7 @@ internal sealed class QueryFormatter : IQueryFormatter
     {
         var (response, contentType) = GeoParquetQueryFormatter.FormatAsGeoParquet(
             result,
-            layer,
+            resource,
             returnGeometry,
             outputSrid,
             returnZ,
@@ -138,7 +128,7 @@ internal sealed class QueryFormatter : IQueryFormatter
 
     private static async Task<(object response, string contentType)> FormatArrowAsync(
         QueryResult<Feature> result,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         bool returnGeometry,
         int? outputSrid,
         bool returnZ,
@@ -148,7 +138,7 @@ internal sealed class QueryFormatter : IQueryFormatter
     {
         var (response, contentType) = await GeoArrowQueryFormatter.FormatAsGeoArrowAsync(
             result,
-            layer,
+            resource,
             returnGeometry,
             outputSrid,
             returnZ,
@@ -159,12 +149,9 @@ internal sealed class QueryFormatter : IQueryFormatter
         return (response, contentType);
     }
 
-    /// <summary>
-    /// Formats result as GeoServices JSON
-    /// </summary>
     private static (object response, string contentType) FormatAsGeoServicesJson(
         QueryResult<Feature> result,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         bool returnGeometry,
         int? outputSrid,
         bool returnZ,
@@ -172,13 +159,14 @@ internal sealed class QueryFormatter : IQueryFormatter
         GeometryLimits geometryLimits,
         string[]? outFields)
     {
-        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
-        var allDeclaredAttributeFields = layer.Fields
-            .Where(field => !field.IsGeometry)
-            .Select(field => field.Name)
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+        var allDeclaredAttributeFields = resource.SchemaFields
+            .Where(static field => !IsGeometryField(field))
+            .Select(static field => field.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var visibleDeclaredAttributeFields = layer.VisibleAttributeFields
-            .Select(field => field.Name)
+        var visibleDeclaredAttributeFields = resource.SchemaFields
+            .Where(static field => !field.Hidden && !IsGeometryField(field))
+            .Select(static field => field.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var runtimeFields = DetectRuntimeFields(result.Items, allDeclaredAttributeFields, objectIdFieldName);
         var runtimeFieldNames = runtimeFields
@@ -197,25 +185,27 @@ internal sealed class QueryFormatter : IQueryFormatter
                 returnM,
                 geometryLimits))
             .ToArray();
-        var queryFields = BuildQueryFields(layer, outFields, objectIdFieldName, runtimeFields);
+        var queryFields = BuildQueryFields(resource, outFields, objectIdFieldName, runtimeFields);
         var displayFieldName = ResolveDisplayFieldName(queryFields, objectIdFieldName);
+        var geometryType = resource.ReadGeometryType();
+        var hasGeometry = geometryType != MetadataV2GeometryType.None || resource.FindPrimaryGeometryField() is not null;
         var hasZ = false;
         var hasM = false;
-        if (layer.HasGeometry && returnGeometry)
+        if (hasGeometry && returnGeometry)
         {
             hasZ = features.Any(feature => feature.Geometry?.HasZ == true);
             hasM = features.Any(feature => feature.Geometry?.HasM == true);
         }
 
-        var srid = outputSrid ?? layer.SpatialReference.Wkid;
-        var spatialReference = layer.HasGeometry
+        var srid = outputSrid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
+        var spatialReference = hasGeometry
             ? new GeoServicesSpatialReference { Wkid = srid, LatestWkid = srid }
             : null;
 
         var response = new QueryResponse
         {
             ObjectIdFieldName = objectIdFieldName,
-            GeometryType = layer.HasGeometry ? MapGeometryType(layer.GeometryType) : null,
+            GeometryType = hasGeometry ? MapGeometryType(geometryType) : null,
             SpatialReference = spatialReference,
             DisplayFieldName = displayFieldName,
             Fields = queryFields,
@@ -228,12 +218,9 @@ internal sealed class QueryFormatter : IQueryFormatter
         return (response, "application/json");
     }
 
-    /// <summary>
-    /// Formats result as GeoJSON
-    /// </summary>
     private static (object response, string contentType) FormatAsGeoJson(
         QueryResult<Feature> result,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         bool returnGeometry,
         bool returnZ,
         bool returnM,
@@ -241,9 +228,9 @@ internal sealed class QueryFormatter : IQueryFormatter
         string[]? outFields)
     {
         var projectedProperties = CreateProjectedProperties(outFields);
-        var buildOptions = CreateFeatureServerGeoJsonBuildOptions(layer, projectedProperties);
+        var buildOptions = CreateFeatureServerGeoJsonBuildOptions(resource, projectedProperties);
         GeoJsonFeature[] features = result.Items
-            .Select(f => ConvertToGeoJsonFeature(f, layer, returnGeometry, buildOptions, returnZ, returnM, geometryLimits))
+            .Select(f => ConvertToGeoJsonFeature(f, resource, returnGeometry, buildOptions, returnZ, returnM, geometryLimits))
             .ToArray();
 
         var exceededTransferLimit = result.HasMoreResults;
@@ -300,19 +287,16 @@ internal sealed class QueryFormatter : IQueryFormatter
         };
     }
 
-    /// <summary>
-    /// Converts a Feature to GeoJSON feature format
-    /// </summary>
     private static GeoJsonFeature ConvertToGeoJsonFeature(
         Feature feature,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         bool returnGeometry,
         GeoJsonFeatureBuildOptions buildOptions,
         bool returnZ,
         bool returnM,
         GeometryLimits geometryLimits)
     {
-        var featureBase = GeoJsonFeatureBaseBuilder.Create(feature, layer, buildOptions);
+        var featureBase = GeoJsonFeatureBaseBuilder.Create(feature, resource, buildOptions);
         var geometry = returnGeometry ? ConvertGeometryToGeoJsonFormat(feature.Geometry, geometryLimits, returnZ, returnM) : null;
         return featureBase.ToGeoJsonFeature(geometry);
     }
@@ -419,19 +403,19 @@ internal sealed class QueryFormatter : IQueryFormatter
     }
 
     internal static GeoJsonFeatureBuildOptions CreateFeatureServerGeoJsonBuildOptions(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         IReadOnlySet<string>? projectedProperties)
         => new(
             ProjectedProperties: projectedProperties,
             IncludeObjectIdProperty: true,
             IncludeObjectIdAlias: projectedProperties is null &&
-                                  GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer)
+                                  GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource)
                                       .Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase),
             IncludeAdditionalAttributes: true,
             ResolveIdFromProperties: true);
 
     internal static GeoServicesFieldInfo[] BuildQueryFields(
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         string[]? outFields,
         string objectIdFieldName,
         IReadOnlyCollection<GeoServicesFieldInfo>? runtimeFields = null)
@@ -448,8 +432,9 @@ internal sealed class QueryFormatter : IQueryFormatter
             };
         }
 
-        var mappedFields = layer.VisibleFields
-            .Where(field => !field.IsGeometry)
+        var mappedFields = resource.SchemaFields
+            .Where(static field => !IsGeometryField(field))
+            .Where(static field => !field.Hidden)
             .Where(field => includeAllFields || requestedFields!.Contains(field.Name))
             .Select(MapFieldInfo)
             .ToList();
@@ -578,21 +563,78 @@ internal sealed class QueryFormatter : IQueryFormatter
         return firstStringField?.Name ?? objectIdFieldName;
     }
 
-    internal static GeoServicesFieldInfo MapFieldInfo(FieldDefinition field)
+    internal static GeoServicesFieldInfo MapFieldInfo(MetadataV2Field field)
     {
+        var isGeometry = IsGeometryField(field);
         return new GeoServicesFieldInfo
         {
             Name = field.Name,
-            Type = field.GeoServicesType,
-            SqlType = field.SqlType,
-            Alias = field.DisplayName,
+            Type = MapFieldTypeToGeoServices(field.Type),
+            SqlType = field.SqlType ?? MapFieldTypeToSql(field.Type),
+            Alias = field.Alias ?? field.Title ?? field.Name,
             Length = field.Length,
             Nullable = field.Nullable,
-            Editable = !field.IsGeometry,
-            DefaultValue = field.DefaultValue,
-            Domain = FeatureServerEndpoints.MapFieldDomainInfo(field.Domain, field.GeoServicesType)
+            Editable = field.Editable && !isGeometry,
+            DefaultValue = field.DefaultValue.HasValue ? ConvertJsonElement(field.DefaultValue.Value) : null,
+            Domain = GeoServicesFieldDomainMapper.Map(field.Domain),
+            Visible = !field.Hidden
         };
     }
+
+    private static bool IsGeometryField(MetadataV2Field field)
+        => field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography;
+
+    private static string MapFieldTypeToGeoServices(MetadataV2FieldType type)
+        => type switch
+        {
+            MetadataV2FieldType.String => "esriFieldTypeString",
+            MetadataV2FieldType.Integer => "esriFieldTypeInteger",
+            MetadataV2FieldType.BigInteger => "esriFieldTypeInteger64",
+            MetadataV2FieldType.Double => "esriFieldTypeDouble",
+            MetadataV2FieldType.Float => "esriFieldTypeSingle",
+            MetadataV2FieldType.Boolean => "esriFieldTypeSmallInteger",
+            MetadataV2FieldType.DateTime => "esriFieldTypeDate",
+            MetadataV2FieldType.Date => "esriFieldTypeDate",
+            MetadataV2FieldType.Time => "esriFieldTypeString",
+            MetadataV2FieldType.Json => "esriFieldTypeString",
+            MetadataV2FieldType.Binary => "esriFieldTypeBlob",
+            MetadataV2FieldType.Uuid => "esriFieldTypeGUID",
+            MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography => "esriFieldTypeGeometry",
+            _ => "esriFieldTypeString"
+        };
+
+    private static string MapFieldTypeToSql(MetadataV2FieldType type)
+        => type switch
+        {
+            MetadataV2FieldType.String => "TEXT",
+            MetadataV2FieldType.Integer => "INTEGER",
+            MetadataV2FieldType.BigInteger => "BIGINT",
+            MetadataV2FieldType.Double => "DOUBLE PRECISION",
+            MetadataV2FieldType.Float => "REAL",
+            MetadataV2FieldType.Boolean => "BOOLEAN",
+            MetadataV2FieldType.DateTime => "TIMESTAMP WITH TIME ZONE",
+            MetadataV2FieldType.Date => "DATE",
+            MetadataV2FieldType.Time => "TIME",
+            MetadataV2FieldType.Json => "JSONB",
+            MetadataV2FieldType.Binary => "BYTEA",
+            MetadataV2FieldType.Uuid => "UUID",
+            MetadataV2FieldType.Geometry => "GEOMETRY",
+            MetadataV2FieldType.Geography => "GEOGRAPHY",
+            _ => "TEXT"
+        };
+
+    private static object? ConvertJsonElement(JsonElement element)
+        => element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number => element.TryGetInt64(out var longValue) ? longValue :
+                                    element.TryGetDouble(out var doubleValue) ? doubleValue :
+                                    element.GetDecimal(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null => null,
+            _ => element.Clone()
+        };
 
     /// <summary>
     /// Converts WKB geometry to GeoJSON format
@@ -782,21 +824,19 @@ internal sealed class QueryFormatter : IQueryFormatter
         return values.ToArray();
     }
 
-    private static string MapGeometryType(Honua.Core.Features.Catalog.Domain.GeometryType geometryType)
-    {
-        return geometryType switch
+    private static string MapGeometryType(MetadataV2GeometryType geometryType)
+        => geometryType switch
         {
-            Honua.Core.Features.Catalog.Domain.GeometryType.Point => "esriGeometryPoint",
-            Honua.Core.Features.Catalog.Domain.GeometryType.LineString => "esriGeometryPolyline",
-            Honua.Core.Features.Catalog.Domain.GeometryType.Polygon => "esriGeometryPolygon",
-            Honua.Core.Features.Catalog.Domain.GeometryType.MultiPoint => "esriGeometryMultipoint",
-            Honua.Core.Features.Catalog.Domain.GeometryType.MultiLineString => "esriGeometryPolyline",
-            Honua.Core.Features.Catalog.Domain.GeometryType.MultiPolygon => "esriGeometryPolygon",
-            Honua.Core.Features.Catalog.Domain.GeometryType.GeometryCollection => "esriGeometryNull",
-            Honua.Core.Features.Catalog.Domain.GeometryType.None => "esriGeometryNull",
-            _ => "esriGeometryPolygon"
+            MetadataV2GeometryType.Point => "esriGeometryPoint",
+            MetadataV2GeometryType.LineString => "esriGeometryPolyline",
+            MetadataV2GeometryType.Polygon => "esriGeometryPolygon",
+            MetadataV2GeometryType.MultiPoint => "esriGeometryMultipoint",
+            MetadataV2GeometryType.MultiLineString => "esriGeometryPolyline",
+            MetadataV2GeometryType.MultiPolygon => "esriGeometryPolygon",
+            MetadataV2GeometryType.GeometryCollection or MetadataV2GeometryType.Mixed or MetadataV2GeometryType.None => "esriGeometryNull",
+            _ => "esriGeometryNull"
         };
-    }
+
 }
 
 /// <summary>
@@ -812,12 +852,9 @@ internal sealed class StreamingQueryFormatter
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
     }
 
-    /// <summary>
-    /// Streams query result as GeoServices JSON format using Utf8JsonWriter
-    /// </summary>
     public async Task StreamAsGeoServicesJsonAsync(
         IAsyncEnumerable<Feature> features,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         bool returnGeometry,
         int? outputSrid,
         bool returnZ,
@@ -835,31 +872,33 @@ internal sealed class StreamingQueryFormatter
             SkipValidation = false
         });
 
-        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         var outFieldLookup = CreateFieldLookup(outFields);
-        var srid = outputSrid ?? layer.SpatialReference.Wkid;
-        var queryFields = QueryFormatter.BuildQueryFields(layer, outFields, objectIdFieldName);
-        var allDeclaredAttributeFields = layer.Fields
-            .Where(field => !field.IsGeometry)
-            .Select(field => field.Name)
+        var srid = outputSrid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
+        var queryFields = QueryFormatter.BuildQueryFields(resource, outFields, objectIdFieldName);
+        var allDeclaredAttributeFields = resource.SchemaFields
+            .Where(static field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
+            .Select(static field => field.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var visibleDeclaredAttributeFields = layer.VisibleAttributeFields
-            .Select(field => field.Name)
+        var visibleDeclaredAttributeFields = resource.SchemaFields
+            .Where(static field => !field.Hidden &&
+                                   field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
+            .Select(static field => field.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var displayFieldName = QueryFormatter.ResolveDisplayFieldName(queryFields, objectIdFieldName);
+        var geometryType = resource.ReadGeometryType();
+        var hasGeometry = geometryType != MetadataV2GeometryType.None || resource.FindPrimaryGeometryField() is not null;
 
-        // Start object
         writer.WriteStartObject();
 
-        // Write metadata
         writer.WriteString("objectIdFieldName", objectIdFieldName);
         writer.WriteString("displayFieldName", displayFieldName);
         writer.WritePropertyName("fields");
         JsonSerializer.Serialize(writer, queryFields, FeatureServerJsonContext.Default.GeoServicesFieldInfoArray);
 
-        if (layer.HasGeometry)
+        if (hasGeometry)
         {
-            writer.WriteString("geometryType", MapGeometryType(layer.GeometryType));
+            writer.WriteString("geometryType", MapGeometryType(geometryType));
             writer.WriteStartObject("spatialReference");
             writer.WriteNumber("wkid", srid);
             writer.WriteNumber("latestWkid", srid);
@@ -867,7 +906,6 @@ internal sealed class StreamingQueryFormatter
 
             if (returnGeometry)
             {
-                // Streaming output cannot pre-scan all features; report requested dimensions.
                 writer.WriteBoolean("hasZ", returnZ);
                 writer.WriteBoolean("hasM", returnM);
             }
@@ -879,7 +917,6 @@ internal sealed class StreamingQueryFormatter
             maxAllowableOffset,
             forceSimplify: maxAllowableOffset is > 0);
 
-        // Start features array
         writer.WriteStartArray("features");
         var featuresSinceFlush = 0;
 
@@ -906,27 +943,21 @@ internal sealed class StreamingQueryFormatter
             }
         }
 
-        // End features array
         writer.WriteEndArray();
 
         if (hasMoreResults)
         {
-            // Write additional metadata only when exceeded (matches ArcGIS REST behavior)
             writer.WriteBoolean("exceededTransferLimit", true);
         }
 
-        // End object
         writer.WriteEndObject();
 
         await writer.FlushAsync(cancellationToken);
     }
 
-    /// <summary>
-    /// Streams query result as GeoJSON format using Utf8JsonWriter
-    /// </summary>
     public async Task StreamAsGeoJsonAsync(
         IAsyncEnumerable<Feature> features,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         bool returnGeometry,
         bool returnZ,
         bool returnM,
@@ -944,13 +975,11 @@ internal sealed class StreamingQueryFormatter
         });
 
         var projectedProperties = QueryFormatter.CreateProjectedProperties(outFields);
-        var buildOptions = QueryFormatter.CreateFeatureServerGeoJsonBuildOptions(layer, projectedProperties);
+        var buildOptions = QueryFormatter.CreateFeatureServerGeoJsonBuildOptions(resource, projectedProperties);
 
-        // Start GeoJSON FeatureCollection
         writer.WriteStartObject();
         writer.WriteString("type", "FeatureCollection");
 
-        // Start features array
         writer.WriteStartArray("features");
 
         var effectiveLimits = GeometryOutputProcessor.CreateEffectiveLimits(
@@ -965,7 +994,7 @@ internal sealed class StreamingQueryFormatter
             WriteGeoJsonFeature(
                 writer,
                 feature,
-                layer,
+                resource,
                 returnGeometry,
                 buildOptions,
                 returnZ,
@@ -980,7 +1009,6 @@ internal sealed class StreamingQueryFormatter
             }
         }
 
-        // End features array
         writer.WriteEndArray();
 
         if (hasMoreResults)
@@ -991,7 +1019,6 @@ internal sealed class StreamingQueryFormatter
             writer.WriteEndObject();
         }
 
-        // End FeatureCollection
         writer.WriteEndObject();
 
         await writer.FlushAsync(cancellationToken);
@@ -1101,13 +1128,10 @@ internal sealed class StreamingQueryFormatter
         return !allDeclaredAttributeFields.Contains(fieldName);
     }
 
-    /// <summary>
-    /// Writes a single feature in GeoJSON format
-    /// </summary>
     private static void WriteGeoJsonFeature(
         Utf8JsonWriter writer,
         Feature feature,
-        LayerDefinition layer,
+        MetadataV2Resource resource,
         bool returnGeometry,
         GeoJsonFeatureBuildOptions buildOptions,
         bool returnZ,
@@ -1115,14 +1139,13 @@ internal sealed class StreamingQueryFormatter
         GeometryLimits geometryLimits,
         CancellationToken cancellationToken)
     {
-        var featureBase = GeoJsonFeatureBaseBuilder.Create(feature, layer, buildOptions);
+        var featureBase = GeoJsonFeatureBaseBuilder.Create(feature, resource, buildOptions);
 
         writer.WriteStartObject();
         writer.WriteString("type", "Feature");
         writer.WritePropertyName("id");
         JsonSerializer.Serialize(writer, featureBase.Id, FeatureServerJsonContext.Default.Object);
 
-        // Write geometry if requested and available
         if (returnGeometry && feature.Geometry != null)
         {
             writer.WritePropertyName("geometry");
@@ -1145,15 +1168,14 @@ internal sealed class StreamingQueryFormatter
             writer.WriteNull("geometry");
         }
 
-        // Write properties
         writer.WriteStartObject("properties");
         foreach (var kvp in featureBase.Properties)
         {
             WriteJsonValue(writer, kvp.Key, kvp.Value, cancellationToken);
         }
 
-        writer.WriteEndObject(); // End properties
-        writer.WriteEndObject(); // End feature
+        writer.WriteEndObject();
+        writer.WriteEndObject();
     }
 
     private static HashSet<string>? CreateFieldLookup(string[]? outFields)
@@ -1219,19 +1241,17 @@ internal sealed class StreamingQueryFormatter
         cancellationToken.ThrowIfCancellationRequested();
     }
 
-    /// <summary>
-    /// Maps layer geometry type to GeoServices geometry type string
-    /// </summary>
-    private static string MapGeometryType(Honua.Core.Features.Catalog.Domain.GeometryType geometryType) => geometryType switch
-    {
-        Honua.Core.Features.Catalog.Domain.GeometryType.Point => "esriGeometryPoint",
-        Honua.Core.Features.Catalog.Domain.GeometryType.LineString => "esriGeometryPolyline",
-        Honua.Core.Features.Catalog.Domain.GeometryType.Polygon => "esriGeometryPolygon",
-        Honua.Core.Features.Catalog.Domain.GeometryType.MultiPoint => "esriGeometryMultipoint",
-        Honua.Core.Features.Catalog.Domain.GeometryType.MultiLineString => "esriGeometryPolyline",
-        Honua.Core.Features.Catalog.Domain.GeometryType.MultiPolygon => "esriGeometryPolygon",
-        Honua.Core.Features.Catalog.Domain.GeometryType.GeometryCollection => "esriGeometryNull",
-        _ => "esriGeometryNull"
-    };
+    private static string MapGeometryType(MetadataV2GeometryType geometryType)
+        => geometryType switch
+        {
+            MetadataV2GeometryType.Point => "esriGeometryPoint",
+            MetadataV2GeometryType.LineString => "esriGeometryPolyline",
+            MetadataV2GeometryType.Polygon => "esriGeometryPolygon",
+            MetadataV2GeometryType.MultiPoint => "esriGeometryMultipoint",
+            MetadataV2GeometryType.MultiLineString => "esriGeometryPolyline",
+            MetadataV2GeometryType.MultiPolygon => "esriGeometryPolygon",
+            MetadataV2GeometryType.GeometryCollection or MetadataV2GeometryType.Mixed or MetadataV2GeometryType.None => "esriGeometryNull",
+            _ => "esriGeometryNull"
+        };
 
 }

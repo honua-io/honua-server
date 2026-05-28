@@ -1,8 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
@@ -52,7 +53,7 @@ internal sealed class FeatureServerRelatedRecordsHandler(
                     queryParams.RelationshipId);
             }
 
-            var resourceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerAsync(
+            var resourceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerV2Async(
                 _resourceValidator,
                 serviceId,
                 layerId,
@@ -64,12 +65,22 @@ internal sealed class FeatureServerRelatedRecordsHandler(
                 return resourceValidationResult.ErrorResult!;
             }
 
-            ServiceDefinition service = resourceValidationResult.Service!;
-            LayerDefinition layer = resourceValidationResult.Layer!;
-            var accessError = AccessPolicyHelpers.RequireLayerAccess(httpContext, layer, service);
+            var service = resourceValidationResult.Service!;
+            var publication = resourceValidationResult.Publication!;
+            var resource = resourceValidationResult.Resource!;
+            var accessError = AccessPolicyHelpers.RequireResourceAccess(httpContext, resource, service);
             if (accessError != null)
             {
                 return accessError;
+            }
+
+            var snapshotProvider = httpContext.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+            var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var sourceStorageLayerId = ResolveStorageLayerId(snapshot, publication, resource);
+            if (sourceStorageLayerId is null)
+            {
+                return StandardErrorHelpers.CreateNotFound(httpContext,
+                    $"Layer '{resource.Metadata.Name ?? layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}' is not bound to a storage layer.");
             }
 
             // Validate required parameters (these should already be validated by parameter parsing)
@@ -80,8 +91,8 @@ internal sealed class FeatureServerRelatedRecordsHandler(
                     ["objectIds parameter is required"]);
             }
 
-            var relationship = layer.LayerRelationships.FirstOrDefault(r => r.RelationshipId == queryParams.RelationshipId);
-            if (relationship.RelationshipId == 0)
+            var relationship = resource.Relationships.FirstOrDefault(r => ResolveRelationshipId(r) == queryParams.RelationshipId);
+            if (relationship is null)
             {
                 FeatureServerLog.RelationshipNotFound(_logger, layerId, queryParams.RelationshipId);
                 return StandardErrorHelpers.CreateNotFound(httpContext,
@@ -117,12 +128,33 @@ internal sealed class FeatureServerRelatedRecordsHandler(
             }
 
             // Get related layer information
-            var relatedLayer = service.Layers.FirstOrDefault(l => l.Id == relationship.RelatedLayerId);
-            if (relatedLayer == null)
+            if (!TryResolveRelatedResource(
+                    snapshot,
+                    service,
+                    relationship,
+                    out var relatedResource,
+                    out var relatedPublication,
+                    out var relatedLayerId))
             {
-                FeatureServerLog.LayerNotFound(_logger, serviceId, relationship.RelatedLayerId);
+                FeatureServerLog.LayerNotFound(_logger, serviceId, relatedLayerId);
                 return StandardErrorHelpers.CreateNotFound(httpContext,
-                    $"Related layer {relationship.RelatedLayerId} not found in service '{serviceId}'");
+                    $"Related layer {relatedLayerId} not found in service '{serviceId}'");
+            }
+
+            var resolvedRelatedResource = relatedResource!;
+            var resolvedRelatedPublication = relatedPublication!;
+
+            accessError = AccessPolicyHelpers.RequireResourceAccess(httpContext, resolvedRelatedResource, service);
+            if (accessError != null)
+            {
+                return accessError;
+            }
+
+            var relatedStorageLayerId = ResolveStorageLayerId(snapshot, resolvedRelatedPublication, resolvedRelatedResource);
+            if (relatedStorageLayerId is null)
+            {
+                return StandardErrorHelpers.CreateNotFound(httpContext,
+                    $"Related layer {relatedLayerId} is not bound to a storage layer.");
             }
 
             var objectIds = queryParams.ObjectIds;
@@ -134,7 +166,7 @@ internal sealed class FeatureServerRelatedRecordsHandler(
                     [$"Unsupported outSR value: {validatedParams.OutSr}"]);
             }
 
-            outputSrid ??= relatedLayer.SpatialReference.ToSrid();
+            outputSrid ??= resolvedRelatedResource.ReadSrid();
 
             SqlFragment? sqlFilter = null;
             if (!string.IsNullOrWhiteSpace(validatedParams.Where))
@@ -149,7 +181,7 @@ internal sealed class FeatureServerRelatedRecordsHandler(
 
                 if (parseResult.Expression != null)
                 {
-                    var translationResult = _filterExpressionService.Translate(parseResult.Expression, relatedLayer);
+                    var translationResult = _filterExpressionService.Translate(parseResult.Expression, resolvedRelatedResource);
                     if (!translationResult.IsSuccess)
                     {
                         return StandardErrorHelpers.CreateBadRequest(httpContext,
@@ -166,13 +198,14 @@ internal sealed class FeatureServerRelatedRecordsHandler(
                 validatedParams,
                 objectIds,
                 relationship,
+                relatedStorageLayerId.Value,
                 sqlFilter);
 
             // Execute related query
-            QueryResult<Feature> result = await _relatedRecordsService.ExecuteRelatedQueryAsync(layerId, relatedQuery, cancellationToken);
+            QueryResult<Feature> result = await _relatedRecordsService.ExecuteRelatedQueryAsync(sourceStorageLayerId.Value, relatedQuery, cancellationToken);
 
             // Group results by origin object ID
-            var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(relatedLayer);
+            var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resolvedRelatedResource);
             RelatedRecordGroup[] relatedRecordGroups = _relatedRecordsService.GroupRelatedRecords(
                 result,
                 objectIds,
@@ -292,4 +325,47 @@ internal sealed class FeatureServerRelatedRecordsHandler(
             ? $"{sample},..."
             : sample;
     }
+
+    private static int ResolveRelationshipId(MetadataV2Relationship relationship)
+        => relationship.EsriRelationshipId ?? FeatureServerEndpoints.StableStringHash(relationship.Id);
+
+    private static bool TryResolveRelatedResource(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Service service,
+        MetadataV2Relationship relationship,
+        out MetadataV2Resource? resource,
+        out MetadataV2Publication? publication,
+        out int layerId)
+    {
+        resource = null;
+        publication = null;
+        layerId = -1;
+
+        if (!snapshot.Index.ResourcesById.TryGetValue(relationship.RelatedResourceId, out resource))
+        {
+            return false;
+        }
+
+        var relatedResourceId = resource.Metadata.Id;
+        publication = snapshot.PublicationsForService(service.Metadata.Id)
+            .FirstOrDefault(pub => string.Equals(pub.ResourceId, relatedResourceId, StringComparison.OrdinalIgnoreCase));
+        if (publication is null)
+        {
+            return false;
+        }
+
+        layerId = publication.LayerIndex
+            ?? snapshot.ResolveStorageLayerId(publication)
+            ?? snapshot.ResolveStorageLayerId(resource)
+            ?? -1;
+        return layerId >= 0;
+    }
+
+    private static int? ResolveStorageLayerId(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication publication,
+        MetadataV2Resource resource)
+        => snapshot.ResolveStorageLayerId(publication)
+           ?? snapshot.ResolveStorageLayerId(resource)
+           ?? publication.LayerIndex;
 }

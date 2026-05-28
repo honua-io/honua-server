@@ -6,12 +6,11 @@ using System.IO;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Services;
-using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Protocols.Ogc.Common;
 
 namespace Honua.Server.Features.Streaming;
@@ -943,14 +942,17 @@ internal static partial class FeatureStreamEndpoints
         CancellationToken cancellationToken)
     {
         var serviceId = NullIfEmpty(control.ServiceId);
-        ServiceDefinition? service = null;
+        var snapshot = await deps.MetadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        MetadataV2Service? service = null;
         if (serviceId is not null)
         {
-            service = await deps.LayerCatalog.GetServiceAsync(serviceId, cancellationToken).ConfigureAwait(false);
+            service = ResolveStreamService(snapshot, serviceId);
             if (service is null)
             {
                 return (null, $"Service '{serviceId}' not found.");
             }
+
+            serviceId = service.Metadata.Name;
         }
 
         var layerIds = ResolveControlLayerIds(control);
@@ -961,47 +963,54 @@ internal static partial class FeatureStreamEndpoints
 
         if (layerIds is not null)
         {
-            IReadOnlyDictionary<int, ServiceDefinition>? layerToService = null;
+            var resolvedLayerIds = new List<int>(layerIds.Length);
+            var seenResolvedLayerIds = new HashSet<int>();
             foreach (var layerId in layerIds)
             {
                 // When a serviceId was provided, restrict layer ids to that service so a
                 // caller cannot piggy-back unrelated layers on an authorized service.
                 // When no serviceId was provided, look up the layer's primary service so
                 // the access policy check evaluates the service-level policy too.
-                LayerDefinition? layer;
-                ServiceDefinition? authService;
+                StreamLayerDescriptor? layer;
+                MetadataV2Service? authService;
                 if (service is not null)
                 {
-                    layer = ResolveLayer(service, layerId);
+                    layer = ResolveStreamLayer(snapshot, service, layerId);
                     if (layer is null)
                     {
-                        return (null, $"Layer {layerId} is not part of service '{service.Name}'.");
+                        return (null, $"Layer {layerId} is not part of service '{service.Metadata.Name}'.");
                     }
 
                     authService = service;
                 }
                 else
                 {
-                    layer = await deps.LayerCatalog.GetLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+                    layer = ResolveStreamLayer(snapshot, service: null, layerId);
                     if (layer is null)
                     {
                         return (null, $"Layer {layerId} not found.");
                     }
 
-                    layerToService ??= await BuildLayerToPrimaryServiceMapAsync(deps, cancellationToken).ConfigureAwait(false);
-                    authService = layerToService.TryGetValue(layer.Id, out var resolved) ? resolved : null;
+                    authService = layer.Service;
                 }
 
-                var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, authService);
+                var accessError = RequireStreamLayerAccess(context, layer.Resource, authService);
                 if (accessError is not null)
                 {
                     return (null, "Access to the requested stream layer is forbidden.");
                 }
+
+                if (seenResolvedLayerIds.Add(layer.LayerId))
+                {
+                    resolvedLayerIds.Add(layer.LayerId);
+                }
             }
+
+            layerIds = resolvedLayerIds.ToArray();
         }
         else if (service is not null)
         {
-            var accessError = RequireAllLayerAccess(context, service);
+            var accessError = RequireAllLayerAccess(context, snapshot, service);
             if (accessError is not null)
             {
                 return (null, "Access to the requested stream service is forbidden.");
@@ -1033,8 +1042,7 @@ internal static partial class FeatureStreamEndpoints
                 return (null, "Invalid EPSG:4326 bbox.");
             }
 
-            var layer = ResolveLayer(service, layerIds[0]) ??
-                await deps.LayerCatalog.GetLayerAsync(layerIds[0], cancellationToken).ConfigureAwait(false);
+            var layer = ResolveStreamLayer(snapshot, service, layerIds[0]);
             if (layer is null)
             {
                 return (null, $"Layer {layerIds[0]} not found.");
@@ -1078,8 +1086,7 @@ internal static partial class FeatureStreamEndpoints
                 return (null, validationError ?? "Streaming subscriptions do not support the requested filter expression.");
             }
 
-            var layer = ResolveLayer(service, layerIds[0]) ??
-                await deps.LayerCatalog.GetLayerAsync(layerIds[0], cancellationToken).ConfigureAwait(false);
+            var layer = ResolveStreamLayer(snapshot, service, layerIds[0]);
             if (layer is null)
             {
                 return (null, $"Layer {layerIds[0]} not found.");
@@ -1101,30 +1108,24 @@ internal static partial class FeatureStreamEndpoints
                 return (null, "temporal filters require exactly one time-aware layer.");
             }
 
-            var layer = ResolveLayer(service, layerIds[0]) ??
-                await deps.LayerCatalog.GetLayerAsync(layerIds[0], cancellationToken).ConfigureAwait(false);
+            var layer = ResolveStreamLayer(snapshot, service, layerIds[0]);
             if (layer is null)
             {
                 return (null, $"Layer {layerIds[0]} not found.");
             }
 
-            var timeInfo = layer.Metadata?.TimeInfo;
-            if (timeInfo is null || string.IsNullOrWhiteSpace(timeInfo.StartTimeField))
+            if (!TemporalExtentHelpers.HasOptInTemporalFields(layer.Resource))
             {
-                return (null, $"Layer {layer.Id} is not time-aware; temporal stream filters require layer timeInfo.");
+                return (null, $"Layer {layer.LayerId} is not time-aware; temporal stream filters require resource temporal metadata.");
             }
 
-            if (!OgcTemporalFilterParser.TryParse(control.Datetime, layer, out var parsedTemporalFilter, out var temporalError) ||
+            if (!TryBuildStreamTemporalFilter(control.Datetime, layer.Resource, out var parsedTemporalFilter, out var temporalError) ||
                 parsedTemporalFilter is null)
             {
                 return (null, temporalError ?? "Invalid datetime parameter.");
             }
 
-            temporalFilter = new StreamTemporalFilter(
-                parsedTemporalFilter.Value.PropertyName,
-                timeInfo.EndTimeField,
-                parsedTemporalFilter.Value.Start,
-                parsedTemporalFilter.Value.End);
+            temporalFilter = parsedTemporalFilter;
         }
 
         return (new StreamSubscriptionFilter(serviceId, layerIds, bbox, attributeFilter, temporalFilter), null);

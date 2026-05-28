@@ -15,9 +15,10 @@ public interface IBindableFeatureDataProvider
 {
     /// <summary>
     /// Returns a reader bound to the supplied <see cref="FeatureProviderBinding"/>. The binding
-    /// carries the resolved <see cref="Honua.Core.Features.Security.Domain.DataConnection"/> for
-    /// services that route through a per-tenant or secure connection. Implementations must not
-    /// mutate shared state; each call should produce a reader scoped to the binding.
+    /// carries the Metadata v2 resource/publication/storage binding plus the resolved
+    /// <see cref="Honua.Core.Features.Security.Domain.DataConnection"/> for services that route
+    /// through a per-tenant or secure connection. Implementations must not mutate shared state;
+    /// each call should produce a reader scoped to the binding.
     /// </summary>
     /// <param name="binding">Resolved provider binding.</param>
     /// <returns>Reader bound to the supplied binding.</returns>

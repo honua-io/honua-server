@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Protocols.GeoServices;
 using Honua.Server.Features.Infrastructure.Abstractions;
@@ -289,25 +289,12 @@ internal static partial class MapServerEndpoints
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var serviceResult = await resourceValidator.ValidateServiceAsync(serviceId, cancellationToken);
-        if (!serviceResult.IsValid)
-        {
-            var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
-            if (serviceResult.ErrorCode == ResourceValidationError.InvalidIdentifier)
-            {
-                return StandardErrorHelpers.CreateBadRequest(context, errorMessage);
-            }
-
-            return StandardErrorHelpers.CreateNotFound(context, errorMessage);
-        }
-
-        var service = serviceResult.Resource!;
-        var protocolError = ProtocolValidationHelpers.ValidateProtocolEnabled(context, service, ServiceProtocols.MapServer);
-        if (protocolError != null)
-        {
-            return protocolError;
-        }
-
-        return null;
+        var serviceResult = await ServiceResourceValidationHelpers.ValidateServiceV2Async(
+            resourceValidator,
+            serviceId,
+            ServiceProtocols.MapServer,
+            context,
+            cancellationToken: cancellationToken);
+        return serviceResult.IsValid ? null : serviceResult.ErrorResult;
     }
 }

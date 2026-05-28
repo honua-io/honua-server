@@ -1,8 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
-using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.Postgres.Queries.Filters;
 
@@ -11,30 +10,11 @@ namespace Honua.Postgres.Tests.Queries.Filters;
 public class PostgresSqlFilterTranslatorTests
 {
     private readonly PostgresSqlFilterTranslator _translator = new();
-    private readonly LayerDefinition _layer;
+    private readonly MetadataV2Resource _resource;
 
     public PostgresSqlFilterTranslatorTests()
     {
-        _layer = new LayerDefinition(
-            Id: 1,
-            Name: "TestLayer",
-            Description: "Test layer for SQL translation",
-            GeometryType: GeometryType.Point,
-            SpatialReference: SpatialReference.WGS84,
-            Fields: [
-                new FieldDefinition("id", FieldType.Integer, Nullable: false),
-                new FieldDefinition("geom", FieldType.Geometry, Nullable: false),
-                new FieldDefinition("name", FieldType.String),
-                new FieldDefinition("age", FieldType.Integer),
-                new FieldDefinition("active", FieldType.Boolean),
-                new FieldDefinition("description", FieldType.String),
-                new FieldDefinition("field", FieldType.String),
-                new FieldDefinition("status", FieldType.String),
-                new FieldDefinition("timestamp", FieldType.DateTime),
-                new FieldDefinition("event_time", FieldType.Time),
-                new FieldDefinition("tags", FieldType.Json)
-            ]
-        );
+        _resource = CreateResource();
     }
 
     [Fact]
@@ -44,7 +24,7 @@ public class PostgresSqlFilterTranslatorTests
         var property = new PropertyReference("name");
 
         // Act
-        var result = _translator.Translate(property, _layer);
+        var result = _translator.Translate(property, _resource);
 
         // Assert
         result.Sql.Should().Be("\"name\"");
@@ -58,7 +38,7 @@ public class PostgresSqlFilterTranslatorTests
         var literal = new Literal("John", LiteralType.Text);
 
         // Act
-        var result = _translator.Translate(literal, _layer);
+        var result = _translator.Translate(literal, _resource);
 
         // Assert
         result.Sql.Should().Be("@p0");
@@ -75,7 +55,7 @@ public class PostgresSqlFilterTranslatorTests
         var comparison = new BinaryExpression(left, BinaryOperator.GreaterThanOrEqual, right);
 
         // Act
-        var result = _translator.Translate(comparison, _layer);
+        var result = _translator.Translate(comparison, _resource);
 
         // Assert
         result.Sql.Should().Be("\"age\" >= @p0");
@@ -100,7 +80,7 @@ public class PostgresSqlFilterTranslatorTests
         var andExpr = new BinaryExpression(left, BinaryOperator.And, right);
 
         // Act
-        var result = _translator.Translate(andExpr, _layer);
+        var result = _translator.Translate(andExpr, _resource);
 
         // Assert
         result.Sql.Should().Be("(\"age\" >= @p0 AND \"name\" LIKE @p1)");
@@ -121,7 +101,7 @@ public class PostgresSqlFilterTranslatorTests
         var notExpr = new UnaryExpression(UnaryOperator.Not, inner);
 
         // Act
-        var result = _translator.Translate(notExpr, _layer);
+        var result = _translator.Translate(notExpr, _resource);
 
         // Assert
         result.Sql.Should().Be("NOT (\"active\" = @p0)");
@@ -136,7 +116,7 @@ public class PostgresSqlFilterTranslatorTests
         var isNull = new UnaryExpression(UnaryOperator.IsNull, new PropertyReference("description"));
 
         // Act
-        var result = _translator.Translate(isNull, _layer);
+        var result = _translator.Translate(isNull, _resource);
 
         // Assert
         result.Sql.Should().Be("\"description\" IS NULL");
@@ -150,7 +130,7 @@ public class PostgresSqlFilterTranslatorTests
         var isNotNull = new UnaryExpression(UnaryOperator.IsNotNull, new PropertyReference("description"));
 
         // Act
-        var result = _translator.Translate(isNotNull, _layer);
+        var result = _translator.Translate(isNotNull, _resource);
 
         // Assert
         result.Sql.Should().Be("\"description\" IS NOT NULL");
@@ -173,7 +153,7 @@ public class PostgresSqlFilterTranslatorTests
             valueList);
 
         // Act
-        var result = _translator.Translate(inClause, _layer);
+        var result = _translator.Translate(inClause, _resource);
 
         // Assert
         result.Sql.Should().Be("\"status\" IN (@p0, @p1, @p2)");
@@ -193,7 +173,7 @@ public class PostgresSqlFilterTranslatorTests
             new ValueList([]));
 
         // Act
-        var result = _translator.Translate(inClause, _layer);
+        var result = _translator.Translate(inClause, _resource);
 
         // Assert
         result.Sql.Should().Be("FALSE");
@@ -210,7 +190,7 @@ public class PostgresSqlFilterTranslatorTests
             new ValueList([]));
 
         // Act
-        var result = _translator.Translate(notInClause, _layer);
+        var result = _translator.Translate(notInClause, _resource);
 
         // Assert
         result.Sql.Should().Be("TRUE");
@@ -229,7 +209,7 @@ public class PostgresSqlFilterTranslatorTests
             geometry);
 
         // Act
-        var result = _translator.Translate(spatial, _layer);
+        var result = _translator.Translate(spatial, _resource);
 
         // Assert
         result.Sql.Should().Be("ST_Intersects(\"geom\"::geometry, ST_GeomFromWKB(@p0, @p1))");
@@ -252,7 +232,7 @@ public class PostgresSqlFilterTranslatorTests
             distance);
 
         // Act
-        var result = _translator.Translate(spatial, _layer);
+        var result = _translator.Translate(spatial, _resource);
 
         // Assert
         result.Sql.Should().Be("ST_DWithin(\"geom\"::geometry::geography, ST_GeomFromWKB(@p0, @p1)::geography, @p2)");
@@ -264,10 +244,12 @@ public class PostgresSqlFilterTranslatorTests
     public void Translate_SpatialDistancePredicate_WithNonWgs84GeographicLayer_TransformsToWgs84()
     {
         // Arrange
-        var layer = _layer with
+        var resource = CreateResource(new MetadataV2SpatialReference
         {
-            SpatialReference = SpatialReference.Create(4269, null, null, null, "GEOGCS[\"NAD83\"]")
-        };
+            Srid = 4269,
+            Crs = "EPSG:4269",
+            IsGeographic = true,
+        });
         var wkb = new byte[] { 1, 2, 3, 4 };
         var geometry = new GeometryLiteral(wkb, 4269, "POINT(1 2)");
         var distance = new Literal(100, LiteralType.Number);
@@ -278,7 +260,7 @@ public class PostgresSqlFilterTranslatorTests
             distance);
 
         // Act
-        var result = _translator.Translate(spatial, layer);
+        var result = _translator.Translate(spatial, resource);
 
         // Assert
         result.Sql.Should().Be("ST_DWithin(ST_Transform(\"geom\"::geometry, 4326)::geography, ST_Transform(ST_GeomFromWKB(@p0, @p1), 4326)::geography, @p2)");
@@ -296,7 +278,7 @@ public class PostgresSqlFilterTranslatorTests
             new Literal(1, LiteralType.Number));
 
         // Act
-        var result = _translator.Translate(arithmetic, _layer);
+        var result = _translator.Translate(arithmetic, _resource);
 
         // Assert
         result.Sql.Should().Be("(\"age\" + @p0)");
@@ -313,7 +295,7 @@ public class PostgresSqlFilterTranslatorTests
             new Literal(2, LiteralType.Number));
 
         // Act
-        var result = _translator.Translate(arithmetic, _layer);
+        var result = _translator.Translate(arithmetic, _resource);
 
         // Assert
         result.Sql.Should().Be("TRUNC((\"age\") / (@p0))");
@@ -329,7 +311,7 @@ public class PostgresSqlFilterTranslatorTests
             new Literal(2, LiteralType.Number));
 
         // Act
-        var result = _translator.Translate(arithmetic, _layer);
+        var result = _translator.Translate(arithmetic, _resource);
 
         // Assert
         result.Sql.Should().Be("POWER(\"age\", @p0)");
@@ -349,7 +331,7 @@ public class PostgresSqlFilterTranslatorTests
             interval);
 
         // Act
-        var result = _translator.Translate(predicate, _layer);
+        var result = _translator.Translate(predicate, _resource);
 
         // Assert
         result.Sql.Should().Be("NOT (\"timestamp\" < @p0 OR \"timestamp\" > @p1)");
@@ -369,7 +351,7 @@ public class PostgresSqlFilterTranslatorTests
             new PropertyReference("timestamp"),
             interval);
 
-        var result = _translator.Translate(predicate, _layer);
+        var result = _translator.Translate(predicate, _resource);
 
         result.Sql.Should().Be("\"timestamp\" < @p0");
         result.Parameters.Should().ContainSingle().Which.Should().Be(start);
@@ -388,7 +370,7 @@ public class PostgresSqlFilterTranslatorTests
             new PropertyReference("timestamp"),
             interval);
 
-        var result = _translator.Translate(predicate, _layer);
+        var result = _translator.Translate(predicate, _resource);
 
         result.Sql.Should().Be("\"timestamp\" > @p0");
         result.Parameters.Should().ContainSingle().Which.Should().Be(end);
@@ -406,7 +388,7 @@ public class PostgresSqlFilterTranslatorTests
             new PropertyReference("event_time"),
             interval);
 
-        var action = () => _translator.Translate(predicate, _layer);
+        var action = () => _translator.Translate(predicate, _resource);
 
         action.Should().Throw<ArgumentException>()
             .WithMessage("*event_time*time-only field*");
@@ -427,7 +409,7 @@ public class PostgresSqlFilterTranslatorTests
             array);
 
         // Act
-        var result = _translator.Translate(predicate, _layer);
+        var result = _translator.Translate(predicate, _resource);
 
         // Assert
         result.Sql.Should().Be("\"attributes\" -> 'tags' @> @p0::jsonb");
@@ -440,7 +422,7 @@ public class PostgresSqlFilterTranslatorTests
         var function = new FunctionCall("CASEI", [new PropertyReference("name")]);
 
         // Act
-        var result = _translator.Translate(function, _layer);
+        var result = _translator.Translate(function, _resource);
 
         // Assert
         result.Sql.Should().Be("LOWER(\"name\")");
@@ -464,7 +446,7 @@ public class PostgresSqlFilterTranslatorTests
             new Literal("value", LiteralType.Text));
 
         // Act
-        var result = _translator.Translate(binary, _layer);
+        var result = _translator.Translate(binary, _resource);
 
         // Assert
         result.Sql.Should().Contain(expectedSql);
@@ -487,7 +469,7 @@ public class PostgresSqlFilterTranslatorTests
         var spatial = new SpatialPredicate(op, new PropertyReference("geom"), geometry);
 
         // Act
-        var result = _translator.Translate(spatial, _layer);
+        var result = _translator.Translate(spatial, _resource);
 
         // Assert
         result.Sql.Should().StartWith(expectedFunction);
@@ -500,7 +482,7 @@ public class PostgresSqlFilterTranslatorTests
         var unknownField = new PropertyReference("unknown_field");
 
         // Act & Assert
-        var action = () => _translator.Translate(unknownField, _layer);
+        var action = () => _translator.Translate(unknownField, _resource);
         action.Should().Throw<ArgumentException>()
             .WithMessage("*unknown_field*not found*");
     }
@@ -535,7 +517,7 @@ public class PostgresSqlFilterTranslatorTests
         var orExpr = new BinaryExpression(left, BinaryOperator.Or, right);
 
         // Act
-        var result = _translator.Translate(orExpr, _layer);
+        var result = _translator.Translate(orExpr, _resource);
 
         // Assert
         result.Sql.Should().Be("((\"age\" >= @p0 AND \"name\" LIKE @p1) OR (\"description\" = @p2 AND \"active\" = @p3))");
@@ -566,7 +548,7 @@ public class PostgresSqlFilterTranslatorTests
                     new Literal(i, LiteralType.Number)));
         }
 
-        var act = () => _translator.Translate(expression, _layer);
+        var act = () => _translator.Translate(expression, _resource);
 
         act.Should().Throw<ArgumentException>()
             .WithMessage($"*maximum nesting depth of {PostgresSqlFilterTranslator.MaxExpressionDepth}*");
@@ -594,8 +576,53 @@ public class PostgresSqlFilterTranslatorTests
                     new Literal(i, LiteralType.Number)));
         }
 
-        var act = () => _translator.Translate(expression, _layer);
+        var act = () => _translator.Translate(expression, _resource);
 
         act.Should().NotThrow();
     }
+
+    private static MetadataV2Resource CreateResource(MetadataV2SpatialReference? spatialReference = null)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "res-test-layer",
+                Name = "TestLayer",
+                Description = "Test layer for SQL translation",
+            },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = spatialReference ?? MetadataV2SpatialReference.Wgs84,
+                GeometryType = MetadataV2GeometryType.Point,
+                PrimaryGeometryField = "geom",
+            },
+            SchemaFields =
+            [
+                Field("id", MetadataV2FieldType.Integer, nullable: false, semanticRoles: ["id.primary"]),
+                Field("geom", MetadataV2FieldType.Geometry, nullable: false, semanticRoles: ["geometry.primary"]),
+                Field("name", MetadataV2FieldType.String),
+                Field("age", MetadataV2FieldType.Integer),
+                Field("active", MetadataV2FieldType.Boolean),
+                Field("description", MetadataV2FieldType.String),
+                Field("field", MetadataV2FieldType.String),
+                Field("status", MetadataV2FieldType.String),
+                Field("timestamp", MetadataV2FieldType.DateTime),
+                Field("event_time", MetadataV2FieldType.Time),
+                Field("tags", MetadataV2FieldType.Json),
+            ],
+        };
+
+    private static MetadataV2Field Field(
+        string name,
+        MetadataV2FieldType type,
+        bool nullable = true,
+        params string[] semanticRoles)
+        => new()
+        {
+            Name = name,
+            Type = type,
+            Nullable = nullable,
+            SemanticRoles = semanticRoles,
+        };
 }

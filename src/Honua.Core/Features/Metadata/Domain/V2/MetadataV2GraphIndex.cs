@@ -10,6 +10,7 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 public sealed class MetadataV2GraphIndex
 {
     private MetadataV2GraphIndex(
+        IReadOnlyDictionary<string, MetadataV2Catalog> catalogsById,
         IReadOnlyDictionary<string, MetadataV2Resource> resourcesById,
         IReadOnlyDictionary<string, MetadataV2Resource> resourcesByName,
         IReadOnlyDictionary<string, MetadataV2Connection> connectionsById,
@@ -22,11 +23,13 @@ public sealed class MetadataV2GraphIndex
         IReadOnlyDictionary<string, MetadataV2Publication> publicationsById,
         ILookup<string, MetadataV2Publication> publicationsByService,
         ILookup<string, MetadataV2Publication> publicationsByResource,
-        IReadOnlyDictionary<string, MetadataV2Catalog> catalogsById,
+        IReadOnlyDictionary<string, MetadataV2ProjectionProfile> projectionProfilesById,
+        ILookup<string, MetadataV2ProjectionProfile> projectionProfilesByTarget,
         IReadOnlyDictionary<string, MetadataV2Policy> policiesById,
         IReadOnlyDictionary<string, MetadataV2Role> rolesById,
         ILookup<string, MetadataV2Resource> resourcesByStyleResourceId)
     {
+        CatalogsById = catalogsById;
         ResourcesById = resourcesById;
         ResourcesByName = resourcesByName;
         ConnectionsById = connectionsById;
@@ -39,35 +42,18 @@ public sealed class MetadataV2GraphIndex
         PublicationsById = publicationsById;
         PublicationsByService = publicationsByService;
         PublicationsByResource = publicationsByResource;
-        CatalogsById = catalogsById;
+        ProjectionProfilesById = projectionProfilesById;
+        ProjectionProfilesByTarget = projectionProfilesByTarget;
         PoliciesById = policiesById;
         RolesById = rolesById;
         ResourcesByStyleResourceId = resourcesByStyleResourceId;
     }
 
-    /// <summary>
-    /// Resources by stable metadata identifier.
-    /// </summary>
+    public IReadOnlyDictionary<string, MetadataV2Catalog> CatalogsById { get; }
     public IReadOnlyDictionary<string, MetadataV2Resource> ResourcesById { get; }
-
-    /// <summary>
-    /// Resources by metadata name. First match wins when names collide.
-    /// </summary>
     public IReadOnlyDictionary<string, MetadataV2Resource> ResourcesByName { get; }
-
-    /// <summary>
-    /// Connections by stable metadata identifier.
-    /// </summary>
     public IReadOnlyDictionary<string, MetadataV2Connection> ConnectionsById { get; }
-
-    /// <summary>
-    /// Storage bindings by stable metadata identifier.
-    /// </summary>
     public IReadOnlyDictionary<string, MetadataV2StorageBinding> StorageBindingsById { get; }
-
-    /// <summary>
-    /// Storage bindings grouped by canonical resource identifier.
-    /// </summary>
     public ILookup<string, MetadataV2StorageBinding> StorageBindingsByResource { get; }
 
     /// <summary>
@@ -87,44 +73,14 @@ public sealed class MetadataV2GraphIndex
     /// </summary>
     public IReadOnlyDictionary<int, MetadataV2Resource> ResourcesByStorageLayerId { get; }
 
-    /// <summary>
-    /// Services by stable metadata identifier.
-    /// </summary>
     public IReadOnlyDictionary<string, MetadataV2Service> ServicesById { get; }
-
-    /// <summary>
-    /// Services by metadata name. First match wins when names collide.
-    /// </summary>
     public IReadOnlyDictionary<string, MetadataV2Service> ServicesByName { get; }
-
-    /// <summary>
-    /// Publications by stable metadata identifier.
-    /// </summary>
     public IReadOnlyDictionary<string, MetadataV2Publication> PublicationsById { get; }
-
-    /// <summary>
-    /// Publications grouped by service identifier.
-    /// </summary>
     public ILookup<string, MetadataV2Publication> PublicationsByService { get; }
-
-    /// <summary>
-    /// Publications grouped by resource identifier.
-    /// </summary>
     public ILookup<string, MetadataV2Publication> PublicationsByResource { get; }
-
-    /// <summary>
-    /// Catalog targets by stable metadata identifier.
-    /// </summary>
-    public IReadOnlyDictionary<string, MetadataV2Catalog> CatalogsById { get; }
-
-    /// <summary>
-    /// Policies by stable metadata identifier.
-    /// </summary>
+    public IReadOnlyDictionary<string, MetadataV2ProjectionProfile> ProjectionProfilesById { get; }
+    public ILookup<string, MetadataV2ProjectionProfile> ProjectionProfilesByTarget { get; }
     public IReadOnlyDictionary<string, MetadataV2Policy> PoliciesById { get; }
-
-    /// <summary>
-    /// Roles by stable metadata identifier.
-    /// </summary>
     public IReadOnlyDictionary<string, MetadataV2Role> RolesById { get; }
 
     /// <summary>
@@ -140,6 +96,7 @@ public sealed class MetadataV2GraphIndex
     {
         ArgumentNullException.ThrowIfNull(graph);
 
+        var catalogsById = graph.Catalogs.ToDictionary(c => c.Metadata.Id, StringComparer.Ordinal);
         var resourcesById = graph.Resources.ToDictionary(r => r.Metadata.Id, StringComparer.Ordinal);
         // Multiple resources may share the same display name (different IDs / namespaces).
         // First-wins keeps the index deterministic and avoids ArgumentException on construction.
@@ -186,7 +143,8 @@ public sealed class MetadataV2GraphIndex
         var publicationsById = graph.Publications.ToDictionary(p => p.Metadata.Id, StringComparer.Ordinal);
         var publicationsByService = graph.Publications.ToLookup(p => p.ServiceId, StringComparer.Ordinal);
         var publicationsByResource = graph.Publications.ToLookup(p => p.ResourceId, StringComparer.Ordinal);
-        var catalogsById = graph.Catalogs.ToDictionary(c => c.Metadata.Id, StringComparer.Ordinal);
+        var projectionProfilesById = graph.ProjectionProfiles.ToDictionary(p => p.Metadata.Id, StringComparer.Ordinal);
+        var projectionProfilesByTarget = graph.ProjectionProfiles.ToLookup(p => p.Target, StringComparer.OrdinalIgnoreCase);
         var policiesById = graph.Policies.ToDictionary(p => p.Metadata.Id, StringComparer.Ordinal);
         var rolesById = graph.Roles.ToDictionary(r => r.Metadata.Id, StringComparer.Ordinal);
 
@@ -199,6 +157,7 @@ public sealed class MetadataV2GraphIndex
             .ToLookup(pair => pair.StyleId, pair => pair.Resource, StringComparer.Ordinal);
 
         return new MetadataV2GraphIndex(
+            catalogsById,
             resourcesById,
             resourcesByName,
             connectionsById,
@@ -211,7 +170,8 @@ public sealed class MetadataV2GraphIndex
             publicationsById,
             publicationsByService,
             publicationsByResource,
-            catalogsById,
+            projectionProfilesById,
+            projectionProfilesByTarget,
             policiesById,
             rolesById,
             resourcesByStyleResourceId);

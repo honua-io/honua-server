@@ -4,13 +4,15 @@
 using System.Globalization;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
-using Npgsql;
+using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -148,100 +150,8 @@ public sealed class LayerValidationEndpointsTests : IAsyncLifetime
 
     private async Task CreateLayerMetadataAsync()
     {
-        await using var connection = await _fixture.Postgres.GetConnectionAsync(_schema);
-
-        await using (var sequenceCommand = connection.CreateCommand())
-        {
-            sequenceCommand.CommandText = """
-                SELECT setval(
-                    pg_get_serial_sequence('honua.layers', 'layer_id'),
-                    GREATEST((SELECT COALESCE(MAX(layer_id), 1) FROM honua.layers), 1),
-                    true);
-                """;
-            await sequenceCommand.ExecuteNonQueryAsync();
-        }
-
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO honua.services (
-                service_name,
-                description,
-                srid,
-                supported_formats,
-                capabilities,
-                service_extent
-            )
-            VALUES (
-                @serviceName,
-                'Layer validation endpoint test service',
-                4326,
-                ARRAY['JSON', 'GeoJSON'],
-                ARRAY['Query'],
-                ST_MakeEnvelope(-158.0, 21.0, -157.0, 22.0, 4326)
-            );
-
-            INSERT INTO honua.layers (
-                layer_name,
-                description,
-                table_schema,
-                table_name,
-                primary_key_column,
-                geometry_column,
-                storage_srid,
-                geometry_type,
-                srid,
-                extent,
-                default_visibility,
-                enabled
-            )
-            VALUES (
-                @layerName,
-                'Layer validation endpoint test layer',
-                @schema,
-                @tableName,
-                'id',
-                'geom',
-                4326,
-                'Point',
-                4326,
-                ST_MakeEnvelope(-158.0, 21.0, -157.0, 22.0, 4326),
-                true,
-                true
-            )
-            RETURNING layer_id;
-            """;
-        command.Parameters.AddWithValue("serviceName", _serviceName);
-        command.Parameters.AddWithValue("layerName", $"Layer {_tableName}");
-        command.Parameters.AddWithValue("schema", _schema);
-        command.Parameters.AddWithValue("tableName", _tableName);
-
-        var layerId = await command.ExecuteScalarAsync();
-        _layerId = Convert.ToInt32(layerId, CultureInfo.InvariantCulture);
-
-        await using var fieldsCommand = connection.CreateCommand();
-        fieldsCommand.CommandText = """
-            INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
-            VALUES (@serviceName, @layerId, 0);
-
-            INSERT INTO honua.layer_fields (
-                layer_id,
-                field_name,
-                field_type,
-                field_order,
-                max_length,
-                nullable,
-                description
-            )
-            VALUES
-                (@layerId, 'id', 'Integer', 0, null, false, 'Identifier'),
-                (@layerId, 'name', 'String', 1, null, false, 'Name'),
-                (@layerId, 'population', 'Integer', 2, null, true, 'Population'),
-                (@layerId, 'geom', 'Geometry', 3, null, false, 'Geometry');
-            """;
-        fieldsCommand.Parameters.AddWithValue("serviceName", _serviceName);
-        fieldsCommand.Parameters.AddWithValue("layerId", _layerId.Value);
-
-        await fieldsCommand.ExecuteNonQueryAsync();
+        _layerId = Random.Shared.Next(100_000, int.MaxValue);
+        await UpsertLayerValidationMetadataAsync();
     }
 
     private async Task DropPopulationColumnAsync()
@@ -254,48 +164,150 @@ public sealed class LayerValidationEndpointsTests : IAsyncLifetime
     }
 
     private async Task SetLayerPermanentFilterMetadataAsync(string expression, string language)
-    {
-        await using var connection = await _fixture.Postgres.GetConnectionAsync(_schema);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            UPDATE honua.layers
-            SET metadata = jsonb_build_object(
-                'permanentFilter',
-                jsonb_build_object(
-                    'expression', @expression,
-                    'language', @language))
-            WHERE layer_id = @layerId;
-            """;
-        command.Parameters.AddWithValue("expression", expression);
-        command.Parameters.AddWithValue("language", language);
-        command.Parameters.AddWithValue("layerId", _layerId!.Value);
+        => await UpsertLayerValidationMetadataAsync(new MetadataV2PermanentFilter
+        {
+            Expression = expression,
+            Language = language
+        });
 
-        await command.ExecuteNonQueryAsync();
+    private async Task UpsertLayerValidationMetadataAsync(MetadataV2PermanentFilter? permanentFilter = null)
+    {
+        var provider = _fixture.GetService<IMetadataV2GraphProvider>() as TestMetadataV2GraphProvider
+            ?? throw new InvalidOperationException("Test V2 graph provider was not registered.");
+        var snapshot = await provider.GetCurrentAsync();
+        var layerId = _layerId!.Value;
+        var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
+        var resourceId = $"resource.layer-validation.{layerId}";
+        var bindingId = $"storage.layer-validation.{layerId}";
+        var serviceId = $"service.layer-validation.{layerId}";
+        var publicationId = $"publication.layer-validation.{layerId}";
+        var resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = resourceId,
+                Name = $"Layer {_tableName}"
+            },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            StorageBindingIds = [bindingId],
+            SchemaFields =
+            [
+                new MetadataV2Field
+                {
+                    Name = "id",
+                    Type = MetadataV2FieldType.Integer,
+                    Nullable = false,
+                    SemanticRoles = ["id.primary"]
+                },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = false },
+                new MetadataV2Field { Name = "population", Type = MetadataV2FieldType.Integer, Nullable = true },
+                new MetadataV2Field
+                {
+                    Name = "geom",
+                    Type = MetadataV2FieldType.Geometry,
+                    Nullable = false,
+                    SemanticRoles = ["geometry.primary"]
+                }
+            ],
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = MetadataV2SpatialReference.Wgs84,
+                StorageCrs = MetadataV2SpatialReference.Wgs84,
+                GeometryType = MetadataV2GeometryType.Point,
+                PrimaryGeometryField = "geom"
+            },
+            PermanentFilter = permanentFilter
+        };
+        var storageBinding = new MetadataV2StorageBinding
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = bindingId,
+                Name = bindingId
+            },
+            ResourceId = resourceId,
+            StorageType = MetadataV2StorageType.RelationalTable,
+            Locator = $"{_schema}.{_tableName}",
+            StorageLayerId = layerId
+        };
+        var service = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = serviceId,
+                Name = _serviceName
+            },
+            Route = "/api/v1/admin/metadata/layers"
+        };
+        var publication = new MetadataV2Publication
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = publicationId,
+                Name = layerIdText
+            },
+            ServiceId = serviceId,
+            ResourceId = resourceId,
+            StorageBindingId = bindingId,
+            Identifier = new MetadataV2PublicationIdentifier
+            {
+                Value = layerIdText,
+                IsNumeric = true
+            },
+            PublicationType = MetadataV2PublicationType.EsriFeatureLayer,
+            IsPrimary = true
+        };
+
+        provider.SetGraph(snapshot.Graph with
+        {
+            Resources = snapshot.Graph.Resources
+                .Where(existing => !string.Equals(existing.Metadata.Id, resourceId, StringComparison.Ordinal))
+                .Append(resource)
+                .ToArray(),
+            StorageBindings = snapshot.Graph.StorageBindings
+                .Where(existing => !string.Equals(existing.Metadata.Id, bindingId, StringComparison.Ordinal))
+                .Append(storageBinding)
+                .ToArray(),
+            Services = snapshot.Graph.Services
+                .Where(existing => !string.Equals(existing.Metadata.Id, serviceId, StringComparison.Ordinal))
+                .Append(service)
+                .ToArray(),
+            Publications = snapshot.Graph.Publications
+                .Where(existing => !string.Equals(existing.Metadata.Id, publicationId, StringComparison.Ordinal))
+                .Append(publication)
+                .ToArray(),
+            Revision = snapshot.Graph.Revision + 1
+        });
     }
 
     private async Task CleanupLayerMetadataAsync()
     {
-        if (_layerId.HasValue)
+        if (!_layerId.HasValue)
         {
-            await using var connection = await _fixture.Postgres.GetConnectionAsync(_schema);
-            await using var command = connection.CreateCommand();
-            command.CommandText = """
-                DELETE FROM honua.layer_fields WHERE layer_id = @layerId;
-                DELETE FROM honua.service_layers WHERE layer_id = @layerId;
-                DELETE FROM honua.layers WHERE layer_id = @layerId;
-                """;
-            command.Parameters.AddWithValue("layerId", _layerId.Value);
-            await command.ExecuteNonQueryAsync();
+            return;
         }
 
-        if (!string.IsNullOrWhiteSpace(_serviceName))
+        var provider = _fixture.GetService<IMetadataV2GraphProvider>() as TestMetadataV2GraphProvider
+            ?? throw new InvalidOperationException("Test V2 graph provider was not registered.");
+        var snapshot = await provider.GetCurrentAsync();
+        var layerId = _layerId.Value.ToString(CultureInfo.InvariantCulture);
+        var suffix = $".layer-validation.{layerId}";
+        provider.SetGraph(snapshot.Graph with
         {
-            await using var connection = await _fixture.Postgres.GetConnectionAsync(_schema);
-            await using var command = connection.CreateCommand();
-            command.CommandText = "DELETE FROM honua.services WHERE service_name = @serviceName;";
-            command.Parameters.AddWithValue("serviceName", _serviceName);
-            await command.ExecuteNonQueryAsync();
-        }
+            Resources = snapshot.Graph.Resources
+                .Where(existing => !existing.Metadata.Id.EndsWith(suffix, StringComparison.Ordinal))
+                .ToArray(),
+            StorageBindings = snapshot.Graph.StorageBindings
+                .Where(existing => !existing.Metadata.Id.EndsWith(suffix, StringComparison.Ordinal))
+                .ToArray(),
+            Services = snapshot.Graph.Services
+                .Where(existing => !existing.Metadata.Id.EndsWith(suffix, StringComparison.Ordinal))
+                .ToArray(),
+            Publications = snapshot.Graph.Publications
+                .Where(existing => !existing.Metadata.Id.EndsWith(suffix, StringComparison.Ordinal))
+                .ToArray(),
+            Revision = snapshot.Graph.Revision + 1
+        });
     }
 
     private async Task DropSpatialTableAsync()

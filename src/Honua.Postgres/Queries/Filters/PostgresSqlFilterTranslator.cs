@@ -44,15 +44,6 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
     }
 
     /// <summary>
-    /// Translates a filter expression to SQL
-    /// </summary>
-    /// <param name="filter">Filter expression to translate</param>
-    /// <param name="layer">Layer definition for field validation</param>
-    /// <returns>SQL fragment with parameters</returns>
-    public SqlFragment Translate(FilterExpression filter, LayerDefinition layer)
-        => TranslateCore(filter, FilterTranslationContext.FromLayer(layer));
-
-    /// <summary>
     /// Translates a filter expression to SQL using a Metadata v2 resource for
     /// field validation and spatial-reference resolution.
     /// </summary>
@@ -211,7 +202,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
             return GetGeometryColumnExpression(context);
         }
 
-        if (field.IsPrimaryKey && IsCoreObjectIdField(field.Name))
+        if (field.IsPrimaryKey)
         {
             return QuoteIdentifier(_primaryKeyColumn);
         }
@@ -791,13 +782,6 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         if (propertyName.Equals("id", StringComparison.OrdinalIgnoreCase) &&
             context.PrimaryKeyName is not null)
         {
-            var declaredField = context.TryGetField(propertyName);
-            if (declaredField is not null && !IsCoreObjectIdField(declaredField.Value.Name))
-            {
-                expression = string.Empty;
-                return false;
-            }
-
             expression = QuoteIdentifier(_primaryKeyColumn);
             return true;
         }
@@ -833,10 +817,6 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         return false;
     }
 
-    private static bool IsCoreObjectIdField(string fieldName)
-        => fieldName.Equals(DatabaseSchema.ObjectIdColumn, StringComparison.OrdinalIgnoreCase) ||
-           fieldName.Equals(DatabaseSchema.ObjectIdColumnAlt, StringComparison.OrdinalIgnoreCase);
-
     private static bool IsGeometryAlias(string propertyName)
         => propertyName.Equals(DatabaseSchema.GeometryColumn, StringComparison.OrdinalIgnoreCase) ||
            propertyName.Equals("shape", StringComparison.OrdinalIgnoreCase) ||
@@ -852,7 +832,7 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         if (expression is PropertyReference propertyReference)
         {
             var field = context.TryGetField(propertyReference.PropertyName);
-            if (field is null || field.Value.Type != FieldType.Json)
+            if (field is null || field.Value.Type != MetadataV2FieldType.Json)
             {
                 throw new ArgumentException($"Array predicates require JSON array fields. '{propertyReference.PropertyName}' is not JSON.");
             }
@@ -895,13 +875,13 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
             case PropertyReference property:
                 {
                     var field = context.TryGetField(property.PropertyName);
-                    if (field?.Type == FieldType.Time)
+                    if (field?.Type == MetadataV2FieldType.Time)
                     {
                         throw new ArgumentException(
                             $"Field '{property.PropertyName}' is a time-only field and cannot be used with temporal interval predicates.");
                     }
 
-                    var kind = field?.Type == FieldType.Date ? TemporalKind.Date : TemporalKind.Timestamp;
+                    var kind = field?.Type == MetadataV2FieldType.Date ? TemporalKind.Date : TemporalKind.Timestamp;
                     var sql = TranslateProperty(property, context);
                     return new TemporalBounds(sql, sql, kind, false, false, false);
                 }
@@ -1024,19 +1004,19 @@ internal sealed class PostgresSqlFilterTranslator : ISqlFilterTranslator
         Timestamp
     }
 
-    private static string? GetJsonCastType(FieldType fieldType)
+    private static string? GetJsonCastType(MetadataV2FieldType fieldType)
     {
         return fieldType switch
         {
-            FieldType.Integer => "integer",
-            FieldType.BigInteger => "bigint",
-            FieldType.Float => "real",
-            FieldType.Double => "double precision",
-            FieldType.Boolean => "boolean",
-            FieldType.DateTime => "timestamptz",
-            FieldType.Date => "date",
-            FieldType.Time => "time",
-            FieldType.Uuid => "uuid",
+            MetadataV2FieldType.Integer => "integer",
+            MetadataV2FieldType.BigInteger => "bigint",
+            MetadataV2FieldType.Float => "real",
+            MetadataV2FieldType.Double => "double precision",
+            MetadataV2FieldType.Boolean => "boolean",
+            MetadataV2FieldType.DateTime => "timestamptz",
+            MetadataV2FieldType.Date => "date",
+            MetadataV2FieldType.Time => "time",
+            MetadataV2FieldType.Uuid => "uuid",
             _ => null
         };
     }

@@ -5,7 +5,6 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -50,11 +49,12 @@ internal static class WmtsRequestHandlers
     private const string WmtsCapabilitiesSchemaLocation =
         "http://www.opengis.net/wmts/1.0 http://schemas.opengis.net/wmts/1.0/wmtsGetCapabilities_response.xsd";
     private const string CiteWmtsNonQueryableLayerTitle = "cite:BasicPolygons";
+    private const string WmtsProtocolName = "Wmts";
     private static readonly char[] _wmtsAdditionalQuerySeparators = ['&', ';'];
 
     /// <summary>
     /// Resolved (resource, publication, storage layer id) triple for a single WMTS layer.
-    /// Replaces the v1 <c>LayerDefinition</c> in the request pipeline. <see cref="Identifier"/>
+    /// Replaces the legacy layer shape in the request pipeline. <see cref="Identifier"/>
     /// is the protocol-facing LAYER value (either the publication's int LayerIndex stringified
     /// or its service-local id when non-numeric); <see cref="StorageLayerId"/> is the integer
     /// handle that <see cref="IFeatureReader"/> / the raster pipeline expects.
@@ -64,6 +64,9 @@ internal static class WmtsRequestHandlers
         MetadataV2Publication Publication,
         int StorageLayerId,
         string Identifier);
+
+    private static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)
+        => service?.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase)) == true;
 
     [Flags]
     private enum WmtsCapabilitiesSections
@@ -157,9 +160,9 @@ internal static class WmtsRequestHandlers
             }
 
             var svcDef = serviceResult.Resource!;
-            if (!ServiceProtocols.IsProtocolEnabled(svcDef, ServiceProtocols.Wmts))
+            if (!IsProtocolEnabled(svcDef, WmtsProtocolName))
             {
-                return StandardErrorHelpers.CreateNotFound(context, $"{ServiceProtocols.Wmts} is not enabled for this service.");
+                return StandardErrorHelpers.CreateNotFound(context, $"{WmtsProtocolName} is not enabled for this service.");
             }
 
             var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
@@ -1071,28 +1074,14 @@ internal static class WmtsRequestHandlers
 
     private static RenderLayerDescriptor BuildRenderDescriptor(WmtsLayer layer)
     {
-        // The renderer's GeometryType is the v1 enum; V2 carries the canonical
-        // MetadataV2GeometryType. When the resource's Spatial slot is empty (common in test
-        // fixtures that only set a schema-level geometry field), infer the kind from the
-        // primary geometry field's name/type so the renderer picks the right symbol set.
+        // When the resource's Spatial slot is empty (common in test fixtures that only set
+        // a schema-level geometry field), still mark the layer renderable so the renderer
+        // picks a default symbol set.
         var v2GeometryType = layer.Resource.ReadGeometryType();
         var hasGeometry = v2GeometryType != MetadataV2GeometryType.None
             || layer.Resource.FindPrimaryGeometryField() is not null;
-        var geometryType = MapGeometryType(v2GeometryType);
-        return new RenderLayerDescriptor(layer.StorageLayerId, hasGeometry, geometryType);
+        return CreateRenderLayerDescriptorFromV2(layer.StorageLayerId, hasGeometry, v2GeometryType);
     }
-
-    private static GeometryType MapGeometryType(MetadataV2GeometryType v2)
-        => v2 switch
-        {
-            MetadataV2GeometryType.Point => GeometryType.Point,
-            MetadataV2GeometryType.MultiPoint => GeometryType.MultiPoint,
-            MetadataV2GeometryType.LineString => GeometryType.LineString,
-            MetadataV2GeometryType.MultiLineString => GeometryType.MultiLineString,
-            MetadataV2GeometryType.Polygon => GeometryType.Polygon,
-            MetadataV2GeometryType.MultiPolygon => GeometryType.MultiPolygon,
-            _ => GeometryType.None,
-        };
 
     private static bool TryResolveWmtsLayer(IReadOnlyList<WmtsLayer> layers, string layerIdOrName, out WmtsLayer layer)
     {

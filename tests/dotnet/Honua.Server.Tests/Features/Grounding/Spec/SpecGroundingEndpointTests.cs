@@ -6,7 +6,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -22,13 +22,14 @@ public sealed class SpecGroundingEndpointTests : IAsyncLifetime
 
     public SpecGroundingEndpointTests()
     {
+        var graphProvider = SpecGroundingTestSupport.CreateGraphProvider(
+            SpecGroundingTestSupport.CreateLayer(1, "Rivers"),
+            SpecGroundingTestSupport.CreateLayer(2, "Hospitals North"),
+            SpecGroundingTestSupport.CreateLayer(3, "Hospitals South"),
+            SpecGroundingTestSupport.CreateLayer(4, "Zones"));
+
         _fixture = new WebAppFixture()
-            .ReplaceService<Honua.Core.Features.Catalog.Abstractions.ILayerCatalog>(
-                new SpecGroundingLayerCatalog(
-                    SpecGroundingTestSupport.CreateLayer(1, "Rivers"),
-                    SpecGroundingTestSupport.CreateLayer(2, "Hospitals North"),
-                    SpecGroundingTestSupport.CreateLayer(3, "Hospitals South"),
-                    SpecGroundingTestSupport.CreateLayer(4, "Zones")));
+            .ReplaceService<IMetadataV2GraphProvider>(graphProvider);
     }
 
     public async Task InitializeAsync()

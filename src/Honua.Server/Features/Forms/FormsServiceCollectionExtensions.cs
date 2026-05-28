@@ -14,6 +14,7 @@ internal static class FormsServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.TryAddScoped<FormPackageValidator>();
+        services.TryAddScoped<IFormTargetMetadataResolver, FormTargetMetadataResolver>();
         services.AddScoped<FormPackageLifecycleService>();
         services.AddScoped<FormOfflinePolicyService>();
         services.AddScoped<FormSubmissionService>();

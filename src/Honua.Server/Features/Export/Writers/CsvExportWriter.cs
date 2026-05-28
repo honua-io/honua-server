@@ -3,7 +3,6 @@
 
 using System.Globalization;
 using System.Text;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.Infrastructure.Services;
 using NetTopologySuite.IO;
@@ -26,7 +25,7 @@ internal static class CsvExportWriter
     public static async Task<int> WriteAsync(
         Stream output,
         IAsyncEnumerable<Feature> features,
-        FieldDefinition[] fields,
+        ExportField[] fields,
         CancellationToken cancellationToken)
     {
         await using var writer = new StreamWriter(output, Encoding.UTF8, bufferSize: 8192, leaveOpen: true);

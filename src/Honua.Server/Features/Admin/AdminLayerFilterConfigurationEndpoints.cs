@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -12,6 +11,7 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
+using PermanentFilterLanguages = Honua.Core.Features.Metadata.Domain.V2.MetadataV2PermanentFilterLanguages;
 
 namespace Honua.Server.Features.Admin;
 
@@ -106,14 +106,14 @@ internal static class AdminLayerFilterConfigurationEndpoints
 
     /// <summary>
     /// Writes the per-layer permanent filter onto every V2 resource that this layer id
-    /// publishes through. Slice 51/N moved the legacy layer permanent-filter field to
+    /// publishes through. Slice 51/N moved <c>LayerMetadata.PermanentFilter</c> to
     /// <see cref="MetadataV2Resource.PermanentFilter"/>; this endpoint is the migrated
     /// admin write-path. Passing <c>null</c> clears the filter.
     /// </summary>
     private static async Task WriteResourcePermanentFilterAsync(
         IMetadataV2GraphStore graphStore,
         int layerId,
-        LayerPermanentFilter? filter,
+        MetadataV2PermanentFilter? filter,
         CancellationToken cancellationToken)
     {
         var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
@@ -132,20 +132,12 @@ internal static class AdminLayerFilterConfigurationEndpoints
             return;
         }
 
-        var v2Filter = filter is null
-            ? null
-            : new MetadataV2PermanentFilter
-            {
-                Expression = filter.Expression,
-                Language = filter.Language,
-            };
-
         var resources = snapshot.Graph.Resources.ToArray();
         for (var i = 0; i < resources.Length; i++)
         {
             if (targetResourceIds.Contains(resources[i].Metadata.Id))
             {
-                resources[i] = resources[i] with { PermanentFilter = v2Filter };
+                resources[i] = resources[i] with { PermanentFilter = filter };
             }
         }
 
@@ -157,7 +149,7 @@ internal static class AdminLayerFilterConfigurationEndpoints
         _ = await graphStore.SaveAsync(updated, snapshot.Etag, cancellationToken).ConfigureAwait(false);
     }
 
-    private static (LayerPermanentFilter? Filter, string? Error) ValidateAndBuildPermanentFilter(
+    private static (MetadataV2PermanentFilter? Filter, string? Error) ValidateAndBuildPermanentFilter(
         MetadataV2Resource resource,
         LayerPermanentFilterConfiguration? configuration,
         IFilterExpressionService filterExpressionService)
@@ -184,8 +176,7 @@ internal static class AdminLayerFilterConfigurationEndpoints
         }
 
         // V2 cutover: validate the candidate filter against the resource's V2 schema fields
-        // via ParseAndNormalize + Translate(expression, resource). The v1 path used the
-        // LayerDefinition-typed overload; the V2 overload resolves field types from
+        // via ParseAndNormalize + Translate(expression, resource). Field types come from
         // MetadataV2Resource.SchemaFields, which is the canonical post-cutover schema source.
         var parseResult = filterExpressionService.ParseAndNormalize(filterLanguage, expression, resource);
         if (!parseResult.IsSuccess)
@@ -199,7 +190,7 @@ internal static class AdminLayerFilterConfigurationEndpoints
             return (null, $"Permanent filter is invalid: {translationResult.ErrorMessage ?? "Invalid filter."}");
         }
 
-        return (new LayerPermanentFilter
+        return (new MetadataV2PermanentFilter
         {
             Expression = expression,
             Language = canonicalLanguage
@@ -211,27 +202,27 @@ internal static class AdminLayerFilterConfigurationEndpoints
         out string canonicalLanguage,
         out FilterLanguage filterLanguage)
     {
-        canonicalLanguage = LayerPermanentFilterLanguages.ArcGisSql;
+        canonicalLanguage = PermanentFilterLanguages.ArcGisSql;
         filterLanguage = FilterLanguage.ArcGisSql;
-        var normalized = (language ?? LayerPermanentFilterLanguages.ArcGisSql)
+        var normalized = (language ?? PermanentFilterLanguages.ArcGisSql)
             .Trim()
             .ToLowerInvariant();
 
         switch (normalized)
         {
-            case LayerPermanentFilterLanguages.ArcGisSql:
+            case PermanentFilterLanguages.ArcGisSql:
             case "arcgis":
             case "geoservices-sql":
-                canonicalLanguage = LayerPermanentFilterLanguages.ArcGisSql;
+                canonicalLanguage = PermanentFilterLanguages.ArcGisSql;
                 filterLanguage = FilterLanguage.ArcGisSql;
                 return true;
-            case LayerPermanentFilterLanguages.Cql2Text:
+            case PermanentFilterLanguages.Cql2Text:
             case "cql2":
-                canonicalLanguage = LayerPermanentFilterLanguages.Cql2Text;
+                canonicalLanguage = PermanentFilterLanguages.Cql2Text;
                 filterLanguage = FilterLanguage.Cql2Text;
                 return true;
-            case LayerPermanentFilterLanguages.Cql2Json:
-                canonicalLanguage = LayerPermanentFilterLanguages.Cql2Json;
+            case PermanentFilterLanguages.Cql2Json:
+                canonicalLanguage = PermanentFilterLanguages.Cql2Json;
                 filterLanguage = FilterLanguage.Cql2Json;
                 return true;
             default:
@@ -263,19 +254,6 @@ internal static class AdminLayerFilterConfigurationEndpoints
         {
             LayerId = layerId,
             PermanentFilter = BuildPermanentFilterConfiguration(filter)
-        };
-
-    private static LayerFilterConfigurationResponse BuildResponse(int layerId, LayerPermanentFilter? filter)
-        => new()
-        {
-            LayerId = layerId,
-            PermanentFilter = filter == null
-                ? null
-                : new LayerPermanentFilterConfiguration
-                {
-                    Expression = filter.Expression,
-                    Language = filter.Language
-                }
         };
 
     private static LayerPermanentFilterConfiguration? BuildPermanentFilterConfiguration(MetadataV2PermanentFilter? filter)

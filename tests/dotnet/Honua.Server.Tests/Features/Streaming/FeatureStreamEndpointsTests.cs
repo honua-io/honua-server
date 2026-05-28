@@ -7,11 +7,12 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Streaming;
@@ -21,6 +22,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.Configuration;
+using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Server.Tests.Features.Streaming;
 
@@ -1246,8 +1248,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     public async Task Stream_WithProjectedBboxLayer_AllowsSseHandshake()
     {
         var fixture = new WebAppFixture()
-            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
-            .ReplaceService<ILayerCatalog>(new SpatialReferenceTestLayerCatalog());
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro));
 
         await fixture.InitializeAsync();
 
@@ -1293,7 +1294,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     {
         var fixture = new WebAppFixture()
             .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
-            .ReplaceService<ILayerCatalog>(new TestLayerCatalog());
+            .ReplaceService<IMetadataV2GraphProvider>(BuildStreamMetadataProvider(timeAware: false));
 
         await fixture.InitializeAsync();
 
@@ -1307,7 +1308,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
             using var response = await fixture.CreateAdminClient().SendAsync(request);
             var body = await response.Content.ReadAsStringAsync();
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
             body.Should().Contain("not time-aware");
         }
         finally
@@ -1322,7 +1323,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     {
         var fixture = new WebAppFixture()
             .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
-            .ReplaceService<ILayerCatalog>(new TimeAwareStreamLayerCatalog());
+            .ReplaceService<IMetadataV2GraphProvider>(BuildStreamMetadataProvider(timeAware: true));
 
         await fixture.InitializeAsync();
 
@@ -1335,8 +1336,11 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             using var response = await fixture.CreateAdminClient().SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+            var body = response.StatusCode == HttpStatusCode.OK
+                ? string.Empty
+                : await response.Content.ReadAsStringAsync(cts.Token);
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
             response.Content.Headers.ContentType?.MediaType.Should().Be("text/event-stream");
         }
         finally
@@ -1508,7 +1512,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     {
         var fixture = new WebAppFixture()
             .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
-            .ReplaceService<ILayerCatalog>(new ServiceLevelAccessStreamLayerCatalog());
+            .ReplaceService<IMetadataV2GraphProvider>(ServiceLevelAccessStreamLayerCatalog.BuildMetadataProvider());
 
         await fixture.InitializeAsync();
 
@@ -1543,7 +1547,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     {
         var fixture = new WebAppFixture()
             .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
-            .ReplaceService<ILayerCatalog>(new ServiceLevelAccessStreamLayerCatalog());
+            .ReplaceService<IMetadataV2GraphProvider>(ServiceLevelAccessStreamLayerCatalog.BuildMetadataProvider());
 
         await fixture.InitializeAsync();
 
@@ -1578,7 +1582,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     {
         var fixture = new WebAppFixture()
             .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
-            .ReplaceService<ILayerCatalog>(new MixedAccessStreamLayerCatalog());
+            .ReplaceService<IMetadataV2GraphProvider>(MixedAccessStreamLayerCatalog.BuildMetadataProvider());
 
         await fixture.InitializeAsync();
 
@@ -2212,238 +2216,96 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     // policy (admin lacks the role under dev auth) and its layer has no
     // layer-level policy. Used to verify that streaming surfaces evaluate
     // service-level policies, not just layer-level ones.
-    private sealed class ServiceLevelAccessStreamLayerCatalog : ILayerCatalog
+    private static class ServiceLevelAccessStreamLayerCatalog
     {
         public const int OpenLayerId = 0;
         public const int RestrictedServiceLayerId = 9;
 
-        private readonly LayerDefinition _openLayer;
-        private readonly LayerDefinition _restrictedServiceLayer;
-        private readonly ServiceDefinition _openService;
-        private readonly ServiceDefinition _restrictedService;
 
-        public ServiceLevelAccessStreamLayerCatalog()
-        {
-            var spatialReference = SpatialReference.Create(4326);
-            var extent = FeatureExtent.Create(-180, -90, 180, 90, 4326);
-            var fields = new[]
-            {
-                new FieldDefinition("objectid", FieldType.Integer, null, false, null, "Object ID"),
-                new FieldDefinition("name", FieldType.String, 255, true, null, "Name"),
-                new FieldDefinition("shape", FieldType.Geometry, null, false, null, "Geometry")
-            };
+        public static TestMetadataV2GraphProvider BuildMetadataProvider()
+            => new TestMetadataV2GraphBuilder()
+                .AddResource("res-stream-open", "Public Stream Layer", MetadataV2ResourceType.FeatureDataset)
+                .AddStorageBinding("binding-stream-open", "res-stream-open", "test.layers.open", storageLayerId: OpenLayerId)
+                .AddResource("res-stream-restricted-service", "Layer In Restricted Service", MetadataV2ResourceType.FeatureDataset)
+                .AddStorageBinding("binding-stream-restricted-service", "res-stream-restricted-service", "test.layers.restricted", storageLayerId: RestrictedServiceLayerId)
+                .AddService("svc-open-stream", "open-svc", protocols: MetadataV2ServiceProtocols.All)
+                .AddService(
+                    "svc-restricted-stream",
+                    "restricted-svc",
+                    protocols: MetadataV2ServiceProtocols.All,
+                    accessPolicy: new AccessPolicy { AllowedRoles = ["restricted-stream-reader"] })
+                .AddPublication("pub-stream-open", "svc-open-stream", "res-stream-open", layerIndex: OpenLayerId, storageBindingId: "binding-stream-open")
+                .AddPublication(
+                    "pub-stream-restricted-service",
+                    "svc-restricted-stream",
+                    "res-stream-restricted-service",
+                    layerIndex: RestrictedServiceLayerId,
+                    storageBindingId: "binding-stream-restricted-service")
+                .BuildProvider();
 
-            _openLayer = new LayerDefinition(
-                Id: OpenLayerId,
-                Name: "Public Stream Layer",
-                Description: "Layer in the open service",
-                GeometryType: GeometryType.Point,
-                SpatialReference: spatialReference,
-                Fields: fields,
-                Extent: extent);
-
-            _restrictedServiceLayer = new LayerDefinition(
-                Id: RestrictedServiceLayerId,
-                Name: "Layer In Restricted Service",
-                Description: "Layer has no policy of its own; service policy gates access",
-                GeometryType: GeometryType.Point,
-                SpatialReference: spatialReference,
-                Fields: fields,
-                Extent: extent);
-
-            _openService = new ServiceDefinition(
-                "open-svc",
-                "Open service",
-                [_openLayer],
-                spatialReference,
-                ServiceExtent: extent);
-
-            _restrictedService = new ServiceDefinition(
-                "restricted-svc",
-                "Restricted service",
-                [_restrictedServiceLayer],
-                spatialReference,
-                ServiceExtent: extent,
-                Metadata: new CatalogMetadata { AccessPolicy = new AccessPolicy { AllowedRoles = ["restricted-stream-reader"] } });
-        }
-
-        public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult<LayerDefinition?>(layerId switch
-            {
-                OpenLayerId => _openLayer,
-                RestrictedServiceLayerId => _restrictedServiceLayer,
-                _ => null
-            });
-
-        public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(new[] { _openLayer, _restrictedServiceLayer });
-
-        public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult<ServiceDefinition?>(serviceName switch
-            {
-                "open-svc" => _openService,
-                "restricted-svc" => _restrictedService,
-                _ => null
-            });
-
-        public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(new[] { _openService, _restrictedService });
-
-        public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(layerId == OpenLayerId || layerId == RestrictedServiceLayerId);
-
-        public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult(serviceName == "open-svc" || serviceName == "restricted-svc");
-
-        public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
-            => Task.FromResult<Relationship?>(null);
-
-        public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(Array.Empty<Relationship>());
     }
 
     // Mixes one anonymous-readable layer with one role-restricted layer. The
     // capabilities endpoint must filter the restricted layer out for callers
     // that lack the role, so its name/CRS/time-aware status is not leaked.
-    private sealed class MixedAccessStreamLayerCatalog : ILayerCatalog
+    private static class MixedAccessStreamLayerCatalog
     {
         public const int VisibleLayerId = 0;
         public const int RestrictedLayerId = 7;
 
-        private readonly LayerDefinition _visible;
-        private readonly LayerDefinition _restricted;
-        private readonly ServiceDefinition _service;
 
-        public MixedAccessStreamLayerCatalog()
-        {
-            var spatialReference = SpatialReference.Create(4326);
-            var extent = FeatureExtent.Create(-180, -90, 180, 90, 4326);
-            var fields = new[]
-            {
-                new FieldDefinition("objectid", FieldType.Integer, null, false, null, "Object ID"),
-                new FieldDefinition("name", FieldType.String, 255, true, null, "Name"),
-                new FieldDefinition("shape", FieldType.Geometry, null, false, null, "Geometry")
-            };
+        public static TestMetadataV2GraphProvider BuildMetadataProvider()
+            => new TestMetadataV2GraphBuilder()
+                .AddResource(
+                    "res-stream-visible",
+                    "Public Stream Layer",
+                    MetadataV2ResourceType.FeatureDataset,
+                    accessPolicy: new AccessPolicy { AllowAnonymous = true })
+                .AddStorageBinding("binding-stream-visible", "res-stream-visible", "test.layers.visible", storageLayerId: VisibleLayerId)
+                .AddResource(
+                    "res-stream-restricted",
+                    "Restricted Stream Layer",
+                    MetadataV2ResourceType.FeatureDataset,
+                    accessPolicy: new AccessPolicy { AllowedRoles = ["restricted-stream-reader"] })
+                .AddStorageBinding("binding-stream-restricted", "res-stream-restricted", "test.layers.restricted", storageLayerId: RestrictedLayerId)
+                .AddService("svc-stream-test", "stream-test", protocols: MetadataV2ServiceProtocols.All)
+                .AddPublication("pub-stream-visible", "svc-stream-test", "res-stream-visible", layerIndex: VisibleLayerId, storageBindingId: "binding-stream-visible")
+                .AddPublication("pub-stream-restricted", "svc-stream-test", "res-stream-restricted", layerIndex: RestrictedLayerId, storageBindingId: "binding-stream-restricted")
+                .BuildProvider();
 
-            _visible = new LayerDefinition(
-                Id: VisibleLayerId,
-                Name: "Public Stream Layer",
-                Description: "Anonymous-readable",
-                GeometryType: GeometryType.Point,
-                SpatialReference: spatialReference,
-                Fields: fields,
-                Extent: extent,
-                Metadata: new CatalogMetadata { AccessPolicy = new AccessPolicy { AllowAnonymous = true } });
-
-            _restricted = new LayerDefinition(
-                Id: RestrictedLayerId,
-                Name: "Restricted Stream Layer",
-                Description: "Role-gated; admins are not in this role",
-                GeometryType: GeometryType.Point,
-                SpatialReference: spatialReference,
-                Fields: fields,
-                Extent: extent,
-                Metadata: new CatalogMetadata { AccessPolicy = new AccessPolicy { AllowedRoles = ["restricted-stream-reader"] } });
-
-            _service = new ServiceDefinition(
-                "stream-test",
-                "Streaming capability access test service",
-                [_visible, _restricted],
-                spatialReference,
-                ServiceExtent: extent);
-        }
-
-        public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult<LayerDefinition?>(layerId switch
-            {
-                VisibleLayerId => _visible,
-                RestrictedLayerId => _restricted,
-                _ => null
-            });
-
-        public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(new[] { _visible, _restricted });
-
-        public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult(string.Equals(serviceName, _service.Name, StringComparison.OrdinalIgnoreCase) ? _service : null);
-
-        public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(new[] { _service });
-
-        public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(layerId == VisibleLayerId || layerId == RestrictedLayerId);
-
-        public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult(string.Equals(serviceName, _service.Name, StringComparison.OrdinalIgnoreCase));
-
-        public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
-            => Task.FromResult<Relationship?>(null);
-
-        public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(Array.Empty<Relationship>());
     }
 
-    private sealed class TimeAwareStreamLayerCatalog : ILayerCatalog
+    private static TestMetadataV2GraphProvider BuildStreamMetadataProvider(bool timeAware)
     {
-        private readonly ServiceDefinition _service;
-        private readonly LayerDefinition _layer;
+        var temporal = timeAware
+            ? new MetadataV2ResourceTemporal { StartTimeField = "timestamp" }
+            : null;
 
-        public TimeAwareStreamLayerCatalog()
-        {
-            var fields = new[]
-            {
-                new FieldDefinition("objectid", FieldType.Integer, null, false, null, "Object ID"),
-                new FieldDefinition("name", FieldType.String, 255, true, null, "Name"),
-                new FieldDefinition("timestamp", FieldType.DateTime, null, true, null, "Timestamp"),
-                new FieldDefinition("shape", FieldType.Geometry, null, false, null, "Geometry")
-            };
-            var spatialReference = SpatialReference.Create(4326);
-            var extent = FeatureExtent.Create(-180, -90, 180, 90, 4326);
-            _layer = new LayerDefinition(
-                Id: 0,
-                Name: "Time Aware Stream Layer",
-                Description: "Time-aware layer for streaming tests",
-                GeometryType: GeometryType.Point,
-                SpatialReference: spatialReference,
-                Fields: fields,
-                Extent: extent,
-                Metadata: new CatalogMetadata
-                {
-                    TimeInfo = new LayerTimeInfo { StartTimeField = "timestamp" }
-                });
-            _service = new ServiceDefinition(
-                "test",
-                "Time-aware streaming service",
-                [_layer],
-                spatialReference,
-                ServiceExtent: extent);
-        }
-
-        public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(layerId == _layer.Id ? _layer : null);
-
-        public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(new[] { _layer });
-
-        public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult(string.Equals(serviceName, _service.Name, StringComparison.OrdinalIgnoreCase) ? _service : null);
-
-        public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(new[] { _service });
-
-        public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(layerId == _layer.Id);
-
-        public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult(string.Equals(serviceName, _service.Name, StringComparison.OrdinalIgnoreCase));
-
-        public Task<Relationship?> GetRelationshipAsync(
-            int layerId,
-            int relationshipId,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult<Relationship?>(null);
-
-        public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(Array.Empty<Relationship>());
+        return new TestMetadataV2GraphBuilder()
+            .AddResource(
+                "res-layer-0",
+                "Time Aware Stream Layer",
+                MetadataV2ResourceType.FeatureDataset,
+                fields:
+                [
+                    new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer },
+                    new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String },
+                    new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime },
+                    new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry },
+                ],
+                temporal: temporal)
+            .AddStorageBinding(
+                "binding-layer-0",
+                "res-layer-0",
+                "test.layers.0",
+                storageLayerId: 0)
+            .AddService("svc-test", "test", protocols: MetadataV2ServiceProtocols.All)
+            .AddPublication(
+                "pub-layer-0",
+                "svc-test",
+                "res-layer-0",
+                layerIndex: 0,
+                storageBindingId: "binding-layer-0")
+            .BuildProvider();
     }
 }

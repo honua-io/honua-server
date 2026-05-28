@@ -3,7 +3,6 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
@@ -48,93 +47,9 @@ internal sealed class GeoServicesQueryParameterAdapter(
 
     public ProtocolLimits DefaultLimits => ProtocolLimits.GeoServices;
 
-    public Task<QueryAdapterResult> ConvertAsync(
-        GeoServicesQueryRequest request,
-        LayerDefinition layer,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var queryParams = request.Parameters;
-            var hasObjectIdRequest = queryParams.ObjectIds is { Length: > 0 };
-            var hasObjectIds = request.UseObjectIdsFastPath && hasObjectIdRequest;
-            var outFields = ResolveOutFields(queryParams, layer);
-            var spatialFilter = ResolveSpatialFilter(queryParams, request.ParsedGeometry, request.InputSrid);
-            var orderBy = OrderByParsing.ParseFeatureServerOrderBy(
-                queryParams.OrderByFields,
-                layer,
-                FeatureServerOrderByFields.AllowedCoreOrderByFields);
-
-            QueryFilter? filter = null;
-            if (request.SqlFilter != null)
-            {
-                filter = QueryFilter.FromSql(
-                    request.SqlFilter,
-                    new FilterSource(queryParams.Where ?? queryParams.Time ?? string.Empty, FilterLanguage.ArcGisSql, ProtocolName));
-            }
-
-            QueryAggregation? aggregation = queryParams.ReturnDistinctValues
-                ? QueryAggregation.Create(distinct: true)
-                : null;
-
-            var metadata = new Dictionary<string, object>
-            {
-                ["f"] = queryParams.F ?? "json",
-                ["returnGeometry"] = queryParams.ReturnGeometry,
-                ["returnCountOnly"] = queryParams.ReturnCountOnly,
-                ["returnExtentOnly"] = queryParams.ReturnExtentOnly,
-                ["returnIdsOnly"] = queryParams.ReturnIdsOnly
-            };
-
-            if (queryParams.GeometryPrecision.HasValue)
-            {
-                metadata["geometryPrecision"] = queryParams.GeometryPrecision.Value;
-            }
-
-            if (queryParams.MaxAllowableOffset.HasValue)
-            {
-                metadata["maxAllowableOffset"] = queryParams.MaxAllowableOffset.Value;
-            }
-
-            var unifiedQuery = new UnifiedQuery
-            {
-                Filter = filter,
-                SpatialFilter = spatialFilter,
-                ObjectIds = hasObjectIds ? queryParams.ObjectIds?.ToImmutableArray() : null,
-                OutFields = outFields,
-                Offset = queryParams.ResultOffset,
-                Limit = queryParams.ReturnIdsOnly
-                    ? null
-                    : hasObjectIdRequest
-                    ? queryParams.ResultRecordCount ?? queryParams.ObjectIds?.Length
-                    : queryParams.ResultRecordCount ?? request.QueryLimits.DefaultRecordCount,
-                OrderBy = orderBy,
-                OutputCrs = request.OutputSrid.HasValue
-                    ? QueryCrs.Create(request.OutputSrid.Value)
-                    : null,
-                Aggregation = aggregation,
-                Hints = QueryHints.Create(
-                    preferStreaming: (queryParams.ResultRecordCount ?? request.QueryLimits.DefaultRecordCount) > DefaultLimits.DefaultResultCount,
-                    enableCaching: true,
-                    requireExactCount: queryParams.ReturnCountOnly || queryParams.ReturnExtentOnly || queryParams.ReturnIdsOnly)
-            };
-
-            return Task.FromResult(QueryAdapterResult.Success(unifiedQuery, metadata));
-        }
-        catch (Exception ex)
-        {
-            GeoServicesPreparedAdaptersLog.QueryParameterConversionFailed(_logger, ex);
-            return Task.FromResult(QueryAdapterResult.Failure("Invalid query parameters."));
-        }
-    }
-
     /// <summary>
-    /// V2 overload of <see cref="ConvertAsync(GeoServicesQueryRequest, LayerDefinition, CancellationToken)"/>.
-    /// Validates field references against <see cref="MetadataV2Resource.SchemaFields"/> instead of
-    /// the v1 <see cref="LayerDefinition.Fields"/> collection. Note: the spatial-filter and SQL-filter
-    /// translation paths are unchanged here — callers are responsible for producing the
-    /// <see cref="GeoServicesQueryRequest.SqlFilter"/> (see "SQL last-mile bridge (#1035): see
-    /// metadata-v2-cutover-plan.md" in the FeatureServer query handler).
+    /// Converts query parameters against a Metadata v2 canonical resource. Spatial-filter and SQL-filter
+    /// translation paths are prepared by the caller.
     /// </summary>
     public Task<QueryAdapterResult> ConvertAsync(
         GeoServicesQueryRequest request,
@@ -230,27 +145,6 @@ internal sealed class GeoServicesQueryParameterAdapter(
             .Where(static field => field.Length > 0)
             .ToList();
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
-        if (!fields.Any(field => field.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase)))
-        {
-            fields.Add(objectIdFieldName);
-        }
-
-        return fields.ToImmutableArray();
-    }
-
-    private static ImmutableArray<string>? ResolveOutFields(QueryParameters queryParams, LayerDefinition layer)
-    {
-        if (string.IsNullOrEmpty(queryParams.OutFields) ||
-            string.Equals(queryParams.OutFields, "*", StringComparison.Ordinal))
-        {
-            return null;
-        }
-
-        var fields = queryParams.OutFields.Split(',', StringSplitOptions.RemoveEmptyEntries)
-            .Select(static field => field.Trim())
-            .Where(static field => field.Length > 0)
-            .ToList();
-        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer);
         if (!fields.Any(field => field.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase)))
         {
             fields.Add(objectIdFieldName);

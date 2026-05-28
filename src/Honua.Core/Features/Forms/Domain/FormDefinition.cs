@@ -4,7 +4,7 @@
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
 using System.Collections.Immutable;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Forms.Domain;
 
@@ -99,7 +99,7 @@ public record FormBinding(
     string BindingId,
     string ControlId,
     string TargetFieldName,
-    FieldType FieldType,
+    MetadataV2FieldType FieldType,
     bool Required,
     ImmutableList<ValidationRule> ValidationRules,
     DefaultValue? DefaultValue,

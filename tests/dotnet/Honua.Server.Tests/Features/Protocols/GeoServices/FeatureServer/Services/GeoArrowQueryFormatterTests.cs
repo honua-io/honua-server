@@ -8,13 +8,11 @@ using Apache.Arrow.Ipc;
 using Apache.Arrow.Types;
 using FluentAssertions;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
-using GeometryType = Honua.Core.Features.Catalog.Domain.GeometryType;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
@@ -24,9 +22,9 @@ public sealed class GeoArrowQueryFormatterTests
     public async Task FormatAsGeoArrowAsync_WithFeatures_WritesReadableArrowStreamWithGeoMetadata()
     {
         var layer = CreateLayer(
-            new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false),
-            new FieldDefinition("name", FieldType.String, 255),
-            new FieldDefinition("created", FieldType.DateTime));
+            new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false },
+            new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 255 },
+            new MetadataV2Field { Name = "created", Type = MetadataV2FieldType.DateTime });
         var feature = Feature.Create(
             1,
             CreatePointWkb(-157.8583, 21.3069),
@@ -88,12 +86,53 @@ public sealed class GeoArrowQueryFormatterTests
     }
 
     [Fact]
+    public async Task FormatAsGeoArrowAsync_WithMetadataV2Resource_WritesReadableArrowStreamWithGeoMetadata()
+    {
+        var resource = CreateResource(
+            new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false },
+            new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 255 },
+            new MetadataV2Field { Name = "created", Type = MetadataV2FieldType.DateTime });
+        var feature = Feature.Create(
+            1,
+            CreatePointWkb(-157.8583, 21.3069),
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 1L,
+                ["name"] = "Honolulu Harbor",
+                ["created"] = new DateTimeOffset(2024, 01, 02, 03, 04, 05, TimeSpan.Zero)
+            }.ToImmutableDictionary());
+
+        var (payload, contentType) = await GeoArrowQueryFormatter.FormatAsGeoArrowAsync(
+            QueryResult<Feature>.Create(1, [feature]),
+            resource,
+            returnGeometry: true,
+            outputSrid: 4326,
+            returnZ: false,
+            returnM: false,
+            geometryLimits: new GeometryLimits());
+
+        contentType.Should().Be("application/vnd.apache.arrow.stream");
+        using var stream = new MemoryStream(payload);
+        using var reader = new ArrowStreamReader(stream);
+        var batch = await reader.ReadNextRecordBatchAsync();
+
+        batch.Should().NotBeNull();
+        batch!.Length.Should().Be(1);
+        reader.Schema.FieldsList.Select(f => f.Name)
+            .Should().Equal("objectid", "name", "created", "geometry");
+
+        var geometryField = reader.Schema.GetFieldByName("geometry");
+        geometryField.Metadata["ARROW:extension:name"].Should().Be("geoarrow.wkb");
+        reader.Schema.Metadata.Should().ContainKey("geo");
+    }
+
+    [Fact]
     public async Task FormatAsGeoArrowAsync_EmptyResult_PreservesRequestedSchema()
     {
         var layer = CreateLayer(
-            new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false),
-            new FieldDefinition("name", FieldType.String, 255),
-            new FieldDefinition("created", FieldType.DateTime));
+            new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false },
+            new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 255 },
+            new MetadataV2Field { Name = "created", Type = MetadataV2FieldType.DateTime });
 
         var (payload, _) = await GeoArrowQueryFormatter.FormatAsGeoArrowAsync(
             QueryResult<Feature>.Empty(),
@@ -120,7 +159,7 @@ public sealed class GeoArrowQueryFormatterTests
     [Fact]
     public async Task FormatAsGeoArrowAsync_AppliesGeometryPrecisionAndDimensionFiltering()
     {
-        var layer = CreateLayer(new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false));
+        var layer = CreateLayer(new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false });
         var feature = Feature.Create(
             1,
             CreatePointWkbWithZm(1.2349, 2.3451, 3.4567, 4.5678),
@@ -153,7 +192,7 @@ public sealed class GeoArrowQueryFormatterTests
     [Fact]
     public async Task FormatAsGeoArrowAsync_NullGeometry_WritesNullInGeometryColumn()
     {
-        var layer = CreateLayer(new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false));
+        var layer = CreateLayer(new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false });
         var feature = Feature.Create(
             1,
             null,
@@ -180,12 +219,12 @@ public sealed class GeoArrowQueryFormatterTests
     public async Task FormatAsGeoArrowAsync_FieldTypeMappings_CorrectArrowTypes()
     {
         var layer = CreateLayer(
-            new FieldDefinition("id", FieldType.BigInteger, Nullable: false),
-            new FieldDefinition("count", FieldType.Integer),
-            new FieldDefinition("rating", FieldType.Float),
-            new FieldDefinition("area", FieldType.Double),
-            new FieldDefinition("active", FieldType.Boolean),
-            new FieldDefinition("label", FieldType.String, 100));
+            new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.BigInteger, Nullable = false },
+            new MetadataV2Field { Name = "count", Type = MetadataV2FieldType.Integer },
+            new MetadataV2Field { Name = "rating", Type = MetadataV2FieldType.Float },
+            new MetadataV2Field { Name = "area", Type = MetadataV2FieldType.Double },
+            new MetadataV2Field { Name = "active", Type = MetadataV2FieldType.Boolean },
+            new MetadataV2Field { Name = "label", Type = MetadataV2FieldType.String, Length = 100 });
 
         var feature = Feature.Create(
             1,
@@ -233,7 +272,7 @@ public sealed class GeoArrowQueryFormatterTests
     [Fact]
     public async Task FormatAsGeoArrowAsync_ExtensionMetadata_ContainsGeometryTypesAndOmitsCrsFor4326()
     {
-        var layer = CreateLayer(new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false));
+        var layer = CreateLayer(new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false });
         var feature = Feature.Create(
             1,
             CreatePointWkb(0, 0),
@@ -266,7 +305,7 @@ public sealed class GeoArrowQueryFormatterTests
     [Fact]
     public async Task FormatAsGeoArrowAsync_WithReturnZ_IncludesZSuffix()
     {
-        var layer = CreateLayer(new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false));
+        var layer = CreateLayer(new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false });
         var feature = Feature.Create(
             1,
             CreatePointWkbWithZm(1.0, 2.0, 3.0, double.NaN),
@@ -302,8 +341,8 @@ public sealed class GeoArrowQueryFormatterTests
     public async Task FormatAsGeoArrowAsync_WithoutGeometry_OmitsGeometryColumn()
     {
         var layer = CreateLayer(
-            new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false),
-            new FieldDefinition("name", FieldType.String, 255));
+            new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false },
+            new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 255 });
         var feature = Feature.Create(
             1,
             CreatePointWkb(0, 0),
@@ -338,7 +377,7 @@ public sealed class GeoArrowQueryFormatterTests
     [Fact]
     public async Task FormatAsGeoArrowAsync_RuntimeFields_IncludedInSchema()
     {
-        var layer = CreateLayer(new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false));
+        var layer = CreateLayer(new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false });
         // Simulate a KNN result with a runtime "distance" attribute not in the layer schema
         var feature = Feature.Create(
             1,
@@ -374,7 +413,7 @@ public sealed class GeoArrowQueryFormatterTests
     public async Task FormatAsGeoArrowAsync_EmptyResult_EmitsEmptyGeometryTypes()
     {
         var layer = CreateLayer(
-            new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false));
+            new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false });
 
         var (payload, _) = await GeoArrowQueryFormatter.FormatAsGeoArrowAsync(
             QueryResult<Feature>.Empty(),
@@ -405,7 +444,7 @@ public sealed class GeoArrowQueryFormatterTests
     public async Task FormatAsGeoArrowAsync_WithNon4326GeometrySrid_ThrowsInvalidOperation()
     {
         var layer = CreateLayer(
-            new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false));
+            new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false });
 
         var act = async () => await GeoArrowQueryFormatter.FormatAsGeoArrowAsync(
             QueryResult<Feature>.Empty(),
@@ -424,7 +463,7 @@ public sealed class GeoArrowQueryFormatterTests
     public async Task FormatAsGeoArrowAsync_WithReturnMTrue_ThrowsInvalidOperation()
     {
         var layer = CreateLayer(
-            new FieldDefinition("objectid", FieldType.BigInteger, Nullable: false));
+            new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false });
 
         var feature = Feature.Create(
             1,
@@ -447,18 +486,36 @@ public sealed class GeoArrowQueryFormatterTests
             .WithMessage("*GeoArrow*returnM=true*XY and XYZ geometries*");
     }
 
-    private static LayerDefinition CreateLayer(params FieldDefinition[] fields)
-        => new(
-            Id: 1,
-            Name: "harbors",
-            Description: "Harbors",
-            GeometryType: GeometryType.Point,
-            SpatialReference: SpatialReference.WGS84,
-            Fields:
+    private static MetadataV2Resource CreateLayer(params MetadataV2Field[] fields)
+        => CreateResource(fields);
+
+    private static MetadataV2Resource CreateResource(params MetadataV2Field[] fields)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "harbors",
+                Name = "harbors",
+                Description = "Harbors"
+            },
+            SchemaFields =
             [
                 .. fields,
-                new FieldDefinition("shape", FieldType.Geometry, Nullable: true)
-            ]);
+                new MetadataV2Field
+                {
+                    Name = "shape",
+                    Type = MetadataV2FieldType.Geometry,
+                    Nullable = true,
+                    SemanticRoles = ["geometry.primary"]
+                }
+            ],
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = MetadataV2SpatialReference.Wgs84,
+                GeometryType = MetadataV2GeometryType.Point,
+                PrimaryGeometryField = "shape"
+            }
+        };
 
     private static byte[] CreatePointWkb(double x, double y)
         => new WKBWriter().Write(new Point(x, y) { SRID = 4326 });

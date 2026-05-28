@@ -4,7 +4,6 @@
 using System.Reflection;
 using FluentAssertions;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -14,6 +13,7 @@ using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.TestKit.Infrastructure;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Validation;
@@ -22,7 +22,6 @@ using Honua.Server.Features.Protocols.OData.Models;
 using Honua.Server.Features.Protocols.OData.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.Extensions.DependencyInjection;
@@ -295,10 +294,6 @@ public sealed class ODataBatchOperationHandlerTests
         var outputCacheStore = Substitute.For<IOutputCacheStore>();
         var responseCache = Substitute.For<IResponseCache>();
         var publisher = Substitute.For<IFeatureChangeEventPublisher>();
-        var layerCatalog = Substitute.For<ILayerCatalog>();
-        var layer = LayerDefinition.CreateBasic(1, "Features", GeometryType.Point);
-        var service = ServiceDefinition.CreateSingle("odata-service", layer);
-        layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>()).Returns([service]);
         var scopeFactory = new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
         var outputCacheInvalidationService = new OutputCacheInvalidationService(
             outputCacheStore,
@@ -310,19 +305,8 @@ public sealed class ODataBatchOperationHandlerTests
 
         var services = new ServiceCollection();
         services.AddSingleton(outputCacheInvalidationService);
-        services.AddSingleton(layerCatalog);
         services.AddSingleton<IMetadataV2GraphProvider>(
-            new TestMetadataV2GraphProvider(new TestMetadataV2GraphBuilder()
-                .AddResource("res-layer-1", "Features", MetadataV2ResourceType.FeatureDataset)
-                .AddService("svc-odata-test", "odata-service", protocols: [ServiceProtocols.OData])
-                .AddPublication(
-                    "pub-odata-layer-1",
-                    "svc-odata-test",
-                    "res-layer-1",
-                    layerIndex: 1,
-                    serviceLocalId: "1",
-                    publicationType: MetadataV2PublicationType.ODataEntitySet)
-                .Build()));
+            new TestMetadataV2GraphProvider(new TestMetadataV2GraphBuilder().Build()));
 
         var context = new DefaultHttpContext
         {
@@ -330,7 +314,6 @@ public sealed class ODataBatchOperationHandlerTests
         };
 
         var dependencies = new ODataBatchDependencies(
-            layerCatalog,
             Substitute.For<IFeatureReader>(),
             Substitute.For<IFeatureWriter>(),
             Substitute.For<IGeometryService>(),

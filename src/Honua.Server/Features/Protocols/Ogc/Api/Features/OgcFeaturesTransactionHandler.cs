@@ -7,7 +7,6 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Exceptions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -47,6 +46,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     private readonly FeatureMutationValidator _mutationValidator = dependencies.MutationValidator;
     private readonly FeatureMutationEventService _mutationEventService = dependencies.MutationEventService;
     private readonly ILogger<OgcFeaturesTransactionHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private const string OgcFeaturesProtocolName = "OgcFeatures";
 
     /// <summary>
     /// Handles batch feature operations in a single transaction.
@@ -242,7 +242,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         eventOperation,
                         HonuaTelemetry.Protocols.OgcFeatures,
                         CancellationToken.None,
-                        serviceProtocol: ServiceProtocols.OgcFeatures,
+                        serviceProtocol: OgcFeaturesProtocolName,
                         requestId: $"{context.TraceIdentifier}:{operation.Id ?? "batch"}",
                         mutationFeature: preparedOperation?.OperationKind == BatchOperationKind.Delete
                             ? null
@@ -476,7 +476,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                     HonuaTelemetry.Protocols.OgcFeatures,
                     CancellationToken.None,
                     mutationFeature: updated.Value,
-                    serviceProtocol: ServiceProtocols.OgcFeatures,
+                    serviceProtocol: OgcFeaturesProtocolName,
                     geometryChanged: geometryChangedForReplace).ConfigureAwait(false);
                 HonuaTelemetry.SetSuccess(activity);
                 return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
@@ -677,25 +677,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 }
                 else
                 {
-                    // Validate only the properties this PATCH actually sets. Values carried
-                    // over from the existing row (notably the immutable id field read back
-                    // from storage) are not edits and must not be re-validated for
-                    // editability — this mirrors PUT, which validates only the submitted
-                    // properties. Validating the full merged set instead rejected unchanged
-                    // non-editable fields, e.g. "Field 'objectid' is not editable.".
-                    var patchValidation = _mutationValidator.ValidateAttributes(
-                        resource,
-                        patchRequest.Properties,
-                        ValidationExtensions.AttributeValidationMode.Strict,
-                        isUpdate: true);
-                    if (!patchValidation.IsValid)
-                    {
-                        return StandardErrorHelpers.CreateBadRequest(
-                            context,
-                            patchValidation.ErrorMessage ?? "Invalid attributes.");
-                    }
-
-                    foreach (var (key, value) in patchValidation.Value!)
+                    foreach (var (key, value) in patchRequest.Properties)
                     {
                         if (value == null)
                         {
@@ -709,10 +691,22 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 }
             }
 
+            var attributesResult = _mutationValidator.ValidateAttributes(
+                resource,
+                attributesBuilder.ToImmutable(),
+                ValidationExtensions.AttributeValidationMode.Strict,
+                isUpdate: true);
+            if (!attributesResult.IsValid)
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context,
+                    attributesResult.ErrorMessage ?? "Invalid attributes.");
+            }
+
             var feature = Feature.Create(
                 objectId,
                 geometryValidation.Geometry,
-                attributesBuilder.ToImmutable());
+                attributesResult.Value!);
 
             try
             {
@@ -784,7 +778,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                     HonuaTelemetry.Protocols.OgcFeatures,
                     CancellationToken.None,
                     mutationFeature: updated.Value,
-                    serviceProtocol: ServiceProtocols.OgcFeatures).ConfigureAwait(false);
+                    serviceProtocol: OgcFeaturesProtocolName).ConfigureAwait(false);
                 HonuaTelemetry.SetSuccess(activity);
                 return Results.Json(response, OgcJsonContext.Default.GeoJsonFeature, contentType: MediaTypes.GeoJson);
             }
@@ -881,7 +875,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             context,
             layerId,
             HonuaTelemetry.Protocols.OgcFeatures,
-            serviceProtocol: ServiceProtocols.OgcFeatures,
+            serviceProtocol: OgcFeaturesProtocolName,
             // V2 storage SRID is read from MetadataV2SpatialExtensions.ReadSrid so the
             // outbox enrichment fallback matches the inline-publish path.
             layerSrid: resource.ReadSrid(),

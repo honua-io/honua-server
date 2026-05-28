@@ -575,7 +575,9 @@ public sealed class StacSearchTests : IAsyncLifetime
         var stacId = $"fields-{runId}";
         var nestedId = $"nested-{runId}";
         var featureId = await _fixture.InsertFeatureAsync(WebAppFixture.TestLayerId, $"fields {runId}");
-        await UpsertLayerFieldAsync("id", "String", 255);
+        _fixture.UpdateV2ResourceSchemaField(
+            WebAppFixture.TestLayerId,
+            new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.String, Nullable = true });
         await SetFeatureAttributeAsync(featureId, "stac_id", stacId);
         await SetFeatureAttributeAsync(featureId, "id", nestedId);
 
@@ -658,72 +660,6 @@ public sealed class StacSearchTests : IAsyncLifetime
         await using var reader = await command.ExecuteReaderAsync();
         (await reader.ReadAsync()).Should().BeTrue();
         return (reader.GetDouble(0), reader.GetDouble(1));
-    }
-
-    private async Task UpsertLayerFieldAsync(string fieldName, string fieldType, int? maxLength = null)
-    {
-        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO honua.layer_fields (
-                layer_id,
-                field_name,
-                field_type,
-                field_order,
-                max_length,
-                nullable,
-                description
-            )
-            VALUES (@layerId, @fieldName, @fieldType, 1000, @maxLength, TRUE, @description)
-            ON CONFLICT (layer_id, field_name)
-            DO UPDATE SET
-                field_type = EXCLUDED.field_type,
-                max_length = EXCLUDED.max_length,
-                nullable = EXCLUDED.nullable,
-                description = EXCLUDED.description;
-            """;
-        command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
-        command.Parameters.AddWithValue("fieldName", fieldName);
-        command.Parameters.AddWithValue("fieldType", fieldType);
-        command.Parameters.AddWithValue("maxLength", maxLength.HasValue ? maxLength.Value : DBNull.Value);
-        command.Parameters.AddWithValue("description", $"{fieldName} test field");
-        await command.ExecuteNonQueryAsync();
-
-        _fixture.UpsertV2ResourceSchemaField(
-            WebAppFixture.TestLayerId,
-            new MetadataV2Field
-            {
-                Name = fieldName,
-                Type = ToMetadataV2FieldType(fieldType),
-                Length = maxLength,
-                Nullable = true,
-                Description = $"{fieldName} test field",
-            });
-    }
-
-    private static MetadataV2FieldType ToMetadataV2FieldType(string fieldType)
-    {
-        var normalized = fieldType.Replace("_", string.Empty, StringComparison.Ordinal)
-            .Replace("-", string.Empty, StringComparison.Ordinal)
-            .ToLowerInvariant();
-        return normalized switch
-        {
-            "string" or "text" => MetadataV2FieldType.String,
-            "integer" or "int" or "int32" => MetadataV2FieldType.Integer,
-            "biginteger" or "long" or "bigint" or "int64" => MetadataV2FieldType.BigInteger,
-            "double" or "float64" => MetadataV2FieldType.Double,
-            "float" or "single" => MetadataV2FieldType.Float,
-            "boolean" or "bool" => MetadataV2FieldType.Boolean,
-            "datetime" or "timestamp" => MetadataV2FieldType.DateTime,
-            "date" => MetadataV2FieldType.Date,
-            "time" => MetadataV2FieldType.Time,
-            "json" or "jsonb" => MetadataV2FieldType.Json,
-            "binary" or "bytes" => MetadataV2FieldType.Binary,
-            "uuid" or "guid" => MetadataV2FieldType.Uuid,
-            "geometry" => MetadataV2FieldType.Geometry,
-            "geography" => MetadataV2FieldType.Geography,
-            _ => MetadataV2FieldType.Unknown,
-        };
     }
 
     private async Task SetFeatureAttributeAsync(long featureId, string attributeName, string attributeValue)

@@ -3,10 +3,9 @@
 
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.NlQuery.Domain;
 using Honua.Core.Features.NlQuery.Services;
-using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -16,27 +15,25 @@ namespace Honua.Core.Tests.Features.NlQuery;
 [Protocol(Protocols.TestQuality)]
 public sealed class FilterPlanCompilerTests
 {
-    private readonly LayerDefinition _testLayer;
+    private readonly MetadataV2Resource _testResource;
 
     public FilterPlanCompilerTests()
     {
-        _testLayer = new LayerDefinition(
-            Id: 1,
-            Name: "test_layer",
-            Description: "Test layer for NL query compilation",
-            GeometryType: GeometryType.Point,
-            SpatialReference: SpatialReference.WGS84,
-            Fields:
+        _testResource = CreateResource(
+            "test_layer",
+            MetadataV2GeometryType.Point,
+            MetadataV2SpatialReference.Wgs84,
             [
-                new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                new FieldDefinition("name", FieldType.String, Length: 100),
-                new FieldDefinition("population", FieldType.Integer),
-                new FieldDefinition("height", FieldType.Double),
-                new FieldDefinition("category", FieldType.String, Length: 50),
-                new FieldDefinition("active", FieldType.Boolean),
-                new FieldDefinition("created_at", FieldType.DateTime),
-                new FieldDefinition("shape", FieldType.Geometry)
-            ]);
+                Field("objectid", MetadataV2FieldType.Integer, nullable: false, roles: ["id.primary"]),
+                Field("name", MetadataV2FieldType.String, length: 100),
+                Field("population", MetadataV2FieldType.Integer),
+                Field("height", MetadataV2FieldType.Double),
+                Field("category", MetadataV2FieldType.String, length: 50),
+                Field("active", MetadataV2FieldType.Boolean),
+                Field("created_at", MetadataV2FieldType.DateTime),
+                Field("shape", MetadataV2FieldType.Geometry, roles: ["geometry.primary"])
+            ],
+            description: "Test layer for NL query compilation");
     }
 
     // --- Comparison clause tests ---
@@ -52,7 +49,7 @@ public sealed class FilterPlanCompilerTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _testLayer);
+        var result = FilterPlanCompiler.Compile(plan, _testResource);
 
         result.IsSuccess.Should().BeTrue();
         var binary = result.Expression.Should().BeOfType<BinaryExpression>().Subject;
@@ -72,7 +69,7 @@ public sealed class FilterPlanCompilerTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _testLayer);
+        var result = FilterPlanCompiler.Compile(plan, _testResource);
 
         result.IsSuccess.Should().BeTrue();
         var binary = result.Expression.Should().BeOfType<BinaryExpression>().Subject;
@@ -92,7 +89,7 @@ public sealed class FilterPlanCompilerTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _testLayer);
+        var result = FilterPlanCompiler.Compile(plan, _testResource);
 
         result.IsSuccess.Should().BeTrue();
         var binary = result.Expression.Should().BeOfType<BinaryExpression>().Subject;
@@ -110,7 +107,7 @@ public sealed class FilterPlanCompilerTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _testLayer);
+        var result = FilterPlanCompiler.Compile(plan, _testResource);
 
         result.IsSuccess.Should().BeTrue(result.ErrorMessage ?? "unknown error");
         var binary = result.Expression.Should().BeOfType<BinaryExpression>().Subject;
@@ -130,7 +127,7 @@ public sealed class FilterPlanCompilerTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _testLayer);
+        var result = FilterPlanCompiler.Compile(plan, _testResource);
 
         result.IsSuccess.Should().BeTrue();
         var binary = result.Expression.Should().BeOfType<BinaryExpression>().Subject;
@@ -156,7 +153,7 @@ public sealed class FilterPlanCompilerTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _testLayer);
+        var result = FilterPlanCompiler.Compile(plan, _testResource);
 
         result.IsSuccess.Should().BeTrue();
         var spatial = result.Expression.Should().BeOfType<SpatialPredicate>().Subject;
@@ -184,7 +181,7 @@ public sealed class FilterPlanCompilerTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _testLayer);
+        var result = FilterPlanCompiler.Compile(plan, _testResource);
 
         result.IsSuccess.Should().BeTrue();
         var spatial = result.Expression.Should().BeOfType<SpatialDistancePredicate>().Subject;
@@ -213,7 +210,7 @@ public sealed class FilterPlanCompilerTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _testLayer);
+        var result = FilterPlanCompiler.Compile(plan, _testResource);
 
         result.IsSuccess.Should().BeTrue();
         var spatial = result.Expression.Should().BeOfType<SpatialPredicate>().Subject;
@@ -236,7 +233,7 @@ public sealed class FilterPlanCompilerTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _testLayer);
+        var result = FilterPlanCompiler.Compile(plan, _testResource);
 
         result.IsSuccess.Should().BeTrue();
         var temporal = result.Expression.Should().BeOfType<TemporalPredicate>().Subject;
@@ -259,7 +256,7 @@ public sealed class FilterPlanCompilerTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _testLayer);
+        var result = FilterPlanCompiler.Compile(plan, _testResource);
 
         result.IsSuccess.Should().BeTrue();
         var temporal = result.Expression.Should().BeOfType<TemporalPredicate>().Subject;
@@ -280,7 +277,7 @@ public sealed class FilterPlanCompilerTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _testLayer);
+        var result = FilterPlanCompiler.Compile(plan, _testResource);
 
         result.IsSuccess.Should().BeTrue();
         var temporal = result.Expression.Should().BeOfType<TemporalPredicate>().Subject;
@@ -302,7 +299,7 @@ public sealed class FilterPlanCompilerTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _testLayer);
+        var result = FilterPlanCompiler.Compile(plan, _testResource);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorMessage.Should().Contain("date or datetime");
@@ -330,7 +327,7 @@ public sealed class FilterPlanCompilerTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _testLayer);
+        var result = FilterPlanCompiler.Compile(plan, _testResource);
 
         result.IsSuccess.Should().BeTrue();
         // Top level: AND(population > 10000, OR(category = park, category = garden))
@@ -360,7 +357,7 @@ public sealed class FilterPlanCompilerTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _testLayer);
+        var result = FilterPlanCompiler.Compile(plan, _testResource);
 
         result.IsSuccess.Should().BeTrue();
         var and = result.Expression.Should().BeOfType<BinaryExpression>().Subject;
@@ -382,7 +379,7 @@ public sealed class FilterPlanCompilerTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _testLayer);
+        var result = FilterPlanCompiler.Compile(plan, _testResource);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorMessage.Should().Contain("nonexistent");
@@ -400,7 +397,7 @@ public sealed class FilterPlanCompilerTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _testLayer);
+        var result = FilterPlanCompiler.Compile(plan, _testResource);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorMessage.Should().Contain("regex");
@@ -423,7 +420,7 @@ public sealed class FilterPlanCompilerTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _testLayer);
+        var result = FilterPlanCompiler.Compile(plan, _testResource);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorMessage.Should().Contain("GeoJSON");
@@ -440,7 +437,7 @@ public sealed class FilterPlanCompilerTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _testLayer);
+        var result = FilterPlanCompiler.Compile(plan, _testResource);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorMessage.Should().Contain("no clauses");
@@ -457,7 +454,7 @@ public sealed class FilterPlanCompilerTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _testLayer);
+        var result = FilterPlanCompiler.Compile(plan, _testResource);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorMessage.Should().Contain("unknown_type");
@@ -480,7 +477,7 @@ public sealed class FilterPlanCompilerTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _testLayer);
+        var result = FilterPlanCompiler.Compile(plan, _testResource);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorMessage.Should().Contain("Distance");
@@ -490,16 +487,13 @@ public sealed class FilterPlanCompilerTests
     [Operation(Operations.Query)]
     public void Compile_SpatialOnLayerWithoutGeometry_ReturnsFailure()
     {
-        var noGeomLayer = new LayerDefinition(
-            Id: 2,
-            Name: "no_geom",
-            Description: null,
-            GeometryType: GeometryType.None,
-            SpatialReference: SpatialReference.WGS84,
-            Fields:
+        var noGeomResource = CreateResource(
+            "no_geom",
+            MetadataV2GeometryType.None,
+            MetadataV2SpatialReference.Wgs84,
             [
-                new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                new FieldDefinition("name", FieldType.String, Length: 100)
+                Field("objectid", MetadataV2FieldType.Integer, nullable: false, roles: ["id.primary"]),
+                Field("name", MetadataV2FieldType.String, length: 100)
             ]);
 
         var plan = Deserialize("""
@@ -515,7 +509,7 @@ public sealed class FilterPlanCompilerTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, noGeomLayer);
+        var result = FilterPlanCompiler.Compile(plan, noGeomResource);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorMessage.Should().Contain("geometry field");
@@ -540,7 +534,7 @@ public sealed class FilterPlanCompilerTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _testLayer);
+        var result = FilterPlanCompiler.Compile(plan, _testResource);
 
         result.IsSuccess.Should().BeTrue();
         var spatial = result.Expression.Should().BeOfType<SpatialDistancePredicate>().Subject;
@@ -562,7 +556,7 @@ public sealed class FilterPlanCompilerTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, _testLayer);
+        var result = FilterPlanCompiler.Compile(plan, _testResource);
 
         result.IsSuccess.Should().BeTrue();
         var or = result.Expression.Should().BeOfType<BinaryExpression>().Subject;
@@ -575,17 +569,14 @@ public sealed class FilterPlanCompilerTests
     {
         // Regression: untagged GeoJSON must default to EPSG:4326 per RFC 7946,
         // not the layer SRID, so the downstream pipeline can ST_Transform correctly.
-        var webMercatorLayer = new LayerDefinition(
-            Id: 3,
-            Name: "mercator_layer",
-            Description: null,
-            GeometryType: GeometryType.Point,
-            SpatialReference: SpatialReference.WebMercator,
-            Fields:
+        var webMercatorResource = CreateResource(
+            "mercator_layer",
+            MetadataV2GeometryType.Point,
+            MetadataV2SpatialReference.WebMercator,
             [
-                new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                new FieldDefinition("name", FieldType.String, Length: 100),
-                new FieldDefinition("shape", FieldType.Geometry)
+                Field("objectid", MetadataV2FieldType.Integer, nullable: false, roles: ["id.primary"]),
+                Field("name", MetadataV2FieldType.String, length: 100),
+                Field("shape", MetadataV2FieldType.Geometry, roles: ["geometry.primary"])
             ]);
 
         var plan = Deserialize("""
@@ -601,7 +592,7 @@ public sealed class FilterPlanCompilerTests
         }
         """);
 
-        var result = FilterPlanCompiler.Compile(plan, webMercatorLayer);
+        var result = FilterPlanCompiler.Compile(plan, webMercatorResource);
 
         result.IsSuccess.Should().BeTrue();
         var spatial = result.Expression.Should().BeOfType<SpatialPredicate>().Subject;
@@ -614,4 +605,49 @@ public sealed class FilterPlanCompilerTests
         return JsonSerializer.Deserialize<FilterPlan>(json)
             ?? throw new InvalidOperationException("Failed to deserialize filter plan fixture.");
     }
+
+    private static MetadataV2Resource CreateResource(
+        string name,
+        MetadataV2GeometryType geometryType,
+        MetadataV2SpatialReference spatialReference,
+        IReadOnlyList<MetadataV2Field> fields,
+        string? description = null)
+    {
+        var geometryField = fields.FirstOrDefault(field =>
+            field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography);
+
+        return new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = $"resource:{name}",
+                Name = name,
+                Description = description,
+            },
+            SchemaFields = fields,
+            Spatial = geometryType == MetadataV2GeometryType.None
+                ? null
+                : new MetadataV2ResourceSpatial
+                {
+                    SpatialReference = spatialReference,
+                    GeometryType = geometryType,
+                    PrimaryGeometryField = geometryField?.Name,
+                },
+        };
+    }
+
+    private static MetadataV2Field Field(
+        string name,
+        MetadataV2FieldType type,
+        bool nullable = true,
+        int? length = null,
+        IReadOnlyList<string>? roles = null)
+        => new()
+        {
+            Name = name,
+            Type = type,
+            Nullable = nullable,
+            Length = length,
+            SemanticRoles = roles ?? [],
+        };
 }

@@ -3,7 +3,7 @@
 
 using System.Reflection;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Protocols.OData.Services;
@@ -17,17 +17,16 @@ public sealed class ODataSearchServiceSqlTests
     {
         var fields = new[]
         {
-            new FieldDefinition(FieldNames.ObjectId, FieldType.Integer, Nullable: false),
-            new FieldDefinition("O'Reilly", FieldType.String)
+            new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+            new MetadataV2Field { Name = "O'Reilly", Type = MetadataV2FieldType.String }
         };
 
-        var layer = new LayerDefinition(
-            Id: 1,
-            Name: "Test",
-            Description: null,
-            GeometryType.None,
-            SpatialReference.WGS84,
-            fields);
+        var resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-test", Name = "Test" },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            SchemaFields = fields
+        };
 
         var terms = new List<List<(string term, bool isNegated, bool isPhrase)>>
         {
@@ -40,7 +39,7 @@ public sealed class ODataSearchServiceSqlTests
 
         method.Should().NotBeNull();
 
-        var fragment = (SqlFragment)method!.Invoke(null, new object[] { terms, layer })!;
+        var fragment = (SqlFragment)method!.Invoke(null, new object[] { terms, resource })!;
 
         fragment.Sql.Should().Contain("attributes->>'O''Reilly'");
         fragment.Sql.Should().NotContain("attributes->>'O'Reilly'");

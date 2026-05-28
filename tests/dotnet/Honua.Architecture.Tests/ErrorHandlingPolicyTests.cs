@@ -67,6 +67,7 @@ public sealed class ErrorHandlingPolicyTests
     {
         // Pure route-table partials and dispatcher files whose handlers live
         // in companion files that *do* carry error-handling scaffolding.
+        Path.Combine("src", "Honua.Server", "Features", "Admin", "AdminInfoEndpoints.cs"),
         Path.Combine("src", "Honua.Server", "Features", "Admin", "FeatureOverviewEndpoints.cs"),
         Path.Combine("src", "Honua.Server", "Features", "Admin", "GeocodingAdminEndpoints.cs"),
         Path.Combine("src", "Honua.Server", "Features", "Admin", "LicenseAdminEndpoints.cs"),

@@ -2,11 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Infrastructure.Licensing;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Raster;
 using Microsoft.AspNetCore.Http;
 using NetTopologySuite.Geometries;
 
@@ -14,9 +12,6 @@ namespace Honua.Server.Features.Protocols.GeoServices.ImageServer.Services;
 
 internal static class ImageServerMosaicHelpers
 {
-    internal static RasterMergeStrategy ResolveMergeStrategy(CatalogMetadata? metadata, string? mosaicRule)
-        => RasterMosaicUtilities.ResolveMergeStrategy(metadata, mosaicRule);
-
     internal static bool TryParseTime(string? value, out DateTimeOffset? timestamp, out string? error)
     {
         timestamp = null;

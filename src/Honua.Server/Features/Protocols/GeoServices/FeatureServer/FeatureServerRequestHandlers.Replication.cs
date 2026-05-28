@@ -1,9 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Configuration;
@@ -32,15 +33,9 @@ internal static partial class FeatureServerEndpoints
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.replicas");
         activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
 
-        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceAsync(
-            resourceValidator,
-            serviceId,
-            context,
-            logger: null,
-            cancellationToken: cancellationToken);
-        if (!serviceValidationResult.IsValid)
+        var serviceValidationResult = await ValidateReplicationServiceV2Async(serviceId, context, cancellationToken);
+        if (serviceValidationResult.ErrorResult is not null)
         {
             return serviceValidationResult.ErrorResult!;
         }
@@ -60,19 +55,20 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = serviceValidationResult.Service!;
-        var accessError = AccessPolicyHelpers.RequireAnyLayerAccess(context, service.Layers, service);
+        var snapshot = serviceValidationResult.Snapshot!;
+        var serviceLayers = ResolveServiceReplicaLayersV2(service, snapshot);
+        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+            context,
+            serviceLayers.Select(layer => layer.Resource),
+            service);
         if (accessError != null)
         {
             return accessError;
         }
 
-        var accessibleLayerIds = service.Layers
-            .Where(layer => AccessPolicyHelpers.EvaluateAccess(
-                context,
-                layer.Metadata?.AccessPolicy,
-                service.Metadata?.AccessPolicy,
-                AccessScope.Read).IsAllowed)
-            .Select(layer => layer.Id)
+        var accessibleLayerIds = serviceLayers
+            .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
+            .Select(layer => layer.PublicLayerId)
             .ToHashSet();
 
         var replicaRepository = context.RequestServices.GetRequiredService<IReplicaRepository>();
@@ -100,15 +96,9 @@ internal static partial class FeatureServerEndpoints
         activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
         activity?.SetTag("honua.replicaId", replicaId);
 
-        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceAsync(
-            resourceValidator,
-            serviceId,
-            context,
-            logger: null,
-            cancellationToken: cancellationToken);
-        if (!serviceValidationResult.IsValid)
+        var serviceValidationResult = await ValidateReplicationServiceV2Async(serviceId, context, cancellationToken);
+        if (serviceValidationResult.ErrorResult is not null)
         {
             return serviceValidationResult.ErrorResult!;
         }
@@ -123,6 +113,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         var service = serviceValidationResult.Service!;
+        var snapshot = serviceValidationResult.Snapshot!;
         var replicaRepository = context.RequestServices.GetRequiredService<IReplicaRepository>();
         var record = await replicaRepository.GetAsync(replicaId, cancellationToken).ConfigureAwait(false);
         if (record == null || !string.Equals(record.Value.ServiceId, serviceId, StringComparison.OrdinalIgnoreCase))
@@ -132,7 +123,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         var replica = ToReplicaState(record.Value);
-        if (!TryResolveReplicaLayers(context, service, replica, AccessScope.Read, out var replicaLayers, out var replicaLayerError))
+        if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, AccessScope.Read, out var replicaLayers, out var replicaLayerError))
         {
             return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
                 context,
@@ -166,7 +157,7 @@ internal static partial class FeatureServerEndpoints
             LastSyncDate = record.Value.LastSyncTime.ToUnixTimeMilliseconds(),
             Layers = replicaLayers.Select(layer => new ReplicaInfoLayer
             {
-                Id = layer.Id
+                Id = layer.PublicLayerId
             }).ToArray()
         };
 
@@ -180,24 +171,20 @@ internal static partial class FeatureServerEndpoints
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.createReplica");
         activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
 
-        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceAsync(
-            resourceValidator,
-            serviceId,
-            context,
-            logger: null,
-            cancellationToken: cancellationToken);
-        if (!serviceValidationResult.IsValid)
+        var serviceValidationResult = await ValidateReplicationServiceV2Async(serviceId, context, cancellationToken);
+        if (serviceValidationResult.ErrorResult is not null)
         {
             return serviceValidationResult.ErrorResult!;
         }
 
         var service = serviceValidationResult.Service!;
+        var snapshot = serviceValidationResult.Snapshot!;
 
-        var writeAccessError = await RequireAnyServiceLayerWriteAccessBeforeBodyAsync(
+        var writeAccessError = await RequireAnyServiceResourceWriteAccessBeforeBodyAsync(
             context,
             service,
+            snapshot,
             cancellationToken);
         if (writeAccessError != null)
         {
@@ -229,9 +216,10 @@ internal static partial class FeatureServerEndpoints
         var layersParam = GetValueString(values, "layers");
         var syncModel = GetValueString(values, "syncModel") ?? "perReplica";
 
-        if (!TryResolveReplicaLayerIds(
+        if (!TryResolveReplicaLayerIdsV2(
                 context,
                 service,
+                snapshot,
                 layersParam,
                 out var layerIds,
                 out var layerError,
@@ -242,10 +230,10 @@ internal static partial class FeatureServerEndpoints
                 "layers parameter contains one or more invalid layer IDs for this service.");
         }
 
-        var createLayers = service.Layers
-            .Where(layer => layerIds.Contains(layer.Id))
+        var createLayers = ResolveServiceReplicaLayersV2(service, snapshot)
+            .Where(layer => layerIds.Contains(layer.PublicLayerId))
             .ToArray();
-        var createRbacError = await RequireReplicaWriteAccessAsync(
+        var createRbacError = await RequireReplicaWriteAccessV2Async(
             context,
             service,
             createLayers,
@@ -297,20 +285,15 @@ internal static partial class FeatureServerEndpoints
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.extractChanges");
         activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
 
-        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceAsync(
-            resourceValidator,
-            serviceId,
-            context,
-            logger: null,
-            cancellationToken: cancellationToken);
-        if (!serviceValidationResult.IsValid)
+        var serviceValidationResult = await ValidateReplicationServiceV2Async(serviceId, context, cancellationToken);
+        if (serviceValidationResult.ErrorResult is not null)
         {
             return serviceValidationResult.ErrorResult!;
         }
 
         var service = serviceValidationResult.Service!;
+        var snapshot = serviceValidationResult.Snapshot!;
         var replicaStore = context.RequestServices.GetRequiredService<IReplicaStore>();
 
         var (values, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
@@ -348,7 +331,7 @@ internal static partial class FeatureServerEndpoints
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
-        if (!TryResolveReplicaLayers(context, service, replica, AccessScope.Read, out var replicaLayers, out var replicaLayerError))
+        if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, AccessScope.Read, out var replicaLayers, out var replicaLayerError))
         {
             return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
                 context,
@@ -369,7 +352,7 @@ internal static partial class FeatureServerEndpoints
             foreach (var layer in replicaLayers)
             {
                 var result = await featureReader.QueryAsync(
-                    layer.Id,
+                    layer.StorageLayerId,
                     new FeatureQuery { Limit = queryLimits.MaxRecordCount + 1 },
                     cancellationToken);
                 if (result.HasMoreResults || result.Items.Length > queryLimits.MaxRecordCount)
@@ -377,7 +360,7 @@ internal static partial class FeatureServerEndpoints
                     return StandardErrorHelpers.CreateBadRequest(
                         context,
                         $"Replica '{replicaId}' initial extract exceeds the configured per-layer record limit.",
-                        [$"Layer {layer.Id} returned more than {queryLimits.MaxRecordCount} features."]);
+                        [$"Layer {layer.PublicLayerId} returned more than {queryLimits.MaxRecordCount} features."]);
                 }
 
                 var addFeatures = result.Items
@@ -386,7 +369,7 @@ internal static partial class FeatureServerEndpoints
 
                 layerChanges.Add(new LayerChanges
                 {
-                    Id = layer.Id,
+                    Id = layer.PublicLayerId,
                     Adds = addFeatures.Length,
                     Updates = 0,
                     Deletes = 0,
@@ -401,7 +384,7 @@ internal static partial class FeatureServerEndpoints
             // Query real incremental deltas from the change log
             var changes = await changeTracker.GetChangesSinceAsync(
                 replica.LastSyncGeneration,
-                replica.LayerIds,
+                replicaLayers.Select(layer => layer.StorageLayerId).Distinct().ToArray(),
                 cancellationToken);
 
             // Group collapsed changes by layer
@@ -411,7 +394,7 @@ internal static partial class FeatureServerEndpoints
 
             foreach (var layer in replicaLayers)
             {
-                if (changesByLayer.TryGetValue(layer.Id, out var layerChangeList))
+                if (changesByLayer.TryGetValue(layer.StorageLayerId, out var layerChangeList))
                 {
                     // Collect objectIds by operation type
                     var insertIds = layerChangeList
@@ -436,7 +419,7 @@ internal static partial class FeatureServerEndpoints
                         return StandardErrorHelpers.CreateBadRequest(
                             context,
                             $"Replica '{replicaId}' extract exceeds the configured per-layer change limit.",
-                            [$"Layer {layer.Id} exceeded {queryLimits.MaxRecordCount} adds, updates, or deletes in a single extract."]);
+                            [$"Layer {layer.PublicLayerId} exceeded {queryLimits.MaxRecordCount} adds, updates, or deletes in a single extract."]);
                     }
 
                     // Query actual features for inserts and updates
@@ -444,7 +427,7 @@ internal static partial class FeatureServerEndpoints
                     if (insertIds.Length > 0)
                     {
                         var query = new FeatureQuery { ObjectIds = ImmutableArray.Create(insertIds) };
-                        var result = await featureReader.QueryAsync(layer.Id, query, cancellationToken);
+                        var result = await featureReader.QueryAsync(layer.StorageLayerId, query, cancellationToken);
                         addFeatures = result.Items
                             .Select(f => ConvertFeatureToGeoServices(f))
                             .ToArray();
@@ -454,7 +437,7 @@ internal static partial class FeatureServerEndpoints
                     if (updateIds.Length > 0)
                     {
                         var query = new FeatureQuery { ObjectIds = ImmutableArray.Create(updateIds) };
-                        var result = await featureReader.QueryAsync(layer.Id, query, cancellationToken);
+                        var result = await featureReader.QueryAsync(layer.StorageLayerId, query, cancellationToken);
                         updateFeatures = result.Items
                             .Select(f => ConvertFeatureToGeoServices(f))
                             .ToArray();
@@ -462,7 +445,7 @@ internal static partial class FeatureServerEndpoints
 
                     layerChanges.Add(new LayerChanges
                     {
-                        Id = layer.Id,
+                        Id = layer.PublicLayerId,
                         Adds = insertIds.Length,
                         Updates = updateIds.Length,
                         Deletes = deleteIds.Length,
@@ -475,7 +458,7 @@ internal static partial class FeatureServerEndpoints
                 {
                     layerChanges.Add(new LayerChanges
                     {
-                        Id = layer.Id,
+                        Id = layer.PublicLayerId,
                         Adds = 0,
                         Updates = 0,
                         Deletes = 0
@@ -507,24 +490,20 @@ internal static partial class FeatureServerEndpoints
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.synchronizeReplica");
         activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
 
-        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceAsync(
-            resourceValidator,
-            serviceId,
-            context,
-            logger: null,
-            cancellationToken: cancellationToken);
-        if (!serviceValidationResult.IsValid)
+        var serviceValidationResult = await ValidateReplicationServiceV2Async(serviceId, context, cancellationToken);
+        if (serviceValidationResult.ErrorResult is not null)
         {
             return serviceValidationResult.ErrorResult!;
         }
 
         var service = serviceValidationResult.Service!;
+        var snapshot = serviceValidationResult.Snapshot!;
 
-        var writeAccessError = await RequireAnyServiceLayerWriteAccessBeforeBodyAsync(
+        var writeAccessError = await RequireAnyServiceResourceWriteAccessBeforeBodyAsync(
             context,
             service,
+            snapshot,
             cancellationToken);
         if (writeAccessError != null)
         {
@@ -568,14 +547,14 @@ internal static partial class FeatureServerEndpoints
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
-        if (!TryResolveReplicaLayers(context, service, replica, AccessScope.Write, out var replicaLayers, out var replicaLayerError))
+        if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, AccessScope.Write, out var replicaLayers, out var replicaLayerError))
         {
             return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
                 context,
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
-        var synchronizeRbacError = await RequireReplicaWriteAccessAsync(
+        var synchronizeRbacError = await RequireReplicaWriteAccessV2Async(
             context,
             service,
             replicaLayers,
@@ -608,7 +587,7 @@ internal static partial class FeatureServerEndpoints
             if (features is { Length: > 0 })
             {
                 // Apply the incoming edits to the first replica layer
-                var targetLayerId = replicaLayers[0].Id;
+                var targetLayerId = replicaLayers[0].PublicLayerId;
                 var editsHandler = context.RequestServices.GetRequiredService<FeatureServerEditsHandler>();
                 var limitsOptions = context.RequestServices
                     .GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>();
@@ -669,24 +648,20 @@ internal static partial class FeatureServerEndpoints
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.unRegisterReplica");
         activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
 
-        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceAsync(
-            resourceValidator,
-            serviceId,
-            context,
-            logger: null,
-            cancellationToken: cancellationToken);
-        if (!serviceValidationResult.IsValid)
+        var serviceValidationResult = await ValidateReplicationServiceV2Async(serviceId, context, cancellationToken);
+        if (serviceValidationResult.ErrorResult is not null)
         {
             return serviceValidationResult.ErrorResult!;
         }
 
         var service = serviceValidationResult.Service!;
+        var snapshot = serviceValidationResult.Snapshot!;
 
-        var writeAccessError = await RequireAnyServiceLayerWriteAccessBeforeBodyAsync(
+        var writeAccessError = await RequireAnyServiceResourceWriteAccessBeforeBodyAsync(
             context,
             service,
+            snapshot,
             cancellationToken);
         if (writeAccessError != null)
         {
@@ -725,14 +700,14 @@ internal static partial class FeatureServerEndpoints
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
-        if (!TryResolveReplicaLayers(context, service, replica, AccessScope.Write, out var replicaLayers, out var replicaLayerError))
+        if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, AccessScope.Write, out var replicaLayers, out var replicaLayerError))
         {
             return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
                 context,
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
-        var unregisterRbacError = await RequireReplicaWriteAccessAsync(
+        var unregisterRbacError = await RequireReplicaWriteAccessV2Async(
             context,
             service,
             replicaLayers,
@@ -753,9 +728,66 @@ internal static partial class FeatureServerEndpoints
         return Results.Json(response, FeatureServerJsonContext.Default.SuccessResponse, contentType: "application/json");
     }
 
-    private static bool TryResolveReplicaLayerIds(
+    private readonly record struct ReplicationServiceValidationResult(
+        MetadataV2Service? Service,
+        MetadataV2GraphSnapshot? Snapshot,
+        IResult? ErrorResult);
+
+    private sealed record ReplicaLayerV2(
+        int PublicLayerId,
+        int StorageLayerId,
+        MetadataV2Publication Publication,
+        MetadataV2Resource Resource);
+
+    private static async Task<ReplicationServiceValidationResult> ValidateReplicationServiceV2Async(
+        string serviceId,
         HttpContext context,
-        ServiceDefinition service,
+        CancellationToken cancellationToken)
+    {
+        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
+        var serviceValidationResult = await FeatureServerResourceValidationHelpers.ValidateServiceV2Async(
+            resourceValidator,
+            serviceId,
+            context,
+            logger: null,
+            cancellationToken: cancellationToken);
+        if (!serviceValidationResult.IsValid)
+        {
+            return new ReplicationServiceValidationResult(null, null, serviceValidationResult.ErrorResult);
+        }
+
+        var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        return new ReplicationServiceValidationResult(serviceValidationResult.Service!, snapshot, null);
+    }
+
+    private static ReplicaLayerV2[] ResolveServiceReplicaLayersV2(
+        MetadataV2Service service,
+        MetadataV2GraphSnapshot snapshot)
+    {
+        return
+        [
+            ..snapshot.PublicationsForService(service.Metadata.Id)
+                .Select(publication =>
+                {
+                    var resource = snapshot.ResolveResource(publication);
+                    var storageLayerId = publication.LayerIndex
+                        ?? snapshot.ResolveStorageLayerId(publication)
+                        ?? (resource is not null ? snapshot.ResolveStorageLayerId(resource) : null);
+                    var publicLayerId = publication.LayerIndex ?? storageLayerId;
+                    return resource is not null && storageLayerId is not null && publicLayerId is not null
+                        ? new ReplicaLayerV2(publicLayerId.Value, storageLayerId.Value, publication, resource)
+                        : null;
+                })
+                .Where(layer => layer is not null)
+                .Select(layer => layer!)
+        ];
+    }
+
+    private static bool TryResolveReplicaLayerIdsV2(
+        HttpContext context,
+        MetadataV2Service service,
+        MetadataV2GraphSnapshot snapshot,
         string? layersParam,
         out int[] layerIds,
         out IResult? error,
@@ -766,18 +798,19 @@ internal static partial class FeatureServerEndpoints
 
         if (string.IsNullOrWhiteSpace(layersParam))
         {
-            var accessibleLayers = service.Layers
-                .Where(layer => AccessPolicyHelpers.EvaluateAccess(
-                    context,
-                    layer.Metadata?.AccessPolicy,
-                    service.Metadata?.AccessPolicy,
-                    scope).IsAllowed)
-                .Select(layer => layer.Id)
+            var serviceLayers = ResolveServiceReplicaLayersV2(service, snapshot);
+            var accessibleLayers = serviceLayers
+                .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service, scope))
+                .Select(layer => layer.PublicLayerId)
                 .ToArray();
 
             if (accessibleLayers.Length == 0)
             {
-                error = AccessPolicyHelpers.RequireAnyLayerAccess(context, service.Layers, service, scope)
+                error = AccessPolicyHelpers.RequireAnyResourceAccess(
+                            context,
+                            serviceLayers.Select(layer => layer.Resource),
+                            service,
+                            scope)
                         ?? StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage);
                 return false;
             }
@@ -786,7 +819,8 @@ internal static partial class FeatureServerEndpoints
             return true;
         }
 
-        var layerById = service.Layers.ToDictionary(layer => layer.Id);
+        var layerById = ResolveServiceReplicaLayersV2(service, snapshot)
+            .ToDictionary(layer => layer.PublicLayerId);
         var tokens = layersParam.Split(',', StringSplitOptions.TrimEntries);
         if (tokens.Any(token => token.Length == 0))
         {
@@ -816,7 +850,7 @@ internal static partial class FeatureServerEndpoints
                 return false;
             }
 
-            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service, scope);
+            var accessError = AccessPolicyHelpers.RequireResourceAccess(context, layer.Resource, service, scope);
             if (accessError != null)
             {
                 error = accessError;
@@ -838,19 +872,21 @@ internal static partial class FeatureServerEndpoints
         return true;
     }
 
-    private static bool TryResolveReplicaLayers(
+    private static bool TryResolveReplicaLayersV2(
         HttpContext context,
-        ServiceDefinition service,
+        MetadataV2Service service,
+        MetadataV2GraphSnapshot snapshot,
         ReplicaState replica,
         AccessScope scope,
-        out LayerDefinition[] layers,
+        out ReplicaLayerV2[] layers,
         out IResult? error)
     {
         layers = [];
         error = null;
 
-        var serviceLayerById = service.Layers.ToDictionary(layer => layer.Id);
-        var resolved = new List<LayerDefinition>(replica.LayerIds.Length);
+        var serviceLayerById = ResolveServiceReplicaLayersV2(service, snapshot)
+            .ToDictionary(layer => layer.PublicLayerId);
+        var resolved = new List<ReplicaLayerV2>(replica.LayerIds.Length);
 
         foreach (var layerId in replica.LayerIds.Distinct())
         {
@@ -858,11 +894,11 @@ internal static partial class FeatureServerEndpoints
             {
                 error = StandardErrorHelpers.CreateNotFound(
                     context,
-                    $"Replica '{replica.ReplicaId}' not found for service '{service.Name}'.");
+                    $"Replica '{replica.ReplicaId}' not found for service '{service.Metadata.Name}'.");
                 return false;
             }
 
-            var accessError = AccessPolicyHelpers.RequireLayerAccess(context, layer, service, scope);
+            var accessError = AccessPolicyHelpers.RequireResourceAccess(context, layer.Resource, service, scope);
             if (accessError != null)
             {
                 error = accessError;
@@ -876,7 +912,7 @@ internal static partial class FeatureServerEndpoints
         {
             error = StandardErrorHelpers.CreateNotFound(
                 context,
-                $"Replica '{replica.ReplicaId}' not found for service '{service.Name}'.");
+                $"Replica '{replica.ReplicaId}' not found for service '{service.Metadata.Name}'.");
             return false;
         }
 
@@ -921,17 +957,17 @@ internal static partial class FeatureServerEndpoints
         LastSyncGeneration = record.LastSyncGeneration
     };
 
-    private static async Task<IResult?> RequireReplicaWriteAccessAsync(
+    private static async Task<IResult?> RequireReplicaWriteAccessV2Async(
         HttpContext context,
-        ServiceDefinition service,
-        IEnumerable<LayerDefinition> layers,
+        MetadataV2Service service,
+        IEnumerable<ReplicaLayerV2> layers,
         CancellationToken cancellationToken)
     {
-        foreach (var layer in layers.DistinctBy(static layer => layer.Id))
+        foreach (var layer in layers.DistinctBy(static layer => layer.PublicLayerId))
         {
-            var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
+            var rbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
                 context,
-                layer,
+                layer.Resource,
                 service,
                 cancellationToken);
             if (rbacError != null)
@@ -943,17 +979,18 @@ internal static partial class FeatureServerEndpoints
         return null;
     }
 
-    private static async Task<IResult?> RequireAnyServiceLayerWriteAccessBeforeBodyAsync(
+    private static async Task<IResult?> RequireAnyServiceResourceWriteAccessBeforeBodyAsync(
         HttpContext context,
-        ServiceDefinition service,
+        MetadataV2Service service,
+        MetadataV2GraphSnapshot snapshot,
         CancellationToken cancellationToken)
     {
         IResult? firstError = null;
-        foreach (var layer in service.Layers.DistinctBy(static layer => layer.Id))
+        foreach (var layer in ResolveServiceReplicaLayersV2(service, snapshot).DistinctBy(static layer => layer.PublicLayerId))
         {
-            var rbacError = await ServiceDataEditorAuthorization.RequireLayerDataEditorAsync(
+            var rbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
                 context,
-                layer,
+                layer.Resource,
                 service,
                 cancellationToken);
             if (rbacError == null)

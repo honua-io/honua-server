@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -14,54 +13,6 @@ namespace Honua.Server.Features.Protocols.Ogc.Api.Features.Services;
 
 internal static class OgcGeoJsonFeatureBuilder
 {
-    internal static GeoJsonFeature Create(
-        Feature feature,
-        LayerDefinition layer,
-        AxisOrder axisOrder,
-        OgcFeaturesGeometryServices geometryServices,
-        IReadOnlySet<string>? projectedProperties = null,
-        Func<long, object?>? idFactory = null,
-        ImmutableArray<Link>? links = null)
-    {
-        var geometry = geometryServices.ConvertWkbToSimpleGeometry(feature.Geometry, axisOrder);
-        return CreateCore(
-            GeoJsonFeatureBaseBuilder.Create(
-                feature,
-                layer,
-                new GeoJsonFeatureBuildOptions(
-                    ProjectedProperties: projectedProperties,
-                    IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(layer),
-                    IdFactory: idFactory ?? (_ => OgcFeatureIdentifierResolver.GetPublicId(feature, layer)))),
-            geometry,
-            links);
-    }
-
-    internal static GeoJsonFeature Create(
-        EncodedGeoJsonFeature feature,
-        LayerDefinition layer,
-        AxisOrder axisOrder,
-        OgcFeaturesGeometryServices geometryServices,
-        IReadOnlySet<string>? projectedProperties = null,
-        Func<long, object?>? idFactory = null,
-        ImmutableArray<Link>? links = null)
-    {
-        var geometry = geometryServices.ConvertGeoJsonToSimpleGeometry(feature.GeometryGeoJson, axisOrder);
-        return CreateCore(
-            GeoJsonFeatureBaseBuilder.Create(
-                feature,
-                layer,
-                new GeoJsonFeatureBuildOptions(
-                    ProjectedProperties: projectedProperties,
-                    IncludeObjectIdProperty: ShouldIncludePublicIdentifierProperty(layer),
-                    IdFactory: idFactory ?? (_ => OgcFeatureIdentifierResolver.GetPublicId(feature, layer)))),
-            geometry,
-            links);
-    }
-
-    // -----------------------------------------------------------------------
-    // Metadata v2 overloads
-    // -----------------------------------------------------------------------
-
     internal static GeoJsonFeature Create(
         Feature feature,
         MetadataV2Resource resource,
@@ -140,7 +91,4 @@ internal static class OgcGeoJsonFeatureBuilder
         SimpleGeoJsonGeometry? geometry,
         ImmutableArray<Link>? links)
         => featureBase.ToOgcGeoJsonFeature(geometry, links);
-
-    private static bool ShouldIncludePublicIdentifierProperty(LayerDefinition layer)
-        => !layer.ObjectIdFieldName.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase);
 }

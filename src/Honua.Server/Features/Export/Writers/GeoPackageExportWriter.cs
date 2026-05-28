@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Microsoft.Data.Sqlite;
 using NetTopologySuite.Geometries;
@@ -23,8 +22,8 @@ internal static class GeoPackageExportWriter
     public static async Task<int> WriteAsync(
         string gpkgPath,
         IAsyncEnumerable<Feature> features,
-        FieldDefinition[] fields,
-        GeometryType geometryType,
+        ExportField[] fields,
+        ExportGeometryType geometryType,
         int srid,
         string? srsName,
         string? srsWkt,
@@ -154,7 +153,7 @@ internal static class GeoPackageExportWriter
     }
 
     private static async Task CreateFeatureTableAsync(
-        SqliteConnection connection, FieldDefinition[] fields, GeometryType geometryType, CancellationToken ct)
+        SqliteConnection connection, ExportField[] fields, ExportGeometryType geometryType, CancellationToken ct)
     {
         var columns = new List<string>
         {
@@ -187,7 +186,7 @@ internal static class GeoPackageExportWriter
     }
 
     private static async Task RegisterGeometryColumnAsync(
-        SqliteConnection connection, GeometryType geometryType, int srid, GeometryDimensionMetadata dimensions, CancellationToken ct)
+        SqliteConnection connection, ExportGeometryType geometryType, int srid, GeometryDimensionMetadata dimensions, CancellationToken ct)
     {
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = """
@@ -205,7 +204,7 @@ internal static class GeoPackageExportWriter
     private static async Task<FeatureInsertSummary> InsertFeaturesAsync(
         SqliteConnection connection,
         IAsyncEnumerable<Feature> features,
-        FieldDefinition[] fields,
+        ExportField[] fields,
         int srid,
         CancellationToken ct)
     {
@@ -304,11 +303,11 @@ internal static class GeoPackageExportWriter
                 DetermineDimensionRequirement(anyGeometry, anyGeometryHasM, anyGeometryWithoutM)));
     }
 
-    private static SqliteType MapSqliteParamType(FieldType fieldType) => fieldType switch
+    private static SqliteType MapSqliteParamType(ExportFieldType fieldType) => fieldType switch
     {
-        FieldType.Integer or FieldType.BigInteger or FieldType.Boolean => SqliteType.Integer,
-        FieldType.Double or FieldType.Float => SqliteType.Real,
-        FieldType.Binary => SqliteType.Blob,
+        ExportFieldType.Integer or ExportFieldType.BigInteger or ExportFieldType.Boolean => SqliteType.Integer,
+        ExportFieldType.Double or ExportFieldType.Float => SqliteType.Real,
+        ExportFieldType.Binary => SqliteType.Blob,
         _ => SqliteType.Text
     };
 
@@ -336,42 +335,43 @@ internal static class GeoPackageExportWriter
         return result;
     }
 
-    private static string MapGpkgGeometryType(GeometryType geometryType) => geometryType switch
+    private static string MapGpkgGeometryType(ExportGeometryType geometryType) => geometryType switch
     {
-        GeometryType.Point => "POINT",
-        GeometryType.MultiPoint => "MULTIPOINT",
-        GeometryType.LineString => "LINESTRING",
-        GeometryType.MultiLineString => "MULTILINESTRING",
-        GeometryType.Polygon => "POLYGON",
-        GeometryType.MultiPolygon => "MULTIPOLYGON",
-        GeometryType.GeometryCollection => "GEOMETRY",
-        GeometryType.None => "GEOMETRY",
+        ExportGeometryType.Point => "POINT",
+        ExportGeometryType.MultiPoint => "MULTIPOINT",
+        ExportGeometryType.LineString => "LINESTRING",
+        ExportGeometryType.MultiLineString => "MULTILINESTRING",
+        ExportGeometryType.Polygon => "POLYGON",
+        ExportGeometryType.MultiPolygon => "MULTIPOLYGON",
+        ExportGeometryType.GeometryCollection => "GEOMETRY",
+        ExportGeometryType.Mixed => "GEOMETRY",
+        ExportGeometryType.None => "GEOMETRY",
         _ => "GEOMETRY"
     };
 
-    private static string MapSqliteType(FieldType fieldType) => fieldType switch
+    private static string MapSqliteType(ExportFieldType fieldType) => fieldType switch
     {
-        FieldType.Integer => "INTEGER",
-        FieldType.BigInteger => "INTEGER",
-        FieldType.Double or FieldType.Float => "REAL",
-        FieldType.Boolean => "INTEGER",
-        FieldType.DateTime or FieldType.Date => "TEXT",
-        FieldType.Time => "TEXT",
-        FieldType.Binary => "BLOB",
+        ExportFieldType.Integer => "INTEGER",
+        ExportFieldType.BigInteger => "INTEGER",
+        ExportFieldType.Double or ExportFieldType.Float => "REAL",
+        ExportFieldType.Boolean => "INTEGER",
+        ExportFieldType.DateTime or ExportFieldType.Date => "TEXT",
+        ExportFieldType.Time => "TEXT",
+        ExportFieldType.Binary => "BLOB",
         _ => "TEXT"
     };
 
-    private static object NormalizeSqliteValue(object? value, FieldType fieldType)
+    private static object NormalizeSqliteValue(object? value, ExportFieldType fieldType)
     {
         if (value is null or DBNull)
             return DBNull.Value;
 
         return fieldType switch
         {
-            FieldType.Boolean when value is bool b => b ? 1 : 0,
-            FieldType.DateTime when value is DateTimeOffset dto => dto.ToString("O", CultureInfo.InvariantCulture),
-            FieldType.Date when value is DateTimeOffset dto => dto.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            FieldType.Time when value is TimeSpan ts => ts.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture),
+            ExportFieldType.Boolean when value is bool b => b ? 1 : 0,
+            ExportFieldType.DateTime when value is DateTimeOffset dto => dto.ToString("O", CultureInfo.InvariantCulture),
+            ExportFieldType.Date when value is DateTimeOffset dto => dto.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            ExportFieldType.Time when value is TimeSpan ts => ts.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture),
             _ => value
         };
     }

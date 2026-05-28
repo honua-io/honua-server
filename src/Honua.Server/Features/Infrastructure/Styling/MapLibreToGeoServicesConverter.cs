@@ -4,13 +4,13 @@
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Domain;
+using GeometryType = Honua.Core.Features.Metadata.Domain.V2.MetadataV2GeometryType;
 
 namespace Honua.Server.Features.Infrastructure.Styling;
 
 internal static class MapLibreToGeoServicesConverter
 {
-    public static string Convert(string mapLibreStyleJson, LayerDefinition layer)
+    public static string Convert(string mapLibreStyleJson, StyleLayerDescriptor layer)
     {
         if (string.IsNullOrWhiteSpace(mapLibreStyleJson))
         {
@@ -52,7 +52,7 @@ internal static class MapLibreToGeoServicesConverter
     private static string BuildDrawingInfo(
         JsonElement primaryLayer,
         JsonElement? outlineLayer,
-        LayerDefinition layer,
+        StyleLayerDescriptor layer,
         JsonElement? metadata)
     {
         if (layer.GeometryType is GeometryType.Point or GeometryType.MultiPoint

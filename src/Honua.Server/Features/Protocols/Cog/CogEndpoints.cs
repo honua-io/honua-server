@@ -222,7 +222,7 @@ internal static class CogEndpoints
 
     /// <summary>
     /// Returns true when the Metadata v2 graph contains any publication whose service-local layer
-    /// index matches the supplied id. Replaces the v1 <c>ILayerCatalog.LayerExistsAsync</c> probe.
+    /// index matches the supplied id.
     /// </summary>
     private static async Task<bool> LayerPublicationExistsAsync(
         IMetadataV2GraphProvider graphProvider,

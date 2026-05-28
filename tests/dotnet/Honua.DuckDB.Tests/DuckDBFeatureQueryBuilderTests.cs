@@ -337,7 +337,7 @@ public class DuckDBFeatureQueryBuilderTests
     [Fact]
     public void BuildTemporalExtentQuery_GeneratesMinMax()
     {
-        var result = _builder.BuildTemporalExtentQuery(TestLayerId, "created_date", Honua.Core.Features.Catalog.Domain.FieldType.DateTime);
+        var result = _builder.BuildTemporalExtentQuery(TestLayerId, "created_date", TemporalPropertyType.DateTime);
 
         Assert.Contains("MIN(\"created_date\") AS min_value", result.Sql);
         Assert.Contains("MAX(\"created_date\") AS max_value", result.Sql);

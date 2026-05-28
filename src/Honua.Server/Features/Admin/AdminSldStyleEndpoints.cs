@@ -4,7 +4,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Xml;
-using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
@@ -12,6 +12,7 @@ using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.Server.Features.Infrastructure.Styling;
 using Honua.Server.Features.Infrastructure.Styling.Sld;
+using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 
@@ -55,22 +56,27 @@ internal static class AdminSldStyleEndpoints
     private static async Task<IResult> HandleImportSld(
         int layerId,
         HttpContext context,
-        [FromServices] IResourceValidator resourceValidator,
         [FromServices] ILayerStyleService styleService,
         [FromServices] OutputCacheInvalidationService cacheInvalidator,
         [FromServices] ILogger<SldImportLogCategory> logger,
         CancellationToken cancellationToken)
     {
-        var layerResult = await resourceValidator.ValidateLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        if (!layerResult.IsValid || layerResult.Resource == null)
+        if (layerId < 0)
         {
-            var statusCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier
-                ? StatusCodes.Status400BadRequest
-                : StatusCodes.Status404NotFound;
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context,
-                statusCode,
-                layerResult.ErrorMessage ?? $"Layer {layerId} not found.");
+                StatusCodes.Status400BadRequest,
+                $"Layer id '{layerId}' is invalid.");
+        }
+
+        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
+            context,
+            layerId,
+            scope: AccessScope.Write,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!layerValidation.IsValid || layerValidation.Resource is null)
+        {
+            return layerValidation.ErrorResult!;
         }
 
         if (context.Request.ContentLength is { } length && length > MaxSldBytes)
@@ -143,11 +149,12 @@ internal static class AdminSldStyleEndpoints
                 statusCode: StatusCodes.Status422UnprocessableEntity);
         }
 
-        var styleJson = BuildMapLibreStyleDocument(layerResult.Resource, conversion.Layers);
+        var styleJson = BuildMapLibreStyleDocument(layerValidation.Resource, layerId, conversion.Layers);
         var styleElement = JsonSerializer.SerializeToElement(styleJson, StyleJsonContext.Default.DictionaryStringObject);
 
         var update = await styleService.UpdateStyleAsync(
-                layerResult.Resource,
+                layerValidation.Resource,
+                layerId,
                 styleElement,
                 drawingInfo: null,
                 cancellationToken: cancellationToken)
@@ -194,24 +201,28 @@ internal static class AdminSldStyleEndpoints
     private static async Task<IResult> HandleExportSld(
         int layerId,
         HttpContext context,
-        [FromServices] IResourceValidator resourceValidator,
         [FromServices] ILayerStyleService styleService,
         [FromServices] ILogger<SldImportLogCategory> logger,
         CancellationToken cancellationToken)
     {
-        var layerResult = await resourceValidator.ValidateLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
-        if (!layerResult.IsValid || layerResult.Resource == null)
+        if (layerId < 0)
         {
-            var statusCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier
-                ? StatusCodes.Status400BadRequest
-                : StatusCodes.Status404NotFound;
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context,
-                statusCode,
-                layerResult.ErrorMessage ?? $"Layer {layerId} not found.");
+                StatusCodes.Status400BadRequest,
+                $"Layer id '{layerId}' is invalid.");
         }
 
-        var snapshot = await styleService.GetStyleAsync(layerResult.Resource, cancellationToken).ConfigureAwait(false);
+        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
+            context,
+            layerId,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!layerValidation.IsValid || layerValidation.Resource is null)
+        {
+            return layerValidation.ErrorResult!;
+        }
+
+        var snapshot = await styleService.GetStyleAsync(layerValidation.Resource, layerId, cancellationToken).ConfigureAwait(false);
         if (snapshot == null || !snapshot.MapLibreStyle.HasValue || snapshot.MapLibreStyle.Value.ValueKind != JsonValueKind.Object)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -244,7 +255,9 @@ internal static class AdminSldStyleEndpoints
                 "Stored MapLibre style cannot be deserialized for export.");
         }
 
-        var layerName = layerResult.Resource.Name ?? $"layer-{layerId}";
+        var layerName = string.IsNullOrWhiteSpace(layerValidation.Resource.Metadata.Name)
+            ? $"layer-{layerId}"
+            : layerValidation.Resource.Metadata.Name;
         var export = MapLibreToSldConverter.Export(layers, layerName);
 
         if (export.Diagnostics.Any(d => d.Severity == SldDiagnosticSeverity.Error))
@@ -334,11 +347,13 @@ internal static class AdminSldStyleEndpoints
     }
 
     private static Dictionary<string, object?> BuildMapLibreStyleDocument(
-        Honua.Core.Features.Catalog.Domain.LayerDefinition layer,
+        MetadataV2Resource resource,
+        int layerId,
         MapLibreStyleLayer[] convertedLayers)
     {
-        var document = StyleDefaults.BuildDefaultMapLibreStyle(layer);
-        var sourceId = StyleDefaults.GetSourceId(layer);
+        var styleLayer = StyleLayerDescriptor.FromResource(resource, layerId);
+        var document = StyleDefaults.BuildDefaultMapLibreStyle(styleLayer);
+        var sourceId = StyleDefaults.GetSourceId(styleLayer);
         var layerList = new List<Dictionary<string, object?>>(convertedLayers.Length);
 
         foreach (var converted in convertedLayers)

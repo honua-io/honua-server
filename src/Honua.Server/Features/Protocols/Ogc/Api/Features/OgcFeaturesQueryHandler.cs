@@ -7,7 +7,6 @@ using System.Globalization;
 using System.Buffers;
 using System.Text.Json;
 using Honua.Core.Features.Caching;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
@@ -53,6 +52,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
     private readonly ILogger<OgcFeaturesQueryHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private const int StreamingThreshold = 200;
     private const int StreamingFlushInterval = 128;
+    private const string OgcFeaturesProtocolName = "OgcFeatures";
     /// <summary>
     /// Handles GetItems request with comprehensive filtering and pagination.
     /// </summary>
@@ -90,7 +90,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             var layerValidation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
                 context,
                 collectionId,
-                requiredProtocol: ServiceProtocols.OgcFeatures,
+                requiredProtocol: OgcFeaturesProtocolName,
                 cancellationToken: cancellationToken);
             if (!layerValidation.IsValid)
             {
@@ -529,7 +529,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         {
             OgcFeaturesLog.ItemsQueryFailed(_logger, collectionId, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);
-            return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving features.");
+            return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving items.");
         }
         finally
         {
@@ -576,7 +576,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             var layerValidation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
                 context,
                 collectionId,
-                requiredProtocol: ServiceProtocols.OgcFeatures,
+                requiredProtocol: OgcFeaturesProtocolName,
                 cancellationToken: cancellationToken);
             if (!layerValidation.IsValid)
             {
