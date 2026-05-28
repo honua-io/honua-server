@@ -71,6 +71,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Protocols.Scene.Tests
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Protocols.Stac.Tests", "tests\dotnet\Honua.Protocols.Stac.Tests\Honua.Protocols.Stac.Tests.csproj", "{F8F9F433-6DF5-4123-8C56-20C4377383BF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Hosting", "src\Honua.Hosting\Honua.Hosting.csproj", "{DCA3B1AA-F7BD-4D09-96EF-A331EAF1AF01}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -441,6 +443,18 @@ Global
 		{F8F9F433-6DF5-4123-8C56-20C4377383BF}.Release|x64.Build.0 = Release|Any CPU
 		{F8F9F433-6DF5-4123-8C56-20C4377383BF}.Release|x86.ActiveCfg = Release|Any CPU
 		{F8F9F433-6DF5-4123-8C56-20C4377383BF}.Release|x86.Build.0 = Release|Any CPU
+		{DCA3B1AA-F7BD-4D09-96EF-A331EAF1AF01}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DCA3B1AA-F7BD-4D09-96EF-A331EAF1AF01}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DCA3B1AA-F7BD-4D09-96EF-A331EAF1AF01}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{DCA3B1AA-F7BD-4D09-96EF-A331EAF1AF01}.Debug|x64.Build.0 = Debug|Any CPU
+		{DCA3B1AA-F7BD-4D09-96EF-A331EAF1AF01}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{DCA3B1AA-F7BD-4D09-96EF-A331EAF1AF01}.Debug|x86.Build.0 = Debug|Any CPU
+		{DCA3B1AA-F7BD-4D09-96EF-A331EAF1AF01}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DCA3B1AA-F7BD-4D09-96EF-A331EAF1AF01}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DCA3B1AA-F7BD-4D09-96EF-A331EAF1AF01}.Release|x64.ActiveCfg = Release|Any CPU
+		{DCA3B1AA-F7BD-4D09-96EF-A331EAF1AF01}.Release|x64.Build.0 = Release|Any CPU
+		{DCA3B1AA-F7BD-4D09-96EF-A331EAF1AF01}.Release|x86.ActiveCfg = Release|Any CPU
+		{DCA3B1AA-F7BD-4D09-96EF-A331EAF1AF01}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -471,5 +485,6 @@ Global
 		{6EB8DBCE-6329-4771-B052-C86619FA83ED} = {35C501C9-8590-3B46-F622-E1ABED50CEA9}
 		{E7EC0AE9-6DA1-419F-8A71-1FF265BE37B9} = {35C501C9-8590-3B46-F622-E1ABED50CEA9}
 		{F8F9F433-6DF5-4123-8C56-20C4377383BF} = {35C501C9-8590-3B46-F622-E1ABED50CEA9}
+		{DCA3B1AA-F7BD-4D09-96EF-A331EAF1AF01} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal
