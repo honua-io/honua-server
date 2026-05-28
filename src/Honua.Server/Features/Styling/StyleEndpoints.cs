@@ -10,7 +10,7 @@ using Honua.Server.Features.Protocols.Ogc.Common;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Server.Features.Infrastructure.Styling;
+namespace Honua.Server.Features.Styling;
 
 internal static class StyleEndpoints
 {
@@ -83,7 +83,7 @@ internal static class StyleEndpoints
         }
 
         var rawJson = styleElement.Value.GetRawText();
-        var logger = loggerFactory.CreateLogger("Honua.Server.Features.Infrastructure.Styling.StyleEndpoints");
+        var logger = loggerFactory.CreateLogger("Honua.Server.Features.Styling.StyleEndpoints");
         var themed = StyleThemeTransformer.ApplyTheme(rawJson, themeProfile, logger, layerId);
         var themeName = themeProfile switch
         {

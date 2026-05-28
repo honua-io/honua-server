@@ -6,7 +6,7 @@ using System.Text.Json;
 using System.Xml.Linq;
 using Honua.Server.Features.Infrastructure.Rendering;
 
-namespace Honua.Server.Features.Infrastructure.Styling.Sld;
+namespace Honua.Server.Features.Styling.Sld;
 
 /// <summary>
 /// Best-effort export of MapLibre layers to SLD 1.0. Only the symbolizer subset

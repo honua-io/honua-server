@@ -4,7 +4,7 @@
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Domain;
 
-namespace Honua.Server.Features.Infrastructure.Styling;
+namespace Honua.Server.Features.Styling;
 
 /// <summary>
 /// Generates MapLibre v8 style documents and GeoServices drawingInfo from style suggestions.

@@ -6,7 +6,7 @@ using System.Linq;
 using System.Text.Json;
 using GeometryType = Honua.Core.Features.Metadata.Domain.V2.MetadataV2GeometryType;
 
-namespace Honua.Server.Features.Infrastructure.Styling;
+namespace Honua.Server.Features.Styling;
 
 internal static class MapLibreToGeoServicesConverter
 {

@@ -4,7 +4,7 @@
 using System.Globalization;
 using System.Text.Json;
 
-namespace Honua.Server.Features.Infrastructure.Styling;
+namespace Honua.Server.Features.Styling;
 
 internal static class StyleParsingHelpers
 {

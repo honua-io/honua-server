@@ -6,7 +6,7 @@ using System.Xml;
 using System.Xml.Linq;
 using Honua.Server.Features.Infrastructure.Helpers;
 
-namespace Honua.Server.Features.Infrastructure.Styling.Sld;
+namespace Honua.Server.Features.Styling.Sld;
 
 /// <summary>
 /// Parses SLD 1.0 and SLD 1.1 / Symbology Encoding documents into the internal

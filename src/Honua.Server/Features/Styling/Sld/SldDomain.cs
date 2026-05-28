@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-namespace Honua.Server.Features.Infrastructure.Styling.Sld;
+namespace Honua.Server.Features.Styling.Sld;
 
 /// <summary>
 /// Internal SLD/SE document tree captured by <see cref="SldParser"/>.

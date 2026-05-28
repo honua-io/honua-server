@@ -3,7 +3,7 @@
 
 using System.Xml.Linq;
 
-namespace Honua.Server.Features.Infrastructure.Styling.Sld;
+namespace Honua.Server.Features.Styling.Sld;
 
 /// <summary>
 /// Parses an OGC Filter element subtree into the internal <see cref="SldFilter"/> AST.

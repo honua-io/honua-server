@@ -4,7 +4,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Server.Features.Infrastructure.Styling;
+using Honua.Server.Features.Styling;
 using Xunit.Sdk;
 
 namespace Honua.Server.Tests.Features.Styling;

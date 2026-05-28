@@ -53,7 +53,7 @@ using Honua.Server.Features.Infrastructure.MultiTenancy;
 using Honua.Server.Features.Infrastructure.RateLimiting;
 using Honua.Server.Features.Infrastructure.Redis;
 using Honua.Server.Features.Infrastructure.Security;
-using Honua.Server.Features.Infrastructure.Styling;
+using Honua.Server.Features.Styling;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Mobile.Auth;
 using Honua.Server.Features.Mobile.Diagnostics;
@@ -446,7 +446,7 @@ builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.IGeomet
     Honua.Server.Features.Infrastructure.Services.GeometryConverter>();
 builder.Services.AddScoped<ILayerStyleService, LayerStyleService>();
 builder.Services.AddSingleton<Honua.Core.Features.Styling.Abstractions.ISldStyleConverter,
-    Honua.Server.Features.Infrastructure.Styling.Sld.SldStyleConverter>();
+    Honua.Server.Features.Styling.Sld.SldStyleConverter>();
 builder.Services.AddStyleSuggestionCore();
 
 // Configure temporary file service for image exports

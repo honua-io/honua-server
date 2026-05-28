@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Metadata.Domain.V2;
 
-namespace Honua.Server.Features.Infrastructure.Styling;
+namespace Honua.Server.Features.Styling;
 
 internal readonly record struct StyleLayerDescriptor(
     int Id,

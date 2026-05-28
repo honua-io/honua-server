@@ -9,7 +9,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Styling;
+using Honua.Server.Features.Styling;
 using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;

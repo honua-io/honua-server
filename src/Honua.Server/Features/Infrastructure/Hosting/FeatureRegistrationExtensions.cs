@@ -24,7 +24,7 @@ using Honua.Server.Features.Protocols.GeoServices.Catalog;
 using Honua.Server.Features.Protocols.Grpc;
 using Honua.Server.Features.Protocols.GeoServices.ImageServer;
 using Honua.Server.Features.Infrastructure.Monitoring;
-using Honua.Server.Features.Infrastructure.Styling;
+using Honua.Server.Features.Styling;
 using Honua.Server.Features.Protocols.GeoServices.MapServer;
 using Honua.Server.Features.Protocols.GeoServices.NAServer;
 using Honua.Server.Features.Protocols.Mcp;

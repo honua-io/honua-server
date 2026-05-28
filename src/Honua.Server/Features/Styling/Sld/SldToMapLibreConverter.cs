@@ -4,7 +4,7 @@
 using System.Globalization;
 using Honua.Server.Features.Infrastructure.Rendering;
 
-namespace Honua.Server.Features.Infrastructure.Styling.Sld;
+namespace Honua.Server.Features.Styling.Sld;
 
 /// <summary>
 /// Converts a parsed <see cref="SldDocument"/> into MapLibre style layer objects.

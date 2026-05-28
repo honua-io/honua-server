@@ -5,7 +5,7 @@ using System.Text.Json;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Infrastructure.Rendering;
 
-namespace Honua.Server.Features.Infrastructure.Styling.Sld;
+namespace Honua.Server.Features.Styling.Sld;
 
 /// <summary>
 /// <see cref="ISldStyleConverter"/> implementation that delegates to the internal

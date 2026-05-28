@@ -7,7 +7,7 @@ using System.Text.Json.Nodes;
 using Honua.Core.Features.Styling.Domain;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Server.Features.Infrastructure.Styling;
+namespace Honua.Server.Features.Styling;
 
 /// <summary>
 /// Pure deterministic transforms applied to a canonical MapLibre Style Spec v8

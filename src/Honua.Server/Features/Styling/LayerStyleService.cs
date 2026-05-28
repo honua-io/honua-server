@@ -8,7 +8,7 @@ using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Server.Features.Infrastructure.Styling;
+namespace Honua.Server.Features.Styling;
 
 /// <summary>
 /// Default implementation for layer style orchestration.

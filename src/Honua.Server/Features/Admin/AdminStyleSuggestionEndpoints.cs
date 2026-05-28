@@ -9,7 +9,7 @@ using Honua.Core.Features.Styling.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Styling;
+using Honua.Server.Features.Styling;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;

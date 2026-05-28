@@ -4,7 +4,7 @@
 using System.Text.Json.Serialization;
 using Honua.Server.Features.Infrastructure.Rendering;
 
-namespace Honua.Server.Features.Infrastructure.Styling.Sld;
+namespace Honua.Server.Features.Styling.Sld;
 
 /// <summary>
 /// Result of converting an SLD document into MapLibre style layers.

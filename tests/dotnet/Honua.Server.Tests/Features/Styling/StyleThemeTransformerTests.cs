@@ -3,7 +3,7 @@
 
 using System.Text.Json;
 using Honua.Core.Features.Styling.Domain;
-using Honua.Server.Features.Infrastructure.Styling;
+using Honua.Server.Features.Styling;
 
 namespace Honua.Server.Tests.Features.Styling;
 
