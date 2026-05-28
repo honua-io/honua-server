@@ -289,9 +289,11 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20",
       "paths": [
         "src/Honua.Server/Features/Protocols/Ogc/Classic/Wfs20/",
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/",
         "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wfs20/"
       ]
     },
@@ -453,12 +455,32 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts",
       "paths": [
         "src/Honua.Server/Features/Protocols/Ogc/Classic/Wms/",
         "src/Honua.Server/Features/Protocols/Ogc/Classic/Wmts/",
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wms/",
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wmts/",
         "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wms/",
         "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wmts/"
+      ]
+    },
+    {
+      "name": "OGC Classic Residual (ServerTests)",
+      "shard_name": "OGC Classic Residual (ServerTests)",
+      "artifact_suffix": "ogc-classic-residual",
+      "log_name": "server-tests-ogc-classic-residual",
+      "timeout_minutes": 25,
+      "test_timeout_minutes": 15,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "FullyQualifiedName~Wfs20EndpointsTests|FullyQualifiedName~OgcClassicWmtsTests|FullyQualifiedName~MapsuiWmsClientCompatibilityTests",
+      "paths": [
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wfs20/Wfs20EndpointsTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wmts/OgcClassicWmtsTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wms/MapsuiWmsClientCompatibilityTests.cs"
       ]
     },
     {

@@ -21,6 +21,7 @@
     <InternalsVisibleTo Include="Honua.Server.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.OData.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.OgcApi.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.OgcClassic.Tests" />
     <InternalsVisibleTo Include="Honua.Benchmarks" />
     <!--
       The heavyweight GDAL worker (src/Honua.Worker.Gdal) reuses the internal
