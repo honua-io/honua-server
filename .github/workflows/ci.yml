@@ -495,12 +495,50 @@ jobs:
       - name: Create Test Results Directory
         run: mkdir -p ./tests/TestResults
 
+      - name: Compute affected projects
+        id: affected
+        # ADR-0043 PR #2 — scope the foundation-tests rebuild to projects
+        # affected by this PR + their reverse dependencies. Falls through to
+        # a full-solution build whenever shared infra changed
+        # (Directory.Packages.props, Honua.sln, .github/, scripts/ci/) or the
+        # base ref is unavailable on a shallow checkout. The script emits
+        # either the token "ALL" (full build) or a sorted list of csproj
+        # paths to stdout.
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha || 'origin/trunk' }}
+          HEAD_REF: ${{ github.event.pull_request.head.sha || 'HEAD' }}
+        run: |
+          affected="$(scripts/ci/compute-affected-projects.sh)"
+          if [[ -z "${affected}" || "${affected}" == "ALL" ]]; then
+            mode="full"
+            projects=""
+          else
+            mode="affected"
+            # Newline-delimited list → space-delimited for `dotnet build` args.
+            projects="$(printf '%s' "${affected}" | tr '\n' ' ')"
+          fi
+          echo "mode=${mode}" >> "$GITHUB_OUTPUT"
+          {
+            echo "projects<<EOF"
+            printf '%s' "${projects}"
+            echo
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice::Foundation-tests build mode: ${mode}${projects:+ (${projects})}"
+
       - name: Build foundation test binaries
         timeout-minutes: 20
         run: |
-          dotnet build Honua.sln \
-            --no-restore \
-            --configuration Release
+          if [[ "${{ steps.affected.outputs.mode }}" == "affected" ]]; then
+            # shellcheck disable=SC2086
+            dotnet build ${{ steps.affected.outputs.projects }} \
+              --no-restore \
+              --configuration Release
+          else
+            dotnet build Honua.sln \
+              --no-restore \
+              --configuration Release
+          fi
 
       - name: Run .NET Tests (Core)
         # Honua.Postgres.Tests is covered by the postgres-compat job which
