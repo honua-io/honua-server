@@ -16,6 +16,7 @@ using CoreBatchGeocodeRequest = Honua.Core.Features.Geocoding.Domain.BatchGeocod
 using CoreGeocodeSuggestion = Honua.Core.Features.Geocoding.Domain.GeocodeSuggestion;
 using CoreGeocodeProviderException = Honua.Core.Features.Geocoding.Domain.GeocodeProviderException;
 using Honua.Server.Features.Geocoding;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Mvc.Testing;

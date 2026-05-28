@@ -16,7 +16,7 @@ using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Streaming;
-using Honua.Server.Tests.Features.Licensing;
+using Honua.TestKit.Helpers;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;

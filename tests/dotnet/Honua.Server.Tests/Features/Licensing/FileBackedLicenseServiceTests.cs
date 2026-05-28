@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.Infrastructure.Licensing;
+using Honua.TestKit.Helpers;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging;

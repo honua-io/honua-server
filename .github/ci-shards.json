@@ -422,7 +422,7 @@
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataLimitsEnforcementTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataQueryHandlerTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataSearchServiceSqlTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/OData/ODataTestHelpers.cs"
+        "tests/dotnet/Honua.TestKit/Helpers/ODataTestHelpers.cs"
       ]
     },
     {
@@ -447,7 +447,7 @@
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataSpatialMatrixTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataSpatialReferenceTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataTemporalFilteringTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/OData/ODataTestHelpers.cs"
+        "tests/dotnet/Honua.TestKit/Helpers/ODataTestHelpers.cs"
       ]
     },
     {
@@ -471,7 +471,7 @@
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataETagConcurrencyTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataGeometryCrudTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataMultipartBatchTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/OData/ODataTestHelpers.cs"
+        "tests/dotnet/Honua.TestKit/Helpers/ODataTestHelpers.cs"
       ]
     },
     {
@@ -491,7 +491,7 @@
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataClientCertificationTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataClientIntegrationTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataClientModels.cs",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/OData/ODataTestHelpers.cs"
+        "tests/dotnet/Honua.TestKit/Helpers/ODataTestHelpers.cs"
       ]
     },
     {
@@ -508,7 +508,7 @@
       "paths": [
         "src/Honua.Server/Features/Protocols/OData/",
         "tests/dotnet/Honua.Server.Tests/Features/Protocols/OData/ODataErrorHandlingTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/OData/ODataTestHelpers.cs"
+        "tests/dotnet/Honua.TestKit/Helpers/ODataTestHelpers.cs"
       ]
     },
     {

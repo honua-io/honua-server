@@ -31,16 +31,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!--
-      Audit-A2 transitional: ODataTestHelpers is a shared helper that will
-      move to Honua.TestKit in a follow-up PR. Compile-linking it from
-      Honua.Server.Tests keeps the source single-rooted while both projects
-      can use it.
-    -->
-    <Compile Include="..\Honua.Server.Tests\Features\Protocols\OData\ODataTestHelpers.cs" Link="ODataTestHelpers.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
     <!-- Mirror Server.Tests' xunit runner config so parallel test execution
          carries over to this project. -->
     <None Update="xunit.runner.json">

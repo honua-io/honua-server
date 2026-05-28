@@ -5,13 +5,12 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
-using Honua.TestKit;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Crypto.Signers;
 
-namespace Honua.Server.Tests.Features.Licensing;
+namespace Honua.TestKit.Helpers;
 
-internal static class LicenseTestSupport
+public static class LicenseTestSupport
 {
     private static readonly byte[] SigningSeed =
     [
@@ -121,9 +120,9 @@ internal static class LicenseTestSupport
     }
 }
 
-internal sealed record SignedLicenseTestFile(byte[] LicenseData, string PublicKeySetting);
+public sealed record SignedLicenseTestFile(byte[] LicenseData, string PublicKeySetting);
 
-internal sealed class TestLicenseEntitlementService : ILicenseEntitlementService, ILicenseStatusProvider
+public sealed class TestLicenseEntitlementService : ILicenseEntitlementService, ILicenseStatusProvider
 {
     private readonly LicenseSnapshot _snapshot;
 

@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Server.Features.Collaboration.Sessions;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;

@@ -8,7 +8,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Server.Features.Protocols.OData.Models;
-using Honua.Server.Tests.Features.Security;
+using Honua.TestKit.Helpers;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;

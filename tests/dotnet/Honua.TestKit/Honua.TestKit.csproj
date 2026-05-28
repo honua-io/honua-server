@@ -11,6 +11,7 @@
     <!-- ASP.NET Core Testing -->
 
     <!-- PostgreSQL/PostGIS -->
+    <PackageReference Include="BouncyCastle.Cryptography" />
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="FluentAssertions.Json" />
     <PackageReference Include="FsCheck.Xunit" />

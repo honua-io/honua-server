@@ -4,6 +4,7 @@
 using System.Text;
 using System.Text.Json;
 using Honua.Server.Features.Infrastructure.Security;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 

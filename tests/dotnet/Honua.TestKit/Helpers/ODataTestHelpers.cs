@@ -3,9 +3,9 @@
 
 using System.Text.Json;
 
-namespace Honua.Server.Tests.Features.Protocols.OData;
+namespace Honua.TestKit.Helpers;
 
-internal static class ODataTestHelpers
+public static class ODataTestHelpers
 {
     private static readonly HashSet<string> _reservedProperties = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -19,7 +19,7 @@ internal static class ODataTestHelpers
         "@odata.etag"
     };
 
-    internal static JsonElement ParseAttributes(JsonElement feature)
+    public static JsonElement ParseAttributes(JsonElement feature)
     {
         if (feature.TryGetProperty("Attributes", out var attributesElement))
         {

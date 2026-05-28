@@ -18,7 +18,6 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Protocols.GeoServices.FeatureServer;
 using Honua.Core.Queries.Filters;
-using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -26,7 +25,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Honua.Server.Tests;
+namespace Honua.TestKit;
 
 /// <summary>
 /// WebApplicationFactory configured for the test environment without Aspire wiring.

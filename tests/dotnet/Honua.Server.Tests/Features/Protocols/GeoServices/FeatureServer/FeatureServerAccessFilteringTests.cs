@@ -10,7 +10,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Tests.Features.Security;
+using Honua.TestKit.Helpers;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
