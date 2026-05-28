@@ -5,7 +5,7 @@ using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Server.Tests.Infrastructure;
+using Honua.TestKit.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 

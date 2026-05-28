@@ -24,6 +24,17 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!--
+      Audit-A2 transitional: NlQueryTestResources is a Server.Tests-internal
+      helper consumed by both NlQuery unit tests in Server.Tests AND the
+      Mcp-coupled AiBuilderEndToEndContractTests in this project.
+      Compile-link until NlQuery has its own test project.
+    -->
+    <Compile Include="..\Honua.Server.Tests\Features\NlQuery\NlQueryTestResources.cs" Link="NlQueryTestResources.cs" />
+    <Compile Include="..\Honua.Server.Tests\Features\Reporting\ReportingFixtures.cs" Link="ReportingFixtures.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="xunit.runner.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

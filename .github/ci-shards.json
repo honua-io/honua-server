@@ -285,14 +285,14 @@
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Models&FullyQualifiedName!~CachingReplicaStoreTests&FullyQualifiedName!~DistributedReplicaStoreTests&FullyQualifiedName!~FeatureServerReplicationTests&FullyQualifiedName!~ReplicationDurabilityTests&FullyQualifiedName!~PostgresChangeTrackerTests",
       "paths": [
         "src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/FeatureServer/FeatureServerAccessFilteringTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerAccessFilteringTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerExceptionMappingTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerExtrusionTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerGetEstimatesTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerH3TileTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerMaintenanceTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerQueryBinsTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/FeatureServer/FeatureServerQueryDateBinsTests.cs",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerQueryDateBinsTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerQueryH3Tests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerQueryHandlerExtentFallbackTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerQueryParameterTests.cs",
@@ -361,8 +361,7 @@
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Features",
       "paths": [
         "src/Honua.Server/Features/Protocols/Ogc/Api/Features/",
-        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Features/",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Features/"
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Features/"
       ]
     },
     {
@@ -379,8 +378,7 @@
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20",
       "paths": [
         "src/Honua.Server/Features/Protocols/Ogc/Classic/Wfs20/",
-        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wfs20/"
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/"
       ]
     },
     {
@@ -411,13 +409,14 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj",
-      "filter": "FullyQualifiedName~ODataEndpointTests|FullyQualifiedName~ODataAuthorizationTests|FullyQualifiedName~ODataLimitsEnforcementTests|FullyQualifiedName~ODataCrsUtilitiesTests|FullyQualifiedName~ODataGeometryConverterTests|FullyQualifiedName~ODataQueryHandlerTests|FullyQualifiedName~ODataSearchServiceSqlTests|FullyQualifiedName~ODataAdvancedOperationsTests",
+      "filter": "FullyQualifiedName~ODataEndpointTests|FullyQualifiedName~ODataAuthorizationTests|FullyQualifiedName~ODataErrorHandlingTests|FullyQualifiedName~ODataLimitsEnforcementTests|FullyQualifiedName~ODataCrsUtilitiesTests|FullyQualifiedName~ODataGeometryConverterTests|FullyQualifiedName~ODataQueryHandlerTests|FullyQualifiedName~ODataSearchServiceSqlTests|FullyQualifiedName~ODataAdvancedOperationsTests",
       "paths": [
         "src/Honua.Server/Features/Protocols/OData/",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataAdvancedOperationsTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataAuthorizationTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataCrsUtilitiesTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataEndpointTests.cs",
+        "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataErrorHandlingTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataGeometryConverterTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataLimitsEnforcementTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataQueryHandlerTests.cs",
@@ -495,23 +494,6 @@
       ]
     },
     {
-      "name": "OData Residual (ServerTests)",
-      "shard_name": "OData Residual (ServerTests)",
-      "artifact_suffix": "odata-residual",
-      "log_name": "server-tests-odata-residual",
-      "timeout_minutes": 25,
-      "test_timeout_minutes": 15,
-      "max_cpu_count": "",
-      "upload_operator_eval_report": false,
-      "upload_odata_evidence": false,
-      "filter": "FullyQualifiedName~ODataErrorHandlingTests",
-      "paths": [
-        "src/Honua.Server/Features/Protocols/OData/",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/OData/ODataErrorHandlingTests.cs",
-        "tests/dotnet/Honua.TestKit/Helpers/ODataTestHelpers.cs"
-      ]
-    },
-    {
       "name": "OGC API Maps and Tiles",
       "shard_name": "OGC API Maps and Tiles",
       "artifact_suffix": "ogc-api-maps-tiles",
@@ -527,8 +509,7 @@
         "src/Honua.Server/Features/Protocols/Ogc/Api/Maps/",
         "src/Honua.Server/Features/Protocols/Ogc/Api/Tiles/",
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Maps/",
-        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Tiles/",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Maps/"
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Tiles/"
       ]
     },
     {
@@ -547,26 +528,7 @@
         "src/Honua.Server/Features/Protocols/Ogc/Classic/Wms/",
         "src/Honua.Server/Features/Protocols/Ogc/Classic/Wmts/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wms/",
-        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wmts/",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wms/",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wmts/"
-      ]
-    },
-    {
-      "name": "OGC Classic Residual (ServerTests)",
-      "shard_name": "OGC Classic Residual (ServerTests)",
-      "artifact_suffix": "ogc-classic-residual",
-      "log_name": "server-tests-ogc-classic-residual",
-      "timeout_minutes": 25,
-      "test_timeout_minutes": 15,
-      "max_cpu_count": "",
-      "upload_operator_eval_report": false,
-      "upload_odata_evidence": false,
-      "filter": "FullyQualifiedName~Wfs20EndpointsTests|FullyQualifiedName~OgcClassicWmtsTests|FullyQualifiedName~MapsuiWmsClientCompatibilityTests",
-      "paths": [
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wfs20/Wfs20EndpointsTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wmts/OgcClassicWmtsTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wms/MapsuiWmsClientCompatibilityTests.cs"
+        "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wmts/"
       ]
     },
     {
@@ -672,25 +634,6 @@
         "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/",
         "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/"
-      ]
-    },
-    {
-      "name": "GeoServices Residual (ServerTests)",
-      "shard_name": "GeoServices Residual (ServerTests)",
-      "artifact_suffix": "geoservices-residual",
-      "log_name": "server-tests-geoservices-residual",
-      "timeout_minutes": 25,
-      "test_timeout_minutes": 15,
-      "max_cpu_count": "",
-      "upload_operator_eval_report": false,
-      "upload_odata_evidence": false,
-      "filter": "FullyQualifiedName~FeatureServerAccessFilteringTests|FullyQualifiedName~FeatureServerQueryDateBinsTests|FullyQualifiedName~MvtTileTemporalEndpointTests|FullyQualifiedName~ImageServerMosaicIntegrationTests|FullyQualifiedName~MapServerObjectIdFieldTests",
-      "paths": [
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/FeatureServer/FeatureServerAccessFilteringTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/FeatureServer/FeatureServerQueryDateBinsTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/FeatureServer/MvtTileTemporalEndpointTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerMosaicIntegrationTests.cs",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/MapServer/MapServerObjectIdFieldTests.cs"
       ]
     },
     {

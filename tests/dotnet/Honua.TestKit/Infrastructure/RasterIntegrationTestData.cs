@@ -6,9 +6,9 @@ using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using Npgsql;
 
-namespace Honua.Server.Tests.Infrastructure;
+namespace Honua.TestKit.Infrastructure;
 
-internal sealed record RasterSeed(
+public sealed record RasterSeed(
     string Name,
     int Width,
     int Height,
@@ -22,11 +22,11 @@ internal sealed record RasterSeed(
     int Srid = 4326,
     string? Description = null);
 
-internal static class RasterIntegrationTestData
+public static class RasterIntegrationTestData
 {
-    internal static readonly DateTimeOffset WestAcquisition = new(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
-    internal static readonly DateTimeOffset EastAcquisition = new(2024, 1, 15, 0, 0, 0, TimeSpan.Zero);
-    internal static readonly DateTimeOffset OverlapAcquisition = new(2024, 2, 1, 0, 0, 0, TimeSpan.Zero);
+    public static readonly DateTimeOffset WestAcquisition = new(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+    public static readonly DateTimeOffset EastAcquisition = new(2024, 1, 15, 0, 0, 0, TimeSpan.Zero);
+    public static readonly DateTimeOffset OverlapAcquisition = new(2024, 2, 1, 0, 0, 0, TimeSpan.Zero);
 
     public static Task SeedIssue522MosaicAsync(WebAppFixture fixture, int layerId = WebAppFixture.TestLayerId)
     {
