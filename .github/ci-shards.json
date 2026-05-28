@@ -24,7 +24,8 @@
     "src/Honua.Postgres/",
     "src/Honua.Server/",
     "src/Honua.DuckDB/",
-    "tests/dotnet/Honua.Server.Tests/"
+    "tests/dotnet/Honua.Server.Tests/",
+    "tests/dotnet/Honua.Protocols.OData.Tests/"
   ],
   "default_shards_when_no_match": ["Core"],
   "shards": [
