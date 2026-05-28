@@ -29,17 +29,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!--
-      Audit-A2 transitional: compile-link small Server.Tests-internal helpers
-      that the moved test files consume. These will move to Honua.TestKit in
-      a follow-up PR. Compile-linking from a single source root means edits
-      to the helpers stay in one place while both projects pick them up.
-    -->
-    <Compile Include="..\Honua.Server.Tests\Helpers\JobStoreTestExtensions.cs" Link="Helpers\JobStoreTestExtensions.cs" />
-    <Compile Include="..\Honua.Server.Tests\Helpers\LocalstackCli.cs" Link="Helpers\LocalstackCli.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
     <None Update="xunit.runner.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

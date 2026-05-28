@@ -9,14 +9,14 @@ using Amazon.S3;
 using Amazon.S3.Model;
 using Honua.Core.Features.Infrastructure.Domain;
 
-namespace Honua.Server.Tests.Helpers;
+namespace Honua.TestKit.Helpers;
 
-internal static class LocalstackCli
+public static class LocalstackCli
 {
     private const string AwslocalCommand = "awslocal";
     private const string LocalstackCommand = "localstack";
 
-    internal static async Task<JsonDocument> HeadObjectAsync(AwsS3Options options, string objectKey, CancellationToken cancellationToken = default)
+    public static async Task<JsonDocument> HeadObjectAsync(AwsS3Options options, string objectKey, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentException.ThrowIfNullOrWhiteSpace(objectKey);

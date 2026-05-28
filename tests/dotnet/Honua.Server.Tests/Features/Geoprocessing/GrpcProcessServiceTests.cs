@@ -17,7 +17,7 @@ using Honua.Server.Features.ControlPlane;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
-using Honua.Server.Tests.Helpers;
+using Honua.TestKit.Helpers;
 using NSubstitute;
 using Proto = Geospatial.V1;
 

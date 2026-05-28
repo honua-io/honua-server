@@ -10,7 +10,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
-using Honua.Server.Tests.Helpers;
+using Honua.TestKit.Helpers;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;

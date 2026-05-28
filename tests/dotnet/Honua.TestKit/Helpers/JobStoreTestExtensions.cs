@@ -5,16 +5,16 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using NSubstitute;
 
-namespace Honua.Server.Tests.Helpers;
+namespace Honua.TestKit.Helpers;
 
 /// <summary>
 /// Configures <see cref="IExecutionJobStore"/> NSubstitute mocks so that
 /// <see cref="IExecutionJobStore.TrySetAsync"/> delegates to the existing
 /// <see cref="IExecutionJobStore.SetAsync"/> mock and returns <c>true</c>.
 /// </summary>
-internal static class JobStoreTestExtensions
+public static class JobStoreTestExtensions
 {
-    internal static IExecutionJobStore WithTrySet(this IExecutionJobStore mock)
+    public static IExecutionJobStore WithTrySet(this IExecutionJobStore mock)
     {
         mock.TrySetAsync(
             Arg.Any<ExecutionJobRecord>(),

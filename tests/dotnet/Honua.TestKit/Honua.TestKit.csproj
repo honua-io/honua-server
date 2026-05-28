@@ -23,6 +23,7 @@
     <PackageReference Include="Snappier" />
     <PackageReference Include="NBomber.Http" />
     <PackageReference Include="Newtonsoft.Json.Schema" />
+    <PackageReference Include="NSubstitute" />
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Testcontainers.Redis" />
 

@@ -17,7 +17,7 @@ using Honua.Server.Features.ControlPlane;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
-using Honua.Server.Tests.Helpers;
+using Honua.TestKit.Helpers;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
