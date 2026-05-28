@@ -1007,6 +1007,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             .ConfigureAwait(false);
 
         var layers = new List<LayerExtentRefreshLayerResult>(layerIds.Count);
+        var refreshedExtents = new Dictionary<int, LayerExtentInsert?>(layerIds.Count);
         foreach (var layerId in layerIds)
         {
             var layerResult = await RefreshLayerExtentAsync(
@@ -1018,13 +1019,20 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
             if (layerResult != null)
             {
-                layers.Add(layerResult);
+                layers.Add(layerResult.Value.Public);
+                refreshedExtents[layerId] = layerResult.Value.Extent;
             }
         }
 
         await UpdateServiceExtentAsync(connection, transaction, normalizedService, cancellationToken)
             .ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        // Mirror the recomputed extents into the canonical Metadata v2 graph so the
+        // FeatureServer / OGC API Features / OData metadata endpoints (which read
+        // resource.Spatial.Bbox from the V2 snapshot) reflect the same extent the v1
+        // honua.layers cache just got.
+        await SyncRefreshedExtentsIntoV2GraphAsync(refreshedExtents, cancellationToken).ConfigureAwait(false);
 
         var layersWithExtent = layers.Count(layer => layer.HasExtent);
         return new LayerExtentRefreshResult
@@ -1036,6 +1044,69 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             ServiceExtentUpdated = true,
             Layers = layers
         };
+    }
+
+    private async Task SyncRefreshedExtentsIntoV2GraphAsync(
+        Dictionary<int, LayerExtentInsert?> refreshedExtents,
+        CancellationToken cancellationToken)
+    {
+        if (refreshedExtents.Count == 0)
+        {
+            return;
+        }
+
+        var snapshot = await _metadataGraphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var graph = snapshot.Graph;
+
+        // Map layer_id -> resource ids (a layer may be published into multiple services).
+        var affectedResourceIds = new HashSet<string>(StringComparer.Ordinal);
+        var extentByResourceId = new Dictionary<string, LayerExtentInsert?>(StringComparer.Ordinal);
+        foreach (var publication in graph.Publications)
+        {
+            if (publication.LayerIndex is not int layerIndex) continue;
+            if (!refreshedExtents.TryGetValue(layerIndex, out var extent)) continue;
+            if (affectedResourceIds.Add(publication.ResourceId))
+            {
+                extentByResourceId[publication.ResourceId] = extent;
+            }
+        }
+        if (affectedResourceIds.Count == 0)
+        {
+            return;
+        }
+
+        var updatedResources = graph.Resources
+            .Select(resource =>
+            {
+                if (!affectedResourceIds.Contains(resource.Metadata.Id))
+                {
+                    return resource;
+                }
+
+                var extent = extentByResourceId[resource.Metadata.Id];
+                MetadataV2Bbox? bbox = extent is null
+                    ? null
+                    : new MetadataV2Bbox
+                    {
+                        West = extent.MinX,
+                        South = extent.MinY,
+                        East = extent.MaxX,
+                        North = extent.MaxY,
+                    };
+
+                var spatial = (resource.Spatial ?? new MetadataV2ResourceSpatial()) with { Bbox = bbox };
+                return resource with { Spatial = spatial };
+            })
+            .ToArray();
+
+        var updatedGraph = graph with
+        {
+            Revision = Math.Max(graph.Revision + 1, 1),
+            GeneratedAt = DateTimeOffset.UtcNow,
+            Resources = updatedResources,
+        };
+
+        await _metadataGraphStore.SaveAsync(updatedGraph, snapshot.Etag, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<TableInfo?> ResolveTableInfoAsync(
@@ -1987,7 +2058,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             : Convert.ToInt32(result, CultureInfo.InvariantCulture);
     }
 
-    private static async Task<LayerExtentRefreshLayerResult?> RefreshLayerExtentAsync(
+    private static async Task<(LayerExtentRefreshLayerResult Public, LayerExtentInsert? Extent)?> RefreshLayerExtentAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         int layerId,
@@ -2032,13 +2103,14 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         command.Parameters.AddWithValue("@extentSrid", extent?.Srid ?? CatalogExtentSrid);
         await command.ExecuteNonQueryAsync(cancellationToken);
 
-        return new LayerExtentRefreshLayerResult
+        var publicResult = new LayerExtentRefreshLayerResult
         {
             LayerId = metadata.LayerId,
             LayerName = metadata.LayerName,
             HasExtent = extent != null,
             ExtentSrid = extent?.Srid
         };
+        return (publicResult, extent);
     }
 
     private static async Task UpdateServiceExtentAsync(
