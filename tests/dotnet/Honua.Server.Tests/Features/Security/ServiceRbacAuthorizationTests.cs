@@ -1620,13 +1620,24 @@ internal sealed class RbacTestLayerCatalog : ITestMetadataV2GraphSource
 
             foreach (var layerId in svc.LayerIds.OrderBy(static id => id))
             {
+                // A layer's canonical publication lives in its "owning" service:
+                // alpha layer ↔ alpha service, beta layer ↔ beta service. When
+                // betaAlsoIncludesAlphaLayer is set, beta has a SECONDARY (non-primary)
+                // publication of alpha so the canonical-boundary enforcement tests
+                // (collections leak, secondary-scoped-editor denial) can assert on
+                // the IsPrimary flag.
+                var isPrimary =
+                    (layerId == ServiceRbacTestFixture.AlphaLayerId && svc.Name == _alphaServiceName) ||
+                    (layerId == ServiceRbacTestFixture.BetaLayerId && svc.Name == _betaServiceName);
+
                 builder.AddPublication(
                     $"{serviceId}-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
                     serviceId,
                     $"res-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
                     layerIndex: layerId,
                     storageBindingId: $"binding-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
-                    publicationType: MetadataV2PublicationType.ODataEntitySet);
+                    publicationType: MetadataV2PublicationType.ODataEntitySet,
+                    isPrimary: isPrimary);
             }
         }
 

@@ -194,7 +194,8 @@ public sealed class TestMetadataV2GraphBuilder
         int? layerIndex = null,
         string? storageBindingId = null,
         string? serviceLocalId = null,
-        MetadataV2PublicationType publicationType = MetadataV2PublicationType.OgcCollection)
+        MetadataV2PublicationType publicationType = MetadataV2PublicationType.OgcCollection,
+        bool isPrimary = false)
     {
         // The three legacy publication-identification slots collapsed onto one
         // typed MetadataV2PublicationIdentifier in design slice 61/N. Builder
@@ -226,6 +227,7 @@ public sealed class TestMetadataV2GraphBuilder
                 PathOverride = path,
             },
             PublicationType = publicationType,
+            IsPrimary = isPrimary,
         });
 
         // Service→publication membership is derived from publication.ServiceId
