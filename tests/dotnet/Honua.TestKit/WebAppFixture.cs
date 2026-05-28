@@ -591,6 +591,16 @@ public sealed class WebAppFixture : IAsyncLifetime
             Route = "/stac",
             Protocols = [MetadataV2ServiceProtocols.Stac]
         });
+        services.Add(new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Id = "svc-srid-ogc-features",
+                Name = SpatialReferenceTestLayerCatalog.ServiceId
+            },
+            Route = "/ogc/features",
+            Protocols = [MetadataV2ServiceProtocols.OgcFeatures]
+        });
 
         foreach (var layerIndex in new[]
                  {
@@ -649,6 +659,23 @@ public sealed class WebAppFixture : IAsyncLifetime
                     IsNumeric = true
                 },
                 PublicationType = MetadataV2PublicationType.StacCollection
+            });
+            publications.Add(new MetadataV2Publication
+            {
+                Metadata = new MetadataV2ObjectMetadata
+                {
+                    Id = $"pub-srid-ogc-features-{layerIndex}",
+                    Name = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                },
+                ServiceId = "svc-srid-ogc-features",
+                ResourceId = $"res-layer-{layerIndex}",
+                StorageBindingId = $"binding-layer-{layerIndex}",
+                Identifier = new MetadataV2PublicationIdentifier
+                {
+                    Value = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    IsNumeric = true
+                },
+                PublicationType = MetadataV2PublicationType.OgcCollection
             });
         }
 
