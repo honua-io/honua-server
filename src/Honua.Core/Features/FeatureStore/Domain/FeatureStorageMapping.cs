@@ -19,6 +19,10 @@ namespace Honua.Core.Features.FeatureStore.Domain;
 /// <param name="GeometryColumn">Geometry column, or null for non-spatial tables.</param>
 /// <param name="StorageSrid">SRID/CRS used by the stored geometry.</param>
 /// <param name="TemporalColumn">Optional temporal column used for time-aware resources.</param>
+/// <param name="AttributesColumn">Optional JSONB column that stores schema fields as a single
+/// document (e.g. the seed's shared <c>features</c> table). When set, the Postgres feature
+/// reader projects schema fields via <c>{AttributesColumn}-&gt;&gt;'fieldname'</c> instead of
+/// expecting a column per field.</param>
 /// <param name="ProviderOptions">Provider-specific extension values when a neutral field is not enough.</param>
 public sealed record FeatureStorageMapping(
     string TableName,
@@ -29,6 +33,7 @@ public sealed record FeatureStorageMapping(
     string? GeometryColumn = "geometry",
     int? StorageSrid = null,
     string? TemporalColumn = null,
+    string? AttributesColumn = null,
     IReadOnlyDictionary<string, string>? ProviderOptions = null)
 {
     /// <summary>
@@ -119,6 +124,7 @@ public sealed record FeatureStorageMapping(
                 ?? resource.Spatial?.StorageCrs?.ResolveSrid()
                 ?? resource.ReadSrid(),
             TemporalColumn: ReadStringOption(storageBinding.Options, "temporalColumn"),
+            AttributesColumn: ReadStringOption(storageBinding.Options, "attributesColumn"),
             ProviderOptions: providerOptions);
 
         var errors = mapping.Validate();

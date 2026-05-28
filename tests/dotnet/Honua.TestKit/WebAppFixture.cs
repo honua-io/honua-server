@@ -367,7 +367,8 @@ public sealed class WebAppFixture : IAsyncLifetime
                     // from binding options to bridge the two, so add it here.
                     options: new Dictionary<string, JsonElement>
                     {
-                        ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry")
+                        ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry"),
+                        ["attributesColumn"] = JsonSerializer.SerializeToElement("attributes")
                     });
 
             if (defaultServiceLayerIndices.Contains(layerIndex))
@@ -757,7 +758,8 @@ public sealed class WebAppFixture : IAsyncLifetime
                 storageLayerId: layerIndex,
                 options: new Dictionary<string, JsonElement>
                 {
-                    ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry")
+                    ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry"),
+                    ["attributesColumn"] = JsonSerializer.SerializeToElement("attributes")
                 })
             .AddPublication(
                 id: $"pub-layer-{layerIndex}",

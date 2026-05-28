@@ -41,6 +41,18 @@ public sealed class ODataFilterParser
             throw new ODataFilterParseException("Unexpected token after end of expression", Current().Position);
         }
 
+        // The OData spec requires $filter to be a boolean expression. A bare literal
+        // or a bare property reference (e.g. "$filter=invalid_syntax") is not a valid
+        // filter — the translator would otherwise silently coerce it into an unbounded
+        // attribute lookup and return 200 with all features instead of rejecting the
+        // request as malformed. Reject up-front for a clearer 400.
+        if (expression is PropertyReference || expression is Literal)
+        {
+            throw new ODataFilterParseException(
+                "$filter must be a boolean expression (e.g. 'field op value'); a bare property reference or literal is not valid.",
+                position: 0);
+        }
+
         return expression;
     }
 

@@ -392,25 +392,51 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             return "'{}'::jsonb::text";
         }
 
-        return BuildAttributesExpressionText(fields);
+        return BuildAttributesExpressionText(fields, useMapping: true);
     }
 
+    // Kept as a static single-arg overload so the existing reflection-driven unit test
+    // (PostgresStorageMappedFeatureReaderSqlTests.BuildAttributesExpressionText_With...)
+    // continues to invoke the column-per-field shape directly; the production caller goes
+    // through the instance overload to pick up an attributes JSONB column when the resource
+    // binding declared one.
     private static string BuildAttributesExpressionText(MetadataV2Field[] fields)
+        => BuildAttributesExpressionText(fields, attributesColumn: null);
+
+    private string BuildAttributesExpressionText(MetadataV2Field[] fields, bool useMapping)
+        => BuildAttributesExpressionText(fields, useMapping ? _mapping.AttributesColumn : null);
+
+    private static string BuildAttributesExpressionText(MetadataV2Field[] fields, string? attributesColumn)
     {
         var chunks = fields
             .Chunk(MaxJsonbBuildObjectPairs)
-            .Select(BuildAttributesExpressionChunk);
+            .Select(chunk => BuildAttributesExpressionChunk(chunk, attributesColumn));
 
         return $"({string.Join(" || ", chunks)})::text";
     }
 
-    private static string BuildAttributesExpressionChunk(IEnumerable<MetadataV2Field> fields)
+    private static string BuildAttributesExpressionChunk(IEnumerable<MetadataV2Field> fields, string? attributesColumn)
     {
         var parts = new List<string>();
+        var jsonbAccessor = string.IsNullOrWhiteSpace(attributesColumn)
+            ? null
+            : ValidateAndQuoteIdentifier(attributesColumn);
         foreach (var field in fields)
         {
             parts.Add($"'{EscapeSqlLiteral(field.Name)}'");
-            parts.Add(ValidateAndQuoteIdentifier(field.Name));
+            // When the resource declares an attributes JSONB column (a single column holding
+            // the per-field values), pull the field via {attributes}->>'name' instead of
+            // expecting a column-per-field on the table — the seed-driven test fixture's
+            // shared 'features' table follows that shape, and v1 catalog readers used the
+            // same projection before the cutover.
+            if (jsonbAccessor is not null)
+            {
+                parts.Add($"{jsonbAccessor} ->> '{EscapeSqlLiteral(field.Name)}'");
+            }
+            else
+            {
+                parts.Add(ValidateAndQuoteIdentifier(field.Name));
+            }
         }
 
         return $"jsonb_build_object({string.Join(", ", parts)})";
