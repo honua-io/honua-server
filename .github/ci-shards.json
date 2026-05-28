@@ -16,7 +16,12 @@
     "src/Honua.Postgres/Migrations/",
     "src/Honua.Postgres/Queries/",
     "src/Honua.ServiceDefaults/",
-    "src/Honua.Server/Features/Infrastructure/",
+    "src/Honua.Hosting/Honua.Hosting.csproj",
+    "src/Honua.Server/Features/Infrastructure/Hosting/",
+    "src/Honua.Server/Features/Infrastructure/Middleware/",
+    "src/Honua.Server/Features/Infrastructure/Services/",
+    "src/Honua.Server/Features/Infrastructure/Monitoring/",
+    "src/Honua.Server/Startup/",
     "Honua.sln"
   ],
   "unmapped_source_run_all_prefixes": [
