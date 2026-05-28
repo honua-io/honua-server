@@ -50,6 +50,7 @@
     <ProjectReference Include="..\Honua.MySql\Honua.MySql.csproj" />
     <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Honua.Hosting\Honua.Hosting.csproj" />
+    <ProjectReference Include="..\Honua.Protocols.OData\Honua.Protocols.OData.csproj" />
     <ProjectReference
       Include="..\..\samples\Honua.StacOpsDemo\Honua.StacOpsDemo.csproj"
       Condition="'$(HonuaIncludeStacOpsDemo)' != 'false' and ('$(PublishAot)' != 'true' or '$(RuntimeIdentifier)' == '')"
