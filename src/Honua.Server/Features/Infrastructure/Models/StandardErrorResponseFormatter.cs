@@ -5,18 +5,34 @@ using System.Globalization;
 using System.Security;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Monitoring;
-using Honua.Server.Features.Protocols.OData.Models;
-using Honua.Server.Features.Protocols.OData.Services;
 
 namespace Honua.Server.Features.Infrastructure.Models;
 
 /// <summary>
 /// Provides protocol-specific formatting for StandardErrorResponse instances.
-/// Supports GeoServices, OGC API, OData, and generic Problem Details formats.
+/// Supports GeoServices, OGC API, OData (via delegate registration), and
+/// generic Problem Details formats.
 /// </summary>
+/// <remarks>
+/// Audit-A1: this type lives in <c>Honua.Server.Features.Infrastructure.Models</c>
+/// and must not take a using-clause dependency on any protocol assembly so the
+/// Infrastructure.Models sub-area can extract into a <c>Honua.Hosting.Models</c>
+/// assembly without a back-edge. Protocol-specific formatters that need a
+/// payload shape only the protocol owns (today only OData's
+/// <c>ODataError</c> JSON envelope) plug in via
+/// <see cref="ODataErrorFormatterOverride"/>. The OData wiring sets the
+/// override during <c>ODataServiceCollectionExtensions.AddOData</c>.
+/// </remarks>
 internal static class StandardErrorResponseFormatter
 {
-    private const string ODataContentType = "application/json;metadata=minimal";
+    /// <summary>
+    /// Optional OData error formatter. When set, requests classified as OData
+    /// (<see cref="ProtocolRequestClassifier.IsOData"/>) are formatted via the
+    /// delegate. When null, OData requests fall through to the generic Problem
+    /// Details path. The OData protocol's service-registration entry point
+    /// (<c>AddOData</c>) installs the delegate at startup.
+    /// </summary>
+    internal static Func<HttpContext, StandardErrorResponse, ErrorResponseFormatterOptions, IResult>? ODataErrorFormatterOverride { get; set; }
 
     /// <summary>
     /// Formats a StandardErrorResponse into an appropriate IResult based on the request protocol.
@@ -81,34 +97,19 @@ internal static class StandardErrorResponseFormatter
     }
 
     /// <summary>
-    /// Formats error for OData v4 protocol.
+    /// Formats error for OData v4 protocol via the registered override
+    /// delegate, or falls back to generic Problem Details when no OData
+    /// formatter has been wired (e.g. OData is disabled by configuration).
     /// </summary>
     private static IResult FormatODataError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
-        SetODataHeaders(context, options);
-
-        var code = string.IsNullOrWhiteSpace(options.ODataErrorCode)
-            ? ProtocolRequestClassifier.MapODataCode(errorResponse.StatusCode, includeConflict: true)
-            : options.ODataErrorCode;
-        var details = BuildODataDetails(context, errorResponse, options);
-
-        var error = new ODataError
+        var formatter = ODataErrorFormatterOverride;
+        if (formatter is null)
         {
-            Error = new ErrorDetails
-            {
-                Code = code,
-                Message = string.IsNullOrWhiteSpace(errorResponse.Detail)
-                    ? errorResponse.Title
-                    : errorResponse.Detail,
-                Details = details
-            }
-        };
-
-        return Results.Json(
-            error,
-            ODataJsonContext.Default.ODataError,
-            contentType: options.ContentType ?? ODataContentType,
-            statusCode: errorResponse.StatusCode);
+            return FormatGenericError(context, errorResponse, options);
+        }
+        AddResponseHeaders(context, options);
+        return formatter(context, errorResponse, options);
     }
 
     /// <summary>
@@ -206,65 +207,6 @@ internal static class StandardErrorResponseFormatter
     }
 
     /// <summary>
-    /// Builds OData error details array.
-    /// </summary>
-    private static ErrorDetail[]? BuildODataDetails(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
-    {
-        var detailsList = new List<ErrorDetail>();
-
-        // Always include the main detail
-        if (!string.IsNullOrWhiteSpace(errorResponse.Detail))
-        {
-            detailsList.Add(new ErrorDetail
-            {
-                Code = ProtocolRequestClassifier.MapODataCode(errorResponse.StatusCode, includeConflict: true),
-                Message = errorResponse.Detail
-            });
-        }
-
-        // Include additional details if requested
-        if (options.IncludeAdditionalDetails && errorResponse.AdditionalDetails is { Count: > 0 })
-        {
-            foreach (var detail in errorResponse.AdditionalDetails)
-            {
-                detailsList.Add(new ErrorDetail
-                {
-                    Code = ProtocolRequestClassifier.MapODataCode(errorResponse.StatusCode, includeConflict: true),
-                    Message = detail
-                });
-            }
-        }
-
-        // Include debug info if requested
-        if (options.IncludeDebugInfo && !string.IsNullOrWhiteSpace(errorResponse.DebugInfo))
-        {
-            detailsList.Add(new ErrorDetail
-            {
-                Code = "Debug",
-                Message = errorResponse.DebugInfo
-            });
-        }
-
-        var metadata = BuildErrorMetadata(context);
-        if (!string.IsNullOrWhiteSpace(metadata.CorrelationId))
-        {
-            detailsList.Add(new ErrorDetail
-            {
-                Code = "CorrelationId",
-                Message = metadata.CorrelationId
-            });
-        }
-
-        detailsList.Add(new ErrorDetail
-        {
-            Code = "Timestamp",
-            Message = metadata.Timestamp
-        });
-
-        return detailsList.Count > 0 ? [.. detailsList] : null;
-    }
-
-    /// <summary>
     /// Builds GeoServices error details array.
     /// </summary>
     private static string[]? BuildGeoServicesDetails(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
@@ -355,15 +297,6 @@ internal static class StandardErrorResponseFormatter
     private static string EscapeForXml(string value)
     {
         return SecurityElement.Escape(value) ?? string.Empty;
-    }
-
-    /// <summary>
-    /// Sets OData-specific headers.
-    /// </summary>
-    private static void SetODataHeaders(HttpContext context, ErrorResponseFormatterOptions options)
-    {
-        ODataProtocolHeaders.SetVersionHeader(context);
-        AddResponseHeaders(context, options);
     }
 
     /// <summary>

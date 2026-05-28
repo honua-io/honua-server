@@ -10,6 +10,7 @@ using Honua.Core.Features.Query;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Events;
+using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Honua.Server.Features.Protocols.OData.Services;
 using Microsoft.Extensions.Options;
@@ -22,6 +23,13 @@ internal static class ODataServiceCollectionExtensions
     public static IServiceCollection AddOData(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
+
+        // Audit-A1: install the OData error formatter delegate so
+        // StandardErrorResponseFormatter (in Infrastructure.Models) can
+        // dispatch OData-formatted responses without a direct using-clause
+        // dependency on the OData protocol. The override is idempotent —
+        // re-running AddOData() simply re-assigns the same delegate.
+        StandardErrorResponseFormatter.ODataErrorFormatterOverride = ODataErrorFormatter.Format;
 
         services.TryAddScoped<IQueryProcessor, QueryProcessor>();
         services.TryAddScoped<IEditProcessor, EditProcessor>();
