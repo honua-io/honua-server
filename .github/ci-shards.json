@@ -611,6 +611,57 @@
         "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerMosaicIntegrationTests.cs",
         "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/MapServer/MapServerObjectIdFieldTests.cs"
       ]
+    },
+    {
+      "name": "MCP",
+      "shard_name": "MCP",
+      "artifact_suffix": "mcp",
+      "log_name": "server-tests-mcp",
+      "timeout_minutes": 25,
+      "test_timeout_minutes": 15,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.Mcp.Tests/Honua.Protocols.Mcp.Tests.csproj",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp",
+      "paths": [
+        "src/Honua.Server/Features/Protocols/Mcp/",
+        "tests/dotnet/Honua.Protocols.Mcp.Tests/Source/"
+      ]
+    },
+    {
+      "name": "Scene",
+      "shard_name": "Scene",
+      "artifact_suffix": "scene",
+      "log_name": "server-tests-scene",
+      "timeout_minutes": 25,
+      "test_timeout_minutes": 15,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.Scene.Tests/Honua.Protocols.Scene.Tests.csproj",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Scene",
+      "paths": [
+        "src/Honua.Server/Features/Protocols/Scene/",
+        "tests/dotnet/Honua.Protocols.Scene.Tests/Source/"
+      ]
+    },
+    {
+      "name": "STAC Protocol",
+      "shard_name": "STAC Protocol",
+      "artifact_suffix": "stac-protocol",
+      "log_name": "server-tests-stac-protocol",
+      "timeout_minutes": 25,
+      "test_timeout_minutes": 15,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.Stac.Tests/Honua.Protocols.Stac.Tests.csproj",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Stac",
+      "paths": [
+        "src/Honua.Server/Features/Protocols/Stac/",
+        "tests/dotnet/Honua.Protocols.Stac.Tests/Source/"
+      ]
     }
   ]
 }
