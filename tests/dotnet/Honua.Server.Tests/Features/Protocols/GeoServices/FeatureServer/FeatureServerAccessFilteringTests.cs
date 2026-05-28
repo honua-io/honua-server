@@ -5,9 +5,9 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Attachments.Abstractions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Tests.Features.Security;
@@ -121,136 +121,110 @@ public sealed class FeatureServerAccessFilteringTests
             static services => services.AddSingleton<IAttachmentStore, TestAttachmentStore>());
 }
 
-internal sealed class FeatureServerAccessFilteringCatalog : ILayerCatalog, IAccessPolicyCatalogSeed
+/// <summary>
+/// Builds a Metadata v2 graph with one reader-accessible layer and one role-gated hidden layer
+/// (both attachment-enabled, each carrying a coded-value domain) so the FeatureServer
+/// access-filtering tests can assert hidden layers/domains are filtered for unprivileged callers.
+/// </summary>
+internal sealed class FeatureServerAccessFilteringCatalog : ITestMetadataV2GraphSource
 {
     private static readonly string[] SupportedFormats = ["JSON", "GeoJSON"];
     private static readonly string[] Capabilities = ["Query", "Extract"];
 
-    private readonly LayerDefinition _visibleLayer;
-    private readonly LayerDefinition _hiddenLayer;
-    private readonly ServiceDefinition _service;
-    private readonly AccessPolicy _hiddenLayerPolicy;
-    private readonly AccessPolicy _servicePolicy;
-
-    public FeatureServerAccessFilteringCatalog()
+    public TestMetadataV2GraphProvider BuildProvider()
     {
-        var spatialReference = SpatialReference.Create(4326);
-        var extent = FeatureExtent.Create(-180, -90, 180, 90, 4326);
+        var hiddenLayerPolicy = ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["hidden-reader"]);
+        var servicePolicy = ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["reader"]);
 
-        var visibleDomain = new FieldDomainDefinition(
-            "AuditStatus",
-            "codedValue",
-            [
-                new DomainCodedValueDefinition("open", "Open"),
-                new DomainCodedValueDefinition("closed", "Closed")
-            ]);
-
-        var hiddenDomain = new FieldDomainDefinition(
-            "HiddenStatus",
-            "codedValue",
-            [
-                new DomainCodedValueDefinition("internal", "Internal"),
-                new DomainCodedValueDefinition("sealed", "Sealed")
-            ]);
-
-        var hiddenRelationship = Relationship.Create(
-            relationshipId: 1,
-            name: "Hidden Layer Relationship",
-            relatedLayerId: ServiceRbacTestFixture.BetaLayerId,
-            relationshipType: "esriRelRoleOrigin",
-            originForeignKeyField: "objectid",
-            destinationForeignKeyField: "audit_id",
-            description: "Relationship to a hidden layer");
-
-        _visibleLayer = new LayerDefinition(
-            Id: ServiceRbacTestFixture.AlphaLayerId,
-            Name: "Visible Audit Layer",
-            Description: "Accessible layer for FeatureServer access filtering tests",
-            GeometryType: GeometryType.Point,
-            SpatialReference: spatialReference,
-            Fields:
-            [
-                new FieldDefinition("objectid", FieldType.Integer, null, false, null, "Object ID"),
-                new FieldDefinition("name", FieldType.String, 255, true, null, "Name"),
-                new FieldDefinition("status", FieldType.String, 32, true, null, "Status", Domain: visibleDomain),
-                new FieldDefinition("is_active", FieldType.Boolean, null, true, null, "Active")
-            ],
-            Extent: extent,
-            Relationships: [hiddenRelationship],
-            SupportsAttachments: true);
-
-        _hiddenLayerPolicy = ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["hidden-reader"]);
-        _servicePolicy = ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["reader"]);
-
-        _hiddenLayer = new LayerDefinition(
-            Id: ServiceRbacTestFixture.BetaLayerId,
-            Name: "Hidden Audit Layer",
-            Description: "Restricted layer for FeatureServer access filtering tests",
-            GeometryType: GeometryType.Point,
-            SpatialReference: spatialReference,
-            Fields:
-            [
-                new FieldDefinition("objectid", FieldType.Integer, null, false, null, "Object ID"),
-                new FieldDefinition("audit_id", FieldType.Integer, null, true, null, "Audit ID"),
-                new FieldDefinition("hidden_status", FieldType.String, 32, true, null, "Hidden Status", Domain: hiddenDomain)
-            ],
-            Extent: extent,
-            SupportsAttachments: true);
-
-        _service = new ServiceDefinition(
-            Name: ServiceRbacTestFixture.AlphaService,
-            Description: "FeatureServer access filtering test service",
-            Layers: [_visibleLayer, _hiddenLayer],
-            SpatialReference: spatialReference,
-            SupportedFormats: SupportedFormats,
-            Capabilities: Capabilities,
-            ServiceExtent: extent);
-    }
-
-    public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
-    {
-        return Task.FromResult<LayerDefinition?>(layerId switch
+        const string visibleResourceId = "res-layer-0";
+        const string hiddenResourceId = "res-layer-1";
+        const string serviceId = "svc-alpha";
+        var attachmentAnnotation = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ServiceRbacTestFixture.AlphaLayerId => _visibleLayer,
-            ServiceRbacTestFixture.BetaLayerId => _hiddenLayer,
-            _ => null
-        });
+            ["honua.io/attachments"] = bool.TrueString
+        };
+
+        return new TestMetadataV2GraphBuilder()
+            .AddResource(
+                visibleResourceId,
+                "Visible Audit Layer",
+                MetadataV2ResourceType.FeatureDataset,
+                fields:
+                [
+                    new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Description = "Object ID" },
+                    new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Length = 255, Description = "Name" },
+                    new MetadataV2Field
+                    {
+                        Name = "status",
+                        Type = MetadataV2FieldType.String,
+                        Nullable = true,
+                        Length = 32,
+                        Description = "Status",
+                        Domain = CodedDomain("AuditStatus", ("open", "Open"), ("closed", "Closed"))
+                    },
+                    new MetadataV2Field { Name = "is_active", Type = MetadataV2FieldType.Boolean, Nullable = true, Description = "Active" }
+                ],
+                annotations: attachmentAnnotation)
+            .AddStorageBinding("binding-layer-0", visibleResourceId, "test.layers.0", storageLayerId: ServiceRbacTestFixture.AlphaLayerId)
+            .AddResource(
+                hiddenResourceId,
+                "Hidden Audit Layer",
+                MetadataV2ResourceType.FeatureDataset,
+                fields:
+                [
+                    new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Description = "Object ID" },
+                    new MetadataV2Field { Name = "audit_id", Type = MetadataV2FieldType.Integer, Nullable = true, Description = "Audit ID" },
+                    new MetadataV2Field
+                    {
+                        Name = "hidden_status",
+                        Type = MetadataV2FieldType.String,
+                        Nullable = true,
+                        Length = 32,
+                        Description = "Hidden Status",
+                        Domain = CodedDomain("HiddenStatus", ("internal", "Internal"), ("sealed", "Sealed"))
+                    }
+                ],
+                accessPolicy: hiddenLayerPolicy,
+                annotations: attachmentAnnotation)
+            .AddStorageBinding("binding-layer-1", hiddenResourceId, "test.layers.1", storageLayerId: ServiceRbacTestFixture.BetaLayerId)
+            .AddService(
+                serviceId,
+                ServiceRbacTestFixture.AlphaService,
+                protocols: MetadataV2ServiceProtocols.All,
+                accessPolicy: servicePolicy,
+                options: new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                {
+                    ["capabilities"] = JsonSerializer.SerializeToElement(Capabilities),
+                    ["supportedFormats"] = JsonSerializer.SerializeToElement(SupportedFormats)
+                })
+            .AddPublication(
+                "svc-alpha-layer-0",
+                serviceId,
+                visibleResourceId,
+                layerIndex: ServiceRbacTestFixture.AlphaLayerId,
+                storageBindingId: "binding-layer-0",
+                publicationType: MetadataV2PublicationType.ODataEntitySet)
+            .AddPublication(
+                "svc-alpha-layer-1",
+                serviceId,
+                hiddenResourceId,
+                layerIndex: ServiceRbacTestFixture.BetaLayerId,
+                storageBindingId: "binding-layer-1",
+                publicationType: MetadataV2PublicationType.ODataEntitySet)
+            .BuildProvider();
     }
 
-    public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
-        => Task.FromResult(new[] { _visibleLayer, _hiddenLayer });
-
-    public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-        => Task.FromResult<ServiceDefinition?>(
-            string.Equals(serviceName, ServiceRbacTestFixture.AlphaService, StringComparison.OrdinalIgnoreCase)
-                ? _service
-                : null);
-
-    public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
-        => Task.FromResult(new[] { _service });
-
-    public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
-        => Task.FromResult(layerId == ServiceRbacTestFixture.AlphaLayerId || layerId == ServiceRbacTestFixture.BetaLayerId);
-
-    public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
-        => Task.FromResult(string.Equals(serviceName, ServiceRbacTestFixture.AlphaService, StringComparison.OrdinalIgnoreCase));
-
-    public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
-    {
-        Relationship? relationship = layerId == ServiceRbacTestFixture.AlphaLayerId && relationshipId == 1
-            ? _visibleLayer.LayerRelationships[0]
-            : null;
-        return Task.FromResult<Relationship?>(relationship);
-    }
-
-    public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
-        => Task.FromResult(layerId == ServiceRbacTestFixture.AlphaLayerId ? _visibleLayer.LayerRelationships : []);
-
-    public AccessPolicy? GetLayerAccessPolicy(int layerId)
-        => layerId == ServiceRbacTestFixture.BetaLayerId ? _hiddenLayerPolicy : null;
-
-    public AccessPolicy? GetServiceAccessPolicy(string serviceName)
-        => string.Equals(serviceName, ServiceRbacTestFixture.AlphaService, StringComparison.OrdinalIgnoreCase)
-            ? _servicePolicy
-            : null;
+    private static MetadataV2FieldDomain CodedDomain(string name, params (string Code, string Label)[] values)
+        => new()
+        {
+            Name = name,
+            Type = "codedValue",
+            CodedValues = values
+                .Select(value => new MetadataV2CodedValue
+                {
+                    Code = JsonSerializer.SerializeToElement(value.Code),
+                    Name = value.Label
+                })
+                .ToArray()
+        };
 }

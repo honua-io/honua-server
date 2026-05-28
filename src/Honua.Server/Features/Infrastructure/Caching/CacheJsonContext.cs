@@ -12,6 +12,8 @@ namespace Honua.Server.Features.Infrastructure.Caching;
 /// <summary>
 /// JSON serialization context for cache-related types (AOT-compatible).
 /// </summary>
+[JsonSerializable(typeof(FieldDefinition))]
+[JsonSerializable(typeof(FieldDefinition[]))]
 [JsonSerializable(typeof(Honua.Core.Features.Shared.Models.SpatialReference), TypeInfoPropertyName = "CacheSpatialReference")]
 [JsonSerializable(typeof(FeatureExtent))]
 [JsonSerializable(typeof(Relationship))]

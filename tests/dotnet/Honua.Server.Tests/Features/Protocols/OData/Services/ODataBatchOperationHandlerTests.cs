@@ -4,7 +4,6 @@
 using System.Reflection;
 using FluentAssertions;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -295,10 +294,6 @@ public sealed class ODataBatchOperationHandlerTests
         var outputCacheStore = Substitute.For<IOutputCacheStore>();
         var responseCache = Substitute.For<IResponseCache>();
         var publisher = Substitute.For<IFeatureChangeEventPublisher>();
-        var layerCatalog = Substitute.For<ILayerCatalog>();
-        var layer = LayerDefinition.CreateBasic(1, "Features", GeometryType.Point);
-        var service = ServiceDefinition.CreateSingle("odata-service", layer);
-        layerCatalog.ListServicesAsync(Arg.Any<CancellationToken>()).Returns([service]);
         var scopeFactory = new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
         var outputCacheInvalidationService = new OutputCacheInvalidationService(
             outputCacheStore,
@@ -310,7 +305,6 @@ public sealed class ODataBatchOperationHandlerTests
 
         var services = new ServiceCollection();
         services.AddSingleton(outputCacheInvalidationService);
-        services.AddSingleton(layerCatalog);
         services.AddSingleton<IMetadataV2GraphProvider>(
             new TestMetadataV2GraphProvider(new TestMetadataV2GraphBuilder().Build()));
 

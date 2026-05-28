@@ -6,7 +6,6 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -127,7 +126,6 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     public async Task Wfs_GetCapabilities_WithProjectedExtent_UsesTransformFallbackForWgs84BoundingBox()
     {
         var fixture = new WebAppFixture()
-            .ReplaceService<ILayerCatalog>(new ProjectedExtentLayerCatalog())
             .ReplaceService<IMetadataV2GraphProvider>(BuildProjectedMetadataProvider());
 
         try

@@ -4,7 +4,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -132,7 +131,6 @@ public class OidcAuthenticationTests
                     services.AddSingleton(_ => NpgsqlDataSource.Create(TestPostgresConnectionString));
 
                     // Add mock implementations
-                    services.AddScoped<ILayerCatalog>(provider => new TestLayerCatalog());
                     services.AddScoped<TestFeatureStore>();
                     services.AddScoped<IFeatureReader>(provider => provider.GetRequiredService<TestFeatureStore>());
                     services.AddScoped<IFeatureWriter>(provider => provider.GetRequiredService<TestFeatureStore>());

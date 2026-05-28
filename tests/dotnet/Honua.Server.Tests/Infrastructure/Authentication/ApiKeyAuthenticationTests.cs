@@ -3,7 +3,6 @@
 
 using System.Text;
 using System.Text.Json;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -111,11 +110,8 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
     {
         services.RemoveAll<NpgsqlDataSource>();
         services.RemoveAll<IDatabaseConnectionProvider>();
-        services.RemoveAll<ILayerCatalog>();
         services.RemoveAll<IMetadataV2GraphProvider>();
         services.RemoveAll<IMetadataV2GraphStore>();
-
-        services.AddScoped<ILayerCatalog>(_ => new TestLayerCatalog(servicePolicy: servicePolicy));
 
         var metadataProvider = BuildFeatureServerMetadataProvider(servicePolicy);
         services.AddSingleton(metadataProvider);

@@ -5,7 +5,6 @@ using System.Collections.Immutable;
 using System.Globalization;
 using FluentAssertions;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -41,11 +40,9 @@ public sealed class ODataBatchHandlerTests
     {
         var featureReader = Substitute.For<IFeatureReader>();
         var featureWriter = Substitute.For<IFeatureWriter>();
-        var layer = CreateLayer();
-        var service = CreateService(layer);
         var createdFeature = CreateFeature(101, "Persisted name");
 
-        featureReader.GetAsync(layer.Id, 101, Arg.Any<CancellationToken>())
+        featureReader.GetAsync(1, 101, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Feature?>(createdFeature));
         featureWriter.ApplyEditsAsync(default, default!, default)
             .ReturnsForAnyArgs(FeatureEditResult.Success(
@@ -64,11 +61,11 @@ public sealed class ODataBatchHandlerTests
                 {
                     Id = "create-city",
                     Method = "POST",
-                    Url = $"Layers({layer.Id})/Features",
+                    Url = $"Layers({1})/Features",
                     AtomicityGroup = "g1",
                     Body = new Dictionary<string, object?>
                     {
-                        ["LayerId"] = layer.Id,
+                        ["LayerId"] = 1,
                         ["Attributes"] = new Dictionary<string, object?>
                         {
                             ["name"] = "Created in batch"
@@ -78,7 +75,7 @@ public sealed class ODataBatchHandlerTests
             ]
         };
 
-        var response = await sut.ProcessBatchAsync(CreateContext(layer, service, "admin"), request, "https://example.test", CancellationToken.None);
+        var response = await sut.ProcessBatchAsync(CreateContext("admin"), request, "https://example.test", CancellationToken.None);
 
         response.Responses.Should().ContainSingle();
         var createResponse = response.Responses[0];
@@ -91,7 +88,7 @@ public sealed class ODataBatchHandlerTests
         payload.Should().ContainKey("@odata.etag");
         payload.Should().ContainKey("@odata.context");
 
-        await featureReader.Received(1).GetAsync(layer.Id, 101, Arg.Any<CancellationToken>());
+        await featureReader.Received(1).GetAsync(1, 101, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -99,12 +96,10 @@ public sealed class ODataBatchHandlerTests
     {
         var featureReader = Substitute.For<IFeatureReader>();
         var featureWriter = Substitute.For<IFeatureWriter>();
-        var layer = CreateLayer();
-        var service = CreateService(layer);
         var existingFeature = CreateFeature(25, "Before");
         var persistedFeature = CreateFeature(25, "Persisted after");
 
-        featureReader.GetAsync(layer.Id, existingFeature.Id, Arg.Any<CancellationToken>())
+        featureReader.GetAsync(1, existingFeature.Id, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<Feature?>(existingFeature), Task.FromResult<Feature?>(persistedFeature));
         featureWriter.ApplyEditsAsync(default, default!, default)
             .ReturnsForAnyArgs(FeatureEditResult.Success(
@@ -122,7 +117,7 @@ public sealed class ODataBatchHandlerTests
                 {
                     Id = "update-city",
                     Method = "PATCH",
-                    Url = $"Features({layer.Id},{existingFeature.Id})",
+                    Url = $"Features({1},{existingFeature.Id})",
                     AtomicityGroup = "g1",
                     Body = new Dictionary<string, object?>
                     {
@@ -135,7 +130,7 @@ public sealed class ODataBatchHandlerTests
             ]
         };
 
-        var response = await sut.ProcessBatchAsync(CreateContext(layer, service, "admin"), request, "https://example.test", CancellationToken.None);
+        var response = await sut.ProcessBatchAsync(CreateContext("admin"), request, "https://example.test", CancellationToken.None);
 
         response.Responses.Should().ContainSingle();
         var updateResponse = response.Responses[0];
@@ -148,7 +143,7 @@ public sealed class ODataBatchHandlerTests
         payload.Should().ContainKey("@odata.etag");
         payload.Should().ContainKey("@odata.context");
 
-        await featureReader.Received(2).GetAsync(layer.Id, existingFeature.Id, Arg.Any<CancellationToken>());
+        await featureReader.Received(2).GetAsync(1, existingFeature.Id, Arg.Any<CancellationToken>());
     }
 
     private static ODataBatchHandler CreateSut(
@@ -174,12 +169,12 @@ public sealed class ODataBatchHandlerTests
             Substitute.For<ILogger>());
     }
 
-    private static DefaultHttpContext CreateContext(LayerDefinition layer, ServiceDefinition service, params string[] roles)
+    private static DefaultHttpContext CreateContext(params string[] roles)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
         services.AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions()));
-        services.AddSingleton<IMetadataV2GraphProvider>(CreateMetadataProvider(layer, service));
+        services.AddSingleton<IMetadataV2GraphProvider>(CreateMetadataProvider());
 
         var context = new DefaultHttpContext
         {
@@ -204,72 +199,27 @@ public sealed class ODataBatchHandlerTests
             => Task.CompletedTask;
     }
 
-    private static LayerDefinition CreateLayer()
-        => new(
-            1,
-            "cities",
-            null,
-            GeometryType.None,
-            SpatialReference.WGS84,
-            [
-                new FieldDefinition(FieldNames.ObjectId, FieldType.Integer, Nullable: false),
-                new FieldDefinition("name", FieldType.String, Length: 128)
-            ]);
-
-    private static ServiceDefinition CreateService(LayerDefinition layer)
-        => new(
-            "cities",
-            "cities service",
-            [layer],
-            SpatialReference.WGS84);
-
-    private static TestMetadataV2GraphProvider CreateMetadataProvider(LayerDefinition layer, ServiceDefinition service)
-    {
-        var resourceId = $"res-layer-{layer.Id.ToString(CultureInfo.InvariantCulture)}";
-        var bindingId = $"binding-layer-{layer.Id.ToString(CultureInfo.InvariantCulture)}";
-        var serviceId = $"svc-{service.Name}";
-
-        return new TestMetadataV2GraphBuilder()
+    private static TestMetadataV2GraphProvider CreateMetadataProvider()
+        => new TestMetadataV2GraphBuilder()
             .AddResource(
-                resourceId,
-                layer.Name,
+                "res-layer-1",
+                "cities",
                 MetadataV2ResourceType.FeatureDataset,
-                fields: layer.Fields.Select(MapField))
-            .AddStorageBinding(
-                bindingId,
-                resourceId,
-                $"test.layers.{layer.Id.ToString(CultureInfo.InvariantCulture)}",
-                storageLayerId: layer.Id)
-            .AddService(
-                serviceId,
-                service.Name,
-                protocols: ["OData"])
+                fields:
+                [
+                    new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+                    new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 128 }
+                ])
+            .AddStorageBinding("binding-layer-1", "res-layer-1", "test.layers.1", storageLayerId: 1)
+            .AddService("svc-cities", "cities", protocols: ["OData"])
             .AddPublication(
-                $"{serviceId}-layer-{layer.Id.ToString(CultureInfo.InvariantCulture)}",
-                serviceId,
-                resourceId,
-                layerIndex: layer.Id,
-                storageBindingId: bindingId,
+                "svc-cities-layer-1",
+                "svc-cities",
+                "res-layer-1",
+                layerIndex: 1,
+                storageBindingId: "binding-layer-1",
                 publicationType: MetadataV2PublicationType.ODataEntitySet)
             .BuildProvider();
-    }
-
-    private static MetadataV2Field MapField(FieldDefinition field)
-        => new()
-        {
-            Name = field.Name,
-            Type = field.Type switch
-            {
-                FieldType.Integer => MetadataV2FieldType.Integer,
-                FieldType.BigInteger => MetadataV2FieldType.BigInteger,
-                FieldType.Double => MetadataV2FieldType.Double,
-                FieldType.Date => MetadataV2FieldType.DateTime,
-                FieldType.Boolean => MetadataV2FieldType.Boolean,
-                _ => MetadataV2FieldType.String
-            },
-            Nullable = field.Nullable,
-            Length = field.Length
-        };
 
     private static Feature CreateFeature(long id, string name)
         => Feature.Create(

@@ -6,7 +6,6 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Admin.Domain;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
@@ -180,18 +179,6 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         publishApi!.Data.Should().NotBeNull();
         _layerId = publishApi.Data!.LayerId;
 
-        using (var scope = _fixture.Services.CreateScope())
-        {
-            var catalog = scope.ServiceProvider.GetRequiredService<ILayerCatalog>();
-            var legacyService = await catalog.GetServiceAsync(_serviceName);
-            legacyService.Should().NotBeNull();
-            legacyService!.ConnectionId.Should().Be(_connectionId);
-            var layer = legacyService.Layers.Single(layer => layer.Id == _layerId);
-            layer.StorageMapping.Should().NotBeNull();
-            layer.StorageMapping!.IsSourceBacked.Should().BeTrue();
-
-        }
-
         var metadataResponse = await _client.GetAsync(
             $"/rest/services/{_serviceName}/FeatureServer/{_layerId}?f=json");
 
@@ -281,17 +268,6 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         publishApi.Should().NotBeNull();
         publishApi!.Data.Should().NotBeNull();
         _layerId = publishApi.Data!.LayerId;
-
-        using (var scope = _fixture.Services.CreateScope())
-        {
-            var catalog = scope.ServiceProvider.GetRequiredService<ILayerCatalog>();
-            var service = await catalog.GetServiceAsync(_serviceName);
-            service.Should().NotBeNull();
-            service!.ConnectionId.Should().BeNull();
-            var layer = service.Layers.Single(layer => layer.Id == _layerId);
-            layer.StorageMapping.Should().NotBeNull();
-            layer.StorageMapping!.IsSourceBacked.Should().BeTrue();
-        }
 
         await InsertPostGisFeatureAsync("Name Routed Feature", 200, 2d, 2d);
 

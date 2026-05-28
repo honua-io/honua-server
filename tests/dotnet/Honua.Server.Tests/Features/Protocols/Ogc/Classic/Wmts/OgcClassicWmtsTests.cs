@@ -4,7 +4,6 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Tests.Infrastructure;
@@ -86,7 +85,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         // declares its extent in a projected CRS (UTM zone 10N, SRID 26910). The WMTS
         // capabilities builder reads the bbox off resource.Spatial and must reproject
         // it through ICoordinateTransformService to CRS84 — exercising the transform
-        // fallback that v1 used to validate via ILayerCatalog.
+        // fallback for projected-extent resources.
         const string serviceId = "projected-metadata";
         const int storageLayerId = 2001;
         const int projectedSrid = 26910;

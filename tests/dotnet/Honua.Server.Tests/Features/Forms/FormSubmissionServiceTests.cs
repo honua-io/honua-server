@@ -11,8 +11,6 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Attachments.Domain;
 using Honua.Core.Features.AuditLog;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -358,7 +356,7 @@ public sealed class FormSubmissionServiceTests
         FakeFeatureWriter writer,
         IAttachmentStore? attachmentStore = null)
     {
-        var targetMetadataResolver = new FormTargetMetadataResolver(CreateMetadataProvider(store.Service));
+        var targetMetadataResolver = new FormTargetMetadataResolver(CreateMetadataProvider());
         return new FormSubmissionService(
             store,
             new FormPackageValidator(targetMetadataResolver, Options.Create(CreateLimitsOptions())),
@@ -372,98 +370,58 @@ public sealed class FormSubmissionServiceTests
             NullLogger<FormSubmissionService>.Instance);
     }
 
-    private static TestMetadataV2GraphProvider CreateMetadataProvider(ServiceDefinition service)
-    {
-        var layer = service.Layers[0];
-        return new TestMetadataV2GraphBuilder()
+    private const string TargetServiceName = "test";
+    private const int TargetLayerId = 0;
+
+    private static TestMetadataV2GraphProvider CreateMetadataProvider()
+        => new TestMetadataV2GraphBuilder()
             .AddConnection("managed", "Managed")
             .AddResource(
                 "resource-inspections",
-                layer.Name,
-                fields: layer.Fields.Select(MapField),
+                "Inspections",
+                fields:
+                [
+                    new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Editable = true },
+                    new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 255, Editable = true },
+                    new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, Editable = false }
+                ],
                 spatial: new MetadataV2ResourceSpatial
                 {
-                    GeometryType = MapGeometryType(layer.GeometryType),
+                    GeometryType = MetadataV2GeometryType.Point,
                     SpatialReference = new MetadataV2SpatialReference
                     {
-                        Srid = layer.SpatialReference.ToSrid(),
-                        Crs = $"EPSG:{layer.SpatialReference.ToSrid()}",
-                        IsGeographic = layer.SpatialReference.ToSrid() == 4326
+                        Srid = 4326,
+                        Crs = "EPSG:4326",
+                        IsGeographic = true
                     },
-                    PrimaryGeometryField = layer.Fields
-                        .FirstOrDefault(static field => field.IsGeometry)
-                        ?.Name
+                    PrimaryGeometryField = "shape"
                 },
                 annotations: new Dictionary<string, string>
                 {
-                    ["honua.io/attachments"] = layer.SupportsAttachments.ToString()
+                    ["honua.io/attachments"] = bool.TrueString
                 })
             .AddStorageBinding(
                 "binding-inspections",
                 "resource-inspections",
                 "inspections",
                 "managed",
-                storageLayerId: layer.Id)
+                storageLayerId: TargetLayerId)
             .AddService(
                 "service-test",
-                service.Name,
+                TargetServiceName,
                 protocols: ["FeatureServer"],
                 options: new Dictionary<string, JsonElement>
                 {
-                    ["capabilities"] = JsonArray(service.Capabilities)
+                    ["capabilities"] = JsonArray(["Query", "Extract", "Create", "Update", "Delete"])
                 })
             .AddPublication(
                 "publication-inspections",
                 "service-test",
                 "resource-inspections",
-                layerIndex: layer.Id,
+                layerIndex: TargetLayerId,
                 storageBindingId: "binding-inspections",
                 publicationType: MetadataV2PublicationType.EsriFeatureLayer)
             .BuildProvider();
-    }
-
-    private static MetadataV2Field MapField(FieldDefinition field)
-        => new()
-        {
-            Name = field.Name,
-            Type = MapFieldType(field.Type),
-            Nullable = field.Nullable,
-            Length = field.Length,
-            Hidden = field.IsHidden,
-            Editable = !field.IsHidden && !field.IsGeometry
-        };
-
-    private static MetadataV2FieldType MapFieldType(FieldType type)
-        => type switch
-        {
-            FieldType.String => MetadataV2FieldType.String,
-            FieldType.Integer => MetadataV2FieldType.Integer,
-            FieldType.BigInteger => MetadataV2FieldType.BigInteger,
-            FieldType.Double => MetadataV2FieldType.Double,
-            FieldType.Float => MetadataV2FieldType.Float,
-            FieldType.Boolean => MetadataV2FieldType.Boolean,
-            FieldType.DateTime => MetadataV2FieldType.DateTime,
-            FieldType.Date => MetadataV2FieldType.Date,
-            FieldType.Time => MetadataV2FieldType.Time,
-            FieldType.Json => MetadataV2FieldType.Json,
-            FieldType.Binary => MetadataV2FieldType.Binary,
-            FieldType.Uuid => MetadataV2FieldType.Uuid,
-            FieldType.Geometry => MetadataV2FieldType.Geometry,
-            _ => MetadataV2FieldType.Unknown
-        };
-
-    private static MetadataV2GeometryType MapGeometryType(GeometryType type)
-        => type switch
-        {
-            GeometryType.Point => MetadataV2GeometryType.Point,
-            GeometryType.MultiPoint => MetadataV2GeometryType.MultiPoint,
-            GeometryType.LineString => MetadataV2GeometryType.LineString,
-            GeometryType.MultiLineString => MetadataV2GeometryType.MultiLineString,
-            GeometryType.Polygon => MetadataV2GeometryType.Polygon,
-            GeometryType.MultiPolygon => MetadataV2GeometryType.MultiPolygon,
-            GeometryType.GeometryCollection => MetadataV2GeometryType.GeometryCollection,
-            _ => MetadataV2GeometryType.None
-        };
 
     private static JsonElement JsonArray(IEnumerable<string> values)
         => JsonSerializer.SerializeToElement(values);
@@ -620,7 +578,6 @@ public sealed class FormSubmissionServiceTests
         };
 
     private static FormPackageVersion CreatePackageVersion(
-        ServiceDefinition service,
         bool includeAttachment = false,
         string[]? allowedOperations = null,
         bool attachmentFieldRequired = false,
@@ -640,8 +597,8 @@ public sealed class FormSubmissionServiceTests
                 Title = "Inspection Form",
                 Target = new FormTargetDefinition
                 {
-                    ServiceId = service.Name,
-                    LayerId = service.Layers[0].Id
+                    ServiceId = TargetServiceName,
+                    LayerId = TargetLayerId
                 },
                 Sections =
                 [
@@ -714,27 +671,6 @@ public sealed class FormSubmissionServiceTests
             }
         };
 
-    private static ServiceDefinition CreateServiceDefinition()
-    {
-        var layer = new LayerDefinition(
-            0,
-            "Inspections",
-            "Field inspections",
-            GeometryType.Point,
-            SpatialReference.WGS84,
-            [
-                new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                new FieldDefinition("name", FieldType.String, Length: 255),
-                new FieldDefinition("shape", FieldType.Geometry)
-            ]);
-        return new ServiceDefinition(
-            "test",
-            "Test service",
-            [layer],
-            SpatialReference.WGS84,
-            Capabilities: ["Query", "Extract", "Create", "Update", "Delete"]);
-    }
-
     private static JsonElement Json(string json)
         => JsonDocument.Parse(json).RootElement.Clone();
 
@@ -748,9 +684,7 @@ public sealed class FormSubmissionServiceTests
             long maxTotalBytes = 2_000_000,
             int fieldAttachmentMaxCount = 1)
         {
-            Service = CreateServiceDefinition();
             PackageVersion = CreatePackageVersion(
-                Service,
                 includeAttachment,
                 allowedOperations,
                 attachmentFieldRequired,
@@ -758,8 +692,6 @@ public sealed class FormSubmissionServiceTests
                 maxTotalBytes,
                 fieldAttachmentMaxCount);
         }
-
-        public ServiceDefinition Service { get; }
 
         public FormPackageVersion PackageVersion { get; }
 

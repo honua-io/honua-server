@@ -4,8 +4,6 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -103,12 +101,10 @@ public sealed class MapServerObjectIdFieldTests
         {
             builder.ConfigureTestServices(services =>
             {
-                services.RemoveAll<ILayerCatalog>();
                 services.RemoveAll<ICrsDetectionService>();
                 services.RemoveAll<ICrsRegistry>();
                 services.RemoveAll<IMetadataV2GraphProvider>();
                 services.RemoveAll<IMetadataV2GraphStore>();
-                services.AddScoped<ILayerCatalog, StringIdLayerCatalog>();
                 services.AddSingleton<ICrsDetectionService, NoopCrsDetectionService>();
                 services.AddSingleton<ICrsRegistry, StringIdCrsRegistry>();
                 services.AddSingleton(_ => BuildStringIdGraphProvider());
@@ -214,58 +210,5 @@ public sealed class MapServerObjectIdFieldTests
 
         public ValueTask<bool> IsSridSupportedAsync(int srid, CancellationToken cancellationToken = default)
             => ValueTask.FromResult(srid == 4326);
-    }
-
-    private sealed class StringIdLayerCatalog : ILayerCatalog
-    {
-        private static readonly SpatialReference SpatialReference = SpatialReference.Create(4326);
-        private static readonly FeatureExtent Extent = FeatureExtent.Create(-180, -90, 180, 90, 4326);
-
-        private static readonly LayerDefinition Layer = new(
-            Id: StringIdLayerId,
-            Name: "String ID Layer",
-            Description: "Layer with string-valued public feature identifiers.",
-            GeometryType: GeometryType.Point,
-            SpatialReference: SpatialReference,
-            Fields:
-            [
-                new FieldDefinition("id", FieldType.String, Length: 64, Nullable: false),
-                new FieldDefinition(FieldNames.ObjectId, FieldType.Integer, Nullable: false),
-                new FieldDefinition("name", FieldType.String, Length: 255)
-            ],
-            Extent: Extent,
-            MinScale: null,
-            MaxScale: null,
-            DefaultVisibility: true);
-
-        private static readonly ServiceDefinition Service = new(
-            ServiceName,
-            "Feature service for string identifier tests",
-            [Layer],
-            SpatialReference);
-
-        public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(layerId == StringIdLayerId ? Layer : null);
-
-        public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(new[] { Layer });
-
-        public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult(string.Equals(serviceName, Service.Name, StringComparison.OrdinalIgnoreCase) ? Service : null);
-
-        public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(new[] { Service });
-
-        public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(layerId == StringIdLayerId);
-
-        public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult(string.Equals(serviceName, Service.Name, StringComparison.OrdinalIgnoreCase));
-
-        public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
-            => Task.FromResult<Relationship?>(null);
-
-        public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(Array.Empty<Relationship>());
     }
 }

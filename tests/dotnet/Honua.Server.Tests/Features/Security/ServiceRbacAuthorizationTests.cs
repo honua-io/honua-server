@@ -1344,7 +1344,7 @@ internal static class ServiceRbacTestFixture
     public const int BetaLayerId = 1;
 
     public static WebApplicationFactory<Program> CreateFactory(
-        Func<RbacTestLayerCatalog>? layerCatalogFactory = null,
+        Func<ITestMetadataV2GraphSource>? layerCatalogFactory = null,
         Action<IServiceCollection>? configureServices = null)
     {
         layerCatalogFactory ??= static () => new RbacTestLayerCatalog();
@@ -1546,14 +1546,17 @@ internal sealed class TestAuthHandler(
     }
 }
 
-internal interface IAccessPolicyCatalogSeed
+/// <summary>
+/// A test fixture that builds a Metadata v2 graph provider describing a scenario, letting
+/// <see cref="ServiceRbacTestFixture.CreateFactory"/> seed the in-memory v2 graph from any
+/// scenario catalog without coupling to a concrete type.
+/// </summary>
+internal interface ITestMetadataV2GraphSource
 {
-    AccessPolicy? GetLayerAccessPolicy(int layerId);
-
-    AccessPolicy? GetServiceAccessPolicy(string serviceName);
+    TestMetadataV2GraphProvider BuildProvider();
 }
 
-internal sealed class RbacTestLayerCatalog
+internal sealed class RbacTestLayerCatalog : ITestMetadataV2GraphSource
 {
     private static readonly string[] _supportedFormats = ["JSON", "GeoJSON"];
     private static readonly string[] _capabilities = ["Query", "Create", "Update", "Delete"];

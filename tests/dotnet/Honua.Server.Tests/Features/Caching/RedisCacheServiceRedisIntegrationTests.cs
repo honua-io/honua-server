@@ -59,12 +59,11 @@ public sealed class RedisCacheServiceRedisIntegrationTests
         using var cacheA = CreateCacheScope(prefix);
         using var cacheB = CreateCacheScope(prefix);
 
-        var layer = LayerDefinition.CreateBasic(1, "Layer", GeometryType.Point);
-        var service = new ServiceDefinition("test", "Test Service", [layer], SpatialReference.WGS84);
-        await cacheA.Cache.SetAsync("service:1", service);
+        var field = new FieldDefinition("service", FieldType.String, Length: 32);
+        await cacheA.Cache.SetAsync("service:1", field);
 
         await cacheB.Cache.RemoveAsync("service:1");
-        var result = await cacheA.Cache.GetAsync<ServiceDefinition>("service:1");
+        var result = await cacheA.Cache.GetAsync<FieldDefinition>("service:1");
 
         result.Should().BeNull();
     }

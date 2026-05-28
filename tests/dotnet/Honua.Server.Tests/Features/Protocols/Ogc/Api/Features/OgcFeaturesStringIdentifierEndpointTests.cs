@@ -6,8 +6,6 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Catalog.Abstractions;
-using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
@@ -545,7 +543,6 @@ public sealed class OgcFeaturesStringIdentifierEndpointTests
                 services.RemoveAll<ITileProvider>();
                 services.RemoveAll<IRelationshipStore>();
                 services.RemoveAll<IStreamingFeatureStore>();
-                services.RemoveAll<ILayerCatalog>();
                 services.RemoveAll<ICrsRegistry>();
                 services.RemoveAll<ICoordinateTransformService>();
                 services.RemoveAll<IGeometryTopologyValidator>();
@@ -556,7 +553,6 @@ public sealed class OgcFeaturesStringIdentifierEndpointTests
                 services.AddSingleton<ITileProvider>(provider => provider.GetRequiredService<TestFeatureStore>());
                 services.AddSingleton<IRelationshipStore>(provider => provider.GetRequiredService<TestFeatureStore>());
                 services.AddSingleton<IStreamingFeatureStore>(provider => provider.GetRequiredService<TestFeatureStore>());
-                services.AddScoped<ILayerCatalog, StringIdLayerCatalog>();
                 services.AddSingleton<ICrsRegistry, StringIdCrsRegistry>();
                 services.AddSingleton<ICoordinateTransformService, IdentityCoordinateTransformService>();
                 services.AddSingleton<IGeometryTopologyValidator, NoOpGeometryTopologyValidator>();
@@ -670,68 +666,6 @@ public sealed class OgcFeaturesStringIdentifierEndpointTests
 
         public ValueTask<bool> IsSridSupportedAsync(int srid, CancellationToken cancellationToken = default)
             => ValueTask.FromResult(srid == 4326);
-    }
-
-    private sealed class StringIdLayerCatalog : ILayerCatalog
-    {
-        private static readonly SpatialReference SpatialReference = SpatialReference.Create(4326);
-        private static readonly FeatureExtent Extent = FeatureExtent.Create(-180, -90, 180, 90, 4326);
-        private static readonly LayerDefinition Layer = new(
-            Id: StringIdLayerId,
-            Name: "String ID Layer",
-            Description: "Layer with string-valued public feature identifiers.",
-            GeometryType: GeometryType.Point,
-            SpatialReference: SpatialReference,
-            Fields:
-            [
-                new FieldDefinition("id", FieldType.String, Length: 64, Nullable: false),
-                new FieldDefinition("objectid", FieldType.Integer, Nullable: false),
-                new FieldDefinition("name", FieldType.String, Length: 255)
-            ],
-            Extent: Extent,
-            MinScale: null,
-            MaxScale: null,
-            DefaultVisibility: true);
-        private static readonly LayerDefinition NumericNameLayer = Layer with
-        {
-            Id = 100,
-            Name = "123",
-            Description = "Layer with a numeric-looking collection name."
-        };
-        private static readonly ServiceDefinition Service = new(
-            "string-ids",
-            "Feature service for string identifier tests",
-            [Layer, NumericNameLayer],
-            SpatialReference);
-
-        public Task<LayerDefinition?> GetLayerAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(layerId switch
-            {
-                StringIdLayerId => Layer,
-                100 => NumericNameLayer,
-                _ => null
-            });
-
-        public Task<LayerDefinition[]> ListLayersAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(new[] { Layer, NumericNameLayer });
-
-        public Task<ServiceDefinition?> GetServiceAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult(string.Equals(serviceName, Service.Name, StringComparison.OrdinalIgnoreCase) ? Service : null);
-
-        public Task<ServiceDefinition[]> ListServicesAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(new[] { Service });
-
-        public Task<bool> LayerExistsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(layerId is StringIdLayerId or 100);
-
-        public Task<bool> ServiceExistsAsync(string serviceName, CancellationToken cancellationToken = default)
-            => Task.FromResult(string.Equals(serviceName, Service.Name, StringComparison.OrdinalIgnoreCase));
-
-        public Task<Relationship?> GetRelationshipAsync(int layerId, int relationshipId, CancellationToken cancellationToken = default)
-            => Task.FromResult<Relationship?>(null);
-
-        public Task<Relationship[]> ListRelationshipsAsync(int layerId, CancellationToken cancellationToken = default)
-            => Task.FromResult(Array.Empty<Relationship>());
     }
 
     private static TestMetadataV2GraphProvider BuildStringIdGraphProvider()
