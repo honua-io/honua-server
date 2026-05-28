@@ -49,6 +49,7 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0041](0041-core-abstractions-extraction.md) | Honua.Core.Abstractions Extraction (Modularization Phase 0+1) | Accepted | 2026-05 |
 | [0042](0042-per-protocol-test-project-split.md) | Per-Protocol Test Project Split (Modularization Phase 2) | Proposed | 2026-05 |
 | [0043](0043-modularization-ci-rework.md) | Modularization CI Rework (Modularization Phase 3) | Proposed | 2026-05 |
+| [0044](0044-server-infrastructure-decomposition.md) | Server.Features.Infrastructure Decomposition (Audit-A1 / Phase 1 Prerequisite) | Proposed | 2026-05 |
 
 ## Template
 
