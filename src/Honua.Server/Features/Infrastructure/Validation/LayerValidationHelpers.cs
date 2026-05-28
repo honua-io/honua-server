@@ -519,7 +519,79 @@ internal static class LayerValidationHelpers
                 rbacError);
         }
 
+        // Canonical-service boundary: a resource can be published through multiple services
+        // but writes belong to the canonical (IsPrimary) publication. If the validated
+        // publication is the secondary one, require the caller ALSO be authorized as
+        // data-editor on the canonical service.
+        var canonicalError = await EnforceCanonicalServiceWriteAccessAsync(
+            context,
+            validation,
+            cancellationToken).ConfigureAwait(false);
+        if (canonicalError != null)
+        {
+            return new MetadataV2ValidationResult(
+                false,
+                validation.Publication,
+                validation.Resource,
+                validation.Service,
+                canonicalError);
+        }
+
         return validation;
+    }
+
+    /// <summary>
+    /// Enforces the canonical-service boundary for writes: when the validated publication
+    /// is not the resource's IsPrimary publication, the caller must also satisfy data-editor
+    /// authorization on the canonical service. Returns a 403 IResult when the caller can
+    /// write through the secondary publication but not the canonical one, otherwise null.
+    /// </summary>
+    private static async Task<IResult?> EnforceCanonicalServiceWriteAccessAsync(
+        HttpContext context,
+        MetadataV2ValidationResult validation,
+        CancellationToken cancellationToken)
+    {
+        if (!validation.IsValid || validation.Resource is null || validation.Publication is null)
+        {
+            return null;
+        }
+
+        // If the matched publication IS the canonical primary, no extra check needed.
+        if (validation.Publication.IsPrimary)
+        {
+            return null;
+        }
+
+        var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+        MetadataV2Publication? canonical = null;
+        foreach (var pub in snapshot.Graph.Publications)
+        {
+            if (!pub.IsPrimary) continue;
+            var pubResource = snapshot.ResolveResource(pub);
+            if (pubResource is null) continue;
+            if (string.Equals(pubResource.Metadata.Id, validation.Resource.Metadata.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                canonical = pub;
+                break;
+            }
+        }
+
+        if (canonical is null)
+        {
+            // No primary publication declared — nothing to enforce.
+            return null;
+        }
+
+        MetadataV2Service? canonicalService = snapshot.Index.ServicesById.TryGetValue(canonical.ServiceId, out var cs)
+            ? cs
+            : null;
+
+        // Re-evaluate data-editor authorization against the canonical service.
+        return await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
+            context,
+            validation.Resource,
+            canonicalService,
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -558,6 +630,20 @@ internal static class LayerValidationHelpers
                 validation.Resource,
                 validation.Service,
                 rbacError);
+        }
+
+        var canonicalError = await EnforceCanonicalServiceWriteAccessAsync(
+            context,
+            validation,
+            cancellationToken).ConfigureAwait(false);
+        if (canonicalError != null)
+        {
+            return new MetadataV2ValidationResult(
+                false,
+                validation.Publication,
+                validation.Resource,
+                validation.Service,
+                canonicalError);
         }
 
         return validation;

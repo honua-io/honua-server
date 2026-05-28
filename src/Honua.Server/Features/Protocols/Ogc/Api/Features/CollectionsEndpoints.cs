@@ -122,9 +122,35 @@ internal static class CollectionsEndpoints
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
             // Walk OGC API Features publications: each is a (resource, service) pair gated
-            // on protocol enablement + access policy. Use BuildPrimaryServiceMapV2 to pick
-            // the canonical service per layer index when a resource is published through
-            // more than one service.
+            // on protocol enablement + access policy. Enforce the canonical-service
+            // boundary: a resource only appears here through its IsPrimary publication —
+            // showing a layer only because the caller has access to a secondary, non-
+            // canonical publication leaks the canonical boundary (see
+            // OgcServiceBoundaryTests.GetCollections_WithSharedLayerInSecondaryService_DoesNotLeakCanonicalBoundary).
+            // First pass: discover the canonical (IsPrimary) OgcFeatures publication per resource.
+            var canonicalByResource = new Dictionary<string, (MetadataV2Publication Publication, MetadataV2Service Service)>(StringComparer.OrdinalIgnoreCase);
+            foreach (var publication in snapshot.Graph.Publications)
+            {
+                if (!publication.IsPrimary)
+                {
+                    continue;
+                }
+                if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service))
+                {
+                    continue;
+                }
+                if (!IsProtocolEnabled(service, OgcFeaturesProtocolName))
+                {
+                    continue;
+                }
+                var resource = snapshot.ResolveResource(publication);
+                if (resource is null)
+                {
+                    continue;
+                }
+                canonicalByResource[resource.Metadata.Id] = (publication, service);
+            }
+
             var publicationsByResource = new Dictionary<string, (MetadataV2Publication Publication, MetadataV2Service Service, MetadataV2Resource Resource)>(StringComparer.OrdinalIgnoreCase);
             foreach (var publication in snapshot.Graph.Publications)
             {
@@ -145,9 +171,27 @@ internal static class CollectionsEndpoints
                 {
                     continue;
                 }
-                // Prefer the publication explicitly flagged primary; otherwise first wins.
-                if (!publicationsByResource.TryGetValue(resource.Metadata.Id, out var existing) ||
-                    (publication.IsPrimary && !existing.Publication.IsPrimary))
+
+                // Canonical-boundary enforcement: when a resource has an IsPrimary
+                // publication, only surface the layer if the caller can read THAT
+                // canonical publication. Otherwise hide it (the resource may also be
+                // exposed via a secondary service the caller has access to, but
+                // surfacing it there would leak across canonical boundaries).
+                if (canonicalByResource.TryGetValue(resource.Metadata.Id, out var canonical))
+                {
+                    if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, canonical.Service))
+                    {
+                        continue;
+                    }
+                    if (!publicationsByResource.ContainsKey(resource.Metadata.Id))
+                    {
+                        publicationsByResource[resource.Metadata.Id] = (canonical.Publication, canonical.Service, resource);
+                    }
+                    continue;
+                }
+
+                // No canonical publication exists for this resource — first match wins.
+                if (!publicationsByResource.ContainsKey(resource.Metadata.Id))
                 {
                     publicationsByResource[resource.Metadata.Id] = (publication, service, resource);
                 }
