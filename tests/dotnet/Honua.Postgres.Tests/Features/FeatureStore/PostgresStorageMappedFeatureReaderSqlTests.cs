@@ -46,7 +46,10 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
 
         var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
             "BuildAttributesExpressionText",
-            BindingFlags.NonPublic | BindingFlags.Static);
+            BindingFlags.NonPublic | BindingFlags.Static,
+            binder: null,
+            types: [typeof(MetadataV2Field[])],
+            modifiers: null);
 
         method.Should().NotBeNull();
 
