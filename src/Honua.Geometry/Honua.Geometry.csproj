@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <DisableMicrosoftExtensionsLoggingSourceGenerator>false</DisableMicrosoftExtensionsLoggingSourceGenerator>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CS1591;CA1716</NoWarn>
+    <WarningsNotAsErrors>CA2009;IDE0073</WarningsNotAsErrors>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseExpression>Elastic-2.0</PackageLicenseExpression>
+    <RootNamespace>Honua.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+
+    <!--
+      Geometry subsystem extracted from Honua.Core so non-geometry consumers
+      skip the heavy NetTopologySuite / FlatGeobuf / Parquet / Snappier surface.
+      Honua.Geometry depends on Honua.Core / Honua.Core.Abstractions; Honua.Core
+      MUST NOT reference back.
+    -->
+    <PackageReference Include="FlatGeobuf" />
+    <PackageReference Include="NetTopologySuite" />
+    <PackageReference Include="NetTopologySuite.IO.GeoJSON" />
+    <PackageReference Include="Parquet.Net" />
+    <PackageReference Include="Snappier" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Core.Tests" />
+    <InternalsVisibleTo Include="Honua.Server.Tests" />
+    <InternalsVisibleTo Include="Honua.Geometry.Tests" />
+    <InternalsVisibleTo Include="Honua.Postgres" />
+    <InternalsVisibleTo Include="Honua.Postgres.Tests" />
+    <InternalsVisibleTo Include="Honua.Architecture.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Honua.Core.Abstractions\Honua.Core.Abstractions.csproj" />
+    <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+  </ItemGroup>
+
+</Project>
