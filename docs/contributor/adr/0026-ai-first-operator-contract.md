@@ -2,7 +2,13 @@
 
 ## Status
 
-Proposed
+Accepted (2026-05). The canonical types
+(`AnalysisIntent`, `ClarificationRequest`, `AnalysisPlan`,
+`AnalysisResultPackage`, `MapPackage`, `ProvenanceRecord`, etc.) live in
+`src/Honua.Core/Features/Geoprocessing/Domain/` and are surfaced through
+the MCP tool catalog (`src/Honua.Server/Features/Protocols/Mcp/Tools`).
+Compatibility surfaces (GeoServices, OGC API Processes, OData) remain
+projections of this canonical contract.
 
 ## Context
 
