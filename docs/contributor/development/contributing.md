@@ -8,7 +8,7 @@ Code style, architecture rules, and PR process for Honua Server. For dev environ
 
 These are enforced by architecture tests — PRs will fail if violated.
 
-- **Dependency direction**: `Server` → `Postgres` → `Core` (never reversed)
+- **Dependency direction**: see the [Architecture Overview](../architecture-overview.md) for the full five-tier module topology (Abstractions ← Core ← Hosting ← Server, with storage providers and protocol modules carved out). Arrows point down the tier table; no back edges.
 - **Vertical slices**: features organized by business capability under `Features/`
 - **Minimal APIs only**: no controllers (no `ControllerBase`)
 - **Max 5 dependencies per endpoint, max 4 per handler**
