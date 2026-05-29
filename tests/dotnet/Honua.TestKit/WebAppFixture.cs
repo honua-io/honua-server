@@ -300,44 +300,26 @@ public sealed class WebAppFixture : IAsyncLifetime
         await transaction.CommitAsync();
     }
 
-    /// <summary>
-    /// Switches the in-memory V2 graph based on the configured seed file. Default seed
-    /// uses the broad graph; tests that drive <c>tests/seed/odata.yaml</c> or
-    /// <c>tests/seed/spatial-reference.yaml</c> get the matching graph instead so layer
-    /// metadata, queryables, and STAC properties line up with the seeded rows. Audit-A2:
-    /// the graph factories live on <c>WebAppFixtureMetadataV2Mixin</c>.
-    /// </summary>
+    // Audit-A2 follow-up: the V2 graph mutation helpers (UpdateV2*, SetV2*, and
+    // AddAdminSampleMetadataV2Graph) used to live inline as ~400 LOC. They now live on
+    // Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin and the methods below
+    // are thin delegating wrappers that preserve the public fixture API. ApplySeedSpecificMetadataV2Graph
+    // is likewise routed through the mixin.
+
     private void ApplySeedSpecificMetadataV2Graph()
     {
-        if (_serviceScope is null || _seedPath is null)
+        if (_serviceScope is null)
         {
             return;
         }
 
-        var provider = GetService<IMetadataV2GraphProvider>() as Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider
-            ?? throw new InvalidOperationException(
-                "Test V2 graph provider not registered as TestMetadataV2GraphProvider.");
-
-        var seedFile = Path.GetFileName(_seedPath);
-        if (seedFile.Equals("odata.yaml", StringComparison.OrdinalIgnoreCase))
-        {
-            provider.SetGraph(Honua.TestKit.Mixins.WebAppFixtureMetadataV2Mixin.BuildODataSeedTestGraph());
-            return;
-        }
-
-        if (seedFile.Equals("spatial-reference.yaml", StringComparison.OrdinalIgnoreCase))
-        {
-            provider.SetGraph(Honua.TestKit.Mixins.WebAppFixtureMetadataV2Mixin.BuildSpatialReferenceSeedTestGraph());
-        }
+        Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.ApplySeedSpecificGraph(this, _seedPath);
     }
 
     /// <summary>
     /// V2-aware helper that mirrors the v1 <c>ILayerMetadataUpdater</c> seed surface used
-    /// by classic-protocol and STAC tests. Looks up the resource bound to the publication
-    /// with <paramref name="layerIndex"/> and applies the supplied access policy, temporal
-    /// metadata, spatial metadata, permanent filter, extrusion metadata, and/or STAC extension payload.
-    /// Passing a value writes it; omitting an argument leaves that slot untouched. The
-    /// <c>clear*</c> flags explicitly clear the corresponding slot.
+    /// by classic-protocol and STAC tests. Delegates to
+    /// <see cref="WebAppFixtureMetadataV2GraphMutationMixin"/>.
     /// </summary>
     public void UpdateV2ResourceMetadata(
         int layerIndex,
@@ -351,356 +333,67 @@ public sealed class WebAppFixture : IAsyncLifetime
         bool clearTemporal = false,
         bool clearPermanentFilter = false,
         bool clearExtrusion = false)
-    {
-        var provider = GetService<IMetadataV2GraphProvider>() as Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider
-            ?? throw new InvalidOperationException(
-                "Test V2 graph provider not registered as TestMetadataV2GraphProvider.");
-
-        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
-        var pub = snapshot.Graph.Publications.FirstOrDefault(p => p.LayerIndex == layerIndex);
-        if (pub is null)
-        {
-            throw new InvalidOperationException(
-                $"No publication for layer {layerIndex} in the test V2 graph.");
-        }
-
-        var resources = snapshot.Graph.Resources.ToArray();
-        var mutated = false;
-        for (var i = 0; i < resources.Length; i++)
-        {
-            if (!string.Equals(resources[i].Metadata.Id, pub.ResourceId, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            var next = resources[i];
-            if (clearAccessPolicy)
-            {
-                next = next with { AccessPolicy = null };
-            }
-            else if (accessPolicy is not null)
-            {
-                next = next with { AccessPolicy = accessPolicy };
-            }
-
-            if (clearTemporal)
-            {
-                next = next with { Temporal = null };
-            }
-            else if (temporal is not null)
-            {
-                next = next with { Temporal = temporal };
-            }
-
-            if (spatial is not null)
-            {
-                next = next with { Spatial = spatial };
-            }
-
-            if (clearPermanentFilter)
-            {
-                next = next with { PermanentFilter = null };
-            }
-            else if (permanentFilter is not null)
-            {
-                next = next with { PermanentFilter = permanentFilter };
-            }
-
-            if (clearExtrusion)
-            {
-                next = next with { Extrusion = null };
-            }
-            else if (extrusion is not null)
-            {
-                next = next with { Extrusion = extrusion };
-            }
-
-            if (stacExtension.HasValue)
-            {
-                var extensions = new Dictionary<string, JsonElement>(next.Extensions, StringComparer.Ordinal)
-                {
-                    ["stac"] = stacExtension.Value,
-                };
-                next = next with { Extensions = extensions };
-            }
-
-            resources[i] = next;
-            mutated = true;
-        }
-
-        if (!mutated)
-        {
-            return;
-        }
-
-        var updatedGraph = snapshot.Graph with
-        {
-            Resources = resources,
-            Revision = snapshot.Graph.Revision + 1,
-        };
-        provider.SetGraph(updatedGraph);
-    }
+        => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceMetadata(
+            this,
+            layerIndex,
+            accessPolicy,
+            temporal,
+            spatial,
+            permanentFilter,
+            extrusion,
+            stacExtension,
+            clearAccessPolicy,
+            clearTemporal,
+            clearPermanentFilter,
+            clearExtrusion);
 
     /// <summary>
     /// Adds or replaces a Metadata v2 schema field on the resource published at
-    /// <paramref name="layerIndex"/>.
+    /// <paramref name="layerIndex"/>. Delegates to
+    /// <see cref="WebAppFixtureMetadataV2GraphMutationMixin"/>.
     /// </summary>
     public void UpdateV2ResourceSchemaField(int layerIndex, MetadataV2Field field)
-    {
-        ArgumentNullException.ThrowIfNull(field);
-
-        var provider = GetService<IMetadataV2GraphProvider>() as Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider
-            ?? throw new InvalidOperationException(
-                "Test V2 graph provider not registered as TestMetadataV2GraphProvider.");
-
-        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
-        var pub = snapshot.Graph.Publications.FirstOrDefault(p => p.LayerIndex == layerIndex);
-        if (pub is null)
-        {
-            throw new InvalidOperationException(
-                $"No publication for layer {layerIndex} in the test V2 graph.");
-        }
-
-        var resources = snapshot.Graph.Resources.ToArray();
-        var mutated = false;
-        for (var i = 0; i < resources.Length; i++)
-        {
-            if (!string.Equals(resources[i].Metadata.Id, pub.ResourceId, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            var fields = resources[i].SchemaFields
-                .Where(existing => !string.Equals(existing.Name, field.Name, StringComparison.OrdinalIgnoreCase))
-                .Append(field)
-                .ToArray();
-            resources[i] = resources[i] with { SchemaFields = fields };
-            mutated = true;
-        }
-
-        if (!mutated)
-        {
-            return;
-        }
-
-        var updatedGraph = snapshot.Graph with
-        {
-            Resources = resources,
-            Revision = snapshot.Graph.Revision + 1,
-        };
-        provider.SetGraph(updatedGraph);
-    }
+        => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceSchemaField(this, layerIndex, field);
 
     /// <summary>
-    /// V2-aware helper that renames the canonical resource bound to the publication
-    /// with <paramref name="layerIndex"/>. The CITE-conformance WMS tests rename the
-    /// v1 <c>honua.layers.layer_name</c> column to drive conformance behaviour keyed on
-    /// the layer's display name (e.g. <c>cite:Autos</c>); since handlers read their layer
-    /// names from the V2 graph, the same tests
-    /// must update the V2 resource's <see cref="MetadataV2ObjectMetadata.Name"/> for the
-    /// rename to be visible.
+    /// V2-aware helper that renames the canonical resource bound to the publication with
+    /// <paramref name="layerIndex"/>. Delegates to
+    /// <see cref="WebAppFixtureMetadataV2GraphMutationMixin"/>.
     /// </summary>
     public void UpdateV2ResourceName(int layerIndex, string newName)
-    {
-        var provider = GetService<IMetadataV2GraphProvider>() as Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider
-            ?? throw new InvalidOperationException(
-                "Test V2 graph provider not registered as TestMetadataV2GraphProvider.");
-
-        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
-        var pub = snapshot.Graph.Publications.FirstOrDefault(p => p.LayerIndex == layerIndex);
-        if (pub is null)
-        {
-            throw new InvalidOperationException(
-                $"No publication for layer {layerIndex} in the test V2 graph.");
-        }
-
-        var resources = snapshot.Graph.Resources.ToArray();
-        var mutated = false;
-        for (var i = 0; i < resources.Length; i++)
-        {
-            if (!string.Equals(resources[i].Metadata.Id, pub.ResourceId, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            resources[i] = resources[i] with
-            {
-                Metadata = resources[i].Metadata with { Name = newName }
-            };
-            mutated = true;
-        }
-
-        if (!mutated)
-        {
-            return;
-        }
-
-        var updatedGraph = snapshot.Graph with
-        {
-            Resources = resources,
-            Revision = snapshot.Graph.Revision + 1,
-        };
-        provider.SetGraph(updatedGraph);
-    }
+        => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceName(this, layerIndex, newName);
 
     /// <summary>
     /// V2-aware helper that mirrors the v1 <c>IServiceMetadataUpdater</c> seed surface
-    /// for service-level toggles (enabled protocols, access policy). Updates every V2
-    /// service that shares the supplied name (case-insensitive) — the test graph
-    /// registers one service per protocol cluster, all keyed off the same logical name,
-    /// so the v1 "one row per service" admin shape collapses onto fan-out at write time.
+    /// for service-level toggles. Delegates to
+    /// <see cref="WebAppFixtureMetadataV2GraphMutationMixin"/>.
     /// </summary>
     public void UpdateV2ServiceMetadata(
         string serviceName,
         IReadOnlyList<string>? enabledProtocols = null,
         AccessPolicy? accessPolicy = null,
         bool clearAccessPolicy = false)
-    {
-        var provider = GetService<IMetadataV2GraphProvider>() as Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider
-            ?? throw new InvalidOperationException(
-                "Test V2 graph provider not registered as TestMetadataV2GraphProvider.");
-
-        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
-        var services = snapshot.Graph.Services.ToArray();
-        var mutated = false;
-        for (var i = 0; i < services.Length; i++)
-        {
-            if (!string.Equals(services[i].Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            var next = services[i];
-            if (enabledProtocols is not null)
-            {
-                next = next with { Protocols = enabledProtocols };
-            }
-            if (clearAccessPolicy)
-            {
-                next = next with { AccessPolicy = null };
-            }
-            else if (accessPolicy is not null)
-            {
-                next = next with { AccessPolicy = accessPolicy };
-            }
-
-            services[i] = next;
-            mutated = true;
-        }
-
-        if (!mutated)
-        {
-            return;
-        }
-
-        var updatedGraph = snapshot.Graph with
-        {
-            Services = services,
-            Revision = snapshot.Graph.Revision + 1,
-        };
-        provider.SetGraph(updatedGraph);
-    }
+        => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateServiceMetadata(
+            this,
+            serviceName,
+            enabledProtocols,
+            accessPolicy,
+            clearAccessPolicy);
 
     /// <summary>
-    /// Toggles the runtime visibility of the Metadata v2 publications/resources bound to the
-    /// supplied layer index by flipping their status (Retired when disabled, runtime-ready when
-    /// enabled), so access/visibility tests observe an enabled/disabled layer.
+    /// Toggles the runtime visibility of the Metadata v2 publications/resources bound to
+    /// the supplied layer index. Delegates to
+    /// <see cref="WebAppFixtureMetadataV2GraphMutationMixin"/>.
     /// </summary>
     public void SetV2LayerEnabled(int layerIndex, bool enabled)
-    {
-        var provider = GetService<IMetadataV2GraphProvider>() as Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider
-            ?? throw new InvalidOperationException(
-                "Test V2 graph provider not registered as TestMetadataV2GraphProvider.");
-
-        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
-        var affectedResourceIds = snapshot.Graph.Publications
-            .Where(publication => publication.LayerIndex == layerIndex)
-            .Select(publication => publication.ResourceId)
-            .ToHashSet(StringComparer.Ordinal);
-        if (affectedResourceIds.Count == 0)
-        {
-            return;
-        }
-
-        var status = enabled
-            ? new MetadataV2Status
-            {
-                Lifecycle = MetadataV2LifecycleStatus.Active,
-                State = MetadataV2OperationalState.Ready,
-            }
-            : new MetadataV2Status
-            {
-                Lifecycle = MetadataV2LifecycleStatus.Retired,
-                State = MetadataV2OperationalState.Ready,
-            };
-
-        var resources = snapshot.Graph.Resources
-            .Select(resource => affectedResourceIds.Contains(resource.Metadata.Id)
-                ? resource with { Status = status }
-                : resource)
-            .ToArray();
-        var publications = snapshot.Graph.Publications
-            .Select(publication => publication.LayerIndex == layerIndex
-                ? publication with { Status = status }
-                : publication)
-            .ToArray();
-
-        provider.SetGraph(snapshot.Graph with
-        {
-            Resources = resources,
-            Publications = publications,
-            Revision = snapshot.Graph.Revision + 1,
-        });
-    }
+        => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.SetLayerEnabled(this, layerIndex, enabled);
 
     /// <summary>
     /// Adds the Metadata v2 mirror for <c>tests/seed/admin-sample-feature-server.yaml</c>.
-    /// The SQL seed is applied after the fixture starts, so tests that use it must update
-    /// the in-memory v2 graph explicitly.
+    /// Delegates to <see cref="WebAppFixtureMetadataV2GraphMutationMixin"/>.
     /// </summary>
     public void AddAdminSampleMetadataV2Graph()
-    {
-        var provider = GetService<IMetadataV2GraphProvider>() as Honua.TestKit.Infrastructure.TestMetadataV2GraphProvider
-            ?? throw new InvalidOperationException(
-                "Test V2 graph provider not registered as TestMetadataV2GraphProvider.");
-
-        var snapshot = provider.GetCurrentAsync().AsTask().GetAwaiter().GetResult();
-        var adminGraph = Honua.TestKit.Mixins.WebAppFixtureMetadataV2Mixin.BuildAdminSampleMetadataV2Graph();
-        var adminResourceIds = adminGraph.Resources
-            .Select(static resource => resource.Metadata.Id)
-            .ToHashSet(StringComparer.Ordinal);
-        var adminBindingIds = adminGraph.StorageBindings
-            .Select(static binding => binding.Metadata.Id)
-            .ToHashSet(StringComparer.Ordinal);
-        var adminServiceIds = adminGraph.Services
-            .Select(static service => service.Metadata.Id)
-            .ToHashSet(StringComparer.Ordinal);
-        var adminPublicationIds = adminGraph.Publications
-            .Select(static publication => publication.Metadata.Id)
-            .ToHashSet(StringComparer.Ordinal);
-
-        var graph = snapshot.Graph;
-        provider.SetGraph(graph with
-        {
-            Resources = graph.Resources
-                .Where(resource => !adminResourceIds.Contains(resource.Metadata.Id))
-                .Concat(adminGraph.Resources)
-                .ToArray(),
-            StorageBindings = graph.StorageBindings
-                .Where(binding => !adminBindingIds.Contains(binding.Metadata.Id))
-                .Concat(adminGraph.StorageBindings)
-                .ToArray(),
-            Services = graph.Services
-                .Where(service => !adminServiceIds.Contains(service.Metadata.Id))
-                .Concat(adminGraph.Services)
-                .ToArray(),
-            Publications = graph.Publications
-                .Where(publication => !adminPublicationIds.Contains(publication.Metadata.Id))
-                .Concat(adminGraph.Publications)
-                .ToArray(),
-            Revision = graph.Revision + 1,
-        });
-    }
+        => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.AddAdminSample(this);
 
     /// <summary>
     /// Creates a simple test point geometry as WKB
