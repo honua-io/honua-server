@@ -40,11 +40,12 @@ namespace Honua.TestKit;
 /// </summary>
 public sealed class WebAppFixture : IAsyncLifetime
 {
-    private static readonly SemaphoreSlim _sharedLock = new(1, 1);
-    private static WebApplicationFactory<Program>? _sharedFactory;
-    private static PostgresFixture? _sharedPostgres;
-    private static int _sharedRefCount;
-    private static bool _sharedInitialized;
+    // Audit-A2: the process-wide shared-factory/Postgres/refcount/semaphore static
+    // state used to live here. It is owned by
+    // <see cref="Mixins.WebAppFixtureSharedBootstrapMixin"/> now, which exposes the
+    // factory + Postgres handles through static accessors. The bootstrap mixin owns
+    // the lifecycle (init + ref-counted release) so the per-fixture instance code
+    // only needs to know about its own per-test state.
 
     private PostgresFixture? _postgres;
     private readonly List<Action<IServiceCollection>> _serviceConfigurations = [];
@@ -93,7 +94,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     public HttpClient Client { get; private set; } = null!;
 
     public PostgresFixture Postgres => _useSharedServer
-        ? _sharedPostgres ?? throw new InvalidOperationException("Shared Postgres fixture not initialized.")
+        ? Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin.Postgres
         : _postgres ?? throw new InvalidOperationException("Postgres fixture not initialized.");
 
     public PostgresFixture PostgresFixture => Postgres;
@@ -108,10 +109,19 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// <summary>
     /// Gets the service provider from the test server's DI container.
     /// </summary>
-    public IServiceProvider Services => (_useSharedServer ? _sharedFactory : _factory)?.Services
-        ?? throw new InvalidOperationException("Web application factory not initialized.");
+    public IServiceProvider Services => ActiveFactory.Services;
 
     private bool HasCustomConfiguration => _serviceConfigurations.Count > 0 || _configureWebHost != null;
+
+    /// <summary>
+    /// Returns the active <see cref="WebApplicationFactory{TEntryPoint}"/> for this
+    /// fixture, sourced from the shared bootstrap mixin when running in shared mode
+    /// or this instance's <c>_factory</c> in isolated mode. Throws when called before
+    /// initialization.
+    /// </summary>
+    private WebApplicationFactory<Program> ActiveFactory => _useSharedServer
+        ? Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin.Factory
+        : _factory ?? throw new InvalidOperationException("Web application factory not initialized.");
 
     public async Task InitializeAsync()
     {
@@ -274,67 +284,10 @@ public sealed class WebAppFixture : IAsyncLifetime
 
     private async Task InitializeSharedAsync()
     {
-        await _sharedLock.WaitAsync();
-        try
-        {
-            if (!_sharedInitialized)
-            {
-                Environment.SetEnvironmentVariable("HONUA_TEST_SCHEMA_HEADERS", "true");
-
-                _sharedPostgres = new PostgresFixture();
-                await _sharedPostgres.InitializeAsync();
-
-                var sharedAppConfigExtras = new Dictionary<string, string?>
-                {
-                    ["HONUA_DEV_AUTH"] = "true",
-                    ["HONUA_DEV_AUTH_ALLOW_BYPASS"] = "true",
-                    ["HONUA_ADMIN_PASSWORD"] = SharedAdminPassword,
-                    ["HONUA_TEST_SCHEMA_HEADERS"] = "true",
-                    ["Database:QueryCache:EnableAutomaticCaching"] = "false",
-                };
-
-                var sharedPostgresConfigExtras = new Dictionary<string, string?>
-                {
-                    ["HONUA_TEST_SCHEMA_HEADERS"] = "true",
-                };
-
-                _sharedFactory = new WebApplicationFactory<Program>()
-                    .WithWebHostBuilder(builder =>
-                    {
-                        // Audit-A2: host settings, app configuration, and PostgreSQL
-                        // test services wiring all live on
-                        // WebAppFixturePostgresWiringMixin so the isolated and shared
-                        // bootstrap paths stay in lockstep.
-                        Honua.TestKit.Mixins.WebAppFixturePostgresWiringMixin.ApplyCommonHostSettings(builder);
-                        builder.UseSetting("HONUA_ADMIN_PASSWORD", SharedAdminPassword);
-
-                        builder.ConfigureAppConfiguration((context, configBuilder) =>
-                        {
-                            configBuilder.AddInMemoryCollection(
-                                Honua.TestKit.Mixins.WebAppFixturePostgresWiringMixin
-                                    .BuildAppConfigurationDictionary(
-                                        _sharedPostgres.ConnectionString,
-                                        sharedAppConfigExtras));
-                        });
-
-                        builder.ConfigureTestServices(services =>
-                        {
-                            Honua.TestKit.Mixins.WebAppFixturePostgresWiringMixin.ConfigureSharedTestServices(
-                                services,
-                                _sharedPostgres.ConnectionString,
-                                sharedPostgresConfigExtras);
-                        });
-                    });
-
-                _sharedInitialized = true;
-            }
-
-            _sharedRefCount++;
-        }
-        finally
-        {
-            _sharedLock.Release();
-        }
+        // Audit-A2: the process-wide shared-server lifecycle (semaphore + refcount +
+        // factory/Postgres construction) lives on WebAppFixtureSharedBootstrapMixin.
+        await Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin
+            .EnsureInitializedAsync(SharedAdminPassword);
 
         if (string.IsNullOrWhiteSpace(_currentSchema))
         {
@@ -344,7 +297,7 @@ public sealed class WebAppFixture : IAsyncLifetime
         await SeedSchemaAsync(_currentSchema);
 
         Client = CreateAdminClient();
-        _serviceScope = _sharedFactory?.Services.CreateScope();
+        _serviceScope = Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin.Factory.Services.CreateScope();
 
         ApplySeedSpecificMetadataV2Graph();
 
@@ -365,36 +318,9 @@ public sealed class WebAppFixture : IAsyncLifetime
 
             Client.Dispose();
 
-            await _sharedLock.WaitAsync();
-            try
-            {
-                if (_sharedRefCount > 0)
-                {
-                    _sharedRefCount--;
-                }
-
-                if (_sharedRefCount == 0 && _sharedInitialized)
-                {
-                    if (_sharedFactory is not null)
-                    {
-                        await _sharedFactory.DisposeAsync();
-                    }
-
-                    if (_sharedPostgres is not null)
-                    {
-                        await _sharedPostgres.DisposeAsync();
-                    }
-
-                    _sharedFactory = null;
-                    _sharedPostgres = null;
-                    _sharedInitialized = false;
-                }
-            }
-            finally
-            {
-                _sharedLock.Release();
-            }
-
+            // Audit-A2: ref-counted teardown of the shared factory + Postgres lives on
+            // WebAppFixtureSharedBootstrapMixin.
+            await Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin.ReleaseAsync();
             return;
         }
 
@@ -574,35 +500,21 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// Useful for constructing custom transports (e.g. gRPC channels) that route
     /// through the same pipeline as <see cref="Client"/>.
     /// </summary>
-    public HttpMessageHandler CreateHandler()
-    {
-        var factory = (_useSharedServer ? _sharedFactory : _factory)
-            ?? throw new InvalidOperationException("Web application factory not initialized.");
-
-        return factory.Server.CreateHandler();
-    }
+    public HttpMessageHandler CreateHandler() => ActiveFactory.Server.CreateHandler();
 
     /// <summary>
     /// Creates a <see cref="Microsoft.AspNetCore.TestHost.WebSocketClient"/> for testing
     /// WebSocket endpoints through the in-memory test server.
     /// </summary>
     public Microsoft.AspNetCore.TestHost.WebSocketClient CreateWebSocketClient()
-    {
-        var factory = (_useSharedServer ? _sharedFactory : _factory)
-            ?? throw new InvalidOperationException("Web application factory not initialized.");
-
-        return factory.Server.CreateWebSocketClient();
-    }
+        => ActiveFactory.Server.CreateWebSocketClient();
 
     /// <summary>
     /// Create a new HTTP client with custom configuration.
     /// </summary>
     public HttpClient CreateClient(Action<HttpClient>? configure = null)
     {
-        var factory = (_useSharedServer ? _sharedFactory : _factory)
-            ?? throw new InvalidOperationException("Web application factory not initialized.");
-
-        var client = factory.CreateClient();
+        var client = ActiveFactory.CreateClient();
         client.Timeout = _defaultTestClientTimeout;
         if (_useSharedServer && !string.IsNullOrWhiteSpace(_currentSchema))
         {

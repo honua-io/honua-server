@@ -50,6 +50,8 @@
     <InternalsVisibleTo Include="Honua.Protocols.Mcp.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.Scene.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.Stac.Tests" />
+    <InternalsVisibleTo Include="Honua.Aws" />
+    <InternalsVisibleTo Include="Honua.Azure" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 
