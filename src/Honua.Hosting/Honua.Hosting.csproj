@@ -45,6 +45,11 @@
     <!-- Grpc.AspNetCore brings Grpc.Core.Api transitively for LicenseGate's
          RpcException factory (carved Licensing sub-area). Mirrors Server. -->
     <PackageReference Include="Grpc.AspNetCore" />
+    <!-- SkiaSharp is required by the carved Rendering sub-area
+         (SkiaMapRenderer, WkbToSkiaConverter, raster tile pipeline).
+         The Linux native asset stays on Server.csproj; consumers that
+         actually rasterize already reference Server. -->
+    <PackageReference Include="SkiaSharp" />
   </ItemGroup>
 
   <ItemGroup>
