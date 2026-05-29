@@ -89,6 +89,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Geometry", "src\Honua
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Ai", "src\Honua.Ai\Honua.Ai.csproj", "{7F0558A5-056E-461B-A7F6-600A87201F9F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Geoprocessing", "src\Honua.Geoprocessing\Honua.Geoprocessing.csproj", "{C74F8F59-4971-4201-BB41-3474F0902068}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -567,6 +569,18 @@ Global
 		{7F0558A5-056E-461B-A7F6-600A87201F9F}.Release|x64.Build.0 = Release|Any CPU
 		{7F0558A5-056E-461B-A7F6-600A87201F9F}.Release|x86.ActiveCfg = Release|Any CPU
 		{7F0558A5-056E-461B-A7F6-600A87201F9F}.Release|x86.Build.0 = Release|Any CPU
+		{C74F8F59-4971-4201-BB41-3474F0902068}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C74F8F59-4971-4201-BB41-3474F0902068}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C74F8F59-4971-4201-BB41-3474F0902068}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{C74F8F59-4971-4201-BB41-3474F0902068}.Debug|x64.Build.0 = Debug|Any CPU
+		{C74F8F59-4971-4201-BB41-3474F0902068}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{C74F8F59-4971-4201-BB41-3474F0902068}.Debug|x86.Build.0 = Debug|Any CPU
+		{C74F8F59-4971-4201-BB41-3474F0902068}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C74F8F59-4971-4201-BB41-3474F0902068}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C74F8F59-4971-4201-BB41-3474F0902068}.Release|x64.ActiveCfg = Release|Any CPU
+		{C74F8F59-4971-4201-BB41-3474F0902068}.Release|x64.Build.0 = Release|Any CPU
+		{C74F8F59-4971-4201-BB41-3474F0902068}.Release|x86.ActiveCfg = Release|Any CPU
+		{C74F8F59-4971-4201-BB41-3474F0902068}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

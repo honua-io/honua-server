@@ -5,6 +5,7 @@ using Honua.Core.Features.Compliance;
 using Honua.Core.Features.Metadata;
 using Honua.Postgres.Features.Scene;
 using Honua.Server.Features.Admin;
+using Honua.Server.Features.ControlPlane;
 using Honua.Server.Features.AnalysisContent;
 using Honua.Server.Features.Capabilities;
 using Honua.Server.Features.Infrastructure.Scene;
@@ -99,6 +100,11 @@ internal static class FeatureRegistrationExtensions
         services.AddSceneGeneration(configuration);
         services.AddPrintingTools();
         services.AddGeoprocessing(configuration);
+        // Job-orchestration substrate (queue + log store) used by AddGeoprocessing.
+        // Lives in Honua.Server because it composes a Share-export terminal callback
+        // that depends on Honua.Server.Features.Admin.Share — out of reach for the
+        // carved Honua.Geoprocessing assembly.
+        services.AddJobOrchestration();
         services.AddAnalysisContent(configuration);
         services.AddAnalysisReporting(configuration);
         services.AddCapabilityManifest();

@@ -153,8 +153,10 @@ internal static class GeoprocessingServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IJobExecutor, GeoprocessingDispatchJobExecutor>());
 
-        // Job orchestration substrate: queue, log store (ticket #681)
-        services.AddJobOrchestration();
+        // Job orchestration substrate (queue, log store — ticket #681) is wired
+        // by the Honua.Server composition root via AddJobOrchestration, which
+        // also registers the Share-export terminal callback that depends on
+        // Honua.Server.Features.Admin.Share (out of reach for this assembly).
 
         return services;
     }

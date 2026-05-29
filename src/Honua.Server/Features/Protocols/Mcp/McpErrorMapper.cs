@@ -10,8 +10,8 @@ namespace Honua.Server.Features.Protocols.Mcp;
 
 /// <summary>
 /// Maps geoprocessing domain exceptions to MCP JSON-RPC error envelopes.
-/// Mirrors the translation that <see cref="HonuaProcessService.MapToRpcException"/>
-/// performs for gRPC so every transport surfaces the same recoverable signals
+/// Mirrors the translation that <see cref="HonuaProcessService"/> performs
+/// for gRPC so every transport surfaces the same recoverable signals
 /// (approval required, idempotency conflict, authentication) without parsing
 /// message strings. Numeric codes follow JSON-RPC 2.0 / MCP 2025-03-26: -32700
 /// parse error, -32600 invalid request, -32601 method not found, -32602 invalid

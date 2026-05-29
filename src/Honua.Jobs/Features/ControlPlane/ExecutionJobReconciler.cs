@@ -11,7 +11,7 @@ namespace Honua.Server.Features.ControlPlane;
 
 /// <summary>
 /// Reconciles durable execution-job records against pluggable batch-compute backends.
-/// Mirrors <see cref="DeployWorkflowReconciler"/> for the run-to-completion job lifecycle
+/// Mirrors the deploy-workflow reconciler for the run-to-completion job lifecycle
 /// so that optional distributed executors plug in behind the canonical runtime.
 /// </summary>
 internal sealed partial class ExecutionJobReconciler(

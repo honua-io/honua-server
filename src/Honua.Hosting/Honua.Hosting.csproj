@@ -77,6 +77,8 @@
     <InternalsVisibleTo Include="Honua.Protocols.Scene.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.Stac" />
     <InternalsVisibleTo Include="Honua.Protocols.Stac.Tests" />
+    <InternalsVisibleTo Include="Honua.Geoprocessing" />
+    <InternalsVisibleTo Include="Honua.Geoprocessing.Tests" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 

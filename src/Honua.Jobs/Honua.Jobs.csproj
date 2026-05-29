@@ -52,6 +52,8 @@
     <InternalsVisibleTo Include="Honua.Protocols.Stac.Tests" />
     <InternalsVisibleTo Include="Honua.Aws" />
     <InternalsVisibleTo Include="Honua.Azure" />
+    <InternalsVisibleTo Include="Honua.Geoprocessing" />
+    <InternalsVisibleTo Include="Honua.Geoprocessing.Tests" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 
