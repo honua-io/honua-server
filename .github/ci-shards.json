@@ -17,6 +17,8 @@
     "src/Honua.Postgres/Queries/",
     "src/Honua.ServiceDefaults/",
     "src/Honua.Hosting/Honua.Hosting.csproj",
+    "src/Honua.Aws/",
+    "src/Honua.Azure/",
     "src/Honua.Server/Features/Infrastructure/Hosting/",
     "src/Honua.Server/Features/Infrastructure/Middleware/",
     "src/Honua.Server/Features/Infrastructure/Services/",
