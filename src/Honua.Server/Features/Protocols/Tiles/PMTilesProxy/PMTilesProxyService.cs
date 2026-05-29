@@ -1,10 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Net;
 using System.Net.Http.Headers;
-using Amazon.S3;
-using Azure;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Microsoft.Extensions.Options;
@@ -25,15 +22,18 @@ internal sealed class PMTilesProxyService
 
     private readonly ICloudFileStorage _cloudStorage;
     private readonly IEnumerable<ICloudRangeReader> _rangeReaders;
+    private readonly IReadOnlyList<ICloudNotFoundClassifier> _notFoundClassifiers;
     private readonly CloudStorageOptions _storageOptions;
 
     public PMTilesProxyService(
         ICloudFileStorage cloudStorage,
         IEnumerable<ICloudRangeReader> rangeReaders,
+        IEnumerable<ICloudNotFoundClassifier> notFoundClassifiers,
         IOptions<CloudStorageOptions> storageOptions)
     {
         _cloudStorage = cloudStorage ?? throw new ArgumentNullException(nameof(cloudStorage));
         _rangeReaders = rangeReaders ?? throw new ArgumentNullException(nameof(rangeReaders));
+        _notFoundClassifiers = (notFoundClassifiers ?? throw new ArgumentNullException(nameof(notFoundClassifiers))).ToArray();
         _storageOptions = storageOptions?.Value ?? throw new ArgumentNullException(nameof(storageOptions));
     }
 
@@ -134,7 +134,7 @@ internal sealed class PMTilesProxyService
             {
                 payload = await reader.ReadRangeAsync(bucket, metadata.StoragePath, start, (int)length, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex) when (IsProviderNotFound(ex))
+            catch (Exception ex) when (IsProviderNotFound(ex, _notFoundClassifiers))
             {
                 // S3 NoSuchKey / Azure 404. Match the download-fallback path
                 // by surfacing a missing underlying object as NotFound so the
@@ -160,13 +160,25 @@ internal sealed class PMTilesProxyService
         return PMTilesRangeResult.Partial(start, end, totalSize, payload);
     }
 
-    internal static bool IsProviderNotFound(Exception exception) => exception switch
+    /// <summary>
+    /// Fans <paramref name="exception"/> through every registered
+    /// <see cref="ICloudNotFoundClassifier"/> so the proxy can surface a missing
+    /// underlying object as 404 without taking a direct dependency on AWS / Azure
+    /// SDK exception types. Provider-specific classifiers live in Honua.Aws /
+    /// Honua.Azure.
+    /// </summary>
+    internal static bool IsProviderNotFound(Exception exception, IReadOnlyList<ICloudNotFoundClassifier> classifiers)
     {
-        AmazonS3Exception s3 when s3.StatusCode == HttpStatusCode.NotFound
-            || string.Equals(s3.ErrorCode, "NoSuchKey", StringComparison.OrdinalIgnoreCase) => true,
-        RequestFailedException azure when azure.Status == (int)HttpStatusCode.NotFound => true,
-        _ => false
-    };
+        for (var i = 0; i < classifiers.Count; i++)
+        {
+            if (classifiers[i].IsNotFound(exception))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     public async Task<Stream?> OpenFullAsync(string artifactId, CancellationToken cancellationToken)
     {

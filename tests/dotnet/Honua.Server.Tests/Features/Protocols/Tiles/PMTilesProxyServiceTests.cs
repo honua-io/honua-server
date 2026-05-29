@@ -8,6 +8,7 @@ using Azure;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Server.Features.FileStorage;
 using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 using Microsoft.Extensions.Options;
 
@@ -44,7 +45,7 @@ public sealed class PMTilesProxyServiceTests
     public async Task ResolveAsync_MissingArtifact_ReturnsNotFound()
     {
         var stub = new TestCloudStorage();
-        var sut = new PMTilesProxyService(stub, [], Options.Create(new CloudStorageOptions()));
+        var sut = new PMTilesProxyService(stub, [], TestClassifiers(), Options.Create(new CloudStorageOptions()));
 
         var resolution = await sut.ResolveAsync("missing", CancellationToken.None);
 
@@ -60,7 +61,7 @@ public sealed class PMTilesProxyServiceTests
             [0, 1, 2, 3],
             contentType: "application/octet-stream",
             metadata: ImmutableDictionary<string, string>.Empty.Add("operation", "publish"));
-        var sut = new PMTilesProxyService(stub, [], Options.Create(new CloudStorageOptions()));
+        var sut = new PMTilesProxyService(stub, [], TestClassifiers(), Options.Create(new CloudStorageOptions()));
 
         var resolution = await sut.ResolveAsync(fileId, CancellationToken.None);
 
@@ -76,7 +77,7 @@ public sealed class PMTilesProxyServiceTests
             [0, 1, 2, 3],
             contentType: "application/vnd.pmtiles",
             metadata: ImmutableDictionary<string, string>.Empty.Add("operation", "archive"));
-        var sut = new PMTilesProxyService(stub, [], Options.Create(new CloudStorageOptions()));
+        var sut = new PMTilesProxyService(stub, [], TestClassifiers(), Options.Create(new CloudStorageOptions()));
 
         var resolution = await sut.ResolveAsync(fileId, CancellationToken.None);
 
@@ -99,7 +100,7 @@ public sealed class PMTilesProxyServiceTests
             AwsS3 = new AwsS3Options { BucketName = "honua-bucket", Region = "us-east-1" },
             PMTilesPublish = new PMTilesPublishOptions { KeyPrefix = "pmtiles" }
         });
-        var sut = new PMTilesProxyService(stub, [], options);
+        var sut = new PMTilesProxyService(stub, [], TestClassifiers(), options);
 
         var resolution = await sut.ResolveAsync(fileId, CancellationToken.None);
 
@@ -127,7 +128,7 @@ public sealed class PMTilesProxyServiceTests
             },
             PMTilesPublish = new PMTilesPublishOptions { KeyPrefix = "pmtiles" }
         });
-        var sut = new PMTilesProxyService(stub, [], options);
+        var sut = new PMTilesProxyService(stub, [], TestClassifiers(), options);
 
         var resolution = await sut.ResolveAsync(fileId, CancellationToken.None);
 
@@ -140,7 +141,7 @@ public sealed class PMTilesProxyServiceTests
     {
         var stub = new TestCloudStorage();
         var fileId = stub.AddFile([0, 1, 2, 3, 4, 5, 6, 7]);
-        var sut = new PMTilesProxyService(stub, [], Options.Create(new CloudStorageOptions()));
+        var sut = new PMTilesProxyService(stub, [], TestClassifiers(), Options.Create(new CloudStorageOptions()));
 
         var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
         var result = await sut.ReadRangeAsync(metadata, rangeHeader: null, CancellationToken.None);
@@ -154,7 +155,7 @@ public sealed class PMTilesProxyServiceTests
     {
         var stub = new TestCloudStorage();
         var fileId = stub.AddFile([10, 20, 30, 40, 50, 60, 70, 80]);
-        var sut = new PMTilesProxyService(stub, [], Options.Create(new CloudStorageOptions()));
+        var sut = new PMTilesProxyService(stub, [], TestClassifiers(), Options.Create(new CloudStorageOptions()));
 
         var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
         var result = await sut.ReadRangeAsync(metadata, rangeHeader: "bytes=2-5", CancellationToken.None);
@@ -171,7 +172,7 @@ public sealed class PMTilesProxyServiceTests
     {
         var stub = new TestCloudStorage();
         var fileId = stub.AddFile([1, 2, 3]);
-        var sut = new PMTilesProxyService(stub, [], Options.Create(new CloudStorageOptions()));
+        var sut = new PMTilesProxyService(stub, [], TestClassifiers(), Options.Create(new CloudStorageOptions()));
 
         var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
         var result = await sut.ReadRangeAsync(metadata, rangeHeader: "bytes=20-30", CancellationToken.None);
@@ -189,7 +190,7 @@ public sealed class PMTilesProxyServiceTests
         var stub = new TestCloudStorage();
         var fileId = stub.AddFile([1, 2, 3, 4, 5, 6, 7, 8]);
         stub.SimulateOutOfBandDelete(fileId);
-        var sut = new PMTilesProxyService(stub, [], Options.Create(new CloudStorageOptions()));
+        var sut = new PMTilesProxyService(stub, [], TestClassifiers(), Options.Create(new CloudStorageOptions()));
 
         var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata;
         metadata.Should().NotBeNull("metadata is still cached even though the bytes are gone");
@@ -221,7 +222,7 @@ public sealed class PMTilesProxyServiceTests
             Provider = CloudStorageProvider.AwsS3,
             AwsS3 = new AwsS3Options { BucketName = "honua-bucket", Region = "us-east-1" }
         });
-        var sut = new PMTilesProxyService(stub, [failingReader], options);
+        var sut = new PMTilesProxyService(stub, [failingReader], TestClassifiers(), options);
 
         var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
         var result = await sut.ReadRangeAsync(metadata, "bytes=0-3", CancellationToken.None);
@@ -245,7 +246,7 @@ public sealed class PMTilesProxyServiceTests
             Provider = CloudStorageProvider.AzureBlob,
             AzureBlob = new AzureBlobOptions { ConnectionString = "fake", ContainerName = "tiles" }
         });
-        var sut = new PMTilesProxyService(stub, [failingReader], options);
+        var sut = new PMTilesProxyService(stub, [failingReader], TestClassifiers(), options);
 
         var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
         var result = await sut.ReadRangeAsync(metadata, "bytes=0-3", CancellationToken.None);
@@ -273,7 +274,7 @@ public sealed class PMTilesProxyServiceTests
             Provider = CloudStorageProvider.AwsS3,
             AwsS3 = new AwsS3Options { BucketName = "honua-bucket", Region = "us-east-1" }
         });
-        var sut = new PMTilesProxyService(stub, [failingReader], options);
+        var sut = new PMTilesProxyService(stub, [failingReader], TestClassifiers(), options);
 
         var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
         var act = async () => await sut.ReadRangeAsync(metadata, "bytes=0-3", CancellationToken.None);
@@ -284,21 +285,38 @@ public sealed class PMTilesProxyServiceTests
     [Fact]
     public void IsProviderNotFound_RecognizesProviderShapes()
     {
+        var classifiers = TestClassifiers();
+
         PMTilesProxyService.IsProviderNotFound(
-            new AmazonS3Exception("missing") { StatusCode = HttpStatusCode.NotFound })
+            new AmazonS3Exception("missing") { StatusCode = HttpStatusCode.NotFound },
+            classifiers)
             .Should().BeTrue();
         PMTilesProxyService.IsProviderNotFound(
-            new AmazonS3Exception("missing") { ErrorCode = "NoSuchKey" })
+            new AmazonS3Exception("missing") { ErrorCode = "NoSuchKey" },
+            classifiers)
             .Should().BeTrue();
         PMTilesProxyService.IsProviderNotFound(
-            new RequestFailedException(status: 404, message: "BlobNotFound"))
+            new RequestFailedException(status: 404, message: "BlobNotFound"),
+            classifiers)
             .Should().BeTrue();
         PMTilesProxyService.IsProviderNotFound(
-            new RequestFailedException(status: 500, message: "Internal"))
+            new RequestFailedException(status: 500, message: "Internal"),
+            classifiers)
             .Should().BeFalse();
-        PMTilesProxyService.IsProviderNotFound(new InvalidOperationException("other"))
+        PMTilesProxyService.IsProviderNotFound(new InvalidOperationException("other"), classifiers)
             .Should().BeFalse();
     }
+
+    /// <summary>
+    /// Builds the same per-cloud classifier set that production DI assembles —
+    /// one AWS classifier, one Azure classifier — so the orchestrator-level
+    /// tests exercise the chained classification path end-to-end.
+    /// </summary>
+    private static ICloudNotFoundClassifier[] TestClassifiers() =>
+    [
+        new AwsS3NotFoundClassifier(),
+        new AzureBlobNotFoundClassifier(),
+    ];
 
     [Fact]
     public async Task ReadRangeAsync_RangeReaderRegistered_DispatchesByProvider()
@@ -311,7 +329,7 @@ public sealed class PMTilesProxyServiceTests
             Provider = CloudStorageProvider.AwsS3,
             AwsS3 = new AwsS3Options { BucketName = "honua-bucket", Region = "us-east-1" }
         });
-        var sut = new PMTilesProxyService(stub, [stubReader], options);
+        var sut = new PMTilesProxyService(stub, [stubReader], TestClassifiers(), options);
 
         var metadata = (await sut.ResolveAsync(fileId, CancellationToken.None)).Metadata!;
         var result = await sut.ReadRangeAsync(metadata, "bytes=0-3", CancellationToken.None);
