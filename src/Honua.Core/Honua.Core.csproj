@@ -30,13 +30,11 @@
     <PackageReference Include="Polly" />
 
     <!--
-      NetTopologySuite-only refs remain pending. FlatGeobuf, Parquet.Net,
-      and Snappier moved with the FileImport readers into Honua.Geometry.
-      The remaining NTS surface inside Spec/Queries.Filters still requires
-      the base NetTopologySuite + NetTopologySuite.IO.GeoJSON packages.
+      NetTopologySuite and friends moved to Honua.Geometry along with the
+      Spec subsystem, the WKT/GeoJSON-consuming filter parsers, and the
+      NlQuery FilterPlanCompiler. Honua.Core no longer pulls any geospatial
+      package — see ADR-0041 and CoreAbstractionsIsolationTests.
     -->
-    <PackageReference Include="NetTopologySuite" />
-    <PackageReference Include="NetTopologySuite.IO.GeoJSON" />
   </ItemGroup>
 
   <ItemGroup>

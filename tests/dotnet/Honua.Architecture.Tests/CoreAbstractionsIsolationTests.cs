@@ -152,14 +152,16 @@ public sealed class CoreAbstractionsIsolationTests
         "FlatGeobuf",
         "Parquet.Net",
         "Snappier",
+        "NetTopologySuite",
+        "NetTopologySuite.IO.GeoJSON",
     };
 
     /// <summary>
-    /// Asserts that the file-format reader extraction kept the heavy geospatial
-    /// file format packages (FlatGeobuf / Parquet.Net / Snappier) out of
-    /// <c>Honua.Core.csproj</c>. Those packages now live with the readers in
-    /// <c>Honua.Geometry</c>. NetTopologySuite stays in scope for a follow-up
-    /// wave because Spec / Queries.Filters still construct geometries inline.
+    /// Asserts that the geometry-subsystem extraction kept the heavy geospatial
+    /// packages (FlatGeobuf / Parquet.Net / Snappier / NetTopologySuite) out of
+    /// <c>Honua.Core.csproj</c>. Those packages now live with the readers, the
+    /// Spec subsystem, the WKT/GeoJSON-consuming filter parsers, and the
+    /// NlQuery filter-plan compiler inside <c>Honua.Geometry</c>.
     /// </summary>
     [ArchitectureTest]
     public void HonuaCoreCsproj_ShouldNotReference_GeometryFileFormatPackages()
