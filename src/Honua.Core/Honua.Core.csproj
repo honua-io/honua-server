@@ -29,12 +29,14 @@
     <PackageReference Include="Microsoft.Extensions.ObjectPool" />
     <PackageReference Include="Polly" />
 
-    <!-- NetTopologySuite geospatial file format support -->
-    <PackageReference Include="FlatGeobuf" />
+    <!--
+      NetTopologySuite-only refs remain pending. FlatGeobuf, Parquet.Net,
+      and Snappier moved with the FileImport readers into Honua.Geometry.
+      The remaining NTS surface inside Spec/Queries.Filters still requires
+      the base NetTopologySuite + NetTopologySuite.IO.GeoJSON packages.
+    -->
     <PackageReference Include="NetTopologySuite" />
     <PackageReference Include="NetTopologySuite.IO.GeoJSON" />
-    <PackageReference Include="Parquet.Net" />
-    <PackageReference Include="Snappier" />
   </ItemGroup>
 
   <ItemGroup>
