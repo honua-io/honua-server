@@ -63,6 +63,54 @@ public sealed class CloudSdkIsolationTests
                 string.Join(", ", offending.Select(pair => $"{Path.GetFileName(pair.Csproj)} -> {pair.Package}")));
     }
 
+    /// <summary>
+    /// Honua.Server is downstream of Honua.Aws / Honua.Azure but per the
+    /// cloud-SDK isolation contract its source files must not name any
+    /// AWSSDK / Azure SDK types directly — the carve-out kept the
+    /// <c>Honua.Server.Features.*</c> namespaces on the per-cloud projects
+    /// precisely so callers don't need to. A regression that re-introduces
+    /// <c>using Amazon.*</c> or <c>using Azure.*</c> in Honua.Server should
+    /// fail this guard rather than silently re-leak the SDK surface.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Architecture")]
+    public void HonuaServer_MustNotImport_AwsOrAzureSdkNamespaces()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var serverRoot = Path.Combine(repositoryRoot, "src", "Honua.Server");
+
+        Directory.Exists(serverRoot).Should().BeTrue(
+            "Honua.Server source root must exist at: {0}",
+            serverRoot);
+
+        var offenders = new List<(string File, string UsingLine)>();
+        foreach (var file in Directory.EnumerateFiles(serverRoot, "*.cs", SearchOption.AllDirectories))
+        {
+            // Skip generated obj/ output so a stale build doesn't trigger the guard.
+            if (file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                || file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            foreach (var line in File.ReadLines(file))
+            {
+                var trimmed = line.TrimStart();
+                if (trimmed.StartsWith("using Amazon.", StringComparison.Ordinal)
+                    || trimmed.StartsWith("using Azure.", StringComparison.Ordinal)
+                    || trimmed.StartsWith("using static Amazon.", StringComparison.Ordinal)
+                    || trimmed.StartsWith("using static Azure.", StringComparison.Ordinal))
+                {
+                    offenders.Add((file, trimmed));
+                }
+            }
+        }
+
+        offenders.Should().BeEmpty(
+            "Honua.Server must not directly import AWSSDK / Azure SDK namespaces — move the SDK-typed code into Honua.Aws / Honua.Azure (which preserve the Honua.Server.Features.* namespace) or expose a small cloud-neutral abstraction from Honua.Core / Honua.Hosting. Offenders: {0}",
+            string.Join("; ", offenders.Select(pair => $"{Path.GetFileName(pair.File)}: {pair.UsingLine}")));
+    }
+
     private static void CollectBannedPackageRefs(
         string csprojPath,
         HashSet<string> visited,
