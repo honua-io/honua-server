@@ -120,7 +120,7 @@ internal sealed partial class AwsBatchComputeBackend(
 
     /// <summary>
     /// Bounded grace window the reconciler allows for an uncertain submit before transitioning
-    /// to a terminal state. Mirrors <see cref="AzureBatchComputeBackend.MissingRegistrationGracePeriod"/>
+    /// to a terminal state. Mirrors <c>AzureBatchComputeBackend.MissingRegistrationGracePeriod</c>
     /// so operators get the same "provider never acknowledged submission" semantics across backends.
     /// </summary>
     internal static TimeSpan PendingDiscoveryGracePeriod => TimeSpan.FromMinutes(2);
@@ -150,7 +150,7 @@ internal sealed partial class AwsBatchComputeBackend(
     /// <summary>
     /// True when the durable record has already crossed the remote-start boundary but is
     /// missing a concrete provider id. Happens when a crash or CAS conflict lost the
-    /// post-start write in <see cref="ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync"/>
+    /// post-start write in <c>ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync</c>
     /// after AWS Batch accepted (or may have accepted) the submission. Without this
     /// recovery path, observe/cancel would short-circuit to "not submitted yet" and orphan
     /// the real provider job. The per-attempt job name is deterministic, so reconciliation

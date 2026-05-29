@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!--
+      Honua.Aws is the carved-out AWS SDK surface (S3, Batch, ECS, Lambda,
+      SNS, SQS, ElasticLoadBalancingV2) extracted from Honua.Server so that
+      cloud-neutral consumers do not pull the heavy AWSSDK.* surface
+      transitively. Namespaces preserved (Honua.Server.Features.*) so cross-
+      module references in the Server orchestration layer keep compiling
+      without a using-clause sweep. AWSSDK.LocationService lives in
+      Honua.Geocoding (already extracted).
+    -->
+    <NoWarn>$(NoWarn);CS1591;IL2104;IL2026;IL3002;IL3050;CA1041;CA1000;CA1862;IDE0051;IDE0052;IDE0005;CA1844;IL2075</NoWarn>
+    <RootNamespace>Honua.Server.Features</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Honua.Core.Abstractions\Honua.Core.Abstractions.csproj" />
+    <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\Honua.Hosting\Honua.Hosting.csproj" />
+    <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- AWS SDK packages carved from Honua.Server.csproj. AWSSDK.LocationService
+         is intentionally excluded — it lives in Honua.Geocoding. -->
+    <PackageReference Include="AWSSDK.S3" />
+    <PackageReference Include="AWSSDK.Batch" />
+    <PackageReference Include="AWSSDK.ECS" />
+    <PackageReference Include="AWSSDK.ElasticLoadBalancingV2" />
+    <PackageReference Include="AWSSDK.Lambda" />
+    <PackageReference Include="AWSSDK.SimpleNotificationService" />
+    <PackageReference Include="AWSSDK.SQS" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Aws.Tests" />
+    <InternalsVisibleTo Include="Honua.Server" />
+    <InternalsVisibleTo Include="Honua.Server.Tests" />
+    <InternalsVisibleTo Include="Honua.Architecture.Tests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+
+</Project>

@@ -410,7 +410,7 @@ internal sealed class AwsSdkEcsClient : IAwsEcsClient
 /// Native AWS ECS + ALB canary deploy backend. Manages ALB listener-rule weights and
 /// the canary ECS service's task definition through direct AWS SDK calls so Honua
 /// controls promotion and rollback end-to-end without relying on an external GitOps
-/// agent. Coexists with <see cref="AwsEcsGitOpsDeployBackend"/> under
+/// agent. Coexists with <c>AwsEcsGitOpsDeployBackend</c> under
 /// <see cref="DeployTargetKind.AwsEcs"/>; targets pick by backend name.
 /// </summary>
 internal sealed partial class AwsEcsAlbDeployBackend(
