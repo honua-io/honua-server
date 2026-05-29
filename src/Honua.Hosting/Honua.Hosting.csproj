@@ -55,6 +55,10 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Server" />
     <InternalsVisibleTo Include="Honua.Server.Tests" />
+    <InternalsVisibleTo Include="Honua.Aws" />
+    <InternalsVisibleTo Include="Honua.Aws.Tests" />
+    <InternalsVisibleTo Include="Honua.Azure" />
+    <InternalsVisibleTo Include="Honua.Azure.Tests" />
     <InternalsVisibleTo Include="Honua.Architecture.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.OData" />
     <InternalsVisibleTo Include="Honua.Protocols.OData.Tests" />
