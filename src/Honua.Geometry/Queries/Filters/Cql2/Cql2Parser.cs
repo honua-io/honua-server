@@ -728,7 +728,7 @@ public sealed class Cql2Parser
 
         try
         {
-            var geometry = FilterParserGuard.ParseWktGeometry(wktText, "CQL2 geometry literal");
+            var geometry = FilterParserGeometryGuard.ParseWktGeometry(wktText, "CQL2 geometry literal");
             var writer = new WKBWriter();
             var wkb = writer.Write(geometry);
 

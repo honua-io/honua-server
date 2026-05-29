@@ -519,7 +519,7 @@ public sealed class ODataFilterParser
 
         try
         {
-            var geometry = FilterParserGuard.ParseWktGeometry(wkt, "OData geometry literal", srid);
+            var geometry = FilterParserGeometryGuard.ParseWktGeometry(wkt, "OData geometry literal", srid);
             if (!IsGeometryValid(geometry) || !geometry.IsValid)
             {
                 throw new ODataFilterParseException($"Invalid geometry literal '{value}'", position);

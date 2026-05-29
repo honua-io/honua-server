@@ -806,7 +806,7 @@ public static class Fes20Parser
 
         try
         {
-            FilterParserGuard.EnsureCoordinateCount(positions.Length, "FES geometry literal");
+            FilterParserGeometryGuard.EnsureCoordinateCount(positions.Length, "FES geometry literal");
         }
         catch (ArgumentException ex)
         {
@@ -827,7 +827,7 @@ public static class Fes20Parser
 
         try
         {
-            FilterParserGuard.EnsureCoordinateCount(values.Length / 2, "FES geometry literal");
+            FilterParserGeometryGuard.EnsureCoordinateCount(values.Length / 2, "FES geometry literal");
         }
         catch (ArgumentException ex)
         {

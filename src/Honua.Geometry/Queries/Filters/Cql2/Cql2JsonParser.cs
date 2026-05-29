@@ -606,7 +606,7 @@ public sealed class Cql2JsonParser
 
         try
         {
-            var geometry = FilterParserGuard.ParseGeoJsonGeometry(geoJson, "CQL2-JSON geometry literal");
+            var geometry = FilterParserGeometryGuard.ParseGeoJsonGeometry(geoJson, "CQL2-JSON geometry literal");
             var srid = ResolveGeometrySrid(element, geometry);
             geometry.SRID = srid;
             var writer = new WKBWriter();

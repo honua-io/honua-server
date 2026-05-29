@@ -1,20 +1,22 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text;
-using NetTopologySuite.Geometries;
-using NetTopologySuite.IO;
-
 namespace Honua.Core.Queries.Filters;
 
 /// <summary>
 /// Shared guardrails for filter-parser hostile-input handling.
 /// </summary>
+/// <remarks>
+/// Geometry-shaped guard methods (WKT / GeoJSON parsing, coordinate caps,
+/// text-size caps applied to geometry payloads) live in
+/// <c>FilterParserGeometryGuard</c> inside <c>Honua.Geometry</c>; they pull
+/// NetTopologySuite, which <c>Honua.Core</c> no longer references directly.
+/// </remarks>
 internal static class FilterParserGuard
 {
     internal const int MaxExpressionDepth = FilterExpressionNormalizer.MaxExpressionDepth;
-    private const int MaxGeometryTextBytes = 5 * 1024 * 1024;
-    private const int MaxGeometryVertices = 50_000;
+    internal const int MaxGeometryTextBytes = 5 * 1024 * 1024;
+    internal const int MaxGeometryVertices = 50_000;
 
     // Caps applied to un-structured parser input so that a single oversized token
     // cannot pin down the heap or slow down comparison loops.
@@ -70,52 +72,4 @@ internal static class FilterParserGuard
         }
     }
 
-    public static Geometry ParseGeoJsonGeometry(string geoJson, string description, int? srid = null)
-    {
-        EnsureGeometryTextSize(geoJson, description);
-        var geometry = new GeoJsonReader().Read<Geometry>(geoJson)
-            ?? throw new ArgumentException($"{description} could not be parsed.");
-        ApplyGeometryGuards(geometry, description, srid);
-        return geometry;
-    }
-
-    public static Geometry ParseWktGeometry(string wkt, string description, int? srid = null)
-    {
-        EnsureGeometryTextSize(wkt, description);
-        var geometry = new WKTReader().Read(wkt)
-            ?? throw new ArgumentException($"{description} could not be parsed.");
-        ApplyGeometryGuards(geometry, description, srid);
-        return geometry;
-    }
-
-    public static void EnsureCoordinateCount(int coordinateCount, string description)
-    {
-        if (coordinateCount > MaxGeometryVertices)
-        {
-            throw new ArgumentException(
-                $"{description} exceeds the maximum geometry complexity of {MaxGeometryVertices} vertices.");
-        }
-    }
-
-    private static void ApplyGeometryGuards(Geometry geometry, string description, int? srid)
-    {
-        if (srid.HasValue && srid.Value > 0)
-        {
-            geometry.SRID = srid.Value;
-        }
-
-        if (!geometry.IsEmpty)
-        {
-            EnsureCoordinateCount(geometry.NumPoints, description);
-        }
-    }
-
-    private static void EnsureGeometryTextSize(string geometryText, string description)
-    {
-        if (Encoding.UTF8.GetByteCount(geometryText) > MaxGeometryTextBytes)
-        {
-            throw new ArgumentException(
-                $"{description} exceeds the maximum geometry size of {MaxGeometryTextBytes} bytes.");
-        }
-    }
 }
