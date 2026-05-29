@@ -147,6 +147,51 @@ public sealed class CoreAbstractionsIsolationTests
         return false;
     }
 
+    private static readonly string[] CoreBannedGeometryPackages =
+    {
+        "FlatGeobuf",
+        "Parquet.Net",
+        "Snappier",
+    };
+
+    /// <summary>
+    /// Asserts that the file-format reader extraction kept the heavy geospatial
+    /// file format packages (FlatGeobuf / Parquet.Net / Snappier) out of
+    /// <c>Honua.Core.csproj</c>. Those packages now live with the readers in
+    /// <c>Honua.Geometry</c>. NetTopologySuite stays in scope for a follow-up
+    /// wave because Spec / Queries.Filters still construct geometries inline.
+    /// </summary>
+    [ArchitectureTest]
+    public void HonuaCoreCsproj_ShouldNotReference_GeometryFileFormatPackages()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var csprojPath = Path.Combine(
+            repositoryRoot,
+            "src",
+            "Honua.Core",
+            "Honua.Core.csproj");
+
+        File.Exists(csprojPath).Should().BeTrue("Honua.Core.csproj must exist at the canonical path");
+
+        var document = XDocument.Load(csprojPath);
+        var packageReferences = document
+            .Descendants("PackageReference")
+            .Select(element => element.Attribute("Include")?.Value)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
+            .ToList();
+
+        foreach (var banned in CoreBannedGeometryPackages)
+        {
+            packageReferences
+                .Should()
+                .NotContain(
+                    package => package.Equals(banned, StringComparison.OrdinalIgnoreCase),
+                    "Honua.Core.csproj must not directly reference {0} — the geometry file-format readers belong in Honua.Geometry",
+                    banned);
+        }
+    }
+
     [ArchitectureTest]
     public void AbstractionsCsproj_ShouldNotReference_HonuaCore()
     {
