@@ -9,13 +9,12 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
-using Honua.Core.Features.FileImport.Services.FileGdb;
 namespace Honua.Core.Features.FileImport.Services;
 
 /// <summary>
 /// Shared stream utilities for the import pipeline. Used by both
 /// database import services and format readers that require
-/// seekable streams (e.g. <see cref="FlatGeobufFormatReader"/>).
+/// seekable streams (e.g. the FlatGeobuf format reader in Honua.Geometry).
 /// </summary>
 internal static class ImportStreamHelper
 {
