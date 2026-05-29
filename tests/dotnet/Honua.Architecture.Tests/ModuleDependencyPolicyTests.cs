@@ -65,6 +65,8 @@ public sealed class ModuleDependencyPolicyTests
         Aws,
         Azure,
         Hosting,
+        Jobs,
+        Ai,
         Postgres,
         DuckDB,
         MySql,
@@ -130,6 +132,33 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Protocols, ModuleRole.Geometry),
         (ModuleRole.Protocols, ModuleRole.Hosting),
 
+        // Jobs: the durable job-execution substrate. Depends on
+        // Abstractions + Core + Hosting + ServiceDefaults (no AWS/Azure
+        // packages — the provider backends sit in Honua.Aws / Honua.Azure).
+        (ModuleRole.Jobs, ModuleRole.Abstractions),
+        (ModuleRole.Jobs, ModuleRole.Core),
+        (ModuleRole.Jobs, ModuleRole.Hosting),
+        (ModuleRole.Jobs, ModuleRole.ServiceDefaults),
+
+        // Aws / Azure additionally reach Hosting (cloud-control-plane base
+        // types lifted into Hosting by ADR-0044) and Jobs (durable substrate).
+        (ModuleRole.Aws,   ModuleRole.Hosting),
+        (ModuleRole.Aws,   ModuleRole.Jobs),
+        (ModuleRole.Aws,   ModuleRole.ServiceDefaults),
+        (ModuleRole.Azure, ModuleRole.Hosting),
+        (ModuleRole.Azure, ModuleRole.Jobs),
+        (ModuleRole.Azure, ModuleRole.ServiceDefaults),
+
+        // Ai (carved AiBuilder + Grounding + NlQuery + AnalysisContent).
+        // Same provider set as the cloud satellites: Abstractions + Core +
+        // Hosting + Jobs + ServiceDefaults. Crucially, Ai must NEVER reference
+        // Server — that one-way edge is enforced by HonuaAiIsolationTests.
+        (ModuleRole.Ai, ModuleRole.Abstractions),
+        (ModuleRole.Ai, ModuleRole.Core),
+        (ModuleRole.Ai, ModuleRole.Hosting),
+        (ModuleRole.Ai, ModuleRole.Jobs),
+        (ModuleRole.Ai, ModuleRole.ServiceDefaults),
+
         // Server (composition root): every tier below it.
         (ModuleRole.Server, ModuleRole.Abstractions),
         (ModuleRole.Server, ModuleRole.Core),
@@ -137,7 +166,9 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Server, ModuleRole.Geocoding),
         (ModuleRole.Server, ModuleRole.Aws),
         (ModuleRole.Server, ModuleRole.Azure),
+        (ModuleRole.Server, ModuleRole.Ai),
         (ModuleRole.Server, ModuleRole.Hosting),
+        (ModuleRole.Server, ModuleRole.Jobs),
         (ModuleRole.Server, ModuleRole.Postgres),
         (ModuleRole.Server, ModuleRole.DuckDB),
         (ModuleRole.Server, ModuleRole.MySql),
@@ -422,6 +453,23 @@ public sealed class ModuleDependencyPolicyTests
             projectName.StartsWith("Honua.Hosting.", StringComparison.Ordinal))
         {
             return ModuleRole.Hosting;
+        }
+
+        // Durable-job substrate (carved out of Server in the jobs-split
+        // refactor). Sits alongside Hosting in tier 4.
+        if (projectName.Equals("Honua.Jobs", StringComparison.Ordinal) ||
+            projectName.StartsWith("Honua.Jobs.", StringComparison.Ordinal))
+        {
+            return ModuleRole.Jobs;
+        }
+
+        // AI feature surface (AiBuilder + Grounding + NlQuery +
+        // AnalysisContent) carved out of Server in the ai-split refactor.
+        // Sits alongside Hosting / Jobs in the upper tier of the topology.
+        if (projectName.Equals("Honua.Ai", StringComparison.Ordinal) ||
+            projectName.StartsWith("Honua.Ai.", StringComparison.Ordinal))
+        {
+            return ModuleRole.Ai;
         }
 
         // Tier 5: Storage providers. Honua.Postgres + planned sub-assemblies

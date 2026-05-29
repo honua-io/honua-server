@@ -41,6 +41,8 @@ several assemblies that share a role.
 | 2 | **Core** | `Honua.Core` | Cross-cutting domain logic — filter AST, metadata graph, security helpers, validation primitives. Provider-agnostic; protocol-neutral. May reference Abstractions. **Goal state:** heavy package refs migrate out (see Notes). | `Microsoft.Extensions.*`, `Polly`. Heavy refs (`NetTopologySuite`, `AWSSDK.*`, `Parquet.*`, `FlatGeobuf`) are present today but are scheduled to move to Geometry/Geocoding/Aws — new code must not add to them. |
 | 3 | **Geospatial / Cloud satellites** | `Honua.Geometry` (NTS), `Honua.Geocoding` (AWS Location), `Honua.Aws` (S3 / etc.), `Honua.Azure` (Blob / etc.) | Heavy-package-coupled domain stacks. Each is dedicated to one external SDK family so the rest of the graph stays light. May reference Abstractions and Core. **Today these assemblies do not yet exist**; the policy reserves their slots so the migration target is unambiguous. | The relevant SDK family + Abstractions/Core. No other satellite. |
 | 4 | **Hosting** | `Honua.Hosting` | ASP.NET-coupled host plumbing: authentication, caching, events, helpers, models, validation, the protocol-module plug-in surface. The only project (besides Server) that references `Microsoft.AspNetCore.*`. | `Microsoft.AspNetCore.*` + Abstractions / Core / ServiceDefaults. |
+| 4 | **Jobs** | `Honua.Jobs` | Durable job-execution substrate (claim / lease / heartbeat / reconciliation). Carved out of Server in the jobs-split refactor; sits alongside Hosting in tier 4 because the cloud satellites (`Honua.Aws`, `Honua.Azure`) and Worker.Gdal reuse it. | `StackExchange.Redis`, `Polly` + Abstractions / Core / Hosting / ServiceDefaults. |
+| 4 | **Ai** | `Honua.Ai` | Carved AiBuilder + Grounding + NlQuery + AnalysisContent surface (the four feature subtrees that previously sat in `Honua.Server/Features/`). Sits alongside Hosting / Jobs in tier 4 so Server can depend on it without re-introducing a cycle. **Must not reference Honua.Server** — `HonuaAiIsolationTests` guards the one-way edge. | `Asp.Versioning.Http`, `StackExchange.Redis` + Abstractions / Core / Hosting / Jobs / ServiceDefaults. |
 | 5 | **Storage Providers** | `Honua.Postgres` (+ planned sub-assemblies `Honua.Postgres.{Migrations, Catalog, FeatureStore, Streaming, Outbox}`), `Honua.DuckDB`, `Honua.MySql`, `Honua.SqlServer` | One assembly per backend. Implements Core abstractions over a specific provider SDK. Never references Hosting, Server, or another storage provider. | Provider SDK (`Npgsql`, `DuckDB.NET`, `MySqlConnector`, `Microsoft.Data.SqlClient`) + Abstractions/Core. |
 | 6 | **Protocol Modules** | `Honua.Protocols.OData`, and the planned siblings `Honua.Protocols.{OgcApi, OgcClassic, GeoServices, Mcp, Scene, Stac}` | One assembly per HTTP / RPC surface. Depend on Abstractions + Core + Hosting; never on Server or each other. | Format-specific packages (`Microsoft.OData.*` for OData, etc.) + Abstractions/Core/Hosting. |
 | 7 | **Composition root** | `Honua.Server` | Wires every storage provider + every protocol module into an executable host. The only assembly allowed to reference everything below it. Feature code only lives here when it cannot fit a lower tier. | Anything the runtime needs. |
@@ -58,22 +60,24 @@ Rows are consumers; columns are providers. A `✓` means the row's
 `.csproj` is allowed to `ProjectReference` the column's `.csproj`. Empty
 cells are forbidden and are caught by `ModuleDependencyPolicyTests`.
 
-| Consumer ↓ \ Provider → | Abstr | Core | Geo | Gcod | Aws | Azure | Hosting | Postgres | DuckDB | MySql | SqlServer | Protocols.X | Server | SvcDef |
-|--------------------------|:-----:|:----:|:---:|:----:|:---:|:-----:|:-------:|:--------:|:------:|:-----:|:---------:|:-----------:|:------:|:------:|
-| **Abstractions**         |       |      |     |      |     |       |         |          |        |       |           |             |        |        |
-| **Core**                 |   ✓   |      |     |      |     |       |         |          |        |       |           |             |        |        |
-| **Geometry**             |   ✓   |  ✓   |     |      |     |       |         |          |        |       |           |             |        |        |
-| **Geocoding**            |   ✓   |  ✓   |     |      |     |       |         |          |        |       |           |             |        |        |
-| **Aws**                  |   ✓   |  ✓   |     |      |     |       |         |          |        |       |           |             |        |        |
-| **Azure**                |   ✓   |  ✓   |     |      |     |       |         |          |        |       |           |             |        |        |
-| **Hosting**              |   ✓   |  ✓   |     |      |     |       |         |          |        |       |           |             |        |   ✓    |
-| **Postgres**             |   ✓   |  ✓   |  ✓  |      |  ✓  |       |         |          |        |       |           |             |        |        |
-| **DuckDB**               |   ✓   |  ✓   |  ✓  |      |     |       |         |          |        |       |           |             |        |        |
-| **MySql**                |   ✓   |  ✓   |  ✓  |      |     |       |         |          |        |       |           |             |        |        |
-| **SqlServer**            |   ✓   |  ✓   |  ✓  |      |     |       |         |          |        |       |           |             |        |        |
-| **Protocols.\<X\>**      |   ✓   |  ✓   |  ✓  |      |     |       |    ✓    |          |        |       |           |             |        |        |
-| **Server**               |   ✓   |  ✓   |  ✓  |  ✓   |  ✓  |   ✓   |    ✓    |    ✓     |   ✓    |   ✓   |     ✓     |      ✓      |        |   ✓    |
-| **ServiceDefaults**      |   ✓   |  ✓   |     |      |     |       |         |          |        |       |           |             |        |        |
+| Consumer ↓ \ Provider → | Abstr | Core | Geo | Gcod | Aws | Azure | Hosting | Jobs | Ai | Postgres | DuckDB | MySql | SqlServer | Protocols.X | Server | SvcDef |
+|--------------------------|:-----:|:----:|:---:|:----:|:---:|:-----:|:-------:|:----:|:--:|:--------:|:------:|:-----:|:---------:|:-----------:|:------:|:------:|
+| **Abstractions**         |       |      |     |      |     |       |         |      |    |          |        |       |           |             |        |        |
+| **Core**                 |   ✓   |      |     |      |     |       |         |      |    |          |        |       |           |             |        |        |
+| **Geometry**             |   ✓   |  ✓   |     |      |     |       |         |      |    |          |        |       |           |             |        |        |
+| **Geocoding**            |   ✓   |  ✓   |     |      |     |       |         |      |    |          |        |       |           |             |        |        |
+| **Aws**                  |   ✓   |  ✓   |     |      |     |       |    ✓    |  ✓   |    |          |        |       |           |             |        |   ✓    |
+| **Azure**                |   ✓   |  ✓   |     |      |     |       |    ✓    |  ✓   |    |          |        |       |           |             |        |   ✓    |
+| **Hosting**              |   ✓   |  ✓   |     |      |     |       |         |      |    |          |        |       |           |             |        |   ✓    |
+| **Jobs**                 |   ✓   |  ✓   |     |      |     |       |    ✓    |      |    |          |        |       |           |             |        |   ✓    |
+| **Ai**                   |   ✓   |  ✓   |     |      |     |       |    ✓    |  ✓   |    |          |        |       |           |             |        |   ✓    |
+| **Postgres**             |   ✓   |  ✓   |  ✓  |      |  ✓  |       |         |      |    |          |        |       |           |             |        |        |
+| **DuckDB**               |   ✓   |  ✓   |  ✓  |      |     |       |         |      |    |          |        |       |           |             |        |        |
+| **MySql**                |   ✓   |  ✓   |  ✓  |      |     |       |         |      |    |          |        |       |           |             |        |        |
+| **SqlServer**            |   ✓   |  ✓   |  ✓  |      |     |       |         |      |    |          |        |       |           |             |        |        |
+| **Protocols.\<X\>**      |   ✓   |  ✓   |  ✓  |      |     |       |    ✓    |      |    |          |        |       |           |             |        |        |
+| **Server**               |   ✓   |  ✓   |  ✓  |  ✓   |  ✓  |   ✓   |    ✓    |  ✓   | ✓  |    ✓     |   ✓    |   ✓   |     ✓     |      ✓      |        |   ✓    |
+| **ServiceDefaults**      |   ✓   |  ✓   |     |      |     |       |         |      |    |          |        |       |           |             |        |        |
 
 Reading the matrix:
 
