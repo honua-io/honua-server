@@ -35,9 +35,6 @@
     <PackageReference Include="NetTopologySuite.IO.GeoJSON" />
     <PackageReference Include="Parquet.Net" />
     <PackageReference Include="Snappier" />
-
-    <!-- Geocoding provider dependencies -->
-    <PackageReference Include="AWSSDK.LocationService" />
   </ItemGroup>
 
   <ItemGroup>
