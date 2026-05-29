@@ -51,6 +51,8 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0043](0043-modularization-ci-rework.md) | Modularization CI Rework (Modularization Phase 3) | Proposed | 2026-05 |
 | [0044](0044-server-infrastructure-decomposition.md) | Server.Features.Infrastructure Decomposition (Audit-A1 / Phase 1 Prerequisite) | Proposed | 2026-05 |
 | [0045](0045-defer-migration-sequence-collision-renumbering.md) | Defer Renumbering of Colliding Migration Sequence Numbers | Accepted | 2026-05 |
+| [0046](0046-audit-c3-database-session-progressive-migration.md) | Audit C3 — Progressive `IDatabaseSession` Migration With Coexistence | Accepted | 2026-05 |
+| [0047](0047-module-dependency-policy.md) | Module Dependency Policy | Accepted | 2026-05 |
 
 ## Template
 
