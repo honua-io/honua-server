@@ -29,6 +29,12 @@
   <ItemGroup>
     <ProjectReference Include="..\Honua.Core.Abstractions\Honua.Core.Abstractions.csproj" />
     <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+    <!-- Grounding / AnalysisContent orchestrate geoprocessing jobs through
+         IGeoprocessingJobService, which moved into Honua.Geoprocessing in the
+         geoprocessing-split. Ai consumes that surface (it must never reference
+         Honua.Server). Honua.Geoprocessing has no edge back to Ai, so this is
+         acyclic. Matrix cell: (Ai, Geoprocessing) in ADR-0047. -->
+    <ProjectReference Include="..\Honua.Geoprocessing\Honua.Geoprocessing.csproj" />
     <ProjectReference Include="..\Honua.Hosting\Honua.Hosting.csproj" />
     <ProjectReference Include="..\Honua.Jobs\Honua.Jobs.csproj" />
     <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />

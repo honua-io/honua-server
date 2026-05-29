@@ -58,7 +58,7 @@ public sealed class HonuaAiIsolationTests
 
     /// <summary>
     /// Asserts the ProjectReference set declared by Honua.Ai stays inside the
-    /// canonical allow-list (Abstractions, Core, Hosting, Jobs,
+    /// canonical allow-list (Abstractions, Core, Hosting, Jobs, Geoprocessing,
     /// ServiceDefaults). New references — to a storage provider, a protocol
     /// module, or any other satellite — must come with a deliberate matrix
     /// update in ADR-0047 / <see cref="ModuleDependencyPolicyTests"/>.
@@ -75,6 +75,7 @@ public sealed class HonuaAiIsolationTests
             "Honua.Core",
             "Honua.Hosting",
             "Honua.Jobs",
+            "Honua.Geoprocessing",
             "Honua.ServiceDefaults",
         };
 
@@ -100,7 +101,7 @@ public sealed class HonuaAiIsolationTests
             .Should()
             .BeEmpty(
                 "Honua.Ai may only reference Honua.Core.Abstractions, Honua.Core, Honua.Hosting, " +
-                "Honua.Jobs, and Honua.ServiceDefaults. Disallowed references: {0}",
+                "Honua.Jobs, Honua.Geoprocessing, and Honua.ServiceDefaults. Disallowed references: {0}",
                 string.Join(", ", disallowed));
     }
 

@@ -45,6 +45,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Geoprocessing.Tests" />
+    <InternalsVisibleTo Include="Honua.Ai" />
     <InternalsVisibleTo Include="Honua.Server" />
     <InternalsVisibleTo Include="Honua.Server.Tests" />
     <InternalsVisibleTo Include="Honua.Architecture.Tests" />

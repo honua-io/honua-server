@@ -67,6 +67,7 @@ public sealed class ModuleDependencyPolicyTests
         Hosting,
         Jobs,
         Ai,
+        Geoprocessing,
         Postgres,
         DuckDB,
         MySql,
@@ -150,14 +151,31 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Azure, ModuleRole.ServiceDefaults),
 
         // Ai (carved AiBuilder + Grounding + NlQuery + AnalysisContent).
-        // Same provider set as the cloud satellites: Abstractions + Core +
-        // Hosting + Jobs + ServiceDefaults. Crucially, Ai must NEVER reference
-        // Server — that one-way edge is enforced by HonuaAiIsolationTests.
+        // Same provider set as the cloud satellites (Abstractions + Core +
+        // Hosting + Jobs + ServiceDefaults) plus Geoprocessing: Grounding and
+        // AnalysisContent orchestrate analysis jobs through
+        // IGeoprocessingJobService, which lives in Honua.Geoprocessing.
+        // Crucially, Ai must NEVER reference Server — that one-way edge is
+        // enforced by HonuaAiIsolationTests.
         (ModuleRole.Ai, ModuleRole.Abstractions),
         (ModuleRole.Ai, ModuleRole.Core),
         (ModuleRole.Ai, ModuleRole.Hosting),
         (ModuleRole.Ai, ModuleRole.Jobs),
+        (ModuleRole.Ai, ModuleRole.Geoprocessing),
         (ModuleRole.Ai, ModuleRole.ServiceDefaults),
+
+        // Geoprocessing: the canonical process/analysis runtime carved out of
+        // Server so the OGC API Processes / GeoServices GPServer protocol
+        // adapters (and Ai's analysis orchestration) can reference it without
+        // pulling Server transitively. Depends on Abstractions + Core +
+        // Geometry (NTS) + Hosting + Jobs + ServiceDefaults; it must NEVER
+        // back-reference Server (enforced by GeoprocessingIsolationTests).
+        (ModuleRole.Geoprocessing, ModuleRole.Abstractions),
+        (ModuleRole.Geoprocessing, ModuleRole.Core),
+        (ModuleRole.Geoprocessing, ModuleRole.Geometry),
+        (ModuleRole.Geoprocessing, ModuleRole.Hosting),
+        (ModuleRole.Geoprocessing, ModuleRole.Jobs),
+        (ModuleRole.Geoprocessing, ModuleRole.ServiceDefaults),
 
         // Server (composition root): every tier below it.
         (ModuleRole.Server, ModuleRole.Abstractions),
@@ -167,6 +185,7 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Server, ModuleRole.Aws),
         (ModuleRole.Server, ModuleRole.Azure),
         (ModuleRole.Server, ModuleRole.Ai),
+        (ModuleRole.Server, ModuleRole.Geoprocessing),
         (ModuleRole.Server, ModuleRole.Hosting),
         (ModuleRole.Server, ModuleRole.Jobs),
         (ModuleRole.Server, ModuleRole.Postgres),
@@ -470,6 +489,16 @@ public sealed class ModuleDependencyPolicyTests
             projectName.StartsWith("Honua.Ai.", StringComparison.Ordinal))
         {
             return ModuleRole.Ai;
+        }
+
+        // Canonical process/analysis runtime carved out of Server in the
+        // geoprocessing-split refactor. Sits alongside Hosting / Jobs / Ai in
+        // the upper tier; referenced by Server, Ai, and (forward-looking) the
+        // OGC API Processes / GeoServices GPServer protocol modules.
+        if (projectName.Equals("Honua.Geoprocessing", StringComparison.Ordinal) ||
+            projectName.StartsWith("Honua.Geoprocessing.", StringComparison.Ordinal))
+        {
+            return ModuleRole.Geoprocessing;
         }
 
         // Tier 5: Storage providers. Honua.Postgres + planned sub-assemblies
