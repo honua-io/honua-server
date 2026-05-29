@@ -38,6 +38,13 @@
          heavier NTS-IO codecs; only the small thread-static WkbReaderCache
          and envelope reader are carved into Hosting. -->
     <PackageReference Include="NetTopologySuite" />
+    <!-- BouncyCastle.Cryptography is required by the carved Licensing sub-area
+         (BouncyCastleEd25519Verifier + FileBackedLicenseService signature
+         verification). Mirrors the corresponding Server csproj package ref. -->
+    <PackageReference Include="BouncyCastle.Cryptography" />
+    <!-- Grpc.AspNetCore brings Grpc.Core.Api transitively for LicenseGate's
+         RpcException factory (carved Licensing sub-area). Mirrors Server. -->
+    <PackageReference Include="Grpc.AspNetCore" />
   </ItemGroup>
 
   <ItemGroup>
