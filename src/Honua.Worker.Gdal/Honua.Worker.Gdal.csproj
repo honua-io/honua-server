@@ -22,16 +22,21 @@
 
   <ItemGroup>
     <!--
-      Reuses the durable job-execution substrate from Honua.Server (the shared
-      JobExecutionService loop, RedisJobQueue, and Redis-backed stores). GDAL is
-      NOT referenced as a package — it is provided by the worker image base layer
-      via the gdalwarp / ogr2ogr CLI tools. See ADR-0038.
+      Reuses the durable job-execution substrate from Honua.Jobs (the shared
+      JobExecutionService loop, RedisJobQueue, and Redis-backed stores). The
+      worker DELIBERATELY does NOT ProjectReference Honua.Server — ADR-0038's
+      lean-worker boundary requires the worker image to ship only the substrate
+      plus GDAL CLI shims, not the serving image's full ASP.NET / protocol /
+      data-layer surface. GDAL is NOT referenced as a package — it is provided
+      by the worker image base layer via the gdalwarp / ogr2ogr CLI tools.
     -->
-    <ProjectReference Include="..\Honua.Server\Honua.Server.csproj" />
+    <ProjectReference Include="..\Honua.Core.Abstractions\Honua.Core.Abstractions.csproj" />
+    <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\Honua.Jobs\Honua.Jobs.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Microsoft.Extensions.Hosting is provided by the Worker SDK / transitively by Honua.Server. -->
+    <!-- Microsoft.Extensions.Hosting is provided by the Worker SDK. -->
     <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>
 
