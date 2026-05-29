@@ -168,60 +168,14 @@ public sealed class WebAppFixture : IAsyncLifetime
     }
 
     /// <summary>
-    /// Ensures a large test dataset exists for streaming performance tests
+    /// Ensures a large test dataset exists for streaming performance tests. Delegates to
+    /// <see cref="Mixins.WebAppFixtureLargeDatasetMixin"/>.
     /// </summary>
-    public async Task EnsureLargeTestDatasetAsync()
-    {
-        if (string.IsNullOrWhiteSpace(_currentSchema))
-        {
-            throw new InvalidOperationException("Test schema not initialized.");
-        }
-
-        await using var connection = await Postgres.GetConnectionAsync(_currentSchema);
-
-        await using var countCommand = connection.CreateCommand();
-        countCommand.CommandText = "SELECT COUNT(*) FROM features WHERE layer_id = @layerId;";
-        countCommand.Parameters.Add(new NpgsqlParameter { ParameterName = "@layerId", Value = TestLayerId });
-        var existingCount = Convert.ToInt32(await countCommand.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
-
-        if (existingCount >= 2000)
-        {
-            return;
-        }
-
-        var additionalFeaturesNeeded = 2000 - existingCount;
-
-        await using var transaction = await connection.BeginTransactionAsync();
-        await using var insertCommand = connection.CreateCommand();
-        insertCommand.Transaction = transaction;
-        insertCommand.CommandText = """
-            INSERT INTO features (layer_id, geometry, attributes)
-            VALUES (@layerId, ST_GeomFromWKB(@geometry, 4326), @attributes::jsonb);
-            """;
-        insertCommand.Parameters.Add(new NpgsqlParameter { ParameterName = "@layerId", Value = TestLayerId });
-        var geometryParam = new NpgsqlParameter { ParameterName = "@geometry", Value = DBNull.Value };
-        var attributesParam = new NpgsqlParameter { ParameterName = "@attributes", Value = DBNull.Value };
-        insertCommand.Parameters.Add(geometryParam);
-        insertCommand.Parameters.Add(attributesParam);
-
-        for (var i = 0; i < additionalFeaturesNeeded; i++)
-        {
-            geometryParam.Value = CreateTestPointGeometry(-180 + (i % 360), -90 + ((i / 360) % 180));
-
-            var attributes = new Dictionary<string, object?>
-            {
-                ["Name"] = $"Streaming Test Feature {i}",
-                ["Category"] = "Performance Test",
-                ["Value"] = i % 100,
-                ["TestBatch"] = "LargeDataset"
-            };
-            attributesParam.Value = JsonSerializer.Serialize(attributes);
-
-            await insertCommand.ExecuteNonQueryAsync();
-        }
-
-        await transaction.CommitAsync();
-    }
+    public Task EnsureLargeTestDatasetAsync()
+        => Honua.TestKit.Mixins.WebAppFixtureLargeDatasetMixin.EnsureLargeTestDatasetAsync(
+            Postgres,
+            _currentSchema!,
+            TestLayerId);
 
     // Audit-A2 follow-up: the V2 graph mutation helpers (UpdateV2*, SetV2*, and
     // AddAdminSampleMetadataV2Graph) used to live inline as ~400 LOC. They now live on
@@ -317,19 +271,6 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// </summary>
     public void AddAdminSampleMetadataV2Graph()
         => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.AddAdminSample(this);
-
-    /// <summary>
-    /// Creates a simple test point geometry as WKB
-    /// </summary>
-    private static byte[] CreateTestPointGeometry(double x, double y)
-    {
-        // Create a simple WKB point geometry
-        // This is a simplified implementation for testing purposes
-        var geometryFactory = new NetTopologySuite.Geometries.GeometryFactory();
-        var point = geometryFactory.CreatePoint(new NetTopologySuite.Geometries.Coordinate(x, y));
-        var writer = new NetTopologySuite.IO.WKBWriter();
-        return writer.Write(point);
-    }
 
     private async Task InitializeSharedAsync()
     {
