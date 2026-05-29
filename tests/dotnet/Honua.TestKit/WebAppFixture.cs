@@ -29,7 +29,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 using Xunit;
-using CoreSslMode = Honua.Core.Features.Security.Domain.SslMode;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.TestKit;
@@ -42,7 +41,6 @@ namespace Honua.TestKit;
 public sealed class WebAppFixture : IAsyncLifetime
 {
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
-    private static readonly SemaphoreSlim _secureConnectionLock = new(1, 1);
     private static WebApplicationFactory<Program>? _sharedFactory;
     private static PostgresFixture? _sharedPostgres;
     private static int _sharedRefCount;
@@ -71,8 +69,6 @@ public sealed class WebAppFixture : IAsyncLifetime
     private const string StableTestGeocodingBaseUrl = "https://8.8.8.8/nominatim";
     private const string TestEncryptionMasterKey = "test-master-key-that-is-at-least-32-characters-long-for-security";
     private const string TestEncryptionSalt = "dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=";
-    private const string TestSecureConnectionName = "test";
-    private const string TestSecureConnectionCreatedBy = "test-fixture";
 
     // Audit-A2: the default GeoServices drawingInfo, V2 graph factories, and per-layer
     // schema/spatial/temporal helpers historically lived inline as ~770 LOC of static
@@ -669,24 +665,11 @@ public sealed class WebAppFixture : IAsyncLifetime
     }
 
     /// <summary>
-    /// Get the test secure connection ID created by the fixture.
+    /// Get the test secure connection ID created by the fixture. Delegates to
+    /// <see cref="WebAppFixtureSecureConnectionMixin"/>.
     /// </summary>
-    public async Task<Guid?> GetTestSecureConnectionIdAsync()
-    {
-        if (_serviceScope is null)
-        {
-            return null;
-        }
-
-        var registry = _serviceScope.ServiceProvider.GetService<ISecureConnectionRegistry>();
-        if (registry == null)
-        {
-            return null;
-        }
-
-        var connection = await registry.GetConnectionByNameAsync(TestSecureConnectionName);
-        return connection?.ConnectionId;
-    }
+    public Task<Guid?> GetTestSecureConnectionIdAsync()
+        => Honua.TestKit.Mixins.WebAppFixtureSecureConnectionMixin.GetTestSecureConnectionIdAsync(_serviceScope);
 
     /// <summary>
     /// Create an isolated schema for this test.
@@ -705,139 +688,13 @@ public sealed class WebAppFixture : IAsyncLifetime
         return _currentSchema;
     }
 
-    private async Task EnsureTestSecureConnectionAsync()
-    {
-        if (_serviceScope is null)
-        {
-            return;
-        }
-
-        var services = _serviceScope.ServiceProvider;
-        var connectionProvider = services.GetRequiredService<IDatabaseConnectionProvider>();
-
-        if (!await SecureConnectionTablesAvailableAsync(connectionProvider).ConfigureAwait(false))
-        {
-            return;
-        }
-
-        await EnsureSecureConnectionProviderColumnAsync(connectionProvider).ConfigureAwait(false);
-
-        var registry = services.GetRequiredService<ISecureConnectionRegistry>();
-        var encryptionService = services.GetRequiredService<IConnectionEncryptionService>();
-        var configuration = services.GetRequiredService<IConfiguration>();
-        var connectionString = configuration.GetConnectionString("DefaultConnection");
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            return;
-        }
-
-        await _secureConnectionLock.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            var existing = await registry.GetConnectionByNameAsync(TestSecureConnectionName).ConfigureAwait(false);
-            if (existing != null)
-            {
-                return;
-            }
-
-            var builder = new NpgsqlConnectionStringBuilder(connectionString);
-            if (string.IsNullOrWhiteSpace(builder.Host) ||
-                string.IsNullOrWhiteSpace(builder.Database) ||
-                string.IsNullOrWhiteSpace(builder.Username) ||
-                builder.Port <= 0)
-            {
-                return;
-            }
-
-            var encrypted = await encryptionService.EncryptConnectionStringAsync(connectionString).ConfigureAwait(false);
-            var keyVersion = await encryptionService.GetCurrentKeyVersionAsync().ConfigureAwait(false);
-            var sslRequired = builder.SslMode is Npgsql.SslMode.Require or Npgsql.SslMode.VerifyCA or Npgsql.SslMode.VerifyFull;
-            var sslMode = Enum.Parse<CoreSslMode>(builder.SslMode.ToString(), true);
-
-            var connection = DataConnection.CreateWithEncryptedCredentials(
-                name: TestSecureConnectionName,
-                host: builder.Host,
-                port: builder.Port,
-                databaseName: builder.Database,
-                username: builder.Username,
-                encryptedConnectionString: encrypted,
-                encryptionKeyVersion: keyVersion,
-                createdBy: TestSecureConnectionCreatedBy,
-                description: "Test secure connection",
-                sslRequired: sslRequired,
-                sslMode: sslMode);
-
-            try
-            {
-                await registry.CreateConnectionAsync(connection).ConfigureAwait(false);
-            }
-            catch (PostgresException ex) when (string.Equals(ex.SqlState, "23505", StringComparison.Ordinal))
-            {
-                // Another fixture created the same connection concurrently.
-            }
-        }
-        finally
-        {
-            _secureConnectionLock.Release();
-        }
-    }
-
-    private static async Task<bool> SecureConnectionTablesAvailableAsync(IDatabaseConnectionProvider connectionProvider)
-    {
-        const string sql = """
-            SELECT 1
-            FROM information_schema.tables
-            WHERE table_schema = 'honua'
-              AND table_name = 'data_connections'
-            LIMIT 1
-            """;
-        const int maxAttempts = 3;
-
-        for (var attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            try
-            {
-                await using var connection = await connectionProvider.OpenConnectionAsync().ConfigureAwait(false);
-                await using var command = connection.CreateCommand();
-                command.CommandText = sql;
-                command.CommandTimeout = 10;
-                var result = await command.ExecuteScalarAsync().ConfigureAwait(false);
-                return result != null && result != DBNull.Value;
-            }
-            catch (Exception ex) when (IsTransientSecureConnectionCheckFailure(ex))
-            {
-                if (attempt == maxAttempts)
-                {
-                    Console.Error.WriteLine($"WARNING: Could not verify secure-connection table after {maxAttempts} attempts. Proceeding without it.");
-                    return false;
-                }
-
-                await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt)).ConfigureAwait(false);
-            }
-        }
-
-        Console.Error.WriteLine($"WARNING: Could not verify secure-connection table after {maxAttempts} attempts. Proceeding without it.");
-        return false;
-    }
-
-    private static async Task EnsureSecureConnectionProviderColumnAsync(IDatabaseConnectionProvider connectionProvider)
-    {
-        const string sql = """
-            ALTER TABLE IF EXISTS honua.data_connections
-                ADD COLUMN IF NOT EXISTS provider_name TEXT NOT NULL DEFAULT 'postgis';
-            """;
-
-        await using var connection = await connectionProvider.OpenConnectionAsync().ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        command.CommandTimeout = 10;
-        await command.ExecuteNonQueryAsync().ConfigureAwait(false);
-    }
-
-    private static bool IsTransientSecureConnectionCheckFailure(Exception ex)
-    {
-        return ex is TimeoutException or TaskCanceledException or NpgsqlException;
-    }
+    /// <summary>
+    /// Audit-A2 follow-up: the secure-connection bootstrap now lives on
+    /// <see cref="WebAppFixtureSecureConnectionMixin"/>. This wrapper preserves the call
+    /// site shape that <c>InitializeAsync</c> / <c>CreateIsolatedSchemaAsync</c> use.
+    /// </summary>
+    private Task EnsureTestSecureConnectionAsync()
+        => Honua.TestKit.Mixins.WebAppFixtureSecureConnectionMixin.EnsureTestSecureConnectionAsync(_serviceScope);
 
     private Task SeedSchemaAsync(string schemaName)
     {

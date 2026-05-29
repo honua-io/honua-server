@@ -349,7 +349,7 @@ public sealed class ModuleDependencyPolicyTests
         }
     }
 
-    private static IReadOnlyList<string> LoadProjectReferenceNames(string csprojPath)
+    private static List<string> LoadProjectReferenceNames(string csprojPath)
     {
         var document = XDocument.Load(csprojPath);
         var names = new List<string>();
