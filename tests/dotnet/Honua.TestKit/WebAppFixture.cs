@@ -66,9 +66,10 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// </summary>
     public const int TestLayerId = 0;
 
-    private const string StableTestGeocodingBaseUrl = "https://8.8.8.8/nominatim";
-    private const string TestEncryptionMasterKey = "test-master-key-that-is-at-least-32-characters-long-for-security";
-    private const string TestEncryptionSalt = "dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=";
+    // Audit-A2: the geocoding base URL and encryption material constants used to live
+    // here as static strings. They now live on
+    // <see cref="WebAppFixturePostgresWiringMixin"/> next to the configuration-building
+    // helpers that read them.
 
     // Audit-A2: the default GeoServices drawingInfo, V2 graph factories, and per-layer
     // schema/spatial/temporal helpers historically lived inline as ~770 LOC of static
@@ -128,101 +129,27 @@ public sealed class WebAppFixture : IAsyncLifetime
         _factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
-                // Configure test environment
-                builder.UseEnvironment("Test");
-
-                // Configure authentication bypass for test environment.
-                // BOTH flags are required (see honua-server#1144): HONUA_DEV_AUTH
-                // alone is insufficient outside of Test+explicit-ack to prevent
-                // accidental bypass activation in Staging/QA.
-                builder.UseSetting("HONUA_DEV_AUTH", "true");
-                builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "true");
-                builder.UseSetting("HONUA_SKIP_MIGRATIONS", "true");
+                // Audit-A2: host settings, app configuration, and PostgreSQL test
+                // services wiring all live on WebAppFixturePostgresWiringMixin so the
+                // isolated and shared bootstrap paths stay in lockstep.
+                Honua.TestKit.Mixins.WebAppFixturePostgresWiringMixin.ApplyCommonHostSettings(builder);
 
                 _configureWebHost?.Invoke(builder);
 
-                // Configure application configuration with test connection string BEFORE app startup
                 builder.ConfigureAppConfiguration((context, configBuilder) =>
                 {
-                    var attachmentsPath = Path.Combine(Directory.GetCurrentDirectory(), "tmp", "attachments");
-                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
-                    {
-                        ["ConnectionStrings:honua"] = _postgres.ConnectionString,
-                        ["ConnectionStrings:DefaultConnection"] = _postgres.ConnectionString,
-                        // Avoid live DNS dependency during startup validation in integration tests.
-                        ["Geocoding:Nominatim:BaseUrl"] = StableTestGeocodingBaseUrl,
-                        ["Geocoding:Providers:Nominatim:BaseUrl"] = StableTestGeocodingBaseUrl,
-                        ["HONUA_SKIP_MIGRATIONS"] = "true",
-                        ["Limits:Connections:RequestTimeout"] = "00:05:00",
-                        ["Limits:Query:QueryTimeout"] = "00:02:00",
-                        ["FileStorage:Provider"] = "Local",
-                        ["FileStorage:LocalStorage:BasePath"] = attachmentsPath,
-                        ["Security:ConnectionEncryption:MasterKey"] = TestEncryptionMasterKey,
-                        ["Security:ConnectionEncryption:Salt"] = TestEncryptionSalt
-                    });
+                    configBuilder.AddInMemoryCollection(
+                        Honua.TestKit.Mixins.WebAppFixturePostgresWiringMixin
+                            .BuildAppConfigurationDictionary(_postgres.ConnectionString));
                 });
 
                 builder.ConfigureTestServices(services =>
                 {
-                    // Remove and re-register all PostgreSQL services with test connection string
-                    services.RemoveAll<NpgsqlDataSource>();
-                    services.RemoveAll<IFeatureReader>();
-                    services.RemoveAll<IFeatureWriter>();
-                    services.RemoveAll<ITileProvider>();
-                    services.RemoveAll<IRelationshipStore>();
-                    services.RemoveAll<IStreamingFeatureStore>();
-                    services.RemoveAll<IAttachmentStore>();
-                    services.RemoveAll<ITableDiscoveryService>();
-                    services.RemoveAll<IDatabaseHealthChecker>();
-                    services.RemoveAll<IDatabaseConnectionProvider>();
-                    services.RemoveAll<ICrsDetectionService>();
-                    services.RemoveAll<IFileImportService>();
-                    services.RemoveAll<ISqlFilterTranslator>();
-
-                    // Create test configuration with connection string
-                    var testConfiguration = new ConfigurationBuilder()
-                        .AddInMemoryCollection(new Dictionary<string, string?>
-                        {
-                            ["ConnectionStrings:DefaultConnection"] = _postgres.ConnectionString,
-                            ["Limits:Connections:RequestTimeout"] = "00:05:00",
-                            ["Limits:Query:QueryTimeout"] = "00:02:00",
-                            ["Security:ConnectionEncryption:MasterKey"] = TestEncryptionMasterKey,
-                            ["Security:ConnectionEncryption:Salt"] = TestEncryptionSalt
-                        })
-                        .Build();
-
-                    // Register all PostgreSQL services using the Postgres layer's extension method
-                    // This ensures proper dependency injection without Server/TestKit directly instantiating Postgres types
-                    Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, testConfiguration);
-
-                    // Override the data source to avoid multiplexing so schema-based tests keep session state.
-                    services.RemoveAll<NpgsqlDataSource>();
-                    services.AddSingleton<NpgsqlDataSource>(_ =>
-                    {
-                        var dataSourceBuilder = new NpgsqlDataSourceBuilder(_postgres.ConnectionString);
-                        dataSourceBuilder.ConnectionStringBuilder.Multiplexing = false;
-                        return dataSourceBuilder.Build();
-                    });
-
-                    // Replace the Postgres-backed Metadata v2 provider with an in-memory fixture
-                    // so endpoints read the seeded snapshot without
-                    // a migrated snapshot row being present in the test database.
-                    // Audit-A2: the graph factories live on WebAppFixtureMetadataV2Mixin.
-                    Honua.TestKit.Mixins.WebAppFixtureMetadataV2Mixin.RegisterDefaultMetadataV2Graph(services);
-
-                    // Override database connection provider with test-specific implementation
-                    services.RemoveAll<IDatabaseConnectionProvider>();
-                    services.AddScoped<IDatabaseConnectionProvider>(serviceProvider =>
-                    {
-                        var dataSource = serviceProvider.GetRequiredService<NpgsqlDataSource>();
-                        return new TestDatabaseConnectionProvider(dataSource, () => _currentSchema);
-                    });
-
-                    // Apply custom service configurations
-                    foreach (var configure in _serviceConfigurations)
-                    {
-                        configure(services);
-                    }
+                    Honua.TestKit.Mixins.WebAppFixturePostgresWiringMixin.ConfigureIsolatedTestServices(
+                        services,
+                        _postgres.ConnectionString,
+                        () => _currentSchema,
+                        _serviceConfigurations);
                 });
             });
 
@@ -315,7 +242,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// <summary>
     /// V2-aware helper that mirrors the v1 <c>ILayerMetadataUpdater</c> seed surface used
     /// by classic-protocol and STAC tests. Delegates to
-    /// <see cref="WebAppFixtureMetadataV2GraphMutationMixin"/>.
+    /// <see cref="Mixins.WebAppFixtureMetadataV2GraphMutationMixin"/>.
     /// </summary>
     public void UpdateV2ResourceMetadata(
         int layerIndex,
@@ -346,7 +273,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// <summary>
     /// Adds or replaces a Metadata v2 schema field on the resource published at
     /// <paramref name="layerIndex"/>. Delegates to
-    /// <see cref="WebAppFixtureMetadataV2GraphMutationMixin"/>.
+    /// <see cref="Mixins.WebAppFixtureMetadataV2GraphMutationMixin"/>.
     /// </summary>
     public void UpdateV2ResourceSchemaField(int layerIndex, MetadataV2Field field)
         => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceSchemaField(this, layerIndex, field);
@@ -354,7 +281,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// <summary>
     /// V2-aware helper that renames the canonical resource bound to the publication with
     /// <paramref name="layerIndex"/>. Delegates to
-    /// <see cref="WebAppFixtureMetadataV2GraphMutationMixin"/>.
+    /// <see cref="Mixins.WebAppFixtureMetadataV2GraphMutationMixin"/>.
     /// </summary>
     public void UpdateV2ResourceName(int layerIndex, string newName)
         => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateResourceName(this, layerIndex, newName);
@@ -362,7 +289,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// <summary>
     /// V2-aware helper that mirrors the v1 <c>IServiceMetadataUpdater</c> seed surface
     /// for service-level toggles. Delegates to
-    /// <see cref="WebAppFixtureMetadataV2GraphMutationMixin"/>.
+    /// <see cref="Mixins.WebAppFixtureMetadataV2GraphMutationMixin"/>.
     /// </summary>
     public void UpdateV2ServiceMetadata(
         string serviceName,
@@ -379,14 +306,14 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// <summary>
     /// Toggles the runtime visibility of the Metadata v2 publications/resources bound to
     /// the supplied layer index. Delegates to
-    /// <see cref="WebAppFixtureMetadataV2GraphMutationMixin"/>.
+    /// <see cref="Mixins.WebAppFixtureMetadataV2GraphMutationMixin"/>.
     /// </summary>
     public void SetV2LayerEnabled(int layerIndex, bool enabled)
         => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.SetLayerEnabled(this, layerIndex, enabled);
 
     /// <summary>
     /// Adds the Metadata v2 mirror for <c>tests/seed/admin-sample-feature-server.yaml</c>.
-    /// Delegates to <see cref="WebAppFixtureMetadataV2GraphMutationMixin"/>.
+    /// Delegates to <see cref="Mixins.WebAppFixtureMetadataV2GraphMutationMixin"/>.
     /// </summary>
     public void AddAdminSampleMetadataV2Graph()
         => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.AddAdminSample(this);
@@ -416,85 +343,45 @@ public sealed class WebAppFixture : IAsyncLifetime
                 _sharedPostgres = new PostgresFixture();
                 await _sharedPostgres.InitializeAsync();
 
-                var attachmentsPath = Path.Combine(Directory.GetCurrentDirectory(), "tmp", "attachments");
+                var sharedAppConfigExtras = new Dictionary<string, string?>
+                {
+                    ["HONUA_DEV_AUTH"] = "true",
+                    ["HONUA_DEV_AUTH_ALLOW_BYPASS"] = "true",
+                    ["HONUA_ADMIN_PASSWORD"] = SharedAdminPassword,
+                    ["HONUA_TEST_SCHEMA_HEADERS"] = "true",
+                    ["Database:QueryCache:EnableAutomaticCaching"] = "false",
+                };
+
+                var sharedPostgresConfigExtras = new Dictionary<string, string?>
+                {
+                    ["HONUA_TEST_SCHEMA_HEADERS"] = "true",
+                };
 
                 _sharedFactory = new WebApplicationFactory<Program>()
                     .WithWebHostBuilder(builder =>
                     {
-                        builder.UseEnvironment("Test");
-                        // honua-server#1144: dev-auth bypass requires explicit ack.
-                        builder.UseSetting("HONUA_DEV_AUTH", "true");
-                        builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "true");
+                        // Audit-A2: host settings, app configuration, and PostgreSQL
+                        // test services wiring all live on
+                        // WebAppFixturePostgresWiringMixin so the isolated and shared
+                        // bootstrap paths stay in lockstep.
+                        Honua.TestKit.Mixins.WebAppFixturePostgresWiringMixin.ApplyCommonHostSettings(builder);
                         builder.UseSetting("HONUA_ADMIN_PASSWORD", SharedAdminPassword);
-                        builder.UseSetting("HONUA_SKIP_MIGRATIONS", "true");
 
                         builder.ConfigureAppConfiguration((context, configBuilder) =>
                         {
-                            configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
-                            {
-                                ["ConnectionStrings:honua"] = _sharedPostgres.ConnectionString,
-                                ["ConnectionStrings:DefaultConnection"] = _sharedPostgres.ConnectionString,
-                                // Avoid live DNS dependency during startup validation in integration tests.
-                                ["Geocoding:Nominatim:BaseUrl"] = StableTestGeocodingBaseUrl,
-                                ["Geocoding:Providers:Nominatim:BaseUrl"] = StableTestGeocodingBaseUrl,
-                                ["HONUA_DEV_AUTH"] = "true",
-                                ["HONUA_DEV_AUTH_ALLOW_BYPASS"] = "true",
-                                ["HONUA_ADMIN_PASSWORD"] = SharedAdminPassword,
-                                ["HONUA_SKIP_MIGRATIONS"] = "true",
-                                ["HONUA_TEST_SCHEMA_HEADERS"] = "true",
-                                ["Limits:Connections:RequestTimeout"] = "00:05:00",
-                                ["Limits:Query:QueryTimeout"] = "00:02:00",
-                                ["Database:QueryCache:EnableAutomaticCaching"] = "false",
-                                ["FileStorage:Provider"] = "Local",
-                                ["FileStorage:LocalStorage:BasePath"] = attachmentsPath,
-                                ["Security:ConnectionEncryption:MasterKey"] = TestEncryptionMasterKey,
-                                ["Security:ConnectionEncryption:Salt"] = TestEncryptionSalt
-                            });
+                            configBuilder.AddInMemoryCollection(
+                                Honua.TestKit.Mixins.WebAppFixturePostgresWiringMixin
+                                    .BuildAppConfigurationDictionary(
+                                        _sharedPostgres.ConnectionString,
+                                        sharedAppConfigExtras));
                         });
 
                         builder.ConfigureTestServices(services =>
                         {
-                            services.RemoveAll<NpgsqlDataSource>();
-                            services.RemoveAll<IFeatureReader>();
-                            services.RemoveAll<IFeatureWriter>();
-                            services.RemoveAll<ITileProvider>();
-                            services.RemoveAll<IRelationshipStore>();
-                            services.RemoveAll<IStreamingFeatureStore>();
-                            services.RemoveAll<IAttachmentStore>();
-                            services.RemoveAll<ITableDiscoveryService>();
-                            services.RemoveAll<IDatabaseHealthChecker>();
-                            services.RemoveAll<IDatabaseConnectionProvider>();
-                            services.RemoveAll<ICrsDetectionService>();
-                            services.RemoveAll<IFileImportService>();
-                            services.RemoveAll<ISqlFilterTranslator>();
-
-                            var testConfiguration = new ConfigurationBuilder()
-                                .AddInMemoryCollection(new Dictionary<string, string?>
-                                {
-                                    ["ConnectionStrings:DefaultConnection"] = _sharedPostgres.ConnectionString,
-                                    ["HONUA_TEST_SCHEMA_HEADERS"] = "true",
-                                    ["Limits:Connections:RequestTimeout"] = "00:05:00",
-                                    ["Limits:Query:QueryTimeout"] = "00:02:00",
-                                    ["Security:ConnectionEncryption:MasterKey"] = TestEncryptionMasterKey,
-                                    ["Security:ConnectionEncryption:Salt"] = TestEncryptionSalt
-                                })
-                                .Build();
-
-                            Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, testConfiguration);
-
-                            services.RemoveAll<NpgsqlDataSource>();
-                            services.AddSingleton<NpgsqlDataSource>(_ =>
-                            {
-                                var dataSourceBuilder = new NpgsqlDataSourceBuilder(_sharedPostgres.ConnectionString);
-                                dataSourceBuilder.ConnectionStringBuilder.Multiplexing = false;
-                                return dataSourceBuilder.Build();
-                            });
-
-                            // Replace the Postgres-backed Metadata v2 provider with an in-memory
-                            // fixture so endpoints read the seeded snapshot without a migrated
-                            // snapshot row being present in the test database.
-                            // Audit-A2: the graph factories live on WebAppFixtureMetadataV2Mixin.
-                            Honua.TestKit.Mixins.WebAppFixtureMetadataV2Mixin.RegisterDefaultMetadataV2Graph(services);
+                            Honua.TestKit.Mixins.WebAppFixturePostgresWiringMixin.ConfigureSharedTestServices(
+                                services,
+                                _sharedPostgres.ConnectionString,
+                                sharedPostgresConfigExtras);
                         });
                     });
 
@@ -666,7 +553,7 @@ public sealed class WebAppFixture : IAsyncLifetime
 
     /// <summary>
     /// Get the test secure connection ID created by the fixture. Delegates to
-    /// <see cref="WebAppFixtureSecureConnectionMixin"/>.
+    /// <see cref="Mixins.WebAppFixtureSecureConnectionMixin"/>.
     /// </summary>
     public Task<Guid?> GetTestSecureConnectionIdAsync()
         => Honua.TestKit.Mixins.WebAppFixtureSecureConnectionMixin.GetTestSecureConnectionIdAsync(_serviceScope);
@@ -690,7 +577,7 @@ public sealed class WebAppFixture : IAsyncLifetime
 
     /// <summary>
     /// Audit-A2 follow-up: the secure-connection bootstrap now lives on
-    /// <see cref="WebAppFixtureSecureConnectionMixin"/>. This wrapper preserves the call
+    /// <see cref="Mixins.WebAppFixtureSecureConnectionMixin"/>. This wrapper preserves the call
     /// site shape that <c>InitializeAsync</c> / <c>CreateIsolatedSchemaAsync</c> use.
     /// </summary>
     private Task EnsureTestSecureConnectionAsync()
