@@ -60,6 +60,8 @@
     <InternalsVisibleTo Include="Honua.Aws.Tests" />
     <InternalsVisibleTo Include="Honua.Azure" />
     <InternalsVisibleTo Include="Honua.Azure.Tests" />
+    <InternalsVisibleTo Include="Honua.Ai" />
+    <InternalsVisibleTo Include="Honua.Ai.Tests" />
     <InternalsVisibleTo Include="Honua.Architecture.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.OData" />
     <InternalsVisibleTo Include="Honua.Protocols.OData.Tests" />

@@ -149,7 +149,7 @@ internal sealed class McpPlanAnalysisAppPackage
 
 /// <summary>
 /// Wire shape for an <see cref="Honua.Core.Features.Geoprocessing.Domain.AnalysisPlan"/>.
-/// Mirrors <see cref="McpPlanInput"/> intentionally so validate/dry-run/execute
+/// Mirrors <c>McpPlanInput</c> intentionally so validate/dry-run/execute
 /// can consume the planner's output without re-shaping.
 /// </summary>
 internal sealed class McpAnalysisPlanOutput

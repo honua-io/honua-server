@@ -1,0 +1,67 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!--
+      Honua.Ai is the carved-out AI surface (AiBuilder + Grounding +
+      NlQuery + AnalysisContent) extracted from Honua.Server so the
+      composition root no longer carries the deterministic-grounding
+      engine, the OpenAI plan-provider client, the analysis-content
+      durable store, and the AiBuilder fixture catalog. Namespaces are
+      preserved (Honua.Server.Features.{AiBuilder,Grounding,NlQuery,
+      AnalysisContent}) so Server's DI composition keeps compiling
+      without a using-clause sweep — the same pattern Honua.Aws,
+      Honua.Azure, and Honua.Jobs already use.
+
+      The McpPlanAnalysisModels DTO surface moves here too because
+      AiBuilder's FixturePlanAnalysisService is the producer of those
+      wire-format objects; the Mcp PlanAnalysisTool stays in Server and
+      reads them through the Honua.Ai project reference.
+    -->
+    <NoWarn>$(NoWarn);CS1591;IL2104;IL2026;IL3002;IL3050;CA1041;CA1000;CA1862;IDE0051;IDE0052;IDE0005;CA1844;IL2075</NoWarn>
+    <RootNamespace>Honua.Server.Features</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Honua.Core.Abstractions\Honua.Core.Abstractions.csproj" />
+    <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\Honua.Hosting\Honua.Hosting.csproj" />
+    <ProjectReference Include="..\Honua.Jobs\Honua.Jobs.csproj" />
+    <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Asp.Versioning.Http drives the WithApiVersionSet / HasApiVersion
+         extensions used by AnalysisContent and Spec grounding endpoints.
+         Mirrors the Server csproj's existing reference. -->
+    <PackageReference Include="Asp.Versioning.Http" />
+    <!-- StackExchange.Redis is required by InMemoryAnalysisContentStore and
+         by GroundingService for distributed-cache helpers. -->
+    <PackageReference Include="StackExchange.Redis" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- AiBuilder fixture JSON catalog. Logical names preserved so
+         AiBuilderFixtureCatalog.GetManifestResourceStream lookups keep
+         resolving with the original Honua.Server.Features.AiBuilder.Fixtures.*
+         resource ids. -->
+    <EmbeddedResource Include="..\..\tests\fixtures\ai-builder\spatial-query-contract-v1.json"
+                      LogicalName="Honua.Server.Features.AiBuilder.Fixtures.spatial-query-contract-v1.json" />
+    <EmbeddedResource Include="..\..\tests\fixtures\ai-builder\operations-dashboard-contract-v1.json"
+                      LogicalName="Honua.Server.Features.AiBuilder.Fixtures.operations-dashboard-contract-v1.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Server" />
+    <InternalsVisibleTo Include="Honua.Server.Tests" />
+    <InternalsVisibleTo Include="Honua.Architecture.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.Mcp.Tests" />
+    <InternalsVisibleTo Include="Honua.Ai.Tests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+
+</Project>

@@ -149,7 +149,7 @@ internal static class AiBuilderScenarioMapper
     /// <summary>
     /// Normalises the fixture's free-form <c>kind</c> strings into the
     /// canonical <see cref="Honua.Core.Features.Geoprocessing.Domain.AnalysisPlanStepKind"/>
-    /// names that <see cref="Protocols.Mcp.Tools.McpToolHelpers.ToDomainPlan"/>
+    /// names that <c>Honua.Server.Features.Protocols.Mcp.Tools.McpToolHelpers.ToDomainPlan</c>
     /// accepts. Anything not recognised falls through to <c>Geoprocess</c> so
     /// the wire output never carries an invalid step kind — the operations
     /// dashboard's specialised kinds (service, report, package, …) are kept

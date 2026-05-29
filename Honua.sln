@@ -79,17 +79,15 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Protocols.OData", "sr
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Geocoding", "src\Honua.Geocoding\Honua.Geocoding.csproj", "{4A4E07AC-5360-453A-8F4A-CEC6A35C0EED}"
 EndProject
-
-
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Jobs", "src\Honua.Jobs\Honua.Jobs.csproj", "{CD3C4ACD-ED09-4FC4-86D4-A673E087FB0A}"
-
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Aws", "src\Honua.Aws\Honua.Aws.csproj", "{7EF45092-EF76-4FD2-A751-2C40F2EBFD44}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Azure", "src\Honua.Azure\Honua.Azure.csproj", "{6FD192BB-A3D5-45F8-9D0D-DA8B1BAA1355}"
-
-
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Geometry", "src\Honua.Geometry\Honua.Geometry.csproj", "{27A45697-554F-487C-B3CA-D002C94B9505}"
-
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Ai", "src\Honua.Ai\Honua.Ai.csproj", "{7F0558A5-056E-461B-A7F6-600A87201F9F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -509,8 +507,6 @@ Global
 		{4A4E07AC-5360-453A-8F4A-CEC6A35C0EED}.Release|x64.Build.0 = Release|Any CPU
 		{4A4E07AC-5360-453A-8F4A-CEC6A35C0EED}.Release|x86.ActiveCfg = Release|Any CPU
 		{4A4E07AC-5360-453A-8F4A-CEC6A35C0EED}.Release|x86.Build.0 = Release|Any CPU
-
-
 		{CD3C4ACD-ED09-4FC4-86D4-A673E087FB0A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{CD3C4ACD-ED09-4FC4-86D4-A673E087FB0A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{CD3C4ACD-ED09-4FC4-86D4-A673E087FB0A}.Debug|x64.ActiveCfg = Debug|Any CPU
@@ -523,7 +519,6 @@ Global
 		{CD3C4ACD-ED09-4FC4-86D4-A673E087FB0A}.Release|x64.Build.0 = Release|Any CPU
 		{CD3C4ACD-ED09-4FC4-86D4-A673E087FB0A}.Release|x86.ActiveCfg = Release|Any CPU
 		{CD3C4ACD-ED09-4FC4-86D4-A673E087FB0A}.Release|x86.Build.0 = Release|Any CPU
-
 		{7EF45092-EF76-4FD2-A751-2C40F2EBFD44}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{7EF45092-EF76-4FD2-A751-2C40F2EBFD44}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7EF45092-EF76-4FD2-A751-2C40F2EBFD44}.Debug|x64.ActiveCfg = Debug|Any CPU
@@ -548,8 +543,6 @@ Global
 		{6FD192BB-A3D5-45F8-9D0D-DA8B1BAA1355}.Release|x64.Build.0 = Release|Any CPU
 		{6FD192BB-A3D5-45F8-9D0D-DA8B1BAA1355}.Release|x86.ActiveCfg = Release|Any CPU
 		{6FD192BB-A3D5-45F8-9D0D-DA8B1BAA1355}.Release|x86.Build.0 = Release|Any CPU
-
-
 		{27A45697-554F-487C-B3CA-D002C94B9505}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{27A45697-554F-487C-B3CA-D002C94B9505}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{27A45697-554F-487C-B3CA-D002C94B9505}.Debug|x64.ActiveCfg = Debug|Any CPU
@@ -562,7 +555,18 @@ Global
 		{27A45697-554F-487C-B3CA-D002C94B9505}.Release|x64.Build.0 = Release|Any CPU
 		{27A45697-554F-487C-B3CA-D002C94B9505}.Release|x86.ActiveCfg = Release|Any CPU
 		{27A45697-554F-487C-B3CA-D002C94B9505}.Release|x86.Build.0 = Release|Any CPU
-
+		{7F0558A5-056E-461B-A7F6-600A87201F9F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7F0558A5-056E-461B-A7F6-600A87201F9F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7F0558A5-056E-461B-A7F6-600A87201F9F}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{7F0558A5-056E-461B-A7F6-600A87201F9F}.Debug|x64.Build.0 = Debug|Any CPU
+		{7F0558A5-056E-461B-A7F6-600A87201F9F}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{7F0558A5-056E-461B-A7F6-600A87201F9F}.Debug|x86.Build.0 = Debug|Any CPU
+		{7F0558A5-056E-461B-A7F6-600A87201F9F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7F0558A5-056E-461B-A7F6-600A87201F9F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7F0558A5-056E-461B-A7F6-600A87201F9F}.Release|x64.ActiveCfg = Release|Any CPU
+		{7F0558A5-056E-461B-A7F6-600A87201F9F}.Release|x64.Build.0 = Release|Any CPU
+		{7F0558A5-056E-461B-A7F6-600A87201F9F}.Release|x86.ActiveCfg = Release|Any CPU
+		{7F0558A5-056E-461B-A7F6-600A87201F9F}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -600,6 +604,10 @@ Global
 		{7EF45092-EF76-4FD2-A751-2C40F2EBFD44} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{6FD192BB-A3D5-45F8-9D0D-DA8B1BAA1355} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{27A45697-554F-487C-B3CA-D002C94B9505} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+<<<<<<< HEAD
 		{8F2A1B6C-7D3E-4F50-9C61-A8E2B4D5F671} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+=======
+		{7F0558A5-056E-461B-A7F6-600A87201F9F} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+>>>>>>> 57aa1a5fa... refactor(ai-split): extract Honua.Ai (AiBuilder + Grounding + NlQuery + AnalysisContent)
 	EndGlobalSection
 EndGlobal
