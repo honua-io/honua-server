@@ -1,0 +1,479 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using System.Xml.Linq;
+using FluentAssertions;
+using Xunit;
+
+namespace Honua.Architecture.Tests;
+
+/// <summary>
+/// Enforces the canonical Module Dependency Policy
+/// (<c>docs/contributor/adr/0047-module-dependency-policy.md</c>): every
+/// <c>&lt;ProjectReference&gt;</c> declared by a runtime csproj must point at a
+/// provider that the consumer's matrix row permits.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The matrix in ADR-0047 is the single source of truth for module placement.
+/// This test parses every <c>.csproj</c> under <c>src/</c>, <c>tests/</c>,
+/// <c>samples/</c>, and <c>benchmarks/</c>, classifies it into one of the
+/// matrix roles by name pattern, and then walks every <c>ProjectReference</c>
+/// to verify the <c>(consumer-role, provider-role)</c> cell is allowed.
+/// </para>
+///
+/// <para>
+/// Unclassified csprojs (samples, benchmarks, tests, the test-kit) fall
+/// through to a default policy that permits any reference. Tooling assemblies
+/// are not part of the runtime topology and are governed by their own
+/// hygiene tests; this test only guards the runtime matrix.
+/// </para>
+///
+/// <para>
+/// Pre-existing matrix violations are tolerated through the
+/// <see cref="_techDebtAllowances"/> ratchet, identical in shape to the
+/// cross-protocol ratchet in <see cref="CrossProtocolIsolationTests"/>: each
+/// entry pins a <c>(consumer-role, provider-role, MaxCount)</c> triple and may
+/// only shrink. When a violation is paid down, decrement the cap (or delete
+/// the entry); the test fails if the cap is loose.
+/// </para>
+///
+/// <para>
+/// <strong>Editing protocol:</strong> the matrix in ADR-0047 and the
+/// <see cref="_allowedCells"/> set in this file must be edited together. A PR
+/// that touches only the test silently drifts from policy; a PR that touches
+/// only the ADR will fail this test. The two artefacts are linked in writing,
+/// in code, and in the diff.
+/// </para>
+/// </remarks>
+[Trait("Category", "Architecture")]
+public sealed class ModuleDependencyPolicyTests
+{
+    /// <summary>
+    /// Canonical module roles from ADR-0047. <see cref="ModuleRole.Unclassified"/>
+    /// is the catch-all for tooling (samples, benchmarks, tests, test-kit). The
+    /// default-policy branch treats <see cref="ModuleRole.Unclassified"/> consumers
+    /// as permitted to reference anything.
+    /// </summary>
+    private enum ModuleRole
+    {
+        Unclassified,
+        Abstractions,
+        Core,
+        Geometry,
+        Geocoding,
+        Aws,
+        Azure,
+        Hosting,
+        Postgres,
+        DuckDB,
+        MySql,
+        SqlServer,
+        Protocols,
+        Server,
+        ServiceDefaults,
+        AppHost,
+        Worker,
+    }
+
+    /// <summary>
+    /// The dependency-direction matrix from ADR-0047, encoded as the set of
+    /// <c>(consumer, provider)</c> pairs that are allowed. Every pair NOT in
+    /// this set is forbidden; violations either fail the test or — if the
+    /// violation is pre-existing — must appear in <see cref="_techDebtAllowances"/>.
+    /// </summary>
+    /// <remarks>
+    /// Reading the matrix: each entry is "this consumer may reference this
+    /// provider". The Server row is the only one that may reference everything
+    /// below it in the tier stack. The Abstractions row is empty (the contract
+    /// surface depends on nothing in the repo).
+    /// </remarks>
+    private static readonly HashSet<(ModuleRole Consumer, ModuleRole Provider)> _allowedCells = new()
+    {
+        // Core can reference Abstractions only.
+        (ModuleRole.Core, ModuleRole.Abstractions),
+
+        // Geospatial / cloud satellites depend on Abstractions + Core.
+        (ModuleRole.Geometry,  ModuleRole.Abstractions),
+        (ModuleRole.Geometry,  ModuleRole.Core),
+        (ModuleRole.Geocoding, ModuleRole.Abstractions),
+        (ModuleRole.Geocoding, ModuleRole.Core),
+        (ModuleRole.Aws,       ModuleRole.Abstractions),
+        (ModuleRole.Aws,       ModuleRole.Core),
+        (ModuleRole.Azure,     ModuleRole.Abstractions),
+        (ModuleRole.Azure,     ModuleRole.Core),
+
+        // Hosting: Abstractions + Core + ServiceDefaults.
+        (ModuleRole.Hosting, ModuleRole.Abstractions),
+        (ModuleRole.Hosting, ModuleRole.Core),
+        (ModuleRole.Hosting, ModuleRole.ServiceDefaults),
+
+        // Storage providers: Abstractions + Core + Geometry (NTS); Postgres
+        // additionally may use Aws (S3 backed cloud-storage paths).
+        (ModuleRole.Postgres,  ModuleRole.Abstractions),
+        (ModuleRole.Postgres,  ModuleRole.Core),
+        (ModuleRole.Postgres,  ModuleRole.Geometry),
+        (ModuleRole.Postgres,  ModuleRole.Aws),
+        (ModuleRole.DuckDB,    ModuleRole.Abstractions),
+        (ModuleRole.DuckDB,    ModuleRole.Core),
+        (ModuleRole.DuckDB,    ModuleRole.Geometry),
+        (ModuleRole.MySql,     ModuleRole.Abstractions),
+        (ModuleRole.MySql,     ModuleRole.Core),
+        (ModuleRole.MySql,     ModuleRole.Geometry),
+        (ModuleRole.SqlServer, ModuleRole.Abstractions),
+        (ModuleRole.SqlServer, ModuleRole.Core),
+        (ModuleRole.SqlServer, ModuleRole.Geometry),
+
+        // Protocol modules: Abstractions + Core + Geometry + Hosting.
+        (ModuleRole.Protocols, ModuleRole.Abstractions),
+        (ModuleRole.Protocols, ModuleRole.Core),
+        (ModuleRole.Protocols, ModuleRole.Geometry),
+        (ModuleRole.Protocols, ModuleRole.Hosting),
+
+        // Server (composition root): every tier below it.
+        (ModuleRole.Server, ModuleRole.Abstractions),
+        (ModuleRole.Server, ModuleRole.Core),
+        (ModuleRole.Server, ModuleRole.Geometry),
+        (ModuleRole.Server, ModuleRole.Geocoding),
+        (ModuleRole.Server, ModuleRole.Aws),
+        (ModuleRole.Server, ModuleRole.Azure),
+        (ModuleRole.Server, ModuleRole.Hosting),
+        (ModuleRole.Server, ModuleRole.Postgres),
+        (ModuleRole.Server, ModuleRole.DuckDB),
+        (ModuleRole.Server, ModuleRole.MySql),
+        (ModuleRole.Server, ModuleRole.SqlServer),
+        (ModuleRole.Server, ModuleRole.Protocols),
+        (ModuleRole.Server, ModuleRole.ServiceDefaults),
+
+        // ServiceDefaults sits sideways from the main stack but currently
+        // references Core for shared logging/diagnostics primitives.
+        (ModuleRole.ServiceDefaults, ModuleRole.Abstractions),
+        (ModuleRole.ServiceDefaults, ModuleRole.Core),
+
+        // AppHost is the Aspire orchestration shell; references only
+        // ServiceDefaults today.
+        (ModuleRole.AppHost, ModuleRole.ServiceDefaults),
+
+        // Worker.Gdal is a side-car process whose composition root is Server
+        // (the only assembly outside Server itself permitted to do so).
+        (ModuleRole.Worker, ModuleRole.Server),
+    };
+
+    /// <summary>
+    /// Tech-debt ratchet for pre-existing policy violations. Each entry pins
+    /// the number of distinct <c>ProjectReference</c> edges that today violate
+    /// the matrix, partitioned by <c>(consumer-role, provider-role)</c>. The
+    /// ratchet is one-way: caps may only shrink. When the matrix in ADR-0047
+    /// is the actual state of the world, this list is empty.
+    /// </summary>
+    /// <remarks>
+    /// As of ADR-0047, every runtime csproj reference matches the matrix
+    /// exactly. Future heavy-package-migration PRs (carving
+    /// <c>Honua.Geometry</c> and <c>Honua.Geocoding</c> out of
+    /// <c>Honua.Core</c>) may introduce transitional edges that land here.
+    /// </remarks>
+    private static readonly IReadOnlyList<TechDebtAllowance> _techDebtAllowances = Array.Empty<TechDebtAllowance>();
+
+    private sealed record TechDebtAllowance(ModuleRole Consumer, ModuleRole Provider, int MaxCount);
+
+    [ArchitectureTest]
+    public void ProjectReferences_ShouldMatch_ModuleDependencyPolicyMatrix()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+
+        var allCsprojs = EnumerateRuntimeCsprojs(repositoryRoot).ToArray();
+        allCsprojs.Should().NotBeEmpty(
+            "csproj enumeration must find at least one project; an empty result " +
+            "means the repository layout has shifted and the test is silently passing.");
+
+        var violations = new List<string>();
+        var ratchetCounts = new Dictionary<(ModuleRole, ModuleRole), int>();
+
+        foreach (var csprojPath in allCsprojs)
+        {
+            var consumerRole = ClassifyByCsprojName(Path.GetFileNameWithoutExtension(csprojPath));
+
+            // Unclassified consumers (samples / benchmarks / tests / test-kit)
+            // fall through to the default policy: tooling may reference anything.
+            if (consumerRole == ModuleRole.Unclassified)
+            {
+                continue;
+            }
+
+            var projectReferences = LoadProjectReferenceNames(csprojPath);
+            foreach (var providerName in projectReferences)
+            {
+                var providerRole = ClassifyByCsprojName(providerName);
+
+                // Unclassified providers are out-of-policy tooling; runtime
+                // assemblies should not reference them, but if they do we surface
+                // the case explicitly rather than silently allow it.
+                if (providerRole == ModuleRole.Unclassified)
+                {
+                    var relative = Path.GetRelativePath(repositoryRoot, csprojPath);
+                    violations.Add(
+                        $"Runtime project '{Path.GetFileNameWithoutExtension(csprojPath)}' " +
+                        $"({relative}) references unclassified provider '{providerName}'. " +
+                        "Runtime assemblies may reference only the modules named in " +
+                        "ADR-0047's matrix. Add the provider to the matrix (and to " +
+                        $"{nameof(ClassifyByCsprojName)}) if it belongs there, or remove the " +
+                        "reference.");
+                    continue;
+                }
+
+                var cell = (consumerRole, providerRole);
+                if (_allowedCells.Contains(cell))
+                {
+                    continue;
+                }
+
+                // Forbidden by the matrix. Could be ratcheted tech-debt; otherwise
+                // it is a hard violation.
+                if (_techDebtAllowances.Any(allowance =>
+                        allowance.Consumer == consumerRole && allowance.Provider == providerRole))
+                {
+                    ratchetCounts.TryGetValue(cell, out var prior);
+                    ratchetCounts[cell] = prior + 1;
+                    continue;
+                }
+
+                var relativePath = Path.GetRelativePath(repositoryRoot, csprojPath);
+                violations.Add(
+                    $"Module dependency policy violation: '{consumerRole}' " +
+                    $"({Path.GetFileNameWithoutExtension(csprojPath)}, {relativePath}) " +
+                    $"references '{providerRole}' ({providerName}), which is forbidden by " +
+                    "the ADR-0047 dependency-direction matrix. See " +
+                    "docs/contributor/adr/0047-module-dependency-policy.md " +
+                    $"§ 'Dependency direction matrix' — the ({consumerRole}, {providerRole}) " +
+                    "cell is empty. Either route the dependency through a permitted layer, " +
+                    "or (only if intentional) update both the ADR matrix and the test's " +
+                    "_allowedCells in the same PR.");
+            }
+        }
+
+        violations
+            .OrderBy(message => message, StringComparer.Ordinal)
+            .Should()
+            .BeEmpty(
+                "every runtime ProjectReference must match the ADR-0047 dependency-direction " +
+                "matrix. See docs/contributor/adr/0047-module-dependency-policy.md for the " +
+                "policy and the decision tree.");
+
+        // ----- Ratchet enforcement -----
+        // For each tech-debt allowance, the actual count must MATCH the cap exactly.
+        // - actual > cap : regression — a new csproj started violating the matrix.
+        // - actual < cap : debt was paid down — decrement so the ratchet tightens.
+        var ratchetFailures = new List<string>();
+        foreach (var allowance in _techDebtAllowances)
+        {
+            ratchetCounts.TryGetValue((allowance.Consumer, allowance.Provider), out var actual);
+
+            if (actual > allowance.MaxCount)
+            {
+                ratchetFailures.Add(
+                    $"Tech-debt cap for '{allowance.Consumer} -> {allowance.Provider}' exceeded: " +
+                    $"declared MaxCount = {allowance.MaxCount}, actual = {actual}. " +
+                    "A new csproj started violating the matrix. Remove the new reference, or " +
+                    "(only if justified) raise the cap and update the entry's burn-down note.");
+            }
+            else if (actual < allowance.MaxCount)
+            {
+                ratchetFailures.Add(
+                    $"Tech-debt cap for '{allowance.Consumer} -> {allowance.Provider}' is loose: " +
+                    $"declared MaxCount = {allowance.MaxCount}, actual = {actual}. " +
+                    "Debt was paid down — decrement MaxCount to the actual count " +
+                    "(or delete the entry if actual is 0) so the ratchet tightens.");
+            }
+        }
+
+        ratchetFailures
+            .OrderBy(message => message, StringComparer.Ordinal)
+            .Should()
+            .BeEmpty(
+                "the module-dependency tech-debt ratchet is one-way: caps can only shrink. " +
+                "Tightening keeps the policy honest as Geometry/Geocoding/Aws/Azure satellites " +
+                "land and the heavy-package refs migrate out of Honua.Core.");
+    }
+
+    [ArchitectureTest]
+    public void MatrixAndAdr_ShouldCrossReference_EachOther()
+    {
+        // Cheap, fast sanity check: the editing-protocol contract in the test's
+        // xmldoc explicitly says the matrix and the ADR must be edited together.
+        // If someone deletes the ADR without updating the test (or vice versa)
+        // this assertion surfaces the drift loudly.
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var adrPath = Path.Combine(
+            repositoryRoot,
+            "docs",
+            "contributor",
+            "adr",
+            "0047-module-dependency-policy.md");
+
+        File.Exists(adrPath).Should().BeTrue(
+            "ADR-0047 must exist alongside this test; the test enforces its matrix and the " +
+            "two artefacts are linked. See the test's xmldoc 'Editing protocol' note.");
+
+        var adrText = File.ReadAllText(adrPath);
+        adrText.Should().Contain(
+            "ModuleDependencyPolicyTests",
+            "ADR-0047 must name the arch test that enforces it; otherwise a future contributor " +
+            "editing the matrix may not realise the test exists.");
+        adrText.Should().Contain(
+            "Dependency direction matrix",
+            "ADR-0047 must contain a 'Dependency direction matrix' section — the error message " +
+            "this test emits points readers at that section by name.");
+    }
+
+    private static IEnumerable<string> EnumerateRuntimeCsprojs(string repositoryRoot)
+    {
+        var roots = new[] { "src", "tests", "samples", "benchmarks" };
+        foreach (var root in roots)
+        {
+            var rootPath = Path.Combine(repositoryRoot, root);
+            if (!Directory.Exists(rootPath))
+            {
+                continue;
+            }
+
+            foreach (var path in Directory.EnumerateFiles(rootPath, "*.csproj", SearchOption.AllDirectories))
+            {
+                if (path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase) ||
+                    path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                yield return path;
+            }
+        }
+    }
+
+    private static IReadOnlyList<string> LoadProjectReferenceNames(string csprojPath)
+    {
+        var document = XDocument.Load(csprojPath);
+        var names = new List<string>();
+
+        foreach (var element in document.Descendants("ProjectReference"))
+        {
+            var include = element.Attribute("Include")?.Value;
+            if (string.IsNullOrWhiteSpace(include))
+            {
+                continue;
+            }
+
+            var fileName = Path.GetFileNameWithoutExtension(include.Replace('\\', '/'));
+            if (!string.IsNullOrWhiteSpace(fileName))
+            {
+                names.Add(fileName);
+            }
+        }
+
+        return names;
+    }
+
+    /// <summary>
+    /// Maps a csproj name to its <see cref="ModuleRole"/>. Order matters — the
+    /// more-specific names (e.g. <c>Honua.Core.Abstractions</c>) must be tested
+    /// before their less-specific prefixes (e.g. <c>Honua.Core</c>). Names that
+    /// do not match any matrix role return <see cref="ModuleRole.Unclassified"/>;
+    /// the caller treats unclassified consumers as tooling (allowed to
+    /// reference anything) but flags unclassified runtime providers as a
+    /// violation that needs an explicit matrix entry.
+    /// </summary>
+    private static ModuleRole ClassifyByCsprojName(string projectName)
+    {
+        // Tier 1: Abstractions — must come before Core because of the prefix.
+        if (projectName.Equals("Honua.Core.Abstractions", StringComparison.Ordinal))
+        {
+            return ModuleRole.Abstractions;
+        }
+
+        // Tier 2: Core.
+        if (projectName.Equals("Honua.Core", StringComparison.Ordinal))
+        {
+            return ModuleRole.Core;
+        }
+
+        // Tier 3: Geospatial / cloud satellites. None of these csprojs exist
+        // yet (ADR-0047 reserves their slots); the classifier names them so
+        // the policy is ready when they land.
+        if (projectName.Equals("Honua.Geometry", StringComparison.Ordinal))
+        {
+            return ModuleRole.Geometry;
+        }
+        if (projectName.Equals("Honua.Geocoding", StringComparison.Ordinal))
+        {
+            return ModuleRole.Geocoding;
+        }
+        if (projectName.Equals("Honua.Aws", StringComparison.Ordinal) ||
+            projectName.StartsWith("Honua.Aws.", StringComparison.Ordinal))
+        {
+            return ModuleRole.Aws;
+        }
+        if (projectName.Equals("Honua.Azure", StringComparison.Ordinal) ||
+            projectName.StartsWith("Honua.Azure.", StringComparison.Ordinal))
+        {
+            return ModuleRole.Azure;
+        }
+
+        // Tier 4: Hosting.
+        if (projectName.Equals("Honua.Hosting", StringComparison.Ordinal) ||
+            projectName.StartsWith("Honua.Hosting.", StringComparison.Ordinal))
+        {
+            return ModuleRole.Hosting;
+        }
+
+        // Tier 5: Storage providers. Honua.Postgres + planned sub-assemblies
+        // (Migrations / Catalog / FeatureStore / Streaming / Outbox) all share
+        // the Postgres role; the matrix gains no rows when the split lands.
+        if (projectName.Equals("Honua.Postgres", StringComparison.Ordinal) ||
+            projectName.StartsWith("Honua.Postgres.", StringComparison.Ordinal))
+        {
+            return ModuleRole.Postgres;
+        }
+        if (projectName.Equals("Honua.DuckDB", StringComparison.Ordinal))
+        {
+            return ModuleRole.DuckDB;
+        }
+        if (projectName.Equals("Honua.MySql", StringComparison.Ordinal))
+        {
+            return ModuleRole.MySql;
+        }
+        if (projectName.Equals("Honua.SqlServer", StringComparison.Ordinal))
+        {
+            return ModuleRole.SqlServer;
+        }
+
+        // Tier 6: Protocol modules.
+        if (projectName.StartsWith("Honua.Protocols.", StringComparison.Ordinal))
+        {
+            return ModuleRole.Protocols;
+        }
+
+        // Tier 7: Server (composition root).
+        if (projectName.Equals("Honua.Server", StringComparison.Ordinal))
+        {
+            return ModuleRole.Server;
+        }
+
+        // Out-of-stack: shared utility, Aspire shell, side-car worker.
+        if (projectName.Equals("Honua.ServiceDefaults", StringComparison.Ordinal))
+        {
+            return ModuleRole.ServiceDefaults;
+        }
+        if (projectName.Equals("Honua.AppHost", StringComparison.Ordinal))
+        {
+            return ModuleRole.AppHost;
+        }
+        if (projectName.StartsWith("Honua.Worker.", StringComparison.Ordinal))
+        {
+            return ModuleRole.Worker;
+        }
+
+        // Tooling (tests, samples, benchmarks, test-kit) is unclassified by
+        // design: the matrix governs the runtime topology, not the tools that
+        // exercise it.
+        return ModuleRole.Unclassified;
+    }
+}

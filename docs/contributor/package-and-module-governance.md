@@ -22,6 +22,17 @@ Do not add `Version`, `VersionOverride`, or child `<Version>` metadata to a `.cs
 
 The architecture suite enforces this rule with `PackageGovernanceTests`.
 
+## Module Dependency Policy
+
+The canonical policy for which assembly may reference which is recorded in
+[ADR-0047: Module Dependency Policy](adr/0047-module-dependency-policy.md).
+That ADR holds the dependency-direction matrix, the decision tree for placing
+new code, and the rules of thumb for the six tiers. It is the first document
+to read before adding a new project or moving code between assemblies. The
+matrix is enforced by `ModuleDependencyPolicyTests` in
+`Honua.Architecture.Tests`; the ADR and the test must be edited together when
+the policy intentionally changes.
+
 ## Base Runtime Boundary
 
 The base runtime is the smallest package graph needed to host shared canonical behavior and the default deployment shape:
