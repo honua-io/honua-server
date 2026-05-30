@@ -962,7 +962,7 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "src/Honua.Server/Features/Protocols/Scene/SceneDiscoveryEndpoints.cs",
+            "src/Honua.Protocols.Scene/SceneDiscoveryEndpoints.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
             "tests/dotnet/Honua.Protocols.Scene.Tests/Source/PublicSceneDiscoveryEndpointTests.cs"
           ],

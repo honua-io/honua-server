@@ -65,10 +65,9 @@
     <ProjectReference Include="..\Honua.Io\Honua.Io.csproj" />
     <ProjectReference Include="..\Honua.Import\Honua.Import.csproj" />
 
-    <ProjectReference
-      Include="..\..\samples\Honua.StacOpsDemo\Honua.StacOpsDemo.csproj"
-      Condition="'$(HonuaIncludeStacOpsDemo)' != 'false' and ('$(PublishAot)' != 'true' or '$(RuntimeIdentifier)' == '')"
-      GlobalPropertiesToRemove="PublishAot;RuntimeIdentifier;SelfContained;StripSymbols" />
+    <ProjectReference Include="..\..\samples\Honua.StacOpsDemo\Honua.StacOpsDemo.csproj" Condition="'$(HonuaIncludeStacOpsDemo)' != 'false' and ('$(PublishAot)' != 'true' or '$(RuntimeIdentifier)' == '')" GlobalPropertiesToRemove="PublishAot;RuntimeIdentifier;SelfContained;StripSymbols" />
+
+    <ProjectReference Include="..\Honua.Protocols.Scene\Honua.Protocols.Scene.csproj" />
   </ItemGroup>
 
 
@@ -129,13 +128,11 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
-    <Content Include="..\..\docs\developer\api-specs\admin-api.json" Link="admin-openapi.json"
-             Condition="Exists('..\..\docs\developer\api-specs\admin-api.json')">
+    <Content Include="..\..\docs\developer\api-specs\admin-api.json" Link="admin-openapi.json" Condition="Exists('..\..\docs\developer\api-specs\admin-api.json')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
-    <Content Include="..\..\docs\api-specs\admin-api.json" Link="admin-openapi.json"
-             Condition="!Exists('..\..\docs\developer\api-specs\admin-api.json') and Exists('..\..\docs\api-specs\admin-api.json')">
+    <Content Include="..\..\docs\api-specs\admin-api.json" Link="admin-openapi.json" Condition="!Exists('..\..\docs\developer\api-specs\admin-api.json') and Exists('..\..\docs\api-specs\admin-api.json')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>

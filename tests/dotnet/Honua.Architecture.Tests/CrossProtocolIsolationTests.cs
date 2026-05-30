@@ -143,6 +143,7 @@ public sealed class CrossProtocolIsolationTests
         new(StringComparer.Ordinal)
         {
             ["OData"] = Path.Combine("src", "Honua.Protocols.OData"),
+            ["Scene"] = Path.Combine("src", "Honua.Protocols.Scene"),
             // MCP is the AI module's protocol surface (consolidated into Honua.Ai
             // rather than a standalone Honua.Protocols.Mcp, because Ai and Mcp are
             // mutually dependent — MCP tools delegate to AiBuilder/Grounding).
