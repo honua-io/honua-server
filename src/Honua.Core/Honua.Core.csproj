@@ -45,11 +45,8 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Core.Tests" />
     <InternalsVisibleTo Include="Honua.Geometry" />
-    <InternalsVisibleTo Include="Honua.Geometry.Tests" />
     <InternalsVisibleTo Include="Honua.Io" />
-    <InternalsVisibleTo Include="Honua.Io.Tests" />
     <InternalsVisibleTo Include="Honua.Import" />
-    <InternalsVisibleTo Include="Honua.Import.Tests" />
     <InternalsVisibleTo Include="Honua.Server.Tests" />
     <InternalsVisibleTo Include="Honua.Ai.Tests" />
     <InternalsVisibleTo Include="Honua.Benchmarks" />

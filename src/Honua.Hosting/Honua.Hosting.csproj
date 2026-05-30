@@ -63,15 +63,11 @@
     <InternalsVisibleTo Include="Honua.Server" />
     <InternalsVisibleTo Include="Honua.Server.Tests" />
     <InternalsVisibleTo Include="Honua.Aws" />
-    <InternalsVisibleTo Include="Honua.Aws.Tests" />
     <InternalsVisibleTo Include="Honua.Azure" />
-    <InternalsVisibleTo Include="Honua.Azure.Tests" />
     <InternalsVisibleTo Include="Honua.Ai" />
     <InternalsVisibleTo Include="Honua.Ai.Tests" />
     <InternalsVisibleTo Include="Honua.Io" />
-    <InternalsVisibleTo Include="Honua.Io.Tests" />
     <InternalsVisibleTo Include="Honua.Import" />
-    <InternalsVisibleTo Include="Honua.Import.Tests" />
     <InternalsVisibleTo Include="Honua.Architecture.Tests" />
     <InternalsVisibleTo Include="Honua.Benchmarks" />
     <InternalsVisibleTo Include="Honua.Protocols.OData" />
@@ -88,7 +84,6 @@
     <InternalsVisibleTo Include="Honua.Protocols.Stac" />
     <InternalsVisibleTo Include="Honua.Protocols.Stac.Tests" />
     <InternalsVisibleTo Include="Honua.Geoprocessing" />
-    <InternalsVisibleTo Include="Honua.Geoprocessing.Tests" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 
