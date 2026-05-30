@@ -63,6 +63,7 @@
     <ProjectReference Include="..\Honua.Geometry\Honua.Geometry.csproj" />
     <ProjectReference Include="..\Honua.Geoprocessing\Honua.Geoprocessing.csproj" />
     <ProjectReference Include="..\Honua.Io\Honua.Io.csproj" />
+    <ProjectReference Include="..\Honua.Import\Honua.Import.csproj" />
 
     <ProjectReference
       Include="..\..\samples\Honua.StacOpsDemo\Honua.StacOpsDemo.csproj"

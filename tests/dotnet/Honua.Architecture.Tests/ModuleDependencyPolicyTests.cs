@@ -69,6 +69,7 @@ public sealed class ModuleDependencyPolicyTests
         Ai,
         Geoprocessing,
         Io,
+        Import,
         Postgres,
         DuckDB,
         MySql,
@@ -203,6 +204,18 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Io, ModuleRole.Hosting),
         (ModuleRole.Io, ModuleRole.ServiceDefaults),
 
+        // Import: the data-ingest / migration HTTP surface (Migration endpoints
+        // + job managers, file-import upload plumbing, raster-import endpoints).
+        // ASP.NET-coupled; depends on Abstractions + Core + Geometry + Hosting +
+        // ServiceDefaults. The provider-agnostic ingest domain stays in Core
+        // (provider-consumed); the NTS readers stay in Geometry. Must NEVER
+        // reference Server (enforced by HonuaImportIsolationTests).
+        (ModuleRole.Import, ModuleRole.Abstractions),
+        (ModuleRole.Import, ModuleRole.Core),
+        (ModuleRole.Import, ModuleRole.Geometry),
+        (ModuleRole.Import, ModuleRole.Hosting),
+        (ModuleRole.Import, ModuleRole.ServiceDefaults),
+
         // Server (composition root): every tier below it.
         (ModuleRole.Server, ModuleRole.Abstractions),
         (ModuleRole.Server, ModuleRole.Core),
@@ -213,6 +226,7 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Server, ModuleRole.Ai),
         (ModuleRole.Server, ModuleRole.Geoprocessing),
         (ModuleRole.Server, ModuleRole.Io),
+        (ModuleRole.Server, ModuleRole.Import),
         (ModuleRole.Server, ModuleRole.Hosting),
         (ModuleRole.Server, ModuleRole.Jobs),
         (ModuleRole.Server, ModuleRole.Postgres),
@@ -555,6 +569,15 @@ public sealed class ModuleDependencyPolicyTests
             projectName.StartsWith("Honua.Io.", StringComparison.Ordinal))
         {
             return ModuleRole.Io;
+        }
+
+        // Data-ingest / migration HTTP surface carved out of Server in the
+        // import-split refactor. ASP.NET-coupled; sits in tier 4 alongside
+        // Hosting / Jobs / Ai / Geoprocessing / Io.
+        if (projectName.Equals("Honua.Import", StringComparison.Ordinal) ||
+            projectName.StartsWith("Honua.Import.", StringComparison.Ordinal))
+        {
+            return ModuleRole.Import;
         }
 
         // Tier 5: Storage providers. Honua.Postgres + planned sub-assemblies
