@@ -658,10 +658,10 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "csproj": "tests/dotnet/Honua.Ai.Tests/Honua.Protocols.Mcp.Tests.csproj",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp",
+      "csproj": "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp|FullyQualifiedName~Honua.Server.Tests.Features.AiBuilder|FullyQualifiedName~Honua.Server.Tests.Features.Reporting",
       "paths": [
-        "src/Honua.Ai/Features/Protocols/Mcp/",
+        "src/Honua.Ai/",
         "tests/dotnet/Honua.Ai.Tests/Source/"
       ]
     },
