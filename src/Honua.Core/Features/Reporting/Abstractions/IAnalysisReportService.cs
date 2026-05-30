@@ -4,13 +4,15 @@
 using System.Security.Claims;
 using Honua.Core.Features.Reporting.Domain;
 
-namespace Honua.Server.Features.Reporting;
+namespace Honua.Core.Features.Reporting.Abstractions;
 
 /// <summary>
-/// Server-side orchestrator for analysis-report retrieval. Wraps the core
+/// Orchestrator abstraction for analysis-report retrieval. Wraps the core
 /// builder so endpoints and the MCP resource only depend on a single service.
+/// Lives in Core so the MCP/AI surface can consume it without a Honua.Server
+/// dependency.
 /// </summary>
-internal interface IAnalysisReportService
+public interface IAnalysisReportService
 {
     /// <summary>
     /// Retrieves the canonical <see cref="AnalysisReport"/> envelope for the
@@ -38,7 +40,7 @@ internal interface IAnalysisReportService
 /// Rendered analysis report body plus the contract metadata required to
 /// surface the right MIME type and HTTP cache headers.
 /// </summary>
-internal sealed record RenderedAnalysisReport(
+public sealed record RenderedAnalysisReport(
     AnalysisReport Report,
     AnalysisReportFormat Format,
     string Body);

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Reporting.Domain;
+using Honua.Core.Features.Reporting.Abstractions;
 using Honua.Server.Features.Protocols.Mcp.Models;
 using Honua.Server.Features.Reporting;
 

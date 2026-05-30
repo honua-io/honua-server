@@ -8,6 +8,7 @@ using Honua.Server.Features.Protocols.Mcp.Resources;
 using Honua.Server.Features.Protocols.Mcp.Tools;
 using Honua.Server.Features.Reporting;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Honua.Core.Features.Reporting.Abstractions;
 
 namespace Honua.Server.Features.Protocols.Mcp;
 
