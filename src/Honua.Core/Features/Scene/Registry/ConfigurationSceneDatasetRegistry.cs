@@ -14,7 +14,7 @@ namespace Honua.Server.Features.Infrastructure.Scene;
 /// Resolves scene datasets from <see cref="SceneDatasetOptions"/>.
 /// Replaced by a database-backed implementation in honua-server-844.
 /// </summary>
-internal sealed class ConfigurationSceneDatasetRegistry : ISceneDatasetRegistry
+public sealed class ConfigurationSceneDatasetRegistry : ISceneDatasetRegistry
 {
     private readonly FrozenDictionary<string, SceneDataset> _scenes;
 

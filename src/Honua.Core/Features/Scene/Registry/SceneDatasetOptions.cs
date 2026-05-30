@@ -9,7 +9,7 @@ namespace Honua.Server.Features.Infrastructure.Scene;
 /// Configuration-bound list of hosted 3D Tiles scene datasets.
 /// Bind to the <c>Scenes</c> section.
 /// </summary>
-internal sealed class SceneDatasetOptions
+public sealed class SceneDatasetOptions
 {
     /// <summary>
     /// Configuration section name for appsettings.json binding.
@@ -27,7 +27,7 @@ internal sealed class SceneDatasetOptions
 /// <summary>
 /// A single configuration-defined scene dataset entry.
 /// </summary>
-internal sealed class SceneDatasetEntry
+public sealed class SceneDatasetEntry
 {
     /// <summary>
     /// Stable scene identifier used in URLs.
