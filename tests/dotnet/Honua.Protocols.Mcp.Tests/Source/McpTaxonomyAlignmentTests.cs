@@ -15,6 +15,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using Honua.Core.Features.Reporting.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -338,7 +339,7 @@ public sealed class McpTaxonomyAlignmentTests
     private static IMcpResource[] BuildResources()
     {
         var jobService = Substitute.For<IGeoprocessingJobService>();
-        var reportService = Substitute.For<Honua.Server.Features.Reporting.IAnalysisReportService>();
+        var reportService = Substitute.For<Honua.Core.Features.Reporting.Abstractions.IAnalysisReportService>();
         var services = Substitute.For<IPublishedServiceStore>();
         var deployments = Substitute.For<IDeploymentStore>();
         return

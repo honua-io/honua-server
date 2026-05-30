@@ -6,7 +6,6 @@ using Honua.Server.Features.AiBuilder.Planning;
 using Honua.Server.Features.Grounding;
 using Honua.Server.Features.Protocols.Mcp.Resources;
 using Honua.Server.Features.Protocols.Mcp.Tools;
-using Honua.Server.Features.Reporting;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Honua.Core.Features.Reporting.Abstractions;
 

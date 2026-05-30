@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.PackageReview.Domain;
 using Honua.Core.Features.Reporting.Domain;
 
 namespace Honua.Server.Features.Protocols.Mcp.Models;
@@ -92,6 +93,8 @@ namespace Honua.Server.Features.Protocols.Mcp.Models;
 [JsonSerializable(typeof(IReadOnlyList<McpContentBlock>))]
 [JsonSerializable(typeof(IReadOnlyList<McpResourceContent>))]
 [JsonSerializable(typeof(IReadOnlyList<McpValidationViolation>))]
+[JsonSerializable(typeof(PackageReviewRequest))]
+[JsonSerializable(typeof(PackageReviewResponse))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

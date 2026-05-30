@@ -4,7 +4,6 @@
 using Honua.Core.Features.Reporting.Domain;
 using Honua.Core.Features.Reporting.Abstractions;
 using Honua.Server.Features.Protocols.Mcp.Models;
-using Honua.Server.Features.Reporting;
 
 namespace Honua.Server.Features.Protocols.Mcp.Resources;
 

@@ -55,14 +55,14 @@ internal abstract class PackageReviewToolBase : IMcpTool
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
         _jobService.EnsureCallerAuthorized(principal, OperatorResourceType.Process, OperatorOperation.Read);
 
-        var request = McpToolHelpers.ParseArguments(arguments, PackageReviewJsonContext.Default.PackageReviewRequest)
+        var request = McpToolHelpers.ParseArguments(arguments, McpJsonContext.Default.PackageReviewRequest)
             .WithPreviewPlan(IncludePreviewPlan);
         var response = await _reviewService.ReviewAsync(
             request,
-            PackageReviewEndpoints.CreateReviewContext(httpContext),
+            PackageReviewContextFactory.FromHttpContext(httpContext),
             cancellationToken).ConfigureAwait(false);
 
-        return McpToolHelpers.SuccessResult(response, PackageReviewJsonContext.Default.PackageReviewResponse);
+        return McpToolHelpers.SuccessResult(response, McpJsonContext.Default.PackageReviewResponse);
     }
 }
 

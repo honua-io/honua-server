@@ -94,6 +94,10 @@ public sealed class VerticalSliceIsolationTests
                                 // (CloudFileStorageBase, progress/cancellation streams) shared
                                 // by the storage providers; the FileStorage endpoints +
                                 // LocalFileStorage stay in Honua.Server/Features/FileStorage.
+            "PackageReview",    // Hosting-resident PackageReviewContextFactory: the HttpContext->
+                                // PackageReviewContext helper shared by the Server PackageReview
+                                // endpoints and the MCP package-review tool (the AI surface), so
+                                // the latter doesn't couple to the former's endpoint class.
             "Helpers",          // Hosting carve preserves Honua.Server.Features.Infrastructure.Helpers.*
             // Cross-cutting subsystems.
             "Analytics",
