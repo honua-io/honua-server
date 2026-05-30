@@ -6,6 +6,49 @@
 
 Honua Server is a greenfield implementation of a geospatial server that exposes one shared geospatial capability set through multiple protocol adapters: GeoServices REST, OGC API, classic OGC services (WFS/WMS/WMTS), OData v4, STAC, MVT/TileJSON, COG/raster routes, MCP, and gRPC. This is a **clean rewrite** — the legacy codebase exists as reference only.
 
+## Tech Stack
+
+- **Language/runtime:** .NET 10 (`DOTNET_VERSION: 10.0.x`), `LangVersion=preview`, `Nullable=enable`, `TreatWarningsAsErrors=true`.
+- **Host:** ASP.NET Core Minimal APIs (`src/Honua.Server`), vertical-slice "Features" layout, source-generated JSON/logging, AOT-conscious.
+- **Data providers:** PostGIS (default), DuckDB (read-only analytics), SQL Server (read-only `geometry`/`geography`), MySQL/MariaDB (read/query-only).
+- **Orchestration:** .NET Aspire (`src/Honua.AppHost`). **Cache/jobs:** Redis (required for durable jobs/workflows). **Observability:** OpenTelemetry.
+- **Deps:** centrally managed via `Directory.Packages.props`; build props in `Directory.Build.props`. Solution: `Honua.sln`.
+- **gRPC:** generated bindings consumed from the published `Geospatial.Grpc` package; canonical `.proto` lives in the `geospatial-grpc` repo (do not vendor protos here).
+
+## Setup
+
+- Install the .NET 10 SDK. `dotnet restore Honua.sln`.
+- Local stack via Docker Compose (PostGIS auto-starts, migrations run on boot): `docker compose up -d` then `curl http://localhost:8080/healthz/ready`. HTTP/gRPC-Web on `8080`, native h2c gRPC on `8081`.
+- Aspire local dev (dashboard for traces/logs/metrics): `dotnet run --project src/Honua.AppHost`.
+- Config is environment-variable driven; copy `.env.example` (Docker: `.env.docker.example`). Required defaults: `ConnectionStrings__DefaultConnection`, `HONUA_ADMIN_PASSWORD`.
+- Integration tests use Testcontainers (require a running Docker daemon).
+
+## Commands
+
+Copy these exactly; they mirror `.github/workflows/ci.yml`.
+
+```bash
+# Build (release, warnings-as-errors)
+dotnet build Honua.sln --no-restore --configuration Release /p:TreatWarningsAsErrors=true
+
+# Format / lint (must pass before PR)
+dotnet format Honua.sln                       # apply
+dotnet format Honua.sln --verify-no-changes   # CI verification mode
+
+# Unit tests
+dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj
+
+# Integration tests (Testcontainers + PostGIS; Docker required)
+dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --filter "Tier=Fast"
+
+# Architecture enforcement tests
+dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj
+
+# Tier filters: Tier=Fast, Tier!=Slow, Category=Scale (scale stack required)
+```
+
+Test projects live under `tests/dotnet/` (`Honua.Core.Tests`, `Honua.Server.Tests`, `Honua.Architecture.Tests`, provider `*.Tests`, `Honua.LoadTests`, `Honua.TestKit`). Do NOT run `dotnet build`/test as part of documentation tasks unless asked.
+
 ## OGC CITE Compliance
 
 **Authoritative pass rate: 952/952 (100%) across 11 OGC CITE conformance suites on `trunk`.**
@@ -448,3 +491,13 @@ tests/
   folders alongside `Protocols/`, `Admin/`, `Reporting/`. This is deferred —
   Styling references span endpoint files, the admin metadata surface and the
   layout pipeline, so a move requires a dedicated PR with namespace updates.
+
+## Shared dev-environment rules (multi-agent WSL)
+
+This machine runs many agents concurrently (**Codex + Claude**, often via agentflow with multiple tabs/agents). To prevent host lockups and lost work, every agent MUST follow these:
+
+1. **Heavy builds/tests are throttled by a shared lock.** `dotnet` and `npm` are PATH-shimmed, so their build/test/publish/pack and ci/install/test/run-build/run-test subcommands automatically run under a global semaphore (default 1 concurrent, `HONUA_BUILD_SLOTS`). For other heavy tools, call the wrapper explicitly: `with-build-lock pytest ...`, `with-build-lock cargo build`, `with-build-lock make build`. The lock is shared across ALL of this user's processes (every Codex/Claude tab, agentflow children). Do not bypass it for compiles or test suites. Long-running servers (`dotnet run`, `npm run dev`) are intentionally NOT locked — never wrap those.
+
+2. **Commit and push when you finish a task** so your worktree can be reclaimed. An hourly job (`honua-clean`) removes a worktree ONLY when it is clean AND fully pushed (merged, remote-gone, or idle >=2d). Dirty or unpushed worktrees are NEVER touched — but uncommitted/unpushed work blocks reclamation and is at risk if the instance is reset. Build artifacts (bin/obj and untracked node_modules) are reclaimed automatically and safely.
+
+3. **Commit hygiene — no agent attribution.** Author every commit as the repo owner only (git identity: Mike McDougall <mike@honua.io>). Do **NOT** add any agent/tool attribution to commits: no `Co-Authored-By: Claude ...`, no `Co-Authored-By: Codex ...` (or other bot co-authors), and no "Generated with Claude Code" / "Generated with Codex" / "🤖" lines in the message or PR body. Write a plain, descriptive commit message and stop.
