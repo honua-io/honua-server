@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Protocols.GeoServices.GPServer.Models;
+namespace Honua.Protocols.GeoServices.GPServer.Models;
 
 /// <summary>
 /// AOT-compatible JSON serialization context for GPServer wire-format models.

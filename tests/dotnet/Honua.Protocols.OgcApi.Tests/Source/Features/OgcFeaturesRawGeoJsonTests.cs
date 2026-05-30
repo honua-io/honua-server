@@ -7,8 +7,8 @@ using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Protocols.Ogc.Api.Features;
-using Honua.Server.Features.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Api.Features;
+using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 

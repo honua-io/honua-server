@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-namespace Honua.Server.Features.Protocols.GeoServices.GeometryService;
+namespace Honua.Protocols.GeoServices.GeometryService;
 
 /// <summary>
 /// Structured logging for GeometryService endpoints with source generation (AOT compatible).

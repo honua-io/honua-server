@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
+namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 
 /// <summary>
 /// Response for a service-level getEstimates operation containing per-layer estimates.

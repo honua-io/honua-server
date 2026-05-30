@@ -6,7 +6,7 @@ using System.Xml;
 using System.Xml.Serialization;
 using Honua.Server.Features.Infrastructure.Models;
 
-namespace Honua.Server.Features.Protocols.Ogc.Classic.Wfs20.Models;
+namespace Honua.Protocols.Ogc.Classic.Wfs20.Models;
 
 // These types are public by design because XmlSerializer requires public CLR contracts for
 // the WFS 2.0 XML payloads emitted by the protocol endpoints.

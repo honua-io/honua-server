@@ -3,7 +3,7 @@
 
 using Microsoft.Extensions.Primitives;
 
-namespace Honua.Server.Features.Protocols.OData.Services;
+namespace Honua.Protocols.OData.Services;
 
 internal static class ODataProtocolHeaders
 {

@@ -10,11 +10,11 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Microsoft.Extensions.Primitives;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+namespace Honua.Protocols.GeoServices.FeatureServer;
 
 /// <summary>
 /// V2 overloads of the response-builder helpers on

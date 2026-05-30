@@ -43,6 +43,24 @@ public sealed class CrossProtocolIsolationTests
     private const string ProtocolsRootNamespace = "Honua.Server.Features.Protocols";
 
     /// <summary>
+    /// The namespace root for a protocol family. Families extracted into their own
+    /// <c>Honua.Protocols.*</c> assembly have had their namespace normalized to match the
+    /// assembly (e.g. <c>Honua.Protocols.OData</c>; the Ogc Api/Classic/Shared trio collapses
+    /// under <c>Honua.Protocols.Ogc</c>); families still resident in Honua.Server keep the legacy
+    /// <c>Honua.Server.Features.Protocols.{family}</c> root. MCP keeps the legacy root (its source
+    /// lives in Honua.Ai with the namespace not yet normalized).
+    /// </summary>
+    private static string FamilyNamespace(string family) => family switch
+    {
+        "OData" => "Honua.Protocols.OData",
+        "Scene" => "Honua.Protocols.Scene",
+        "Stac" => "Honua.Protocols.Stac",
+        "GeoServices" => "Honua.Protocols.GeoServices",
+        "Ogc" => "Honua.Protocols.Ogc",
+        _ => $"{ProtocolsRootNamespace}.{family}",
+    };
+
+    /// <summary>
     /// The 14 protocol adapter families under <c>Features/Protocols/</c>. Each value is the
     /// directory/namespace segment immediately following <c>Protocols.</c>; sub-namespaces
     /// (for example <c>Ogc.Api</c>, <c>Ogc.Classic</c>, <c>Ogc.Common</c>) collapse into their
@@ -192,11 +210,11 @@ public sealed class CrossProtocolIsolationTests
             $"protocol adapters must live under {protocolsPath}");
 
         // Pre-compiled matchers for each family's namespace, e.g. a reference to
-        // "Honua.Server.Features.Protocols.GeoServices" or any sub-namespace thereof.
+        // "Honua.Protocols.GeoServices" or any sub-namespace thereof.
         var familyMatchers = _protocolFamilies.ToDictionary(
             family => family,
             family => new Regex(
-                $@"\b{Regex.Escape(ProtocolsRootNamespace)}\.{Regex.Escape(family)}(?=[\s.;<>(){{}}]|$)",
+                $@"\b{Regex.Escape(FamilyNamespace(family))}(?=[\s.;<>(){{}}]|$)",
                 RegexOptions.Compiled),
             StringComparer.Ordinal);
 
@@ -288,7 +306,7 @@ public sealed class CrossProtocolIsolationTests
                     var relative = Path.GetRelativePath(repositoryRoot, file);
                     violations.Add(
                         $"Protocol family '{family}' file '{relative}' references protocol " +
-                        $"family '{otherFamily}' ('{ProtocolsRootNamespace}.{otherFamily}'). " +
+                        $"family '{otherFamily}' ('{FamilyNamespace(otherFamily)}'). " +
                         "Protocol adapters must not depend on each other; extract a neutral " +
                         "Core/Infrastructure service that both adapt to.");
                 }

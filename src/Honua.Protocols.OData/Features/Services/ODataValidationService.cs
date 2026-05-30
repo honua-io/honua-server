@@ -5,7 +5,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Validation;
 using Honua.Core.Features.Validation.Abstractions;
 
-namespace Honua.Server.Features.Protocols.OData.Services;
+namespace Honua.Protocols.OData.Services;
 
 /// <summary>
 /// Composite validation service for OData endpoints that combines both common and feature-specific validation.

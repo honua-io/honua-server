@@ -5,7 +5,7 @@ using System.Collections.Immutable;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 
-namespace Honua.Server.Features.Protocols.Ogc.Common;
+namespace Honua.Protocols.Ogc.Common;
 
 internal static class OgcCoreMetadataUtilities
 {

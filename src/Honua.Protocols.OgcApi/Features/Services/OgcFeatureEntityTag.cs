@@ -9,7 +9,7 @@ using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.Infrastructure.Caching;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Features.Services;
+namespace Honua.Protocols.Ogc.Api.Features.Services;
 
 /// <summary>
 /// Computes canonical entity tags for OGC API Features resources.

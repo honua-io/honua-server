@@ -3,7 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Server.Features.Protocols.GeoServices.GPServer;
+using Honua.Protocols.GeoServices.GPServer;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 

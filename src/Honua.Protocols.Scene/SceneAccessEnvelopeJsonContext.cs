@@ -2,9 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
-using Honua.Server.Features.Protocols.Scene.Models;
+using Honua.Protocols.Scene.Models;
 
-namespace Honua.Server.Features.Protocols.Scene;
+namespace Honua.Protocols.Scene;
 
 /// <summary>
 /// Compact internal payload encoded into the wire token. The two-letter

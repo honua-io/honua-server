@@ -7,10 +7,10 @@ using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Caching;
-using Honua.Server.Features.Protocols.OData.Services;
+using Honua.Protocols.OData.Services;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Protocols.OData;
+namespace Honua.Protocols.OData;
 
 internal sealed class ODataQueryDependencies
 {

@@ -12,11 +12,11 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
-using Honua.Server.Features.Protocols.Ogc.Common;
-using Honua.Server.Features.Protocols.Ogc.Api.Features;
+using Honua.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Api.Features;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Tiles;
+namespace Honua.Protocols.Ogc.Api.Tiles;
 
 internal static class CollectionsEndpoints
 {

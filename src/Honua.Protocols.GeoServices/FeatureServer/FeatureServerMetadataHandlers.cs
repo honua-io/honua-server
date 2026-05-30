@@ -8,14 +8,14 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+namespace Honua.Protocols.GeoServices.FeatureServer;
 
 /// <summary>
 /// Metadata handlers for FeatureServer endpoints. Ported to V2 metadata (issue #1035

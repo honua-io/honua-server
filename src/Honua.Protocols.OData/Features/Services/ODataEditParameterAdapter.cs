@@ -5,7 +5,7 @@ using System.Collections.Immutable;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.Metadata.Domain.V2;
 
-namespace Honua.Server.Features.Protocols.OData.Services;
+namespace Honua.Protocols.OData.Services;
 
 /// <summary>
 /// Protocol request shape for OData edit operations after payload parsing.

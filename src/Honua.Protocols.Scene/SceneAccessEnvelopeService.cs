@@ -5,10 +5,10 @@ using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Honua.Server.Features.Protocols.Scene.Models;
+using Honua.Protocols.Scene.Models;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Protocols.Scene;
+namespace Honua.Protocols.Scene;
 
 /// <summary>
 /// HMAC-SHA256 signed scene access envelope issuer/verifier.

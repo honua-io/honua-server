@@ -9,15 +9,15 @@
 
 using System.Globalization;
 using System.Text.Json;
-using Honua.Server.Features.Protocols.GeoServices;
-using Honua.Server.Features.Protocols.GeoServices.ImageServer.Handlers;
-using Honua.Server.Features.Protocols.GeoServices.ImageServer.Models;
-using Honua.Server.Features.Protocols.GeoServices.ImageServer.Services;
+using Honua.Protocols.GeoServices;
+using Honua.Protocols.GeoServices.ImageServer.Handlers;
+using Honua.Protocols.GeoServices.ImageServer.Models;
+using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.Extensions.Primitives;
 
-namespace Honua.Server.Features.Protocols.GeoServices.ImageServer;
+namespace Honua.Protocols.GeoServices.ImageServer;
 
 /// <summary>
 /// Esri Image Server endpoints providing raster imagery capabilities.

@@ -5,7 +5,7 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using Honua.Core.Features.Metadata.Domain.V2;
 
-namespace Honua.Server.Features.Protocols.Stac.Services;
+namespace Honua.Protocols.Stac.Services;
 
 /// <summary>
 /// Reads STAC-specific projection extras (license, keywords, declared STAC extensions)

@@ -7,7 +7,7 @@ using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Styling;
-using Honua.Server.Features.Protocols.GeoServices.MapServer.Models;
+using Honua.Protocols.GeoServices.MapServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;

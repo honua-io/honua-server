@@ -1,9 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Server.Features.Protocols.Scene.Models;
+using Honua.Protocols.Scene.Models;
 
-namespace Honua.Server.Features.Protocols.Scene;
+namespace Honua.Protocols.Scene;
 
 /// <summary>
 /// Issues and verifies short-lived signed envelopes that authorize CesiumJS

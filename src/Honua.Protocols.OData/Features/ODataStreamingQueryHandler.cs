@@ -13,12 +13,12 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
-using Honua.Server.Features.Protocols.OData.Models;
-using Honua.Server.Features.Protocols.OData.Services;
+using Honua.Protocols.OData.Models;
+using Honua.Protocols.OData.Services;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Honua.Server.Features.Protocols.OData;
+namespace Honua.Protocols.OData;
 
 /// <summary>
 /// Handler for OData streaming query operations for large-scale feature queries.

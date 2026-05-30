@@ -12,13 +12,13 @@ using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
-using Honua.Server.Features.Protocols.Scene.Models;
+using Honua.Protocols.Scene.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 
-namespace Honua.Server.Features.Protocols.Scene;
+namespace Honua.Protocols.Scene;
 
 /// <summary>
 /// HTTP endpoints that serve hosted OGC 3D Tiles tilesets so CesiumJS clients
@@ -139,7 +139,7 @@ internal static partial class SceneEndpoints
         [FromServices] ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
-        var logger = loggerFactory.CreateLogger("Honua.Server.Features.Protocols.Scene.SceneEndpoints");
+        var logger = loggerFactory.CreateLogger("Honua.Protocols.Scene.SceneEndpoints");
 
         if (string.IsNullOrWhiteSpace(sceneId))
         {
@@ -220,7 +220,7 @@ internal static partial class SceneEndpoints
             context,
             registry,
             cacheOptions.Value.SceneTilesetMetadata,
-            loggerFactory.CreateLogger("Honua.Server.Features.Protocols.Scene.SceneEndpoints"),
+            loggerFactory.CreateLogger("Honua.Protocols.Scene.SceneEndpoints"),
             cancellationToken);
 
     private static async Task<IResult> HandleGetOpenUsdStageManifest(
@@ -232,7 +232,7 @@ internal static partial class SceneEndpoints
         [FromServices] ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
-        var logger = loggerFactory.CreateLogger("Honua.Server.Features.Protocols.Scene.SceneEndpoints");
+        var logger = loggerFactory.CreateLogger("Honua.Protocols.Scene.SceneEndpoints");
 
         if (string.IsNullOrWhiteSpace(sceneId))
         {
@@ -343,7 +343,7 @@ internal static partial class SceneEndpoints
             context,
             registry,
             cacheOptions.Value.SceneTileAsset,
-            loggerFactory.CreateLogger("Honua.Server.Features.Protocols.Scene.SceneEndpoints"),
+            loggerFactory.CreateLogger("Honua.Protocols.Scene.SceneEndpoints"),
             cancellationToken);
 
     private static async Task<IResult> HandleAssetRequestAsync(

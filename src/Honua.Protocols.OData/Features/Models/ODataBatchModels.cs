@@ -5,7 +5,7 @@ using System.Collections.Immutable;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.FeatureStore.Domain;
 
-namespace Honua.Server.Features.Protocols.OData.Models;
+namespace Honua.Protocols.OData.Models;
 
 /// <summary>
 /// Represents an OData batch request containing multiple operations.

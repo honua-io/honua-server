@@ -18,7 +18,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+namespace Honua.Protocols.GeoServices.FeatureServer;
 
 /// <summary>
 /// Logger category for attachment operations

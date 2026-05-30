@@ -5,7 +5,7 @@ using System.Text.Json;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 
-namespace Honua.Server.Features.Protocols.GeoServices.GPServer;
+namespace Honua.Protocols.GeoServices.GPServer;
 
 /// <summary>
 /// Bidirectional translation between Esri GP parameter types and canonical

@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+namespace Honua.Protocols.GeoServices.FeatureServer;
 
 /// <summary>
 /// Structured logging for FeatureServer endpoints with source generation (AOT compatible)

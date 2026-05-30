@@ -6,7 +6,7 @@ using System.Collections.Immutable;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Tiles;
-using Honua.Server.Features.Protocols.Ogc.Api.Tiles;
+using Honua.Protocols.Ogc.Api.Tiles;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 

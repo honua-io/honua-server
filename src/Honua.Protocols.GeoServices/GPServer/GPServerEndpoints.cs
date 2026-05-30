@@ -11,10 +11,10 @@ using Honua.Geoprocessing;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
-using Honua.Server.Features.Protocols.GeoServices.GPServer.Models;
+using Honua.Protocols.GeoServices.GPServer.Models;
 using Honua.ServiceDefaults;
 
-namespace Honua.Server.Features.Protocols.GeoServices.GPServer;
+namespace Honua.Protocols.GeoServices.GPServer;
 
 /// <summary>
 /// Maps GeoServices GPServer REST endpoints as a protocol adapter

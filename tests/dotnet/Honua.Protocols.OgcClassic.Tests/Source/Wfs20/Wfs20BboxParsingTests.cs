@@ -6,7 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Protocols.Ogc.Classic.Wfs20.Services;
+using Honua.Protocols.Ogc.Classic.Wfs20.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using NetTopologySuite.Geometries;

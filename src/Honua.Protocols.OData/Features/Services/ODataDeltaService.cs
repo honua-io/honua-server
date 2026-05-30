@@ -4,7 +4,7 @@
 using System.Globalization;
 using System.Text;
 
-namespace Honua.Server.Features.Protocols.OData.Services;
+namespace Honua.Protocols.OData.Services;
 
 /// <summary>
 /// Provides encoding and decoding of OData $deltatoken values for change tracking.

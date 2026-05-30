@@ -4,7 +4,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Protocols.GeoServices.GeometryService.Models;
+namespace Honua.Protocols.GeoServices.GeometryService.Models;
 
 /// <summary>
 /// Standard response for geometry service operations.

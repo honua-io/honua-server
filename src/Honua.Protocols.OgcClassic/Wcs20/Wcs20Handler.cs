@@ -15,13 +15,13 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Services;
-using Honua.Server.Features.Protocols.Ogc.Shared;
+using Honua.Protocols.Ogc.Shared;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Primitives;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
-namespace Honua.Server.Features.Protocols.Ogc.Classic.Wcs20;
+namespace Honua.Protocols.Ogc.Classic.Wcs20;
 
 /// <summary>
 /// CITE conformance: 82/82 (WCS 2.0 `core` profile, 100% pass on trunk).

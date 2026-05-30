@@ -6,7 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
-using Honua.Server.Features.Protocols.OData.Services;
+using Honua.Protocols.OData.Services;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 

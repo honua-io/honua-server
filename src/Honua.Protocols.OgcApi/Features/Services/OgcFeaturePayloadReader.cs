@@ -3,11 +3,11 @@
 
 using System.Text.Json;
 using Honua.Server.Features.Infrastructure.Validation;
-using Honua.Server.Features.Protocols.Ogc.Api.Features.Models;
-using Honua.Server.Features.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Api.Features.Models;
+using Honua.Protocols.Ogc.Common;
 using Microsoft.AspNetCore.Http;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Features.Services;
+namespace Honua.Protocols.Ogc.Api.Features.Services;
 
 internal static class OgcFeaturePayloadReader
 {

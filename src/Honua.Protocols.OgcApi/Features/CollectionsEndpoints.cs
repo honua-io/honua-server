@@ -14,12 +14,12 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
-using Honua.Server.Features.Protocols.Ogc.Common;
-using Honua.Server.Features.Protocols.Ogc.Api.Features.Models;
+using Honua.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Api.Features.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Features;
+namespace Honua.Protocols.Ogc.Api.Features;
 
 /// <summary>
 /// Collections management endpoints for OGC API Features

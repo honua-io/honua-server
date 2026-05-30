@@ -2,10 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Protocols.GeoServices;
+using Honua.Protocols.GeoServices;
 using Microsoft.Extensions.Primitives;
 
-namespace Honua.Server.Features.Protocols.GeoServices.MapServer;
+namespace Honua.Protocols.GeoServices.MapServer;
 
 internal static partial class MapServerEndpoints
 {

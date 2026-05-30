@@ -4,7 +4,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Honua.Server.Features.Protocols.OData;
+namespace Honua.Protocols.OData;
 
 /// <summary>
 /// OData v4 endpoints providing intermediate conformance level.

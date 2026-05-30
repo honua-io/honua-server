@@ -5,7 +5,7 @@ global using Xunit;
 global using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 global using Honua.Core.Features.Security.Domain;
 global using Honua.Server.Features.Infrastructure.Authentication;
-global using Honua.Server.Features.Protocols.Ogc.Classic.Wfs20.Services;
+global using Honua.Protocols.Ogc.Classic.Wfs20.Services;
 global using Honua.TestKit.Extensions;
 global using Operations = Honua.TestKit.Constants.Operations;
 global using TestProtocols = Honua.TestKit.Constants.ProtocolNames;

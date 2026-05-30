@@ -9,13 +9,13 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Geometries;
 using Honua.Server.Features.Infrastructure.Services;
-using Honua.Server.Features.Protocols.Ogc.Api.Features.Models;
+using Honua.Protocols.Ogc.Api.Features.Models;
 using Microsoft.Extensions.Options;
 using NetTopologySuite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Features.Services;
+namespace Honua.Protocols.Ogc.Api.Features.Services;
 
 /// <summary>
 /// Provides geometry processing, conversion, and validation services for OGC Features.
@@ -502,7 +502,7 @@ internal sealed partial class OgcFeaturesGeometryServices
     /// </summary>
     public static (bool hasZ, bool hasM) GetHasZandM(Geometry geometry)
     {
-        return Infrastructure.Services.GeometryService.DetectZMFromGeometry(geometry);
+        return Honua.Server.Features.Infrastructure.Services.GeometryService.DetectZMFromGeometry(geometry);
     }
 
     /// <summary>

@@ -3,9 +3,9 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using Honua.Server.Features.Protocols.OData.Models;
+using Honua.Protocols.OData.Models;
 
-namespace Honua.Server.Features.Protocols.OData.Services;
+namespace Honua.Protocols.OData.Services;
 
 /// <summary>
 /// Dependency ordering and Content-ID reference resolution for the OData $batch handler.

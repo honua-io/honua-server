@@ -8,7 +8,7 @@
 // route opts into AllowAnonymous explicitly so authorization-policy tooling
 // can see the intent rather than treating it as an accidental gap.
 
-namespace Honua.Server.Features.Protocols.GeoServices.MapServer;
+namespace Honua.Protocols.GeoServices.MapServer;
 
 /// <summary>
 /// Maps MapServer REST API endpoints for dynamic map image generation.

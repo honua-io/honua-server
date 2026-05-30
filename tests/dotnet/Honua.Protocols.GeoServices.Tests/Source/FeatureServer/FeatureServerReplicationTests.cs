@@ -6,7 +6,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Exceptions;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;

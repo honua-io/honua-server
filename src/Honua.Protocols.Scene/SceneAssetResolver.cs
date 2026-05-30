@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Scene.Domain;
 
-namespace Honua.Server.Features.Protocols.Scene;
+namespace Honua.Protocols.Scene;
 
 /// <summary>
 /// Result of resolving a scene asset path to a concrete file under the scene's asset root.

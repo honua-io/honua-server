@@ -7,7 +7,7 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Honua.Server.Features.Protocols.OData.Services;
+namespace Honua.Protocols.OData.Services;
 
 /// <summary>
 /// Metadata v2 lookup helpers scoped to the OData protocol family. Collapses the

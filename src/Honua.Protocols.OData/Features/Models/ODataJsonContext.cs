@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Protocols.OData.Models;
+namespace Honua.Protocols.OData.Models;
 
 /// <summary>
 /// JSON serialization context for OData models with AOT support

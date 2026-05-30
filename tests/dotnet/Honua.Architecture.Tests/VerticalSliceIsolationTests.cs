@@ -316,7 +316,7 @@ public sealed class VerticalSliceIsolationTests
         var forbiddenNamespaces = new[]
         {
             "Honua.Server.Features.Protocols.Grpc",
-            "Honua.Server.Features.Protocols.GeoServices.GPServer"
+            "Honua.Protocols.GeoServices.GPServer"
         };
 
         var violations = new List<string>();

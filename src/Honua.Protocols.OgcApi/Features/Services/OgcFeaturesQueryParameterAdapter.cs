@@ -11,7 +11,7 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Validation;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Features.Services;
+namespace Honua.Protocols.Ogc.Api.Features.Services;
 
 /// <summary>
 /// Parameters for OGC API Features item queries.

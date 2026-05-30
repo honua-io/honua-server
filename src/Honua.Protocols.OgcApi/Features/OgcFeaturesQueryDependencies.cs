@@ -9,10 +9,10 @@ using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Caching;
-using Honua.Server.Features.Protocols.Ogc.Api.Features.Services;
+using Honua.Protocols.Ogc.Api.Features.Services;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Features;
+namespace Honua.Protocols.Ogc.Api.Features;
 
 internal sealed class OgcFeaturesQueryDependencies
 {

@@ -5,7 +5,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Coverages;
+namespace Honua.Protocols.Ogc.Api.Coverages;
 
 internal sealed class OgcCoveragesDependencies
 {

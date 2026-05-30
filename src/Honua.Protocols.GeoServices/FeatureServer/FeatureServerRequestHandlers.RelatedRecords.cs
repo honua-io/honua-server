@@ -4,12 +4,12 @@
 using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Validation.Abstractions;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+namespace Honua.Protocols.GeoServices.FeatureServer;
 
 internal static partial class FeatureServerEndpoints
 {

@@ -17,7 +17,7 @@ using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+namespace Honua.Protocols.GeoServices.FeatureServer;
 
 internal static partial class FeatureServerEndpoints
 {

@@ -7,7 +7,7 @@ using Honua.Core.Features.Tiles;
 using Honua.Server.Features.Infrastructure.Rendering;
 using SkiaSharp;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Tiles;
+namespace Honua.Protocols.Ogc.Api.Tiles;
 
 /// <summary>
 /// Renders features to a 256x256 PNG raster tile using SkiaSharp.

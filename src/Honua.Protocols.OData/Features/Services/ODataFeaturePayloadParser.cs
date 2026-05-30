@@ -3,9 +3,9 @@
 
 using System.Globalization;
 using System.Text.Json;
-using Honua.Server.Features.Protocols.OData.Models;
+using Honua.Protocols.OData.Models;
 
-namespace Honua.Server.Features.Protocols.OData.Services;
+namespace Honua.Protocols.OData.Services;
 
 internal sealed record ParsedFeaturePayload
 {

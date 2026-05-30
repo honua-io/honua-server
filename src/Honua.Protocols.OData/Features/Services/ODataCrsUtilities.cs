@@ -3,9 +3,9 @@
 
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Protocols.OData.Models;
+using Honua.Protocols.OData.Models;
 
-namespace Honua.Server.Features.Protocols.OData.Services;
+namespace Honua.Protocols.OData.Services;
 
 /// <summary>
 /// Helpers for resolving CRS details for OData spatial payloads.

@@ -7,7 +7,7 @@ using Honua.Server.Features.Infrastructure.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
 
-namespace Honua.Server.Features.Protocols.Ogc.Common;
+namespace Honua.Protocols.Ogc.Common;
 
 /// <summary>
 /// Shared helper for serving OpenAPI specs in OGC endpoints.

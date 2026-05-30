@@ -11,10 +11,10 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Npgsql;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
+namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
 /// <summary>
 /// Executes FeatureServer queries and handles streaming responses.

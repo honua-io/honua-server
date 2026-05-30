@@ -3,10 +3,10 @@
 
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.Query;
-using Honua.Server.Features.Protocols.Ogc.Api.Features.Services;
+using Honua.Protocols.Ogc.Api.Features.Services;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Features;
+namespace Honua.Protocols.Ogc.Api.Features;
 
 internal static class OgcFeaturesServiceCollectionExtensions
 {

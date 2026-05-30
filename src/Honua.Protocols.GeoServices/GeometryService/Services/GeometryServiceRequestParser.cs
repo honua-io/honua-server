@@ -6,7 +6,7 @@ using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Primitives;
 
-namespace Honua.Server.Features.Protocols.GeoServices.GeometryService.Services;
+namespace Honua.Protocols.GeoServices.GeometryService.Services;
 
 /// <summary>
 /// Parses geometry service request parameters from GET query strings, POST form-data, or POST JSON bodies.

@@ -17,19 +17,19 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Protocols.Ogc.Api.Features;
+using Honua.Protocols.Ogc.Api.Features;
 using Honua.Server.Features.Infrastructure.Rendering;
-using Honua.Server.Features.Protocols.Ogc.Classic;
-using Honua.Server.Features.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Classic;
+using Honua.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using static Honua.Server.Features.Infrastructure.Helpers.DelimitedParameterHelpers;
 using static Honua.Server.Features.Infrastructure.Rendering.RasterMapRenderingPipeline;
-using static Honua.Server.Features.Protocols.Ogc.Classic.OgcClassicRequestHelpers;
+using static Honua.Protocols.Ogc.Classic.OgcClassicRequestHelpers;
 
-namespace Honua.Server.Features.Protocols.Ogc.Classic.Wmts;
+namespace Honua.Protocols.Ogc.Classic.Wmts;
 
 /// <summary>
 /// CITE conformance: 60/60 (WMTS 1.0 `default` profile, 100% pass on trunk).
@@ -104,7 +104,7 @@ internal static class WmtsRequestHandlers
         activity?.SetTag(HonuaTelemetry.Tags.Operation, "wmts");
 
         var loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
-        var logger = loggerFactory.CreateLogger("Honua.Server.Features.Protocols.Ogc.Classic.Wmts.WmtsRequestHandlers");
+        var logger = loggerFactory.CreateLogger("Honua.Protocols.Ogc.Classic.Wmts.WmtsRequestHandlers");
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
 
         try

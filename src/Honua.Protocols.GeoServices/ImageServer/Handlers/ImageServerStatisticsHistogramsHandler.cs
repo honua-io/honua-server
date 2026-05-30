@@ -5,15 +5,15 @@ using System.Globalization;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Server.Features.Protocols.GeoServices.ImageServer.Models;
-using Honua.Server.Features.Protocols.GeoServices.ImageServer.Services;
+using Honua.Protocols.GeoServices.ImageServer.Models;
+using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
 
-namespace Honua.Server.Features.Protocols.GeoServices.ImageServer.Handlers;
+namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
 /// <summary>
 /// Internal whole-raster statistics/histogram helper retained for non-public use until

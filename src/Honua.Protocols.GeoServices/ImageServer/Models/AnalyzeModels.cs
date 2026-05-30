@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Protocols.GeoServices.ImageServer.Models;
+namespace Honua.Protocols.GeoServices.ImageServer.Models;
 
 /// <summary>
 /// Raster function chain document accepted by the internal raster-function analysis helper.

@@ -5,7 +5,7 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Processes.Models;
+namespace Honua.Protocols.Ogc.Api.Processes.Models;
 
 /// <summary>
 /// OGC API Processes process summary returned in process list responses.

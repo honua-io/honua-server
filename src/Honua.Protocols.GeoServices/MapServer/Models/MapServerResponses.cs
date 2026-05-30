@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Protocols.GeoServices.MapServer.Models;
+namespace Honua.Protocols.GeoServices.MapServer.Models;
 
 /// <summary>
 /// Response for the MapServer service metadata endpoint.

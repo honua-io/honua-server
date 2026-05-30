@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Protocols.GeoServices.ImageServer.Models;
+namespace Honua.Protocols.GeoServices.ImageServer.Models;
 
 /// <summary>
 /// JSON serialization context for Image Server models.

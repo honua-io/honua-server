@@ -4,7 +4,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
+namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 
 /// <summary>
 /// Request model for a single layer's edits in a service-level applyEdits call

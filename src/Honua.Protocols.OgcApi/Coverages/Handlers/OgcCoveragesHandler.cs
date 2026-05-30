@@ -15,16 +15,16 @@ using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.Infrastructure.Validation;
-using Honua.Server.Features.Protocols.Ogc.Api.Coverages;
-using Honua.Server.Features.Protocols.Ogc.Api.Coverages.Models;
-using Honua.Server.Features.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Api.Coverages;
+using Honua.Protocols.Ogc.Api.Coverages.Models;
+using Honua.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Primitives;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Coverages.Handlers;
+namespace Honua.Protocols.Ogc.Api.Coverages.Handlers;
 
 internal sealed class OgcCoveragesHandler
 {

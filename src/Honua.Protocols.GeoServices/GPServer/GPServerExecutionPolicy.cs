@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Geoprocessing.Domain;
 
-namespace Honua.Server.Features.Protocols.GeoServices.GPServer;
+namespace Honua.Protocols.GeoServices.GPServer;
 
 /// <summary>
 /// Classifies which catalog tasks are eligible for the GeoServices synchronous

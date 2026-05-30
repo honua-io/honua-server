@@ -5,12 +5,12 @@ using System.Collections.Frozen;
 using System.Globalization;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
-using Honua.Server.Features.Protocols.GeoServices;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Protocols.GeoServices;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Microsoft.Extensions.Primitives;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+namespace Honua.Protocols.GeoServices.FeatureServer;
 
 /// <summary>
 /// Utility methods for FeatureServer endpoints

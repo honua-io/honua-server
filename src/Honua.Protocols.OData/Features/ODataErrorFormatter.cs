@@ -4,10 +4,10 @@
 using System.Globalization;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Protocols.OData.Models;
-using Honua.Server.Features.Protocols.OData.Services;
+using Honua.Protocols.OData.Models;
+using Honua.Protocols.OData.Services;
 
-namespace Honua.Server.Features.Protocols.OData;
+namespace Honua.Protocols.OData;
 
 /// <summary>
 /// Protocol-specific error formatter for OData v4 responses. Owns the
@@ -20,8 +20,8 @@ namespace Honua.Server.Features.Protocols.OData;
 /// </summary>
 /// <remarks>
 /// Audit-A1 unblock: removing the
-/// <c>using Honua.Server.Features.Protocols.OData.Models</c> and
-/// <c>using Honua.Server.Features.Protocols.OData.Services</c> back-edge
+/// <c>using Honua.Protocols.OData.Models</c> and
+/// <c>using Honua.Protocols.OData.Services</c> back-edge
 /// from <c>Honua.Server.Features.Infrastructure.Models.StandardErrorResponseFormatter</c>
 /// is what lets the Infrastructure.Models sub-area extract into a
 /// <c>Honua.Hosting.Models</c> assembly without ProjectReferencing OData.

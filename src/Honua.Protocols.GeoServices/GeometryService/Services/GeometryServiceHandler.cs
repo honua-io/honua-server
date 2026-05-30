@@ -6,7 +6,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Protocols.GeoServices.GeometryService.Models;
+using Honua.Protocols.GeoServices.GeometryService.Models;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.ServiceDefaults;
@@ -15,7 +15,7 @@ using Microsoft.Extensions.Primitives;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
-namespace Honua.Server.Features.Protocols.GeoServices.GeometryService.Services;
+namespace Honua.Protocols.GeoServices.GeometryService.Services;
 
 /// <summary>
 /// Orchestrates geometry service operations: parse input, invoke PostGIS, format output.

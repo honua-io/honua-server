@@ -3,7 +3,7 @@
 
 using Npgsql;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
+namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
 /// <summary>
 /// Classifies database exceptions that should be treated as invalid client query syntax.

@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Shared.Models;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
+namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 
 /// <summary>
 /// Field definition in GeoServices format, extending shared field metadata

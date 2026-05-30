@@ -8,7 +8,7 @@ using NetTopologySuite.Geometries;
 using NetTopologySuite.Geometries.Utilities;
 using NetTopologySuite.IO;
 
-namespace Honua.Server.Features.Protocols.GeoServices.GPServer;
+namespace Honua.Protocols.GeoServices.GPServer;
 
 /// <summary>
 /// Honors the GP environment control <c>env:outSR</c> for synchronous results

@@ -5,7 +5,7 @@ using System.Globalization;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 
-namespace Honua.Server.Features.Protocols.Ogc.Common;
+namespace Honua.Protocols.Ogc.Common;
 
 internal static class OgcTemporalFilterParser
 {

@@ -13,13 +13,13 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters.Fes20;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Services;
-using Honua.Server.Features.Protocols.Ogc.Common;
-using Honua.Server.Features.Protocols.Ogc.Classic.Wfs20.Models;
+using Honua.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Classic.Wfs20.Models;
 using Honua.ServiceDefaults;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
-namespace Honua.Server.Features.Protocols.Ogc.Classic.Wfs20.Services;
+namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 
 internal sealed partial class Wfs20Handler
 {

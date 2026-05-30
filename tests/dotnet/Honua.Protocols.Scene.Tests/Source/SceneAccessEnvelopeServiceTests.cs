@@ -2,8 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Server.Features.Protocols.Scene;
-using Honua.Server.Features.Protocols.Scene.Models;
+using Honua.Protocols.Scene;
+using Honua.Protocols.Scene.Models;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Options;
 

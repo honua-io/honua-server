@@ -8,10 +8,10 @@ using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Middleware;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
-using Honua.Server.Features.Protocols.Ogc.Classic.Wfs20.Models;
-using Honua.Server.Features.Protocols.Ogc.Classic.Wfs20.Services;
+using Honua.Protocols.Ogc.Classic.Wfs20.Models;
+using Honua.Protocols.Ogc.Classic.Wfs20.Services;
 
-namespace Honua.Server.Features.Protocols.Ogc.Classic.Wfs20;
+namespace Honua.Protocols.Ogc.Classic.Wfs20;
 
 /// <summary>
 /// WFS 2.0 dispatcher endpoint that routes requests based on the 'request' parameter

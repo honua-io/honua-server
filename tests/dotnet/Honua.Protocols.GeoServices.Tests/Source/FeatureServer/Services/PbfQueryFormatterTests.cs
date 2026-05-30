@@ -6,7 +6,7 @@ using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
+using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;

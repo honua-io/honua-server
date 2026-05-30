@@ -1,10 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Server.Features.Protocols.GeoServices.ImageServer.Handlers;
-using Honua.Server.Features.Protocols.GeoServices.ImageServer.Services;
+using Honua.Protocols.GeoServices.ImageServer.Handlers;
+using Honua.Protocols.GeoServices.ImageServer.Services;
 
-namespace Honua.Server.Features.Protocols.GeoServices.ImageServer;
+namespace Honua.Protocols.GeoServices.ImageServer;
 
 /// <summary>
 /// Service collection extensions for Image Server feature registration.

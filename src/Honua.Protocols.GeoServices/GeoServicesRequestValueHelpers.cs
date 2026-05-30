@@ -10,7 +10,7 @@ using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
-namespace Honua.Server.Features.Protocols.GeoServices;
+namespace Honua.Protocols.GeoServices;
 
 internal static class GeoServicesRequestValueHelpers
 {

@@ -3,7 +3,7 @@
 
 using System.Collections.Frozen;
 
-namespace Honua.Server.Features.Protocols.OData;
+namespace Honua.Protocols.OData;
 
 /// <summary>
 /// Defines allowed OData query parameters for different endpoint types.

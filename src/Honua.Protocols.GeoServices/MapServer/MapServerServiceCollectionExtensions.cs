@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-namespace Honua.Server.Features.Protocols.GeoServices.MapServer;
+namespace Honua.Protocols.GeoServices.MapServer;
 
 /// <summary>
 /// Service collection extensions for MapServer feature registration.
@@ -19,7 +19,7 @@ internal static class MapServerServiceCollectionExtensions
         // MapServer uses core services (IFeatureReader, ILayerStyleCatalog) which are already registered.
         // Rendering is handled by static utility classes (SkiaMapRenderer, StyleTranslator, etc.).
         // Query endpoints reuse FeatureServer query handling for ArcGIS REST parity.
-        services.AddSingleton<Infrastructure.Rendering.RasterRenderCapacityLimiter>();
+        services.AddSingleton<Honua.Server.Features.Infrastructure.Rendering.RasterRenderCapacityLimiter>();
 
         return services;
     }

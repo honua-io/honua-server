@@ -3,9 +3,9 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Honua.Server.Features.Protocols.Ogc.Classic.Wms;
+using Honua.Protocols.Ogc.Classic.Wms;
 
-namespace Honua.Server.Features.Protocols.Ogc.Classic;
+namespace Honua.Protocols.Ogc.Classic;
 
 /// <summary>
 /// AOT-compatible JSON serialization context for classic OGC response models.

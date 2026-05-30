@@ -7,7 +7,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 
-namespace Honua.Server.Features.Protocols.GeoServices;
+namespace Honua.Protocols.GeoServices;
 
 internal static class GeoServicesObjectIdFieldResolver
 {

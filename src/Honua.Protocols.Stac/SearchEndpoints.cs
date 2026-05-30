@@ -14,13 +14,13 @@ using Honua.Server.Features.Infrastructure.Filtering;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
-using Honua.Server.Features.Protocols.Ogc.Common;
-using Honua.Server.Features.Protocols.Stac.Models;
-using Honua.Server.Features.Protocols.Stac.Services;
+using Honua.Protocols.Ogc.Common;
+using Honua.Protocols.Stac.Models;
+using Honua.Protocols.Stac.Services;
 using Honua.Core.Features.Geometry.Abstractions;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Honua.Server.Features.Protocols.Stac;
+namespace Honua.Protocols.Stac;
 
 /// <summary>
 /// STAC Item Search endpoint (GET and POST).

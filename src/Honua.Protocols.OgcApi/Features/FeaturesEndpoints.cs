@@ -3,10 +3,10 @@
 
 using System.Text.Json;
 using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Protocols.Ogc.Common;
-using Honua.Server.Features.Protocols.Ogc.Api.Features.Models;
+using Honua.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Api.Features.Models;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Features;
+namespace Honua.Protocols.Ogc.Api.Features;
 
 /// <summary>
 /// Features/Items CRUD endpoints for OGC API Features.

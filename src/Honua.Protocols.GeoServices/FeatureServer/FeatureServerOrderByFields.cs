@@ -4,7 +4,7 @@
 using System.Collections.Frozen;
 using Honua.Core.Features.Shared.Models;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+namespace Honua.Protocols.GeoServices.FeatureServer;
 
 internal static class FeatureServerOrderByFields
 {

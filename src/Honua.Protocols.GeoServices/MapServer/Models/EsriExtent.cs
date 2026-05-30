@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 
-namespace Honua.Server.Features.Protocols.GeoServices.MapServer.Models;
+namespace Honua.Protocols.GeoServices.MapServer.Models;
 
 /// <summary>
 /// Esri spatial extent information for MapServer responses.

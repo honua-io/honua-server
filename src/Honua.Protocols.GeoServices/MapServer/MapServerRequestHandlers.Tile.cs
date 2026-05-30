@@ -15,7 +15,7 @@ using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 using static Honua.Server.Features.Infrastructure.Rendering.RasterMapRenderingPipeline;
 
-namespace Honua.Server.Features.Protocols.GeoServices.MapServer;
+namespace Honua.Protocols.GeoServices.MapServer;
 
 internal static partial class MapServerEndpoints
 {

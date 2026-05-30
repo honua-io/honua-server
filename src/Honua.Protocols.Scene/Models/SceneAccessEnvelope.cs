@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Protocols.Scene.Models;
+namespace Honua.Protocols.Scene.Models;
 
 /// <summary>
 /// A short-lived signed token authorizing CesiumJS-style nested asset

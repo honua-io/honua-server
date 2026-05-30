@@ -1,9 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Server.Features.Protocols.GeoServices.NAServer.Models;
+using Honua.Protocols.GeoServices.NAServer.Models;
 
-namespace Honua.Server.Features.Protocols.GeoServices.NAServer;
+namespace Honua.Protocols.GeoServices.NAServer;
 
 /// <summary>
 /// Maps the minimal GeoServices NAServer compatibility endpoints used by mobile routing clients.

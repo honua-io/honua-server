@@ -8,11 +8,11 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
-using Honua.Server.Features.Protocols.GeoServices;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Protocols.GeoServices;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Validation;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
+namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
 /// <summary>
 /// Prepared GeoServices query inputs ready for protocol-adapter conversion.

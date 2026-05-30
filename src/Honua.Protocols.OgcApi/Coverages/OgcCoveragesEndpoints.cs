@@ -3,11 +3,11 @@
 
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Protocols.Ogc.Api.Coverages.Handlers;
-using Honua.Server.Features.Protocols.Ogc.Api.Coverages.Models;
-using Honua.Server.Features.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Api.Coverages.Handlers;
+using Honua.Protocols.Ogc.Api.Coverages.Models;
+using Honua.Protocols.Ogc.Common;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Coverages;
+namespace Honua.Protocols.Ogc.Api.Coverages;
 
 /// <summary>
 /// OGC API - Coverages endpoints for raster coverage discovery and retrieval.

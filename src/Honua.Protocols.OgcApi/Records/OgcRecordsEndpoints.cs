@@ -8,11 +8,11 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Protocols.Ogc.Api.Records.Models;
-using Honua.Server.Features.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Api.Records.Models;
+using Honua.Protocols.Ogc.Common;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Records;
+namespace Honua.Protocols.Ogc.Api.Records;
 
 /// <summary>
 /// Read-only OGC API Records endpoints backed by Honua catalog metadata.

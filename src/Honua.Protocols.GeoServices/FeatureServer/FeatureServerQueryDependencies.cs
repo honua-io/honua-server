@@ -7,11 +7,11 @@ using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
+using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Caching;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+namespace Honua.Protocols.GeoServices.FeatureServer;
 
 internal sealed class FeatureServerQueryDependencies
 {

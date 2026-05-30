@@ -7,7 +7,7 @@ using Honua.TestKit.Constants;
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps;
 
 /// <summary>
-/// Tests for <see cref="Honua.Server.Features.Protocols.Ogc.Api.Maps.Handlers.OgcMapsRenderingHandler"/>.
+/// Tests for <see cref="Honua.Protocols.Ogc.Api.Maps.Handlers.OgcMapsRenderingHandler"/>.
 ///
 /// TODO(#1035 cutover 86/N): the rendering handler was ported to Metadata v2 in the
 /// same slice but its (very large) v1-only test class was left to a follow-up port

@@ -9,7 +9,7 @@ using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
-namespace Honua.Server.Features.Protocols.GeoServices.ImageServer.Services;
+namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
 internal interface IImageServerLayerResolver
 {

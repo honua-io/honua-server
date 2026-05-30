@@ -9,7 +9,7 @@ using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Honua.Server.Features.Protocols.GeoServices.Catalog;
+namespace Honua.Protocols.GeoServices.Catalog;
 
 /// <summary>
 /// GeoServices catalog endpoints for service discovery.

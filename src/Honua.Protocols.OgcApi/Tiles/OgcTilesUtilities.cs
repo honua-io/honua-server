@@ -8,10 +8,10 @@ using Microsoft.AspNetCore.Http;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Shared.Models;
 using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Protocols.Ogc.Common;
-using Honua.Server.Features.Protocols.Ogc.Api.Tiles.Models;
+using Honua.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Api.Tiles.Models;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Tiles;
+namespace Honua.Protocols.Ogc.Api.Tiles;
 
 internal static class OgcTilesUtilities
 {

@@ -4,7 +4,7 @@
 using System.Globalization;
 using System.Text.Json;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+namespace Honua.Protocols.GeoServices.FeatureServer;
 
 internal static class FeatureServerValueParser
 {

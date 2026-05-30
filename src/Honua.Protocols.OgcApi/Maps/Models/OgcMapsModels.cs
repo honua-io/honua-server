@@ -5,7 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Maps.Models;
+namespace Honua.Protocols.Ogc.Api.Maps.Models;
 
 /// <summary>
 /// OGC API - Maps conformance declaration.

@@ -14,10 +14,10 @@ using Honua.Core.Features.Tiles;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Protocols.Ogc.Common;
-using Honua.Server.Features.Protocols.Ogc.Api.Features;
+using Honua.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Api.Features;
 using Honua.Server.Features.Infrastructure.Rendering;
-using Honua.Server.Features.Protocols.Ogc.Api.Tiles.Models;
+using Honua.Protocols.Ogc.Api.Tiles.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,7 +28,7 @@ using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Tiles;
+namespace Honua.Protocols.Ogc.Api.Tiles;
 
 internal static partial class TilesEndpoints
 {

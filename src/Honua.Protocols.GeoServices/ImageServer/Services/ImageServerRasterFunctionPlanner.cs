@@ -2,9 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Server.Features.Protocols.GeoServices.ImageServer.Models;
+using Honua.Protocols.GeoServices.ImageServer.Models;
 
-namespace Honua.Server.Features.Protocols.GeoServices.ImageServer.Services;
+namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
 /// <summary>
 /// Validates and walks Esri raster function chain documents. The MVP supports

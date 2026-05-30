@@ -6,7 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Shared.Models;
 
-namespace Honua.Server.Features.Protocols.OData.Models;
+namespace Honua.Protocols.OData.Models;
 
 /// <summary>
 /// OData service document response

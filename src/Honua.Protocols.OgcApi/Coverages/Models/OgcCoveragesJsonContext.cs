@@ -3,9 +3,9 @@
 
 using System.Collections.Immutable;
 using System.Text.Json.Serialization;
-using Honua.Server.Features.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Common;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Coverages.Models;
+namespace Honua.Protocols.Ogc.Api.Coverages.Models;
 
 /// <summary>
 /// JSON serialization context for OGC API - Coverages models.

@@ -11,15 +11,15 @@ using Honua.Server.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.Infrastructure.Validation;
-using Honua.Server.Features.Protocols.Ogc.Classic;
-using Honua.Server.Features.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Classic;
+using Honua.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
 using SkiaSharp;
 using static Honua.Server.Features.Infrastructure.Rendering.RasterMapRenderingPipeline;
-using static Honua.Server.Features.Protocols.Ogc.Classic.OgcClassicRequestHelpers;
+using static Honua.Protocols.Ogc.Classic.OgcClassicRequestHelpers;
 
-namespace Honua.Server.Features.Protocols.Ogc.Classic.Wms;
+namespace Honua.Protocols.Ogc.Classic.Wms;
 
 internal static partial class WmsRequestHandlers
 {

@@ -3,9 +3,9 @@
 
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Geometry.Domain;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
+namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
 internal sealed class FeatureServerGeometryServices(IGeometryValidator geometryValidator) : IFeatureServerGeometryServices
 {

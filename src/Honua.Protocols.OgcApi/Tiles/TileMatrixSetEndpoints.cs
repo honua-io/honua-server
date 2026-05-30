@@ -5,13 +5,13 @@ using System.Collections.Immutable;
 using Honua.Core.Configuration;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Protocols.Ogc.Common;
-using Honua.Server.Features.Protocols.Ogc.Api.Features;
-using Honua.Server.Features.Protocols.Ogc.Api.Tiles.Models;
+using Honua.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Api.Features;
+using Honua.Protocols.Ogc.Api.Tiles.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Tiles;
+namespace Honua.Protocols.Ogc.Api.Tiles;
 
 internal static class TileMatrixSetEndpoints
 {

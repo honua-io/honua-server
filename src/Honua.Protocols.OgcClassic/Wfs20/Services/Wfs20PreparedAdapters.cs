@@ -7,7 +7,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Query;
 using Honua.Core.Queries.Filters;
 
-namespace Honua.Server.Features.Protocols.Ogc.Classic.Wfs20.Services;
+namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 
 /// <summary>
 /// Prepared WFS 2.0 query inputs ready for adapter conversion.

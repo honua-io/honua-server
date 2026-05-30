@@ -3,10 +3,10 @@
 
 using System.Collections.Immutable;
 using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Common;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Processes;
+namespace Honua.Protocols.Ogc.Api.Processes;
 
 /// <summary>
 /// OGC API Processes core metadata endpoints (landing page, conformance).

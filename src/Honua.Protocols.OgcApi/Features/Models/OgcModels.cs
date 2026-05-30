@@ -5,9 +5,9 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Common;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Features.Models;
+namespace Honua.Protocols.Ogc.Api.Features.Models;
 
 /// <summary>
 /// JSON converter for raw JSON strings to avoid double encoding

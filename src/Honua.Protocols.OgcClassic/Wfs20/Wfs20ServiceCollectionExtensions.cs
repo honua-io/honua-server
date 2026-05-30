@@ -3,10 +3,10 @@
 
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.Query;
-using Honua.Server.Features.Protocols.Ogc.Classic.Wfs20.Services;
+using Honua.Protocols.Ogc.Classic.Wfs20.Services;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Honua.Server.Features.Protocols.Ogc.Classic.Wfs20;
+namespace Honua.Protocols.Ogc.Classic.Wfs20;
 
 /// <summary>
 /// Service collection extensions for WFS 2.0

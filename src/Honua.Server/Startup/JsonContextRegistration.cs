@@ -17,14 +17,14 @@ internal static class JsonContextRegistration
         services.ConfigureHttpJsonOptions(options =>
         {
             options.SerializerOptions.TypeInfoResolver = JsonTypeInfoResolver.Combine(
-                Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models.FeatureServerJsonContext.Default,
-                Honua.Server.Features.Protocols.GeoServices.ImageServer.Models.ImageServerJsonContext.Default,
-                Honua.Server.Features.Protocols.OData.Models.ODataJsonContext.Default,
-                Honua.Server.Features.Protocols.Ogc.Api.Coverages.Models.OgcCoveragesJsonContext.Default,
-                Honua.Server.Features.Protocols.Ogc.Api.Features.OgcJsonContext.Default,
-                Honua.Server.Features.Protocols.Ogc.Api.Maps.Models.OgcMapsJsonContext.Default,
-                Honua.Server.Features.Protocols.Ogc.Api.Records.OgcRecordsJsonContext.Default,
-                Honua.Server.Features.Protocols.Ogc.Api.Tiles.OgcTilesJsonContext.Default,
+                Honua.Protocols.GeoServices.FeatureServer.Models.FeatureServerJsonContext.Default,
+                Honua.Protocols.GeoServices.ImageServer.Models.ImageServerJsonContext.Default,
+                Honua.Protocols.OData.Models.ODataJsonContext.Default,
+                Honua.Protocols.Ogc.Api.Coverages.Models.OgcCoveragesJsonContext.Default,
+                Honua.Protocols.Ogc.Api.Features.OgcJsonContext.Default,
+                Honua.Protocols.Ogc.Api.Maps.Models.OgcMapsJsonContext.Default,
+                Honua.Protocols.Ogc.Api.Records.OgcRecordsJsonContext.Default,
+                Honua.Protocols.Ogc.Api.Tiles.OgcTilesJsonContext.Default,
                 Honua.Server.Features.Admin.Models.SecureConnectionJsonContext.Default,
                 Honua.Server.Features.Admin.Models.LayerPublishingJsonContext.Default,
                 Honua.Server.Features.Admin.Models.ServiceSettingsJsonContext.Default,
@@ -66,7 +66,7 @@ internal static class JsonContextRegistration
                 Honua.Server.Features.Admin.Models.AdminApiKeyJsonContext.Default,
                 Honua.Server.Features.Admin.Models.SceneDatasetJsonContext.Default,
                 Honua.Server.Features.Admin.Models.SceneGenerationJsonContext.Default,
-                Honua.Server.Features.Protocols.Scene.Models.PublicSceneDiscoveryJsonContext.Default,
+                Honua.Protocols.Scene.Models.PublicSceneDiscoveryJsonContext.Default,
                 Honua.Server.Features.Admin.Models.RateLimitJsonContext.Default,
                 Honua.Server.Features.Admin.Models.TableDiscoveryJsonContext.Default,
                 Honua.Server.Features.Admin.Models.ExternalServiceDiscoveryJsonContext.Default,
@@ -88,10 +88,10 @@ internal static class JsonContextRegistration
                 Honua.Server.Features.Infrastructure.Models.ProblemJsonContext.Default,
                 Honua.Server.Features.Infrastructure.Middleware.LimitsEnforcementJsonContext.Default,
                 Honua.Server.Features.Infrastructure.Security.CspViolationJsonContext.Default,
-                Honua.Server.Features.Protocols.GeoServices.GeometryService.Models.GeometryServiceJsonContext.Default,
-                Honua.Server.Features.Protocols.GeoServices.NAServer.Models.NAServerJsonContext.Default,
+                Honua.Protocols.GeoServices.GeometryService.Models.GeometryServiceJsonContext.Default,
+                Honua.Protocols.GeoServices.NAServer.Models.NAServerJsonContext.Default,
                 Honua.Server.Features.Export.ExportJsonContext.Default,
-                Honua.Server.Features.Protocols.Stac.StacJsonContext.Default,
+                Honua.Protocols.Stac.StacJsonContext.Default,
                 Honua.Server.Features.Protocols.Cog.CogJsonContext.Default,
                 Honua.Server.Features.Protocols.Coverages.Multidimensional.MultidimensionalCoverageJsonContext.Default,
                 Honua.Server.Features.Protocols.Zarr.ZarrJsonContext.Default,
@@ -99,7 +99,7 @@ internal static class JsonContextRegistration
                 Honua.Server.Features.Collaboration.Sessions.CollaborationSessionJsonContext.Default,
                 Honua.Server.Features.Collaboration.FeatureLocks.FeatureLockJsonContext.Default,
                 Honua.Core.Features.Authorization.Domain.OperatorAuthorizationJsonContext.Default,
-                Honua.Server.Features.Protocols.Ogc.Api.Processes.OgcProcessesJsonContext.Default);
+                Honua.Protocols.Ogc.Api.Processes.OgcProcessesJsonContext.Default);
         });
 
         return services;

@@ -5,7 +5,7 @@ using System.Collections.Immutable;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Shared.Models;
 
-namespace Honua.Server.Features.Protocols.Ogc.Common;
+namespace Honua.Protocols.Ogc.Common;
 
 /// <summary>
 /// OGC API landing page response.

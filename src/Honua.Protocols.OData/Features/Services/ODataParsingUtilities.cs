@@ -3,7 +3,7 @@
 
 using System.Globalization;
 
-namespace Honua.Server.Features.Protocols.OData.Services;
+namespace Honua.Protocols.OData.Services;
 
 /// <summary>
 /// Provides shared utilities for parsing OData query parameters.

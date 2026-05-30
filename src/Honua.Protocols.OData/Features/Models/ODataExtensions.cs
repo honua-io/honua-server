@@ -4,7 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.Shared.Models;
 
-namespace Honua.Server.Features.Protocols.OData.Models;
+namespace Honua.Protocols.OData.Models;
 
 /// <summary>
 /// Extension methods for converting between OData models and shared components

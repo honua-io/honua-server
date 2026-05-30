@@ -4,7 +4,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Protocols.GeoServices.MapServer.Models;
+namespace Honua.Protocols.GeoServices.MapServer.Models;
 
 /// <summary>
 /// AOT-compatible JSON serialization context for MapServer models.

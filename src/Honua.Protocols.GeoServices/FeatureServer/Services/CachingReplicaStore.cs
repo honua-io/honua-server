@@ -6,7 +6,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
+namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
 /// <summary>
 /// Write-through caching wrapper that persists replica state to Postgres first,

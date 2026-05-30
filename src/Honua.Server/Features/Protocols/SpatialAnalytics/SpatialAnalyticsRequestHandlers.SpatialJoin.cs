@@ -10,7 +10,7 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.SpatialAnalytics.Abstractions;
 using Honua.Core.Features.SpatialAnalytics.Domain;
-using Honua.Server.Features.Protocols.GeoServices;
+using Honua.Protocols.GeoServices;
 using Honua.Server.Features.Infrastructure.Analytics;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;

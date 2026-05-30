@@ -4,8 +4,8 @@
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Protocols.OData.Models;
-using Honua.Server.Features.Protocols.OData.Services;
+using Honua.Protocols.OData.Models;
+using Honua.Protocols.OData.Services;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;

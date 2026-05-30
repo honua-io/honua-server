@@ -3,7 +3,7 @@
 
 using System.Text.Json;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
+namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 
 internal static class SpatialAggregationContractConstants
 {

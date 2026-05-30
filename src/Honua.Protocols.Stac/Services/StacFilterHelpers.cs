@@ -8,7 +8,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
-namespace Honua.Server.Features.Protocols.Stac.Services;
+namespace Honua.Protocols.Stac.Services;
 
 /// <summary>
 /// Helpers for converting STAC search parameters to Honua query filters.

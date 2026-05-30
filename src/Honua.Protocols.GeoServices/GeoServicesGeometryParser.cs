@@ -2,10 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Parsing;
 
-namespace Honua.Server.Features.Protocols.GeoServices;
+namespace Honua.Protocols.GeoServices;
 
 /// <summary>
 /// Parses GeoServices geometry parameters from query strings into structured geometry objects.

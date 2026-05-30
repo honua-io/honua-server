@@ -3,7 +3,7 @@
 
 using System.Globalization;
 using FluentAssertions;
-using Honua.Server.Features.Protocols.Ogc.Api.Features;
+using Honua.Protocols.Ogc.Api.Features;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 

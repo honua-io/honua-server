@@ -4,7 +4,7 @@
 using System.Globalization;
 using SkiaSharp;
 
-namespace Honua.Server.Features.Protocols.GeoServices.ImageServer.Services;
+namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
 /// <summary>
 /// Builds the per-class swatches that the Esri Image Server <c>legend</c>

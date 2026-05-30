@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-namespace Honua.Server.Features.Protocols.Ogc.Classic.Wcs20;
+namespace Honua.Protocols.Ogc.Classic.Wcs20;
 
 /// <summary>
 /// Service collection extensions for WCS 2.0.1.

@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Protocols.GeoServices.NAServer.Models;
+namespace Honua.Protocols.GeoServices.NAServer.Models;
 
 /// <summary>
 /// Minimal NAServer route solve response.

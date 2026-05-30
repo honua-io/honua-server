@@ -26,18 +26,18 @@ using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.Infrastructure.Validation;
-using Honua.Server.Features.Protocols.Ogc.Common;
-using Honua.Server.Features.Protocols.Ogc.Api.Features;
-using Honua.Server.Features.Protocols.Ogc.Api.Features.Models;
-using Honua.Server.Features.Protocols.Ogc.Api.Features.Services;
-using Honua.Server.Features.Protocols.Ogc.Classic.Wfs20.Models;
+using Honua.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Api.Features;
+using Honua.Protocols.Ogc.Api.Features.Models;
+using Honua.Protocols.Ogc.Api.Features.Services;
+using Honua.Protocols.Ogc.Classic.Wfs20.Models;
 using Honua.ServiceDefaults;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 using NetTopologySuite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
-namespace Honua.Server.Features.Protocols.Ogc.Classic.Wfs20.Services;
+namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 
 /// <summary>
 /// Core handler for WFS 2.0 operations backed by the shared catalog and feature stores.

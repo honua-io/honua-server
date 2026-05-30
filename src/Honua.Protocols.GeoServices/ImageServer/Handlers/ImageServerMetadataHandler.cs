@@ -6,14 +6,14 @@ using System.Globalization;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Server.Features.Protocols.GeoServices.ImageServer.Models;
-using Honua.Server.Features.Protocols.GeoServices.ImageServer.Services;
+using Honua.Protocols.GeoServices.ImageServer.Models;
+using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Server.Features.Protocols.GeoServices.ImageServer.Handlers;
+namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
 /// <summary>
 /// Handler for Image Server metadata operations.

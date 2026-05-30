@@ -7,12 +7,12 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Protocols.Ogc.Common;
-using Honua.Server.Features.Protocols.Ogc.Api.Maps.Handlers;
-using Honua.Server.Features.Protocols.Ogc.Api.Maps.Models;
+using Honua.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Api.Maps.Handlers;
+using Honua.Protocols.Ogc.Api.Maps.Models;
 using Microsoft.AspNetCore.Http;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Maps;
+namespace Honua.Protocols.Ogc.Api.Maps;
 
 /// <summary>
 /// OGC API - Maps endpoints providing server-rendered map imagery.

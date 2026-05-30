@@ -3,7 +3,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Server.Features.Protocols.GeoServices.ImageServer;
+namespace Honua.Protocols.GeoServices.ImageServer;
 
 /// <summary>
 /// Structured logging for Image Server operations.

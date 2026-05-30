@@ -3,7 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Server.Features.Protocols.Ogc.Api.Processes;
+using Honua.Protocols.Ogc.Api.Processes;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 

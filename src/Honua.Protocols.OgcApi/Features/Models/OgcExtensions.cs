@@ -5,9 +5,9 @@ using System.Collections.Immutable;
 using System.Linq;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Common;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Features.Models;
+namespace Honua.Protocols.Ogc.Api.Features.Models;
 
 /// <summary>
 /// Extension methods for converting between OGC models and shared components

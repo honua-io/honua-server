@@ -3,7 +3,7 @@
 
 using Honua.Server.Features.Infrastructure.Models;
 
-namespace Honua.Server.Features.Protocols.Ogc.Classic.Wfs20;
+namespace Honua.Protocols.Ogc.Classic.Wfs20;
 
 internal static class Wfs20ErrorResults
 {

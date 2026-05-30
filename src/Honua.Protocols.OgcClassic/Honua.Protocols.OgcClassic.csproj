@@ -8,7 +8,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!--
       Classic OGC protocol assembly (WFS, WMS, WMTS, WCS). Carved out of
-      Honua.Server.Features.Protocols.Ogc.Classic per the modularization Phase 1 plan.
+      Honua.Protocols.Ogc.Classic per the modularization Phase 1 plan.
       Its Infrastructure dependencies live in Honua.Hosting; the shared OGC base lives
       in Honua.Protocols.Ogc.Shared. The WFS 2.0 / WMS / WMTS capabilities reuse OGC API
       Features adapter types, so this assembly references Honua.Protocols.OgcApi (the only
@@ -16,7 +16,7 @@
       may not reference Honua.Server.
     -->
     <NoWarn>$(NoWarn);CS1591;IL2104;IL2026;IL3002;IL3050;CA1041;CA1000;CA1862;IDE0051;IDE0052;IDE0005;CA1844;IL2075</NoWarn>
-    <RootNamespace>Honua.Server.Features.Protocols.Ogc</RootNamespace>
+    <RootNamespace>Honua.Protocols.Ogc</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

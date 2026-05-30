@@ -7,13 +7,13 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Protocols.Ogc.Api.Features;
-using Honua.Server.Features.Protocols.Ogc.Common;
-using Honua.Server.Features.Protocols.Stac.Models;
-using Honua.Server.Features.Protocols.Stac.Services;
+using Honua.Protocols.Ogc.Api.Features;
+using Honua.Protocols.Ogc.Common;
+using Honua.Protocols.Stac.Models;
+using Honua.Protocols.Stac.Services;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Honua.Server.Features.Protocols.Stac;
+namespace Honua.Protocols.Stac;
 
 /// <summary>
 /// STAC collection listing and detail endpoints.

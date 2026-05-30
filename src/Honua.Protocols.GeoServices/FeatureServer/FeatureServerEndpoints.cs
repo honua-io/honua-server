@@ -3,9 +3,9 @@
 
 using System;
 using Honua.Server.Features.Infrastructure.Caching;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+namespace Honua.Protocols.GeoServices.FeatureServer;
 
 /// <summary>
 /// Extension methods to register FeatureServer endpoints

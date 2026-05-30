@@ -3,7 +3,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Server.Features.Protocols.Ogc.Classic;
+namespace Honua.Protocols.Ogc.Classic;
 
 /// <summary>
 /// Source-generated log messages for classic OGC web service operations.

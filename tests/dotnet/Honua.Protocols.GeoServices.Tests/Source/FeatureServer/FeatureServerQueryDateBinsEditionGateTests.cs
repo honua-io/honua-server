@@ -4,7 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;

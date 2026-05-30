@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Server.Features.Infrastructure.Helpers;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
+namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 
 internal sealed class GeoServicesFeatureJsonConverter : JsonConverter<GeoServicesFeature>
 {

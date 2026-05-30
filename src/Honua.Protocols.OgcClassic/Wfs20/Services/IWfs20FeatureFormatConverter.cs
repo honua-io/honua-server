@@ -4,7 +4,7 @@
 using System.Xml.Linq;
 using Honua.Core.Features.FeatureStore.Domain;
 
-namespace Honua.Server.Features.Protocols.Ogc.Classic.Wfs20.Services;
+namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 
 /// <summary>
 /// Interface for converting between different feature formats in WFS 2.0 operations.

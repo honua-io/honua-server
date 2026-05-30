@@ -4,7 +4,7 @@
 using Honua.Core.Features.Validation;
 using Honua.Server.Features.Infrastructure.Validation;
 
-namespace Honua.Server.Features.Protocols.OData.Services;
+namespace Honua.Protocols.OData.Services;
 
 internal sealed record ODataPagingParameters(
     int? Top,

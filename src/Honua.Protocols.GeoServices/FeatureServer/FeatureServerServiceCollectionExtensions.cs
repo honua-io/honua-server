@@ -4,11 +4,11 @@
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.Query;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
+using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Server.Features.Infrastructure.Abstractions;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+namespace Honua.Protocols.GeoServices.FeatureServer;
 
 internal static class FeatureServerServiceCollectionExtensions
 {

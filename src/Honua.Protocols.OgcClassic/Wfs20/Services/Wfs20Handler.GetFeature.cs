@@ -7,11 +7,11 @@ using System.Globalization;
 using Honua.Core.Queries.Filters.Fes20;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Protocols.Ogc.Common;
-using Honua.Server.Features.Protocols.Ogc.Classic.Wfs20.Models;
+using Honua.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Classic.Wfs20.Models;
 using Honua.ServiceDefaults;
 
-namespace Honua.Server.Features.Protocols.Ogc.Classic.Wfs20.Services;
+namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 
 /// <summary>
 /// WFS 2.0 GetFeature operation handling. Split from <see cref="Wfs20Handler"/> as part of audit #1144.

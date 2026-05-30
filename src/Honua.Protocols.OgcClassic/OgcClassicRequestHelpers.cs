@@ -4,7 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.Metadata.Domain.V2;
 
-namespace Honua.Server.Features.Protocols.Ogc.Classic;
+namespace Honua.Protocols.Ogc.Classic;
 
 internal static class OgcClassicRequestHelpers
 {

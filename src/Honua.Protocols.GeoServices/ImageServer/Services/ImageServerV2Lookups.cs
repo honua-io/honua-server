@@ -5,7 +5,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Infrastructure.Raster;
 
-namespace Honua.Server.Features.Protocols.GeoServices.ImageServer.Services;
+namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
 /// <summary>
 /// Metadata v2 lookup helpers scoped to the GeoServices ImageServer handler family.

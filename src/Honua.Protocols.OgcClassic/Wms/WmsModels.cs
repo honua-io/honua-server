@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Protocols.Ogc.Classic.Wms;
+namespace Honua.Protocols.Ogc.Classic.Wms;
 
 /// <summary>
 /// WMS GetFeatureInfo JSON response.

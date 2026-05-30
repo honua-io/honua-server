@@ -3,7 +3,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Maps;
+namespace Honua.Protocols.Ogc.Api.Maps;
 
 /// <summary>
 /// Structured logging for OGC API - Maps operations.

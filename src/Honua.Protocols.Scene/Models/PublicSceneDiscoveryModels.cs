@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Protocols.Scene.Models;
+namespace Honua.Protocols.Scene.Models;
 
 internal sealed class PublicSceneListResponse
 {

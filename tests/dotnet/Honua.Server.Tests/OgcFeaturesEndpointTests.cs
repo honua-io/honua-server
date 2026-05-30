@@ -4,7 +4,7 @@
 using System.Net.Http.Json;
 using System.Globalization;
 using FluentAssertions;
-using Honua.Server.Features.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Common;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;

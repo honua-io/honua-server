@@ -3,7 +3,7 @@
 
 using System.Collections.Immutable;
 
-namespace Honua.Server.Features.Protocols.Ogc.Common;
+namespace Honua.Protocols.Ogc.Common;
 
 internal sealed record OgcTileMatrixSetDescriptor(
     string Id,

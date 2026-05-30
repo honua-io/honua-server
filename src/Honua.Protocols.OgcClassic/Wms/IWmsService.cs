@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-namespace Honua.Server.Features.Protocols.Ogc.Classic.Wms;
+namespace Honua.Protocols.Ogc.Classic.Wms;
 
 /// <summary>
 /// Service responsible for handling WMS (Web Map Service) operations.

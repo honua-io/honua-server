@@ -9,11 +9,11 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Protocols.Ogc.Common;
-using Honua.Server.Features.Protocols.Ogc.Api.Processes.Models;
+using Honua.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Api.Processes.Models;
 using Honua.ServiceDefaults;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Processes;
+namespace Honua.Protocols.Ogc.Api.Processes;
 
 /// <summary>
 /// OGC API Processes process discovery and execution endpoints.

@@ -6,7 +6,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Helpers;
 
-namespace Honua.Server.Features.Protocols.GeoServices;
+namespace Honua.Protocols.GeoServices;
 
 /// <summary>
 /// Builds temporal filter expressions for GeoServices time queries.

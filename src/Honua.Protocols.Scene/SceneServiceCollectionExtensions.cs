@@ -5,7 +5,7 @@ using Honua.Core.Features.Scene.Abstractions;
 using Honua.Server.Features.Infrastructure.Scene;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Honua.Server.Features.Protocols.Scene;
+namespace Honua.Protocols.Scene;
 
 /// <summary>
 /// DI registration for the hosted 3D Tiles scene serving feature.

@@ -3,7 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Scene.Domain;
-using Honua.Server.Features.Protocols.Scene;
+using Honua.Protocols.Scene;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 

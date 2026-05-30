@@ -3,9 +3,9 @@
 
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Services;
+using Honua.Protocols.GeoServices.FeatureServer.Services;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+namespace Honua.Protocols.GeoServices.FeatureServer;
 
 internal sealed class FeatureServerRelatedRecordsDependencies
 {

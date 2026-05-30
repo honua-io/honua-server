@@ -2,9 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 
-namespace Honua.Server.Features.Protocols.GeoServices.GPServer;
+namespace Honua.Protocols.GeoServices.GPServer;
 
 /// <summary>
 /// Translates stock ArcGIS GP geometry inputs — <c>esriGeometry</c> JSON

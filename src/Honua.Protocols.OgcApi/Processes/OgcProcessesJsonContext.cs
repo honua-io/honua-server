@@ -4,10 +4,10 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Honua.Server.Features.Protocols.Ogc.Common;
-using Honua.Server.Features.Protocols.Ogc.Api.Processes.Models;
+using Honua.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Api.Processes.Models;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Processes;
+namespace Honua.Protocols.Ogc.Api.Processes;
 
 /// <summary>
 /// Source-generated JSON serializer context for OGC API Processes models.

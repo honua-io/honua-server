@@ -4,12 +4,12 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Redis;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Infrastructure.Redis;
 using Microsoft.Extensions.Caching.Distributed;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+namespace Honua.Protocols.GeoServices.FeatureServer;
 
 /// <summary>
 /// Standardized Redis-backed distributed replica store with consistent fallback behavior.

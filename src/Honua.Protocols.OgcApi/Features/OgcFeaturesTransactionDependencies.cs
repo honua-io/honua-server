@@ -8,9 +8,9 @@ using Honua.Core.Features.Query;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Validation;
-using Honua.Server.Features.Protocols.Ogc.Api.Features.Services;
+using Honua.Protocols.Ogc.Api.Features.Services;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Features;
+namespace Honua.Protocols.Ogc.Api.Features;
 
 internal sealed class OgcFeaturesTransactionDependencies
 {

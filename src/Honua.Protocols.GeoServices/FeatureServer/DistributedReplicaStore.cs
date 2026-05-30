@@ -5,10 +5,10 @@ using System.Collections.Concurrent;
 using System.Linq;
 using System.Text.Json;
 using Honua.Core.Exceptions;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Microsoft.Extensions.Caching.Distributed;
 
-namespace Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+namespace Honua.Protocols.GeoServices.FeatureServer;
 
 internal interface IReplicaStore
 {

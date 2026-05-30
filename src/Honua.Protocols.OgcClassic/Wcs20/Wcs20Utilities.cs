@@ -3,7 +3,7 @@
 
 using System.Collections.Immutable;
 
-namespace Honua.Server.Features.Protocols.Ogc.Classic.Wcs20;
+namespace Honua.Protocols.Ogc.Classic.Wcs20;
 
 internal static class Wcs20Utilities
 {

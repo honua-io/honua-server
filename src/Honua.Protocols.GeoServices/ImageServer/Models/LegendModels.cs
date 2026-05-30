@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Protocols.GeoServices.ImageServer.Models;
+namespace Honua.Protocols.GeoServices.ImageServer.Models;
 
 /// <summary>
 /// Esri-conformant response for the Image Server <c>legend</c> endpoint.

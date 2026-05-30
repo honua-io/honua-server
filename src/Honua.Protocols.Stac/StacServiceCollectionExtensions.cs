@@ -4,7 +4,7 @@
 using Honua.Server.Features.Infrastructure.Filtering;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Honua.Server.Features.Protocols.Stac;
+namespace Honua.Protocols.Stac;
 
 /// <summary>
 /// Registers STAC API services in the dependency injection container.

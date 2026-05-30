@@ -8,7 +8,7 @@ using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Http;
 using NetTopologySuite.Geometries;
 
-namespace Honua.Server.Features.Protocols.GeoServices.ImageServer.Services;
+namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
 internal static class ImageServerMosaicHelpers
 {

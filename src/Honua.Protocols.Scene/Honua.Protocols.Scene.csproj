@@ -8,7 +8,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!--
       3D Tiles / OpenUSD Scene protocol assembly. Carved out of
-      Honua.Server.Features.Protocols.Scene per the modularization Phase 1 plan.
+      Honua.Protocols.Scene per the modularization Phase 1 plan.
       Its Infrastructure dependencies (Authentication, Caching, Helpers, Models,
       Validation) live in Honua.Hosting (audit-A1 / ADR-0044) and its scene
       dataset config/registry domain (SceneDatasetOptions, ConfigurationSceneDatasetRegistry)
@@ -16,7 +16,7 @@
       Honua.Server (that's the cycle Phase 1 is solving).
     -->
     <NoWarn>$(NoWarn);CS1591;IL2104;IL2026;IL3002;IL3050;CA1041;CA1000;CA1862;IDE0051;IDE0052;IDE0005;CA1844;IL2075</NoWarn>
-    <RootNamespace>Honua.Server.Features.Protocols.Scene</RootNamespace>
+    <RootNamespace>Honua.Protocols.Scene</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

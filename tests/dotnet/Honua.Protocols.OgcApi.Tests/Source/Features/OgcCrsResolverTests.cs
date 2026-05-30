@@ -3,7 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Protocols.Ogc.Api.Features;
+using Honua.Protocols.Ogc.Api.Features;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;

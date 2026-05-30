@@ -11,13 +11,13 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Validation;
-using Honua.Server.Features.Protocols.OData.Models;
-using Honua.Server.Features.Protocols.OData.Services;
+using Honua.Protocols.OData.Models;
+using Honua.Protocols.OData.Services;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Honua.Server.Features.Protocols.OData;
+namespace Honua.Protocols.OData;
 
 /// <summary>
 /// Handler for OData CRUD operations (Create, Read, Update, Delete) on features.

@@ -4,7 +4,7 @@
 using System.Text.Json;
 using Honua.Core.Features.Shared.Models;
 
-namespace Honua.Server.Features.Protocols.OData.Models;
+namespace Honua.Protocols.OData.Models;
 
 /// <summary>
 /// Shared helpers for serializing and normalizing OData attribute payloads.

@@ -2,8 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Server.Features.Protocols.Ogc.Classic.Wfs20.Models;
-using Honua.Server.Features.Protocols.Ogc.Classic.Wfs20.Services;
+using Honua.Protocols.Ogc.Classic.Wfs20.Models;
+using Honua.Protocols.Ogc.Classic.Wfs20.Services;
 using System.Reflection;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;

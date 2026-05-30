@@ -4,7 +4,7 @@
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 
-namespace Honua.Server.Features.Protocols.GeoServices.ImageServer.Services;
+namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
 /// <summary>
 /// Read-only abstraction over a raster catalog. Returns the per-item metadata

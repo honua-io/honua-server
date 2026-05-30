@@ -4,7 +4,7 @@
 using System.Diagnostics;
 using Honua.ServiceDefaults;
 
-namespace Honua.Server.Features.Protocols.Stac;
+namespace Honua.Protocols.Stac;
 
 internal static class StacTelemetry
 {

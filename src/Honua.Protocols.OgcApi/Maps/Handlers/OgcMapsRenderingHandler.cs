@@ -16,14 +16,14 @@ using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.Infrastructure.Validation;
-using Honua.Server.Features.Protocols.Ogc.Api.Maps;
-using Honua.Server.Features.Protocols.Ogc.Api.Maps.Models;
-using Honua.Server.Features.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Api.Maps;
+using Honua.Protocols.Ogc.Api.Maps.Models;
+using Honua.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Maps.Handlers;
+namespace Honua.Protocols.Ogc.Api.Maps.Handlers;
 
 /// <summary>
 /// Handler for OGC API - Maps rendering operations.

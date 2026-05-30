@@ -4,10 +4,10 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Honua.Server.Features.Protocols.Ogc.Api.Records.Models;
-using Honua.Server.Features.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Api.Records.Models;
+using Honua.Protocols.Ogc.Common;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Records;
+namespace Honua.Protocols.Ogc.Api.Records;
 
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,

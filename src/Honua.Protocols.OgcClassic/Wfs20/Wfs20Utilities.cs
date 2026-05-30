@@ -6,9 +6,9 @@ using System.Globalization;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Validation;
 using Microsoft.AspNetCore.Http;
-using Honua.Server.Features.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Common;
 
-namespace Honua.Server.Features.Protocols.Ogc.Classic.Wfs20;
+namespace Honua.Protocols.Ogc.Classic.Wfs20;
 
 /// <summary>
 /// Utilities and constants for WFS 2.0 implementation

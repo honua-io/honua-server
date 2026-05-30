@@ -10,9 +10,9 @@ using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Server.Features.Infrastructure.Caching;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Validation;
-using Honua.Server.Features.Protocols.OData;
+using Honua.Protocols.OData;
 
-namespace Honua.Server.Features.Protocols.OData.Services;
+namespace Honua.Protocols.OData.Services;
 
 /// <summary>
 /// Aggregates OData batch dependencies to keep handler constructor limits small.

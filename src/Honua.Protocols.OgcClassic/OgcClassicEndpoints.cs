@@ -1,10 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Server.Features.Protocols.Ogc.Classic.Wms;
-using Honua.Server.Features.Protocols.Ogc.Classic.Wmts;
+using Honua.Protocols.Ogc.Classic.Wms;
+using Honua.Protocols.Ogc.Classic.Wmts;
 
-namespace Honua.Server.Features.Protocols.Ogc.Classic;
+namespace Honua.Protocols.Ogc.Classic;
 
 /// <summary>
 /// Maps classic OGC web service endpoints.

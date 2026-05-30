@@ -6,7 +6,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Honua.Server.Features.Protocols.Stac.Services;
+namespace Honua.Protocols.Stac.Services;
 
 /// <summary>
 /// Metadata v2 lookup helpers scoped to the STAC protocol family. Collapses the

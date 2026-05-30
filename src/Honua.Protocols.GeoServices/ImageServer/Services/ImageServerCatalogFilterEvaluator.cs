@@ -5,7 +5,7 @@ using System.Globalization;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.GeoServicesSql;
 
-namespace Honua.Server.Features.Protocols.GeoServices.ImageServer.Services;
+namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
 /// <summary>
 /// Evaluates an ArcGIS-SQL <c>where</c> string against an in-memory raster catalog page.

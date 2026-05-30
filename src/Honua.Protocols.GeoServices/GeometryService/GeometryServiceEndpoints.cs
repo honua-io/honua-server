@@ -1,10 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Server.Features.Protocols.GeoServices.GeometryService.Services;
+using Honua.Protocols.GeoServices.GeometryService.Services;
 using Honua.Server.Features.Infrastructure.Helpers;
 
-namespace Honua.Server.Features.Protocols.GeoServices.GeometryService;
+namespace Honua.Protocols.GeoServices.GeometryService;
 
 /// <summary>
 /// Maps geometry service REST endpoints under the canonical GeometryServer route.

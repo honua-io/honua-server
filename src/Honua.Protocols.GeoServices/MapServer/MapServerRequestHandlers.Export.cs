@@ -17,13 +17,13 @@ using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Services;
 using Honua.Server.Features.Infrastructure.Validation;
-using Honua.Server.Features.Protocols.GeoServices.MapServer.Models;
+using Honua.Protocols.GeoServices.MapServer.Models;
 using Honua.Server.Features.Infrastructure.Rendering;
 using Honua.ServiceDefaults;
 using SkiaSharp;
 using static Honua.Server.Features.Infrastructure.Rendering.RasterMapRenderingPipeline;
 
-namespace Honua.Server.Features.Protocols.GeoServices.MapServer;
+namespace Honua.Protocols.GeoServices.MapServer;
 
 internal static partial class MapServerEndpoints
 {

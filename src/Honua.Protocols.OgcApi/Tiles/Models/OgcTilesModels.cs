@@ -4,9 +4,9 @@
 using System.Collections.Immutable;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Common;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Tiles.Models;
+namespace Honua.Protocols.Ogc.Api.Tiles.Models;
 
 /// <summary>
 /// Response payload for a tilesets list.

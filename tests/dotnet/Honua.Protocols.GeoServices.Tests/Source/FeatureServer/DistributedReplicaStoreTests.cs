@@ -4,7 +4,7 @@
 using System.Collections.Concurrent;
 using FluentAssertions;
 using Honua.Core.Exceptions;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Caching.Distributed;

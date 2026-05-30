@@ -10,12 +10,12 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Services;
-using Honua.Server.Features.Protocols.Ogc.Api.Features;
-using Honua.Server.Features.Protocols.Ogc.Common;
-using Honua.Server.Features.Protocols.Stac.Models;
+using Honua.Protocols.Ogc.Api.Features;
+using Honua.Protocols.Ogc.Common;
+using Honua.Protocols.Stac.Models;
 using NetTopologySuite.IO;
 
-namespace Honua.Server.Features.Protocols.Stac.Services;
+namespace Honua.Protocols.Stac.Services;
 
 /// <summary>
 /// Maps Honua catalog entities (layers, services, features) to STAC representations.

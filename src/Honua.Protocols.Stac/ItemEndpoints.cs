@@ -10,12 +10,12 @@ using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
-using Honua.Server.Features.Protocols.Ogc.Common;
-using Honua.Server.Features.Protocols.Stac.Models;
-using Honua.Server.Features.Protocols.Stac.Services;
+using Honua.Protocols.Ogc.Common;
+using Honua.Protocols.Stac.Models;
+using Honua.Protocols.Stac.Services;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Honua.Server.Features.Protocols.Stac;
+namespace Honua.Protocols.Stac;
 
 /// <summary>
 /// STAC item listing and detail endpoints for a collection.

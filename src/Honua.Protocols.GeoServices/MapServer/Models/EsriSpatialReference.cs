@@ -4,7 +4,7 @@
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Shared.Models;
 
-namespace Honua.Server.Features.Protocols.GeoServices.MapServer.Models;
+namespace Honua.Protocols.GeoServices.MapServer.Models;
 
 /// <summary>
 /// Esri spatial reference information for MapServer responses.

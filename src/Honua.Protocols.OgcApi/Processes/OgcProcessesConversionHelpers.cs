@@ -4,10 +4,10 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Server.Features.Protocols.Ogc.Common;
-using Honua.Server.Features.Protocols.Ogc.Api.Processes.Models;
+using Honua.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Api.Processes.Models;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Processes;
+namespace Honua.Protocols.Ogc.Api.Processes;
 
 /// <summary>
 /// Stateless conversion helpers between canonical domain types and OGC API Processes models.

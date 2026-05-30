@@ -3,11 +3,11 @@
 
 using System.Diagnostics;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Server.Features.Protocols.Ogc.Common;
-using Honua.Server.Features.Protocols.Ogc.Api.Processes.Models;
+using Honua.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Api.Processes.Models;
 using Honua.ServiceDefaults;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Processes;
+namespace Honua.Protocols.Ogc.Api.Processes;
 
 internal static class OgcProcessesResults
 {

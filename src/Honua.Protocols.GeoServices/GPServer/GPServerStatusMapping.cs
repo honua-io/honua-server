@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Domain;
 
-namespace Honua.Server.Features.Protocols.GeoServices.GPServer;
+namespace Honua.Protocols.GeoServices.GPServer;
 
 /// <summary>
 /// Maps canonical <see cref="ExecutionJobStatus"/> to Esri GPServer job status strings

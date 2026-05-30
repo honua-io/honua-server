@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Protocols.GeoServices.NAServer.Models;
+namespace Honua.Protocols.GeoServices.NAServer.Models;
 
 /// <summary>
 /// AOT-compatible JSON serialization context for minimal NAServer wire-format models.

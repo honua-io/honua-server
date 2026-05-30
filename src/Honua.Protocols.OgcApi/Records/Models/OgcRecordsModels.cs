@@ -4,9 +4,9 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Honua.Server.Features.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Common;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Records.Models;
+namespace Honua.Protocols.Ogc.Api.Records.Models;
 
 /// <summary>
 /// OGC API Records collections response.

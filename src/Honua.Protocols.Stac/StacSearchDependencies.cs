@@ -5,7 +5,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Server.Features.Infrastructure.Filtering;
 
-namespace Honua.Server.Features.Protocols.Stac;
+namespace Honua.Protocols.Stac;
 
 internal sealed class StacSearchDependencies
 {

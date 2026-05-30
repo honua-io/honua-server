@@ -4,7 +4,7 @@
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Server.Features.Protocols.GeoServices.GPServer;
+using Honua.Protocols.GeoServices.GPServer;
 using Honua.TestKit.Attributes;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;

@@ -8,12 +8,12 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Validation;
-using Honua.Server.Features.Protocols.Ogc.Common;
-using Honua.Server.Features.Protocols.Ogc.Api.Maps.Models;
+using Honua.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Api.Maps.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Server.Features.Protocols.Ogc.Api.Maps.Handlers;
+namespace Honua.Protocols.Ogc.Api.Maps.Handlers;
 
 /// <summary>
 /// Handler for OGC API - Maps TileSet operations.

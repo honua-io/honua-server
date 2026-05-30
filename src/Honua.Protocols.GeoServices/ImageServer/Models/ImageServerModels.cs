@@ -4,7 +4,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Protocols.GeoServices.ImageServer.Models;
+namespace Honua.Protocols.GeoServices.ImageServer.Models;
 
 /// <summary>
 /// Esri Image Server service metadata response.

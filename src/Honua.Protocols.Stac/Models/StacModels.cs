@@ -4,9 +4,9 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Honua.Server.Features.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Common;
 
-namespace Honua.Server.Features.Protocols.Stac.Models;
+namespace Honua.Protocols.Stac.Models;
 
 /// <summary>
 /// STAC Catalog root object per the STAC API specification.

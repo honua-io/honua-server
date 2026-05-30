@@ -6,11 +6,11 @@ using Honua.Core.Features.Scene.Domain;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Scene;
-using Honua.Server.Features.Protocols.Scene.Models;
+using Honua.Protocols.Scene.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Protocols.Scene;
+namespace Honua.Protocols.Scene;
 
 /// <summary>
 /// Public SDK-compatible scene discovery endpoints. Management stays on
@@ -67,7 +67,7 @@ internal static partial class SceneDiscoveryEndpoints
         [FromServices] ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
-        var logger = loggerFactory.CreateLogger("Honua.Server.Features.Protocols.Scene.SceneDiscoveryEndpoints");
+        var logger = loggerFactory.CreateLogger("Honua.Protocols.Scene.SceneDiscoveryEndpoints");
 
         try
         {
@@ -143,7 +143,7 @@ internal static partial class SceneDiscoveryEndpoints
         [FromServices] ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
-        var logger = loggerFactory.CreateLogger("Honua.Server.Features.Protocols.Scene.SceneDiscoveryEndpoints");
+        var logger = loggerFactory.CreateLogger("Honua.Protocols.Scene.SceneDiscoveryEndpoints");
 
         try
         {
@@ -178,7 +178,7 @@ internal static partial class SceneDiscoveryEndpoints
         [FromServices] ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
-        var logger = loggerFactory.CreateLogger("Honua.Server.Features.Protocols.Scene.SceneDiscoveryEndpoints");
+        var logger = loggerFactory.CreateLogger("Honua.Protocols.Scene.SceneDiscoveryEndpoints");
 
         try
         {
