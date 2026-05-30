@@ -1434,6 +1434,16 @@ jobs:
       - name: Build Honua.Core package
         run: |
           package_version="0.0.0-ci.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+          # Honua.Core's package takes a dependency on Honua.Core.Abstractions
+          # (the Phase-0 contract split), so the compatibility consumer can only
+          # restore Honua.Core if Honua.Core.Abstractions is in the same feed.
+          # Pack both at the same version.
+          dotnet pack src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj \
+            --configuration Release \
+            --output ./packages \
+            --no-restore \
+            -p:PackageVersion="${package_version}" \
+            -p:Version="${package_version}"
           dotnet pack src/Honua.Core/Honua.Core.csproj \
             --configuration Release \
             --output ./packages \
@@ -1465,7 +1475,7 @@ jobs:
             </packageSourceCredentials>
             <packageSourceMapping>
               <packageSource key="local-packages">
-                <package pattern="Honua.Core" />
+                <package pattern="Honua.Core*" />
               </packageSource>
               <packageSource key="github-honua">
                 <package pattern="Geospatial.Grpc" />

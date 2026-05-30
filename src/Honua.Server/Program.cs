@@ -282,6 +282,16 @@ if (!isTestEnvironment || registerInfrastructureInTestEnvironment)
     InfrastructureCompositionRoot.RegisterInfrastructureServices(builder.Services, builder.Configuration);
 }
 
+// IGeometryService is a pure NTS-backed compute service (its only dependency is
+// IOptions<LimitsOptions>), not a data provider the WebAppFixture substitutes.
+// RegisterInfrastructureServices — skipped in the Test environment so the
+// fixture can swap the data providers — is its only registration site, which
+// left every geometry-touching endpoint unable to resolve it under test. Pin it
+// unconditionally with TryAdd so production keeps the single registration above
+// and the test host gets it too.
+builder.Services.TryAddSingleton<Honua.Core.Features.Geometry.Abstractions.IGeometryService,
+    Honua.Server.Features.Infrastructure.Services.GeometryService>();
+
 // PERFORMANCE ENHANCEMENTS: Add advanced monitoring and optimization services
 // These enhancements are designed to push server performance from 9.1/10 toward 9.5+/10
 builder.Services.AddPerformanceEnhancements(options =>
