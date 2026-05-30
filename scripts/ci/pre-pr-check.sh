@@ -70,7 +70,10 @@ else
     # Build only the affected project closure via a throwaway solution filter so
     # shared dependencies compile once. Architecture.Tests is always included so
     # the topology guards run.
-    SLNF="$(mktemp --suffix=.slnf)"
+    # The .slnf must live beside Honua.sln: its "path"/"projects" entries are
+    # resolved relative to the filter file's directory, so a /tmp filter would
+    # look for /tmp/Honua.sln and fail (MSB4014).
+    SLNF="$(mktemp -p "${REPO_ROOT}" --suffix=.slnf)"
     trap 'rm -f "${SLNF}"' EXIT
     projects_json="$(printf '%s\n' "${AFFECTED}" \
         | sed '/^$/d' \
