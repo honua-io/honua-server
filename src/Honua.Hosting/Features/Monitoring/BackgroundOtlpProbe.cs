@@ -6,7 +6,7 @@ using Honua.ServiceDefaults;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Monitoring;
+namespace Honua.Infrastructure.Monitoring;
 
 /// <summary>
 /// Runtime reachability state observed by <see cref="BackgroundOtlpProbe"/>.

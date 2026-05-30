@@ -2,12 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Options;
-using InfrastructureLog = Honua.Server.Features.Infrastructure.Logging.Log;
+using InfrastructureLog = Honua.Infrastructure.Logging.Log;
 
-namespace Honua.Server.Features.Infrastructure.Middleware;
+namespace Honua.Infrastructure.Middleware;
 
 /// <summary>
 /// Middleware to enforce resource limits across all protocols (GeoServices REST, OGC API Features, OData, MVT).

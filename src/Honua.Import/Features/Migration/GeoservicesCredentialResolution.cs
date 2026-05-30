@@ -4,7 +4,7 @@
 using Honua.Core.Features.Configuration;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Security.Abstractions;
-using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Infrastructure.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;

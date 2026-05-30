@@ -8,7 +8,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.Infrastructure.Events;
+namespace Honua.Infrastructure.Events;
 
 /// <summary>
 /// Background dispatcher that delivers persisted feature-change events to configured webhook subscribers.

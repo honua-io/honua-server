@@ -2,9 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 
-namespace Honua.Server.Features.Infrastructure.Middleware;
+namespace Honua.Infrastructure.Middleware;
 
 /// <summary>
 /// Validates request Host headers against an allowlist to reduce DNS rebinding risk.

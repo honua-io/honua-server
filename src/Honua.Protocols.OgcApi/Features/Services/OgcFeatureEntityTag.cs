@@ -7,7 +7,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Server.Features.Infrastructure.Caching;
+using Honua.Infrastructure.Caching;
 
 namespace Honua.Protocols.Ogc.Api.Features.Services;
 

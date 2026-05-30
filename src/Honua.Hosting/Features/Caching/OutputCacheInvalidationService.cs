@@ -6,10 +6,10 @@ using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Server.Features.Infrastructure.Middleware;
+using Honua.Infrastructure.Middleware;
 using Microsoft.AspNetCore.OutputCaching;
 
-namespace Honua.Server.Features.Infrastructure.Caching;
+namespace Honua.Infrastructure.Caching;
 
 /// <summary>
 /// Centralized output cache invalidation for data mutations.

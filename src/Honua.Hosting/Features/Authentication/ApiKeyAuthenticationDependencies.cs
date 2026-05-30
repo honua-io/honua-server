@@ -4,7 +4,7 @@
 using Honua.Core.Features.Security.Abstractions;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Authentication;
+namespace Honua.Infrastructure.Authentication;
 
 internal sealed class ApiKeyAuthenticationDependencies
 {

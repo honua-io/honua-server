@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Server.Features.Infrastructure.Raster;
+using Honua.Infrastructure.Raster;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 

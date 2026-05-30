@@ -14,14 +14,14 @@ using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
 using Honua.Core.Features.Tiles;
 using Honua.Core.Queries.Filters;
-using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Services;
+using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SkiaSharp;
 
-namespace Honua.Server.Features.Infrastructure.Rendering;
+namespace Honua.Infrastructure.Rendering;
 
 internal static class RasterMapRenderingPipeline
 {
@@ -882,7 +882,7 @@ internal static class RasterMapRenderingPipeline
             }
 
             var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
-                .CreateLogger("Honua.Server.Features.Infrastructure.Rendering.RasterMapRenderingPipeline");
+                .CreateLogger("Honua.Infrastructure.Rendering.RasterMapRenderingPipeline");
 
             var transformed = await TryTransformExtentWithPostGisAsync(
                 connectionProvider,

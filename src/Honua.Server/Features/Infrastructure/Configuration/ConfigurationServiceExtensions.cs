@@ -8,7 +8,7 @@ using Honua.Core.Configuration.Validation;
 using Honua.Core.Features.Configuration;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Postgres.Features.Security.ConnectionSecretResolvers;
-using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Infrastructure.Helpers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -16,7 +16,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Configuration;
+namespace Honua.Infrastructure.Configuration;
 
 /// <summary>
 /// Service collection extensions for registering centralized secret management and configuration validation.

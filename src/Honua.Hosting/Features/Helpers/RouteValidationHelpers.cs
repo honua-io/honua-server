@@ -1,11 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Validation;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Honua.Server.Features.Infrastructure.Helpers;
+namespace Honua.Infrastructure.Helpers;
 
 /// <summary>
 /// Helper methods for common route parameter validation patterns

@@ -6,7 +6,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.Infrastructure.Events;
+namespace Honua.Infrastructure.Events;
 
 /// <summary>
 /// Feature-change event store with Redis persistence and in-memory fallback.

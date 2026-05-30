@@ -5,7 +5,7 @@ using System.Text.Json;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Domain;
 
-namespace Honua.Server.Features.Infrastructure.Raster;
+namespace Honua.Infrastructure.Raster;
 
 internal static class RasterMosaicUtilities
 {

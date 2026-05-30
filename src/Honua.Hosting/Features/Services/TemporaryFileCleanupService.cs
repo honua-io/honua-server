@@ -4,7 +4,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Services;
+namespace Honua.Infrastructure.Services;
 
 /// <summary>
 /// Background service that periodically cleans up expired temporary files.

@@ -3,7 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Streaming;
 

@@ -8,7 +8,7 @@ using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Microsoft.Extensions.Caching.Memory;
 
-namespace Honua.Server.Features.Infrastructure.Caching;
+namespace Honua.Infrastructure.Caching;
 
 internal sealed class MemoryResponseCache : IResponseCache, IDisposable
 {

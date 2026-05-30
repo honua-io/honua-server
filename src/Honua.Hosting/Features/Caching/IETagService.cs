@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization.Metadata;
 
-namespace Honua.Server.Features.Infrastructure.Caching;
+namespace Honua.Infrastructure.Caching;
 
 /// <summary>
 /// Service for computing and validating ETags for HTTP caching.

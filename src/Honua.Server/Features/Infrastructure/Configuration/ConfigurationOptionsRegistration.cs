@@ -9,7 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Configuration;
+namespace Honua.Infrastructure.Configuration;
 
 internal interface IConfigurationOptionsRegistration
 {

@@ -13,8 +13,8 @@ using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
-using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Models;
 using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.ImageServer;

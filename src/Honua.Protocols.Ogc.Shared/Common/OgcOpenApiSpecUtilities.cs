@@ -3,7 +3,7 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Http;
 

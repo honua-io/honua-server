@@ -7,10 +7,10 @@ using System.Text.Json;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Caching;
-using Honua.Server.Features.Infrastructure.Events;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Events;
+using Honua.Infrastructure.Validation;
 using Honua.Protocols.OData.Models;
 using Honua.Protocols.OData.Services;
 using Honua.ServiceDefaults;
@@ -26,7 +26,7 @@ namespace Honua.Protocols.OData;
 internal sealed class ODataCrudHandler(
     ODataCrudService crudService,
     ODataValidationService validationService,
-    Honua.Server.Features.Infrastructure.Caching.IETagService etagService,
+    Honua.Infrastructure.Caching.IETagService etagService,
     FeatureMutationEventService mutationEventService)
 {
     private static readonly HashSet<string> FeatureRequestContentTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -36,7 +36,7 @@ internal sealed class ODataCrudHandler(
 
     private readonly ODataCrudService _crudService = crudService ?? throw new ArgumentNullException(nameof(crudService));
     private readonly ODataValidationService _validationService = validationService ?? throw new ArgumentNullException(nameof(validationService));
-    private readonly Honua.Server.Features.Infrastructure.Caching.IETagService _etagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
+    private readonly Honua.Infrastructure.Caching.IETagService _etagService = etagService ?? throw new ArgumentNullException(nameof(etagService));
     private readonly FeatureMutationEventService _mutationEventService = mutationEventService ?? throw new ArgumentNullException(nameof(mutationEventService));
 
     /// <summary>

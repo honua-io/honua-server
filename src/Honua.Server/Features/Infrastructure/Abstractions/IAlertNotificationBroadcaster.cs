@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Alerts.Domain;
 
-namespace Honua.Server.Features.Infrastructure.Abstractions;
+namespace Honua.Infrastructure.Abstractions;
 
 /// <summary>
 /// Options for creating a subscription with metadata.

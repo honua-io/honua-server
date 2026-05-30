@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 
-namespace Honua.Server.Features.Infrastructure.Events.Outbox;
+namespace Honua.Infrastructure.Events.Outbox;
 
 /// <summary>
 /// Default capability provider used when no backing-store extension has registered one

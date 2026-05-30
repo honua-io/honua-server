@@ -5,7 +5,7 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Honua.Server.Features.Infrastructure.Authentication;
+namespace Honua.Infrastructure.Authentication;
 
 internal interface IAdminApiKeyStore
 {

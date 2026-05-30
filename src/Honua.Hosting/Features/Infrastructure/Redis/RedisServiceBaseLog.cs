@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.Redis;
 
-namespace Honua.Server.Features.Infrastructure.Redis;
+namespace Honua.Infrastructure.Redis;
 
 internal static partial class RedisServiceBaseLog
 {

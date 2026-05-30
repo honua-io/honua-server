@@ -3,9 +3,9 @@
 
 using System.Text.Json;
 using Honua.Core.Features.Styling.Domain;
-using Honua.Server.Features.Infrastructure.Caching;
-using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Common;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;

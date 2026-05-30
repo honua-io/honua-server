@@ -11,7 +11,7 @@ namespace Honua.Architecture.Tests;
 /// <summary>
 /// Ratchet that locks in the audit-A1 misfile relocations
 /// (memory: <c>structural-audit-2026-05</c>, A1). When a sub-area moves out
-/// of <c>Honua.Server.Features.Infrastructure</c> to its proper feature
+/// of <c>Honua.Infrastructure</c> to its proper feature
 /// directory, this test asserts the old namespace stays empty so a
 /// re-introduced misfile fails the gate at PR time instead of silently
 /// growing the grab-bag again.
@@ -31,8 +31,8 @@ public sealed class InfrastructureMisfileRatchetTests
         // Relocated commits (audit-A1):
         // - 22b4e6df3 refactor(infra): unmisfile ControlPlane out of Infrastructure
         // - 5a1c3412d refactor(infra): unmisfile Styling out of Infrastructure
-        "Honua.Server.Features.Infrastructure.ControlPlane",
-        "Honua.Server.Features.Infrastructure.Styling",
+        "Honua.Infrastructure.ControlPlane",
+        "Honua.Infrastructure.Styling",
     };
 
     [ArchitectureTest]

@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
-namespace Honua.Server.Features.Infrastructure.Services;
+namespace Honua.Infrastructure.Services;
 
 /// <summary>
 /// Unified geometry service providing consistent format conversion and Z/M detection

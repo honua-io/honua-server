@@ -5,7 +5,7 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Validation.Abstractions;
 
-namespace Honua.Server.Features.Infrastructure.Validation;
+namespace Honua.Infrastructure.Validation;
 
 /// <summary>
 /// Shared parser for ArcGIS REST layerDefs values.

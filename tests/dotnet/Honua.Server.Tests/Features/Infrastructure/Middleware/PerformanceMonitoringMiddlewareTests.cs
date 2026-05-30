@@ -3,7 +3,7 @@
 
 using System.Net;
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Honua.Server.Features.Infrastructure.Middleware;
+using Honua.Infrastructure.Middleware;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Builder;

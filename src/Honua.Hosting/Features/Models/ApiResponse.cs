@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Infrastructure.Models;
+namespace Honua.Infrastructure.Models;
 
 /// <summary>
 /// Generic API response wrapper for successful responses.

@@ -3,7 +3,7 @@
 
 using Microsoft.AspNetCore.Http;
 
-namespace Honua.Server.Features.Infrastructure.Helpers;
+namespace Honua.Infrastructure.Helpers;
 
 /// <summary>
 /// Provides shared access to timeout-aware cancellation tokens.

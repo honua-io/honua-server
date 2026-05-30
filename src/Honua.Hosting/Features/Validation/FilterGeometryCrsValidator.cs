@@ -3,7 +3,7 @@
 
 using Honua.Core.Queries.Filters;
 
-namespace Honua.Server.Features.Infrastructure.Validation;
+namespace Honua.Infrastructure.Validation;
 
 internal static class FilterGeometryCrsValidator
 {

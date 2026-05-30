@@ -25,22 +25,22 @@ internal static class AlertDeliveryServiceCollectionExtensions
             "alerts-webhook",
             "alerts-webhook",
             HttpResiliencePolicies.FastApiDefaults,
-            configureHandler: static () => Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
+            configureHandler: static () => Honua.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
         services.AddResilientHttpClient(
             "alerts-digest",
             "alerts-digest",
             HttpResiliencePolicies.FastApiDefaults,
-            configureHandler: static () => Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
+            configureHandler: static () => Honua.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
         services.AddResilientHttpClient(
             "alerts-slack",
             "alerts-slack",
             HttpResiliencePolicies.FastApiDefaults,
-            configureHandler: static () => Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
+            configureHandler: static () => Honua.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
         services.AddResilientHttpClient(
             "alerts-teams",
             "alerts-teams",
             HttpResiliencePolicies.FastApiDefaults,
-            configureHandler: static () => Honua.Server.Features.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
+            configureHandler: static () => Honua.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
 
         services.AddSingleton<IAlertDeliverySink, WebhookAlertDeliverySink>();
         services.AddSingleton<IAlertDeliverySink, WebSocketAlertDeliverySink>();

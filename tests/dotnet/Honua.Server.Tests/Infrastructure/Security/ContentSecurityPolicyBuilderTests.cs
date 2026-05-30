@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Server.Features.Infrastructure.Security;
+using Honua.Infrastructure.Security;
 
 namespace Honua.Server.Tests.Infrastructure.Security;
 

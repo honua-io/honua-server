@@ -8,10 +8,10 @@ using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Validation.Abstractions;
-using Honua.Server.Features.Infrastructure.Caching;
-using Honua.Server.Features.Infrastructure.Events;
-using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Events;
+using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Validation;
 using Honua.Protocols.OData.Services;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -25,19 +25,19 @@ internal static class ODataServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         // Audit-A1: install the OData error formatter delegate so
-        // StandardErrorResponseFormatter (in Infrastructure.Models) can
+        // StandardErrorResponseFormatter (in Honua.Infrastructure.Models) can
         // dispatch OData-formatted responses without a direct using-clause
         // dependency on the OData protocol. The override is idempotent —
         // re-running AddOData() simply re-assigns the same delegate.
         StandardErrorResponseFormatter.ODataErrorFormatterOverride = ODataErrorFormatter.Format;
 
         // Audit-A1: install the OData validation-error / cancellation-token
-        // delegates so Infrastructure.Validation.LayerValidationHelpers can
+        // delegates so Honua.Infrastructure.Validation.LayerValidationHelpers can
         // dispatch OData-shaped validation errors without a direct using-clause
         // dependency on the OData protocol assembly.
-        Honua.Server.Features.Infrastructure.Validation.LayerValidationHelpers.ODataErrorFactoryOverride =
+        Honua.Infrastructure.Validation.LayerValidationHelpers.ODataErrorFactoryOverride =
             (context, errorCode, message, statusCode) => ODataUtilityService.CreateODataError(context, errorCode, message, statusCode);
-        Honua.Server.Features.Infrastructure.Validation.LayerValidationHelpers.ODataCancellationTokenResolverOverride =
+        Honua.Infrastructure.Validation.LayerValidationHelpers.ODataCancellationTokenResolverOverride =
             ODataUtilityService.GetTimeoutAwareCancellationToken;
 
         services.TryAddScoped<IQueryProcessor, QueryProcessor>();

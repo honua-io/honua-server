@@ -4,7 +4,7 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Tiles;
-using Honua.Server.Features.Infrastructure.Rendering;
+using Honua.Infrastructure.Rendering;
 using SkiaSharp;
 
 namespace Honua.Protocols.Ogc.Api.Tiles;

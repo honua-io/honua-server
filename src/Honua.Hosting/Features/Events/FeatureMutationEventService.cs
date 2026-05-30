@@ -6,11 +6,11 @@ using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Server.Features.Infrastructure.Caching;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Validation;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Honua.Server.Features.Infrastructure.Events;
+namespace Honua.Infrastructure.Events;
 
 internal sealed class FeatureMutationEventService(
     IFeatureChangeEventPublisher featureChangeEventPublisher,

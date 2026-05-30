@@ -3,8 +3,8 @@
 
 using System.Collections.Immutable;
 using Honua.Core.Configuration;
-using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Models;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Features;
 using Honua.Protocols.Ogc.Api.Tiles.Models;

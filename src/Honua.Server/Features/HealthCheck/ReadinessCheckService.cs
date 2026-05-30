@@ -3,9 +3,9 @@
 
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
-using Honua.Server.Features.Infrastructure.Events;
-using Honua.Server.Features.Infrastructure.Monitoring;
-using Honua.Server.Features.Infrastructure.Logging;
+using Honua.Infrastructure.Events;
+using Honua.Infrastructure.Monitoring;
+using Honua.Infrastructure.Logging;
 using System.Diagnostics;
 
 namespace Honua.Server.Features.HealthCheck;

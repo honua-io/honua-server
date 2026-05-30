@@ -42,22 +42,22 @@ using Honua.Import;
 using Honua.Migration;
 using Honua.Import.FileImport;
 using Honua.Import.RasterImport;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Authentication.ClientCertificates;
-using Honua.Server.Features.Infrastructure.AuditLog;
-using Honua.Server.Features.Infrastructure.Caching;
-using Honua.Server.Features.Infrastructure.Configuration;
-using Honua.Server.Features.Infrastructure.Extensions;
-using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Infrastructure.Hosting;
-using Honua.Server.Features.Infrastructure.Middleware;
-using Honua.Server.Features.Infrastructure.Monitoring;
-using Honua.Server.Features.Infrastructure.MultiTenancy;
-using Honua.Server.Features.Infrastructure.RateLimiting;
-using Honua.Server.Features.Infrastructure.Redis;
-using Honua.Server.Features.Infrastructure.Security;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Authentication.ClientCertificates;
+using Honua.Infrastructure.AuditLog;
+using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Configuration;
+using Honua.Infrastructure.Extensions;
+using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Hosting;
+using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.Monitoring;
+using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.RateLimiting;
+using Honua.Infrastructure.Redis;
+using Honua.Infrastructure.Security;
 using Honua.Server.Features.Styling;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Validation;
 using Honua.Server.Features.Mobile.Auth;
 using Honua.Server.Features.Mobile.Diagnostics;
 using Honua.Server.Features.Mobile.FieldCollection;
@@ -255,8 +255,8 @@ builder.Host.UseSerilog((context, services, config) =>
             .MinimumLevel.Override("Microsoft.AspNetCore.Hosting", Serilog.Events.LogEventLevel.Warning)
             .MinimumLevel.Override("Microsoft.AspNetCore.Hosting.Diagnostics", Serilog.Events.LogEventLevel.Warning)
             .MinimumLevel.Override("Serilog.AspNetCore.RequestLoggingMiddleware", Serilog.Events.LogEventLevel.Warning)
-            .MinimumLevel.Override("Honua.Server.Features.Infrastructure.Middleware.SecurityHeadersMiddleware", Serilog.Events.LogEventLevel.Error)
-            .MinimumLevel.Override("Honua.Server.Features.Infrastructure.Authentication.ApiKeyAuthenticationHandler", Serilog.Events.LogEventLevel.Error)
+            .MinimumLevel.Override("Honua.Infrastructure.Middleware.SecurityHeadersMiddleware", Serilog.Events.LogEventLevel.Error)
+            .MinimumLevel.Override("Honua.Infrastructure.Authentication.ApiKeyAuthenticationHandler", Serilog.Events.LogEventLevel.Error)
             .MinimumLevel.Override("Honua.Protocols.Ogc.Api.Features.OgcFeaturesQueryHandler", Serilog.Events.LogEventLevel.Warning);
     }
 
@@ -290,7 +290,7 @@ if (!isTestEnvironment || registerInfrastructureInTestEnvironment)
 // unconditionally with TryAdd so production keeps the single registration above
 // and the test host gets it too.
 builder.Services.TryAddSingleton<Honua.Core.Features.Geometry.Abstractions.IGeometryService,
-    Honua.Server.Features.Infrastructure.Services.GeometryService>();
+    Honua.Infrastructure.Services.GeometryService>();
 
 // PERFORMANCE ENHANCEMENTS: Add advanced monitoring and optimization services
 // These enhancements are designed to push server performance from 9.1/10 toward 9.5+/10
@@ -304,7 +304,7 @@ builder.Services.AddPerformanceEnhancements(options =>
 });
 
 // Add query result caching (Server level - requires IMemoryCache)
-builder.Services.Configure<Honua.Server.Features.Infrastructure.Caching.QueryResultCacheOptions>(options =>
+builder.Services.Configure<Honua.Infrastructure.Caching.QueryResultCacheOptions>(options =>
 {
     options.Enabled = builder.Configuration.GetValue<bool>("Cache:ResponseCachingEnabled");
     options.DefaultExpiration = TimeSpan.FromMinutes(5);
@@ -316,8 +316,8 @@ builder.Services.Configure<Honua.Server.Features.Infrastructure.Caching.QueryRes
     options.EnableDetailedMetrics = !builder.Environment.IsProduction();
 });
 
-builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Caching.IQueryResultCacheManager,
-    Honua.Server.Features.Infrastructure.Caching.QueryResultCacheManager>();
+builder.Services.AddSingleton<Honua.Infrastructure.Caching.IQueryResultCacheManager,
+    Honua.Infrastructure.Caching.QueryResultCacheManager>();
 
 if (useTestSchemaHeaders)
 {
@@ -402,10 +402,10 @@ builder.Services.Configure<FileUploadSecurityOptions>(
 StartupConfigurationHelpers.RegisterConfigurationValidators(builder.Services);
 
 // Register health check services
-builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Monitoring.MigrationState>();
-builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Monitoring.DatabaseCompatibilityState>();
-builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Monitoring.IDeployPreflightProbe,
-    Honua.Server.Features.Infrastructure.Monitoring.DeployPreflightProbe>();
+builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.MigrationState>();
+builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.DatabaseCompatibilityState>();
+builder.Services.AddScoped<Honua.Infrastructure.Monitoring.IDeployPreflightProbe,
+    Honua.Infrastructure.Monitoring.DeployPreflightProbe>();
 builder.Services.AddScoped<Honua.Server.Features.HealthCheck.IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
 builder.Services.AddProductionHealthChecks(builder.Configuration);
@@ -429,8 +429,8 @@ builder.Services.AddSingleton<Honua.Core.Features.Identity.Abstractions.IUserSto
     Honua.Server.Features.Admin.Services.InMemoryUserStore>();
 builder.Services.AddSingleton<Honua.Core.Features.Authorization.Abstractions.IRoleStore,
     Honua.Server.Features.Admin.Services.InMemoryRoleStore>();
-builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Authentication.IAdminApiKeyStore>(sp =>
-    new Honua.Server.Features.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>()));
+builder.Services.AddSingleton<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(sp =>
+    new Honua.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>()));
 // v1 metadata-resource / manifest-approval / gitops-watch admin surface removed in #1035 cutover.
 // V2 admin UX (epic #1046) edits the canonical MetadataV2Graph document directly via IMetadataV2GraphStore.
 
@@ -455,20 +455,20 @@ builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleDepe
 Honua.Core.Features.Publishing.Content.ContentPublishingServiceCollectionExtensions.AddContentPublishingServices(builder.Services);
 
 // Register shared Infrastructure services
-builder.Services.AddScoped<Honua.Server.Features.Infrastructure.Services.IGeometryConverter,
-    Honua.Server.Features.Infrastructure.Services.GeometryConverter>();
+builder.Services.AddScoped<Honua.Infrastructure.Services.IGeometryConverter,
+    Honua.Infrastructure.Services.GeometryConverter>();
 builder.Services.AddScoped<ILayerStyleService, LayerStyleService>();
 builder.Services.AddSingleton<Honua.Core.Features.Styling.Abstractions.ISldStyleConverter,
     Honua.Server.Features.Styling.Sld.SldStyleConverter>();
 builder.Services.AddStyleSuggestionCore();
 
 // Configure temporary file service for image exports
-builder.Services.Configure<Honua.Server.Features.Infrastructure.Services.TemporaryFileOptions>(
-    builder.Configuration.GetSection(Honua.Server.Features.Infrastructure.Services.TemporaryFileOptions.SectionName));
-builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Services.FileSystemTemporaryFileService>();
-builder.Services.AddSingleton<Honua.Server.Features.Infrastructure.Services.ITemporaryFileService,
-    Honua.Server.Features.Infrastructure.Services.CloudBackedTemporaryFileService>();
-builder.Services.AddHostedService<Honua.Server.Features.Infrastructure.Services.TemporaryFileCleanupService>();
+builder.Services.Configure<Honua.Infrastructure.Services.TemporaryFileOptions>(
+    builder.Configuration.GetSection(Honua.Infrastructure.Services.TemporaryFileOptions.SectionName));
+builder.Services.AddSingleton<Honua.Infrastructure.Services.FileSystemTemporaryFileService>();
+builder.Services.AddSingleton<Honua.Infrastructure.Services.ITemporaryFileService,
+    Honua.Infrastructure.Services.CloudBackedTemporaryFileService>();
+builder.Services.AddHostedService<Honua.Infrastructure.Services.TemporaryFileCleanupService>();
 
 // Register shared validation services
 builder.Services.AddValidationServices();
@@ -580,7 +580,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.MetadataPrevalidationJsonContext.Default,
         Honua.Core.Features.Publishing.Content.Domain.ContentPublicationJsonContext.Default,
         Honua.Server.Features.Admin.Models.DeployControlJsonContext.Default,
-        Honua.Server.Features.Infrastructure.Monitoring.MetricsJsonContext.Default,
+        Honua.Infrastructure.Monitoring.MetricsJsonContext.Default,
         Honua.Import.FileImport.ImportJsonContext.Default,
         Honua.Import.RasterImport.RasterImportJsonContext.Default,
         Honua.Migration.GeoservicesImportApiJsonContext.Default,
@@ -619,7 +619,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.ClientCertificateJsonContext.Default,
         Honua.Server.Features.Admin.Models.ConfigurationJsonContext.Default,
         Honua.Server.Features.Admin.Models.LicenseAdminJsonContext.Default,
-        Honua.Server.Features.Infrastructure.Licensing.LicenseFileJsonContext.Default,
+        Honua.Infrastructure.Licensing.LicenseFileJsonContext.Default,
         Honua.Server.Features.Admin.Models.IdentityAdminJsonContext.Default,
         Honua.Server.Features.Admin.Models.CacheAdminJsonContext.Default,
         Honua.Server.Features.Admin.Models.GeocodingAdminJsonContext.Default,
@@ -630,10 +630,10 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.PackageReview.PackageReviewJsonContext.Default,
         Honua.Server.Features.CloudDemo.CloudDemoJsonContext.Default,
         Honua.Server.Features.HealthCheck.HealthJsonContext.Default,
-        Honua.Server.Features.Infrastructure.Models.ProblemJsonContext.Default,
-        Honua.Server.Features.Infrastructure.Authentication.ClientCertificates.ClientCertificateInfrastructureJsonContext.Default,
-        Honua.Server.Features.Infrastructure.Middleware.LimitsEnforcementJsonContext.Default,
-        Honua.Server.Features.Infrastructure.Security.CspViolationJsonContext.Default,
+        Honua.Infrastructure.Models.ProblemJsonContext.Default,
+        Honua.Infrastructure.Authentication.ClientCertificates.ClientCertificateInfrastructureJsonContext.Default,
+        Honua.Infrastructure.Middleware.LimitsEnforcementJsonContext.Default,
+        Honua.Infrastructure.Security.CspViolationJsonContext.Default,
         Honua.Protocols.GeoServices.GeometryService.Models.GeometryServiceJsonContext.Default,
         Honua.Protocols.GeoServices.NAServer.Models.NAServerJsonContext.Default,
         Honua.Io.Export.ExportJsonContext.Default,
@@ -699,7 +699,7 @@ app.Use(async (context, next) =>
         if (trimmedPath.Contains("/admin/connections//", StringComparison.OrdinalIgnoreCase) &&
             trimmedPath.EndsWith("/tables", StringComparison.OrdinalIgnoreCase))
         {
-            await Honua.Server.Features.Infrastructure.Models.ProblemDetailsHelpers.CreateAdminProblem(
+            await Honua.Infrastructure.Models.ProblemDetailsHelpers.CreateAdminProblem(
                     context,
                     StatusCodes.Status400BadRequest,
                     "Connection ID is required")
@@ -742,7 +742,7 @@ ConfigurationLog.ConfigurationValidationSucceeded(app.Logger);
 // reviewing logs immediately notice if admin endpoints are unauthenticated.
 {
     var apiKeyOptions = app.Services
-        .GetRequiredService<IOptions<Honua.Server.Features.Infrastructure.Authentication.ApiKeyAuthenticationOptions>>()
+        .GetRequiredService<IOptions<Honua.Infrastructure.Authentication.ApiKeyAuthenticationOptions>>()
         .Value;
     var devAuthRequested = string.Equals(apiKeyOptions.DevAuthBypass, "true", StringComparison.OrdinalIgnoreCase);
     var devAuthAcknowledged = string.Equals(apiKeyOptions.DevAuthBypassAcknowledged, "true", StringComparison.OrdinalIgnoreCase);
@@ -755,12 +755,12 @@ ConfigurationLog.ConfigurationValidationSucceeded(app.Logger);
 
     if (bypassActive)
     {
-        Honua.Server.Features.Infrastructure.Authentication.AuthenticationLog
+        Honua.Infrastructure.Authentication.AuthenticationLog
             .DevelopmentBypassActiveAtStartup(app.Logger, environmentName);
     }
     else if (devAuthRequested)
     {
-        Honua.Server.Features.Infrastructure.Authentication.AuthenticationLog
+        Honua.Infrastructure.Authentication.AuthenticationLog
             .DevelopmentBypassRequestedButRejected(app.Logger, environmentName);
     }
 }
@@ -960,7 +960,7 @@ app.UseOutputCache();
 
 // Log application startup
 var appVersion = typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown";
-Honua.Server.Features.Infrastructure.Logging.Log.ApplicationStarting(app.Logger,
+Honua.Infrastructure.Logging.Log.ApplicationStarting(app.Logger,
     appVersion,
     app.Environment.EnvironmentName);
 
@@ -1157,11 +1157,11 @@ app.Run();
 // Database migration helper
 async Task RunDatabaseMigrationsAsync()
 {
-    var migrationState = app.Services.GetRequiredService<Honua.Server.Features.Infrastructure.Monitoring.MigrationState>();
+    var migrationState = app.Services.GetRequiredService<Honua.Infrastructure.Monitoring.MigrationState>();
 
     if (builder.Configuration.GetValue<bool>("HONUA_SKIP_MIGRATIONS"))
     {
-        Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationsSkipped(app.Logger);
+        Honua.Infrastructure.Logging.Log.DatabaseMigrationsSkipped(app.Logger);
         migrationState.MarkSkipped("Migrations skipped by configuration.");
         return;
     }
@@ -1173,18 +1173,18 @@ async Task RunDatabaseMigrationsAsync()
     if (string.IsNullOrEmpty(connectionString))
     {
         // Skip migrations if no connection string is configured
-        Honua.Server.Features.Infrastructure.Logging.Log.DatabaseConnectionStringNotConfigured(app.Logger);
+        Honua.Infrastructure.Logging.Log.DatabaseConnectionStringNotConfigured(app.Logger);
 
         if (app.Environment.IsProduction())
         {
-            Honua.Server.Features.Infrastructure.Logging.Log.DatabaseConnectionStringMissingInProduction(app.Logger);
+            Honua.Infrastructure.Logging.Log.DatabaseConnectionStringMissingInProduction(app.Logger);
         }
 
         migrationState.MarkSkipped("No database connection string configured.");
         return;
     }
 
-    Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationsStarting(app.Logger);
+    Honua.Infrastructure.Logging.Log.DatabaseMigrationsStarting(app.Logger);
     migrationState.MarkRunning("Applying database migrations.");
 
     try
@@ -1199,7 +1199,7 @@ async Task RunDatabaseMigrationsAsync()
         {
             var errorMessage = result.ErrorMessage ?? "Database migration failed.";
             var error = result.Error ?? new InvalidOperationException(errorMessage);
-            Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, errorMessage, error);
+            Honua.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, errorMessage, error);
             migrationState.MarkFailed("Database migrations failed.");
 
             // In non-Development environments, re-throw so the app fails to start
@@ -1215,24 +1215,24 @@ async Task RunDatabaseMigrationsAsync()
         var scriptCount = result.AppliedScripts.Count;
         if (scriptCount > 0)
         {
-            Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationsCompleted(app.Logger, scriptCount);
+            Honua.Infrastructure.Logging.Log.DatabaseMigrationsCompleted(app.Logger, scriptCount);
             // Log individual script names for debugging
             foreach (var script in result.AppliedScripts)
             {
-                Honua.Server.Features.Infrastructure.Logging.Log.MigrationScriptApplied(app.Logger, script);
+                Honua.Infrastructure.Logging.Log.MigrationScriptApplied(app.Logger, script);
             }
 
             migrationState.MarkSucceeded($"Applied {scriptCount} migration script(s).");
         }
         else
         {
-            Honua.Server.Features.Infrastructure.Logging.Log.NoDatabaseMigrationsToApply(app.Logger);
+            Honua.Infrastructure.Logging.Log.NoDatabaseMigrationsToApply(app.Logger);
             migrationState.MarkSucceeded("No pending migration scripts.");
         }
     }
     catch (Exception ex)
     {
-        Honua.Server.Features.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, ex.Message, ex);
+        Honua.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, ex.Message, ex);
         migrationState.MarkFailed("Database migrations failed.");
 
         // In non-Development environments, re-throw so the app fails to start
@@ -1247,7 +1247,7 @@ async Task RunDatabaseMigrationsAsync()
 // PostGIS preflight compatibility check
 async Task RunPostGisPreflightCheckAsync()
 {
-    var compatibilityState = app.Services.GetRequiredService<Honua.Server.Features.Infrastructure.Monitoring.DatabaseCompatibilityState>();
+    var compatibilityState = app.Services.GetRequiredService<Honua.Infrastructure.Monitoring.DatabaseCompatibilityState>();
 
     // Resolve secret-backed connection strings (aws:secretsmanager:*, env:*, etc.)
     var secretResolver = app.Services.GetService<Honua.Core.Features.Security.Abstractions.IConnectionSecretResolver>();
@@ -1262,18 +1262,18 @@ async Task RunPostGisPreflightCheckAsync()
     var checker = app.Services.GetService<IDatabaseCompatibilityChecker>();
     if (checker is null)
     {
-        Honua.Server.Features.Infrastructure.Logging.Log.PostGisPreflightCheckSkipped(app.Logger);
+        Honua.Infrastructure.Logging.Log.PostGisPreflightCheckSkipped(app.Logger);
         return;
     }
 
-    Honua.Server.Features.Infrastructure.Logging.Log.PostGisPreflightCheckStarting(app.Logger);
+    Honua.Infrastructure.Logging.Log.PostGisPreflightCheckStarting(app.Logger);
 
     var result = await checker.CheckCompatibilityAsync(connectionString, app.Lifetime.ApplicationStopping);
     compatibilityState.SetResult(result);
 
     if (result.IsCompatible)
     {
-        Honua.Server.Features.Infrastructure.Logging.Log.PostGisPreflightCheckPassed(
+        Honua.Infrastructure.Logging.Log.PostGisPreflightCheckPassed(
             app.Logger, result.EngineVersion, result.PostGisVersion ?? "unknown");
         return;
     }
@@ -1282,9 +1282,9 @@ async Task RunPostGisPreflightCheckAsync()
 
     if (!app.Environment.IsDevelopment())
     {
-        Honua.Server.Features.Infrastructure.Logging.Log.PostGisPreflightCheckFailedCritical(app.Logger, errorMessage);
+        Honua.Infrastructure.Logging.Log.PostGisPreflightCheckFailedCritical(app.Logger, errorMessage);
         throw new InvalidOperationException($"PostGIS preflight check failed: {errorMessage}");
     }
 
-    Honua.Server.Features.Infrastructure.Logging.Log.PostGisPreflightCheckFailedDevelopment(app.Logger, errorMessage);
+    Honua.Infrastructure.Logging.Log.PostGisPreflightCheckFailedDevelopment(app.Logger, errorMessage);
 }

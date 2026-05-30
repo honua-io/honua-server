@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Infrastructure.Licensing;
+namespace Honua.Infrastructure.Licensing;
 
 internal sealed class SignedLicenseEnvelope
 {

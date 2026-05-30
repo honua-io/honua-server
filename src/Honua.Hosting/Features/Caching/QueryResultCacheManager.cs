@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Honua.Core.Features.Infrastructure.Monitoring;
 
-namespace Honua.Server.Features.Infrastructure.Caching;
+namespace Honua.Infrastructure.Caching;
 
 /// <summary>
 /// Advanced query result caching with intelligent cache warming,

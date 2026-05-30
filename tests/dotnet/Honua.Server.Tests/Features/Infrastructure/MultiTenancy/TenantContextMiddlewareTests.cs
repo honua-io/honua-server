@@ -4,7 +4,7 @@
 using System.Net;
 using System.Security.Claims;
 using Honua.Core.Features.MultiTenancy.Abstractions;
-using Honua.Server.Features.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Builder;
@@ -16,7 +16,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Honua.Server.Tests.Features.Infrastructure.MultiTenancy;
 
 /// <summary>
-/// Integration tests for <see cref="Honua.Server.Features.Infrastructure.Middleware.TenantContextMiddleware"/>
+/// Integration tests for <see cref="Honua.Infrastructure.Middleware.TenantContextMiddleware"/>
 /// covering claim-based resolution, header overrides gated on multi-tenant admin role,
 /// default-tenant fallback for anonymous reads, and per-request isolation.
 /// </summary>

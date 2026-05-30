@@ -13,7 +13,7 @@
     <!--
       Namespaces are preserved as Honua.ControlPlane so consumers
       (Server, Worker.Gdal, tests) keep their using clauses unchanged. This is the
-      same approach used by Honua.Hosting (RootNamespace = Honua.Server.Features.Infrastructure).
+      same approach used by Honua.Hosting (RootNamespace = Honua.Infrastructure).
     -->
     <RootNamespace>Honua.ControlPlane</RootNamespace>
   </PropertyGroup>

@@ -3,7 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Infrastructure.Services;
+using Honua.Infrastructure.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using System.Globalization;

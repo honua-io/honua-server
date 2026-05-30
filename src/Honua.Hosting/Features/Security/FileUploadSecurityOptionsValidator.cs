@@ -5,7 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using Honua.Core.Configuration;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Security;
+namespace Honua.Infrastructure.Security;
 
 /// <summary>
 /// Validates FileUploadSecurityOptions configuration to ensure secure file upload handling.

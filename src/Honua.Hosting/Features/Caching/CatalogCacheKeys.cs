@@ -4,7 +4,7 @@
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
 
-namespace Honua.Server.Features.Infrastructure.Caching;
+namespace Honua.Infrastructure.Caching;
 
 /// <summary>
 /// Cache-key constants and schema-scoped key helpers for catalog/output cache entries.

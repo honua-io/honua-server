@@ -7,7 +7,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Services;
+namespace Honua.Infrastructure.Services;
 
 /// <summary>
 /// Service for managing temporary file storage for image exports.

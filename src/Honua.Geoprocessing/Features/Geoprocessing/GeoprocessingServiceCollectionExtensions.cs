@@ -5,7 +5,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Geoprocessing.Execution;
-using Honua.Server.Features.Infrastructure.Abstractions;
+using Honua.Infrastructure.Abstractions;
 using Honua.ControlPlane;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;

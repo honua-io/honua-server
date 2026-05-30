@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Honua.Server.Features.Infrastructure.Hosting.Modules;
+namespace Honua.Infrastructure.Hosting.Modules;
 
 /// <summary>
 /// Esri GeoServices protocol module (FeatureServer / MapServer / ImageServer

@@ -17,7 +17,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
-using Honua.Server.Features.Infrastructure.Events;
+using Honua.Infrastructure.Events;
 using Honua.Protocols.OData.Models;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Features;

@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Threading.Channels;
-using Honua.Server.Features.Infrastructure.Abstractions;
+using Honua.Infrastructure.Abstractions;
 using Microsoft.Extensions.Options;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;

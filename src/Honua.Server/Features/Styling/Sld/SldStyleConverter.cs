@@ -3,7 +3,7 @@
 
 using System.Text.Json;
 using Honua.Core.Features.Styling.Abstractions;
-using Honua.Server.Features.Infrastructure.Rendering;
+using Honua.Infrastructure.Rendering;
 
 namespace Honua.Server.Features.Styling.Sld;
 

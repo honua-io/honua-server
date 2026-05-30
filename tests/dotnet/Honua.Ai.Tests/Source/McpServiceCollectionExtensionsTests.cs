@@ -5,7 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Geoprocessing;
-using Honua.Server.Features.Infrastructure.Hosting;
+using Honua.Infrastructure.Hosting;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.TestKit.Attributes;

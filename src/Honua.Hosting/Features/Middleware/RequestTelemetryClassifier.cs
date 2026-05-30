@@ -3,7 +3,7 @@
 
 using Honua.ServiceDefaults;
 
-namespace Honua.Server.Features.Infrastructure.Middleware;
+namespace Honua.Infrastructure.Middleware;
 
 internal static class RequestTelemetryClassifier
 {

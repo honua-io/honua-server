@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.Monitoring;
 
-namespace Honua.Server.Features.Infrastructure.Monitoring;
+namespace Honua.Infrastructure.Monitoring;
 
 /// <summary>
 /// Response model for basic health metrics.

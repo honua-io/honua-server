@@ -6,13 +6,13 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
-using Honua.Server.Features.Infrastructure.Geometries;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Geometries;
+using Honua.Infrastructure.Validation;
 using NetTopologySuite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
-namespace Honua.Server.Features.Infrastructure.Filtering;
+namespace Honua.Infrastructure.Filtering;
 
 internal sealed class Cql2FilterProcessor(
     IFilterExpressionService filterExpressionService,
@@ -309,7 +309,7 @@ internal sealed class Cql2FilterProcessor(
             clone.Apply(new AxisSwapCoordinateFilter());
             clone.GeometryChanged();
 
-            var (hasZ, hasM) = Honua.Server.Features.Infrastructure.Services.GeometryService.DetectZMFromGeometry(clone);
+            var (hasZ, hasM) = Honua.Infrastructure.Services.GeometryService.DetectZMFromGeometry(clone);
             var writer = new WKBWriter(ByteOrder.LittleEndian, handleSRID: false, emitZ: hasZ, emitM: hasM);
             var wkb = writer.Write(clone);
 

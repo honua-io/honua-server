@@ -3,9 +3,9 @@
 
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Infrastructure.Logging;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 
-namespace Honua.Server.Features.Infrastructure.Middleware;
+namespace Honua.Infrastructure.Middleware;
 
 /// <summary>
 /// Middleware that applies a test schema header to the request-scoped schema context.

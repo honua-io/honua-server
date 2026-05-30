@@ -8,13 +8,13 @@ using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Infrastructure.Resilience;
-using Honua.Server.Features.Infrastructure.Middleware;
+using Honua.Infrastructure.Middleware;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 using Polly;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.Infrastructure.Caching;
+namespace Honua.Infrastructure.Caching;
 
 /// <summary>
 /// Redis-based cache service with in-memory fallback for layer metadata.

@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Honua.Server.Features.Infrastructure.Licensing;
+using Honua.Infrastructure.Licensing;
 
 namespace Honua.Server.Features.HealthCheck;
 

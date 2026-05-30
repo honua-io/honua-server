@@ -6,7 +6,7 @@ using System.Text;
 using System.Xml;
 using System.Xml.Serialization;
 
-namespace Honua.Server.Features.Infrastructure.Models;
+namespace Honua.Infrastructure.Models;
 
 internal interface IXmlNamespaceProvider
 {

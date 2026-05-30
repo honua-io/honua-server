@@ -4,9 +4,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Honua.Server.Features.Infrastructure.Licensing;
+using Honua.Infrastructure.Licensing;
 
-namespace Honua.Server.Features.Infrastructure.Monitoring;
+namespace Honua.Infrastructure.Monitoring;
 
 /// <summary>
 /// JSON serialization context for metrics models with AOT support.

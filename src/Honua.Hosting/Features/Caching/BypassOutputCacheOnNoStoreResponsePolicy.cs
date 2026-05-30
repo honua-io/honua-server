@@ -4,7 +4,7 @@
 using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.Net.Http.Headers;
 
-namespace Honua.Server.Features.Infrastructure.Caching;
+namespace Honua.Infrastructure.Caching;
 
 /// <summary>
 /// Output cache policy that disables server-side cache storage when the

@@ -6,7 +6,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Server.Features.Infrastructure.Events;
+using Honua.Infrastructure.Events;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Features;
 using Honua.Protocols.Ogc.Api.Features.Models;

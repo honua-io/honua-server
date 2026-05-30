@@ -3,9 +3,9 @@
 
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 using Honua.Core.Features.Infrastructure.Resilience;
-using Honua.Server.Features.Infrastructure.Events;
-using Honua.Server.Features.Infrastructure.Events.Outbox;
-using Honua.Server.Features.Infrastructure.Extensions;
+using Honua.Infrastructure.Events;
+using Honua.Infrastructure.Events.Outbox;
+using Honua.Infrastructure.Extensions;
 using Honua.Server.Features.Streaming;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection.Extensions;

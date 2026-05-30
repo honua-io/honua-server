@@ -4,7 +4,7 @@
 using System.Collections.Concurrent;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
-using Honua.Server.Features.Infrastructure.Abstractions;
+using Honua.Infrastructure.Abstractions;
 
 namespace Honua.Alerts;
 

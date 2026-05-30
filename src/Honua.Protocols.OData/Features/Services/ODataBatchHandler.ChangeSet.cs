@@ -5,8 +5,8 @@ using System.Collections.Immutable;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Validation;
 using Honua.Protocols.OData.Models;
 using Honua.ServiceDefaults;
 

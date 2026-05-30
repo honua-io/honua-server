@@ -3,7 +3,7 @@
 
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Authentication.ClientCertificates;
+namespace Honua.Infrastructure.Authentication.ClientCertificates;
 
 internal sealed class ClientCertificateAuthenticationDependencies(
     ClientCertificateExtractor extractor,

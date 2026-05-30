@@ -11,9 +11,9 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Licensing;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Licensing;
+using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Primitives;
 

@@ -5,7 +5,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Authentication;
+namespace Honua.Infrastructure.Authentication;
 
 /// <summary>
 /// Claims transformation service for OIDC-authenticated users.

@@ -5,7 +5,7 @@ using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Authentication;
+namespace Honua.Infrastructure.Authentication;
 
 internal sealed class AdminAuthSessionAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,

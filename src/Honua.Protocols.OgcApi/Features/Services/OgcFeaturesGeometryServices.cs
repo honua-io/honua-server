@@ -7,8 +7,8 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Infrastructure.Geometries;
-using Honua.Server.Features.Infrastructure.Services;
+using Honua.Infrastructure.Geometries;
+using Honua.Infrastructure.Services;
 using Honua.Protocols.Ogc.Api.Features.Models;
 using Microsoft.Extensions.Options;
 using NetTopologySuite;
@@ -502,7 +502,7 @@ internal sealed partial class OgcFeaturesGeometryServices
     /// </summary>
     public static (bool hasZ, bool hasM) GetHasZandM(Geometry geometry)
     {
-        return Honua.Server.Features.Infrastructure.Services.GeometryService.DetectZMFromGeometry(geometry);
+        return Honua.Infrastructure.Services.GeometryService.DetectZMFromGeometry(geometry);
     }
 
     /// <summary>

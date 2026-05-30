@@ -7,7 +7,7 @@ using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
-using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Infrastructure.Helpers;
 using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;

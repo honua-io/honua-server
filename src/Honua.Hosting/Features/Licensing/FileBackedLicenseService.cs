@@ -7,7 +7,7 @@ using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Licensing;
+namespace Honua.Infrastructure.Licensing;
 
 internal sealed class FileBackedLicenseService :
     IHostedService,

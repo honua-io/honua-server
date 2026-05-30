@@ -8,12 +8,12 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
-using InfrastructureLog = Honua.Server.Features.Infrastructure.Logging.Log;
+using InfrastructureLog = Honua.Infrastructure.Logging.Log;
 
-namespace Honua.Server.Features.Infrastructure.Middleware;
+namespace Honua.Infrastructure.Middleware;
 
 /// <summary>
 /// Middleware to catch unhandled exceptions and convert them to standardized error responses

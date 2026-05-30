@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Licensing.Domain;
 
-namespace Honua.Server.Features.Infrastructure.Licensing;
+namespace Honua.Infrastructure.Licensing;
 
 internal static partial class LicenseRuntimeLog
 {

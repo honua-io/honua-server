@@ -6,14 +6,14 @@ using System.Security.Claims;
 using System.Text;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Server.Features.Infrastructure.Events;
+using Honua.Infrastructure.Events;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.Infrastructure.Services;
+namespace Honua.Infrastructure.Services;
 
 /// <summary>
 /// Uses shared cloud file storage for temporary files when the configured file-storage

@@ -4,9 +4,9 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Server.Features.Infrastructure.Caching;
-using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Models;
 using Honua.Protocols.Ogc.Api.Features;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Stac.Models;
@@ -155,7 +155,7 @@ internal static class CollectionEndpoints
                 return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
             }
 
-            var accessError = Honua.Server.Features.Infrastructure.Authentication.AccessPolicyHelpers
+            var accessError = Honua.Infrastructure.Authentication.AccessPolicyHelpers
                 .RequireResourceAccess(context, resolved.Value.Resource, resolved.Value.Service);
             if (accessError != null)
             {

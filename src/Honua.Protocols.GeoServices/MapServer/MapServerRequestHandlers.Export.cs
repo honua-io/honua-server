@@ -12,16 +12,16 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Services;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Services;
+using Honua.Infrastructure.Validation;
 using Honua.Protocols.GeoServices.MapServer.Models;
-using Honua.Server.Features.Infrastructure.Rendering;
+using Honua.Infrastructure.Rendering;
 using Honua.ServiceDefaults;
 using SkiaSharp;
-using static Honua.Server.Features.Infrastructure.Rendering.RasterMapRenderingPipeline;
+using static Honua.Infrastructure.Rendering.RasterMapRenderingPipeline;
 
 namespace Honua.Protocols.GeoServices.MapServer;
 

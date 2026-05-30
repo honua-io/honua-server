@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Events.Outbox;
+namespace Honua.Infrastructure.Events.Outbox;
 
 /// <summary>
 /// Background worker that claims rows from <c>honua.feature_change_outbox</c> and

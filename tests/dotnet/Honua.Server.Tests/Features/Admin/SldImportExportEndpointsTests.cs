@@ -6,7 +6,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Server.Features.Admin.Models;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 using Honua.Server.Features.Styling.Sld;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;

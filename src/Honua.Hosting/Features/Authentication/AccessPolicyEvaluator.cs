@@ -6,7 +6,7 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
-namespace Honua.Server.Features.Infrastructure.Authentication;
+namespace Honua.Infrastructure.Authentication;
 
 /// <summary>
 /// Evaluates layered service and layer access policies.

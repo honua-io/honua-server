@@ -8,7 +8,7 @@ using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Caching;
+namespace Honua.Infrastructure.Caching;
 
 /// <summary>
 /// Coordinates background cache refresh operations with per-key deduplication and bounded concurrency.

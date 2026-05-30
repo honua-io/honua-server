@@ -5,8 +5,8 @@ using System.Collections.Frozen;
 using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Validation.Abstractions;
-using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 

@@ -3,7 +3,7 @@
 
 using Microsoft.Extensions.Hosting;
 
-namespace Honua.Server.Features.Infrastructure.Redis;
+namespace Honua.Infrastructure.Redis;
 
 /// <summary>
 /// Strategy for handling Redis fallback behavior when Redis is unavailable.

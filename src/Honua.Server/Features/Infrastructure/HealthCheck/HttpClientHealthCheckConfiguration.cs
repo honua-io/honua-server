@@ -2,10 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Resilience;
-using Honua.Server.Features.Infrastructure.Resilience;
+using Honua.Infrastructure.Resilience;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
-namespace Honua.Server.Features.Infrastructure.HealthCheck;
+namespace Honua.Infrastructure.HealthCheck;
 
 /// <summary>
 /// Configures health checks for HTTP clients with circuit breaker awareness.

@@ -13,7 +13,7 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 
 public sealed class ODataGeometryConverterTests
 {
-    private readonly Honua.Server.Features.Infrastructure.Services.GeometryService _geometryService = new(Options.Create(new LimitsOptions()));
+    private readonly Honua.Infrastructure.Services.GeometryService _geometryService = new(Options.Create(new LimitsOptions()));
 
     [Fact]
     public void ConvertGeometryToWkb_WithNorthEastAxisOrder_PreservesCoordinateOrder()

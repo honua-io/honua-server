@@ -6,9 +6,9 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Validation;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
-using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Infrastructure.Authentication;
 
-namespace Honua.Server.Features.Infrastructure.Validation;
+namespace Honua.Infrastructure.Validation;
 
 /// <summary>
 /// Extension methods for registering validation services in the dependency injection container.

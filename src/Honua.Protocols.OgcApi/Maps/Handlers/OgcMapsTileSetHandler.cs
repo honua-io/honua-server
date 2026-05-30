@@ -4,10 +4,10 @@
 using System.Globalization;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Maps.Models;
 using Honua.ServiceDefaults;

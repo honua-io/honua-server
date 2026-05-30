@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.MultiTenancy.Abstractions;
 
-namespace Honua.Server.Features.Infrastructure.MultiTenancy;
+namespace Honua.Infrastructure.MultiTenancy;
 
 /// <summary>
 /// Per-request implementation of <see cref="ITenantContext"/>. Populated by

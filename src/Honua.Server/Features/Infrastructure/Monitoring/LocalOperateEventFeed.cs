@@ -15,7 +15,7 @@ using Honua.Core.Features.Observability.Domain;
 using Honua.ControlPlane;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Server.Features.Infrastructure.Monitoring;
+namespace Honua.Infrastructure.Monitoring;
 
 /// <summary>
 /// Server-local fan-out implementation of <see cref="IOperateEventFeed"/> that

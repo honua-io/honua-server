@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.Monitoring;
 
-namespace Honua.Server.Features.Infrastructure.Monitoring;
+namespace Honua.Infrastructure.Monitoring;
 
 /// <summary>
 /// Service collection extensions for registering OpenTelemetry-based monitoring services.

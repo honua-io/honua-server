@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
-using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Infrastructure.Helpers;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 

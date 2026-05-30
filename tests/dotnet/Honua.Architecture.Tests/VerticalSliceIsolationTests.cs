@@ -56,12 +56,12 @@ public sealed class VerticalSliceIsolationTests
     };
 
     /// <summary>
-    /// Sub-areas under <c>Honua.Server.Features.Infrastructure.*</c> that are explicitly
+    /// Sub-areas under <c>Honua.Infrastructure.*</c> that are explicitly
     /// permitted shared plumbing. The arch test treats these as a closed allow-list so
     /// future additions to Infrastructure require an intentional update here. See ADR-0044
     /// for the carve-out that moved Authentication / Caching / Events / Helpers / Models /
-    /// Validation out of Honua.Server.Features.Infrastructure into Honua.Hosting (their
-    /// namespaces are preserved under <c>Honua.Server.Features.Infrastructure.*</c> but
+    /// Validation out of Honua.Infrastructure into Honua.Hosting (their
+    /// namespaces are preserved under <c>Honua.Infrastructure.*</c> but
     /// the source lives in the Hosting assembly).
     /// </summary>
     /// <remarks>
@@ -84,7 +84,7 @@ public sealed class VerticalSliceIsolationTests
             "Abstractions",
             "Extensions",
             "Infrastructure",   // Honua.Hosting/Features/Infrastructure holds the shared
-                                // Honua.Server.Features.Infrastructure.* base types (e.g.
+                                // Honua.Infrastructure.* base types (e.g.
                                 // IConfigurationDocumentationContributor, job-cancellation
                                 // notifier extensions) lifted in the Hosting carve.
             "Alerts",           // Hosting-resident shared base of the Alerts slice (delivery
@@ -98,7 +98,7 @@ public sealed class VerticalSliceIsolationTests
                                 // PackageReviewContext helper shared by the Server PackageReview
                                 // endpoints and the MCP package-review tool (the AI surface), so
                                 // the latter doesn't couple to the former's endpoint class.
-            "Helpers",          // Hosting carve preserves Honua.Server.Features.Infrastructure.Helpers.*
+            "Helpers",          // Hosting carve preserves Honua.Infrastructure.Helpers.*
             // Cross-cutting subsystems.
             "Analytics",
             "AuditLog",
@@ -214,7 +214,7 @@ public sealed class VerticalSliceIsolationTests
     /// See <see cref="_infrastructureAllowedSubAreas"/> for the historical context and
     /// ADR-0044 for the Hosting carve. This test scans the filesystem (not the assembly)
     /// so it captures namespaces whose source has moved to Honua.Hosting under the same
-    /// <c>Honua.Server.Features.Infrastructure.*</c> namespace.
+    /// <c>Honua.Infrastructure.*</c> namespace.
     /// </remarks>
     [ArchitectureTest]
     public void Infrastructure_SubAreas_ShouldBeOnExplicitAllowList()
@@ -234,7 +234,7 @@ public sealed class VerticalSliceIsolationTests
             .ToArray();
 
         stowaways.Should().BeEmpty(
-            "Every top-level sub-directory under Honua.Server.Features.Infrastructure (or " +
+            "Every top-level sub-directory under Honua.Infrastructure (or " +
             "Honua.Hosting/Features) must be on the audit-A1 allow-list. Add the sub-area " +
             "to VerticalSliceIsolationTests._infrastructureAllowedSubAreas with a justifying " +
             "comment, or extract it to its own vertical slice. Unexpected sub-areas: " +
@@ -523,7 +523,7 @@ public sealed class VerticalSliceIsolationTests
         if (_featureNames.Contains(featureName, StringComparer.OrdinalIgnoreCase))
             return true;
 
-        // Allow Infrastructure sub-modules (e.g., Infrastructure.Authentication)
+        // Allow Infrastructure sub-modules (e.g., Honua.Infrastructure.Authentication)
         if (featureName.Equals("Infrastructure", StringComparison.OrdinalIgnoreCase))
             return true;
 

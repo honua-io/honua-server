@@ -8,7 +8,7 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Honua.Server.Features.Infrastructure.Events;
+namespace Honua.Infrastructure.Events;
 
 /// <summary>
 /// Shared webhook delivery logic: HMAC signature, signed HTTP POST, and retry with exponential backoff.

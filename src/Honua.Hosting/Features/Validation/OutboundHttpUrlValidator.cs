@@ -4,7 +4,7 @@
 using System.Net;
 using System.Net.Sockets;
 
-namespace Honua.Server.Features.Infrastructure.Validation;
+namespace Honua.Infrastructure.Validation;
 
 internal readonly record struct OutboundHttpUrlValidationResult(bool IsValid, Uri? Uri, string? ErrorMessage)
 {

@@ -2,8 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Authorization.Abstractions;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Authentication.ClientCertificates;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Authentication.ClientCertificates;
 using Honua.Server.Features.Mobile.Auth;
 
 namespace Honua.Server.Startup;

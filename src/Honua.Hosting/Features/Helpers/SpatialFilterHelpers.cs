@@ -7,7 +7,7 @@ using NetTopologySuite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
-namespace Honua.Server.Features.Infrastructure.Helpers;
+namespace Honua.Infrastructure.Helpers;
 
 /// <summary>
 /// Shared helpers for creating spatial filters from bounding box extents.

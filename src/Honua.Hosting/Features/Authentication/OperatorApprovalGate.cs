@@ -7,10 +7,10 @@ using System.Text.Json.Serialization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Security.Abstractions;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
 
-namespace Honua.Server.Features.Infrastructure.Authentication;
+namespace Honua.Infrastructure.Authentication;
 
 /// <summary>
 /// Scoped façade that groups the operator authorization and approval evaluators into

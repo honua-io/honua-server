@@ -3,10 +3,10 @@
 
 using System.Text.Json;
 using Honua.Core.Features.Validation;
-using Honua.Server.Features.Infrastructure.Middleware;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.Models;
 
-namespace Honua.Server.Features.Infrastructure.Validation;
+namespace Honua.Infrastructure.Validation;
 
 /// <summary>
 /// Standardized error response helpers for validation failures.

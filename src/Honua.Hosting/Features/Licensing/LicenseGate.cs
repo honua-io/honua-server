@@ -3,10 +3,10 @@
 
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 using Grpc.Core;
 
-namespace Honua.Server.Features.Infrastructure.Licensing;
+namespace Honua.Infrastructure.Licensing;
 
 internal static class LicenseGate
 {

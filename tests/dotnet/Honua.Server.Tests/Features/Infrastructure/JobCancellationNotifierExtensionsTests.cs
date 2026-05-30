@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Server.Features.Infrastructure;
+using Honua.Infrastructure;
 using Honua.TestKit.Attributes;
 using NSubstitute;
 

@@ -3,7 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Infrastructure.Rendering;
+using Honua.Infrastructure.Rendering;
 using Honua.Server.Features.StaticMap;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;

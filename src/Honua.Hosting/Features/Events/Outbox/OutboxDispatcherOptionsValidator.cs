@@ -3,13 +3,13 @@
 
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Events.Outbox;
+namespace Honua.Infrastructure.Events.Outbox;
 
 /// <summary>
 /// Validates <see cref="OutboxDispatcherOptions"/> at startup so a misconfigured
 /// dispatcher fails fast instead of silently disabling claim/dispatch behavior.
 /// Pairs with <c>.ValidateOnStart()</c> on the options registration. Mirrors the
-/// in-module pattern established by <see cref="Honua.Server.Features.Infrastructure.Events.FeatureChangeWebhookOptionsValidator"/>.
+/// in-module pattern established by <see cref="Honua.Infrastructure.Events.FeatureChangeWebhookOptionsValidator"/>.
 /// </summary>
 internal sealed class OutboxDispatcherOptionsValidator : IValidateOptions<OutboxDispatcherOptions>
 {

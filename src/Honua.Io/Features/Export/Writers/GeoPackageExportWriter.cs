@@ -5,7 +5,7 @@ using System.Globalization;
 using Honua.Core.Features.FeatureStore.Domain;
 using Microsoft.Data.Sqlite;
 using NetTopologySuite.Geometries;
-using InfrastructureGeometryService = Honua.Server.Features.Infrastructure.Services.GeometryService;
+using InfrastructureGeometryService = Honua.Infrastructure.Services.GeometryService;
 using WkbReader = NetTopologySuite.IO.WKBReader;
 
 namespace Honua.Io.Export.Writers;

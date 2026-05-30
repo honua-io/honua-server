@@ -17,7 +17,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Orchestration.Domain;
 using Honua.Core.Features.Publishing.Domain;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Server.Features.Infrastructure.Progress;
+using Honua.Infrastructure.Progress;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
 using StackExchange.Redis;

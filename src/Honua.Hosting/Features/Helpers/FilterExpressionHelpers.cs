@@ -4,7 +4,7 @@
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 
-namespace Honua.Server.Features.Infrastructure.Helpers;
+namespace Honua.Infrastructure.Helpers;
 
 /// <summary>
 /// Shared helper methods for filter expression validation and normalization.

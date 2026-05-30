@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Geometry.Abstractions;
-using Honua.Server.Features.Infrastructure.Filtering;
+using Honua.Infrastructure.Filtering;
 
 namespace Honua.Protocols.Stac;
 

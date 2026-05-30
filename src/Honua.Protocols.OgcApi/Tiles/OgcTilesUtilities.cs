@@ -7,7 +7,7 @@ using System.Globalization;
 using Microsoft.AspNetCore.Http;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Infrastructure.Helpers;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Tiles.Models;
 

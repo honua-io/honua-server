@@ -5,12 +5,12 @@ using System.Security.Claims;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
-using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
 using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
-namespace Honua.Server.Features.Infrastructure.Authentication;
+namespace Honua.Infrastructure.Authentication;
 
 /// <summary>
 /// Service-scoped RBAC helpers for write operations.

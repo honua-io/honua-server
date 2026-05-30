@@ -5,7 +5,7 @@ using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 

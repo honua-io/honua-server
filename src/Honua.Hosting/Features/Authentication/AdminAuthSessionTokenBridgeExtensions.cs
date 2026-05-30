@@ -3,7 +3,7 @@
 
 using Microsoft.Net.Http.Headers;
 
-namespace Honua.Server.Features.Infrastructure.Authentication;
+namespace Honua.Infrastructure.Authentication;
 
 internal static class AdminAuthSessionTokenBridgeExtensions
 {

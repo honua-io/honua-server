@@ -4,7 +4,7 @@
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Tiles.PMTiles;
 
-namespace Honua.Server.Features.Infrastructure.Progress;
+namespace Honua.Infrastructure.Progress;
 
 /// <summary>
 /// Progress entry for asynchronous tile lifecycle operations.

@@ -9,7 +9,7 @@ using Honua.Core.Features.Infrastructure.Monitoring;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.Infrastructure.Caching;
+namespace Honua.Infrastructure.Caching;
 
 /// <summary>
 /// Distributed cache refresh coordinator using Redis for cross-instance coordination.

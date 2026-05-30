@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.Abstractions;
 
-namespace Honua.Server.Features.Infrastructure;
+namespace Honua.Infrastructure;
 
 /// <summary>
 /// Shared fan-out helpers for job-cancellation notifiers.

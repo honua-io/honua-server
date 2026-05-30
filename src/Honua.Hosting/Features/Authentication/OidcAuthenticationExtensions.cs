@@ -13,9 +13,9 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using StackExchange.Redis;
-using Honua.Server.Features.Infrastructure.Authentication.ClientCertificates;
+using Honua.Infrastructure.Authentication.ClientCertificates;
 
-namespace Honua.Server.Features.Infrastructure.Authentication;
+namespace Honua.Infrastructure.Authentication;
 
 /// <summary>
 /// Extension methods for configuring OIDC authentication services.

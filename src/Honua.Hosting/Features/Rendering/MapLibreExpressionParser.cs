@@ -3,7 +3,7 @@
 
 using System.Text.Json;
 
-namespace Honua.Server.Features.Infrastructure.Rendering;
+namespace Honua.Infrastructure.Rendering;
 
 internal static class MapLibreExpressionParser
 {

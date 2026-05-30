@@ -12,7 +12,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Observability.Domain;
 using Honua.ControlPlane;
-using Honua.Server.Features.Infrastructure.Monitoring;
+using Honua.Infrastructure.Monitoring;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 

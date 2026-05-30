@@ -4,7 +4,7 @@
 using Honua.Core.Features.Infrastructure.Redis;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.Infrastructure.Redis;
+namespace Honua.Infrastructure.Redis;
 
 /// <summary>
 /// Base class for Redis-dependent services with standardized fallback behavior.

@@ -6,9 +6,9 @@ using Honua.Core.Exceptions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Attachments.Domain;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
-using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Security;
+using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Security;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 

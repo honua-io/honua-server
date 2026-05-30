@@ -7,7 +7,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Validation;
 
 namespace Honua.Protocols.OData.Services;
 

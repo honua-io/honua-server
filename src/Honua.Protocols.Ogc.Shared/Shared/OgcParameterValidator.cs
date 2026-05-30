@@ -3,7 +3,7 @@
 
 using System.Globalization;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Infrastructure.Services;
+using Honua.Infrastructure.Services;
 using Honua.Protocols.Ogc.Common;
 
 #pragma warning disable CA1716 // The Shared namespace is intentional — mirrors the audit-fixes kernel placement (#1144).

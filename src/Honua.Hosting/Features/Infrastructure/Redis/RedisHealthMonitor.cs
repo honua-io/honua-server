@@ -5,7 +5,7 @@ using System.Collections.Concurrent;
 using Honua.Core.Features.Infrastructure.Redis;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.Infrastructure.Redis;
+namespace Honua.Infrastructure.Redis;
 
 /// <summary>
 /// Monitors Redis health and provides circuit breaker functionality.

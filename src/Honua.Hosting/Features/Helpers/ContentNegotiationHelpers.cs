@@ -5,7 +5,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using Microsoft.Extensions.Primitives;
 
-namespace Honua.Server.Features.Infrastructure.Helpers;
+namespace Honua.Infrastructure.Helpers;
 
 internal static class ContentNegotiationHelpers
 {

@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Validation;
 
-namespace Honua.Server.Features.Infrastructure.Validation;
+namespace Honua.Infrastructure.Validation;
 
 /// <summary>
 /// Extension methods for common validation patterns used across endpoints.

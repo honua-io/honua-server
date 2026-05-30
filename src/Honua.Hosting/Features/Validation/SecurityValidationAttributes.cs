@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 using Honua.Core.Features.Shared.Models;
 using DataAnnotationsValidationResult = System.ComponentModel.DataAnnotations.ValidationResult;
 
-namespace Honua.Server.Features.Infrastructure.Validation;
+namespace Honua.Infrastructure.Validation;
 
 /// <summary>
 /// Validation attribute that ensures a string contains only safe characters for SQL table/column names.

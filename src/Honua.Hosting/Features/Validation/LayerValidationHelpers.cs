@@ -4,12 +4,12 @@
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Models;
 using Microsoft.Extensions.DependencyInjection;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
-namespace Honua.Server.Features.Infrastructure.Validation;
+namespace Honua.Infrastructure.Validation;
 
 /// <summary>
 /// Shared helper methods for layer validation and access checking across CRUD handlers.
@@ -19,7 +19,7 @@ namespace Honua.Server.Features.Infrastructure.Validation;
 /// Audit-A1: protocol-specific error formatting and cancellation-token resolution
 /// plug in via the static <see cref="ODataErrorFactoryOverride"/> and
 /// <see cref="ODataCancellationTokenResolverOverride"/> delegates so this
-/// Infrastructure.Validation file does not need a using-clause dependency on
+/// Honua.Infrastructure.Validation file does not need a using-clause dependency on
 /// any protocol assembly. <c>ODataServiceCollectionExtensions.AddOData</c>
 /// installs both delegates at startup.
 /// </remarks>

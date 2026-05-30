@@ -14,7 +14,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Infrastructure.Events;
+using Honua.Infrastructure.Events;
 using Honua.Server.Features.Streaming;
 using Honua.TestKit.Helpers;
 using Honua.TestKit;

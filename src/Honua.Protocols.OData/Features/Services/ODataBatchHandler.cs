@@ -9,8 +9,8 @@ using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Infrastructure.Caching;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Validation;
 using Honua.Protocols.OData.Models;
 
 namespace Honua.Protocols.OData.Services;
@@ -45,7 +45,7 @@ internal sealed partial class ODataBatchHandler
     private readonly IETagService _etagService;
     private readonly IEditParameterAdapter<ODataEditRequest> _editParameterAdapter;
     private readonly IEditProcessor _editProcessor;
-    private readonly Honua.Server.Features.Infrastructure.Events.FeatureMutationEventService _mutationEventService;
+    private readonly Honua.Infrastructure.Events.FeatureMutationEventService _mutationEventService;
     private readonly ILogger _logger;
     private readonly Dictionary<int, AxisOrder> _axisOrderCache = new();
 

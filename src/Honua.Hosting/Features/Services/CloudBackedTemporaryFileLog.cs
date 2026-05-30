@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.Domain;
 
-namespace Honua.Server.Features.Infrastructure.Services;
+namespace Honua.Infrastructure.Services;
 
 internal static partial class CloudBackedTemporaryFileLog
 {

@@ -4,7 +4,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Honua.Server.Features.Infrastructure.Events;
+namespace Honua.Infrastructure.Events;
 
 /// <summary>
 /// Shared HMAC-SHA256 signature computation for outbound webhook delivery.

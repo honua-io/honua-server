@@ -4,7 +4,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Styling.Domain;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Admin.Models;
 

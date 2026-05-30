@@ -3,9 +3,9 @@
 
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 
-namespace Honua.Server.Features.Infrastructure.Validation;
+namespace Honua.Infrastructure.Validation;
 
 /// <summary>
 /// Shared validation for H3 capability checks across FeatureServer and OGC endpoints.

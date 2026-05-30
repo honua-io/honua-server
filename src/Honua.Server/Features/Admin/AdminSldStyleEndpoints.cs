@@ -6,13 +6,13 @@ using System.Text.Json;
 using System.Xml;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Admin.Models;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Caching;
-using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Rendering;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Rendering;
 using Honua.Server.Features.Styling;
 using Honua.Server.Features.Styling.Sld;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Validation;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 

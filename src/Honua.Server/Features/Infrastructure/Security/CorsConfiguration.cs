@@ -3,7 +3,7 @@
 
 using Microsoft.AspNetCore.Cors.Infrastructure;
 
-namespace Honua.Server.Features.Infrastructure.Security;
+namespace Honua.Infrastructure.Security;
 
 /// <summary>
 /// CORS configuration for Honua Server with security-first approach.

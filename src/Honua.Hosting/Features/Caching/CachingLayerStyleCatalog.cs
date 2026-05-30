@@ -8,7 +8,7 @@ using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Caching;
+namespace Honua.Infrastructure.Caching;
 
 /// <summary>
 /// Decorator that adds caching to ILayerStyleCatalog operations.

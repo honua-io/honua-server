@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Infrastructure.Models;
+namespace Honua.Infrastructure.Models;
 
 /// <summary>
 /// Standard error response that can be formatted for different protocols.

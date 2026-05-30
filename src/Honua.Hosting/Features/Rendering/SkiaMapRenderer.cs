@@ -5,10 +5,10 @@ using System.Buffers;
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Server.Features.Infrastructure.Rendering;
+using Honua.Infrastructure.Rendering;
 using SkiaSharp;
 
-namespace Honua.Server.Features.Infrastructure.Rendering;
+namespace Honua.Infrastructure.Rendering;
 
 /// <summary>
 /// Renders features to a raster image using SkiaSharp with MapLibre style translation.
@@ -707,7 +707,7 @@ internal sealed class SkiaMapRenderer : IDisposable
     }
 
     internal static Func<double, double, SKPoint> BuildTransform(
-        global::Honua.Server.Features.Infrastructure.Rendering.RenderExtent extent,
+        global::Honua.Infrastructure.Rendering.RenderExtent extent,
         int imageWidth,
         int imageHeight)
         => BuildTransform(new RenderExtent(extent.MinX, extent.MinY, extent.MaxX, extent.MaxY), imageWidth, imageHeight);

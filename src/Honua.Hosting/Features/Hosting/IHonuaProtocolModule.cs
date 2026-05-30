@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Honua.Server.Features.Infrastructure.Hosting;
+namespace Honua.Infrastructure.Hosting;
 
 /// <summary>
 /// Plug-in contract for a protocol surface (modularization Phase 1).
@@ -20,7 +20,7 @@ namespace Honua.Server.Features.Infrastructure.Hosting;
 /// AspNetCore framework reference to the contract-only assembly was
 /// rejected as overreach. Protocol assemblies (Honua.Protocols.&lt;X&gt;)
 /// reference <c>Honua.Hosting</c> alongside <c>Honua.Core.Abstractions</c>.
-/// Namespace <c>Honua.Server.Features.Infrastructure.Hosting</c> is
+/// Namespace <c>Honua.Infrastructure.Hosting</c> is
 /// preserved so the four module implementations (still in Server pending
 /// Phase 1 protocol-assembly extraction) and the reflection-based
 /// discovery harness need no source updates. ADR-0041 records the

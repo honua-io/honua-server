@@ -3,7 +3,7 @@
 
 using System.Security.Claims;
 
-namespace Honua.Server.Features.Infrastructure.Authentication.ClientCertificates;
+namespace Honua.Infrastructure.Authentication.ClientCertificates;
 
 internal sealed record ClientCertificateValidationResult
 {

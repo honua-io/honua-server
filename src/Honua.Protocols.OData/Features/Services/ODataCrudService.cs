@@ -12,8 +12,8 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
-using Honua.Server.Features.Infrastructure.Caching;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Validation;
 using Honua.Protocols.OData.Models;
 
 namespace Honua.Protocols.OData.Services;

@@ -8,12 +8,12 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Validation.Abstractions;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
-using static Honua.Server.Features.Infrastructure.Rendering.RasterMapRenderingPipeline;
+using static Honua.Infrastructure.Rendering.RasterMapRenderingPipeline;
 
 namespace Honua.Protocols.GeoServices.MapServer;
 

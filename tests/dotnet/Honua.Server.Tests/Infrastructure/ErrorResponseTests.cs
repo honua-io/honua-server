@@ -4,7 +4,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Tests.Infrastructure;
 

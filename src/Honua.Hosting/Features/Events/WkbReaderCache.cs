@@ -3,7 +3,7 @@
 
 using NetTopologySuite.IO;
 
-namespace Honua.Server.Features.Infrastructure.Services;
+namespace Honua.Infrastructure.Services;
 
 /// <summary>
 /// Thread-static cache for <see cref="WKBReader"/> instances.

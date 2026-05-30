@@ -12,9 +12,9 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Io.Export.Writers;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Security;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Security;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 

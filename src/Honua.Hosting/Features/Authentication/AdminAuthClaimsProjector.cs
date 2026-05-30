@@ -3,7 +3,7 @@
 
 using System.Security.Claims;
 
-namespace Honua.Server.Features.Infrastructure.Authentication;
+namespace Honua.Infrastructure.Authentication;
 
 internal static class AdminAuthClaimsProjector
 {

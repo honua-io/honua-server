@@ -3,7 +3,7 @@
 
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.Infrastructure.Events;
+namespace Honua.Infrastructure.Events;
 
 /// <summary>
 /// Best-effort Redis-backed lease coordinator for single-writer background dispatchers.

@@ -3,9 +3,9 @@
 
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
-using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Scene;
+using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Scene;
 using Honua.Protocols.Scene.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;

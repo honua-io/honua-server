@@ -5,7 +5,7 @@ using System.Globalization;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Shared.Models;
 
-namespace Honua.Server.Features.Infrastructure.Services;
+namespace Honua.Infrastructure.Services;
 
 /// <summary>
 /// Shared parsing utilities for raster-related request parameters used by ImageServer and OGC Maps.

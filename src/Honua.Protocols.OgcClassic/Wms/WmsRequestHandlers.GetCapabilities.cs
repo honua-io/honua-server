@@ -6,13 +6,13 @@ using System.Text;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Infrastructure.Rendering;
-using Honua.Server.Features.Infrastructure.Services;
+using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Rendering;
+using Honua.Infrastructure.Services;
 using Honua.Protocols.Ogc.Api.Features;
 using Honua.Protocols.Ogc.Classic;
 using Microsoft.Extensions.DependencyInjection;
-using static Honua.Server.Features.Infrastructure.Rendering.RasterMapRenderingPipeline;
+using static Honua.Infrastructure.Rendering.RasterMapRenderingPipeline;
 using static Honua.Protocols.Ogc.Classic.OgcClassicRequestHelpers;
 
 namespace Honua.Protocols.Ogc.Classic.Wms;

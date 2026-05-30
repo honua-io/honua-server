@@ -3,7 +3,7 @@
 
 using FluentAssertions;
 using Honua.Server.Features.Admin.TileOperations;
-using Honua.Server.Features.Infrastructure.Progress;
+using Honua.Infrastructure.Progress;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;

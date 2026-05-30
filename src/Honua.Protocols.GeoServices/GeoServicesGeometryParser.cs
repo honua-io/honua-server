@@ -3,7 +3,7 @@
 
 using System.Text.Json;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
-using Honua.Server.Features.Infrastructure.Parsing;
+using Honua.Infrastructure.Parsing;
 
 namespace Honua.Protocols.GeoServices;
 

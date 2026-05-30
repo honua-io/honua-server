@@ -5,7 +5,7 @@ using Honua.Core.Features.Infrastructure.Redis;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.Infrastructure.Redis;
+namespace Honua.Infrastructure.Redis;
 
 /// <summary>
 /// Service collection extensions for standardized Redis infrastructure.

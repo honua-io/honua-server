@@ -9,8 +9,8 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Io.Export.Writers;
-using Honua.Server.Features.Infrastructure.Events;
-using Honua.Server.Features.Infrastructure.Progress;
+using Honua.Infrastructure.Events;
+using Honua.Infrastructure.Progress;
 using Microsoft.Extensions.Caching.Distributed;
 using StackExchange.Redis;
 

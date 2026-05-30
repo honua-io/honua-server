@@ -4,7 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.Validation;
 
-namespace Honua.Server.Features.Infrastructure.Validation;
+namespace Honua.Infrastructure.Validation;
 
 /// <summary>
 /// Route parameter validation service that consolidates validation patterns

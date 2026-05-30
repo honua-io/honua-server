@@ -3,8 +3,8 @@
 
 using System.Globalization;
 using Honua.Core.Features.Raster.Domain;
-using Honua.Server.Features.Infrastructure.Licensing;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Licensing;
+using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http;
 using NetTopologySuite.Geometries;
 

@@ -5,7 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Infrastructure.Helpers;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Helpers;

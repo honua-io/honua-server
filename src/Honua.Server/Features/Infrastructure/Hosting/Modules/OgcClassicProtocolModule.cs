@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Honua.Server.Features.Infrastructure.Hosting.Modules;
+namespace Honua.Infrastructure.Hosting.Modules;
 
 /// <summary>
 /// OGC Classic (WMS / WMTS / WFS / WCS) protocol module. Wraps the existing

@@ -3,7 +3,7 @@
 
 using Honua.Core.Configuration;
 using Honua.Server.Features.Admin.Services;
-using Honua.Server.Features.Infrastructure.Configuration;
+using Honua.Infrastructure.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 

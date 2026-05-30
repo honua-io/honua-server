@@ -3,9 +3,9 @@
 
 using System.Globalization;
 using System.Text.Json.Serialization;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 
-namespace Honua.Server.Features.Infrastructure.Authentication.ClientCertificates;
+namespace Honua.Infrastructure.Authentication.ClientCertificates;
 
 internal sealed record ClientCertificateProblemDetailsResponse
 {

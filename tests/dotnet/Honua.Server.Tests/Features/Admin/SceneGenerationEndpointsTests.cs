@@ -15,7 +15,7 @@ namespace Honua.Server.Tests.Features.Admin;
 /// <summary>
 /// Integration tests for the v1 3D Tiles generation admin endpoint (#842).
 /// Full end-to-end generation against a PostGIS feature layer is exercised by
-/// <see cref="Infrastructure.Scene.SceneTilesPublishExecutorTests"/>; these
+/// <c>SceneTilesPublishExecutorTests</c>; these
 /// tests cover the HTTP-surface contract — admin authentication gate and
 /// request-payload validation — that the executor never sees.
 /// </summary>

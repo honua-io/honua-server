@@ -3,9 +3,9 @@
 
 using System.Globalization;
 using System.Security;
-using Honua.Server.Features.Infrastructure.Middleware;
+using Honua.Infrastructure.Middleware;
 
-namespace Honua.Server.Features.Infrastructure.Models;
+namespace Honua.Infrastructure.Models;
 
 /// <summary>
 /// Provides protocol-specific formatting for StandardErrorResponse instances.
@@ -13,9 +13,9 @@ namespace Honua.Server.Features.Infrastructure.Models;
 /// generic Problem Details formats.
 /// </summary>
 /// <remarks>
-/// Audit-A1: this type lives in <c>Honua.Server.Features.Infrastructure.Models</c>
+/// Audit-A1: this type lives in <c>Honua.Infrastructure.Models</c>
 /// and must not take a using-clause dependency on any protocol assembly so the
-/// Infrastructure.Models sub-area can extract into a <c>Honua.Hosting.Models</c>
+/// Honua.Infrastructure.Models sub-area can extract into a <c>Honua.Hosting.Models</c>
 /// assembly without a back-edge. Protocol-specific formatters that need a
 /// payload shape only the protocol owns (today only OData's
 /// <c>ODataError</c> JSON envelope) plug in via
@@ -37,7 +37,7 @@ internal static class StandardErrorResponseFormatter
     /// Optional sink for recording errors into the server-side
     /// <c>RecentErrorBuffer</c>. When set, every formatted error is also
     /// recorded via the delegate. The buffer lives in
-    /// <c>Honua.Server.Features.Infrastructure.Monitoring</c> (a Server-side
+    /// <c>Honua.Infrastructure.Monitoring</c> (a Server-side
     /// sub-area that has not been carved into <c>Honua.Hosting</c>); the
     /// observability service-registration entry point in Server installs the
     /// delegate at startup. Mirrors the

@@ -3,7 +3,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Server.Features.Infrastructure.Configuration;
+namespace Honua.Infrastructure.Configuration;
 
 internal static partial class SecretProviderLog
 {

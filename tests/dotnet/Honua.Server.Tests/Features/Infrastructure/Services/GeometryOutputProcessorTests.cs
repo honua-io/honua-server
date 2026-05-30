@@ -3,7 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Configuration;
-using Honua.Server.Features.Infrastructure.Services;
+using Honua.Infrastructure.Services;
 using Honua.TestKit.Attributes;
 using NetTopologySuite.Geometries;
 

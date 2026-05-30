@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.AuditLog.Abstractions;
 
-namespace Honua.Server.Features.Infrastructure.Authentication.ClientCertificates;
+namespace Honua.Infrastructure.Authentication.ClientCertificates;
 
 internal static class ClientCertificateExpirationWarning
 {

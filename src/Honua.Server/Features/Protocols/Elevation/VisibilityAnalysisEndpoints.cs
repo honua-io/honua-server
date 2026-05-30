@@ -6,10 +6,10 @@ using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Security.Domain;
-using Honua.Server.Features.Infrastructure.Licensing;
-using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Raster;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Licensing;
+using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Raster;
+using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
 

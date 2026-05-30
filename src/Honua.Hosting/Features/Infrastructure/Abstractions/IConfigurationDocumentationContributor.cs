@@ -4,7 +4,7 @@
 using Honua.Core.Configuration;
 using ConfigurationSection = Honua.Core.Configuration.ConfigurationSection;
 
-namespace Honua.Server.Features.Infrastructure.Abstractions;
+namespace Honua.Infrastructure.Abstractions;
 
 /// <summary>
 /// Contributes feature-owned configuration metadata to the admin documentation endpoint

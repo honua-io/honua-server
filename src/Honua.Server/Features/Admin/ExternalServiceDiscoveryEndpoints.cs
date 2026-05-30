@@ -4,8 +4,8 @@
 using System.Text.Json;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin.Services;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Admin;
 

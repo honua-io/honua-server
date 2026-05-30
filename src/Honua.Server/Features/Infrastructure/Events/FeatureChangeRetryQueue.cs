@@ -8,7 +8,7 @@ using Honua.Server.Features.Streaming;
 using Microsoft.Extensions.Caching.Distributed;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.Infrastructure.Events;
+namespace Honua.Infrastructure.Events;
 
 // IFeatureChangeRetryQueue (the contract) is defined in
 // src/Honua.Hosting/Features/Events/FeatureChangeRetryContracts.cs so the

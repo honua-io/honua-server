@@ -5,7 +5,7 @@ using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Authentication.ClientCertificates;
+namespace Honua.Infrastructure.Authentication.ClientCertificates;
 
 internal static class ClientCertificateAuthenticationDefaults
 {

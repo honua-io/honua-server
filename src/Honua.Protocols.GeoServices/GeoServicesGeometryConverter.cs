@@ -5,7 +5,7 @@ using System.Buffers.Binary;
 using System.Text.Json;
 using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
-using Honua.Server.Features.Infrastructure.Services;
+using Honua.Infrastructure.Services;
 using NetTopologySuite;
 using NetTopologySuite.Algorithm;
 using NetTopologySuite.Geometries;
@@ -959,7 +959,7 @@ internal static class GeoServicesGeometryConverter
 
     private static (bool hasZ, bool hasM) GetHasZandM(Geometry geometry)
     {
-        return Honua.Server.Features.Infrastructure.Services.GeometryService.DetectZMFromGeometry(geometry);
+        return Honua.Infrastructure.Services.GeometryService.DetectZMFromGeometry(geometry);
     }
 
     private static bool IsEmptyGeometry(GeoServicesGeometry geometry)

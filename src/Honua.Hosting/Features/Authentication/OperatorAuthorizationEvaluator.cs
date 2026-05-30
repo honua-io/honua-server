@@ -6,7 +6,7 @@ using Honua.Core.Features.Security.Domain;
 using Microsoft.Extensions.Options;
 using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
-namespace Honua.Server.Features.Infrastructure.Authentication;
+namespace Honua.Infrastructure.Authentication;
 
 /// <summary>
 /// Evaluates operator-scoped resource authorization using convention mapping from

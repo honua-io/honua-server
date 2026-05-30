@@ -4,7 +4,7 @@
 namespace Honua.Server.Features.Streaming;
 
 /// <summary>
-/// Envelope pushed to streaming clients. Contains the same data as <see cref="Infrastructure.Events.FeatureChangeEvent"/>
+/// Envelope pushed to streaming clients. Contains the same data as <see cref="Honua.Infrastructure.Events.FeatureChangeEvent"/>
 /// but serialized once and shared across transports.
 /// </summary>
 internal sealed record FeatureStreamEnvelope

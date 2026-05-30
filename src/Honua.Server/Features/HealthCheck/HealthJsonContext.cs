@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Honua.Server.Features.Infrastructure.Licensing;
+using Honua.Infrastructure.Licensing;
 
 namespace Honua.Server.Features.HealthCheck;
 

@@ -4,7 +4,7 @@
 using System.Threading;
 using Honua.Core.Features.Infrastructure.Abstractions;
 
-namespace Honua.Server.Features.Infrastructure.Middleware;
+namespace Honua.Infrastructure.Middleware;
 
 /// <summary>
 /// Mutable schema context for request-scoped database operations.

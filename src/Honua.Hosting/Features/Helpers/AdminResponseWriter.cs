@@ -3,10 +3,10 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http;
 
-namespace Honua.Server.Features.Infrastructure.Helpers;
+namespace Honua.Infrastructure.Helpers;
 
 /// <summary>
 /// Shared helpers for admin response payloads and problem details.

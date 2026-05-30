@@ -3,11 +3,11 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.MultiTenancy.Abstractions;
-using Honua.Server.Features.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.MultiTenancy;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 
-namespace Honua.Server.Features.Infrastructure.Middleware;
+namespace Honua.Infrastructure.Middleware;
 
 /// <summary>
 /// Resolves the tenant context for the current request and stores it on the request

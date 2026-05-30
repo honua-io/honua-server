@@ -4,7 +4,7 @@
 using System;
 using System.Security.Claims;
 
-namespace Honua.Server.Features.Infrastructure.Authentication;
+namespace Honua.Infrastructure.Authentication;
 
 /// <summary>
 /// Configuration options for service-scoped RBAC checks.

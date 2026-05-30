@@ -5,7 +5,7 @@ using Honua.Core.Configuration;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Simplify;
 
-namespace Honua.Server.Features.Infrastructure.Services;
+namespace Honua.Infrastructure.Services;
 
 /// <summary>
 /// Applies geometry output limits such as precision and simplification.

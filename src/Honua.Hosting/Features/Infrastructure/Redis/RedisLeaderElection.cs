@@ -5,7 +5,7 @@ using System.Diagnostics;
 using Honua.Core.Features.Infrastructure.Redis;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.Infrastructure.Redis;
+namespace Honua.Infrastructure.Redis;
 
 /// <summary>
 /// Redis-based distributed leader election with automatic lease renewal and fallback handling.

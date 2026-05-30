@@ -8,7 +8,7 @@ using Honua.Server.Features.Admin;
 using Honua.ControlPlane;
 using Honua.Ai.AnalysisContent;
 using Honua.Server.Features.Capabilities;
-using Honua.Server.Features.Infrastructure.Scene;
+using Honua.Infrastructure.Scene;
 using Honua.Alerts;
 using Honua.Server.Features.CloudDemo;
 using Honua.Server.Features.Protocols.Cog;
@@ -24,7 +24,7 @@ using Honua.Protocols.GeoServices.GPServer;
 using Honua.Protocols.GeoServices.Catalog;
 using Honua.Server.Features.Protocols.Grpc;
 using Honua.Protocols.GeoServices.ImageServer;
-using Honua.Server.Features.Infrastructure.Monitoring;
+using Honua.Infrastructure.Monitoring;
 using Honua.Server.Features.Styling;
 using Honua.Protocols.GeoServices.MapServer;
 using Honua.Protocols.GeoServices.NAServer;
@@ -55,7 +55,7 @@ using Honua.Server.Features.StaticMap;
 using Honua.Protocols.Ogc.Classic.Wfs20;
 using Honua.Core.Features.Studio;
 
-namespace Honua.Server.Features.Infrastructure.Hosting;
+namespace Honua.Infrastructure.Hosting;
 
 /// <summary>
 /// Feature registration helpers for the Honua composition root.

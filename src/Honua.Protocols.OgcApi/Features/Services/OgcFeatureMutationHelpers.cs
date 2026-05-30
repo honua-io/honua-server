@@ -5,7 +5,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Api.Features.Models;
 
 namespace Honua.Protocols.Ogc.Api.Features.Services;

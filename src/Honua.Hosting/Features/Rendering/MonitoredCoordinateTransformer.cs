@@ -7,7 +7,7 @@ using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Shared.Models;
 
-namespace Honua.Server.Features.Infrastructure.Rendering;
+namespace Honua.Infrastructure.Rendering;
 
 /// <summary>
 /// Wrapper around CoordinateTransformer that adds performance monitoring.

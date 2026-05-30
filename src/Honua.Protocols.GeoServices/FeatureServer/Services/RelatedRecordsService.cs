@@ -11,8 +11,8 @@ using Honua.Core.Queries.Filters;
 using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
-using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Infrastructure.Services;
+using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Services;
 using Microsoft.Extensions.Options;
 using Npgsql;
 

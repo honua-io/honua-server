@@ -8,7 +8,7 @@ using Honua.Core.Features.Scene.Domain;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Scene;
+namespace Honua.Infrastructure.Scene;
 
 /// <summary>
 /// Resolves scene datasets from <see cref="SceneDatasetOptions"/>.

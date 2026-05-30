@@ -7,7 +7,7 @@
 // route opts into AllowAnonymous explicitly so authorization-policy tooling
 // can see the intent rather than treating it as an accidental gap.
 
-using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Infrastructure.Helpers;
 
 namespace Honua.Server.Features.Geocoding;
 

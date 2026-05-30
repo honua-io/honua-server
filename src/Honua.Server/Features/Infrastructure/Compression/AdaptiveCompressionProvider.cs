@@ -5,7 +5,7 @@ using System.IO.Compression;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Compression;
+namespace Honua.Infrastructure.Compression;
 
 /// <summary>
 /// PERFORMANCE FIX: Adaptive compression provider that adjusts compression level based on content size

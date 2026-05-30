@@ -3,7 +3,7 @@
 
 using Grpc.Core;
 using Grpc.Core.Interceptors;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Protocols.Grpc;
 

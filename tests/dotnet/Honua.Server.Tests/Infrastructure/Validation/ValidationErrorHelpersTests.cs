@@ -4,7 +4,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Validation;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Validation;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 

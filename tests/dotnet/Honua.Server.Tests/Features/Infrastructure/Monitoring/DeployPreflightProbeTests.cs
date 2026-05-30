@@ -7,7 +7,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.HealthCheck;
-using Honua.Server.Features.Infrastructure.Monitoring;
+using Honua.Infrastructure.Monitoring;
 using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;

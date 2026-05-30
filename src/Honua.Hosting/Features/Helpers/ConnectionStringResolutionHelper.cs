@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Security.Abstractions;
 
-namespace Honua.Server.Features.Infrastructure.Helpers;
+namespace Honua.Infrastructure.Helpers;
 
 internal static class ConnectionStringResolutionHelper
 {

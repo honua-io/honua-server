@@ -4,7 +4,7 @@
 using System.Globalization;
 using Microsoft.AspNetCore.OutputCaching;
 
-namespace Honua.Server.Features.Infrastructure.Caching;
+namespace Honua.Infrastructure.Caching;
 
 /// <summary>
 /// Output cache policy that adds tags derived from common route values.

@@ -3,7 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Redis;
-using Honua.Server.Features.Infrastructure.Redis;
+using Honua.Infrastructure.Redis;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;

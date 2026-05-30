@@ -5,7 +5,7 @@ namespace Honua.Hosting;
 
 /// <summary>
 /// Internal marker type for the Honua.Hosting assembly. Honua.Hosting carves
-/// the protocol-required sub-areas of <c>Honua.Server.Features.Infrastructure</c>
+/// the protocol-required sub-areas of <c>Honua.Infrastructure</c>
 /// (Authentication, Models, Events, Validation, Helpers, Caching) into a
 /// dedicated assembly so the Honua.Protocols.* assemblies can ProjectReference
 /// the hosting surface without forming a cycle with Honua.Server. See

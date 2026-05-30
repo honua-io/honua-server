@@ -5,7 +5,7 @@ using System.Buffers;
 using System.Collections.Frozen;
 using System.Text.RegularExpressions;
 
-namespace Honua.Server.Features.Infrastructure.Security;
+namespace Honua.Infrastructure.Security;
 
 /// <summary>
 /// Security utilities for file upload validation and sanitization.

@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Middleware;
+namespace Honua.Infrastructure.Middleware;
 
 /// <summary>
 /// Middleware that collects performance metrics for HTTP requests and tracks system resource usage.

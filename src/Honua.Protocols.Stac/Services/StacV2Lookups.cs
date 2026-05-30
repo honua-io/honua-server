@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Infrastructure.Authentication;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Protocols.Stac.Services;

@@ -3,7 +3,7 @@
 
 using System.Globalization;
 
-namespace Honua.Server.Features.Infrastructure.Models;
+namespace Honua.Infrastructure.Models;
 
 internal static class ProblemDetailsHelpers
 {

@@ -14,11 +14,11 @@ using Honua.Core.Queries.Filters;
 using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Caching;
-using Honua.Server.Features.Infrastructure.Events;
-using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Events;
+using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;

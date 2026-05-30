@@ -4,7 +4,7 @@
 using System.Xml;
 using System.Xml.Linq;
 
-namespace Honua.Server.Features.Infrastructure.Helpers;
+namespace Honua.Infrastructure.Helpers;
 
 /// <summary>
 /// Parses XML documents with DTDs and external entity resolution disabled.

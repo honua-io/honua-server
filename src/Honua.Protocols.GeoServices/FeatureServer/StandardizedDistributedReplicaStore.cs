@@ -5,7 +5,7 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Redis;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
-using Honua.Server.Features.Infrastructure.Redis;
+using Honua.Infrastructure.Redis;
 using Microsoft.Extensions.Caching.Distributed;
 using StackExchange.Redis;
 

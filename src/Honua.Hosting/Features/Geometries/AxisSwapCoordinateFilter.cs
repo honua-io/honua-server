@@ -3,7 +3,7 @@
 
 using NetTopologySuite.Geometries;
 
-namespace Honua.Server.Features.Infrastructure.Geometries;
+namespace Honua.Infrastructure.Geometries;
 
 internal sealed class AxisSwapCoordinateFilter : ICoordinateSequenceFilter
 {

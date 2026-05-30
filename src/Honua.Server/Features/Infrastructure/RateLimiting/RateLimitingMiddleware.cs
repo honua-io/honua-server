@@ -9,7 +9,7 @@ using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.RateLimiting.Abstractions;
 
-namespace Honua.Server.Features.Infrastructure.RateLimiting;
+namespace Honua.Infrastructure.RateLimiting;
 
 /// <summary>
 /// Middleware for enforcing rate limits on incoming requests.

@@ -10,7 +10,7 @@ using Honua.Core.Features.Tiles;
 using Honua.Core.Queries.Filters;
 using Honua.ServiceDefaults;
 
-namespace Honua.Server.Features.Infrastructure.Rendering;
+namespace Honua.Infrastructure.Rendering;
 
 internal static class VectorTileExecution
 {

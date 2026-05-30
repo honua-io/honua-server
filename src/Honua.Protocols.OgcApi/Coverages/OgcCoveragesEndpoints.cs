@@ -1,8 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Models;
 using Honua.Protocols.Ogc.Api.Coverages.Handlers;
 using Honua.Protocols.Ogc.Api.Coverages.Models;
 using Honua.Protocols.Ogc.Common;

@@ -8,8 +8,8 @@ using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using Npgsql;
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Honua.Server.Features.Infrastructure.Abstractions;
-using Honua.Server.Features.Infrastructure.Monitoring;
+using Honua.Infrastructure.Abstractions;
+using Honua.Infrastructure.Monitoring;
 
 namespace Honua.Server.Features.HealthCheck;
 
@@ -77,7 +77,7 @@ internal static class ProductionHealthChecks
         // Feature-change transactional outbox dispatcher (#692). Surfaces dispatch backlog
         // and dead-letter accumulation on the readiness endpoint so deployments observe
         // CDC durability regressions before they cause silent event loss.
-        healthChecksBuilder.AddCheck<Honua.Server.Features.Infrastructure.Events.Outbox.OutboxHealthCheck>(
+        healthChecksBuilder.AddCheck<Honua.Infrastructure.Events.Outbox.OutboxHealthCheck>(
             "feature-change-outbox",
             HealthStatus.Degraded,
             OutboxTags);

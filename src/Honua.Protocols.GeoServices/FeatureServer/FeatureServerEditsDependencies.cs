@@ -6,8 +6,8 @@ using Honua.Core.Features.Edit;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
-using Honua.Server.Features.Infrastructure.Events;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Events;
+using Honua.Infrastructure.Validation;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 

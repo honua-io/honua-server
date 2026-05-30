@@ -5,7 +5,7 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Shared.Models;
 
-namespace Honua.Server.Features.Infrastructure.Services;
+namespace Honua.Infrastructure.Services;
 
 /// <summary>
 /// Shared utilities for parsing spatial reference system identifiers.

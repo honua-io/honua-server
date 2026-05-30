@@ -5,7 +5,7 @@ using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Events;
+namespace Honua.Infrastructure.Events;
 
 /// <summary>
 /// Stored feature-change event envelope used for replay and webhook delivery.

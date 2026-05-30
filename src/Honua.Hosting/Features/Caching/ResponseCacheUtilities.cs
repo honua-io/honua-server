@@ -10,7 +10,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
 using Microsoft.AspNetCore.Http;
 
-namespace Honua.Server.Features.Infrastructure.Caching;
+namespace Honua.Infrastructure.Caching;
 
 internal sealed record CachedResponse(byte[] Payload, string ContentType, string? ETag = null);
 

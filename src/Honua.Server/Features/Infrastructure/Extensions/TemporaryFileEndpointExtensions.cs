@@ -1,9 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Server.Features.Infrastructure.Services;
+using Honua.Infrastructure.Services;
 
-namespace Honua.Server.Features.Infrastructure.Extensions;
+namespace Honua.Infrastructure.Extensions;
 
 /// <summary>
 /// Extension methods for configuring temporary file endpoints.

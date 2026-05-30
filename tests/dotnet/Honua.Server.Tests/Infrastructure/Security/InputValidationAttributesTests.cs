@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Validation;
 using Honua.TestKit.Attributes;
 using Xunit.Abstractions;
 using DataAnnotationsValidationResult = System.ComponentModel.DataAnnotations.ValidationResult;

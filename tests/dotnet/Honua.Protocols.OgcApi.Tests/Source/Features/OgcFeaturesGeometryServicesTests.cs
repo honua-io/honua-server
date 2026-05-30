@@ -6,7 +6,7 @@ using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Infrastructure.Services;
+using Honua.Infrastructure.Services;
 using Honua.Protocols.Ogc.Api.Features.Models;
 using Honua.Protocols.Ogc.Api.Features.Services;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -139,7 +139,7 @@ public sealed class OgcFeaturesGeometryServicesTests
 
     private static OgcFeaturesGeometryServices CreateSut()
         => new(
-            new Honua.Server.Features.Infrastructure.Services.GeometryService(Options.Create(new LimitsOptions())),
+            new Honua.Infrastructure.Services.GeometryService(Options.Create(new LimitsOptions())),
             new IdentityCoordinateTransformService(),
             Options.Create(new LimitsOptions()),
             NullLogger<OgcFeaturesGeometryServices>.Instance);

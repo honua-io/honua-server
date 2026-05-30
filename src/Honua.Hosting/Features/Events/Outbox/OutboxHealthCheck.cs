@@ -6,7 +6,7 @@ using Honua.Core.Features.Infrastructure.Events.Outbox;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Events.Outbox;
+namespace Honua.Infrastructure.Events.Outbox;
 
 /// <summary>
 /// Surfaces feature-change outbox dispatch state to readiness/health endpoints so

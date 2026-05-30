@@ -6,7 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Tiles;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Api.Tiles;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;

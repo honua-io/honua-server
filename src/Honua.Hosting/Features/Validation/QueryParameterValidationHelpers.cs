@@ -4,7 +4,7 @@
 using Honua.Core.Features.Validation;
 using Honua.Core.Features.Validation.Abstractions;
 
-namespace Honua.Server.Features.Infrastructure.Validation;
+namespace Honua.Infrastructure.Validation;
 
 internal static class QueryParameterValidationHelpers
 {

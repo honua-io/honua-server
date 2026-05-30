@@ -1,6 +1,6 @@
 using Honua.Core.Features.Authorization.Domain;
 
-namespace Honua.Server.Features.Infrastructure.Authentication;
+namespace Honua.Infrastructure.Authentication;
 
 /// <summary>
 /// Source-generated structured logging for operator authorization decisions.

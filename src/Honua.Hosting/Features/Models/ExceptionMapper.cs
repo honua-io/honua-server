@@ -7,7 +7,7 @@ using Honua.Core.Exceptions;
 using Honua.Core.Features.Shared.Models;
 using Polly.CircuitBreaker;
 
-namespace Honua.Server.Features.Infrastructure.Models;
+namespace Honua.Infrastructure.Models;
 
 /// <summary>
 /// Centralized exception-to-error mapper that normalizes exceptions to ServiceError

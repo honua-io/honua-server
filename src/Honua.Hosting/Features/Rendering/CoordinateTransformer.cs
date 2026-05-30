@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Shared.Models;
 
-namespace Honua.Server.Features.Infrastructure.Rendering;
+namespace Honua.Infrastructure.Rendering;
 
 /// <summary>
 /// Handles coordinate transformations between common spatial reference systems.
@@ -50,8 +50,8 @@ internal static class CoordinateTransformer
     /// <summary>
     /// Converts a shared render extent from one SRID to another.
     /// </summary>
-    public static global::Honua.Server.Features.Infrastructure.Rendering.RenderExtent TransformExtent(
-        global::Honua.Server.Features.Infrastructure.Rendering.RenderExtent extent,
+    public static global::Honua.Infrastructure.Rendering.RenderExtent TransformExtent(
+        global::Honua.Infrastructure.Rendering.RenderExtent extent,
         int fromSrid,
         int toSrid)
     {
@@ -324,8 +324,8 @@ internal static class CoordinateTransformer
     /// <summary>
     /// Adjusts a shared render extent to match a requested scale denominator.
     /// </summary>
-    public static global::Honua.Server.Features.Infrastructure.Rendering.RenderExtent AdjustExtentForScale(
-        global::Honua.Server.Features.Infrastructure.Rendering.RenderExtent extent,
+    public static global::Honua.Infrastructure.Rendering.RenderExtent AdjustExtentForScale(
+        global::Honua.Infrastructure.Rendering.RenderExtent extent,
         double scaleDenominator,
         int imageWidth,
         int imageHeight,
@@ -375,7 +375,7 @@ internal static class CoordinateTransformer
     /// Calculates the approximate scale denominator for a shared render extent.
     /// </summary>
     public static double CalculateScaleDenominator(
-        global::Honua.Server.Features.Infrastructure.Rendering.RenderExtent extent,
+        global::Honua.Infrastructure.Rendering.RenderExtent extent,
         int imageWidth,
         int dpi,
         int srid)
@@ -402,7 +402,7 @@ internal static class CoordinateTransformer
     /// </summary>
     public static double PixelToMapUnits(
         int pixelTolerance,
-        global::Honua.Server.Features.Infrastructure.Rendering.RenderExtent mapExtent,
+        global::Honua.Infrastructure.Rendering.RenderExtent mapExtent,
         int imageWidth)
         => PixelToMapUnits(pixelTolerance, ToRendererExtent(mapExtent), imageWidth);
 
@@ -443,10 +443,10 @@ internal static class CoordinateTransformer
     }
 
     private static SkiaMapRenderer.RenderExtent ToRendererExtent(
-        global::Honua.Server.Features.Infrastructure.Rendering.RenderExtent extent)
+        global::Honua.Infrastructure.Rendering.RenderExtent extent)
         => new(extent.MinX, extent.MinY, extent.MaxX, extent.MaxY);
 
-    private static global::Honua.Server.Features.Infrastructure.Rendering.RenderExtent ToSharedExtent(
+    private static global::Honua.Infrastructure.Rendering.RenderExtent ToSharedExtent(
         SkiaMapRenderer.RenderExtent extent)
         => new(extent.MinX, extent.MinY, extent.MaxX, extent.MaxY);
 

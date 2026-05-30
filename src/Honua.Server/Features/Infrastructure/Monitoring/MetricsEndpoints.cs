@@ -3,12 +3,12 @@
 
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Server.Features.HealthCheck;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Models;
 using Honua.Server.Features.Streaming;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Honua.Server.Features.Infrastructure.Monitoring;
+namespace Honua.Infrastructure.Monitoring;
 
 /// <summary>
 /// Endpoints for exposing performance metrics and telemetry data to monitoring tools.

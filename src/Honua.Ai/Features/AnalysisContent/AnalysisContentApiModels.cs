@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 using Honua.Core.Features.AnalysisContent.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 
 namespace Honua.Ai.AnalysisContent;
 

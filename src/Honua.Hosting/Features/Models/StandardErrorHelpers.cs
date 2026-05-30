@@ -3,7 +3,7 @@
 
 using Honua.Core.Exceptions;
 
-namespace Honua.Server.Features.Infrastructure.Models;
+namespace Honua.Infrastructure.Models;
 
 /// <summary>
 /// Helper methods for creating standardized error responses across all protocols.

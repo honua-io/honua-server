@@ -6,7 +6,7 @@ using System.Data;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
-namespace Honua.Server.Features.Infrastructure.DataIntegrity;
+namespace Honua.Infrastructure.DataIntegrity;
 
 /// <summary>
 /// Coordinates data integrity operations across file storage, database, and cache layers

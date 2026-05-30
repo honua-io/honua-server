@@ -6,7 +6,7 @@ namespace Honua.Protocols.GeoServices.MapServer.Rendering;
 /// <summary>
 /// Backward-compatible wrapper over the shared raster render capacity limiter.
 /// </summary>
-internal sealed class RasterRenderCapacityLimiter : Honua.Server.Features.Infrastructure.Rendering.RasterRenderCapacityLimiter
+internal sealed class RasterRenderCapacityLimiter : Honua.Infrastructure.Rendering.RasterRenderCapacityLimiter
 {
     public RasterRenderCapacityLimiter()
     {

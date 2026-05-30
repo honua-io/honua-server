@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.Domain;
 
-namespace Honua.Server.Features.Infrastructure.Progress;
+namespace Honua.Infrastructure.Progress;
 
 /// <summary>
 /// Progress entry for asynchronous data export operations.

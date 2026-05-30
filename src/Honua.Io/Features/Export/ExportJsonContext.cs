@@ -4,7 +4,7 @@
 using System.Text.Json.Serialization;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Server.Features.Infrastructure.Progress;
+using Honua.Infrastructure.Progress;
 
 namespace Honua.Io.Export;
 

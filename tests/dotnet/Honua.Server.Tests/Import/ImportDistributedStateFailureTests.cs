@@ -10,7 +10,7 @@ using Honua.Import;
 using Honua.Migration;
 using Honua.Import.FileImport;
 using Honua.Import.RasterImport;
-using Honua.Server.Features.Infrastructure.Progress;
+using Honua.Infrastructure.Progress;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;

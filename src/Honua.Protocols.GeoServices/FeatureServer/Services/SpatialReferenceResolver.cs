@@ -8,7 +8,7 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 /// <summary>
 /// Backward-compatible FeatureServer wrapper over the shared spatial reference resolver.
 /// </summary>
-internal sealed class SpatialReferenceResolver : Honua.Server.Features.Infrastructure.Services.SpatialReferenceResolver
+internal sealed class SpatialReferenceResolver : Honua.Infrastructure.Services.SpatialReferenceResolver
 {
     public SpatialReferenceResolver(
         ICrsDetectionService crsDetectionService,

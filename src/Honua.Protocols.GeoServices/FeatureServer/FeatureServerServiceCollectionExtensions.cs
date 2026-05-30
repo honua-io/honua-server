@@ -5,7 +5,7 @@ using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.Query;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
-using Honua.Server.Features.Infrastructure.Abstractions;
+using Honua.Infrastructure.Abstractions;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;

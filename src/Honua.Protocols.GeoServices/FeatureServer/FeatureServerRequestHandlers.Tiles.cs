@@ -10,11 +10,11 @@ using Honua.Core.Features.Tiles;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
-using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Infrastructure.Licensing;
-using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Rendering;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Licensing;
+using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Rendering;
+using Honua.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;

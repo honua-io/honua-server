@@ -4,7 +4,7 @@
 using Honua.Core.Features.Validation.Abstractions;
 using Microsoft.Extensions.Primitives;
 
-namespace Honua.Server.Features.Infrastructure.Abstractions;
+namespace Honua.Infrastructure.Abstractions;
 
 /// <summary>
 /// Shared feature query execution abstraction used by non-FeatureServer protocols.

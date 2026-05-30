@@ -6,7 +6,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Geometry.Domain;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
-using Honua.Server.Features.Infrastructure.Services;
+using Honua.Infrastructure.Services;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -152,7 +152,7 @@ internal sealed partial class GeometryValidator : IGeometryValidator
                     $"Geometry has {ringCount:N0} rings, exceeds maximum allowed ({_options.MaxRings:N0})");
             }
 
-            var (hasZ, hasM) = Honua.Server.Features.Infrastructure.Services.GeometryService.DetectZMFromGeometry(geometry);
+            var (hasZ, hasM) = Honua.Infrastructure.Services.GeometryService.DetectZMFromGeometry(geometry);
             var stats = new GeometryStats
             {
                 GeometryType = geometry.GeometryType,

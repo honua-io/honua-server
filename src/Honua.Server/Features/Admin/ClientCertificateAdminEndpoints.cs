@@ -4,9 +4,9 @@
 using System.Security.Claims;
 using System.Security.Cryptography.X509Certificates;
 using Honua.Server.Features.Admin.Models;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Authentication.ClientCertificates;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Authentication.ClientCertificates;
+using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;

@@ -7,7 +7,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.ServiceRegistration;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Authentication;
+namespace Honua.Infrastructure.Authentication;
 
 /// <summary>
 /// Validates OidcAuthenticationOptions configuration to ensure secure OIDC authentication setup.

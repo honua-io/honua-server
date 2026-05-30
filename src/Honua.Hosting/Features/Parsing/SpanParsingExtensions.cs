@@ -3,7 +3,7 @@
 
 using System.Globalization;
 
-namespace Honua.Server.Features.Infrastructure.Parsing;
+namespace Honua.Infrastructure.Parsing;
 
 internal static class SpanParsingExtensions
 {

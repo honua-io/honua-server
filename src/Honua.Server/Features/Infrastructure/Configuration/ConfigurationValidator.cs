@@ -8,7 +8,7 @@ using Honua.Core.Configuration.Validation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Server.Features.Infrastructure.Configuration;
+namespace Honua.Infrastructure.Configuration;
 
 /// <summary>
 /// Configuration validator that uses data annotations and provides comprehensive validation reporting.

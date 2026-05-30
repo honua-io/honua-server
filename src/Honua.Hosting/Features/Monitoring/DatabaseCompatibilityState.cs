@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.Domain;
 
-namespace Honua.Server.Features.Infrastructure.Monitoring;
+namespace Honua.Infrastructure.Monitoring;
 
 /// <summary>
 /// Stores the result of the PostGIS preflight compatibility check for use by deploy probes.

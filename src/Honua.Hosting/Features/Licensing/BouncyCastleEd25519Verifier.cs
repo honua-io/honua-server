@@ -4,7 +4,7 @@
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Crypto.Signers;
 
-namespace Honua.Server.Features.Infrastructure.Licensing;
+namespace Honua.Infrastructure.Licensing;
 
 internal sealed class BouncyCastleEd25519Verifier : IEd25519Verifier
 {

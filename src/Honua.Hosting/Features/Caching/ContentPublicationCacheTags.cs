@@ -3,7 +3,7 @@
 
 using System.Globalization;
 
-namespace Honua.Server.Features.Infrastructure.Caching;
+namespace Honua.Infrastructure.Caching;
 
 /// <summary>
 /// Canonical output-cache tag strings for the content publication registry. Shared

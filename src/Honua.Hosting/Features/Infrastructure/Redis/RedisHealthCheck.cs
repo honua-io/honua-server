@@ -4,7 +4,7 @@
 using Honua.Core.Features.Infrastructure.Redis;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
-namespace Honua.Server.Features.Infrastructure.Redis;
+namespace Honua.Infrastructure.Redis;
 
 /// <summary>
 /// Health check for Redis connectivity and standardized Redis services.

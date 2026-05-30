@@ -4,13 +4,13 @@
 using System.IO.Compression;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Observability.Abstractions;
-using Honua.Server.Features.Infrastructure.Caching;
-using Honua.Server.Features.Infrastructure.Compression;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Compression;
+using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Honua.Server.Features.Infrastructure.Monitoring;
+namespace Honua.Infrastructure.Monitoring;
 
 internal static class ObservabilityServiceCollectionExtensions
 {

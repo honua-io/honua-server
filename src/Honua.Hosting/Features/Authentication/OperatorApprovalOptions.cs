@@ -1,4 +1,4 @@
-namespace Honua.Server.Features.Infrastructure.Authentication;
+namespace Honua.Infrastructure.Authentication;
 
 /// <summary>
 /// Configuration options for operator approval policies.

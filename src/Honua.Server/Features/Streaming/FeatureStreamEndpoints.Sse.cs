@@ -5,7 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
-using Honua.Server.Features.Infrastructure.Events;
+using Honua.Infrastructure.Events;
 
 namespace Honua.Server.Features.Streaming;
 

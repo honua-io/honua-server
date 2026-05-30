@@ -3,7 +3,7 @@
 
 using System.Globalization;
 using System.Text.Json;
-using Honua.Server.Features.Infrastructure.Events;
+using Honua.Infrastructure.Events;
 
 namespace Honua.Server.Features.Streaming;
 

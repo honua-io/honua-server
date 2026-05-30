@@ -6,7 +6,7 @@ using Honua.Core.Features.Infrastructure.Redis;
 using Microsoft.Extensions.Caching.Distributed;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.Infrastructure.Redis;
+namespace Honua.Infrastructure.Redis;
 
 /// <summary>
 /// Example configuration for standardized Redis infrastructure.

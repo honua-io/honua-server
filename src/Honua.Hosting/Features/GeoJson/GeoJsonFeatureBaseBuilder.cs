@@ -6,7 +6,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 
-namespace Honua.Server.Features.Infrastructure.GeoJson;
+namespace Honua.Infrastructure.GeoJson;
 
 internal readonly record struct GeoJsonFeatureBuildOptions(
     IReadOnlySet<string>? ProjectedProperties = null,

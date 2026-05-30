@@ -4,10 +4,10 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Server.Features.Infrastructure.Services;
+using Honua.Infrastructure.Services;
 using NetTopologySuite.IO;
 
-namespace Honua.Server.Features.Infrastructure.Events;
+namespace Honua.Infrastructure.Events;
 
 /// <summary>
 /// Extracts geometry envelope and attribute snapshot from a feature for CDC event enrichment.

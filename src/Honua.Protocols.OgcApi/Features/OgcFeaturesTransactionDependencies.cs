@@ -5,9 +5,9 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Query;
-using Honua.Server.Features.Infrastructure.Events;
-using Honua.Server.Features.Infrastructure.Caching;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Events;
+using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Api.Features.Services;
 
 namespace Honua.Protocols.Ogc.Api.Features;

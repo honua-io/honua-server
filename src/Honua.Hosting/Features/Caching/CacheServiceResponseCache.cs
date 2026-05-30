@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 
-namespace Honua.Server.Features.Infrastructure.Caching;
+namespace Honua.Infrastructure.Caching;
 
 internal sealed class CacheServiceResponseCache : IResponseCache
 {

@@ -4,7 +4,7 @@
 using System.Diagnostics.Metrics;
 using Honua.ServiceDefaults;
 
-namespace Honua.Server.Features.Infrastructure.Events.Outbox;
+namespace Honua.Infrastructure.Events.Outbox;
 
 /// <summary>
 /// Metrics emitted by the feature-change transactional outbox dispatcher.

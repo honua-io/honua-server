@@ -7,7 +7,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using FluentAssertions;
 using Honua.Core.Features.AuditLog.Abstractions;
-using Honua.Server.Features.Infrastructure.Authentication.ClientCertificates;
+using Honua.Infrastructure.Authentication.ClientCertificates;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

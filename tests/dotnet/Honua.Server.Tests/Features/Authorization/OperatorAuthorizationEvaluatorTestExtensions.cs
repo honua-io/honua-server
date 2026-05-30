@@ -1,6 +1,6 @@
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
-using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Infrastructure.Authentication;
 
 namespace Honua.Server.Tests.Features.Authorization;
 

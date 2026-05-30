@@ -4,7 +4,7 @@
 using System.Collections.Immutable;
 using System.Xml;
 using System.Xml.Serialization;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20.Models;
 

@@ -9,8 +9,8 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Server.Features.Infrastructure;
-using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Infrastructure;
+using Honua.Infrastructure.Authentication;
 using Honua.ControlPlane;
 
 namespace Honua.Server.Features.Admin.Jobs;

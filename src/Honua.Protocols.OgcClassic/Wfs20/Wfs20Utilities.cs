@@ -3,8 +3,8 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Validation;
 using Microsoft.AspNetCore.Http;
 using Honua.Protocols.Ogc.Common;
 

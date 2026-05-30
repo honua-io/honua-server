@@ -11,9 +11,9 @@ namespace Honua.Architecture.Tests;
 /// Infrastructure sub-areas takes a using-clause dependency on any
 /// <c>Honua.Server.Features.Protocols.*</c> namespace. Replacing those
 /// back-edges with delegate-override registrations (see
-/// <see cref="Honua.Server.Features.Infrastructure.Models.StandardErrorResponseFormatter"/>
+/// <see cref="Honua.Infrastructure.Models.StandardErrorResponseFormatter"/>
 /// and
-/// <see cref="Honua.Server.Features.Infrastructure.Validation.LayerValidationHelpers"/>
+/// <see cref="Honua.Infrastructure.Validation.LayerValidationHelpers"/>
 /// for the canonical pattern) is what unblocks Phase 1 protocol-assembly
 /// extraction. This ratchet locks in the cleanup so a future PR cannot
 /// silently regress it.

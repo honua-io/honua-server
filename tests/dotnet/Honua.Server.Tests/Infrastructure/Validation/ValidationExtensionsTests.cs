@@ -3,7 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Validation;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Validation;
 
 namespace Honua.Server.Tests.Infrastructure.Validation;
 

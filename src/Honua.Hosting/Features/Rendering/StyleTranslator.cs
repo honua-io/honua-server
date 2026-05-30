@@ -6,7 +6,7 @@ using System.Text.Json;
 using Honua.Core.Features.Metadata.Domain.V2;
 using SkiaSharp;
 
-namespace Honua.Server.Features.Infrastructure.Rendering;
+namespace Honua.Infrastructure.Rendering;
 
 /// <summary>
 /// Translates MapLibre style JSON into resolved SkiaSharp styles for rendering.

@@ -4,7 +4,7 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Xml.Linq;
-using Honua.Server.Features.Infrastructure.Rendering;
+using Honua.Infrastructure.Rendering;
 
 namespace Honua.Server.Features.Styling.Sld;
 

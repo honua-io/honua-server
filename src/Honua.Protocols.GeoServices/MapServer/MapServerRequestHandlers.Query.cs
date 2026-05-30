@@ -4,9 +4,9 @@
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Protocols.GeoServices;
-using Honua.Server.Features.Infrastructure.Abstractions;
-using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Abstractions;
+using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Models;
 using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.MapServer;

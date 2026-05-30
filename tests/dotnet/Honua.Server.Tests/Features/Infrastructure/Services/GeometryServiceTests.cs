@@ -11,7 +11,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Services;
 
 public sealed class GeometryServiceTests
 {
-    private readonly Honua.Server.Features.Infrastructure.Services.GeometryService _service = new(Options.Create(new LimitsOptions()));
+    private readonly Honua.Infrastructure.Services.GeometryService _service = new(Options.Create(new LimitsOptions()));
 
     [Fact]
     public void DetectZM_WhenZPresentInLaterCoordinate_ReturnsHasZ()
@@ -65,7 +65,7 @@ public sealed class GeometryServiceTests
     [Fact]
     public void ConvertGeoJsonToWkb_WhenPayloadExceedsConfiguredLimit_ReturnsSanitizedError()
     {
-        var service = new Honua.Server.Features.Infrastructure.Services.GeometryService(
+        var service = new Honua.Infrastructure.Services.GeometryService(
             Options.Create(new LimitsOptions
             {
                 Geometry = new GeometryLimits { MaxGeometrySize = 64 },
@@ -83,7 +83,7 @@ public sealed class GeometryServiceTests
     [Fact]
     public void ConvertWktToWkb_WhenPayloadExceedsConfiguredLimit_ReturnsSanitizedError()
     {
-        var service = new Honua.Server.Features.Infrastructure.Services.GeometryService(
+        var service = new Honua.Infrastructure.Services.GeometryService(
             Options.Create(new LimitsOptions
             {
                 Geometry = new GeometryLimits { MaxGeometrySize = 64 },

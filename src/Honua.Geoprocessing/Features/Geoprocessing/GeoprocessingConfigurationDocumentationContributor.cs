@@ -3,7 +3,7 @@
 
 using Honua.Core.Configuration;
 using Honua.Core.Features.Geoprocessing.Domain;
-using Honua.Server.Features.Infrastructure.Abstractions;
+using Honua.Infrastructure.Abstractions;
 using Microsoft.Extensions.Options;
 using ConfigurationSection = Honua.Core.Configuration.ConfigurationSection;
 

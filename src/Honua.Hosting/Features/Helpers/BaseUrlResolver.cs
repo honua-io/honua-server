@@ -3,7 +3,7 @@
 
 using System.Net;
 
-namespace Honua.Server.Features.Infrastructure.Helpers;
+namespace Honua.Infrastructure.Helpers;
 
 /// <summary>
 /// Resolves the public-facing base URL for link generation.

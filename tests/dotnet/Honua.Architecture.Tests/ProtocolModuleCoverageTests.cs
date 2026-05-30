@@ -3,8 +3,8 @@
 
 using System.Reflection;
 using FluentAssertions;
-using Honua.Server.Features.Infrastructure.Hosting;
-using Honua.Server.Features.Infrastructure.Hosting.Modules;
+using Honua.Infrastructure.Hosting;
+using Honua.Infrastructure.Hosting.Modules;
 using Xunit;
 
 namespace Honua.Architecture.Tests;

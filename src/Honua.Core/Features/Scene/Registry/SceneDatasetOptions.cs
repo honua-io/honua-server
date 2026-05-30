@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Security.Domain;
 
-namespace Honua.Server.Features.Infrastructure.Scene;
+namespace Honua.Infrastructure.Scene;
 
 /// <summary>
 /// Configuration-bound list of hosted 3D Tiles scene datasets.
