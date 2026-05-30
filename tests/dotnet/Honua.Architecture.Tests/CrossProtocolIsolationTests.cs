@@ -131,6 +131,34 @@ public sealed class CrossProtocolIsolationTests
     /// </summary>
     private sealed record CrossProtocolAllowance(string From, string To, int MaxFileCount);
 
+    /// <summary>
+    /// Source roots for protocol families that have been physically extracted into their own
+    /// <c>Honua.Protocols.&lt;X&gt;</c> assembly. Their namespace is preserved
+    /// (<c>Honua.Server.Features.Protocols.{Family}</c>) so the cross-family matchers still
+    /// work, but their source no longer lives under <c>Honua.Server/Features/Protocols</c>.
+    /// Each value is a repo-relative directory; unextracted families default to the Server
+    /// path. As more families are extracted, add their project root here.
+    /// </summary>
+    private static readonly Dictionary<string, string> _extractedFamilyRoots =
+        new(StringComparer.Ordinal)
+        {
+            ["OData"] = Path.Combine("src", "Honua.Protocols.OData"),
+        };
+
+    private static string[] EnumerateFamilySource(string root) =>
+        Directory.Exists(root)
+            ? Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
+                .Where(path => !IsBuildArtifact(path))
+                .ToArray()
+            : Array.Empty<string>();
+
+    private static bool IsBuildArtifact(string path)
+    {
+        var sep = Path.DirectorySeparatorChar;
+        return path.Contains($"{sep}bin{sep}", StringComparison.Ordinal)
+            || path.Contains($"{sep}obj{sep}", StringComparison.Ordinal);
+    }
+
     [ArchitectureTest]
     public void ProtocolFamilies_ShouldNotDependOn_OtherProtocolFamilies()
     {
@@ -152,9 +180,10 @@ public sealed class CrossProtocolIsolationTests
 
         var filesByFamily = _protocolFamilies.ToDictionary(
             family => family,
-            family => Directory.Exists(Path.Combine(protocolsPath, family))
-                ? Directory.EnumerateFiles(Path.Combine(protocolsPath, family), "*.cs", SearchOption.AllDirectories).ToArray()
-                : Array.Empty<string>(),
+            family => EnumerateFamilySource(
+                _extractedFamilyRoots.TryGetValue(family, out var extractedRoot)
+                    ? Path.Combine(repositoryRoot, extractedRoot)
+                    : Path.Combine(protocolsPath, family)),
             StringComparer.Ordinal);
 
         // Sanity check: every guarded family must actually have source, otherwise a rename

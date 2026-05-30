@@ -4,6 +4,7 @@
 using System.Reflection;
 using FluentAssertions;
 using Honua.Server.Features.Infrastructure.Hosting;
+using Honua.Server.Features.Infrastructure.Hosting.Modules;
 using Xunit;
 
 namespace Honua.Architecture.Tests;
@@ -11,13 +12,17 @@ namespace Honua.Architecture.Tests;
 /// <summary>
 /// Enforces that every protocol surface called out by the modularization plan
 /// has a corresponding <see cref="IHonuaProtocolModule"/> implementation so the
-/// future plugin host (Phase 1 follow-up) has something to discover.
+/// plugin host has something to discover.
 /// </summary>
 /// <remarks>
-/// The test inspects the loaded <c>Honua.Server</c> assembly via reflection.
-/// When a protocol is later extracted into its own assembly
-/// (<c>Honua.Protocols.&lt;X&gt;</c>), the discovery surface widens to
-/// include that assembly; the assertion stays the same.
+/// The <see cref="IHonuaProtocolModule"/> contract lives in <c>Honua.Hosting</c>
+/// after the audit-A1 relocation, but the concrete modules still ship in
+/// <c>Honua.Server</c> (and, as protocols are physically extracted, in their
+/// own <c>Honua.Protocols.&lt;X&gt;</c> assemblies). The discovery surface is
+/// therefore the Server assembly unioned with every loaded
+/// <c>Honua.Protocols.*</c> assembly — anchoring on the interface's own
+/// assembly would scan Hosting, which holds the contract but no
+/// implementations.
 /// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class ProtocolModuleCoverageTests
@@ -30,20 +35,37 @@ public sealed class ProtocolModuleCoverageTests
         "GeoServices",
     };
 
+    /// <summary>
+    /// Assemblies that may host protocol-module implementations: the Server
+    /// composition root (anchored on a known module type to force-load it)
+    /// plus any extracted <c>Honua.Protocols.*</c> assemblies already loaded
+    /// into the AppDomain. Server references every protocol module, so loading
+    /// the Server assembly transitively loads the extracted ones.
+    /// </summary>
+    private static List<Assembly> DiscoveryAssemblies()
+    {
+        var server = typeof(ODataProtocolModule).Assembly;
+        return AppDomain.CurrentDomain.GetAssemblies()
+            .Where(a => a.GetName().Name?.StartsWith("Honua.Protocols.", StringComparison.Ordinal) == true)
+            .Append(server)
+            .Distinct()
+            .ToList();
+    }
+
+    private static List<Type> DiscoverModuleTypes() => DiscoveryAssemblies()
+        .SelectMany(ArchitectureTestHelpers.GetTypesSafely)
+        .Where(t => t is { IsAbstract: false, IsInterface: false })
+        .Where(t => typeof(IHonuaProtocolModule).IsAssignableFrom(t))
+        .ToList();
+
     [ArchitectureTest]
     public void EveryRequiredProtocol_ShouldHaveAModuleImplementation()
     {
-        var serverAssembly = typeof(IHonuaProtocolModule).Assembly;
-
-        var moduleTypes = ArchitectureTestHelpers
-            .GetTypesSafely(serverAssembly)
-            .Where(t => t is { IsAbstract: false, IsInterface: false })
-            .Where(t => typeof(IHonuaProtocolModule).IsAssignableFrom(t))
-            .ToList();
+        var moduleTypes = DiscoverModuleTypes();
 
         moduleTypes
             .Should()
-            .NotBeEmpty("at least one IHonuaProtocolModule implementation must exist in Honua.Server");
+            .NotBeEmpty("at least one IHonuaProtocolModule implementation must exist in Honua.Server or an extracted Honua.Protocols.* assembly");
 
         var discoveredNames = moduleTypes
             .Select(t => (IHonuaProtocolModule)Activator.CreateInstance(t)!)
@@ -61,12 +83,7 @@ public sealed class ProtocolModuleCoverageTests
     [ArchitectureTest]
     public void EveryProtocolModule_ShouldBeSealed()
     {
-        var serverAssembly = typeof(IHonuaProtocolModule).Assembly;
-
-        var unsealedModules = ArchitectureTestHelpers
-            .GetTypesSafely(serverAssembly)
-            .Where(t => t is { IsAbstract: false, IsInterface: false })
-            .Where(t => typeof(IHonuaProtocolModule).IsAssignableFrom(t))
+        var unsealedModules = DiscoverModuleTypes()
             .Where(t => !t.IsSealed)
             .Select(t => t.FullName)
             .ToList();
@@ -79,12 +96,7 @@ public sealed class ProtocolModuleCoverageTests
     [ArchitectureTest]
     public void EveryProtocolModule_ShouldHaveAParameterlessConstructor()
     {
-        var serverAssembly = typeof(IHonuaProtocolModule).Assembly;
-
-        var typesMissingParameterlessCtor = ArchitectureTestHelpers
-            .GetTypesSafely(serverAssembly)
-            .Where(t => t is { IsAbstract: false, IsInterface: false })
-            .Where(t => typeof(IHonuaProtocolModule).IsAssignableFrom(t))
+        var typesMissingParameterlessCtor = DiscoverModuleTypes()
             .Where(t => t.GetConstructor(Type.EmptyTypes) is null)
             .Select(t => t.FullName)
             .ToList();

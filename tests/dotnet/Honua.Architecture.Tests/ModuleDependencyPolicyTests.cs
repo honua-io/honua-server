@@ -77,6 +77,7 @@ public sealed class ModuleDependencyPolicyTests
         ServiceDefaults,
         AppHost,
         Worker,
+        Sample,
     }
 
     /// <summary>
@@ -106,9 +107,14 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Azure,     ModuleRole.Abstractions),
         (ModuleRole.Azure,     ModuleRole.Core),
 
-        // Hosting: Abstractions + Core + ServiceDefaults.
+        // Hosting: Abstractions + Core + Geometry + ServiceDefaults. Hosting
+        // owns the IGeometryService abstraction surface and host-level
+        // geometry plumbing, so it consumes NetTopologySuite types through
+        // Honua.Geometry. Geometry depends only on Abstractions + Core, so the
+        // edge is acyclic and directionally down-stack.
         (ModuleRole.Hosting, ModuleRole.Abstractions),
         (ModuleRole.Hosting, ModuleRole.Core),
+        (ModuleRole.Hosting, ModuleRole.Geometry),
         (ModuleRole.Hosting, ModuleRole.ServiceDefaults),
 
         // Storage providers: Abstractions + Core + Geometry (NTS); Postgres
@@ -116,6 +122,12 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Postgres,  ModuleRole.Abstractions),
         (ModuleRole.Postgres,  ModuleRole.Core),
         (ModuleRole.Postgres,  ModuleRole.Geometry),
+        // Intra-family: the Postgres role spans Honua.Postgres plus its split
+        // sub-assemblies (Honua.Postgres.Shared substrate today; Migrations /
+        // Catalog / FeatureStore / Streaming / Outbox planned). Members of the
+        // family may reference each other; the no-cross-provider rule only
+        // forbids Postgres<->DuckDB/MySql/SqlServer edges.
+        (ModuleRole.Postgres,  ModuleRole.Postgres),
         (ModuleRole.Postgres,  ModuleRole.Aws),
         (ModuleRole.DuckDB,    ModuleRole.Abstractions),
         (ModuleRole.DuckDB,    ModuleRole.Core),
@@ -204,9 +216,17 @@ public sealed class ModuleDependencyPolicyTests
         // ServiceDefaults today.
         (ModuleRole.AppHost, ModuleRole.ServiceDefaults),
 
-        // Worker.Gdal is a side-car process whose composition root is Server
-        // (the only assembly outside Server itself permitted to do so).
-        (ModuleRole.Worker, ModuleRole.Server),
+        // Worker.Gdal is a side-car GDAL process. Per ADR-0038 it deliberately
+        // does NOT reference Honua.Server (to avoid pulling the whole host into
+        // the worker image); it consumes the job substrate and contracts
+        // directly: Abstractions + Core + Jobs.
+        (ModuleRole.Worker, ModuleRole.Abstractions),
+        (ModuleRole.Worker, ModuleRole.Core),
+        (ModuleRole.Worker, ModuleRole.Jobs),
+
+        // Server may host a sample/demo app as static content (the StacOpsDemo
+        // Blazor WASM client). Samples never reference back into the runtime.
+        (ModuleRole.Server, ModuleRole.Sample),
     };
 
     /// <summary>
@@ -433,6 +453,18 @@ public sealed class ModuleDependencyPolicyTests
     /// </summary>
     private static ModuleRole ClassifyByCsprojName(string projectName)
     {
+        // Tooling first: test projects and the test-kit are not part of the
+        // runtime topology. This guard must precede the family-prefix checks
+        // below, otherwise e.g. "Honua.Protocols.GeoServices.Tests" would match
+        // the "Honua.Protocols." prefix and be misclassified as a runtime
+        // Protocols consumer (and its test-only Postgres reference would trip
+        // the matrix). Unclassified consumers may reference anything.
+        if (projectName.EndsWith(".Tests", StringComparison.Ordinal) ||
+            projectName.Equals("Honua.TestKit", StringComparison.Ordinal))
+        {
+            return ModuleRole.Unclassified;
+        }
+
         // Tier 1: Abstractions — must come before Core because of the prefix.
         if (projectName.Equals("Honua.Core.Abstractions", StringComparison.Ordinal))
         {
@@ -546,6 +578,16 @@ public sealed class ModuleDependencyPolicyTests
         if (projectName.StartsWith("Honua.Worker.", StringComparison.Ordinal))
         {
             return ModuleRole.Worker;
+        }
+
+        // Hosted sample/demo apps (e.g. the Honua.StacOpsDemo Blazor WASM client
+        // that Server mounts as static assets behind a conditional reference).
+        // Server is the only runtime assembly allowed to reference a sample.
+        if (projectName.EndsWith("Demo", StringComparison.Ordinal) ||
+            projectName.EndsWith(".Sample", StringComparison.Ordinal) ||
+            projectName.EndsWith(".Samples", StringComparison.Ordinal))
+        {
+            return ModuleRole.Sample;
         }
 
         // Tooling (tests, samples, benchmarks, test-kit) is unclassified by

@@ -40,7 +40,7 @@ several assemblies that share a role.
 | 1 | **Abstractions** | `Honua.Core.Abstractions` | Pure contracts — interfaces, DTOs, records, option types, attribute markers. No implementation logic beyond trivial defaults. | `Microsoft.Extensions.*` only. **Banned:** `NetTopologySuite`, `Npgsql`, `AWSSDK.*`, `Azure.*`, `Parquet.*`, `FlatGeobuf`. |
 | 2 | **Core** | `Honua.Core` | Cross-cutting domain logic — filter AST, metadata graph, security helpers, validation primitives. Provider-agnostic; protocol-neutral. May reference Abstractions. **Goal state:** heavy package refs migrate out (see Notes). | `Microsoft.Extensions.*`, `Polly`. Heavy refs (`NetTopologySuite`, `AWSSDK.*`, `Parquet.*`, `FlatGeobuf`) are present today but are scheduled to move to Geometry/Geocoding/Aws — new code must not add to them. |
 | 3 | **Geospatial / Cloud satellites** | `Honua.Geometry` (NTS), `Honua.Geocoding` (AWS Location), `Honua.Aws` (S3 / etc.), `Honua.Azure` (Blob / etc.) | Heavy-package-coupled domain stacks. Each is dedicated to one external SDK family so the rest of the graph stays light. May reference Abstractions and Core. **Today these assemblies do not yet exist**; the policy reserves their slots so the migration target is unambiguous. | The relevant SDK family + Abstractions/Core. No other satellite. |
-| 4 | **Hosting** | `Honua.Hosting` | ASP.NET-coupled host plumbing: authentication, caching, events, helpers, models, validation, the protocol-module plug-in surface. The only project (besides Server) that references `Microsoft.AspNetCore.*`. | `Microsoft.AspNetCore.*` + Abstractions / Core / ServiceDefaults. |
+| 4 | **Hosting** | `Honua.Hosting` | ASP.NET-coupled host plumbing: authentication, caching, events, helpers, models, validation, the protocol-module plug-in surface. The only project (besides Server) that references `Microsoft.AspNetCore.*`. Owns the `IGeometryService` abstraction surface, so it also consumes NetTopologySuite via Geometry. | `Microsoft.AspNetCore.*`, `NetTopologySuite` (via Geometry) + Abstractions / Core / Geometry / ServiceDefaults. |
 | 4 | **Jobs** | `Honua.Jobs` | Durable job-execution substrate (claim / lease / heartbeat / reconciliation). Carved out of Server in the jobs-split refactor; sits alongside Hosting in tier 4 because the cloud satellites (`Honua.Aws`, `Honua.Azure`) and Worker.Gdal reuse it. | `StackExchange.Redis`, `Polly` + Abstractions / Core / Hosting / ServiceDefaults. |
 | 4 | **Ai** | `Honua.Ai` | Carved AiBuilder + Grounding + NlQuery + AnalysisContent surface (the four feature subtrees that previously sat in `Honua.Server/Features/`). Sits alongside Hosting / Jobs in tier 4 so Server can depend on it without re-introducing a cycle. Grounding / AnalysisContent orchestrate analysis jobs through `IGeoprocessingJobService`, so Ai also references Geoprocessing. **Must not reference Honua.Server** — `HonuaAiIsolationTests` guards the one-way edge. | `Asp.Versioning.Http`, `StackExchange.Redis` + Abstractions / Core / Hosting / Jobs / Geoprocessing / ServiceDefaults. |
 | 4 | **Geoprocessing** | `Honua.Geoprocessing` | Canonical process / analysis runtime (plan validation, dry-run, job submission/lifecycle) carved out of Server in the geoprocessing-split refactor so the OGC API Processes / GeoServices GPServer protocol adapters — and Ai's analysis orchestration — can reference it without pulling Server transitively. Sits alongside Hosting / Jobs / Ai in tier 4. **Must not reference Honua.Server** — `GeoprocessingIsolationTests` guards the one-way edge. | Abstractions / Core / Geometry / Hosting / Jobs / ServiceDefaults. |
@@ -51,9 +51,15 @@ several assemblies that share a role.
 `Honua.ServiceDefaults` is a sideways utility shared by Hosting and Server
 (it carries .NET Aspire defaults). `Honua.AppHost` is an Aspire orchestration
 shell that references only `Honua.ServiceDefaults`. `Honua.Worker.Gdal` is a
-separate process whose runtime references Server. These three sit outside
-the main stack and are matrix entries in their own right but do not
-participate in the tier topology.
+separate side-car GDAL process that, per ADR-0038, deliberately does **not**
+reference `Honua.Server` (so the worker image does not pull in the whole
+host); it depends on `Honua.Core.Abstractions`, `Honua.Core`, and `Honua.Jobs`.
+These three sit outside the main stack and are matrix entries in their own
+right but do not participate in the tier topology. Hosted sample/demo apps
+(e.g. `Honua.StacOpsDemo`, a Blazor WASM client Server mounts as static
+assets) are classified as the `Sample` role; `Server` is the only runtime
+assembly permitted to reference a sample, and samples never reference back
+into the runtime stack.
 
 ### Dependency direction matrix
 
@@ -69,11 +75,11 @@ cells are forbidden and are caught by `ModuleDependencyPolicyTests`.
 | **Geocoding**            |   ✓   |  ✓   |     |      |     |       |         |      |    |       |          |        |       |           |             |        |        |
 | **Aws**                  |   ✓   |  ✓   |     |      |     |       |    ✓    |  ✓   |    |       |          |        |       |           |             |        |   ✓    |
 | **Azure**                |   ✓   |  ✓   |     |      |     |       |    ✓    |  ✓   |    |       |          |        |       |           |             |        |   ✓    |
-| **Hosting**              |   ✓   |  ✓   |     |      |     |       |         |      |    |       |          |        |       |           |             |        |   ✓    |
+| **Hosting**              |   ✓   |  ✓   |  ✓  |      |     |       |         |      |    |       |          |        |       |           |             |        |   ✓    |
 | **Jobs**                 |   ✓   |  ✓   |     |      |     |       |    ✓    |      |    |       |          |        |       |           |             |        |   ✓    |
 | **Ai**                   |   ✓   |  ✓   |     |      |     |       |    ✓    |  ✓   |    |   ✓   |          |        |       |           |             |        |   ✓    |
 | **Geoprocessing**        |   ✓   |  ✓   |  ✓  |      |     |       |    ✓    |  ✓   |    |       |          |        |       |           |             |        |   ✓    |
-| **Postgres**             |   ✓   |  ✓   |  ✓  |      |  ✓  |       |         |      |    |       |          |        |       |           |             |        |        |
+| **Postgres**             |   ✓   |  ✓   |  ✓  |      |  ✓  |       |         |      |    |       |    ✓     |        |       |           |             |        |        |
 | **DuckDB**               |   ✓   |  ✓   |  ✓  |      |     |       |         |      |    |       |          |        |       |           |             |        |        |
 | **MySql**                |   ✓   |  ✓   |  ✓  |      |     |       |         |      |    |       |          |        |       |           |             |        |        |
 | **SqlServer**            |   ✓   |  ✓   |  ✓  |      |     |       |         |      |    |       |          |        |       |           |             |        |        |

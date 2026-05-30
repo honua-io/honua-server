@@ -37,6 +37,10 @@ public sealed class VerticalSliceIsolationTests
         "NlQuery",
         "Export",
         "Import",
+        "FileImport",   // Import-split: file-format ingest slice.
+        "Migration",    // Import-split: ArcGIS/legacy migration slice.
+        "RasterImport", // Import-split: raster ingest slice.
+        "ControlPlane", // Relocated out of the Infrastructure grab-bag (audit-A1).
         "FileStorage",
         "PrintingTools",
         "HealthCheck",
@@ -47,6 +51,7 @@ public sealed class VerticalSliceIsolationTests
         "Spec",
         "Reporting",
         "Studio",
+        "Styling", // Relocated out of the Infrastructure grab-bag into its own top-level slice.
         "WorkflowPackages"
     };
 
@@ -78,6 +83,17 @@ public sealed class VerticalSliceIsolationTests
             "Services",
             "Abstractions",
             "Extensions",
+            "Infrastructure",   // Honua.Hosting/Features/Infrastructure holds the shared
+                                // Honua.Server.Features.Infrastructure.* base types (e.g.
+                                // IConfigurationDocumentationContributor, job-cancellation
+                                // notifier extensions) lifted in the Hosting carve.
+            "Alerts",           // Hosting-resident shared base of the Alerts slice (delivery
+                                // options/metadata/sink contracts); the Alerts endpoints stay
+                                // in Honua.Server/Features/Alerts.
+            "FileStorage",      // Hosting-resident cloud-storage base types + stream wrappers
+                                // (CloudFileStorageBase, progress/cancellation streams) shared
+                                // by the storage providers; the FileStorage endpoints +
+                                // LocalFileStorage stay in Honua.Server/Features/FileStorage.
             "Helpers",          // Hosting carve preserves Honua.Server.Features.Infrastructure.Helpers.*
             // Cross-cutting subsystems.
             "Analytics",
@@ -124,7 +140,28 @@ public sealed class VerticalSliceIsolationTests
     private static readonly Dictionary<string, IReadOnlyCollection<string>> _allowedCrossFeatureRefs =
         new(StringComparer.Ordinal)
         {
-            ["Capabilities"] = new[] { "Import", "Streaming" },
+            // Capabilities aggregates a service-metadata manifest across slices
+            // (ingest registry, streaming descriptors, ControlPlane options).
+            ["Capabilities"] = new[] { "Import", "Streaming", "ControlPlane", "FileImport", "Migration", "RasterImport" },
+            // Admin is the composition/administration surface: its endpoints adapt
+            // several domain slices directly (Styling SLD CRUD, the ControlPlane
+            // deploy-workflow service, the ingest pipeline, Console content).
+            // Surfaced once these became tracked features; tech debt to retire by
+            // routing through shared Core abstractions (and, for the ingest set,
+            // by the Honua.Import extraction).
+            ["Admin"] = new[] { "Styling", "ControlPlane", "Console", "Import", "Migration", "FileImport", "RasterImport" },
+            // ControlPlane orchestrates deploy/release workflows over the
+            // Geoprocessing job runtime and is wired from the Admin surface.
+            ["ControlPlane"] = new[] { "Geoprocessing", "Admin" },
+            // Studio composes the Console authoring surface.
+            ["Studio"] = new[] { "Console" },
+            // The ingest cluster (Import + Migration + FileImport + RasterImport)
+            // is one cohesive unit destined for the Honua.Import module; intra-
+            // cluster references are expected and move out of Server together.
+            ["Import"] = new[] { "Migration", "FileImport", "RasterImport" },
+            ["Migration"] = new[] { "Import", "FileImport", "RasterImport" },
+            ["FileImport"] = new[] { "Import", "Migration", "RasterImport" },
+            ["RasterImport"] = new[] { "Import", "Migration", "FileImport" },
             ["Mcp"] = new[] { "Geoprocessing", "Grounding", "Reporting" },
             ["Grounding"] = new[] { "Geoprocessing" },
             ["AnalysisContent"] = new[] { "Geoprocessing" },

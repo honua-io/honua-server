@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Server;
 using NetArchTest.Rules;
 using Xunit;
 
@@ -37,7 +38,7 @@ public sealed class InfrastructureMisfileRatchetTests
     [ArchitectureTest]
     public void RelocatedSubAreas_ShouldNotReappearUnder_Infrastructure()
     {
-        var serverAssembly = typeof(Honua.Server.Features.Infrastructure.Hosting.IHonuaProtocolModule).Assembly;
+        var serverAssembly = typeof(EndpointRegistry).Assembly;
 
         var allTypes = ArchitectureTestHelpers.GetTypesSafely(serverAssembly).ToList();
 
@@ -62,7 +63,7 @@ public sealed class InfrastructureMisfileRatchetTests
     [ArchitectureTest]
     public void RelocatedSubAreas_ShouldExistAt_NewLocation()
     {
-        var serverAssembly = typeof(Honua.Server.Features.Infrastructure.Hosting.IHonuaProtocolModule).Assembly;
+        var serverAssembly = typeof(EndpointRegistry).Assembly;
 
         var allTypes = ArchitectureTestHelpers.GetTypesSafely(serverAssembly).ToList();
 
