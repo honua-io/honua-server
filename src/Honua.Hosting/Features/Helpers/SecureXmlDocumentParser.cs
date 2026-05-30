@@ -11,9 +11,6 @@ namespace Honua.Server.Features.Infrastructure.Helpers;
 /// </summary>
 internal static class SecureXmlDocumentParser
 {
-    // codeql[cs/xml/insecure-dtd-handling]: DtdProcessing is Prohibit, XmlResolver is null,
-    // and MaxCharactersFromEntities is 0; the configuration already blocks XXE and entity-expansion attacks.
-    // codeql[cs/xml/missing-validation]: The secure reader settings above are the dismissal anchor.
     public static XDocument Parse(string xml, LoadOptions loadOptions = LoadOptions.None)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(xml);
@@ -26,6 +23,10 @@ internal static class SecureXmlDocumentParser
         };
 
         using var stringReader = new StringReader(xml);
+        // codeql[cs/xml/missing-validation]: DtdProcessing is Prohibit, XmlResolver is null, and
+        // MaxCharactersFromEntities is 0, so DTDs/external entities (XXE) and entity-expansion are
+        // blocked before the reader loads.
+        // codeql[cs/xml/insecure-dtd-handling]: see above — DTD processing is prohibited.
         using var xmlReader = XmlReader.Create(stringReader, settings);
         return XDocument.Load(xmlReader, loadOptions);
     }

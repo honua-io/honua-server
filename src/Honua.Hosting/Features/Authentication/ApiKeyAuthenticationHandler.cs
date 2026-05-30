@@ -154,6 +154,10 @@ internal sealed class ApiKeyAuthenticationHandler(
             return false;
         }
 
+        // codeql[cs/user-controlled-bypass]: the transport check uses Request.IsHttps, which
+        // reflects the real connection scheme (forwarded values are honored only after the
+        // trusted-proxy ForwardedHeaders middleware), so it is not attacker-controllable;
+        // this branch is the secure path that REJECTS Basic auth over non-HTTPS transport.
         if (_authOptions.RequireHttpsForBasicAuth && !IsHttpsRequest())
         {
             AuthenticationLog.BasicAuthRejectedInsecureTransport(Logger);

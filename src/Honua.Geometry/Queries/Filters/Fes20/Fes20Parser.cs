@@ -55,6 +55,8 @@ public static class Fes20Parser
                 DtdProcessing = DtdProcessing.Prohibit,
                 XmlResolver = null
             };
+            // codeql[cs/xml/missing-validation]: DtdProcessing is Prohibit and XmlResolver is
+            // null, so DTDs and external entities (XXE) are blocked before the reader loads.
             using var xmlReader = XmlReader.Create(stringReader, settings);
             var doc = XDocument.Load(xmlReader, LoadOptions.None);
             var filterElement = doc.Root ?? throw new Fes20ParseException("Invalid XML: no root element");
