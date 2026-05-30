@@ -179,6 +179,16 @@ internal sealed partial class GeoservicesImportBackgroundService : BackgroundSer
 
             stopwatch.Stop();
 
+            // If the job was cancelled (the cancel endpoint writes Cancelled directly
+            // to the progress store) while the import was completing, the cancellation
+            // wins: don't overwrite the terminal Cancelled status with Completed/Failed.
+            var storedProgress = await _jobManager.ProgressStore.GetProgressAsync(jobId, stoppingToken).ConfigureAwait(false);
+            if (storedProgress?.Status == GeoservicesImportStatus.Cancelled)
+            {
+                await _jobManager.RequestStore.DeleteProgressAsync(jobId, stoppingToken).ConfigureAwait(false);
+                return;
+            }
+
             // Update final progress
             var finalStatus = result.Success ? GeoservicesImportStatus.Completed : GeoservicesImportStatus.Failed;
             var finalProgress = new GeoservicesImportProgress

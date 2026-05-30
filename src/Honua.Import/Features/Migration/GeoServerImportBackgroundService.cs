@@ -163,6 +163,20 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
 
             stopwatch.Stop();
 
+            // If the job was cancelled (e.g. via the cancel endpoint, which writes
+            // Cancelled directly to the progress store) while the import was
+            // completing, the cancellation wins: don't overwrite the terminal
+            // Cancelled status with a Completed/Failed result. Imports that honour
+            // the cancellation token throw and land in the catch below; this guard
+            // also covers imports that run to completion without observing it.
+            var storedProgress = await _jobManager.ProgressStore.GetProgressAsync(jobId, stoppingToken).ConfigureAwait(false);
+            if (storedProgress?.Status == GeoServerImportStatus.Cancelled)
+            {
+                await _jobManager.RequestStore.DeleteProgressAsync(jobId, stoppingToken).ConfigureAwait(false);
+                Log.JobCancelled(_logger, jobId, stopwatch.Elapsed.TotalSeconds);
+                return;
+            }
+
             var currentProgress = progressController.CurrentProgress ?? GeoServerImportProgress.CreateInitial(jobId, request.GeoServerRestUrl, request.TargetHonuaUrl);
             var finalProgress = currentProgress with
             {
