@@ -38,7 +38,7 @@ several assemblies that share a role.
 | # | Layer | Assemblies | Role | Allowed package neighbourhoods |
 |---|-------|-----------|------|--------------------------------|
 | 1 | **Abstractions** | `Honua.Core.Abstractions` | Pure contracts — interfaces, DTOs, records, option types, attribute markers. No implementation logic beyond trivial defaults. | `Microsoft.Extensions.*` only. **Banned:** `NetTopologySuite`, `Npgsql`, `AWSSDK.*`, `Azure.*`, `Parquet.*`, `FlatGeobuf`. |
-| 2 | **Core** | `Honua.Core` | Cross-cutting domain logic — filter AST, metadata graph, security helpers, validation primitives. Provider-agnostic; protocol-neutral. May reference Abstractions. **Goal state:** heavy package refs migrate out (see Notes). | `Microsoft.Extensions.*`, `Polly`. Heavy refs (`NetTopologySuite`, `AWSSDK.*`, `Parquet.*`, `FlatGeobuf`) are present today but are scheduled to move to Geometry/Geocoding/Aws — new code must not add to them. |
+| 2 | **Core** | `Honua.Core` | Cross-cutting domain logic — filter AST, metadata graph, security helpers, validation primitives. Provider-agnostic; protocol-neutral. May reference Abstractions. | `Microsoft.Extensions.*`, `Polly` only. The heavy refs (`NetTopologySuite`, `AWSSDK.*`, `Parquet.*`, `FlatGeobuf`) have been migrated out to Geometry / Geocoding / Aws; new code must not reintroduce them here. |
 | 3 | **Geospatial / Cloud satellites** | `Honua.Geometry` (NTS), `Honua.Geocoding` (AWS Location), `Honua.Aws` (S3 / etc.), `Honua.Azure` (Blob / etc.) | Heavy-package-coupled domain stacks. Each is dedicated to one external SDK family so the rest of the graph stays light. May reference Abstractions and Core. **Today these assemblies do not yet exist**; the policy reserves their slots so the migration target is unambiguous. | The relevant SDK family + Abstractions/Core. No other satellite. |
 | 4 | **Hosting** | `Honua.Hosting` | ASP.NET-coupled host plumbing: authentication, caching, events, helpers, models, validation, the protocol-module plug-in surface. The only project (besides Server) that references `Microsoft.AspNetCore.*`. Owns the `IGeometryService` abstraction surface, so it also consumes NetTopologySuite via Geometry. | `Microsoft.AspNetCore.*`, `NetTopologySuite` (via Geometry) + Abstractions / Core / Geometry / ServiceDefaults. |
 | 4 | **Jobs** | `Honua.Jobs` | Durable job-execution substrate (claim / lease / heartbeat / reconciliation). Carved out of Server in the jobs-split refactor; sits alongside Hosting in tier 4 because the cloud satellites (`Honua.Aws`, `Honua.Azure`) and Worker.Gdal reuse it. | `StackExchange.Redis`, `Polly` + Abstractions / Core / Hosting / ServiceDefaults. |
@@ -113,16 +113,17 @@ Reading the matrix:
 
 #### Out-of-stack assemblies
 
-| Consumer ↓ \ Provider → | Abstr | Core | Hosting | Server | SvcDef |
-|--------------------------|:-----:|:----:|:-------:|:------:|:------:|
-| **AppHost**              |       |      |         |        |   ✓    |
-| **Worker.Gdal**          |       |      |         |   ✓    |        |
+| Consumer ↓ \ Provider → | Abstr | Core | Hosting | Jobs | Server | SvcDef |
+|--------------------------|:-----:|:----:|:-------:|:----:|:------:|:------:|
+| **AppHost**              |       |      |         |      |        |   ✓    |
+| **Worker.Gdal**          |   ✓   |  ✓   |         |  ✓   |        |        |
 
 `AppHost` is the Aspire-orchestration entry point; it carries no business
 logic and references only `ServiceDefaults`. `Worker.Gdal` is the GDAL/OGR
-worker process whose composition root happens to be Server today — it is the
-one place outside Server itself that may reference Server. New satellites of
-this kind require an ADR amendment, not just a test allow-list entry.
+side-car process; per ADR-0038 it deliberately does **not** reference
+`Honua.Server` (so the worker image stays slim) and depends only on
+Abstractions + Core + Jobs. New satellites of this kind require an ADR
+amendment, not just a test allow-list entry.
 
 ### Decision tree for new code
 
@@ -203,9 +204,9 @@ The policy does not change shape — only the granularity tightens.
   `CoreAbstractionsIsolationTests.AbstractionsCsproj_ShouldNotReference_HonuaCore`.)
 - **Heavy package dependencies (NTS, AWS, Azure, Parquet, FlatGeobuf) belong
   in their dedicated satellite, not in Core.** Adding such a reference to
-  Core's `.csproj` is the single most common mistake. The matrix forbids it
-  for any *new* dependency; existing ones are grandfathered (see the
-  TechDebt ratchet in the test) and migrate out as the satellites land.
+  Core's `.csproj` is the single most common mistake. The migration is
+  complete — Core carries none of them today and the TechDebt ratchet in the
+  test is empty — so the matrix forbids any reintroduction outright.
 - **Protocol modules depend on Hosting, not on Server.** Server is the
   composition root; if a protocol module needs something that today lives in
   Server, the answer is to move that something into Hosting (or Core), not
