@@ -511,12 +511,18 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Records",
       "paths": [
         "src/Honua.Protocols.OgcApi/Maps/",
         "src/Honua.Protocols.OgcApi/Tiles/",
+        "src/Honua.Protocols.OgcApi/Coverages/",
+        "src/Honua.Protocols.OgcApi/Processes/",
+        "src/Honua.Protocols.OgcApi/Records/",
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Maps/",
-        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Tiles/"
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Tiles/",
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Coverages/",
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Processes/",
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Records/"
       ]
     },
     {
@@ -565,10 +571,18 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.Catalog|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.NAServer",
       "paths": [
         "src/Honua.Protocols.GeoServices/ImageServer/",
-        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/"
+        "src/Honua.Protocols.GeoServices/GPServer/",
+        "src/Honua.Protocols.GeoServices/GeometryService/",
+        "src/Honua.Protocols.GeoServices/Catalog/",
+        "src/Honua.Protocols.GeoServices/NAServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/",
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/"
       ],
       "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
     },
@@ -631,7 +645,7 @@
       "max_cpu_count": "1",
       "upload_operator_eval_report": true,
       "upload_odata_evidence": false,
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Eval|FullyQualifiedName~Honua.Server.Tests.Features.Geoprocessing|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Grpc|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Eval|FullyQualifiedName~Honua.Server.Tests.Features.Geoprocessing|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Grpc",
       "paths": [
         "src/Honua.Geoprocessing/Features/Geoprocessing/",
         "src/Honua.Core/Features/Geoprocessing/",
