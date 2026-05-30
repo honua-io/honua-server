@@ -45,7 +45,11 @@ internal static class ArchitectureTestHelpers
     internal static IReadOnlyList<Assembly> IntegrationTestAssemblies()
     {
         var baseDir = AppContext.BaseDirectory;
-        var patterns = new[] { "Honua.Server.Tests.dll", "Honua.Protocols.*.Tests.dll" };
+        // Honua.Ai.Tests carries the MCP protocol-surface tests (MCP lives in
+        // Honua.Ai, not a standalone Honua.Protocols.Mcp), so it holds endpoint /
+        // operation coverage that the scans must see alongside the Server.Tests
+        // and per-protocol Honua.Protocols.*.Tests assemblies.
+        var patterns = new[] { "Honua.Server.Tests.dll", "Honua.Protocols.*.Tests.dll", "Honua.Ai.Tests.dll" };
 
         var assemblies = new List<Assembly>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

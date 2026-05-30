@@ -2917,13 +2917,13 @@
           "proofMechanism": "JSON-RPC framing, auth, tool delegation, stub envelopes, resource reads, and error mapping are covered through unit and integration tests against the operator surface",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "tests/dotnet/Honua.Protocols.Mcp.Tests/Source/McpEndpointIntegrationTests.cs",
-            "tests/dotnet/Honua.Protocols.Mcp.Tests/Source/McpToolDelegationTests.cs",
-            "tests/dotnet/Honua.Protocols.Mcp.Tests/Source/McpErrorMappingTests.cs",
-            "tests/dotnet/Honua.Protocols.Mcp.Tests/Source/McpAuthorizationTests.cs",
-            "tests/dotnet/Honua.Protocols.Mcp.Tests/Source/PlanAnalysisToolTests.cs",
-            "tests/dotnet/Honua.Protocols.Mcp.Tests/Source/McpResourceSerializationTests.cs",
-            "tests/dotnet/Honua.Protocols.Mcp.Tests/Source/McpTaxonomyAlignmentTests.cs"
+            "tests/dotnet/Honua.Ai.Tests/Source/McpEndpointIntegrationTests.cs",
+            "tests/dotnet/Honua.Ai.Tests/Source/McpToolDelegationTests.cs",
+            "tests/dotnet/Honua.Ai.Tests/Source/McpErrorMappingTests.cs",
+            "tests/dotnet/Honua.Ai.Tests/Source/McpAuthorizationTests.cs",
+            "tests/dotnet/Honua.Ai.Tests/Source/PlanAnalysisToolTests.cs",
+            "tests/dotnet/Honua.Ai.Tests/Source/McpResourceSerializationTests.cs",
+            "tests/dotnet/Honua.Ai.Tests/Source/McpTaxonomyAlignmentTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -3159,7 +3159,7 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Server.Tests/Features/Reporting/AnalysisReportServiceTests.cs",
-            "tests/dotnet/Honua.Protocols.Mcp.Tests/Source/AnalysisReportResourceTests.cs",
+            "tests/dotnet/Honua.Ai.Tests/Source/AnalysisReportResourceTests.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Reporting/RenderGoldenTests.cs",
             "tests/dotnet/Honua.Core.Tests/Features/Reporting/AnalysisReportBuilderTests.cs",
             "tests/dotnet/Honua.Core.Tests/Features/Reporting/InMemoryAnalysisReportStoreTests.cs"

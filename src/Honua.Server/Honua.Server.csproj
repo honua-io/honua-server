@@ -24,7 +24,7 @@
     <InternalsVisibleTo Include="Honua.Protocols.OgcApi.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.OgcClassic.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.GeoServices.Tests" />
-    <InternalsVisibleTo Include="Honua.Protocols.Mcp.Tests" />
+    <InternalsVisibleTo Include="Honua.Ai.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.Scene.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.Stac.Tests" />
     <InternalsVisibleTo Include="Honua.Benchmarks" />

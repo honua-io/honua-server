@@ -27,7 +27,7 @@
     <ProjectReference Include="..\Honua.Protocols.OgcApi.Tests\Honua.Protocols.OgcApi.Tests.csproj" />
     <ProjectReference Include="..\Honua.Protocols.OgcClassic.Tests\Honua.Protocols.OgcClassic.Tests.csproj" />
     <ProjectReference Include="..\Honua.Protocols.GeoServices.Tests\Honua.Protocols.GeoServices.Tests.csproj" />
-    <ProjectReference Include="..\Honua.Protocols.Mcp.Tests\Honua.Protocols.Mcp.Tests.csproj" />
+    <ProjectReference Include="..\Honua.Ai.Tests\Honua.Ai.Tests.csproj" />
     <ProjectReference Include="..\Honua.Protocols.Scene.Tests\Honua.Protocols.Scene.Tests.csproj" />
     <ProjectReference Include="..\Honua.Protocols.Stac.Tests\Honua.Protocols.Stac.Tests.csproj" />
   </ItemGroup>

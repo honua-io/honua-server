@@ -67,7 +67,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Protocols.OgcClassic.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Protocols.GeoServices.Tests", "tests\dotnet\Honua.Protocols.GeoServices.Tests\Honua.Protocols.GeoServices.Tests.csproj", "{3F7E45FA-27F8-4DC8-A7E7-72BAC722AC5F}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Protocols.Mcp.Tests", "tests\dotnet\Honua.Protocols.Mcp.Tests\Honua.Protocols.Mcp.Tests.csproj", "{6EB8DBCE-6329-4771-B052-C86619FA83ED}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Ai.Tests", "tests\dotnet\Honua.Ai.Tests\Honua.Ai.Tests.csproj", "{6EB8DBCE-6329-4771-B052-C86619FA83ED}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Protocols.Scene.Tests", "tests\dotnet\Honua.Protocols.Scene.Tests\Honua.Protocols.Scene.Tests.csproj", "{E7EC0AE9-6DA1-419F-8A71-1FF265BE37B9}"
 EndProject
