@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
-  "_comment": "Single source of truth for the Honua.Server.Tests shard matrix. Owned by ADR-0037. Each entry under `shards` carries both routing fields (`paths`) and matrix-runtime fields (`shard_name`, `artifact_suffix`, `log_name`, `timeout_minutes`, `test_timeout_minutes`, `max_cpu_count`, `upload_operator_eval_report`, `upload_odata_evidence`, `filter`). The `targeted-shards` job in ci.yml reads this file, runs scripts/ci/honua-server-targeted-tests.sh to pick the active shards for the diff, and emits a filtered `matrix_include` that ci.yml::server-tests consumes via `strategy.matrix.include: fromJson(...)`. `timeout_minutes` is the GitHub runner job cap; `test_timeout_minutes` is the inner dotnet-test cap used by scripts/ci/run-server-test-shard.sh so logs and timing artifacts are uploaded before the runner is cancelled. `infrastructure_paths` short-circuits to run_all on first match. Keep infrastructure paths limited to shared runtime/test wiring; feature-slice Core/Postgres paths should be mapped to shard `paths` instead of forcing run_all. CI router and workflow changes are validated by scripts/ci/validate-ci-router.sh instead of forcing the server-test matrix. `unmapped_source_run_all_prefixes` forces run_all when a changed file under one of those prefixes is not matched by any shard's `paths` — this prevents new feature directories from silently routing to the Core shard whose filter excludes Honua.Server.Tests.Features.*. `default_shards_when_no_match` is only consulted when no source code under those prefixes was touched (e.g. doc-only or CI-only diffs).",
+  "_comment": "Single source of truth for the Honua.Server.Tests shard matrix. Owned by ADR-0037. Each entry under `shards` carries both routing fields (`paths`) and matrix-runtime fields (`shard_name`, `artifact_suffix`, `log_name`, `timeout_minutes`, `test_timeout_minutes`, `max_cpu_count`, `upload_operator_eval_report`, `upload_odata_evidence`, `filter`). The `targeted-shards` job in ci.yml reads this file, runs scripts/ci/honua-server-targeted-tests.sh to pick the active shards for the diff, and emits a filtered `matrix_include` that ci.yml::server-tests consumes via `strategy.matrix.include: fromJson(...)`. `timeout_minutes` is the GitHub runner job cap; `test_timeout_minutes` is the inner dotnet-test cap used by scripts/ci/run-server-test-shard.sh so logs and timing artifacts are uploaded before the runner is cancelled. `infrastructure_paths` short-circuits to run_all on first match. Keep infrastructure paths limited to shared runtime/test wiring; feature-slice Core/Postgres paths should be mapped to shard `paths` instead of forcing run_all. CI router and workflow changes are validated by scripts/ci/validate-ci-router.sh instead of forcing the server-test matrix. `unmapped_source_run_all_prefixes` forces run_all when a changed file under one of those prefixes is not matched by any shard's `paths` \u2014 this prevents new feature directories from silently routing to the Core shard whose filter excludes Honua.Server.Tests.Features.*. `default_shards_when_no_match` is only consulted when no source code under those prefixes was touched (e.g. doc-only or CI-only diffs).",
   "infrastructure_paths": [
     "tests/dotnet/Honua.TestKit/",
     "src/Honua.Core/Honua.Core.csproj",
@@ -31,7 +31,15 @@
     "src/Honua.Postgres/",
     "src/Honua.Server/",
     "src/Honua.DuckDB/",
-    "tests/dotnet/Honua.Server.Tests/"
+    "tests/dotnet/Honua.Server.Tests/",
+    "src/Honua.Io/",
+    "src/Honua.Import/",
+    "src/Honua.Protocols.",
+    "src/Honua.Geoprocessing/",
+    "src/Honua.Geometry/",
+    "src/Honua.Geocoding/",
+    "src/Honua.Jobs/",
+    "src/Honua.Ai/"
   ],
   "default_shards_when_no_match": [
     "Core"
@@ -162,7 +170,7 @@
       "paths": [
         "src/Honua.Core/Features/Migration/",
         "src/Honua.Postgres/Features/Migration/",
-        "src/Honua.Server/Features/Migration/",
+        "src/Honua.Import/Features/Migration/",
         "tests/dotnet/Honua.Core.Tests/Features/Import/",
         "tests/dotnet/Honua.Postgres.Tests/Features/Import/",
         "tests/dotnet/Honua.Server.Tests/Import/ArcGisMigrationEvidenceEndpointTests.cs",
@@ -205,8 +213,8 @@
         "src/Honua.Core/Features/FileImport/",
         "src/Honua.Core/Features/Import/",
         "src/Honua.Postgres/Features/FileImport/",
-        "src/Honua.Server/Features/FileImport/",
-        "src/Honua.Server/Features/Import/",
+        "src/Honua.Import/Features/FileImport/",
+        "src/Honua.Import/Features/Import/",
         "tests/dotnet/Honua.Core.Tests/Features/Import/",
         "tests/dotnet/Honua.Postgres.Tests/Features/Import/",
         "tests/dotnet/Honua.Server.Tests/Import/CloudStorageImportTests.cs",
@@ -239,7 +247,7 @@
       "upload_odata_evidence": false,
       "filter": "FullyQualifiedName~Honua.Server.Tests.Import.CogImport|FullyQualifiedName~Honua.Server.Tests.Import.RasterImport",
       "paths": [
-        "src/Honua.Server/Features/RasterImport/",
+        "src/Honua.Import/Features/RasterImport/",
         "tests/dotnet/Honua.Server.Tests/Import/CogImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/RasterImportEndpointTests.cs"
       ]
@@ -413,7 +421,7 @@
       "csproj": "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj",
       "filter": "FullyQualifiedName~ODataEndpointTests|FullyQualifiedName~ODataAuthorizationTests|FullyQualifiedName~ODataErrorHandlingTests|FullyQualifiedName~ODataLimitsEnforcementTests|FullyQualifiedName~ODataCrsUtilitiesTests|FullyQualifiedName~ODataGeometryConverterTests|FullyQualifiedName~ODataQueryHandlerTests|FullyQualifiedName~ODataSearchServiceSqlTests|FullyQualifiedName~ODataAdvancedOperationsTests",
       "paths": [
-        "src/Honua.Server/Features/Protocols/OData/",
+        "src/Honua.Protocols.OData/",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataAdvancedOperationsTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataAuthorizationTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataCrsUtilitiesTests.cs",
@@ -439,7 +447,7 @@
       "csproj": "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj",
       "filter": "FullyQualifiedName~ODataAdvancedFeaturesTests|FullyQualifiedName~ODataFilterFunctionTests|FullyQualifiedName~ODataFilterMatrixTests|FullyQualifiedName~ODataPaginationTests|FullyQualifiedName~ODataSkipTokenTests|FullyQualifiedName~ODataSpatialMatrixTests|FullyQualifiedName~ODataSpatialReferenceTests|FullyQualifiedName~ODataTemporalFilteringTests",
       "paths": [
-        "src/Honua.Server/Features/Protocols/OData/",
+        "src/Honua.Protocols.OData/",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataAdvancedFeaturesTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataFilterFunctionTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataFilterMatrixTests.cs",
@@ -464,7 +472,7 @@
       "csproj": "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj",
       "filter": "FullyQualifiedName~ODataCrudEndpointTests|FullyQualifiedName~ODataCrudExceptionMappingTests|FullyQualifiedName~ODataDeltaTests|FullyQualifiedName~ODataETagConcurrencyTests|FullyQualifiedName~ODataGeometryCrudTests|FullyQualifiedName~ODataMultipartBatchTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.OData.Services",
       "paths": [
-        "src/Honua.Server/Features/Protocols/OData/",
+        "src/Honua.Protocols.OData/",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/Services/",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataCrudEndpointTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataCrudExceptionMappingTests.cs",
@@ -488,7 +496,7 @@
       "csproj": "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj",
       "filter": "FullyQualifiedName~ODataClientCertificationTests|FullyQualifiedName~ODataClientIntegrationTests",
       "paths": [
-        "src/Honua.Server/Features/Protocols/OData/",
+        "src/Honua.Protocols.OData/",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataClientCertificationTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataClientIntegrationTests.cs",
         "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataClientModels.cs",
@@ -600,6 +608,7 @@
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure|FullyQualifiedName~Honua.Server.Tests.Features.Caching|FullyQualifiedName~Honua.Server.Tests.Features.Security|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.Catalog|FullyQualifiedName~Honua.Server.Tests.Features.FileStorage|FullyQualifiedName~Honua.Server.Tests.Features.Styling",
       "paths": [
         "src/Honua.Server/Features/Caching/",
+        "src/Honua.Io/Features/FileStorage/",
         "src/Honua.Server/Features/FileStorage/",
         "src/Honua.Server/Features/Authorization/",
         "src/Honua.Server/Features/Security/",
@@ -610,7 +619,9 @@
         "tests/dotnet/Honua.Server.Tests/Features/FileStorage/",
         "tests/dotnet/Honua.Server.Tests/Features/Security/",
         "tests/dotnet/Honua.Server.Tests/Features/Styling/",
-        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/"
+        "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/",
+        "src/Honua.Io/Features/Export/",
+        "tests/dotnet/Honua.Server.Tests/Features/Export/"
       ]
     },
     {
@@ -625,7 +636,8 @@
       "upload_odata_evidence": false,
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Eval|FullyQualifiedName~Honua.Server.Tests.Features.Geoprocessing|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Grpc|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GPServer",
       "paths": [
-        "src/Honua.Server/Features/Geoprocessing/",
+        "src/Honua.Geoprocessing/Features/Geoprocessing/",
+        "src/Honua.Core/Features/Geoprocessing/",
         "src/Honua.Server/Features/Protocols/Grpc/",
         "src/Honua.Server/Features/Protocols/Ogc/Api/Processes/",
         "src/Honua.Server/Features/Protocols/Mcp/",
