@@ -4,7 +4,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Protocols.Mcp.Models;
+namespace Honua.Ai.Protocols.Mcp.Models;
 
 /// <summary>
 /// Arguments for the <c>honua_plan_analysis</c> tool. Accepts a natural-language

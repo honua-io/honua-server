@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Grounding.Domain;
 
-namespace Honua.Server.Features.Grounding;
+namespace Honua.Ai.Grounding;
 
 /// <summary>
 /// Shared comparer that makes grounding ranking fully deterministic. Scores are

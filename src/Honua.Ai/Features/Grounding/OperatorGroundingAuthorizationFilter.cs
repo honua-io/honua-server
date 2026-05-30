@@ -7,7 +7,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Grounding.Abstractions;
 using Honua.Core.Features.Grounding.Domain;
 
-namespace Honua.Server.Features.Grounding;
+namespace Honua.Ai.Grounding;
 
 /// <summary>
 /// Default authorization filter. Delegates to

@@ -12,7 +12,7 @@ using Honua.Geoprocessing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Grounding;
+namespace Honua.Ai.Grounding;
 
 /// <summary>
 /// Coordinates the grounding pipeline: engine-driven classification and

@@ -5,7 +5,7 @@ using System.Collections.Concurrent;
 using Honua.Core.Features.AnalysisContent.Abstractions;
 using Honua.Core.Features.AnalysisContent.Domain;
 
-namespace Honua.Server.Features.AnalysisContent;
+namespace Honua.Ai.AnalysisContent;
 
 internal sealed class InMemoryAnalysisContentStore : IAnalysisContentStore
 {

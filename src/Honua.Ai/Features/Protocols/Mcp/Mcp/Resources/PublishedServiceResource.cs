@@ -7,9 +7,9 @@ using Honua.Core.Features.Deployment.Domain;
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Publishing.Domain;
 using Honua.Geoprocessing;
-using Honua.Server.Features.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.Models;
 
-namespace Honua.Server.Features.Protocols.Mcp.Resources;
+namespace Honua.Ai.Protocols.Mcp.Resources;
 
 /// <summary>
 /// MCP resource for <c>honua://published-services/{serviceId}</c>. Reads a

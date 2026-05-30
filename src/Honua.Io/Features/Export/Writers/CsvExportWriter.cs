@@ -7,7 +7,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.Infrastructure.Services;
 using NetTopologySuite.IO;
 
-namespace Honua.Server.Features.Export.Writers;
+namespace Honua.Io.Export.Writers;
 
 /// <summary>
 /// Writes features as CSV with WKT geometry column.

@@ -2,10 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Server.Features.Import;
+using Honua.Import;
 using Honua.Server.Features.Migration;
-using Honua.Server.Features.FileImport;
-using Honua.Server.Features.RasterImport;
+using Honua.Import.FileImport;
+using Honua.Import.RasterImport;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 

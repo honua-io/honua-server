@@ -5,7 +5,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Grounding.Domain;
 using Honua.Core.Features.Publishing.Domain;
 
-namespace Honua.Server.Features.Grounding;
+namespace Honua.Ai.Grounding;
 
 /// <summary>
 /// Builds a <see cref="DraftIntent"/> from engine output. Separated from the

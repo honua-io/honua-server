@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-namespace Honua.Server.Features.Protocols.Mcp.Resources;
+namespace Honua.Ai.Protocols.Mcp.Resources;
 
 /// <summary>
 /// Marker interface applied to MCP resources whose backing service has not yet

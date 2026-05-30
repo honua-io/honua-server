@@ -8,7 +8,7 @@ using NetTopologySuite.Geometries;
 using InfrastructureGeometryService = Honua.Server.Features.Infrastructure.Services.GeometryService;
 using WkbReader = NetTopologySuite.IO.WKBReader;
 
-namespace Honua.Server.Features.Export.Writers;
+namespace Honua.Io.Export.Writers;
 
 /// <summary>
 /// Writes features as an OGC GeoPackage (.gpkg) file.

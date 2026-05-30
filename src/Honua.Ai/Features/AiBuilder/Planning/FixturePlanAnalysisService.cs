@@ -2,12 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Server.Features.AiBuilder.Fixtures;
-using Honua.Server.Features.Protocols.Mcp.Models;
+using Honua.Ai.AiBuilder.Fixtures;
+using Honua.Ai.Protocols.Mcp.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Server.Features.AiBuilder.Planning;
+namespace Honua.Ai.AiBuilder.Planning;
 
 /// <summary>
 /// Fixture-replay implementation of <see cref="IPlanAnalysisService"/>. Matches

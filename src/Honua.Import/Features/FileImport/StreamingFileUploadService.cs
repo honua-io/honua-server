@@ -12,12 +12,12 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
-using Honua.Server.Features.Import;
+using Honua.Import;
 using Honua.Server.Features.Migration;
-using Honua.Server.Features.FileImport;
-using Honua.Server.Features.RasterImport;
+using Honua.Import.FileImport;
+using Honua.Import.RasterImport;
 
-namespace Honua.Server.Features.FileImport;
+namespace Honua.Import.FileImport;
 
 /// <summary>
 /// Service for handling streaming file uploads with backpressure control.

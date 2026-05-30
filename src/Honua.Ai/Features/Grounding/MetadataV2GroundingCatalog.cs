@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Metadata.Domain.V2;
 
-namespace Honua.Server.Features.Grounding;
+namespace Honua.Ai.Grounding;
 
 internal static class MetadataV2GroundingCatalog
 {

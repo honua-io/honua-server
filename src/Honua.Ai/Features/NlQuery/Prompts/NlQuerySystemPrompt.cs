@@ -4,7 +4,7 @@
 using System.Text;
 using Honua.Core.Features.Metadata.Domain.V2;
 
-namespace Honua.Server.Features.NlQuery.Prompts;
+namespace Honua.Ai.NlQuery.Prompts;
 
 /// <summary>
 /// Builds the system prompt for the NL query plan provider.

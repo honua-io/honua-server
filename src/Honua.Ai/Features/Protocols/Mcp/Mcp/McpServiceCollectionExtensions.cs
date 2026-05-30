@@ -1,15 +1,15 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Server.Features.AiBuilder;
-using Honua.Server.Features.AiBuilder.Planning;
-using Honua.Server.Features.Grounding;
-using Honua.Server.Features.Protocols.Mcp.Resources;
-using Honua.Server.Features.Protocols.Mcp.Tools;
+using Honua.Ai.AiBuilder;
+using Honua.Ai.AiBuilder.Planning;
+using Honua.Ai.Grounding;
+using Honua.Ai.Protocols.Mcp.Resources;
+using Honua.Ai.Protocols.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Honua.Core.Features.Reporting.Abstractions;
 
-namespace Honua.Server.Features.Protocols.Mcp;
+namespace Honua.Ai.Protocols.Mcp;
 
 /// <summary>
 /// DI registration for the MCP operator surface. Tool and resource handlers are

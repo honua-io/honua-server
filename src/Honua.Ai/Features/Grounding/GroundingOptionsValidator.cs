@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.ServiceRegistration;
 
-namespace Honua.Server.Features.Grounding;
+namespace Honua.Ai.Grounding;
 
 /// <summary>
 /// Validates <see cref="GroundingOptions"/> at startup so misconfigured

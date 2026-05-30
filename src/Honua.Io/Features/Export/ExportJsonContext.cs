@@ -6,7 +6,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Features.Infrastructure.Progress;
 
-namespace Honua.Server.Features.Export;
+namespace Honua.Io.Export;
 
 /// <summary>
 /// Source-generated JSON serialization context for data export types.

@@ -3,10 +3,10 @@
 
 using Honua.Core.Features.Grounding.Domain;
 using Honua.Geoprocessing;
-using Honua.Server.Features.Grounding;
-using Honua.Server.Features.Protocols.Mcp.Models;
+using Honua.Ai.Grounding;
+using Honua.Ai.Protocols.Mcp.Models;
 
-namespace Honua.Server.Features.Protocols.Mcp;
+namespace Honua.Ai.Protocols.Mcp;
 
 /// <summary>
 /// Maps geoprocessing domain exceptions to MCP JSON-RPC error envelopes.

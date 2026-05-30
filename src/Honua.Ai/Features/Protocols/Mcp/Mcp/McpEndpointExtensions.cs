@@ -2,9 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Server.Features.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.Models;
 
-namespace Honua.Server.Features.Protocols.Mcp;
+namespace Honua.Ai.Protocols.Mcp;
 
 /// <summary>
 /// Maps the single JSON-RPC endpoint that hosts the MCP operator surface.

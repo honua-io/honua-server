@@ -4,9 +4,9 @@
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Geoprocessing;
-using Honua.Server.Features.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.Models;
 
-namespace Honua.Server.Features.Protocols.Mcp.Tools;
+namespace Honua.Ai.Protocols.Mcp.Tools;
 
 /// <summary>
 /// MCP server-extension tool that estimates cost, artifacts, and side effects

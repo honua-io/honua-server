@@ -4,7 +4,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Grounding.Spec;
+namespace Honua.Ai.Grounding.Spec;
 
 internal sealed class SpecMutateRequestDto
 {

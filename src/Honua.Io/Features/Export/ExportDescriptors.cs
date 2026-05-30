@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Export;
+namespace Honua.Io.Export;
 
 internal sealed record ExportField(string Name, ExportFieldType Type, bool Nullable);
 

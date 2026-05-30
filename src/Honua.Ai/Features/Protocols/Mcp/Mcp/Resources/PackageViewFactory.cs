@@ -2,9 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Deployment.Domain;
-using Honua.Server.Features.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.Models;
 
-namespace Honua.Server.Features.Protocols.Mcp.Resources;
+namespace Honua.Ai.Protocols.Mcp.Resources;
 
 /// <summary>
 /// Shared builder for <see cref="McpPackageView"/> payloads returned by

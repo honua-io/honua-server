@@ -2,10 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Server.Features.AiBuilder.Fixtures;
-using Honua.Server.Features.AiBuilder.Planning;
+using Honua.Ai.AiBuilder.Fixtures;
+using Honua.Ai.AiBuilder.Planning;
 using Honua.Geoprocessing;
-using Honua.Server.Features.Protocols.Mcp.Tools;
+using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;

@@ -4,7 +4,7 @@
 using System.Collections.Frozen;
 using System.Text.RegularExpressions;
 
-namespace Honua.Server.Features.Grounding;
+namespace Honua.Ai.Grounding;
 
 /// <summary>
 /// Deterministic, dependency-free tokenizer for grounding input text.

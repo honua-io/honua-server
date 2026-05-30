@@ -7,7 +7,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Server.Features.Infrastructure.Models;
 
-namespace Honua.Server.Features.AnalysisContent;
+namespace Honua.Ai.AnalysisContent;
 
 internal sealed record CreateAnalysisContentItemRequest
 {

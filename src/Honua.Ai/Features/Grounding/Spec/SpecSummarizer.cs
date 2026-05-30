@@ -4,7 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.Spec.Domain;
 
-namespace Honua.Server.Features.Grounding.Spec;
+namespace Honua.Ai.Grounding.Spec;
 
 internal sealed class SpecSummarizer
 {

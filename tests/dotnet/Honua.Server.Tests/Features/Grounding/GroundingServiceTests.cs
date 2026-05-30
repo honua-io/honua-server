@@ -11,7 +11,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Publishing.Domain;
 using Honua.Geoprocessing;
-using Honua.Server.Features.Grounding;
+using Honua.Ai.Grounding;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;

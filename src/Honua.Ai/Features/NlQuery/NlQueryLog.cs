@@ -3,7 +3,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Server.Features.NlQuery;
+namespace Honua.Ai.NlQuery;
 
 /// <summary>
 /// Structured logging for NL spatial query operations.

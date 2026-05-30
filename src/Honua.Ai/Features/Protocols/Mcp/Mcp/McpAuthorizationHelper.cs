@@ -3,7 +3,7 @@
 
 using System.Security.Claims;
 
-namespace Honua.Server.Features.Protocols.Mcp;
+namespace Honua.Ai.Protocols.Mcp;
 
 /// <summary>
 /// Shared authentication helpers for MCP tool and resource handlers.

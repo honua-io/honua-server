@@ -5,7 +5,7 @@ using System.Globalization;
 using Honua.Core.Features.Deployment.Domain;
 using Honua.Core.Features.Publishing.Domain;
 
-namespace Honua.Server.Features.Protocols.Mcp.Resources;
+namespace Honua.Ai.Protocols.Mcp.Resources;
 
 /// <summary>
 /// Monotonic weak ETag derived from promotion-surface lifecycle timestamps.

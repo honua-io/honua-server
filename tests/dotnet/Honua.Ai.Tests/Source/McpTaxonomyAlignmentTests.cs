@@ -8,9 +8,9 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Grounding.Abstractions;
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Geoprocessing;
-using Honua.Server.Features.Protocols.Mcp;
-using Honua.Server.Features.Protocols.Mcp.Resources;
-using Honua.Server.Features.Protocols.Mcp.Tools;
+using Honua.Ai.Protocols.Mcp;
+using Honua.Ai.Protocols.Mcp.Resources;
+using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -328,7 +328,7 @@ public sealed class McpTaxonomyAlignmentTests
             new ExecutePlanTool(jobService, NullLogger<ExecutePlanTool>.Instance),
             new CancelJobTool(jobService, NullLogger<CancelJobTool>.Instance),
             new PlanAnalysisTool(
-                Substitute.For<Honua.Server.Features.AiBuilder.Planning.IPlanAnalysisService>(),
+                Substitute.For<Honua.Ai.AiBuilder.Planning.IPlanAnalysisService>(),
                 jobService,
                 NullLogger<PlanAnalysisTool>.Instance),
             new GroundCandidatesTool(groundingService, jobService, NullLogger<GroundCandidatesTool>.Instance),

@@ -11,14 +11,14 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
-using Honua.Server.Features.Export.Writers;
+using Honua.Io.Export.Writers;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.Server.Features.Infrastructure.Security;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Honua.Server.Features.Export;
+namespace Honua.Io.Export;
 
 /// <summary>
 /// Minimal API endpoint for exporting layer data in traditional GIS interchange formats.

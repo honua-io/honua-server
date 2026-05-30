@@ -3,9 +3,9 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
-using Honua.Server.Features.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.Models;
 
-namespace Honua.Server.Features.Protocols.Mcp.Resources;
+namespace Honua.Ai.Protocols.Mcp.Resources;
 
 /// <summary>
 /// Shared helpers for MCP resource handlers. Centralizes JSON serialization so

@@ -4,11 +4,11 @@
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Geoprocessing;
-using Honua.Server.Features.Protocols.Mcp.Models;
-using Honua.Server.Features.Protocols.Mcp.Resources;
-using Honua.Server.Features.Protocols.Mcp.Tools;
+using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.Resources;
+using Honua.Ai.Protocols.Mcp.Tools;
 
-namespace Honua.Server.Features.Protocols.Mcp;
+namespace Honua.Ai.Protocols.Mcp;
 
 /// <summary>
 /// Central JSON-RPC dispatcher and registry for the MCP operator surface.

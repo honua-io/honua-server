@@ -4,7 +4,7 @@
 using System.Diagnostics.Metrics;
 using Honua.ServiceDefaults;
 
-namespace Honua.Server.Features.Grounding.Spec;
+namespace Honua.Ai.Grounding.Spec;
 
 internal static class SpecGroundingTelemetry
 {

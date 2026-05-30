@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Grounding.Domain;
 
-namespace Honua.Server.Features.Grounding;
+namespace Honua.Ai.Grounding;
 
 /// <summary>
 /// Exception family for grounding-service failures. Kept separate from

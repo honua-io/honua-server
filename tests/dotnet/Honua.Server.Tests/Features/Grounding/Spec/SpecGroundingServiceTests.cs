@@ -9,7 +9,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Spec.Domain;
 using Honua.ServiceDefaults;
-using Honua.Server.Features.Grounding.Spec;
+using Honua.Ai.Grounding.Spec;
 
 namespace Honua.Server.Tests.Features.Grounding.Spec;
 

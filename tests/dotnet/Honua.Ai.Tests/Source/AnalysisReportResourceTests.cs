@@ -6,7 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Reporting.Domain;
 using Honua.Core.Features.Reporting.Abstractions;
-using Honua.Server.Features.Protocols.Mcp.Resources;
+using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Server.Features.Reporting;
 using Honua.Server.Features.Reporting.Models;
 using Honua.Server.Tests.Features.Protocols.Mcp;

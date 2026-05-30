@@ -8,7 +8,7 @@ using Honua.Core.Features.PackageReview.Abstractions;
 using Honua.Core.Features.PackageReview.Domain;
 using Honua.Geoprocessing;
 using Honua.Server.Features.PackageReview;
-using Honua.Server.Features.Protocols.Mcp.Tools;
+using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;

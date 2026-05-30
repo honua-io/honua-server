@@ -6,7 +6,7 @@ using System.Diagnostics.Metrics;
 using Honua.Core.Features.AnalysisContent.Domain;
 using Honua.ServiceDefaults;
 
-namespace Honua.Server.Features.AnalysisContent;
+namespace Honua.Ai.AnalysisContent;
 
 internal static class AnalysisContentTelemetry
 {

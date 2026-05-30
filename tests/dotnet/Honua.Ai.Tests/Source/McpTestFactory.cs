@@ -4,7 +4,7 @@
 using System.Security.Claims;
 using System.Text.Json;
 using Honua.Core.Features.Geoprocessing.Domain;
-using Honua.Server.Features.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.Models;
 using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;

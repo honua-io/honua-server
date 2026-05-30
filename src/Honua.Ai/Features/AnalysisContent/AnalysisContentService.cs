@@ -22,7 +22,7 @@ using Honua.Core.Queries.Filters;
 using Honua.Geoprocessing;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.AnalysisContent;
+namespace Honua.Ai.AnalysisContent;
 
 internal sealed partial class AnalysisContentService(
     IAnalysisContentStore store,

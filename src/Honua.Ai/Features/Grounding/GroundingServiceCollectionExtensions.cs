@@ -5,7 +5,7 @@ using Honua.Core.Features.Grounding.Abstractions;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Grounding;
+namespace Honua.Ai.Grounding;
 
 /// <summary>
 /// DI registration for the grounding feature slice. The engine and

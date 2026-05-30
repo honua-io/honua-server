@@ -4,7 +4,7 @@
 using Honua.Core.Features.AnalysisContent.Abstractions;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Honua.Server.Features.AnalysisContent;
+namespace Honua.Ai.AnalysisContent;
 
 internal static class AnalysisContentServiceCollectionExtensions
 {

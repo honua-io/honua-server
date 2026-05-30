@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-namespace Honua.Server.Features.Export;
+namespace Honua.Io.Export;
 
 /// <summary>
 /// Background service that processes queued export jobs for large datasets.

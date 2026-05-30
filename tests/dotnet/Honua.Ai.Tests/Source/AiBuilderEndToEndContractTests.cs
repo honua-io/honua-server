@@ -4,11 +4,11 @@
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.NlQuery.Domain;
-using Honua.Server.Features.AiBuilder.Fixtures;
-using Honua.Server.Features.AiBuilder.Planning;
+using Honua.Ai.AiBuilder.Fixtures;
+using Honua.Ai.AiBuilder.Planning;
 using Honua.Geoprocessing;
-using Honua.Server.Features.NlQuery;
-using Honua.Server.Features.Protocols.Mcp.Tools;
+using Honua.Ai.NlQuery;
+using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Server.Tests.Features.NlQuery;
 using Honua.Server.Tests.Features.Protocols.Mcp;
 using Honua.TestKit.Attributes;

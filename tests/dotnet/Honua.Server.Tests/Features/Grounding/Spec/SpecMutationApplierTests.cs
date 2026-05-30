@@ -4,7 +4,7 @@
 using System.Collections.Immutable;
 using FluentAssertions;
 using Honua.Core.Features.Spec.Domain;
-using Honua.Server.Features.Grounding.Spec;
+using Honua.Ai.Grounding.Spec;
 
 namespace Honua.Server.Tests.Features.Grounding.Spec;
 

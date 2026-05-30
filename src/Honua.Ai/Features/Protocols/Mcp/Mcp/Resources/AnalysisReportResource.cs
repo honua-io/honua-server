@@ -3,9 +3,9 @@
 
 using Honua.Core.Features.Reporting.Domain;
 using Honua.Core.Features.Reporting.Abstractions;
-using Honua.Server.Features.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.Models;
 
-namespace Honua.Server.Features.Protocols.Mcp.Resources;
+namespace Honua.Ai.Protocols.Mcp.Resources;
 
 /// <summary>
 /// MCP resource for <c>honua://jobs/{jobId}/report</c>. Delegates to

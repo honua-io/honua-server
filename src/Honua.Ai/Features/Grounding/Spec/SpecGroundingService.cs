@@ -14,10 +14,10 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Spec.Abstractions;
 using Honua.Core.Features.Spec.Domain;
 using Honua.ServiceDefaults;
-using Honua.Server.Features.Grounding;
+using Honua.Ai.Grounding;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Honua.Server.Features.Grounding.Spec;
+namespace Honua.Ai.Grounding.Spec;
 
 internal sealed partial class SpecGroundingService
 {

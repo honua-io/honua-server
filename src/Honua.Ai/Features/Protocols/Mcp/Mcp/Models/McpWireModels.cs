@@ -4,7 +4,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Protocols.Mcp.Models;
+namespace Honua.Ai.Protocols.Mcp.Models;
 
 /// <summary>
 /// JSON-RPC 2.0 request envelope used by the MCP wire protocol.

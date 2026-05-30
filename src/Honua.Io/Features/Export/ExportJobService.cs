@@ -8,13 +8,13 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Server.Features.Export.Writers;
+using Honua.Io.Export.Writers;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.Server.Features.Infrastructure.Progress;
 using Microsoft.Extensions.Caching.Distributed;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.Export;
+namespace Honua.Io.Export;
 
 internal interface IExportJobService
 {

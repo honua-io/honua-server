@@ -4,8 +4,8 @@
 using System.Collections.Immutable;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Server.Features.Export;
-using Honua.Server.Features.Export.Writers;
+using Honua.Io.Export;
+using Honua.Io.Export.Writers;
 using Microsoft.Data.Sqlite;
 using NetTopologySuite.Geometries;
 using WkbWriter = NetTopologySuite.IO.WKBWriter;

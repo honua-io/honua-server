@@ -11,7 +11,7 @@ using NetTopologySuite.IO.Esri.Dbf.Fields;
 using NetTopologySuite.IO.Esri.Shapefiles.Writers;
 using Feature = Honua.Core.Features.FeatureStore.Domain.Feature;
 
-namespace Honua.Server.Features.Export.Writers;
+namespace Honua.Io.Export.Writers;
 
 /// <summary>
 /// Writes features as an ESRI Shapefile packaged in a ZIP archive.

@@ -5,7 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.NlQuery.Domain;
 
-namespace Honua.Server.Features.NlQuery.Models;
+namespace Honua.Ai.NlQuery.Models;
 
 /// <summary>
 /// Source-generated JSON serialization context for NL query types.

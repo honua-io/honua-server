@@ -5,10 +5,10 @@ using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Grounding.Abstractions;
 using Honua.Geoprocessing;
-using Honua.Server.Features.Protocols.Mcp.Grounding;
-using Honua.Server.Features.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.Grounding;
+using Honua.Ai.Protocols.Mcp.Models;
 
-namespace Honua.Server.Features.Protocols.Mcp.Tools;
+namespace Honua.Ai.Protocols.Mcp.Tools;
 
 /// <summary>
 /// MCP tool that resolves a clarification turn by re-running grounding with

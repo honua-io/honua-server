@@ -6,7 +6,7 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Security.Abstractions;
-using Honua.Server.Features.Import.Models;
+using Honua.Import.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Core.Features.Migration.Abstractions;
@@ -15,10 +15,10 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
-using Honua.Server.Features.Import;
+using Honua.Import;
 using Honua.Server.Features.Migration;
-using Honua.Server.Features.FileImport;
-using Honua.Server.Features.RasterImport;
+using Honua.Import.FileImport;
+using Honua.Import.RasterImport;
 
 namespace Honua.Server.Features.Migration;
 

@@ -2,9 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Server.Features.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.Models;
 
-namespace Honua.Server.Features.AiBuilder.Planning;
+namespace Honua.Ai.AiBuilder.Planning;
 
 /// <summary>
 /// Contract for the service backing the <c>honua_plan_analysis</c> MCP tool.

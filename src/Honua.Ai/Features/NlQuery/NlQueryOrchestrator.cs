@@ -7,7 +7,7 @@ using Honua.Core.Features.NlQuery.Services;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Server.Features.NlQuery;
+namespace Honua.Ai.NlQuery;
 
 /// <summary>
 /// Orchestrates the end-to-end NL query pipeline: provider invocation → plan compilation → filter AST.

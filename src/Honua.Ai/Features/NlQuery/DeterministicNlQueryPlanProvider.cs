@@ -4,12 +4,12 @@
 using System.Text.Json;
 using Honua.Core.Features.NlQuery.Abstractions;
 using Honua.Core.Features.NlQuery.Domain;
-using Honua.Server.Features.AiBuilder.Fixtures;
-using Honua.Server.Features.NlQuery.Models;
+using Honua.Ai.AiBuilder.Fixtures;
+using Honua.Ai.NlQuery.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Server.Features.NlQuery;
+namespace Honua.Ai.NlQuery;
 
 /// <summary>
 /// Fixture-replay NL query plan provider. Matches the incoming prompt against

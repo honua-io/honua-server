@@ -6,7 +6,7 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Spec.Domain;
 
-namespace Honua.Server.Features.Grounding.Spec;
+namespace Honua.Ai.Grounding.Spec;
 
 internal sealed partial class SpecMutationApplier
 {

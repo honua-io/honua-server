@@ -33,15 +33,15 @@ using Honua.Server.Features.CloudDemo;
 using Honua.Server.Features.Collaboration;
 using Honua.Server.Features.Console;
 using Honua.Server.Features.Collaboration.Sessions;
-using Honua.Server.Features.Export;
+using Honua.Io.Export;
 using Honua.Server.Features.PrintingTools;
 using Honua.Server.Features.ControlPlane;
 using Honua.Server.Features.FileStorage;
 using Honua.Server.Features.HealthCheck;
-using Honua.Server.Features.Import;
+using Honua.Import;
 using Honua.Server.Features.Migration;
-using Honua.Server.Features.FileImport;
-using Honua.Server.Features.RasterImport;
+using Honua.Import.FileImport;
+using Honua.Import.RasterImport;
 using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Authentication.ClientCertificates;
 using Honua.Server.Features.Infrastructure.AuditLog;
@@ -344,7 +344,7 @@ builder.Services.AddResilientHttpClient(
     "import-source",
     "import-source",
     HttpResiliencePolicies.SlowServiceDefaults,
-    configureHandler: static () => Honua.Server.Features.FileImport.ImportHttpClientHelper.CreatePinnedDnsHttpMessageHandler());
+    configureHandler: static () => Honua.Import.FileImport.ImportHttpClientHelper.CreatePinnedDnsHttpMessageHandler());
 builder.Services.AddResilientHttpClient(
     "control-plane-telemetry",
     "control-plane-telemetry",
@@ -581,8 +581,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Core.Features.Publishing.Content.Domain.ContentPublicationJsonContext.Default,
         Honua.Server.Features.Admin.Models.DeployControlJsonContext.Default,
         Honua.Server.Features.Infrastructure.Monitoring.MetricsJsonContext.Default,
-        Honua.Server.Features.FileImport.ImportJsonContext.Default,
-        Honua.Server.Features.RasterImport.RasterImportJsonContext.Default,
+        Honua.Import.FileImport.ImportJsonContext.Default,
+        Honua.Import.RasterImport.RasterImportJsonContext.Default,
         Honua.Server.Features.Migration.GeoservicesImportApiJsonContext.Default,
         Honua.Server.Features.Migration.OgcWfsImportJsonContext.Default,
         Honua.Server.Features.Migration.OgcCoverageImportJsonContext.Default,
@@ -605,7 +605,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Console.Models.ConsoleJsonContext.Default,
         Honua.Server.Features.Studio.Models.StudioApiJsonContext.Default,
         Honua.Core.Features.Studio.Domain.StudioJsonContext.Default,
-        Honua.Server.Features.AnalysisContent.AnalysisContentApiJsonContext.Default,
+        Honua.Ai.AnalysisContent.AnalysisContentApiJsonContext.Default,
         Honua.Server.Features.Capabilities.Models.CapabilityManifestJsonContext.Default,
         Honua.Server.Features.WorkflowPackages.WorkflowPackagesJsonContext.Default,
         Honua.Server.Features.Admin.Models.AdminApiKeyJsonContext.Default,
@@ -636,7 +636,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Infrastructure.Security.CspViolationJsonContext.Default,
         Honua.Protocols.GeoServices.GeometryService.Models.GeometryServiceJsonContext.Default,
         Honua.Protocols.GeoServices.NAServer.Models.NAServerJsonContext.Default,
-        Honua.Server.Features.Export.ExportJsonContext.Default,
+        Honua.Io.Export.ExportJsonContext.Default,
         Honua.Protocols.Stac.StacJsonContext.Default,
         Honua.Server.Features.Protocols.Cog.CogJsonContext.Default,
         Honua.Server.Features.Protocols.Coverages.Multidimensional.MultidimensionalCoverageJsonContext.Default,

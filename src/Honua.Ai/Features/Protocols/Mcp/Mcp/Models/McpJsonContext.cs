@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 using Honua.Core.Features.PackageReview.Domain;
 using Honua.Core.Features.Reporting.Domain;
 
-namespace Honua.Server.Features.Protocols.Mcp.Models;
+namespace Honua.Ai.Protocols.Mcp.Models;
 
 /// <summary>
 /// AOT-compatible JSON serialization context for MCP wire-format models.

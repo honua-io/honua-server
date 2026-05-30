@@ -10,7 +10,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Server.Features.AnalysisContent;
+using Honua.Ai.AnalysisContent;
 using Honua.Geoprocessing;
 using Honua.Server.Features.ControlPlane;
 using Honua.TestKit.Attributes;

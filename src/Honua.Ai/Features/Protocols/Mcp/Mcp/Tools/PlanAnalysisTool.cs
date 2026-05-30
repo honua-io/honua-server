@@ -3,11 +3,11 @@
 
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
-using Honua.Server.Features.AiBuilder.Planning;
+using Honua.Ai.AiBuilder.Planning;
 using Honua.Geoprocessing;
-using Honua.Server.Features.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.Models;
 
-namespace Honua.Server.Features.Protocols.Mcp.Tools;
+namespace Honua.Ai.Protocols.Mcp.Tools;
 
 /// <summary>
 /// MCP tool that compiles a natural-language intent into a structured analysis

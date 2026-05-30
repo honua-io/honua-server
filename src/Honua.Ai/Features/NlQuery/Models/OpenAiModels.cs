@@ -4,7 +4,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.NlQuery.Models;
+namespace Honua.Ai.NlQuery.Models;
 
 /// <summary>
 /// OpenAI-compatible chat completion request.

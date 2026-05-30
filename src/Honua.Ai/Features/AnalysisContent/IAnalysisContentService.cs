@@ -5,7 +5,7 @@ using System.Security.Claims;
 using Honua.Core.Features.AnalysisContent.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 
-namespace Honua.Server.Features.AnalysisContent;
+namespace Honua.Ai.AnalysisContent;
 
 internal interface IAnalysisContentService
 {

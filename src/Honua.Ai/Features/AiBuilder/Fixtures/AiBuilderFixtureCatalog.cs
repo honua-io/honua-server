@@ -4,7 +4,7 @@
 using System.Reflection;
 using System.Text.Json;
 
-namespace Honua.Server.Features.AiBuilder.Fixtures;
+namespace Honua.Ai.AiBuilder.Fixtures;
 
 /// <summary>
 /// Loads the deterministic AI-builder contract fixtures embedded into Honua.Server
@@ -21,8 +21,8 @@ namespace Honua.Server.Features.AiBuilder.Fixtures;
 /// </remarks>
 internal sealed class AiBuilderFixtureCatalog
 {
-    private const string SpatialQueryResource = "Honua.Server.Features.AiBuilder.Fixtures.spatial-query-contract-v1.json";
-    private const string OperationsDashboardResource = "Honua.Server.Features.AiBuilder.Fixtures.operations-dashboard-contract-v1.json";
+    private const string SpatialQueryResource = "Honua.Ai.AiBuilder.Fixtures.spatial-query-contract-v1.json";
+    private const string OperationsDashboardResource = "Honua.Ai.AiBuilder.Fixtures.operations-dashboard-contract-v1.json";
 
     private readonly List<AiBuilderScenario> _scenarios;
 

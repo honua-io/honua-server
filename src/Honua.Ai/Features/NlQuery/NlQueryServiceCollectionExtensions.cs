@@ -4,11 +4,11 @@
 using Honua.Core.Features.NlQuery;
 using Honua.Core.Features.NlQuery.Abstractions;
 using Honua.Core.Features.Infrastructure.Resilience;
-using Honua.Server.Features.AiBuilder;
+using Honua.Ai.AiBuilder;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.NlQuery;
+namespace Honua.Ai.NlQuery;
 
 /// <summary>
 /// DI registration for the NL spatial query feature.

@@ -6,13 +6,13 @@ using System.Text.Json;
 using Honua.Core.Features.NlQuery;
 using Honua.Core.Features.NlQuery.Abstractions;
 using Honua.Core.Features.NlQuery.Domain;
-using Honua.Server.Features.NlQuery.Models;
-using Honua.Server.Features.NlQuery.Prompts;
+using Honua.Ai.NlQuery.Models;
+using Honua.Ai.NlQuery.Prompts;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.NlQuery;
+namespace Honua.Ai.NlQuery;
 
 /// <summary>
 /// NL query plan provider that calls an OpenAI-compatible chat completions endpoint.

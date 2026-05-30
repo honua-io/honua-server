@@ -5,7 +5,7 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Honua.ServiceDefaults;
 
-namespace Honua.Server.Features.Protocols.Mcp;
+namespace Honua.Ai.Protocols.Mcp;
 
 /// <summary>
 /// Telemetry primitives for the MCP operator surface.

@@ -2,10 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Server.Features.AiBuilder.Fixtures;
-using Honua.Server.Features.Protocols.Mcp.Models;
+using Honua.Ai.AiBuilder.Fixtures;
+using Honua.Ai.Protocols.Mcp.Models;
 
-namespace Honua.Server.Features.AiBuilder.Planning;
+namespace Honua.Ai.AiBuilder.Planning;
 
 /// <summary>
 /// Pure mapping helpers from a parsed <see cref="AiBuilderScenario"/> JSON
@@ -149,7 +149,7 @@ internal static class AiBuilderScenarioMapper
     /// <summary>
     /// Normalises the fixture's free-form <c>kind</c> strings into the
     /// canonical <see cref="Honua.Core.Features.Geoprocessing.Domain.AnalysisPlanStepKind"/>
-    /// names that <c>Honua.Server.Features.Protocols.Mcp.Tools.McpToolHelpers.ToDomainPlan</c>
+    /// names that <c>Honua.Ai.Protocols.Mcp.Tools.McpToolHelpers.ToDomainPlan</c>
     /// accepts. Anything not recognised falls through to <c>Geoprocess</c> so
     /// the wire output never carries an invalid step kind — the operations
     /// dashboard's specialised kinds (service, report, package, …) are kept

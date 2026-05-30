@@ -7,7 +7,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Spec.Canonical;
 using Honua.Core.Features.Spec.Domain;
 
-namespace Honua.Server.Features.Grounding.Spec;
+namespace Honua.Ai.Grounding.Spec;
 
 internal static class SpecGroundingEndpointExtensions
 {

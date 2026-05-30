@@ -5,7 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Geoprocessing.Domain;
 
-namespace Honua.Server.Features.Protocols.Mcp.Tools;
+namespace Honua.Ai.Protocols.Mcp.Tools;
 
 /// <summary>
 /// JSON-schema documents published in <c>tools/list</c>. Plan schemas are

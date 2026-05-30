@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Protocols.Mcp.Grounding;
+namespace Honua.Ai.Protocols.Mcp.Grounding;
 
 // -----------------------------------------------------------------------
 // Tool argument shapes (tools/call params.arguments)

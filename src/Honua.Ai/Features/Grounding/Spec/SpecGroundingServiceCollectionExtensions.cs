@@ -4,7 +4,7 @@
 using Honua.Core.Features.Spec;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Honua.Server.Features.Grounding.Spec;
+namespace Honua.Ai.Grounding.Spec;
 
 internal static class SpecGroundingServiceCollectionExtensions
 {

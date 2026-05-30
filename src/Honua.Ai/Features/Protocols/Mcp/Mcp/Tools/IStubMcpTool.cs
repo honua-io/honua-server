@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-namespace Honua.Server.Features.Protocols.Mcp.Tools;
+namespace Honua.Ai.Protocols.Mcp.Tools;
 
 /// <summary>
 /// Marker interface applied to MCP tools whose backing service has not yet

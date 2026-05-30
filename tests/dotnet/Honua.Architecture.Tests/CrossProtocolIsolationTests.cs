@@ -57,6 +57,7 @@ public sealed class CrossProtocolIsolationTests
         "Stac" => "Honua.Protocols.Stac",
         "GeoServices" => "Honua.Protocols.GeoServices",
         "Ogc" => "Honua.Protocols.Ogc",
+        "Mcp" => "Honua.Ai.Protocols.Mcp",
         _ => $"{ProtocolsRootNamespace}.{family}",
     };
 

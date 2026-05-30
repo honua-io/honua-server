@@ -6,7 +6,7 @@ using Honua.Core.Features.Grounding.Domain;
 using Honua.Core.Features.Publishing.Domain;
 using Honua.Geoprocessing;
 
-namespace Honua.Server.Features.Grounding;
+namespace Honua.Ai.Grounding;
 
 /// <summary>
 /// Carries prior-turn clarification answers that have been validated and

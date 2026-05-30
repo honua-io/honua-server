@@ -3,7 +3,7 @@
 
 using FluentAssertions;
 using Honua.Geoprocessing;
-using Honua.Server.Features.Protocols.Mcp;
+using Honua.Ai.Protocols.Mcp;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 

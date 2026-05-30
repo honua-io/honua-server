@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Protocols.Mcp.Models;
+namespace Honua.Ai.Protocols.Mcp.Models;
 
 // -----------------------------------------------------------------------
 // Resource response shapes

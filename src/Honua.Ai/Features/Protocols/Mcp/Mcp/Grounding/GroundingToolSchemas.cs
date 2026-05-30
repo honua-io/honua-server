@@ -6,7 +6,7 @@ using System.Text.Json;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Grounding.Domain;
 
-namespace Honua.Server.Features.Protocols.Mcp.Grounding;
+namespace Honua.Ai.Protocols.Mcp.Grounding;
 
 /// <summary>
 /// JSON-schema documents advertised in <c>tools/list</c> for the grounding
