@@ -6,7 +6,7 @@ using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using NetTopologySuite.IO;
 
-namespace Honua.Protocols.GeoServices;
+namespace Honua.Infrastructure.Services;
 
 /// <summary>
 /// Service for converting between geometry formats

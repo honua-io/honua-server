@@ -5,7 +5,7 @@ using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
- using Honua.Core.Features.Scene.Registry;
+using Honua.Infrastructure.Scene;
 using Honua.Protocols.Scene.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;

@@ -455,8 +455,8 @@ builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleDepe
 Honua.Core.Features.Publishing.Content.ContentPublishingServiceCollectionExtensions.AddContentPublishingServices(builder.Services);
 
 // Register shared Infrastructure services
-builder.Services.AddScoped<Honua.Protocols.GeoServices.IGeometryConverter,
-    Honua.Protocols.GeoServices.GeometryConverter>();
+builder.Services.AddScoped<Honua.Infrastructure.Services.IGeometryConverter,
+    Honua.Infrastructure.Services.GeometryConverter>();
 builder.Services.AddScoped<ILayerStyleService, LayerStyleService>();
 builder.Services.AddSingleton<Honua.Core.Features.Styling.Abstractions.ISldStyleConverter,
     Honua.Server.Features.Styling.Sld.SldStyleConverter>();

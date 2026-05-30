@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Scene.Abstractions;
- using Honua.Core.Features.Scene.Registry;
+using Honua.Infrastructure.Scene;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Protocols.Scene;
