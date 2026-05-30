@@ -23,7 +23,7 @@
       reads them through the Honua.Ai project reference.
     -->
     <NoWarn>$(NoWarn);CS1591;IL2104;IL2026;IL3002;IL3050;CA1041;CA1000;CA1862;IDE0051;IDE0052;IDE0005;CA1844;IL2075</NoWarn>
-    <RootNamespace>Honua.Server.Features</RootNamespace>
+    <RootNamespace>Honua.Ai</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

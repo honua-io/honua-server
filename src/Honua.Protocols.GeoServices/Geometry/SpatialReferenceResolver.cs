@@ -1,12 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Infrastructure.Services;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 
-namespace Honua.Infrastructure.Services;
+namespace Honua.Protocols.GeoServices;
 
 /// <summary>
 /// Shared service for resolving spatial reference system identifiers from various input formats.

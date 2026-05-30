@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-namespace Honua.Infrastructure.Services;
+namespace Honua.Protocols.GeoServices;
 
 /// <summary>
 /// Service for converting between geometry formats
