@@ -527,6 +527,16 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Reclaim runner disk before the full-solution build + coverage run; the
+      # modular topology pushed some runners over the free-disk limit. Best-effort.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /usr/share/swift || true
+          sudo rm -rf /usr/local/.ghcup || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          df -h / || true
+
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
         with:
@@ -731,6 +741,19 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v5
+
+      # Reclaim runner disk before building. The modular topology (8 protocol
+      # assemblies + native packages such as ParquetSharp/Apache.Arrow/SkiaSharp
+      # duplicated across their bin/obj, plus Coverlet coverage output) pushed
+      # some shards over the ~14GB free-disk limit ("No space left on device").
+      # Remove preinstalled toolchains the .NET test shards never use. Best-effort.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /usr/share/swift || true
+          sudo rm -rf /usr/local/.ghcup || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          df -h / || true
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
