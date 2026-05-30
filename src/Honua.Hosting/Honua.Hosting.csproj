@@ -69,6 +69,7 @@
     <InternalsVisibleTo Include="Honua.Architecture.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.OData" />
     <InternalsVisibleTo Include="Honua.Protocols.OData.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.Ogc.Shared" />
     <InternalsVisibleTo Include="Honua.Protocols.OgcApi" />
     <InternalsVisibleTo Include="Honua.Protocols.OgcApi.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.OgcClassic" />

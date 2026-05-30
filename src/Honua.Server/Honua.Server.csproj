@@ -68,6 +68,8 @@
     <ProjectReference Include="..\..\samples\Honua.StacOpsDemo\Honua.StacOpsDemo.csproj" Condition="'$(HonuaIncludeStacOpsDemo)' != 'false' and ('$(PublishAot)' != 'true' or '$(RuntimeIdentifier)' == '')" GlobalPropertiesToRemove="PublishAot;RuntimeIdentifier;SelfContained;StripSymbols" />
 
     <ProjectReference Include="..\Honua.Protocols.Scene\Honua.Protocols.Scene.csproj" />
+
+    <ProjectReference Include="..\Honua.Protocols.Ogc.Shared\Honua.Protocols.Ogc.Shared.csproj" />
   </ItemGroup>
 
 
