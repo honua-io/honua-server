@@ -9,7 +9,7 @@ namespace Honua.Architecture.Tests;
 
 /// <summary>
 /// Enforces the Honua.Io isolation contract: the carved-out file input/output
-/// surface (file storage today; export + upload primitives planned) must never
+/// surface (file storage + export writers; upload primitives planned) must never
 /// take a ProjectReference on Honua.Server, directly or transitively. The whole
 /// reason Honua.Io exists is to flip that edge — Server references Io, never the
 /// reverse — so the host's composition root no longer carries the file-storage
@@ -30,6 +30,7 @@ public sealed class HonuaIoIsolationTests
     {
         "Honua.Core.Abstractions",
         "Honua.Core",
+        "Honua.Geometry",
         "Honua.Hosting",
         "Honua.ServiceDefaults",
     };
@@ -66,9 +67,8 @@ public sealed class HonuaIoIsolationTests
         var disallowed = referenced.Where(name => !PermittedProviders.Contains(name)).ToList();
 
         disallowed.Should().BeEmpty(
-            "Honua.Io may only reference Honua.Core.Abstractions, Honua.Core, Honua.Hosting, and " +
-            "Honua.ServiceDefaults. When the export increment lands it may add Honua.Geometry; " +
-            "update this allow-list and the ADR-0047 matrix together. Disallowed references: {0}",
+            "Honua.Io may only reference Honua.Core.Abstractions, Honua.Core, Honua.Geometry, " +
+            "Honua.Hosting, and Honua.ServiceDefaults. Disallowed references: {0}",
             string.Join(", ", disallowed));
     }
 

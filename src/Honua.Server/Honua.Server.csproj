@@ -96,7 +96,6 @@
 
   <ItemGroup>
     <PackageReference Include="NetTopologySuite" />
-    <PackageReference Include="NetTopologySuite.IO.Esri.Shapefile" />
     <PackageReference Include="SkiaSharp" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux" />
     <PackageReference Include="Apache.Arrow" />
@@ -106,7 +105,6 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Authentication" />
-    <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="ParquetSharp" />
     <PackageReference Include="Scalar.AspNetCore" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />

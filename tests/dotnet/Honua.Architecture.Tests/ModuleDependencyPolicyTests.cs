@@ -190,14 +190,16 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Geoprocessing, ModuleRole.Jobs),
         (ModuleRole.Geoprocessing, ModuleRole.ServiceDefaults),
 
-        // Io: the file input/output module (file storage today; export +
-        // upload primitives planned). ASP.NET-coupled like Hosting; depends on
-        // Abstractions + Core + Hosting + ServiceDefaults. Must NEVER reference
-        // Server (enforced by HonuaIoIsolationTests). Storage providers must
-        // NOT reference Io — that is why the file-format readers stay in the
-        // light Honua.Geometry instead of moving here.
+        // Io: the file input/output module (file storage + export writers
+        // today; upload primitives planned). ASP.NET-coupled like Hosting;
+        // depends on Abstractions + Core + Geometry (NTS, for the export
+        // writers) + Hosting + ServiceDefaults. Must NEVER reference Server
+        // (enforced by HonuaIoIsolationTests). Storage providers must NOT
+        // reference Io — that is why the file-format readers stay in the light
+        // Honua.Geometry instead of moving here.
         (ModuleRole.Io, ModuleRole.Abstractions),
         (ModuleRole.Io, ModuleRole.Core),
+        (ModuleRole.Io, ModuleRole.Geometry),
         (ModuleRole.Io, ModuleRole.Hosting),
         (ModuleRole.Io, ModuleRole.ServiceDefaults),
 
