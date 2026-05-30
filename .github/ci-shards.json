@@ -640,7 +640,7 @@
         "src/Honua.Core/Features/Geoprocessing/",
         "src/Honua.Server/Features/Protocols/Grpc/",
         "src/Honua.Server/Features/Protocols/Ogc/Api/Processes/",
-        "src/Honua.Server/Features/Protocols/Mcp/",
+        "src/Honua.Ai/Features/Protocols/Mcp/",
         "src/Honua.Server/Features/Protocols/GeoServices/GPServer/",
         "tests/dotnet/Honua.Server.Tests/Features/Eval/",
         "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/",
@@ -663,7 +663,7 @@
       "csproj": "tests/dotnet/Honua.Protocols.Mcp.Tests/Honua.Protocols.Mcp.Tests.csproj",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp",
       "paths": [
-        "src/Honua.Server/Features/Protocols/Mcp/",
+        "src/Honua.Ai/Features/Protocols/Mcp/",
         "tests/dotnet/Honua.Protocols.Mcp.Tests/Source/"
       ]
     },
