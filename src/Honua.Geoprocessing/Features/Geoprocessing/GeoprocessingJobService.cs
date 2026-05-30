@@ -19,7 +19,7 @@ using Honua.Server.Features.Infrastructure;
 using Honua.Server.Features.ControlPlane;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Geoprocessing;
+namespace Honua.Geoprocessing;
 
 /// <summary>
 /// Shared implementation of geoprocessing job lifecycle operations.

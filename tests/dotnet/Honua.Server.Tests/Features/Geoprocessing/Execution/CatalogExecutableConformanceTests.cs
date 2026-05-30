@@ -3,8 +3,8 @@
 
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Server.Features.Geoprocessing;
-using Honua.Server.Features.Geoprocessing.Execution;
+using Honua.Geoprocessing;
+using Honua.Geoprocessing.Execution;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;

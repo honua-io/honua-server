@@ -7,7 +7,7 @@ using NetTopologySuite.Features;
 using NetTopologySuite.Index.Strtree;
 using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
-namespace Honua.Server.Features.Geoprocessing.Execution;
+namespace Honua.Geoprocessing.Execution;
 
 /// <summary>
 /// <c>analytics.spatial-join-managed</c> executor. A job-dispatchable, managed

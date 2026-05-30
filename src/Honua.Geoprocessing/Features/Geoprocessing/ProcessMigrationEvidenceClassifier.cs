@@ -4,7 +4,7 @@
 using System.Collections.Frozen;
 using Honua.Core.Features.Geoprocessing.Domain;
 
-namespace Honua.Server.Features.Geoprocessing;
+namespace Honua.Geoprocessing;
 
 /// <summary>
 /// Classifies built-in processes for migration evidence claims.

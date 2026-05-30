@@ -7,7 +7,7 @@ using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Protocols.Ogc.Common;
 using Honua.Server.Features.Protocols.Ogc.Api.Processes.Models;

@@ -8,7 +8,7 @@ using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;

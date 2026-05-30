@@ -6,7 +6,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Server.Features.ControlPlane;
 
-namespace Honua.Server.Features.Geoprocessing;
+namespace Honua.Geoprocessing;
 
 /// <summary>
 /// Builds durable <see cref="AnalysisResultPackage"/> envelopes from terminal execution jobs.

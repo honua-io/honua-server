@@ -6,7 +6,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.NlQuery.Domain;
 using Honua.Server.Features.AiBuilder.Fixtures;
 using Honua.Server.Features.AiBuilder.Planning;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 using Honua.Server.Features.NlQuery;
 using Honua.Server.Features.Protocols.Mcp.Tools;
 using Honua.Server.Tests.Features.NlQuery;

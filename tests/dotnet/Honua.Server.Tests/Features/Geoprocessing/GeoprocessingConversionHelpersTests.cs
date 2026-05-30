@@ -4,7 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Proto = Geospatial.V1;
 

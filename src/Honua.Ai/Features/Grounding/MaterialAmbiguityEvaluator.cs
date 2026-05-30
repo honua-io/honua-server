@@ -4,7 +4,7 @@
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Grounding.Domain;
 using Honua.Core.Features.Publishing.Domain;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 
 namespace Honua.Server.Features.Grounding;
 

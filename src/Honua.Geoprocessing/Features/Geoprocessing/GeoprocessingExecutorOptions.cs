@@ -3,7 +3,7 @@
 
 using System.ComponentModel.DataAnnotations;
 
-namespace Honua.Server.Features.Geoprocessing;
+namespace Honua.Geoprocessing;
 
 /// <summary>
 /// Configuration guardrails applied by built-in production geoprocessing

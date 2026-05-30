@@ -8,7 +8,7 @@ using Proto = Geospatial.V1;
 using DomainPlan = Honua.Core.Features.Geoprocessing.Domain.AnalysisPlan;
 using DomainPlanStep = Honua.Core.Features.Geoprocessing.Domain.AnalysisPlanStep;
 
-namespace Honua.Server.Features.Geoprocessing;
+namespace Honua.Geoprocessing;
 
 /// <summary>
 /// Stateless conversion helpers between geoprocessing domain types and proto messages.

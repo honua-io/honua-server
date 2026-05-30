@@ -4,7 +4,7 @@
 using Honua.Core.Features.Geoprocessing.Domain;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Geoprocessing;
+namespace Honua.Geoprocessing;
 
 /// <summary>
 /// Configuration options for workspace lifecycle management.

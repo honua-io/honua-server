@@ -4,7 +4,7 @@
 using FluentAssertions;
 using Honua.Server.Features.AiBuilder.Fixtures;
 using Honua.Server.Features.AiBuilder.Planning;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 using Honua.Server.Features.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;

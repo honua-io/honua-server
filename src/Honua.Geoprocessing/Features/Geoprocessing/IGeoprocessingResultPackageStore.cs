@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Geoprocessing.Domain;
 
-namespace Honua.Server.Features.Geoprocessing;
+namespace Honua.Geoprocessing;
 
 /// <summary>
 /// Durable store for terminal geoprocessing result packages keyed by job identifier.

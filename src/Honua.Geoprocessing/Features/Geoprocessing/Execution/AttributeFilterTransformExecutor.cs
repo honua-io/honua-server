@@ -5,7 +5,7 @@ using System.Globalization;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 
-namespace Honua.Server.Features.Geoprocessing.Execution;
+namespace Honua.Geoprocessing.Execution;
 
 /// <summary>
 /// <c>transform.attribute-filter</c> executor. Passes through only features whose

@@ -5,7 +5,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.WorkflowPackages.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Domain;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 
 namespace Honua.Server.Features.WorkflowPackages;
 

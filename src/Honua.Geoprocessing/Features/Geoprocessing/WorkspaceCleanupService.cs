@@ -5,7 +5,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Geoprocessing;
+namespace Honua.Geoprocessing;
 
 /// <summary>
 /// Background service that periodically runs workspace cleanup sweeps.

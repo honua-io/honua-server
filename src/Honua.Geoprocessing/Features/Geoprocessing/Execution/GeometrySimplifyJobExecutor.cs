@@ -10,7 +10,7 @@ using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using NetTopologySuite.Simplify;
 
-namespace Honua.Server.Features.Geoprocessing.Execution;
+namespace Honua.Geoprocessing.Execution;
 
 /// <summary>
 /// Production <see cref="IJobExecutor"/> for the <c>geometry.simplify</c>

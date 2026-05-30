@@ -8,7 +8,7 @@ using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Geometries.Utilities;
 
-namespace Honua.Server.Features.Geoprocessing.Execution;
+namespace Honua.Geoprocessing.Execution;
 
 /// <summary>
 /// <c>transform.reproject</c> executor. Reprojects every feature's geometry between

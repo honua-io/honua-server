@@ -11,7 +11,7 @@ using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
-namespace Honua.Server.Features.Geoprocessing.Execution;
+namespace Honua.Geoprocessing.Execution;
 
 /// <summary>
 /// Production <see cref="IJobExecutor"/> for the <c>geometry.clip</c> process.

@@ -9,7 +9,7 @@ using NetTopologySuite.Features;
 using NetTopologySuite.IO;
 using Newtonsoft.Json;
 
-namespace Honua.Server.Features.Geoprocessing.Execution;
+namespace Honua.Geoprocessing.Execution;
 
 /// <summary>
 /// <c>sink.quarantine</c> dead-letter executor. Writes every input feature to a companion

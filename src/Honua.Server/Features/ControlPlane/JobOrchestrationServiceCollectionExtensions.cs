@@ -4,7 +4,7 @@
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Admin.Share;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using StackExchange.Redis;
 

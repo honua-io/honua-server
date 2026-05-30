@@ -11,7 +11,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Geoprocessing;
+namespace Honua.Geoprocessing;
 
 /// <summary>
 /// Default implementation of <see cref="IExecutionAdmissionEvaluator"/>.

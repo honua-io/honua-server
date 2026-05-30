@@ -3,7 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 using Honua.Server.Features.WorkflowPackages;
 using Honua.TestKit.Attributes;
 

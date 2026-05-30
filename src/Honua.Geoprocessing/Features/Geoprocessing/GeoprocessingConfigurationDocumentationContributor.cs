@@ -7,7 +7,7 @@ using Honua.Server.Features.Infrastructure.Abstractions;
 using Microsoft.Extensions.Options;
 using ConfigurationSection = Honua.Core.Configuration.ConfigurationSection;
 
-namespace Honua.Server.Features.Geoprocessing;
+namespace Honua.Geoprocessing;
 
 /// <summary>
 /// Publishes geoprocessing workspace configuration metadata to the admin config endpoint.

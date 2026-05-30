@@ -8,7 +8,7 @@ using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
-namespace Honua.Server.Features.Geoprocessing.Execution;
+namespace Honua.Geoprocessing.Execution;
 
 /// <summary>
 /// <c>transform.spatial-filter</c> executor. Passes through only features whose

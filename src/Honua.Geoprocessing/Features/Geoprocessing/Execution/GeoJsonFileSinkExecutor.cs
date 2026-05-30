@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 using NetTopologySuite.IO;
 
-namespace Honua.Server.Features.Geoprocessing.Execution;
+namespace Honua.Geoprocessing.Execution;
 
 /// <summary>
 /// <c>sink.geojson-file</c> executor. Writes the input FeatureCollection to a GeoJSON

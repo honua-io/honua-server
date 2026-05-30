@@ -6,7 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.PackageReview.Domain;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 using Honua.Server.Features.PackageReview;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;

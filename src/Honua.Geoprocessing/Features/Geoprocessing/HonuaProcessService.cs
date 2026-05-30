@@ -7,7 +7,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.ServiceDefaults;
 using Proto = Geospatial.V1;
 
-namespace Honua.Server.Features.Geoprocessing;
+namespace Honua.Geoprocessing;
 
 /// <summary>
 /// gRPC service implementation for typed geoprocessing execution and job lifecycle management.

@@ -6,7 +6,7 @@ using System.Text;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 
-namespace Honua.Server.Features.Geoprocessing.Execution;
+namespace Honua.Geoprocessing.Execution;
 
 /// <summary>
 /// <c>transform.dedup</c> executor. Emits the first feature for each distinct key

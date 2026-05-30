@@ -6,7 +6,7 @@ using NetTopologySuite.Features;
 using NetTopologySuite.Geometries;
 using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
-namespace Honua.Server.Features.Geoprocessing.Execution;
+namespace Honua.Geoprocessing.Execution;
 
 /// <summary>
 /// <c>transform.clip</c> executor. Clips each feature's geometry to an

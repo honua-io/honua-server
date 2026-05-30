@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;

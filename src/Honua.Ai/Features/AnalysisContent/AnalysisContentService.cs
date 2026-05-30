@@ -19,7 +19,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.NlQuery.Services;
 using Honua.Core.Features.Query;
 using Honua.Core.Queries.Filters;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 using StackExchange.Redis;
 
 namespace Honua.Server.Features.AnalysisContent;

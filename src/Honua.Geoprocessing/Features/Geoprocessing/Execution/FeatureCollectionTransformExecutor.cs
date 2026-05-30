@@ -7,7 +7,7 @@ using Honua.Server.Features.ControlPlane;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 
-namespace Honua.Server.Features.Geoprocessing.Execution;
+namespace Honua.Geoprocessing.Execution;
 
 /// <summary>
 /// Shared base for the GeoETL <c>transform.*</c> executors. Each transform reads

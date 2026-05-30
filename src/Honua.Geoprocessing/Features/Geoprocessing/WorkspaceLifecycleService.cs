@@ -6,7 +6,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Geoprocessing;
+namespace Honua.Geoprocessing;
 
 /// <summary>
 /// Orchestrates workspace and artifact lifecycle operations.

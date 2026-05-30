@@ -6,7 +6,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 
-namespace Honua.Server.Features.Geoprocessing.Execution;
+namespace Honua.Geoprocessing.Execution;
 
 /// <summary>
 /// <c>source.geojson</c> executor. Parses an inline GeoJSON FeatureCollection (or one

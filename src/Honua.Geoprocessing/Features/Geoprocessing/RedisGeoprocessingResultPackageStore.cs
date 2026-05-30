@@ -3,7 +3,7 @@
 
 using System.Text.Json;
 using Honua.Core.Features.Geoprocessing.Domain;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 using StackExchange.Redis;
 
 namespace Honua.Server.Features.ControlPlane;

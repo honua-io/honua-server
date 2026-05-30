@@ -12,7 +12,7 @@ using NetTopologySuite.IO;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Server.Features.Geoprocessing.Execution;
+namespace Honua.Geoprocessing.Execution;
 
 /// <summary>
 /// <c>sink.external-postgis</c> executor. Writes the input FeatureCollection to a PostGIS

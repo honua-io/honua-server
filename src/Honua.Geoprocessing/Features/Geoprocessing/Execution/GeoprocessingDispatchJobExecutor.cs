@@ -6,7 +6,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.ControlPlane;
 
-namespace Honua.Server.Features.Geoprocessing.Execution;
+namespace Honua.Geoprocessing.Execution;
 
 /// <summary>
 /// Production <see cref="IJobExecutor"/> for <see cref="ExecutionJobKind.Geoprocessing"/>

@@ -11,7 +11,7 @@ using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
-namespace Honua.Server.Features.Geoprocessing.Execution;
+namespace Honua.Geoprocessing.Execution;
 
 /// <summary>
 /// <c>source.csv</c> executor. Parses an inline CSV document into a FeatureCollection,

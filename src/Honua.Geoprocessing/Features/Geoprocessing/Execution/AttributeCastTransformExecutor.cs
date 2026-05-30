@@ -5,7 +5,7 @@ using System.Globalization;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 
-namespace Honua.Server.Features.Geoprocessing.Execution;
+namespace Honua.Geoprocessing.Execution;
 
 /// <summary>
 /// <c>transform.attribute-cast</c> executor. Coerces one attribute to a target CLR

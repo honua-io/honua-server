@@ -6,7 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Grounding.Abstractions;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 using Honua.Server.Features.Protocols.Mcp;
 using Honua.Server.Features.Protocols.Mcp.Models;
 using Honua.Server.Features.Protocols.Mcp.Resources;

@@ -5,7 +5,7 @@ using System.Globalization;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 
-namespace Honua.Server.Features.Geoprocessing.Execution;
+namespace Honua.Geoprocessing.Execution;
 
 /// <summary>
 /// <c>transform.computed-field</c> executor. Adds a new attribute derived from the

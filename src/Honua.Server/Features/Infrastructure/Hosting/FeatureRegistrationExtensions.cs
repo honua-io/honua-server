@@ -19,7 +19,7 @@ using Honua.Server.Features.Geocoding;
 using Honua.Server.Features.Forms;
 using Honua.Server.Features.Grounding.Spec;
 using Honua.Server.Features.Protocols.GeoServices.GeometryService;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 using Honua.Server.Features.Protocols.GeoServices.GPServer;
 using Honua.Server.Features.Protocols.GeoServices.Catalog;
 using Honua.Server.Features.Protocols.Grpc;

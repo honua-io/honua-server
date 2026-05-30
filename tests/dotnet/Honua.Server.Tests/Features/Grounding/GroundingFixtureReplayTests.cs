@@ -8,7 +8,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Grounding.Abstractions;
 using Honua.Core.Features.Grounding.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 using Honua.Server.Features.Grounding;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;

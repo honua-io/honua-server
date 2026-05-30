@@ -3,7 +3,7 @@
 
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 using Honua.Server.Features.Protocols.Mcp.Models;
 
 namespace Honua.Server.Features.Protocols.Mcp.Tools;

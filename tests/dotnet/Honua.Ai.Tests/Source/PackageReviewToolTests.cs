@@ -6,7 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.PackageReview.Abstractions;
 using Honua.Core.Features.PackageReview.Domain;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 using Honua.Server.Features.PackageReview;
 using Honua.Server.Features.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;

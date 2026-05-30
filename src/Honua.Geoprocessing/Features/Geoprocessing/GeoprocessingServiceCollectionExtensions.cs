@@ -4,14 +4,14 @@
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
-using Honua.Server.Features.Geoprocessing.Execution;
+using Honua.Geoprocessing.Execution;
 using Honua.Server.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.ControlPlane;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.Geoprocessing;
+namespace Honua.Geoprocessing;
 
 /// <summary>
 /// Registers geoprocessing workspace lifecycle and service dependencies.

@@ -5,7 +5,7 @@ using System.Text;
 using NetTopologySuite.Features;
 using NetTopologySuite.IO;
 
-namespace Honua.Server.Features.Geoprocessing.Execution;
+namespace Honua.Geoprocessing.Execution;
 
 /// <summary>
 /// Shared in/out contract for the GeoETL transform, source, and sink executors.
