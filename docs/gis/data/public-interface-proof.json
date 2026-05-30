@@ -2387,7 +2387,7 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/OperationRegistry.cs",
-            "src/Honua.Server/Features/Protocols/Ogc/Classic/Wfs20/Services/Wfs20Handler.Legacy.cs",
+            "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.Legacy.cs",
             "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/WfsLegacyEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
@@ -2433,7 +2433,7 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/OperationRegistry.cs",
-            "src/Honua.Server/Features/Protocols/Ogc/Classic/Wfs20/Services/Wfs20Handler.Legacy.cs",
+            "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.Legacy.cs",
             "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/WfsLegacyEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",

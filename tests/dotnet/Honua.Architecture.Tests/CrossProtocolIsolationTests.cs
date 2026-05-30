@@ -153,12 +153,14 @@ public sealed class CrossProtocolIsolationTests
             // rather than a standalone Honua.Protocols.Mcp, because Ai and Mcp are
             // mutually dependent — MCP tools delegate to AiBuilder/Grounding).
             ["Mcp"] = new[] { Path.Combine("src", "Honua.Ai", "Features", "Protocols", "Mcp") },
-            // Ogc spans the extracted OgcApi assembly + the shared Ogc.Shared
-            // foundation; Ogc/Classic is still under the Server path (unioned in
-            // below) until it is extracted into Honua.Protocols.OgcClassic.
+            // Ogc spans the extracted OgcApi + OgcClassic assemblies + the shared
+            // Ogc.Shared foundation (the Server Ogc/ folder is now fully extracted).
+            // They collapse into one "Ogc" family, so OgcClassic -> OgcApi is an
+            // allowed intra-family reference.
             ["Ogc"] = new[]
             {
                 Path.Combine("src", "Honua.Protocols.OgcApi"),
+                Path.Combine("src", "Honua.Protocols.OgcClassic"),
                 Path.Combine("src", "Honua.Protocols.Ogc.Shared"),
             },
         };

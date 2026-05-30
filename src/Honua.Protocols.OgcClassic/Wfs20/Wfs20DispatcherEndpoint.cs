@@ -92,7 +92,7 @@ internal static class Wfs20DispatcherEndpoint
     /// <summary>
     /// WFS operations that have full handler implementations.
     /// Derived from <see cref="_operationHandlers"/> to guarantee consistency with dispatch logic.
-    /// Used by architecture drift tests to verify <see cref="OperationRegistry"/> stays in sync.
+    /// Used by architecture drift tests to verify <c>OperationRegistry</c> stays in sync.
     /// </summary>
     internal static readonly IReadOnlySet<string> ImplementedOperations =
         new HashSet<string>(_operationHandlers.Keys, StringComparer.OrdinalIgnoreCase);

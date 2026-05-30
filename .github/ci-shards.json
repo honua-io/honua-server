@@ -385,7 +385,7 @@
       "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20",
       "paths": [
-        "src/Honua.Server/Features/Protocols/Ogc/Classic/Wfs20/",
+        "src/Honua.Protocols.OgcClassic/Wfs20/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/"
       ]
     },
@@ -533,8 +533,8 @@
       "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts",
       "paths": [
-        "src/Honua.Server/Features/Protocols/Ogc/Classic/Wms/",
-        "src/Honua.Server/Features/Protocols/Ogc/Classic/Wmts/",
+        "src/Honua.Protocols.OgcClassic/Wms/",
+        "src/Honua.Protocols.OgcClassic/Wmts/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wms/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wmts/"
       ]
