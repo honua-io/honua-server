@@ -56,7 +56,17 @@ internal static class GeoServicesRequestValueHelpers
             "sqlFormat",
             "gdbVersion",
             "quantizationParameters",
-            "datumTransformation"
+            "datumTransformation",
+            // Standard Esri layer-query parameters that ArcGIS clients (ArcGIS Pro,
+            // ArcGIS API for Python) send by default. Accepted so those clients can
+            // query Honua; unsupported ones are ignored rather than rejected (#1276).
+            "returnAllRecords",
+            "datumTransformations",
+            "historicMoment",
+            "multipatchOption",
+            "featureEncoding",
+            "parameterValues",
+            "rangeValues"
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 

@@ -908,6 +908,21 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnAllRecords=true")]
+    public async Task QueryFeatures_WithArcGisClientParameters_ReturnsOk()
+    {
+        // ArcGIS Pro and the ArcGIS API for Python send these by default; they must
+        // be accepted (and ignored where unsupported) rather than rejected (#1276).
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query" +
+            "?where=1=1&outFields=*&returnAllRecords=true&multipatchOption=xyFootprint" +
+            "&featureEncoding=esriDefault&datumTransformations=[]&f=json");
+
+        response.HaveStatusCode(System.Net.HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithNonExistentService_Returns404()
     {
