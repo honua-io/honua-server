@@ -545,10 +545,13 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
     /// <summary>
     /// All integration-test source roots whose HTTP requests back EndpointRegistry
     /// entries: the monolithic Honua.Server.Tests plus every extracted
-    /// Honua.Protocols.&lt;X&gt;.Tests project. As protocols were split into their own
-    /// test assemblies (OData, OgcApi, …) the HTTP requests that exercise their
-    /// routes moved with them, so a scan limited to Honua.Server.Tests would report
-    /// those routes (e.g. DELETE /odata/Features(...)) as uncovered.
+    /// Honua.Protocols.&lt;X&gt;.Tests project AND Honua.Ai.Tests. As protocols were
+    /// split into their own test assemblies (OData, OgcApi, …) the HTTP requests
+    /// that exercise their routes moved with them, so a scan limited to
+    /// Honua.Server.Tests would report those routes (e.g. DELETE /odata/Features(...))
+    /// as uncovered. The MCP protocol surface (POST /mcp) is consolidated into
+    /// Honua.Ai (not a standalone Honua.Protocols.Mcp), so its HTTP requests live in
+    /// Honua.Ai.Tests — which the Honua.Protocols.* glob would otherwise miss.
     /// </summary>
     private static List<string> FindIntegrationTestSourceRoots()
     {
@@ -556,6 +559,7 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
         var testsRoot = Directory.GetParent(serverTests)!.FullName; // tests/dotnet
         var roots = new List<string> { serverTests };
         roots.AddRange(Directory.EnumerateDirectories(testsRoot, "Honua.Protocols.*.Tests", SearchOption.TopDirectoryOnly));
+        roots.AddRange(Directory.EnumerateDirectories(testsRoot, "Honua.Ai.Tests", SearchOption.TopDirectoryOnly));
         return roots;
     }
 
