@@ -74,6 +74,8 @@
     <ProjectReference Include="..\Honua.Protocols.OgcApi\Honua.Protocols.OgcApi.csproj" />
 
     <ProjectReference Include="..\Honua.Protocols.OgcClassic\Honua.Protocols.OgcClassic.csproj" />
+
+    <ProjectReference Include="..\Honua.Protocols.Stac\Honua.Protocols.Stac.csproj" />
   </ItemGroup>
 
 

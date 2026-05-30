@@ -399,11 +399,10 @@
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Stac|FullyQualifiedName~Honua.Server.Tests.Features.API",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.API",
       "paths": [
-        "src/Honua.Server/Features/Protocols/Stac/",
-        "tests/dotnet/Honua.Server.Tests/Features/API/",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Stac/"
+        "src/Honua.Protocols.Stac/",
+        "tests/dotnet/Honua.Server.Tests/Features/API/"
       ]
     },
     {
@@ -695,7 +694,7 @@
       "csproj": "tests/dotnet/Honua.Protocols.Stac.Tests/Honua.Protocols.Stac.Tests.csproj",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Stac",
       "paths": [
-        "src/Honua.Server/Features/Protocols/Stac/",
+        "src/Honua.Protocols.Stac/",
         "tests/dotnet/Honua.Protocols.Stac.Tests/Source/"
       ]
     }
