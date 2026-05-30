@@ -11,9 +11,12 @@ using Microsoft.Extensions.Hosting;
 namespace Honua.Server.Features.FileStorage;
 
 /// <summary>
-/// Extension methods for registering file storage services
+/// Composition-root wiring that selects the file-storage backend (local disk
+/// from Honua.Io, S3 from Honua.Aws, Azure Blob from Honua.Azure) and registers
+/// the upload-progress store and retention cleanup. Lives in Server because it
+/// is the only assembly that references all three backends.
 /// </summary>
-public static class FileStorageServiceExtensions
+public static class FileStorageServiceCollectionExtensions
 {
     /// <summary>
     /// Adds cloud file storage services to the dependency injection container

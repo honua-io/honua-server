@@ -68,6 +68,7 @@ public sealed class ModuleDependencyPolicyTests
         Jobs,
         Ai,
         Geoprocessing,
+        Io,
         Postgres,
         DuckDB,
         MySql,
@@ -189,6 +190,17 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Geoprocessing, ModuleRole.Jobs),
         (ModuleRole.Geoprocessing, ModuleRole.ServiceDefaults),
 
+        // Io: the file input/output module (file storage today; export +
+        // upload primitives planned). ASP.NET-coupled like Hosting; depends on
+        // Abstractions + Core + Hosting + ServiceDefaults. Must NEVER reference
+        // Server (enforced by HonuaIoIsolationTests). Storage providers must
+        // NOT reference Io — that is why the file-format readers stay in the
+        // light Honua.Geometry instead of moving here.
+        (ModuleRole.Io, ModuleRole.Abstractions),
+        (ModuleRole.Io, ModuleRole.Core),
+        (ModuleRole.Io, ModuleRole.Hosting),
+        (ModuleRole.Io, ModuleRole.ServiceDefaults),
+
         // Server (composition root): every tier below it.
         (ModuleRole.Server, ModuleRole.Abstractions),
         (ModuleRole.Server, ModuleRole.Core),
@@ -198,6 +210,7 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Server, ModuleRole.Azure),
         (ModuleRole.Server, ModuleRole.Ai),
         (ModuleRole.Server, ModuleRole.Geoprocessing),
+        (ModuleRole.Server, ModuleRole.Io),
         (ModuleRole.Server, ModuleRole.Hosting),
         (ModuleRole.Server, ModuleRole.Jobs),
         (ModuleRole.Server, ModuleRole.Postgres),
@@ -531,6 +544,15 @@ public sealed class ModuleDependencyPolicyTests
             projectName.StartsWith("Honua.Geoprocessing.", StringComparison.Ordinal))
         {
             return ModuleRole.Geoprocessing;
+        }
+
+        // File input/output module (file storage; export + upload to follow)
+        // carved out of Server in the io-split refactor. ASP.NET-coupled like
+        // Hosting; sits alongside Hosting / Jobs / Ai / Geoprocessing.
+        if (projectName.Equals("Honua.Io", StringComparison.Ordinal) ||
+            projectName.StartsWith("Honua.Io.", StringComparison.Ordinal))
+        {
+            return ModuleRole.Io;
         }
 
         // Tier 5: Storage providers. Honua.Postgres + planned sub-assemblies
