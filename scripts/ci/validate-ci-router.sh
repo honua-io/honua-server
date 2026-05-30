@@ -108,7 +108,7 @@ assert_descriptor \
 
 assert_descriptor \
   "feature-server-slice" \
-  "src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/FeatureServerEndpoints.cs" \
+  "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerEndpoints.cs" \
   "targeted" \
   "false" \
   "FeatureServer Endpoints"
