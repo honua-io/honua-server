@@ -292,7 +292,7 @@
       "upload_odata_evidence": false,
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Models&FullyQualifiedName!~CachingReplicaStoreTests&FullyQualifiedName!~DistributedReplicaStoreTests&FullyQualifiedName!~FeatureServerReplicationTests&FullyQualifiedName!~ReplicationDurabilityTests&FullyQualifiedName!~PostgresChangeTrackerTests",
       "paths": [
-        "src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/",
+        "src/Honua.Protocols.GeoServices/FeatureServer/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerAccessFilteringTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerExceptionMappingTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerExtrusionTests.cs",
@@ -327,7 +327,7 @@
       "upload_odata_evidence": false,
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Models|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GeoServicesSpatialFilterBuilderTests",
       "paths": [
-        "src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/",
+        "src/Honua.Protocols.GeoServices/FeatureServer/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Models/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeoServicesSpatialFilterBuilderTests.cs"
@@ -346,7 +346,7 @@
       "upload_odata_evidence": false,
       "filter": "FullyQualifiedName~CachingReplicaStoreTests|FullyQualifiedName~DistributedReplicaStoreTests|FullyQualifiedName~FeatureServerReplicationTests|FullyQualifiedName~ReplicationDurabilityTests|FullyQualifiedName~PostgresChangeTrackerTests",
       "paths": [
-        "src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/",
+        "src/Honua.Protocols.GeoServices/FeatureServer/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/CachingReplicaStoreTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/DistributedReplicaStoreTests.cs",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/FeatureServerReplicationTests.cs",
@@ -550,7 +550,7 @@
       "upload_odata_evidence": false,
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.MapServer",
       "paths": [
-        "src/Honua.Server/Features/Protocols/GeoServices/MapServer/",
+        "src/Honua.Protocols.GeoServices/MapServer/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/"
       ],
       "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
@@ -567,7 +567,7 @@
       "upload_odata_evidence": false,
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer",
       "paths": [
-        "src/Honua.Server/Features/Protocols/GeoServices/ImageServer/",
+        "src/Honua.Protocols.GeoServices/ImageServer/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/"
       ],
       "csproj": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj"
@@ -584,7 +584,7 @@
       "upload_odata_evidence": false,
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Terrain|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Tiles",
       "paths": [
-        "src/Honua.Server/Features/Protocols/GeoServices/GeometryService/",
+        "src/Honua.Protocols.GeoServices/GeometryService/",
         "src/Honua.Server/Features/Protocols/Terrain/",
         "src/Honua.Server/Features/Protocols/Tiles/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/",
@@ -610,7 +610,7 @@
         "src/Honua.Server/Features/Authorization/",
         "src/Honua.Server/Features/Security/",
         "src/Honua.Server/Features/Styling/",
-        "src/Honua.Server/Features/Protocols/GeoServices/Catalog/",
+        "src/Honua.Protocols.GeoServices/Catalog/",
         "tests/dotnet/Honua.Server.Tests/Features/Authorization/",
         "tests/dotnet/Honua.Server.Tests/Features/Caching/",
         "tests/dotnet/Honua.Server.Tests/Features/FileStorage/",
@@ -638,7 +638,7 @@
         "src/Honua.Server/Features/Protocols/Grpc/",
         "src/Honua.Protocols.OgcApi/Processes/",
         "src/Honua.Ai/Features/Protocols/Mcp/",
-        "src/Honua.Server/Features/Protocols/GeoServices/GPServer/",
+        "src/Honua.Protocols.GeoServices/GPServer/",
         "tests/dotnet/Honua.Server.Tests/Features/Eval/",
         "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/",
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Processes/",

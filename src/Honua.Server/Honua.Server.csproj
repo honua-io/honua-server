@@ -76,6 +76,8 @@
     <ProjectReference Include="..\Honua.Protocols.OgcClassic\Honua.Protocols.OgcClassic.csproj" />
 
     <ProjectReference Include="..\Honua.Protocols.Stac\Honua.Protocols.Stac.csproj" />
+
+    <ProjectReference Include="..\Honua.Protocols.GeoServices\Honua.Protocols.GeoServices.csproj" />
   </ItemGroup>
 
 

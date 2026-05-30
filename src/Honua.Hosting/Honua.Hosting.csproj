@@ -73,6 +73,7 @@
     <InternalsVisibleTo Include="Honua.Import" />
     <InternalsVisibleTo Include="Honua.Import.Tests" />
     <InternalsVisibleTo Include="Honua.Architecture.Tests" />
+    <InternalsVisibleTo Include="Honua.Benchmarks" />
     <InternalsVisibleTo Include="Honua.Protocols.OData" />
     <InternalsVisibleTo Include="Honua.Protocols.OData.Tests" />
     <InternalsVisibleTo Include="Honua.Protocols.Ogc.Shared" />
