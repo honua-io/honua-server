@@ -40,7 +40,6 @@
     <InternalsVisibleTo Include="Honua.Server.Tests" />
     <InternalsVisibleTo Include="Honua.Worker.Gdal" />
     <InternalsVisibleTo Include="Honua.Worker.Gdal.Tests" />
-    <InternalsVisibleTo Include="Honua.Jobs.Tests" />
     <InternalsVisibleTo Include="Honua.Architecture.Tests" />
     <InternalsVisibleTo Include="Honua.TestKit" />
     <InternalsVisibleTo Include="Honua.Protocols.OData.Tests" />

@@ -34,7 +34,6 @@
     <InternalsVisibleTo Include="Honua.Import" />
     <InternalsVisibleTo Include="Honua.Server" />
     <InternalsVisibleTo Include="Honua.Server.Tests" />
-    <InternalsVisibleTo Include="Honua.Geometry.Tests" />
     <InternalsVisibleTo Include="Honua.Postgres" />
     <InternalsVisibleTo Include="Honua.Postgres.Tests" />
     <InternalsVisibleTo Include="Honua.Architecture.Tests" />
