@@ -9,7 +9,7 @@ using FluentAssertions;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 using Honua.Server.Features.Studio.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;

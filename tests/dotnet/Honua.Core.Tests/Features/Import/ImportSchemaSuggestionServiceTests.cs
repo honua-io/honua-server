@@ -3,8 +3,13 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Migration.Abstractions;
+using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Import.Domain;
-using Honua.Core.Features.Import.Services;
+using Honua.Core.Features.Migration.Domain;
+using Honua.Core.Features.FileImport.Domain;
+using Honua.Core.Features.Migration.Services;
+using Honua.Core.Features.FileImport.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 
@@ -13,7 +18,7 @@ namespace Honua.Core.Tests.Features.Import;
 /// <summary>
 /// Tests for the import schema suggestion service.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(ProtocolNames.TestQuality)]
 public sealed class ImportSchemaSuggestionServiceTests
 {
     private readonly ImportSchemaSuggestionService _service = new();

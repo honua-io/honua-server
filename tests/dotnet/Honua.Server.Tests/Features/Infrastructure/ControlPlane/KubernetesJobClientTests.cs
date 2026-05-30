@@ -5,7 +5,7 @@ using System.Net.Security;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using FluentAssertions;
-using Honua.Server.Features.Infrastructure.ControlPlane;
+using Honua.ControlPlane;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 

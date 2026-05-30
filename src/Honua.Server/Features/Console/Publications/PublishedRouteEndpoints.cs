@@ -8,9 +8,9 @@ using Honua.Core.Features.Publishing.Content.Abstractions;
 using Honua.Core.Features.Publishing.Content.Domain;
 using Honua.Core.Features.Publishing.Content.Services;
 using Honua.Core.Features.Security.Domain;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Validation;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 

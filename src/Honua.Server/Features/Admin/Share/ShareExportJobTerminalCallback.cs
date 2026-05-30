@@ -5,7 +5,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Share.Abstractions;
 using Honua.Core.Features.Share.Domain;
-using Honua.Server.Features.Infrastructure.ControlPlane;
+using Honua.ControlPlane;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Admin.Share;

@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;

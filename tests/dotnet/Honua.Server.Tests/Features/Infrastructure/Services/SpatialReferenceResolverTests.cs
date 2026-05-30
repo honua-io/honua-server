@@ -4,7 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Infrastructure.Services;
+using Honua.Infrastructure.Services;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Services;
 

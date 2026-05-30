@@ -9,7 +9,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 
-namespace Honua.Server.Features.Alerts;
+namespace Honua.Alerts;
 
 internal sealed partial class AlertPipeline : IAlertPipeline
 {

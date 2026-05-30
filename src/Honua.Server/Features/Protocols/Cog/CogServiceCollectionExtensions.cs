@@ -1,14 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Amazon.S3;
-using Azure.Storage.Blobs;
-using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.CogParser;
-using Honua.Server.Features.FileStorage;
-using Microsoft.Extensions.Options;
+using Honua.FileStorage;
 
 namespace Honua.Server.Features.Protocols.Cog;
 
@@ -19,6 +14,9 @@ internal static class CogServiceCollectionExtensions
 {
     /// <summary>
     /// Registers COG services: range readers, metadata parser, and tile resolver.
+    /// Provider-specific range readers (AWS S3 / Azure Blob) are delegated to the
+    /// per-cloud extensions in Honua.Aws / Honua.Azure to keep the AWSSDK.* /
+    /// Azure.* surface confined to those assemblies.
     /// </summary>
     public static IServiceCollection AddCogServices(this IServiceCollection services, IConfiguration configuration)
     {
@@ -29,62 +27,8 @@ internal static class CogServiceCollectionExtensions
         services.AddScoped<ICogTileResolver, CogTileResolver>();
 
         // Register range readers based on available provider configurations
-        var fileStorageSection = configuration.GetSection("FileStorage");
-
-        // Always register S3 range reader if S3 configuration is present
-        if (fileStorageSection.GetSection("AwsS3").Exists())
-        {
-            services.AddSingleton<ICloudRangeReader>(sp =>
-            {
-                var options = sp.GetRequiredService<IOptions<CloudStorageOptions>>();
-                var s3Options = options.Value.AwsS3;
-                if (s3Options == null)
-                {
-                    throw new InvalidOperationException("AWS S3 options not configured for range reader.");
-                }
-
-                var config = new AmazonS3Config
-                {
-                    RegionEndpoint = Amazon.RegionEndpoint.GetBySystemName(s3Options.Region),
-                    ForcePathStyle = s3Options.ForcePathStyle
-                };
-                if (!string.IsNullOrWhiteSpace(s3Options.ServiceUrl))
-                {
-                    config.ServiceURL = s3Options.ServiceUrl;
-                }
-
-                IAmazonS3 client;
-                if (!string.IsNullOrWhiteSpace(s3Options.AccessKeyId) && !string.IsNullOrWhiteSpace(s3Options.SecretAccessKey))
-                {
-                    client = new AmazonS3Client(
-                        new Amazon.Runtime.BasicAWSCredentials(s3Options.AccessKeyId, s3Options.SecretAccessKey),
-                        config);
-                }
-                else
-                {
-                    client = new AmazonS3Client(config);
-                }
-
-                return new AwsS3RangeReader(client);
-            });
-        }
-
-        // Always register Azure Blob range reader if Azure configuration is present
-        if (fileStorageSection.GetSection("AzureBlob").Exists())
-        {
-            services.AddSingleton<ICloudRangeReader>(sp =>
-            {
-                var options = sp.GetRequiredService<IOptions<CloudStorageOptions>>();
-                var azureOptions = options.Value.AzureBlob;
-                if (azureOptions == null || string.IsNullOrWhiteSpace(azureOptions.ConnectionString))
-                {
-                    throw new InvalidOperationException("Azure Blob options not configured for range reader.");
-                }
-
-                var serviceClient = new BlobServiceClient(azureOptions.ConnectionString);
-                return new AzureBlobRangeReader(serviceClient);
-            });
-        }
+        services.AddAwsCloudRangeReader(configuration);
+        services.AddAzureCloudRangeReader(configuration);
 
         return services;
     }

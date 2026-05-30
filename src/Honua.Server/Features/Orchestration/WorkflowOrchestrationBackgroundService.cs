@@ -8,7 +8,7 @@ namespace Honua.Server.Features.Orchestration;
 
 /// <summary>
 /// Background worker that reconciles active workflow runs in a leased, resumable loop.
-/// Mirrors <see cref="Infrastructure.ControlPlane.DeployWorkflowReconcilerBackgroundService"/>.
+/// Mirrors <see cref="ControlPlane.DeployWorkflowReconcilerBackgroundService"/>.
 /// </summary>
 internal sealed class WorkflowOrchestrationBackgroundService(
     IWorkflowRunStore runStore,

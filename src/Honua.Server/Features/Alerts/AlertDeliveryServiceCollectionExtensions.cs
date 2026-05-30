@@ -1,19 +1,19 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Amazon;
-using Amazon.SimpleNotificationService;
-using Amazon.SQS;
-using Azure;
-using Azure.Identity;
-using Azure.Messaging.EventGrid;
-using Azure.Messaging.EventHubs.Producer;
 using Honua.Core.Features.Alerts.Abstractions;
-using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Infrastructure.Resilience;
 
-namespace Honua.Server.Features.Alerts;
+namespace Honua.Alerts;
 
+/// <summary>
+/// Cloud-neutral orchestration over the alert delivery channels: registers the
+/// HTTP-based sinks (Webhook, Slack, Teams, Email digest, WebSocket) and then
+/// delegates AWS / Azure channel registration to the per-cloud extensions in
+/// Honua.Aws / Honua.Azure. Keeping the AWS / Azure SDK surface confined to
+/// those assemblies preserves the cloud-SDK isolation contract enforced by
+/// CloudSdkIsolationTests.
+/// </summary>
 internal static class AlertDeliveryServiceCollectionExtensions
 {
     public static IServiceCollection AddAlertDeliveryChannels(this IServiceCollection services, IConfiguration configuration)
@@ -25,86 +25,35 @@ internal static class AlertDeliveryServiceCollectionExtensions
             "alerts-webhook",
             "alerts-webhook",
             HttpResiliencePolicies.FastApiDefaults,
-            configureHandler: static () => Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
+            configureHandler: static () => Honua.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
         services.AddResilientHttpClient(
             "alerts-digest",
             "alerts-digest",
             HttpResiliencePolicies.FastApiDefaults,
-            configureHandler: static () => Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
+            configureHandler: static () => Honua.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
         services.AddResilientHttpClient(
             "alerts-slack",
             "alerts-slack",
             HttpResiliencePolicies.FastApiDefaults,
-            configureHandler: static () => Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
+            configureHandler: static () => Honua.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
         services.AddResilientHttpClient(
             "alerts-teams",
             "alerts-teams",
             HttpResiliencePolicies.FastApiDefaults,
-            configureHandler: static () => Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
+            configureHandler: static () => Honua.Infrastructure.Events.WebhookDeliveryHelper.CreatePinnedDnsHttpMessageHandler());
 
         services.AddSingleton<IAlertDeliverySink, WebhookAlertDeliverySink>();
         services.AddSingleton<IAlertDeliverySink, WebSocketAlertDeliverySink>();
         services.AddSingleton<IAlertDeliverySink, EmailAlertDeliverySink>();
-        services.AddSingleton<IAlertDeliverySink>(_ => new UnsupportedAlertDeliverySink(AlertChannelType.Digest));
+        services.AddSingleton<IAlertDeliverySink>(_ => new UnsupportedAlertDeliverySink(Core.Features.Alerts.Domain.AlertChannelType.Digest));
         services.AddHostedService<DigestFlushBackgroundService>();
 
-        RegisterAwsSns(services, configuration);
-        RegisterAzureEventGrid(services, configuration);
+        services.AddAwsAlertDeliveryChannels(configuration);
+        services.AddAzureAlertDeliveryChannels(configuration);
         RegisterSlack(services, configuration);
         RegisterTeams(services, configuration);
-        RegisterAwsSqs(services, configuration);
-        RegisterAzureEventHub(services, configuration);
 
         return services;
-    }
-
-    private static void RegisterAwsSns(IServiceCollection services, IConfiguration configuration)
-    {
-        var snsSection = configuration.GetSection($"{AlertDeliveryOptions.SectionName}:Dispatch:AwsSns");
-        var topicArn = snsSection.GetValue<string>("TopicArn");
-
-        if (!string.IsNullOrWhiteSpace(topicArn))
-        {
-            var region = snsSection.GetValue<string>("Region");
-            services.AddSingleton<ISnsPublisher>(_ =>
-            {
-                var config = new AmazonSimpleNotificationServiceConfig();
-                if (!string.IsNullOrWhiteSpace(region))
-                {
-                    config.RegionEndpoint = RegionEndpoint.GetBySystemName(region);
-                }
-
-                return new AwsSnsPublisher(new AmazonSimpleNotificationServiceClient(config));
-            });
-            services.AddSingleton<IAlertDeliverySink, AwsSnsAlertDeliverySink>();
-        }
-        else
-        {
-            services.AddSingleton<IAlertDeliverySink>(_ => new UnsupportedAlertDeliverySink(AlertChannelType.AwsSns));
-        }
-    }
-
-    private static void RegisterAzureEventGrid(IServiceCollection services, IConfiguration configuration)
-    {
-        var egSection = configuration.GetSection($"{AlertDeliveryOptions.SectionName}:Dispatch:AzureEventGrid");
-        var topicEndpoint = egSection.GetValue<string>("TopicEndpoint");
-
-        if (!string.IsNullOrWhiteSpace(topicEndpoint))
-        {
-            var topicKey = egSection.GetValue<string>("TopicKey");
-            services.AddSingleton(_ =>
-            {
-                var endpoint = new Uri(topicEndpoint);
-                return string.IsNullOrWhiteSpace(topicKey)
-                    ? new EventGridPublisherClient(endpoint, new DefaultAzureCredential())
-                    : new EventGridPublisherClient(endpoint, new AzureKeyCredential(topicKey));
-            });
-            services.AddSingleton<IAlertDeliverySink, AzureEventGridAlertDeliverySink>();
-        }
-        else
-        {
-            services.AddSingleton<IAlertDeliverySink>(_ => new UnsupportedAlertDeliverySink(AlertChannelType.AzureEventGrid));
-        }
     }
 
     private static void RegisterSlack(IServiceCollection services, IConfiguration configuration)
@@ -118,7 +67,7 @@ internal static class AlertDeliveryServiceCollectionExtensions
         }
         else
         {
-            services.AddSingleton<IAlertDeliverySink>(_ => new UnsupportedAlertDeliverySink(AlertChannelType.Slack));
+            services.AddSingleton<IAlertDeliverySink>(_ => new UnsupportedAlertDeliverySink(Core.Features.Alerts.Domain.AlertChannelType.Slack));
         }
     }
 
@@ -133,51 +82,7 @@ internal static class AlertDeliveryServiceCollectionExtensions
         }
         else
         {
-            services.AddSingleton<IAlertDeliverySink>(_ => new UnsupportedAlertDeliverySink(AlertChannelType.MicrosoftTeams));
-        }
-    }
-
-    private static void RegisterAwsSqs(IServiceCollection services, IConfiguration configuration)
-    {
-        var sqsSection = configuration.GetSection($"{AlertDeliveryOptions.SectionName}:Dispatch:AwsSqs");
-        var queueUrl = sqsSection.GetValue<string>("QueueUrl");
-
-        if (!string.IsNullOrWhiteSpace(queueUrl))
-        {
-            var region = sqsSection.GetValue<string>("Region");
-            services.AddSingleton<ISqsPublisher>(_ =>
-            {
-                var config = new AmazonSQSConfig();
-                if (!string.IsNullOrWhiteSpace(region))
-                {
-                    config.RegionEndpoint = RegionEndpoint.GetBySystemName(region);
-                }
-
-                return new AwsSqsPublisher(new AmazonSQSClient(config));
-            });
-            services.AddSingleton<IAlertDeliverySink, AwsSqsAlertDeliverySink>();
-        }
-        else
-        {
-            services.AddSingleton<IAlertDeliverySink>(_ => new UnsupportedAlertDeliverySink(AlertChannelType.AwsSqs));
-        }
-    }
-
-    private static void RegisterAzureEventHub(IServiceCollection services, IConfiguration configuration)
-    {
-        var ehSection = configuration.GetSection($"{AlertDeliveryOptions.SectionName}:Dispatch:AzureEventHub");
-        var connectionString = ehSection.GetValue<string>("ConnectionString");
-        var eventHubName = ehSection.GetValue<string>("EventHubName");
-
-        if (!string.IsNullOrWhiteSpace(connectionString) && !string.IsNullOrWhiteSpace(eventHubName))
-        {
-            services.AddSingleton<IEventHubPublisher>(_ =>
-                new EventHubPublisher(new EventHubProducerClient(connectionString, eventHubName)));
-            services.AddSingleton<IAlertDeliverySink, AzureEventHubAlertDeliverySink>();
-        }
-        else
-        {
-            services.AddSingleton<IAlertDeliverySink>(_ => new UnsupportedAlertDeliverySink(AlertChannelType.AzureEventHub));
+            services.AddSingleton<IAlertDeliverySink>(_ => new UnsupportedAlertDeliverySink(Core.Features.Alerts.Domain.AlertChannelType.MicrosoftTeams));
         }
     }
 }

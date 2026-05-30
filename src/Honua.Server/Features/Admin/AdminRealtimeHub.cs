@@ -2,8 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Monitoring;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Monitoring;
 using Microsoft.AspNetCore.SignalR;
 
 namespace Honua.Server.Features.Admin;

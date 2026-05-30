@@ -3,7 +3,7 @@
 
 using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Infrastructure.Authentication;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.Services;

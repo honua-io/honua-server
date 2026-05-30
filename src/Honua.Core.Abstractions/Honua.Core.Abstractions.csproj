@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <DisableMicrosoftExtensionsLoggingSourceGenerator>false</DisableMicrosoftExtensionsLoggingSourceGenerator>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CS1591;CA1716</NoWarn>
+    <WarningsNotAsErrors>CA2009;IDE0073</WarningsNotAsErrors>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseExpression>Elastic-2.0</PackageLicenseExpression>
+    <RootNamespace>Honua.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+
+    <!--
+      Abstractions-only contract surface. ProjectReference into this assembly is allowed
+      for protocol assemblies (modularization Phase 1) which must NOT take a transitive
+      dependency on heavy data-layer/geospatial libraries (Npgsql, NetTopologySuite,
+      Parquet.Net, FlatGeobuf, AWSSDK, ...). Keep package references minimal.
+    -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Core" />
+    <InternalsVisibleTo Include="Honua.Core.Tests" />
+    <InternalsVisibleTo Include="Honua.Server" />
+    <InternalsVisibleTo Include="Honua.Server.Tests" />
+    <InternalsVisibleTo Include="Honua.Postgres" />
+    <InternalsVisibleTo Include="Honua.Postgres.Tests" />
+    <InternalsVisibleTo Include="Honua.DuckDB" />
+    <InternalsVisibleTo Include="Honua.MySql" />
+    <InternalsVisibleTo Include="Honua.MySql.Tests" />
+    <InternalsVisibleTo Include="Honua.SqlServer" />
+    <InternalsVisibleTo Include="Honua.SqlServer.Tests" />
+    <InternalsVisibleTo Include="Honua.Architecture.Tests" />
+  </ItemGroup>
+
+</Project>

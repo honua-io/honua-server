@@ -20,9 +20,13 @@ public interface IQueryParameterAdapter<in TProtocolParams>
     /// <param name="resource">Target canonical resource.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Unified query or error result.</returns>
-    Task<QueryAdapterResult> ConvertAsync(TProtocolParams parameters, MetadataV2Resource resource, CancellationToken cancellationToken = default)
-        => throw new NotSupportedException(
-            $"Adapter '{GetType().Name}' does not yet implement the Metadata v2 ConvertAsync overload.");
+    /// <remarks>
+    /// Audit-C1: abstract (no default body) so the compiler forces every
+    /// <see cref="IQueryParameterAdapter{TProtocolParams}"/> implementation to ship a working override.
+    /// Previously a default-interface-method that threw <see cref="NotSupportedException"/> at runtime;
+    /// half-migrations were not caught at build time.
+    /// </remarks>
+    Task<QueryAdapterResult> ConvertAsync(TProtocolParams parameters, MetadataV2Resource resource, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets the protocol name for this adapter.

@@ -5,7 +5,7 @@ using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Configuration;
 using Honua.Core.Features.Security.Abstractions;
-using Honua.Server.Features.Infrastructure.Configuration;
+using Honua.Infrastructure.Configuration;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Configuration;

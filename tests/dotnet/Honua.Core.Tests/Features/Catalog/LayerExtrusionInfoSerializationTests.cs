@@ -16,7 +16,7 @@ namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 /// JSON context; without that registration, deserialization would
 /// silently produce null values in published builds.
 /// </summary>
-[Protocol(Protocols.GeoservicesCatalog)]
+[Protocol(ProtocolNames.GeoservicesCatalog)]
 public sealed class MetadataV2ExtrusionInfoSerializationTests
 {
     [UnitTest]

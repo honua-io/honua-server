@@ -3,7 +3,7 @@
 
 using System.Net;
 using Honua.Core.Features.Alerts.Domain;
-using Honua.Server.Features.Alerts;
+using Honua.Alerts;
 
 namespace Honua.Server.Tests.Features.Alerts;
 

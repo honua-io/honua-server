@@ -12,7 +12,7 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Core.Tests.Features.NlQuery;
 
-[Protocol(Protocols.TestQuality)]
+[Protocol(ProtocolNames.TestQuality)]
 public sealed class FilterPlanCompilerTests
 {
     private readonly MetadataV2Resource _testResource;

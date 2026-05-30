@@ -13,8 +13,23 @@
     <ProjectReference Include="..\..\..\src\Honua.Server\Honua.Server.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Postgres\Honua.Postgres.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.MySql\Honua.MySql.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.SqlServer\Honua.SqlServer.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.DuckDB\Honua.DuckDB.csproj" />
     <ProjectReference Include="..\Honua.Server.Tests\Honua.Server.Tests.csproj" />
     <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
+    <!-- Per-protocol test projects are referenced so their assemblies land in
+         this project's output directory, where ApiSurfaceCoverageTests /
+         OperationCoverageTests load them (via
+         ArchitectureTestHelpers.IntegrationTestAssemblies) to verify endpoint
+         and operation coverage for protocols extracted out of Honua.Server. -->
+    <ProjectReference Include="..\Honua.Protocols.OData.Tests\Honua.Protocols.OData.Tests.csproj" />
+    <ProjectReference Include="..\Honua.Protocols.OgcApi.Tests\Honua.Protocols.OgcApi.Tests.csproj" />
+    <ProjectReference Include="..\Honua.Protocols.OgcClassic.Tests\Honua.Protocols.OgcClassic.Tests.csproj" />
+    <ProjectReference Include="..\Honua.Protocols.GeoServices.Tests\Honua.Protocols.GeoServices.Tests.csproj" />
+    <ProjectReference Include="..\Honua.Ai.Tests\Honua.Ai.Tests.csproj" />
+    <ProjectReference Include="..\Honua.Protocols.Scene.Tests\Honua.Protocols.Scene.Tests.csproj" />
+    <ProjectReference Include="..\Honua.Protocols.Stac.Tests\Honua.Protocols.Stac.Tests.csproj" />
   </ItemGroup>
 
   <ItemGroup>

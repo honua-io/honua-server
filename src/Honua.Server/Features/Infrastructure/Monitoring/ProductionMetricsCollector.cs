@@ -4,7 +4,7 @@
 using System.Diagnostics.Metrics;
 using Honua.Core.Features.Infrastructure.Monitoring;
 
-namespace Honua.Server.Features.Infrastructure.Monitoring;
+namespace Honua.Infrastructure.Monitoring;
 
 /// <summary>
 /// Collects comprehensive production metrics for monitoring and alerting.

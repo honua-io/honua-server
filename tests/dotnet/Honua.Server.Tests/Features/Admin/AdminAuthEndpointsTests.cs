@@ -10,7 +10,7 @@ using System.Text;
 using FluentAssertions.Execution;
 using FluentAssertions;
 using Honua.Server.Features.Admin.Models;
-using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;

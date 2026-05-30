@@ -6,7 +6,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Console.Abstractions;
 using Honua.Core.Features.Console.Domain;
-using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Infrastructure.Authentication;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Console.Services;

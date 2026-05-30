@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.Infrastructure.RateLimiting;
+namespace Honua.Infrastructure.RateLimiting;
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(RateLimitExceededResponse))]

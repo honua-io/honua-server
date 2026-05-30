@@ -7,7 +7,7 @@ using Honua.Core.Features.Security.Abstractions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Configuration;
+namespace Honua.Infrastructure.Configuration;
 
 /// <summary>
 /// Centralized secret provider that integrates with multiple secret management systems.

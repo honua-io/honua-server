@@ -3,8 +3,8 @@
 
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin.Jobs;

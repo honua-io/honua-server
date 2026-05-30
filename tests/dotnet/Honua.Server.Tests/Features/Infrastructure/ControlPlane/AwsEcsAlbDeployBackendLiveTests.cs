@@ -3,7 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Server.Features.Infrastructure.ControlPlane;
+using Honua.ControlPlane;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 

@@ -35,26 +35,30 @@ public sealed class OperationCoverageTests
 
     private static HashSet<string> CollectIntegrationTestOperations()
     {
-        var testAssembly = typeof(Honua.Server.Tests.Import.UniversalProgressStoreIntegrationTests).Assembly;
+        // Server.Tests plus every extracted Honua.Protocols.<X>.Tests assembly:
+        // e.g. the Mcp operation tests now live in Honua.Protocols.Mcp.Tests.
         var operations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var type in ArchitectureTestHelpers.GetTypesSafely(testAssembly))
+        foreach (var testAssembly in ArchitectureTestHelpers.IntegrationTestAssemblies())
         {
-            var classHasIntegration = type.GetCustomAttributes(typeof(IntegrationTestAttribute), inherit: true).Length > 0;
-
-            foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
+            foreach (var type in ArchitectureTestHelpers.GetTypesSafely(testAssembly))
             {
-                var methodHasIntegration = classHasIntegration ||
-                    method.GetCustomAttributes(typeof(IntegrationTestAttribute), inherit: true).Length > 0;
+                var classHasIntegration = type.GetCustomAttributes(typeof(IntegrationTestAttribute), inherit: true).Length > 0;
 
-                if (!methodHasIntegration)
+                foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
                 {
-                    continue;
-                }
+                    var methodHasIntegration = classHasIntegration ||
+                        method.GetCustomAttributes(typeof(IntegrationTestAttribute), inherit: true).Length > 0;
 
-                foreach (var attr in method.GetCustomAttributes(typeof(InterfaceOperationAttribute), inherit: true).Cast<InterfaceOperationAttribute>())
-                {
-                    operations.Add(FormatKey(attr.Protocol, attr.Operation));
+                    if (!methodHasIntegration)
+                    {
+                        continue;
+                    }
+
+                    foreach (var attr in method.GetCustomAttributes(typeof(InterfaceOperationAttribute), inherit: true).Cast<InterfaceOperationAttribute>())
+                    {
+                        operations.Add(FormatKey(attr.Protocol, attr.Operation));
+                    }
                 }
             }
         }

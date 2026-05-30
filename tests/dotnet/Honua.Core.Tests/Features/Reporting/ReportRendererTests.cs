@@ -15,7 +15,7 @@ namespace Honua.Core.Tests.Features.Reporting;
 /// Verifies renderer output shape: contract refusal for unsupported versions,
 /// HTML offline guarantees, and Markdown/HTML coverage for every section kind.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(ProtocolNames.TestQuality)]
 public sealed class ReportRendererTests
 {
     [UnitTest]

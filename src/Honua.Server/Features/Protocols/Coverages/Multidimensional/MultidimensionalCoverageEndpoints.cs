@@ -6,7 +6,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Multidimensional.Abstractions;
 using Honua.Core.Features.Raster.Multidimensional.Domain;
-using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Protocols.Coverages.Multidimensional.Models;
 using Microsoft.AspNetCore.Mvc;
 

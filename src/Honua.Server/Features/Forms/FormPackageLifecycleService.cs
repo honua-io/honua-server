@@ -5,7 +5,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Forms.Packages;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.Forms;

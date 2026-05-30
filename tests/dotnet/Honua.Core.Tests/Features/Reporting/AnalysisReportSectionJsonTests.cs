@@ -13,7 +13,7 @@ namespace Honua.Core.Tests.Features.Reporting;
 /// Pins the polymorphic JSON shape of <see cref="AnalysisReportSection"/> so
 /// AOT serializers can round-trip the discriminated union without reflection.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(ProtocolNames.TestQuality)]
 public sealed class AnalysisReportSectionJsonTests
 {
     private static readonly JsonSerializerOptions _options = new()

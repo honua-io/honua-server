@@ -48,6 +48,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Http.Polly" />
     <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\Honua.Geometry\Honua.Geometry.csproj" />
+    <ProjectReference Include="..\Honua.Postgres.Shared\Honua.Postgres.Shared.csproj" />
   </ItemGroup>
 
 </Project>

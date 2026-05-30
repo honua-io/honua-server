@@ -7,7 +7,7 @@ using System.Reflection;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Server.Features.Admin;
-using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;

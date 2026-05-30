@@ -3,7 +3,7 @@
 
 using System.Xml;
 using FluentAssertions;
-using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Infrastructure.Helpers;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Helpers;
 

@@ -4,7 +4,7 @@
 using System.Net;
 using System.Text;
 using FluentAssertions;
-using Honua.Server.Features.Infrastructure.Middleware;
+using Honua.Infrastructure.Middleware;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;

@@ -5,7 +5,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Security.Claims;
 using FluentAssertions;
-using Honua.Server.Features.Infrastructure.Authentication.ClientCertificates;
+using Honua.Infrastructure.Authentication.ClientCertificates;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;

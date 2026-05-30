@@ -5,8 +5,8 @@ using System.Globalization;
 using System.IO;
 using System.Text.Json;
 using BenchmarkDotNet.Attributes;
-using Honua.Server.Features.Protocols.Ogc.Api.Features;
-using Honua.Server.Features.Protocols.Ogc.Api.Features.Models;
+using Honua.Protocols.Ogc.Api.Features;
+using Honua.Protocols.Ogc.Api.Features.Models;
 
 namespace Honua.Benchmarks;
 

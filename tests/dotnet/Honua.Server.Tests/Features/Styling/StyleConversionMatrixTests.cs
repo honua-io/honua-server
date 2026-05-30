@@ -4,7 +4,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Server.Features.Infrastructure.Styling;
+using Honua.Server.Features.Styling;
 using Xunit.Sdk;
 
 namespace Honua.Server.Tests.Features.Styling;
@@ -1368,11 +1368,11 @@ public class StyleConversionMatrixTests
         var fillLayer = FindLayer(doc.RootElement, "fill");
         var colorExprJson = fillLayer.GetProperty("paint").GetProperty("fill-color").GetRawText();
 
-        var expr = Honua.Server.Features.Infrastructure.Rendering.MapLibreExpressionParser.Parse(colorExprJson);
+        var expr = Honua.Infrastructure.Rendering.MapLibreExpressionParser.Parse(colorExprJson);
         var props = System.Collections.Immutable.ImmutableDictionary<string, object?>.Empty
             .Add("population", dirtyValue);
 
-        var result = Honua.Server.Features.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, props);
+        var result = Honua.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, props);
 
         // Must be the gray fallback color (#CCCCCC), NOT the first bucket color (#440154)
         Assert.Equal("#CCCCCC", result?.ToString());
@@ -1432,12 +1432,12 @@ public class StyleConversionMatrixTests
         var fillLayer = FindLayer(doc.RootElement, "fill");
         var colorExprJson = fillLayer.GetProperty("paint").GetProperty("fill-color").GetRawText();
 
-        var expr = Honua.Server.Features.Infrastructure.Rendering.MapLibreExpressionParser.Parse(colorExprJson);
+        var expr = Honua.Infrastructure.Rendering.MapLibreExpressionParser.Parse(colorExprJson);
         // Key exists but value is null — simulates JSONB null or explicit null in source data
         var props = System.Collections.Immutable.ImmutableDictionary<string, object?>.Empty
             .Add("population", null);
 
-        var result = Honua.Server.Features.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, props);
+        var result = Honua.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, props);
 
         Assert.Equal("#CCCCCC", result?.ToString());
     }
@@ -1494,18 +1494,18 @@ public class StyleConversionMatrixTests
         var fillLayer = FindLayer(doc.RootElement, "fill");
         var colorExprJson = fillLayer.GetProperty("paint").GetProperty("fill-color").GetRawText();
 
-        var expr = Honua.Server.Features.Infrastructure.Rendering.MapLibreExpressionParser.Parse(colorExprJson);
+        var expr = Honua.Infrastructure.Rendering.MapLibreExpressionParser.Parse(colorExprJson);
 
         // Value 25.0 < break 50.0 → first bucket color
         var propsLow = System.Collections.Immutable.ImmutableDictionary<string, object?>.Empty
             .Add("population", 25.0);
-        var resultLow = Honua.Server.Features.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, propsLow);
+        var resultLow = Honua.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, propsLow);
         Assert.Equal("#440154", resultLow?.ToString());
 
         // Value 75.0 >= break 50.0 → second bucket color
         var propsHigh = System.Collections.Immutable.ImmutableDictionary<string, object?>.Empty
             .Add("population", 75.0);
-        var resultHigh = Honua.Server.Features.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, propsHigh);
+        var resultHigh = Honua.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, propsHigh);
         Assert.Equal("#FDE725", resultHigh?.ToString());
     }
 
@@ -1759,23 +1759,23 @@ public class StyleConversionMatrixTests
         var fillLayer = FindLayer(doc.RootElement, "fill");
         var colorExprJson = fillLayer.GetProperty("paint").GetProperty("fill-color").GetRawText();
 
-        var expr = Honua.Server.Features.Infrastructure.Rendering.MapLibreExpressionParser.Parse(colorExprJson);
+        var expr = Honua.Infrastructure.Rendering.MapLibreExpressionParser.Parse(colorExprJson);
 
         // Key exists but value is null — must hit fallback, not the "" category
         var propsNull = System.Collections.Immutable.ImmutableDictionary<string, object?>.Empty
             .Add("category", null);
-        var resultNull = Honua.Server.Features.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, propsNull);
+        var resultNull = Honua.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, propsNull);
         Assert.Equal("#CCCCCC", resultNull?.ToString());
 
         // Key missing entirely — must also hit fallback
         var propsMissing = System.Collections.Immutable.ImmutableDictionary<string, object?>.Empty;
-        var resultMissing = Honua.Server.Features.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, propsMissing);
+        var resultMissing = Honua.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, propsMissing);
         Assert.Equal("#CCCCCC", resultMissing?.ToString());
 
         // Non-null value "A" — must match category color
         var propsA = System.Collections.Immutable.ImmutableDictionary<string, object?>.Empty
             .Add("category", "A");
-        var resultA = Honua.Server.Features.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, propsA);
+        var resultA = Honua.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, propsA);
         Assert.Equal("#377EB8", resultA?.ToString());
     }
 
@@ -1976,12 +1976,12 @@ public class StyleConversionMatrixTests
         var fillLayer = FindLayer(doc.RootElement, "fill");
         var colorExprJson = fillLayer.GetProperty("paint").GetProperty("fill-color").GetRawText();
 
-        var expr = Honua.Server.Features.Infrastructure.Rendering.MapLibreExpressionParser.Parse(colorExprJson);
+        var expr = Honua.Infrastructure.Rendering.MapLibreExpressionParser.Parse(colorExprJson);
         // String-typed numeric value: "42" not 42 — simulates mistyped JSONB
         var props = System.Collections.Immutable.ImmutableDictionary<string, object?>.Empty
             .Add("population", stringValue);
 
-        var result = Honua.Server.Features.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, props);
+        var result = Honua.Infrastructure.Rendering.ExpressionEvaluator.Evaluate(expr, props);
 
         Assert.Equal(expectedColor, result?.ToString());
     }

@@ -406,7 +406,8 @@ jobs:
                 max_cpu_count,
                 upload_operator_eval_report,
                 upload_odata_evidence,
-                filter
+                filter,
+                csproj: (.csproj // "")
               })
           ' .github/ci-shards.json)
           if [ "$(printf '%s' "${matrix_include}" | jq 'length')" = "0" ]; then
@@ -448,8 +449,51 @@ jobs:
       - name: Restore
         run: dotnet restore Honua.sln
 
+      - name: Compute affected projects
+        id: affected
+        # ADR-0043 PR #2 — scope the warnings-as-errors build to projects
+        # affected by this PR + their reverse-dependency closure. Force-fulls
+        # whenever shared infra changes (Directory.Packages.props, Honua.sln,
+        # .github/, scripts/ci/) so a graph change cannot bypass the gate.
+        # The trunk-merge build is unaffected: push events resolve to BASE_REF
+        # 'origin/trunk' against HEAD 'HEAD'; on trunk that diff is empty so
+        # the script emits nothing and the build step short-circuits — meaning
+        # the canonical correctness gate is the PR check that landed it.
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha || 'origin/trunk' }}
+          HEAD_REF: ${{ github.event.pull_request.head.sha || 'HEAD' }}
+        run: |
+          affected="$(scripts/ci/compute-affected-projects.sh)"
+          if [[ -z "${affected}" || "${affected}" == "ALL" ]]; then
+            mode="full"
+            projects=""
+          else
+            mode="affected"
+            projects="$(printf '%s' "${affected}" | tr '\n' ' ')"
+          fi
+          echo "mode=${mode}" >> "$GITHUB_OUTPUT"
+          {
+            echo "projects<<EOF"
+            printf '%s' "${projects}"
+            echo
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice::Warnings-as-errors build mode: ${mode}${projects:+ (${projects})}"
+
       - name: Build (warnings as errors)
-        run: dotnet build Honua.sln --no-restore --configuration Release /p:TreatWarningsAsErrors=true
+        run: |
+          if [[ "${{ steps.affected.outputs.mode }}" == "affected" ]]; then
+            # shellcheck disable=SC2086
+            dotnet build ${{ steps.affected.outputs.projects }} \
+              --no-restore \
+              --configuration Release \
+              /p:TreatWarningsAsErrors=true
+          else
+            dotnet build Honua.sln \
+              --no-restore \
+              --configuration Release \
+              /p:TreatWarningsAsErrors=true
+          fi
 
       - name: Format Check
         run: dotnet format Honua.sln --verify-no-changes --verbosity diagnostic
@@ -483,6 +527,16 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Reclaim runner disk before the full-solution build + coverage run; the
+      # modular topology pushed some runners over the free-disk limit. Best-effort.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /usr/share/swift || true
+          sudo rm -rf /usr/local/.ghcup || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          df -h / || true
+
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
         with:
@@ -494,12 +548,50 @@ jobs:
       - name: Create Test Results Directory
         run: mkdir -p ./tests/TestResults
 
+      - name: Compute affected projects
+        id: affected
+        # ADR-0043 PR #2 — scope the foundation-tests rebuild to projects
+        # affected by this PR + their reverse dependencies. Falls through to
+        # a full-solution build whenever shared infra changed
+        # (Directory.Packages.props, Honua.sln, .github/, scripts/ci/) or the
+        # base ref is unavailable on a shallow checkout. The script emits
+        # either the token "ALL" (full build) or a sorted list of csproj
+        # paths to stdout.
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha || 'origin/trunk' }}
+          HEAD_REF: ${{ github.event.pull_request.head.sha || 'HEAD' }}
+        run: |
+          affected="$(scripts/ci/compute-affected-projects.sh)"
+          if [[ -z "${affected}" || "${affected}" == "ALL" ]]; then
+            mode="full"
+            projects=""
+          else
+            mode="affected"
+            # Newline-delimited list → space-delimited for `dotnet build` args.
+            projects="$(printf '%s' "${affected}" | tr '\n' ' ')"
+          fi
+          echo "mode=${mode}" >> "$GITHUB_OUTPUT"
+          {
+            echo "projects<<EOF"
+            printf '%s' "${projects}"
+            echo
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice::Foundation-tests build mode: ${mode}${projects:+ (${projects})}"
+
       - name: Build foundation test binaries
         timeout-minutes: 20
         run: |
-          dotnet build Honua.sln \
-            --no-restore \
-            --configuration Release
+          if [[ "${{ steps.affected.outputs.mode }}" == "affected" ]]; then
+            # shellcheck disable=SC2086
+            dotnet build ${{ steps.affected.outputs.projects }} \
+              --no-restore \
+              --configuration Release
+          else
+            dotnet build Honua.sln \
+              --no-restore \
+              --configuration Release
+          fi
 
       - name: Run .NET Tests (Core)
         # Honua.Postgres.Tests is covered by the postgres-compat job which
@@ -650,21 +742,44 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Reclaim runner disk before building. The modular topology (8 protocol
+      # assemblies + native packages such as ParquetSharp/Apache.Arrow/SkiaSharp
+      # duplicated across their bin/obj, plus Coverlet coverage output) pushed
+      # some shards over the ~14GB free-disk limit ("No space left on device").
+      # Remove preinstalled toolchains the .NET test shards never use. Best-effort.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /usr/share/swift || true
+          sudo rm -rf /usr/local/.ghcup || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          df -h / || true
+
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore
-        run: dotnet restore tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj
+        # Phase 2 / ADR-0042 routing: each shard targets its declared csproj
+        # (matrix.csproj) and falls back to Honua.Server.Tests.csproj for
+        # legacy shards that have not been migrated to a per-protocol project.
+        env:
+          SHARD_CSPROJ: ${{ matrix.csproj }}
+        run: |
+          csproj="${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}"
+          dotnet restore "${csproj}"
 
       - name: Create Test Results Directory
         run: mkdir -p ./tests/TestResults
 
       - name: Build server test binaries
         timeout-minutes: 20
+        env:
+          SHARD_CSPROJ: ${{ matrix.csproj }}
         run: |
-          dotnet build tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+          csproj="${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}"
+          dotnet build "${csproj}" \
             --no-restore \
             --configuration Release
 
@@ -678,6 +793,11 @@ jobs:
           HONUA_SERVER_TEST_MAX_CPU_COUNT: ${{ matrix.max_cpu_count }}
           HONUA_SERVER_TEST_RESULTS_DIR: ./tests/TestResults
           HONUA_SERVER_TEST_CONFIGURATION: Release
+          # Phase 2 / ADR-0042: per-protocol test-project routing.
+          # The shard record's optional `csproj` field selects the test
+          # assembly; the shard script defaults to Honua.Server.Tests.csproj
+          # when this env var is empty so legacy shards keep working unchanged.
+          HONUA_SERVER_TEST_CSPROJ: ${{ matrix.csproj }}
         run: |
           scripts/ci/run-server-test-shard.sh
 
@@ -733,7 +853,11 @@ jobs:
           cache-dependency-path: tests/python/requirements.txt
 
       - name: Restore
-        run: dotnet restore Honua.sln
+        # Scoped to Honua.Server's transitive ProjectReferences; the Python
+        # fixtures host below only needs the Server runtime built. Full-sln
+        # restore was over-fetching for unrelated projects (DuckDB / SqlServer /
+        # MySql / samples / benchmarks / sibling test projects).
+        run: dotnet restore src/Honua.Server/Honua.Server.csproj
 
       - name: Build server binaries for Python fixtures
         run: |
@@ -1256,10 +1380,19 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore
-        run: dotnet restore Honua.sln
+        # Postgres-compat only runs Honua.Postgres.Tests; restoring the full
+        # solution was unnecessary work that scaled with every project added
+        # to the repo. dotnet auto-restores transitive ProjectReferences.
+        run: dotnet restore tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj
 
       - name: Build
-        run: dotnet build Honua.sln --configuration Release --no-restore
+        # Same scoping rationale as the restore above — dotnet builds
+        # transitive ProjectReferences from this csproj so Honua.Core,
+        # Honua.Core.Abstractions, Honua.Postgres, Honua.ServiceDefaults,
+        # and Honua.TestKit all build as needed; unrelated projects
+        # (Server, DuckDB, SqlServer, MySql, Worker.Gdal, samples,
+        # benchmarks, sibling test projects) stay out of the build graph.
+        run: dotnet build tests/dotnet/Honua.Postgres.Tests/Honua.Postgres.Tests.csproj --configuration Release --no-restore
 
       - name: Run Postgres compatibility tests
         env:
@@ -1316,11 +1449,24 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore
-        run: dotnet restore Honua.sln
+        # Scoped to Honua.Core's transitive ProjectReferences; the package
+        # job only pack's Honua.Core. Full-sln restore was over-fetching
+        # for the entire repo every run.
+        run: dotnet restore src/Honua.Core/Honua.Core.csproj
 
       - name: Build Honua.Core package
         run: |
           package_version="0.0.0-ci.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+          # Honua.Core's package takes a dependency on Honua.Core.Abstractions
+          # (the Phase-0 contract split), so the compatibility consumer can only
+          # restore Honua.Core if Honua.Core.Abstractions is in the same feed.
+          # Pack both at the same version.
+          dotnet pack src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj \
+            --configuration Release \
+            --output ./packages \
+            --no-restore \
+            -p:PackageVersion="${package_version}" \
+            -p:Version="${package_version}"
           dotnet pack src/Honua.Core/Honua.Core.csproj \
             --configuration Release \
             --output ./packages \
@@ -1352,7 +1498,7 @@ jobs:
             </packageSourceCredentials>
             <packageSourceMapping>
               <packageSource key="local-packages">
-                <package pattern="Honua.Core" />
+                <package pattern="Honua.Core*" />
               </packageSource>
               <packageSource key="github-honua">
                 <package pattern="Geospatial.Grpc" />
@@ -1400,7 +1546,10 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore
-        run: dotnet restore Honua.sln
+        # Scoped to Honua.Server's transitive ProjectReferences; the AOT
+        # publish only targets Honua.Server. Full-sln restore was
+        # over-fetching every other project's package set every run.
+        run: dotnet restore src/Honua.Server/Honua.Server.csproj
 
       - name: Publish AOT
         run: |

@@ -3,7 +3,7 @@
 
 using System.Collections.Frozen;
 using Honua.Core.Configuration;
-using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Infrastructure.Helpers;
 
 namespace Honua.Server.Features.Admin.Services;
 

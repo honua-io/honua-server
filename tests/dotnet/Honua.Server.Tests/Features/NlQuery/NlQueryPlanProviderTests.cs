@@ -8,7 +8,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.NlQuery;
 using Honua.Core.Features.NlQuery.Abstractions;
 using Honua.Core.Features.NlQuery.Domain;
-using Honua.Server.Features.NlQuery;
+using Honua.Ai.NlQuery;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Configuration;

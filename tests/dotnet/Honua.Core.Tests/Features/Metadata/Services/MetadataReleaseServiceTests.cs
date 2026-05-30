@@ -13,7 +13,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Core.Tests.Features.Metadata.Services;
 
-[Protocol(Protocols.TestQuality)]
+[Protocol(ProtocolNames.TestQuality)]
 [Operation(Operations.Metadata)]
 public sealed class MetadataReleaseServiceTests
 {

@@ -4,7 +4,8 @@
 using System.Net;
 using System.Security.Claims;
 using FluentAssertions;
-using Honua.Server.Features.Infrastructure.Services;
+using Honua.Infrastructure.Services;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Mvc.Testing;

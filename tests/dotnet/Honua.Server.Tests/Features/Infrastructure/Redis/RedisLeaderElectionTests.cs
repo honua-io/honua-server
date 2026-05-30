@@ -3,7 +3,7 @@
 
 using System.Reflection;
 using FluentAssertions;
-using Honua.Server.Features.Infrastructure.Redis;
+using Honua.Infrastructure.Redis;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;

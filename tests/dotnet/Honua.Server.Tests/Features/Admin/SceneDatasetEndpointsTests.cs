@@ -8,7 +8,7 @@ using System.Text.Json.Nodes;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Server.Features.Admin.Models;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;

@@ -7,8 +7,8 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
-using Honua.Server.Tests.Features.Licensing;
-using Honua.Server.Tests.Infrastructure;
+using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 

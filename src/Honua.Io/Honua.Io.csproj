@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <DisableMicrosoftExtensionsLoggingSourceGenerator>false</DisableMicrosoftExtensionsLoggingSourceGenerator>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CS1591;CA1716</NoWarn>
+    <WarningsNotAsErrors>CA2009;IDE0073</WarningsNotAsErrors>
+    <RootNamespace>Honua.Io</RootNamespace>
+    <!--
+      Honua.Io is the file input/output module: file storage (local disk +
+      cloud stream helpers, upload-progress stores, retention cleanup) and
+      export writers (Shapefile / GeoPackage / CSV). The generic upload
+      primitives are a planned follow-on increment. Namespaces are preserved
+      (Honua.Server.Features.{FileStorage,Export}) so consumers keep compiling
+      without a using-clause sweep — the same pattern Honua.Geometry,
+      Honua.Geocoding, and Honua.Ai use.
+
+      File-format READERS (GeoJSON / FlatGeobuf / GeoParquet / KML / GPX / CSV /
+      WKT / FileGDB) deliberately stay in Honua.Geometry: they are pure NTS
+      format parsing consumed by the storage providers, which must not pull the
+      ASP.NET surface this module carries. The export WRITERS live here because
+      they are part of the HTTP export feature, not provider-consumed.
+
+      Depends on Abstractions + Core + Geometry (NTS, for the export writers) +
+      Hosting + ServiceDefaults. It must NEVER reference Honua.Server (the
+      one-way edge enforced by HonuaIoIsolationTests) nor any protocol module.
+    -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Honua.Core.Abstractions\Honua.Core.Abstractions.csproj" />
+    <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+    <!-- Export writers (Shapefile / GeoPackage / CSV) emit NTS geometries. -->
+    <ProjectReference Include="..\Honua.Geometry\Honua.Geometry.csproj" />
+    <ProjectReference Include="..\Honua.Hosting\Honua.Hosting.csproj" />
+    <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Export writers: Shapefile (NTS Esri) + GeoPackage (SQLite). -->
+    <PackageReference Include="NetTopologySuite.IO.Esri.Shapefile" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <!-- Export endpoints use WithApiVersionSet / HasApiVersion. -->
+    <PackageReference Include="Asp.Versioning.Http" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Server" />
+    <InternalsVisibleTo Include="Honua.Server.Tests" />
+    <InternalsVisibleTo Include="Honua.Architecture.Tests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+
+</Project>

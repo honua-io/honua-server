@@ -4,7 +4,7 @@
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Console.Domain;
 using Honua.Server.Features.Console.TypeSidecars;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Console.Models;
 

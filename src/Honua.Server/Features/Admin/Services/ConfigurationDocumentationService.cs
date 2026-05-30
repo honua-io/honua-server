@@ -5,7 +5,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Tiles;
-using Honua.Server.Features.Infrastructure.Abstractions;
+using Honua.Infrastructure.Abstractions;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 using ConfigurationSection = Honua.Core.Configuration.ConfigurationSection;

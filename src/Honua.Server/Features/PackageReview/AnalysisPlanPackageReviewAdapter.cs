@@ -6,9 +6,9 @@ using System.Text.Json;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.PackageReview.Abstractions;
 using Honua.Core.Features.PackageReview.Domain;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 
-namespace Honua.Server.Features.PackageReview;
+namespace Honua.PackageReview;
 
 internal sealed class AnalysisPlanPackageReviewAdapter : IPackageFamilyReviewAdapter
 {

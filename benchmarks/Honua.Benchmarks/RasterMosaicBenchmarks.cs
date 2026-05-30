@@ -6,7 +6,7 @@ using System.Text.Json;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Tiles;
-using Honua.Server.Features.Infrastructure.Raster;
+using Honua.Infrastructure.Raster;
 
 namespace Honua.Benchmarks;
 

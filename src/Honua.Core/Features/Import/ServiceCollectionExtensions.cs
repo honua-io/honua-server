@@ -2,7 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Import.Abstractions;
-using Honua.Core.Features.Import.Services;
+using Honua.Core.Features.Migration.Abstractions;
+using Honua.Core.Features.FileImport.Abstractions;
+using Honua.Core.Features.Migration.Services;
+using Honua.Core.Features.FileImport.Services;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;

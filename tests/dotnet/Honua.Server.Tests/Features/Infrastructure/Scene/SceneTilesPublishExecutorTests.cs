@@ -12,7 +12,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Publishing.Domain;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Infrastructure.Scene;
+using Honua.Infrastructure.Scene;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;

@@ -12,10 +12,10 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
-using Honua.Server.Features.Infrastructure.ControlPlane;
+using Honua.ControlPlane;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Server.Features.Infrastructure.Monitoring;
+namespace Honua.Infrastructure.Monitoring;
 
 /// <summary>
 /// Server-local fan-out implementation of <see cref="IOperateEventFeed"/> that

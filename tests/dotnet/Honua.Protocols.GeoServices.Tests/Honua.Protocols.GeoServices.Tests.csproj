@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!-- Phase 2 per-protocol test-project split per ADR-0042. Esri
+         GeoServices family (FeatureServer / MapServer / ImageServer /
+         GPServer / NAServer / Catalog / GeometryService). The largest
+         protocol surface; the audit called it out as the most-entangled. -->
+    <RootNamespace>Honua.Server.Tests.Features.Protocols.GeoServices</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="xunit.runner.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Server\Honua.Server.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Postgres\Honua.Postgres.csproj" />
+    <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Protocols.GeoServices\Honua.Protocols.GeoServices.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -8,14 +8,14 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
-using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Services;
-using Honua.Server.Features.Protocols.GeoServices;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Services;
+using Honua.Protocols.GeoServices;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Server.Features.Protocols.SpatialAnalytics.Models;
 using Microsoft.Extensions.Primitives;
 
-namespace Honua.Server.Features.Infrastructure.Analytics;
+namespace Honua.Infrastructure.Analytics;
 
 /// <summary>
 /// Builds the shared <see cref="FeatureQuery"/> consumed by every spatial analytics
@@ -31,7 +31,7 @@ namespace Honua.Server.Features.Infrastructure.Analytics;
 /// <remarks>
 /// <para>
 /// The async state machine generated for the factory overloads lives under
-/// <c>Honua.Server.Features.Infrastructure.Analytics.AnalyticsFeatureQueryFactory+&lt;TryBuildAsync&gt;d__N</c>,
+/// <c>Honua.Infrastructure.Analytics.AnalyticsFeatureQueryFactory+&lt;TryBuildAsync&gt;d__N</c>,
 /// which <c>VerticalSliceIsolationTests</c> skips because the checker iterates
 /// <c>_featureNames.Where(f =&gt; f is not ("Infrastructure" or "Ogc" or "Wfs20"))</c>.
 /// The callers in SpatialAnalytics only observe the <see cref="FeatureQuery"/> /

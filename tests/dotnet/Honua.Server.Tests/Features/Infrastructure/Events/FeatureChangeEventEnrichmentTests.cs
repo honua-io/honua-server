@@ -4,7 +4,7 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Server.Features.Infrastructure.Events;
+using Honua.Infrastructure.Events;
 using Honua.TestKit.Attributes;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;

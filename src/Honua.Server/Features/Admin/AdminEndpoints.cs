@@ -9,10 +9,10 @@ using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Admin.Services;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Validation;
-using Honua.Server.Features.Protocols.Ogc.Common;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Validation;
+using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Server.Features.Admin;
 

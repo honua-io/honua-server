@@ -3,9 +3,15 @@
 
 using System.Text;
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Migration.Abstractions;
+using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Import.Domain;
-using Honua.Core.Features.Import.Services;
-using Honua.Postgres.Features.Import;
+using Honua.Core.Features.Migration.Domain;
+using Honua.Core.Features.FileImport.Domain;
+using Honua.Core.Features.Migration.Services;
+using Honua.Core.Features.FileImport.Services;
+using Honua.Postgres.Features.Migration;
+using Honua.Postgres.Features.FileImport;
 using Honua.TestKit.Infrastructure;
 
 namespace Honua.Postgres.Tests.Features.Import;

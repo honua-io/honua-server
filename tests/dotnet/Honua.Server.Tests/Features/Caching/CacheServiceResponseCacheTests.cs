@@ -5,7 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
-using Honua.Server.Features.Infrastructure.Caching;
+using Honua.Infrastructure.Caching;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 

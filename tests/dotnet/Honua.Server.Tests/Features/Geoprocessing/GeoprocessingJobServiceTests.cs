@@ -11,13 +11,13 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Server.Features.Geoprocessing;
-using Honua.Server.Features.Protocols.GeoServices.GPServer;
-using Honua.Server.Features.Infrastructure.ControlPlane;
+using Honua.Geoprocessing;
+using Honua.Protocols.GeoServices.GPServer;
+using Honua.ControlPlane;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
-using Honua.Server.Tests.Helpers;
+using Honua.TestKit.Helpers;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;

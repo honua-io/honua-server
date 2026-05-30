@@ -66,6 +66,12 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IDatabaseConnectionProvider>(sp =>
             new MySqlConnectionProvider(sp.GetRequiredService<MySqlDataSource>()));
 
+        // Audit-C3 session abstraction registered alongside the legacy provider
+        // during the progressive migration (see ADR 0046).
+        services.AddScoped<IDatabaseSessionFactory>(sp =>
+            new Features.Infrastructure.Session.MySqlDatabaseSessionFactory(
+                sp.GetRequiredService<IDatabaseConnectionProvider>()));
+
         services.AddScoped<IFeatureQueryBuilder>(sp =>
             new MySqlFeatureQueryBuilder(
                 sp.GetRequiredService<MySqlLayerMappingRegistry>(),
@@ -102,6 +108,8 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IChangeTracker>(_ => new NoOpChangeTracker());
         services.AddScoped<ITileProvider>(_ => new ReadOnlyTileProvider("MySQL/MariaDB"));
         services.AddScoped<IGmlFeatureStore>(_ => new ReadOnlyGmlFeatureStore("MySQL/MariaDB"));
+
+        services.AddSingleton<ISqlDialect>(MySqlSqlDialect.Instance);
 
         services.AddScoped<ISqlFilterTranslator>(sp =>
             new MySqlSqlFilterTranslator(sp.GetRequiredService<MySqlEngineFlavorHolder>().Flavor));

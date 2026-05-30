@@ -7,6 +7,8 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Migration.Domain;
+using Honua.Core.Features.FileImport.Domain;
 
 namespace Honua.Core.Tests.Features.Import;
 

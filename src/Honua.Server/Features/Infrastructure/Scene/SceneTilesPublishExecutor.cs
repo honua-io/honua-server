@@ -18,7 +18,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Scene;
+namespace Honua.Infrastructure.Scene;
 
 /// <summary>
 /// Publishing executor that converts a feature layer into a deterministic

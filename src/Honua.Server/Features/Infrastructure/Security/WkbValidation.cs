@@ -5,7 +5,7 @@ using Honua.Core.Configuration;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 
-namespace Honua.Server.Features.Infrastructure.Security;
+namespace Honua.Infrastructure.Security;
 
 /// <summary>
 /// Provides WKB (Well-Known Binary) geometry validation for input security.

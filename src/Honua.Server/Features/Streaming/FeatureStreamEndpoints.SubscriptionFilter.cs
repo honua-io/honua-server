@@ -5,12 +5,12 @@ using System.Globalization;
 using System.Security.Claims;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Infrastructure.Licensing;
-using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Services;
-using Honua.Server.Features.Protocols.Ogc.Common;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Licensing;
+using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Services;
+using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Server.Features.Streaming;
 

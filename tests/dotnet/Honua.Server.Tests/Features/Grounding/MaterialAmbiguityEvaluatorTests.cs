@@ -5,7 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Grounding.Domain;
 using Honua.Core.Features.Publishing.Domain;
-using Honua.Server.Features.Grounding;
+using Honua.Ai.Grounding;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 

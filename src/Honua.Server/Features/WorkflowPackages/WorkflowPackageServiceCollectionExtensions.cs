@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.WorkflowPackages.Abstractions;
 using Honua.Core.Features.Orchestration.Abstractions;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 using Honua.Server.Features.Orchestration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;

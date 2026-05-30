@@ -6,7 +6,7 @@ using Honua.Server.Features.Admin.Services;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.Infrastructure.RateLimiting;
+namespace Honua.Infrastructure.RateLimiting;
 
 /// <summary>
 /// Extension methods for configuring rate limiting middleware and services.

@@ -508,7 +508,7 @@ public sealed class EvalRunner
         {
             return new EvalProtocolProbe
             {
-                Protocol = Constants.Protocols.Grpc,
+                Protocol = Constants.ProtocolNames.Grpc,
                 Assertion = "plan-shape-accepted",
                 Outcome = "grpc-failed",
                 Status = EvalStageStatus.Failed
@@ -522,7 +522,7 @@ public sealed class EvalRunner
                 : $"rejected:{response.Issues.Count}-issues";
             return new EvalProtocolProbe
             {
-                Protocol = Constants.Protocols.Grpc,
+                Protocol = Constants.ProtocolNames.Grpc,
                 Assertion = "plan-shape-accepted",
                 Outcome = $"mismatch:{actualOutcome}",
                 Status = EvalStageStatus.Failed
@@ -531,7 +531,7 @@ public sealed class EvalRunner
 
         return new EvalProtocolProbe
         {
-            Protocol = Constants.Protocols.Grpc,
+            Protocol = Constants.ProtocolNames.Grpc,
             Assertion = "plan-shape-accepted",
             Outcome = response.Valid
                 ? "matched-acceptance"
@@ -571,7 +571,7 @@ public sealed class EvalRunner
             {
                 return new EvalProtocolProbe
                 {
-                    Protocol = Constants.Protocols.OgcApiProcesses,
+                    Protocol = Constants.ProtocolNames.OgcApiProcesses,
                     Assertion = "plan-shape-accepted",
                     Outcome = expectedExecutable ? "matched-acceptance" : "unexpected-acceptance",
                     Status = expectedExecutable ? EvalStageStatus.Passed : EvalStageStatus.Failed
@@ -582,7 +582,7 @@ public sealed class EvalRunner
             {
                 return new EvalProtocolProbe
                 {
-                    Protocol = Constants.Protocols.OgcApiProcesses,
+                    Protocol = Constants.ProtocolNames.OgcApiProcesses,
                     Assertion = "plan-shape-accepted",
                     Outcome = expectedExecutable ? "unexpected-rejection" : "matched-rejection",
                     Status = expectedExecutable ? EvalStageStatus.Failed : EvalStageStatus.Passed
@@ -594,7 +594,7 @@ public sealed class EvalRunner
                 var expectsApproval = scenario.ExpectedOutcome.RequiresApproval;
                 return new EvalProtocolProbe
                 {
-                    Protocol = Constants.Protocols.OgcApiProcesses,
+                    Protocol = Constants.ProtocolNames.OgcApiProcesses,
                     Assertion = "plan-shape-accepted",
                     Outcome = expectsApproval ? "matched-approval-required" : "unexpected-approval-required",
                     Status = expectsApproval ? EvalStageStatus.Passed : EvalStageStatus.Failed
@@ -605,7 +605,7 @@ public sealed class EvalRunner
             {
                 return new EvalProtocolProbe
                 {
-                    Protocol = Constants.Protocols.OgcApiProcesses,
+                    Protocol = Constants.ProtocolNames.OgcApiProcesses,
                     Assertion = "plan-shape-accepted",
                     Outcome = "service-unavailable",
                     Status = EvalStageStatus.Skipped
@@ -616,7 +616,7 @@ public sealed class EvalRunner
             {
                 return new EvalProtocolProbe
                 {
-                    Protocol = Constants.Protocols.OgcApiProcesses,
+                    Protocol = Constants.ProtocolNames.OgcApiProcesses,
                     Assertion = "plan-shape-accepted",
                     Outcome = "not-implemented",
                     Status = EvalStageStatus.Skipped
@@ -625,7 +625,7 @@ public sealed class EvalRunner
 
             return new EvalProtocolProbe
             {
-                Protocol = Constants.Protocols.OgcApiProcesses,
+                Protocol = Constants.ProtocolNames.OgcApiProcesses,
                 Assertion = "plan-shape-accepted",
                 Outcome = $"unexpected-{(int)response.StatusCode}",
                 Status = EvalStageStatus.Failed
@@ -635,7 +635,7 @@ public sealed class EvalRunner
         {
             return new EvalProtocolProbe
             {
-                Protocol = Constants.Protocols.OgcApiProcesses,
+                Protocol = Constants.ProtocolNames.OgcApiProcesses,
                 Assertion = "plan-shape-accepted",
                 Outcome = $"http-error:{ex.Message}",
                 Status = EvalStageStatus.Failed
@@ -655,7 +655,7 @@ public sealed class EvalRunner
             // reporting contract for the surrounding scenario.
             return new EvalProtocolProbe
             {
-                Protocol = Constants.Protocols.OgcApiProcesses,
+                Protocol = Constants.ProtocolNames.OgcApiProcesses,
                 Assertion = "plan-shape-accepted",
                 Outcome = "http-timeout",
                 Status = EvalStageStatus.Failed
@@ -686,7 +686,7 @@ public sealed class EvalRunner
             {
                 return new EvalProtocolProbe
                 {
-                    Protocol = Constants.Protocols.GPServer,
+                    Protocol = Constants.ProtocolNames.GPServer,
                     Assertion = "submit-job-surface",
                     Outcome = "matched-acceptance",
                     Status = EvalStageStatus.Passed
@@ -697,7 +697,7 @@ public sealed class EvalRunner
             {
                 return new EvalProtocolProbe
                 {
-                    Protocol = Constants.Protocols.GPServer,
+                    Protocol = Constants.ProtocolNames.GPServer,
                     Assertion = "submit-job-surface",
                     Outcome = response.StatusCode == HttpStatusCode.ServiceUnavailable
                         ? "service-unavailable"
@@ -708,7 +708,7 @@ public sealed class EvalRunner
 
             return new EvalProtocolProbe
             {
-                Protocol = Constants.Protocols.GPServer,
+                Protocol = Constants.ProtocolNames.GPServer,
                 Assertion = "submit-job-surface",
                 Outcome = $"status-{(int)response.StatusCode}",
                 Status = EvalStageStatus.Failed
@@ -718,7 +718,7 @@ public sealed class EvalRunner
         {
             return new EvalProtocolProbe
             {
-                Protocol = Constants.Protocols.GPServer,
+                Protocol = Constants.ProtocolNames.GPServer,
                 Assertion = "service-info-reachable",
                 Outcome = $"http-error:{ex.Message}",
                 Status = EvalStageStatus.Failed
@@ -738,7 +738,7 @@ public sealed class EvalRunner
             // reporting contract for the surrounding scenario.
             return new EvalProtocolProbe
             {
-                Protocol = Constants.Protocols.GPServer,
+                Protocol = Constants.ProtocolNames.GPServer,
                 Assertion = "submit-job-surface",
                 Outcome = "http-timeout",
                 Status = EvalStageStatus.Failed

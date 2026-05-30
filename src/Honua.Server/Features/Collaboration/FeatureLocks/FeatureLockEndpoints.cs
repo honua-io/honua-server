@@ -2,8 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Collaboration.FeatureLocks;
-using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Collaboration.FeatureLocks;

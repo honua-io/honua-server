@@ -5,9 +5,9 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.HealthCheck;
-using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Infrastructure.Helpers;
 
-namespace Honua.Server.Features.Infrastructure.Monitoring;
+namespace Honua.Infrastructure.Monitoring;
 
 internal interface IDeployPreflightProbe
 {

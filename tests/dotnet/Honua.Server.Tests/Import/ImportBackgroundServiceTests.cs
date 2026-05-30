@@ -4,8 +4,15 @@
 using FluentAssertions;
 using System.Collections.Concurrent;
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Migration.Abstractions;
+using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Import.Domain;
-using Honua.Server.Features.Import;
+using Honua.Core.Features.Migration.Domain;
+using Honua.Core.Features.FileImport.Domain;
+using Honua.Import;
+using Honua.Migration;
+using Honua.Import.FileImport;
+using Honua.Import.RasterImport;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;

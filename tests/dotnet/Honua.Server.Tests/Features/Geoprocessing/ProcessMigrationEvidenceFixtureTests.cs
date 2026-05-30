@@ -3,7 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 

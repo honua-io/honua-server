@@ -3,7 +3,7 @@
 
 using System.Collections.Immutable;
 using FluentAssertions;
-using Honua.Server.Features.Infrastructure.Rendering;
+using Honua.Infrastructure.Rendering;
 using Honua.TestKit.Attributes;
 using SkiaSharp;
 

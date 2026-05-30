@@ -12,7 +12,7 @@ namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 /// <summary>
 /// Tests for the canonical snapshot wrapper, its lookup indexes, and consumer helpers.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(ProtocolNames.TestQuality)]
 public sealed class MetadataV2GraphSnapshotTests
 {
     [UnitTest]

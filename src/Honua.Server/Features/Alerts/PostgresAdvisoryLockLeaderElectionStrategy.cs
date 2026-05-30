@@ -5,7 +5,7 @@ using Honua.Core.Features.Alerts.Abstractions;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Honua.Server.Features.Alerts;
+namespace Honua.Alerts;
 
 internal sealed class PostgresAdvisoryLockLeaderElectionStrategy : ILeaderElectionStrategy, IAsyncDisposable
 {

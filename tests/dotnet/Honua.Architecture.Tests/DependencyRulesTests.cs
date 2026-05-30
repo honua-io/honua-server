@@ -97,9 +97,9 @@ public sealed class DependencyRulesTests
 
         var result = Types.InAssembly(serverAssembly)
             .That()
-            .ResideInNamespace("Honua.Server.Features.Protocols.Ogc.Classic")
+            .ResideInNamespace("Honua.Protocols.Ogc.Classic")
             .ShouldNot()
-            .HaveDependencyOn("Honua.Server.Features.Protocols.GeoServices")
+            .HaveDependencyOn("Honua.Protocols.GeoServices")
             .GetResult();
 
         result.IsSuccessful.Should().BeTrue(

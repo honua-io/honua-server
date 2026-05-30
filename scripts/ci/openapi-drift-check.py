@@ -46,10 +46,7 @@ ENDPOINT_REGISTRY = REPO_ROOT / "src" / "Honua.Server" / "EndpointRegistry.cs"
 STAC_INLINE_SOURCE = (
     REPO_ROOT
     / "src"
-    / "Honua.Server"
-    / "Features"
-    / "Protocols"
-    / "Stac"
+    / "Honua.Protocols.Stac"
     / "CatalogEndpoints.cs"
 )
 

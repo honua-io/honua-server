@@ -326,9 +326,9 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "src/Honua.Server/Features/Console/Models/ConsoleJsonContext.cs",
-            "src/Honua.Core/Features/Console/Domain/ConsoleContentItem.cs",
-            "src/Honua.Core/Features/Console/Domain/ConsoleShareProjection.cs",
-            "src/Honua.Core/Features/Console/Domain/ConsoleShareTokens.cs",
+            "src/Honua.Core.Abstractions/Features/Console/Domain/ConsoleContentItem.cs",
+            "src/Honua.Core.Abstractions/Features/Console/Domain/ConsoleShareProjection.cs",
+            "src/Honua.Core.Abstractions/Features/Console/Domain/ConsoleShareTokens.cs",
             "docs/admin-api/console-content-and-rbac.md"
           ],
           "ownerRepo": "honua-server",
@@ -789,8 +789,8 @@
           "proofMechanism": "Core migration artifact translator and parity evidence generator tests",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "src/Honua.Core/Features/Import/Domain/MigrationManifestArtifact.cs",
-            "src/Honua.Core/Features/Import/Domain/MigrationParityEvidenceArtifact.cs",
+            "src/Honua.Core/Features/Migration/Domain/MigrationManifestArtifact.cs",
+            "src/Honua.Core/Features/Migration/Domain/MigrationParityEvidenceArtifact.cs",
             "tests/dotnet/Honua.Core.Tests/Features/Import/MigrationManifestTranslatorTests.cs",
             "tests/dotnet/Honua.Core.Tests/Features/Import/MigrationParityEvidenceGeneratorTests.cs"
           ],
@@ -962,9 +962,9 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "src/Honua.Server/Features/Protocols/Scene/SceneDiscoveryEndpoints.cs",
+            "src/Honua.Protocols.Scene/SceneDiscoveryEndpoints.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/PublicSceneDiscoveryEndpointTests.cs"
+            "tests/dotnet/Honua.Protocols.Scene.Tests/Source/PublicSceneDiscoveryEndpointTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1085,7 +1085,7 @@
           "proofMechanism": ".NET typed client-shaped ImageServer suite exercises metadata, catalog query, legend, inline export bytes, and Esri error envelopes over real HTTP routes; Python client-style tests exercise live metadata/export/error behavior against the pytest server.",
           "executionLane": "ci:test-all+python-integration",
           "evidenceLocations": [
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/ImageServer/ImageServerClientCompatibilityTests.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerClientCompatibilityTests.cs",
             "tests/python/image_server/test_imageserver_client_compat.py"
           ],
           "ownerRepo": "honua-server",
@@ -1424,7 +1424,7 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/OperationRegistry.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wms/OgcClassicWmsTests.cs"
+            "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wms/OgcClassicWmsTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1594,7 +1594,7 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "src/Honua.Server/OperationRegistry.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wcs20/Wcs20EndpointsTests.cs"
+            "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/Wcs20EndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1657,7 +1657,7 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             ".github/workflows/ci.yml",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/OData/ODataClientIntegrationTests.cs",
+            "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataClientIntegrationTests.cs",
             "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
           ],
           "ownerRepo": "honua-server",
@@ -1671,8 +1671,8 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             ".github/workflows/ci.yml",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/OData/ODataClientCertificationTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/OData/ODataClientModels.cs",
+            "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataClientCertificationTests.cs",
+            "tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataClientModels.cs",
             "tests/dotnet/Honua.TestKit/Infrastructure/CertificationEvidenceCollector.cs",
             "tests/dotnet/Honua.TestKit/Infrastructure/CertEnvelope.cs",
             "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
@@ -1861,7 +1861,7 @@
             "src/Honua.Server/EndpointRegistry.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
             "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Records/OgcRecordsEndpointTests.cs"
+            "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Records/OgcRecordsEndpointTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -1874,7 +1874,7 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "docs/gis/specifications/ogc-api-records-coverage.md",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Records/OgcRecordsEndpointTests.cs"
+            "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Records/OgcRecordsEndpointTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -2017,10 +2017,10 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Server.Tests/Comprehensive/ContractCoverageMatrixTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/GeometryServiceAdvancedOperationsTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/GeometryServiceBufferTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/GeometryServiceProjectTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GeometryService/GeometryServiceSimplifyTests.cs"
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceAdvancedOperationsTests.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceBufferTests.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceProjectTests.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GeometryService/GeometryServiceSimplifyTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -2066,7 +2066,7 @@
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Coverages/OgcCoveragesEndpointsTests.cs"
+            "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Coverages/OgcCoveragesEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -2093,7 +2093,7 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "docs/gis/specifications/ogc-api-coverages-coverage.md",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Coverages/OgcCoveragesEndpointsTests.cs"
+            "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Coverages/OgcCoveragesEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -2137,7 +2137,7 @@
           "executionLane": "nightly:ogc-maps-conformance",
           "evidenceLocations": [
             ".github/workflows/ogc-maps-conformance.yml",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Maps/OgcMapsConformanceTests.cs"
+            "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Maps/OgcMapsConformanceTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -2195,7 +2195,7 @@
           "proofMechanism": "Minimal NAServer compatibility tests cover the exact first-party mobile live-routing paths for directions, optimized route, service area, and closest facility.",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/NAServer/NAServerEndpointTests.cs"
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerEndpointTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -2237,10 +2237,10 @@
           "proofMechanism": "GPServer adapter retains happy-path and negative-path depth for endpoint routing, parameter translation, status mapping, and typed .NET/Python client workflows",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GPServer/GPServerClientCompatibilityTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GPServer/GPServerEndpointTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GPServer/GPServerParameterTranslationTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/GeoServices/GPServer/GPServerStatusMappingTests.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerClientCompatibilityTests.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerEndpointTests.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerParameterTranslationTests.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerStatusMappingTests.cs",
             "tests/python/gp_server/test_gpserver_client_compat.py"
           ],
           "ownerRepo": "honua-server",
@@ -2337,7 +2337,7 @@
           "executionLane": "nightly:cite-wfs20-conformance",
           "evidenceLocations": [
             ".github/workflows/cite-wfs20-conformance.yml",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wfs20/Wfs20EndpointsTests.cs"
+            "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/Wfs20EndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -2387,8 +2387,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/OperationRegistry.cs",
-            "src/Honua.Server/Features/Protocols/Ogc/Classic/Wfs20/Services/Wfs20Handler.Legacy.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wfs20/WfsLegacyEndpointsTests.cs"
+            "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.Legacy.cs",
+            "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/WfsLegacyEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -2433,8 +2433,8 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/OperationRegistry.cs",
-            "src/Honua.Server/Features/Protocols/Ogc/Classic/Wfs20/Services/Wfs20Handler.Legacy.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Classic/Wfs20/WfsLegacyEndpointsTests.cs"
+            "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.Legacy.cs",
+            "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wfs20/WfsLegacyEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -2567,9 +2567,9 @@
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/SceneTilesetEndpointTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/SceneAuthorizationTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/SceneAccessEnvelopeEndpointTests.cs"
+            "tests/dotnet/Honua.Protocols.Scene.Tests/Source/SceneTilesetEndpointTests.cs",
+            "tests/dotnet/Honua.Protocols.Scene.Tests/Source/SceneAuthorizationTests.cs",
+            "tests/dotnet/Honua.Protocols.Scene.Tests/Source/SceneAccessEnvelopeEndpointTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -2581,9 +2581,9 @@
           "proofMechanism": "Root tileset.json, nested tileset, binary b3dm tile, png texture, ETag/If-None-Match, HEAD, Range request -> 206 with Content-Range after a cache-warming full GET, traversal/path safety including symlink-escape rejection, public vs protected access policy with private/Vary cache-control on protected scenes, and CORS exposed-header coverage exercised by endpoint and resolver tests; glTF/GLB asset MIME mapping is unit-tested via SceneContentTypes.Resolve but no glTF/GLB fixture exists yet",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/SceneTilesetEndpointTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/SceneAuthorizationTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/SceneAssetResolverTests.cs",
+            "tests/dotnet/Honua.Protocols.Scene.Tests/Source/SceneTilesetEndpointTests.cs",
+            "tests/dotnet/Honua.Protocols.Scene.Tests/Source/SceneAuthorizationTests.cs",
+            "tests/dotnet/Honua.Protocols.Scene.Tests/Source/SceneAssetResolverTests.cs",
             "tests/fixtures/scenes/fixture-tileset/tileset.json",
             "docs/gis/scenes-3dtiles.md"
           ],
@@ -2597,9 +2597,9 @@
           "proofMechanism": "Browser-safe access envelope: POST issuance gated by access policy (public scene -> 400, unauthorized -> 401/403), HMAC-SHA256 signed token, ?token= and X-Honua-Token transports honored on nested asset cascades, validation outcomes (tampered/expired/wrong-scene/path-traversal), private cache-control with output-cache bypass on token-authorized requests, and structured 500 + OptionsMisconfigured (8415) log on unset signing key or out-of-range TTL/refresh fraction exercised by service unit tests and endpoint integration tests",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/SceneAccessEnvelopeEndpointTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/SceneAccessEnvelopeServiceTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Scene/SceneAccessEnvelopeMisconfiguredEndpointTests.cs",
+            "tests/dotnet/Honua.Protocols.Scene.Tests/Source/SceneAccessEnvelopeEndpointTests.cs",
+            "tests/dotnet/Honua.Protocols.Scene.Tests/Source/SceneAccessEnvelopeServiceTests.cs",
+            "tests/dotnet/Honua.Protocols.Scene.Tests/Source/SceneAccessEnvelopeMisconfiguredEndpointTests.cs",
             "docs/gis/scenes-3dtiles.md"
           ],
           "ownerRepo": "honua-server",
@@ -2917,13 +2917,13 @@
           "proofMechanism": "JSON-RPC framing, auth, tool delegation, stub envelopes, resource reads, and error mapping are covered through unit and integration tests against the operator surface",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/McpEndpointIntegrationTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/McpToolDelegationTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/McpErrorMappingTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/McpAuthorizationTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/PlanAnalysisToolTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/McpResourceSerializationTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/McpTaxonomyAlignmentTests.cs"
+            "tests/dotnet/Honua.Ai.Tests/Source/McpEndpointIntegrationTests.cs",
+            "tests/dotnet/Honua.Ai.Tests/Source/McpToolDelegationTests.cs",
+            "tests/dotnet/Honua.Ai.Tests/Source/McpErrorMappingTests.cs",
+            "tests/dotnet/Honua.Ai.Tests/Source/McpAuthorizationTests.cs",
+            "tests/dotnet/Honua.Ai.Tests/Source/PlanAnalysisToolTests.cs",
+            "tests/dotnet/Honua.Ai.Tests/Source/McpResourceSerializationTests.cs",
+            "tests/dotnet/Honua.Ai.Tests/Source/McpTaxonomyAlignmentTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -3159,7 +3159,7 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Server.Tests/Features/Reporting/AnalysisReportServiceTests.cs",
-            "tests/dotnet/Honua.Server.Tests/Features/Reporting/AnalysisReportResourceTests.cs",
+            "tests/dotnet/Honua.Ai.Tests/Source/AnalysisReportResourceTests.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Reporting/RenderGoldenTests.cs",
             "tests/dotnet/Honua.Core.Tests/Features/Reporting/AnalysisReportBuilderTests.cs",
             "tests/dotnet/Honua.Core.Tests/Features/Reporting/InMemoryAnalysisReportStoreTests.cs"

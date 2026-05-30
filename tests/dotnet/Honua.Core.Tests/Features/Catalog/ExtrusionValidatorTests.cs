@@ -13,7 +13,7 @@ namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 /// validation branch reports the expected stable error code from
 /// <see cref="MetadataV2ExtrusionErrorCodes"/>.
 /// </summary>
-[Protocol(Protocols.GeoservicesCatalog)]
+[Protocol(ProtocolNames.GeoservicesCatalog)]
 public sealed class MetadataV2ExtrusionValidatorTests
 {
     private static readonly MetadataV2Field[] _resourceFields =

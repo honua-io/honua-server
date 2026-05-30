@@ -4,8 +4,8 @@
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Licensing.Abstractions;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Licensing;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Licensing;
 
 namespace Honua.Server.Features.HealthCheck;
 

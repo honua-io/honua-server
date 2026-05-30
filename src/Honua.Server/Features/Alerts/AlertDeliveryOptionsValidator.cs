@@ -3,7 +3,7 @@
 
 using Honua.Core.Configuration;
 
-namespace Honua.Server.Features.Alerts;
+namespace Honua.Alerts;
 
 internal sealed class AlertDeliveryOptionsValidator : OptionsValidator<AlertDeliveryOptions>
 {

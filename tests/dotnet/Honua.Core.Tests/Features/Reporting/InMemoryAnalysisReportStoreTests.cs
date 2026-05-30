@@ -18,7 +18,7 @@ namespace Honua.Core.Tests.Features.Reporting;
 /// MemoryCache enforces the configured size cap so the store cannot grow
 /// unbounded as new job ids accumulate.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(ProtocolNames.TestQuality)]
 public sealed class InMemoryAnalysisReportStoreTests
 {
     [UnitTest]

@@ -15,7 +15,7 @@ public sealed class ProtocolAttribute : Attribute
     /// <summary>
     /// Initializes a new instance of the <see cref="ProtocolAttribute"/> class.
     /// </summary>
-    /// <param name="protocols">One or more protocol identifiers from <see cref="Constants.Protocols"/></param>
+    /// <param name="protocols">One or more protocol identifiers from <see cref="Constants.ProtocolNames"/></param>
     public ProtocolAttribute(params string[] protocols)
     {
         Protocols = protocols ?? [];

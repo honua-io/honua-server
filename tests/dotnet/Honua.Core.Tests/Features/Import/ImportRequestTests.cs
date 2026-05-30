@@ -3,6 +3,8 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Migration.Domain;
+using Honua.Core.Features.FileImport.Domain;
 
 namespace Honua.Core.Tests.Features.Import;
 

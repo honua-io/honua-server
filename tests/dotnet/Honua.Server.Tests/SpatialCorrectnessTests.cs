@@ -4,8 +4,8 @@
 using FluentAssertions;
 using System.Text;
 using System.Text.Json;
-using Honua.Server.Features.Infrastructure.Helpers;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer.Models;
+using Honua.Infrastructure.Helpers;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -288,7 +288,7 @@ public sealed class SpatialCorrectnessTests : IAsyncLifetime
     public void ValidateGeographicRange_AntimeridianCrossingBoxes_CorrectValidation(
         string bbox, bool expectedValid)
     {
-        var result = Honua.Server.Features.Infrastructure.Services.RasterParsingHelpers
+        var result = Honua.Infrastructure.Services.RasterParsingHelpers
             .TryParseBoundingBox(
                 bbox,
                 Honua.Core.Features.Shared.Models.AxisOrder.EastNorth,
@@ -321,7 +321,7 @@ public sealed class SpatialCorrectnessTests : IAsyncLifetime
     public void ValidateGeographicRange_PolarBoundaries_CorrectValidation(
         string bbox, bool expectedValid)
     {
-        var result = Honua.Server.Features.Infrastructure.Services.RasterParsingHelpers
+        var result = Honua.Infrastructure.Services.RasterParsingHelpers
             .TryParseBoundingBox(
                 bbox,
                 Honua.Core.Features.Shared.Models.AxisOrder.EastNorth,

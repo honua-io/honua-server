@@ -3,7 +3,10 @@
 
 using System.Net;
 using FluentAssertions;
-using Honua.Server.Features.Import;
+using Honua.Import;
+using Honua.Migration;
+using Honua.Import.FileImport;
+using Honua.Import.RasterImport;
 
 namespace Honua.Server.Tests.Import;
 

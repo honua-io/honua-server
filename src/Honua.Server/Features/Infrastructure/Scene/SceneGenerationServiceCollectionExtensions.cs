@@ -6,7 +6,7 @@ using Honua.Core.Features.Scene.Abstractions;
 using Honua.Postgres.Features.Scene;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Honua.Server.Features.Infrastructure.Scene;
+namespace Honua.Infrastructure.Scene;
 
 /// <summary>
 /// DI registration for the v1 3D Tiles generation pipeline (#842).

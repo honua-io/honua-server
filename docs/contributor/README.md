@@ -11,6 +11,7 @@ This section is for people **building or extending** Honua (core contributors, a
 
 ## Architecture
 
+- [Module Topology Overview](architecture-overview.md) — five-tier module structure (Abstractions / Core / Hosting / Server / Protocols.X), dependency-direction invariant, and ADR cross-links
 - [Architecture Overview](ARCHITECTURE.md) — system design and component interaction
 - [Architecture Diagrams](ARCHITECTURE_DIAGRAMS.md) — visual system diagrams
 - [ADRs](adr/README.md) — architectural decisions and rationale

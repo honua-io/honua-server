@@ -12,9 +12,11 @@ using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Styling.Abstractions;
-using Honua.Server.Features.Infrastructure.Caching;
-using Honua.Server.Features.Infrastructure.Configuration;
-using Honua.Server.Features.Infrastructure.Monitoring;
+using Honua.Core.Features.Geometry.Abstractions;
+using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Configuration;
+using Honua.Infrastructure.Monitoring;
+using Honua.Infrastructure.Services;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -36,26 +38,22 @@ internal static class InfrastructureCompositionRoot
     /// </summary>
     public static void RegisterInfrastructureServices(IServiceCollection services, IConfiguration configuration)
     {
-        var provider = configuration.GetValue<string>("DataSource:Provider");
-        if (string.IsNullOrWhiteSpace(provider) ||
-            provider.Equals("postgres", StringComparison.OrdinalIgnoreCase) ||
-            provider.Equals("postgresql", StringComparison.OrdinalIgnoreCase) ||
-            provider.Equals("postgis", StringComparison.OrdinalIgnoreCase))
+        var configuredProvider = configuration.GetValue<string>("DataSource:Provider");
+        var provider = DataProviderNames.Normalize(configuredProvider);
+        switch (provider)
         {
-            Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, configuration);
-        }
-        else if (provider.Equals("duckdb", StringComparison.OrdinalIgnoreCase))
-        {
-            Honua.DuckDB.ServiceCollectionExtensions.AddDuckDBServices(services, configuration);
-        }
-        else if (provider.Equals(DataProviderNames.MySql, StringComparison.OrdinalIgnoreCase) ||
-                 provider.Equals("mariadb", StringComparison.OrdinalIgnoreCase))
-        {
-            Honua.MySql.ServiceCollectionExtensions.AddMySqlServices(services, configuration);
-        }
-        else
-        {
-            throw new InvalidOperationException($"Unsupported data source provider '{provider}'.");
+            case DataProviderNames.Postgis:
+            case DataProviderNames.PostgreSql:
+                Honua.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, configuration);
+                break;
+            case DataProviderNames.DuckDb:
+                Honua.DuckDB.ServiceCollectionExtensions.AddDuckDBServices(services, configuration);
+                break;
+            case DataProviderNames.MySql:
+                Honua.MySql.ServiceCollectionExtensions.AddMySqlServices(services, configuration);
+                break;
+            default:
+                throw new InvalidOperationException($"Unsupported data source provider '{configuredProvider}'.");
         }
 
         // Register the SQL Server spatial provider as an additional read-only feature backend (#850).
@@ -72,10 +70,17 @@ internal static class InfrastructureCompositionRoot
             new FeatureProviderQueryRouter(
                 serviceProvider.GetRequiredService<Honua.Core.Features.Security.Abstractions.ISecureConnectionRegistry>(),
                 serviceProvider.GetRequiredService<IFeatureDataProviderRegistry>(),
-                DataProviderNames.Normalize(provider)));
+                provider));
 
         // Add centralized configuration management and secret services
         services.AddConfigurationManagement(configuration);
+
+        // Audit-A1 / ADR-0044: IGeometryService's concrete NTS-backed
+        // implementation lives in Server because Honua.Hosting must not
+        // depend on the NetTopologySuite package graph. The hosting-side
+        // validation surface (AddValidationServices) consumes the
+        // IGeometryService abstraction registered here.
+        services.AddSingleton<IGeometryService, GeometryService>();
 
         // Wrap ILayerStyleCatalog with caching decorator
         var innerStyleCatalogDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(ILayerStyleCatalog));

@@ -36,6 +36,11 @@
     <ProjectReference Include="..\..\..\src\Honua.Server\Honua.Server.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Postgres\Honua.Postgres.csproj" />
     <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
+    <!-- Referenced solely so the Comprehensive ContractCoverageMatrixTests can
+         reflect over the GeometryService scenario tests that moved into the
+         extracted Honua.Protocols.GeoServices.Tests project. xUnit does not run
+         a referenced assembly's tests, so this does not duplicate execution. -->
+    <ProjectReference Include="..\Honua.Protocols.GeoServices.Tests\Honua.Protocols.GeoServices.Tests.csproj" />
   </ItemGroup>
 
   <ItemGroup>

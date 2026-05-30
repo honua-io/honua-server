@@ -9,7 +9,7 @@ using Honua.Core.Features.Reporting;
 using Honua.Core.Features.Reporting.Abstractions;
 using Honua.Core.Features.Reporting.Domain;
 using Honua.Core.Features.Reporting.Services;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 using Honua.Server.Features.Reporting;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;

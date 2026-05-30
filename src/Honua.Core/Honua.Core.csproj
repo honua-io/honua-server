@@ -6,7 +6,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- Documentation and minor analyzer cleanup is still in progress for this package. -->
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <NoWarn>$(NoWarn);CS1591;CA1716</NoWarn>
     <WarningsNotAsErrors>CA2009;IDE0073</WarningsNotAsErrors>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageLicenseExpression>Elastic-2.0</PackageLicenseExpression>
@@ -29,15 +29,12 @@
     <PackageReference Include="Microsoft.Extensions.ObjectPool" />
     <PackageReference Include="Polly" />
 
-    <!-- NetTopologySuite geospatial file format support -->
-    <PackageReference Include="FlatGeobuf" />
-    <PackageReference Include="NetTopologySuite" />
-    <PackageReference Include="NetTopologySuite.IO.GeoJSON" />
-    <PackageReference Include="Parquet.Net" />
-    <PackageReference Include="Snappier" />
-
-    <!-- Geocoding provider dependencies -->
-    <PackageReference Include="AWSSDK.LocationService" />
+    <!--
+      NetTopologySuite and friends moved to Honua.Geometry along with the
+      Spec subsystem, the WKT/GeoJSON-consuming filter parsers, and the
+      NlQuery FilterPlanCompiler. Honua.Core no longer pulls any geospatial
+      package — see ADR-0041 and CoreAbstractionsIsolationTests.
+    -->
   </ItemGroup>
 
   <ItemGroup>
@@ -47,7 +44,11 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Core.Tests" />
+    <InternalsVisibleTo Include="Honua.Geometry" />
+    <InternalsVisibleTo Include="Honua.Io" />
+    <InternalsVisibleTo Include="Honua.Import" />
     <InternalsVisibleTo Include="Honua.Server.Tests" />
+    <InternalsVisibleTo Include="Honua.Ai.Tests" />
     <InternalsVisibleTo Include="Honua.Benchmarks" />
     <InternalsVisibleTo Include="Honua.Postgres" />
     <InternalsVisibleTo Include="Honua.Postgres.Tests" />
@@ -56,6 +57,10 @@
     <InternalsVisibleTo Include="Honua.MySql.Tests" />
     <InternalsVisibleTo Include="Honua.SqlServer" />
     <InternalsVisibleTo Include="Honua.SqlServer.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Honua.Core.Abstractions\Honua.Core.Abstractions.csproj" />
   </ItemGroup>
 
 </Project>

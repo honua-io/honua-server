@@ -3,7 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Security.Abstractions;
-using Honua.Server.Features.Infrastructure.Helpers;
+using Honua.Infrastructure.Helpers;
 using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Helpers;

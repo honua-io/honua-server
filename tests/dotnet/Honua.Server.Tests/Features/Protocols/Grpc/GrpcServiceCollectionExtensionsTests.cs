@@ -4,7 +4,7 @@
 using FluentAssertions;
 using Grpc.AspNetCore.Server;
 using Honua.Server.Features.Protocols.Grpc;
-using Honua.Server.Features.Infrastructure.Services;
+using Honua.Infrastructure.Services;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

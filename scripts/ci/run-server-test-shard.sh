@@ -18,6 +18,10 @@ fi
 
 configuration="${HONUA_SERVER_TEST_CONFIGURATION:-Release}"
 results_dir="${HONUA_SERVER_TEST_RESULTS_DIR:-./tests/TestResults}"
+# Phase 2 / ADR-0042: shards may target a per-protocol test project; default
+# remains the Honua.Server.Tests monolith when the env var is unset so legacy
+# shards keep working unchanged.
+test_csproj="${HONUA_SERVER_TEST_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}"
 max_cpu_count="${HONUA_SERVER_TEST_MAX_CPU_COUNT:-}"
 timeout_minutes="${HONUA_SERVER_TEST_TIMEOUT_MINUTES:-}"
 heartbeat_seconds="${HONUA_SERVER_TEST_HEARTBEAT_SECONDS:-30}"
@@ -46,7 +50,7 @@ if [[ -n "${max_cpu_count}" ]]; then
 fi
 
 test_command=(
-  dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj
+  dotnet test "${test_csproj}"
   --no-build
   --no-restore
   --configuration "${configuration}"

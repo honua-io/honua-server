@@ -8,10 +8,12 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Queries.Filters;
 using Honua.DuckDB.Features.FeatureStore;
 using Honua.DuckDB.Features.FeatureStore.Services;
 using DuckDB.NET.Data;
 using Honua.DuckDB.Features.Infrastructure;
+using Honua.DuckDB.Queries.Filters;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -59,6 +61,8 @@ internal static class ServiceCollectionExtensions
             ? $"Data Source={options.DatabasePath};Access Mode=ReadOnly"
             : $"Data Source={options.DatabasePath}";
 
+        services.AddSingleton<ISqlDialect>(DuckDbSqlDialect.Instance);
+
         // Register infrastructure singletons
         services.AddSingleton<DuckDBSpatialBootstrap>(sp =>
             new DuckDBSpatialBootstrap(
@@ -80,6 +84,12 @@ internal static class ServiceCollectionExtensions
                 connectionString,
                 sp.GetRequiredService<DuckDBSpatialBootstrap>(),
                 sp.GetRequiredService<ILogger<DuckDBConnectionProvider>>()));
+
+        // Audit-C3 session abstraction registered alongside the legacy provider
+        // during the progressive migration (see ADR 0046).
+        services.AddScoped<IDatabaseSessionFactory>(sp =>
+            new Features.Infrastructure.Session.DuckDbDatabaseSessionFactory(
+                sp.GetRequiredService<IDatabaseConnectionProvider>()));
 
         // Register query builder (scoped — depends on layer registry)
         services.AddScoped<IFeatureQueryBuilder>(sp =>

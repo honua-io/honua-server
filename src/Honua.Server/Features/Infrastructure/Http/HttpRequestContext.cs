@@ -4,7 +4,7 @@
 using Honua.Core.Features.Infrastructure.Http;
 using Microsoft.AspNetCore.Http;
 
-namespace Honua.Server.Features.Infrastructure.Http;
+namespace Honua.Infrastructure.Http;
 
 /// <summary>
 /// ASP.NET Core implementation of IRequestContext that adapts HttpContext to the Core abstraction.

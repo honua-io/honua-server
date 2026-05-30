@@ -4,7 +4,11 @@
 using System.IO.Compression;
 using System.Text;
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Migration.Abstractions;
+using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Migration.Domain;
+using Honua.Core.Features.FileImport.Domain;
 using Honua.TestKit.Infrastructure;
 
 namespace Honua.Postgres.Tests.Features.Import;

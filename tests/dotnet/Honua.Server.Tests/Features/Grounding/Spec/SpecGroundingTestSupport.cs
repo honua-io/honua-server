@@ -10,7 +10,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Spec;
 using Honua.Core.Features.Spec.Abstractions;
 using Honua.Core.Features.Spec.Domain;
-using Honua.Server.Features.Grounding.Spec;
+using Honua.Ai.Grounding.Spec;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

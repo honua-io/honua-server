@@ -6,8 +6,8 @@ using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Compliance.Abstractions;
 using Honua.Core.Features.Compliance.Domain;
 using Honua.Server.Features.Admin.Models;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 

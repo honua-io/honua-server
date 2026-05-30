@@ -7,7 +7,7 @@ using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Infrastructure.Events;
+using Honua.Infrastructure.Events;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;

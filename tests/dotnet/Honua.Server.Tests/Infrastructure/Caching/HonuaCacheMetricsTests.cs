@@ -4,7 +4,7 @@
 using System.Diagnostics.Metrics;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Honua.Server.Features.Infrastructure.Caching;
+using Honua.Infrastructure.Caching;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 

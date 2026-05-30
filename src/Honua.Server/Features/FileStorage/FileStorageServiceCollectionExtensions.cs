@@ -1,0 +1,214 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Infrastructure.Helpers;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+
+namespace Honua.FileStorage;
+
+/// <summary>
+/// Composition-root wiring that selects the file-storage backend (local disk
+/// from Honua.Io, S3 from Honua.Aws, Azure Blob from Honua.Azure) and registers
+/// the upload-progress store and retention cleanup. Lives in Server because it
+/// is the only assembly that references all three backends.
+/// </summary>
+public static class FileStorageServiceCollectionExtensions
+{
+    /// <summary>
+    /// Adds cloud file storage services to the dependency injection container
+    /// </summary>
+    /// <param name="services">Service collection</param>
+    /// <param name="configuration">Configuration for binding options</param>
+    /// <returns>Service collection for chaining</returns>
+    public static IServiceCollection AddCloudFileStorage(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        RegisterUploadProgressStore(services);
+
+        // Bind configuration
+        var section = configuration.GetSection("FileStorage");
+        services.Configure<CloudStorageOptions>(section);
+        services.PostConfigure<CloudStorageOptions>(options =>
+        {
+            ResolveCloudStorageSecrets(options);
+            EnsureLocalStorageDefaults(options, section);
+        });
+
+        // Bind provider-specific options
+        var localSection = section.GetSection("LocalStorage");
+        if (localSection.Exists())
+        {
+            services.Configure<LocalStorageOptions>(localSection);
+        }
+        else
+        {
+            // Default local storage path if not configured
+            var defaultLocalOptions = new LocalStorageOptions
+            {
+                BasePath = section.GetValue("LocalStorage:BasePath", null as string)
+                           ?? Path.Combine(Path.GetTempPath(), "honua-storage"),
+                CreateDirectoryIfNotExists = section.GetValue("LocalStorage:CreateDirectoryIfNotExists", true)
+            };
+            services.AddSingleton<Microsoft.Extensions.Options.IOptions<LocalStorageOptions>>(
+                Microsoft.Extensions.Options.Options.Create(defaultLocalOptions));
+        }
+
+        // Determine provider from configuration or environment
+        var providerName = section.GetValue<string>("Provider")
+                           ?? Environment.GetEnvironmentVariable("HONUA_STORAGE_PROVIDER")
+                           ?? "Local";
+
+        var provider = Enum.TryParse<CloudStorageProvider>(providerName, ignoreCase: true, out var p)
+            ? p
+            : CloudStorageProvider.Local;
+
+        // Register appropriate provider
+        switch (provider)
+        {
+            case CloudStorageProvider.Local:
+                services.AddSingleton<ICloudFileStorage, LocalFileStorage>();
+                break;
+
+            case CloudStorageProvider.AwsS3:
+                services.AddSingleton<ICloudFileStorage, AwsS3FileStorage>();
+                break;
+
+            case CloudStorageProvider.AzureBlob:
+                services.AddSingleton<ICloudFileStorage, AzureBlobFileStorage>();
+                break;
+
+            default:
+                throw new InvalidOperationException($"Unknown storage provider: {providerName}");
+        }
+
+        // Register cleanup background service
+        var enableCleanup = section.GetValue("EnableAutomaticCleanup", true);
+        if (enableCleanup)
+        {
+            services.AddHostedService<FileStorageCleanupService>();
+        }
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds cloud file storage services with a specific provider
+    /// </summary>
+    /// <param name="services">Service collection</param>
+    /// <param name="configure">Configuration action for options</param>
+    /// <returns>Service collection for chaining</returns>
+    public static IServiceCollection AddCloudFileStorage(
+        this IServiceCollection services,
+        Action<CloudStorageOptions> configure)
+    {
+        RegisterUploadProgressStore(services);
+
+        var options = new CloudStorageOptions();
+        configure(options);
+        ResolveCloudStorageSecrets(options);
+
+        services.AddSingleton(Microsoft.Extensions.Options.Options.Create(options));
+
+        // Configure local storage options if using local provider
+        if (options.Provider == CloudStorageProvider.Local && options.LocalStorage is not null)
+        {
+            services.AddSingleton(Microsoft.Extensions.Options.Options.Create(options.LocalStorage));
+        }
+        else if (options.Provider == CloudStorageProvider.Local)
+        {
+            services.AddSingleton(Microsoft.Extensions.Options.Options.Create(new LocalStorageOptions
+            {
+                BasePath = Path.Combine(Path.GetTempPath(), "honua-storage"),
+                CreateDirectoryIfNotExists = true
+            }));
+        }
+
+        switch (options.Provider)
+        {
+            case CloudStorageProvider.Local:
+                services.AddSingleton<ICloudFileStorage, LocalFileStorage>();
+                break;
+
+            case CloudStorageProvider.AwsS3:
+                services.AddSingleton<ICloudFileStorage, AwsS3FileStorage>();
+                break;
+
+            case CloudStorageProvider.AzureBlob:
+                services.AddSingleton<ICloudFileStorage, AzureBlobFileStorage>();
+                break;
+
+            default:
+                throw new InvalidOperationException($"Unknown storage provider: {options.Provider}");
+        }
+
+        if (options.EnableAutomaticCleanup)
+        {
+            services.AddHostedService<FileStorageCleanupService>();
+        }
+
+        return services;
+    }
+
+    private static void ResolveCloudStorageSecrets(CloudStorageOptions options)
+    {
+        if (options.AwsS3 != null)
+        {
+            options.AwsS3.AccessKeyId = SecretReferenceResolver.ResolveEnvironmentReference(
+                options.AwsS3.AccessKeyId,
+                "FileStorage:AwsS3:AccessKeyId");
+            options.AwsS3.SecretAccessKey = SecretReferenceResolver.ResolveEnvironmentReference(
+                options.AwsS3.SecretAccessKey,
+                "FileStorage:AwsS3:SecretAccessKey");
+        }
+
+        if (options.AzureBlob is { } azureBlob)
+        {
+            azureBlob.ConnectionString = SecretReferenceResolver.ResolveEnvironmentReference(
+                azureBlob.ConnectionString,
+                "FileStorage:AzureBlob:ConnectionString") ?? string.Empty;
+        }
+
+    }
+
+    private static void EnsureLocalStorageDefaults(CloudStorageOptions options, IConfiguration section)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(section);
+
+        if (options.Provider != CloudStorageProvider.Local)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.LocalStorage?.BasePath))
+        {
+            return;
+        }
+
+        options.LocalStorage = new LocalStorageOptions
+        {
+            BasePath = section.GetValue("LocalStorage:BasePath", null as string)
+                       ?? Path.Combine(Path.GetTempPath(), "honua-storage"),
+            CreateDirectoryIfNotExists = section.GetValue("LocalStorage:CreateDirectoryIfNotExists", true)
+        };
+    }
+
+    private static void RegisterUploadProgressStore(IServiceCollection services)
+    {
+        services.AddSingleton<IUploadProgressStore>(serviceProvider =>
+        {
+            var universalStore = serviceProvider.GetService<IUniversalProgressStore>();
+            if (universalStore != null)
+            {
+                return new UniversalUploadProgressStore(universalStore);
+            }
+
+            return new InMemoryUploadProgressStore();
+        });
+    }
+}

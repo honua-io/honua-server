@@ -6,7 +6,7 @@ using Amazon.S3.Model;
 using Amazon.S3.Util;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Server.Features.FileStorage;
+using Honua.FileStorage;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;

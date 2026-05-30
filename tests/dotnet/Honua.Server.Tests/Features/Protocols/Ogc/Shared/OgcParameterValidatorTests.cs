@@ -2,9 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Server.Features.Protocols.Ogc.Shared;
+using Honua.Protocols.Ogc.Shared;
 
-#pragma warning disable CA1716 // Mirrors the namespace under test (Honua.Server.Features.Protocols.Ogc.Shared).
+#pragma warning disable CA1716 // Mirrors the namespace under test (Honua.Protocols.Ogc.Shared).
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Shared;
 #pragma warning restore CA1716
 

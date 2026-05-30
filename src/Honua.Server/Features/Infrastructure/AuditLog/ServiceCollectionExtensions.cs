@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Server.Features.Infrastructure.AuditLog;
+namespace Honua.Infrastructure.AuditLog;
 
 /// <summary>
 /// DI registration for the audit log feature (#1144).

@@ -5,7 +5,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using FluentAssertions;
 using Honua.Server;
-using Honua.Server.Features.Protocols.Ogc.Classic.Wfs20;
+using Honua.Protocols.Ogc.Classic.Wfs20;
 using Honua.TestKit;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -377,7 +377,8 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
             .ToArray();
         var endpoints = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var sourceFiles = sourcePath is null
-            ? Directory.EnumerateFiles(FindServerTestSourceRoot(), "*.cs", SearchOption.AllDirectories)
+            ? FindIntegrationTestSourceRoots()
+                .SelectMany(root => Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories))
             : new[] { sourcePath };
 
         foreach (var block in EnumerateIntegrationTestMethodBodies(sourceFiles))
@@ -539,6 +540,27 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
         }
 
         throw new DirectoryNotFoundException("Could not locate tests/dotnet/Honua.Server.Tests from the test execution directory.");
+    }
+
+    /// <summary>
+    /// All integration-test source roots whose HTTP requests back EndpointRegistry
+    /// entries: the monolithic Honua.Server.Tests plus every extracted
+    /// Honua.Protocols.&lt;X&gt;.Tests project AND Honua.Ai.Tests. As protocols were
+    /// split into their own test assemblies (OData, OgcApi, …) the HTTP requests
+    /// that exercise their routes moved with them, so a scan limited to
+    /// Honua.Server.Tests would report those routes (e.g. DELETE /odata/Features(...))
+    /// as uncovered. The MCP protocol surface (POST /mcp) is consolidated into
+    /// Honua.Ai (not a standalone Honua.Protocols.Mcp), so its HTTP requests live in
+    /// Honua.Ai.Tests — which the Honua.Protocols.* glob would otherwise miss.
+    /// </summary>
+    private static List<string> FindIntegrationTestSourceRoots()
+    {
+        var serverTests = FindServerTestSourceRoot();
+        var testsRoot = Directory.GetParent(serverTests)!.FullName; // tests/dotnet
+        var roots = new List<string> { serverTests };
+        roots.AddRange(Directory.EnumerateDirectories(testsRoot, "Honua.Protocols.*.Tests", SearchOption.TopDirectoryOnly));
+        roots.AddRange(Directory.EnumerateDirectories(testsRoot, "Honua.Ai.Tests", SearchOption.TopDirectoryOnly));
+        return roots;
     }
 
     private static string NormalizeEndpointKey(string endpoint)

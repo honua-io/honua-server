@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Admin.Models;
 

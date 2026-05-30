@@ -3,10 +3,10 @@
 
 using System.Globalization;
 using System.Text.RegularExpressions;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Infrastructure.Security;
+namespace Honua.Infrastructure.Security;
 
 /// <summary>
 /// Middleware for comprehensive input validation to prevent injection attacks.

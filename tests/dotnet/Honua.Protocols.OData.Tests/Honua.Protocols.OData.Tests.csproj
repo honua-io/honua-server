@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!--
+      Phase 2 per-protocol test-project split per ADR-0042. Moves the OData
+      protocol test files out of the 653-file Honua.Server.Tests monolith
+      so a shard compiling these tests does not have to recompile every
+      unrelated test file.
+    -->
+    <RootNamespace>Honua.Server.Tests.Features.Protocols.OData</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Microsoft.OData.Client" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Mirror Server.Tests' xunit runner config so parallel test execution
+         carries over to this project. -->
+    <None Update="xunit.runner.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Server\Honua.Server.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Postgres\Honua.Postgres.csproj" />
+    <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Protocols.OData\Honua.Protocols.OData.csproj" />
+  </ItemGroup>
+
+</Project>

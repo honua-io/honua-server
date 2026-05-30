@@ -2,7 +2,12 @@
 
 ## Status
 
-Proposed
+Accepted (2026-05). The grounding surface and the material-ambiguity rule
+set landed in honua-server #742 (see the Implementation Landing section
+below). `GroundingRequest`, `GroundingResult`, `ClarificationModels`,
+`IntentDrafter`, and the `SpecGroundingService` are all live; the canonical
+rule table and confidence-band thresholds are documented in
+[docs/developer/GROUNDING.md](../../developer/GROUNDING.md).
 
 ## Context
 

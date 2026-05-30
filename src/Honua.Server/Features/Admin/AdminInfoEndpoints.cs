@@ -4,8 +4,8 @@
 using System.Reflection;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Admin;
 

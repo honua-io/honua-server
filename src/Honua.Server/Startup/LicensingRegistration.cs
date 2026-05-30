@@ -3,8 +3,8 @@
 
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Licensing.Abstractions;
-using Honua.Server.Features.Infrastructure.Extensions;
-using Honua.Server.Features.Infrastructure.Licensing;
+using Honua.Infrastructure.Extensions;
+using Honua.Infrastructure.Licensing;
 
 namespace Honua.Server.Startup;
 

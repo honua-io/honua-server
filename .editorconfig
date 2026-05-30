@@ -358,7 +358,9 @@ dotnet_diagnostic.CA1062.severity = none
 dotnet_diagnostic.CA1707.severity = none
 
 # CA1716: Identifiers should not match keywords
-dotnet_diagnostic.CA1716.severity = suggestion
+# Suppressed: the 'Shared' namespace identifier is intentional and not
+# renamed during the Honua.Core.Abstractions extraction. See ADR-0041.
+dotnet_diagnostic.CA1716.severity = none
 
 # CA1822: Mark members as static
 dotnet_diagnostic.CA1822.severity = suggestion

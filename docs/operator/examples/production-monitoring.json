@@ -100,8 +100,8 @@
   "Logging": {
     "LogLevel": {
       "Default": "Information",
-      "Honua.Server.Features.Infrastructure.Monitoring": "Debug",
-      "Honua.Server.Features.Infrastructure.Resilience": "Information",
+      "Honua.Infrastructure.Monitoring": "Debug",
+      "Honua.Infrastructure.Resilience": "Information",
       "System.Net.Http.HttpClient": "Warning"
     }
   },

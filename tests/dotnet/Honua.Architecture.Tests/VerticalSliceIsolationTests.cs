@@ -37,6 +37,10 @@ public sealed class VerticalSliceIsolationTests
         "NlQuery",
         "Export",
         "Import",
+        "FileImport",   // Import-split: file-format ingest slice.
+        "Migration",    // Import-split: ArcGIS/legacy migration slice.
+        "RasterImport", // Import-split: raster ingest slice.
+        "ControlPlane", // Relocated out of the Infrastructure grab-bag (audit-A1).
         "FileStorage",
         "PrintingTools",
         "HealthCheck",
@@ -47,8 +51,86 @@ public sealed class VerticalSliceIsolationTests
         "Spec",
         "Reporting",
         "Studio",
+        "Styling", // Relocated out of the Infrastructure grab-bag into its own top-level slice.
         "WorkflowPackages"
     };
+
+    /// <summary>
+    /// Sub-areas under <c>Honua.Infrastructure.*</c> that are explicitly
+    /// permitted shared plumbing. The arch test treats these as a closed allow-list so
+    /// future additions to Infrastructure require an intentional update here. See ADR-0044
+    /// for the carve-out that moved Authentication / Caching / Events / Helpers / Models /
+    /// Validation out of Honua.Infrastructure into Honua.Hosting (their
+    /// namespaces are preserved under <c>Honua.Infrastructure.*</c> but
+    /// the source lives in the Hosting assembly).
+    /// </summary>
+    /// <remarks>
+    /// Audit-A1 (structural-audit-2026-05): the audit found Infrastructure had grown to
+    /// 351 files / 42 subdirs with Auth(45), ControlPlane(38), Styling(26), Rendering(16)
+    /// misfiled — entries that should have been their own slices. The Hosting carve moved
+    /// six sub-areas out (Authentication, Caching, Events, Helpers, Models, Validation),
+    /// and ControlPlane / Styling have been extracted to their own slices. Anything not on
+    /// this allow-list is treated as a real feature slice and must comply with vertical
+    /// isolation. Update the list when a new genuinely-shared subsystem is added; reject
+    /// additions that look like a slice in disguise.
+    /// </remarks>
+    private static readonly HashSet<string> _infrastructureAllowedSubAreas =
+        new(StringComparer.Ordinal)
+        {
+            // Genuinely shared plumbing.
+            "Middleware",
+            "Monitoring",
+            "Services",
+            "Abstractions",
+            "Extensions",
+            "Infrastructure",   // Honua.Hosting/Features/Infrastructure holds the shared
+                                // Honua.Infrastructure.* base types (e.g.
+                                // IConfigurationDocumentationContributor, job-cancellation
+                                // notifier extensions) lifted in the Hosting carve.
+            "Alerts",           // Hosting-resident shared base of the Alerts slice (delivery
+                                // options/metadata/sink contracts); the Alerts endpoints stay
+                                // in Honua.Server/Features/Alerts.
+            "FileStorage",      // Hosting-resident cloud-storage base types + stream wrappers
+                                // (CloudFileStorageBase, progress/cancellation streams) shared
+                                // by the storage providers; the FileStorage endpoints +
+                                // LocalFileStorage stay in Honua.Server/Features/FileStorage.
+            "PackageReview",    // Hosting-resident PackageReviewContextFactory: the HttpContext->
+                                // PackageReviewContext helper shared by the Server PackageReview
+                                // endpoints and the MCP package-review tool (the AI surface), so
+                                // the latter doesn't couple to the former's endpoint class.
+            "Helpers",          // Hosting carve preserves Honua.Infrastructure.Helpers.*
+            // Cross-cutting subsystems.
+            "Analytics",
+            "AuditLog",
+            "Authentication",   // Lives in Honua.Hosting under the preserved namespace.
+            "Caching",          // Lives in Honua.Hosting under the preserved namespace.
+            "Compression",
+            "Configuration",
+            "Coordination",
+            "DataIntegrity",
+            "Events",           // Bulk lives in Honua.Hosting; FeatureChangeRetryQueue remains in Server.
+            "Filtering",
+            "GeoJson",
+            "Geometries",
+            "HealthCheck",
+            "HealthChecks",
+            "Hosting",
+            "Http",
+            "Licensing",
+            "Logging",
+            "Models",           // Lives in Honua.Hosting under the preserved namespace.
+            "MultiTenancy",
+            "Parsing",
+            "Progress",
+            "Raster",
+            "RateLimiting",
+            "Redis",
+            "Rendering",
+            "Resilience",
+            "Scene",
+            "Security",
+            "Validation",       // Lives in Honua.Hosting under the preserved namespace.
+        };
 
     /// <summary>
     /// Protocol-adapter features that are allowed to consume a specific domain
@@ -62,7 +144,28 @@ public sealed class VerticalSliceIsolationTests
     private static readonly Dictionary<string, IReadOnlyCollection<string>> _allowedCrossFeatureRefs =
         new(StringComparer.Ordinal)
         {
-            ["Capabilities"] = new[] { "Import", "Streaming" },
+            // Capabilities aggregates a service-metadata manifest across slices
+            // (ingest registry, streaming descriptors, ControlPlane options).
+            ["Capabilities"] = new[] { "Import", "Streaming", "ControlPlane", "FileImport", "Migration", "RasterImport" },
+            // Admin is the composition/administration surface: its endpoints adapt
+            // several domain slices directly (Styling SLD CRUD, the ControlPlane
+            // deploy-workflow service, the ingest pipeline, Console content).
+            // Surfaced once these became tracked features; tech debt to retire by
+            // routing through shared Core abstractions (and, for the ingest set,
+            // by the Honua.Import extraction).
+            ["Admin"] = new[] { "Styling", "ControlPlane", "Console", "Import", "Migration", "FileImport", "RasterImport" },
+            // ControlPlane orchestrates deploy/release workflows over the
+            // Geoprocessing job runtime and is wired from the Admin surface.
+            ["ControlPlane"] = new[] { "Geoprocessing", "Admin" },
+            // Studio composes the Console authoring surface.
+            ["Studio"] = new[] { "Console" },
+            // The ingest cluster (Import + Migration + FileImport + RasterImport)
+            // is one cohesive unit destined for the Honua.Import module; intra-
+            // cluster references are expected and move out of Server together.
+            ["Import"] = new[] { "Migration", "FileImport", "RasterImport" },
+            ["Migration"] = new[] { "Import", "FileImport", "RasterImport" },
+            ["FileImport"] = new[] { "Import", "Migration", "RasterImport" },
+            ["RasterImport"] = new[] { "Import", "Migration", "FileImport" },
             ["Mcp"] = new[] { "Geoprocessing", "Grounding", "Reporting" },
             ["Grounding"] = new[] { "Geoprocessing" },
             ["AnalysisContent"] = new[] { "Geoprocessing" },
@@ -96,6 +199,59 @@ public sealed class VerticalSliceIsolationTests
             "Features must maintain vertical slice isolation and not directly reference other features. " +
             "Cross-feature communication should happen through shared abstractions in Core or Infrastructure layers. " +
             "Infrastructure is an exception as it provides shared services.");
+    }
+
+    /// <summary>
+    /// Audit-A1 ratchet: confirms the Infrastructure carve-out is intact. The blanket
+    /// "Infrastructure is exempt" rule is anchored to the explicit
+    /// <see cref="_infrastructureAllowedSubAreas"/> allow-list — any new top-level folder
+    /// under <c>src/Honua.Server/Features/Infrastructure/</c> must be reviewed and either
+    /// (a) extracted to its own slice (preferred for misfiled slices like the historical
+    /// Auth/ControlPlane/Styling sub-areas) or (b) added to the allow-list with a comment
+    /// explaining why it is shared plumbing.
+    /// </summary>
+    /// <remarks>
+    /// See <see cref="_infrastructureAllowedSubAreas"/> for the historical context and
+    /// ADR-0044 for the Hosting carve. This test scans the filesystem (not the assembly)
+    /// so it captures namespaces whose source has moved to Honua.Hosting under the same
+    /// <c>Honua.Infrastructure.*</c> namespace.
+    /// </remarks>
+    [ArchitectureTest]
+    public void Infrastructure_SubAreas_ShouldBeOnExplicitAllowList()
+    {
+        var currentDir = Directory.GetCurrentDirectory();
+        var projectRoot = FindProjectRoot(currentDir);
+        var infraServerPath = Path.Combine(projectRoot, "src", "Honua.Server", "Features", "Infrastructure");
+        var infraHostingPath = Path.Combine(projectRoot, "src", "Honua.Hosting", "Features");
+
+        var observed = new HashSet<string>(StringComparer.Ordinal);
+        AccumulateSubAreaNames(infraServerPath, observed);
+        AccumulateSubAreaNames(infraHostingPath, observed);
+
+        var stowaways = observed
+            .Where(name => !_infrastructureAllowedSubAreas.Contains(name))
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        stowaways.Should().BeEmpty(
+            "Every top-level sub-directory under Honua.Infrastructure (or " +
+            "Honua.Hosting/Features) must be on the audit-A1 allow-list. Add the sub-area " +
+            "to VerticalSliceIsolationTests._infrastructureAllowedSubAreas with a justifying " +
+            "comment, or extract it to its own vertical slice. Unexpected sub-areas: " +
+            string.Join(", ", stowaways));
+
+        static void AccumulateSubAreaNames(string path, HashSet<string> sink)
+        {
+            if (!Directory.Exists(path))
+            {
+                return;
+            }
+
+            foreach (var dir in Directory.GetDirectories(path))
+            {
+                sink.Add(new DirectoryInfo(dir).Name);
+            }
+        }
     }
 
     [ArchitectureTest]
@@ -160,7 +316,7 @@ public sealed class VerticalSliceIsolationTests
         var forbiddenNamespaces = new[]
         {
             "Honua.Server.Features.Protocols.Grpc",
-            "Honua.Server.Features.Protocols.GeoServices.GPServer"
+            "Honua.Protocols.GeoServices.GPServer"
         };
 
         var violations = new List<string>();
@@ -367,7 +523,7 @@ public sealed class VerticalSliceIsolationTests
         if (_featureNames.Contains(featureName, StringComparer.OrdinalIgnoreCase))
             return true;
 
-        // Allow Infrastructure sub-modules (e.g., Infrastructure.Authentication)
+        // Allow Infrastructure sub-modules (e.g., Honua.Infrastructure.Authentication)
         if (featureName.Equals("Infrastructure", StringComparison.OrdinalIgnoreCase))
             return true;
 

@@ -9,7 +9,7 @@ using TestOperations = Honua.TestKit.Constants.Operations;
 
 namespace Honua.Core.Tests.Features.Collaboration.Operations;
 
-[Protocol(Protocols.TestQuality)]
+[Protocol(ProtocolNames.TestQuality)]
 public sealed class InMemorySavedMapOperationLogRepositoryTests
 {
     private static readonly DateTimeOffset _acceptedAt = new(2026, 5, 11, 10, 0, 0, TimeSpan.Zero);

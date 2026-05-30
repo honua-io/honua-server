@@ -4,7 +4,7 @@
 using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Queries.Filters;
-using Honua.Server.Features.Infrastructure.Events;
+using Honua.Infrastructure.Events;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Streaming;

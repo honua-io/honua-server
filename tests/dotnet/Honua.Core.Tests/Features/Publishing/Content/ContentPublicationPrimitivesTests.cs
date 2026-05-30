@@ -13,7 +13,7 @@ namespace Honua.Core.Tests.Features.Publishing.Content;
 /// Unit tests for content publication primitives: slug normalization, content/token
 /// hashing, and public-link verification.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(ProtocolNames.TestQuality)]
 public sealed class ContentPublicationPrimitivesTests
 {
     [Operation(Operations.Query)]

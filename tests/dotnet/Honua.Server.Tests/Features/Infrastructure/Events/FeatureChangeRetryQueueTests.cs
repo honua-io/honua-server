@@ -5,7 +5,7 @@ using System.Text.Json;
 using System.Threading.Channels;
 using System.Reflection;
 using FluentAssertions;
-using Honua.Server.Features.Infrastructure.Events;
+using Honua.Infrastructure.Events;
 using Honua.Server.Features.Streaming;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;

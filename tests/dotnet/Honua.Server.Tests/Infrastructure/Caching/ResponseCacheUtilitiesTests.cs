@@ -5,7 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
-using Honua.Server.Features.Infrastructure.Caching;
+using Honua.Infrastructure.Caching;
 using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Tests.Infrastructure.Caching;

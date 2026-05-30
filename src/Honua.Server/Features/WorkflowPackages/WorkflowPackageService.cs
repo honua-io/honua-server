@@ -11,7 +11,7 @@ using Honua.Core.Features.Orchestration.Abstractions;
 using Honua.Core.Features.Orchestration.Domain;
 using Honua.Core.Features.WorkflowPackages.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Domain;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 using Honua.Server.Features.Orchestration;
 
 namespace Honua.Server.Features.WorkflowPackages;

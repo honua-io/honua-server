@@ -4,7 +4,7 @@
 using System.Data;
 using Microsoft.Extensions.Logging;
 
-namespace Honua.Server.Features.Infrastructure.DataIntegrity;
+namespace Honua.Infrastructure.DataIntegrity;
 
 internal static partial class DataIntegrityCoordinatorLog
 {

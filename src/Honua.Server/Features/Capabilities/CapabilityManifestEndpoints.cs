@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Server.Features.Capabilities.Models;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Capabilities;

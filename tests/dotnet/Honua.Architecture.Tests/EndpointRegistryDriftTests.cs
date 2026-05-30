@@ -162,7 +162,17 @@ public sealed class EndpointRegistryDriftTests
         // catalog entry.
         var repoRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var featuresRoot = Path.Combine(repoRoot, FeaturesRelativePath);
-        var literalRoutes = CollectLiteralRouteFragments(featuresRoot);
+        // Anchor against the Server features tree plus every extracted module
+        // assembly (Honua.Ai, Honua.Geoprocessing, Honua.Geocoding,
+        // Honua.Protocols.*, …). As features were carved out of Honua.Server
+        // their Map* calls moved with them — e.g. the AnalysisContent
+        // endpoints now live in Honua.Ai — but their registry entries must
+        // still anchor to a real Map source somewhere in src/.
+        var anchorRoots = new[] { featuresRoot }
+            .Concat(ExtractedModuleRoots(repoRoot))
+            .Where(Directory.Exists)
+            .ToArray();
+        var literalRoutes = CollectLiteralRouteFragments(anchorRoots);
 
         var orphans = BuildRegistrySet()
             .Where(entry => !KnownNonFeatureRegistryEntries.Contains(entry))
@@ -201,7 +211,27 @@ public sealed class EndpointRegistryDriftTests
     private static bool StartsWithEnforcedPrefix(string path)
         => EnforcedPrefixes.Any(prefix => path.StartsWith(prefix, System.StringComparison.Ordinal));
 
-    private static LiteralRouteIndex CollectLiteralRouteFragments(string featuresRoot)
+    /// <summary>
+    /// Source roots for every module physically extracted out of
+    /// <c>Honua.Server</c> (Honua.Ai, Honua.Geoprocessing, Honua.Geocoding,
+    /// Honua.Protocols.*, …). Endpoint Map* calls that moved with a carved-out
+    /// feature live here rather than under <c>Honua.Server/Features</c>, so the
+    /// reverse registry-anchoring scan must include them. The glob over
+    /// <c>src/Honua.*</c> picks up future extractions automatically;
+    /// <c>Honua.Server</c> itself is excluded because its features tree is
+    /// scanned directly and its non-feature host routes are catalogued in
+    /// <see cref="KnownNonFeatureRegistryEntries"/>.
+    /// </summary>
+    private static IEnumerable<string> ExtractedModuleRoots(string repoRoot)
+    {
+        var srcRoot = Path.Combine(repoRoot, "src");
+        return Directory.Exists(srcRoot)
+            ? Directory.EnumerateDirectories(srcRoot, "Honua.*", SearchOption.TopDirectoryOnly)
+                .Where(dir => !string.Equals(Path.GetFileName(dir), "Honua.Server", System.StringComparison.Ordinal))
+            : Enumerable.Empty<string>();
+    }
+
+    private static LiteralRouteIndex CollectLiteralRouteFragments(IReadOnlyCollection<string> roots)
     {
         // Build several views of every route fragment we can find in the
         // features tree:
@@ -224,14 +254,23 @@ public sealed class EndpointRegistryDriftTests
             RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
         // Direction-2 anchoring uses the broader features tree (route paths
-        // can live in companion files such as *Utilities.cs constants).
-        foreach (var file in Directory.EnumerateFiles(featuresRoot, "*.cs", SearchOption.AllDirectories))
+        // can live in companion files such as *Utilities.cs constants), plus
+        // any extracted protocol-module source roots.
+        foreach (var root in roots)
         {
-            combinedText.Append(StripComments(File.ReadAllText(file)));
-            combinedText.Append('\n');
+            foreach (var file in Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories))
+            {
+                if (IsBuildArtifactPath(file))
+                {
+                    continue;
+                }
+
+                combinedText.Append(StripComments(File.ReadAllText(file)));
+                combinedText.Append('\n');
+            }
         }
 
-        foreach (var file in EnumerateEndpointFiles(featuresRoot))
+        foreach (var file in roots.SelectMany(EnumerateEndpointFiles))
         {
             var content = StripComments(File.ReadAllText(file));
 
@@ -460,7 +499,15 @@ public sealed class EndpointRegistryDriftTests
         // partial-class continuations such as FeatureServerEndpoints.Query.cs.
         return Directory.EnumerateFiles(featuresRoot, "*Endpoints.cs", SearchOption.AllDirectories)
             .Concat(Directory.EnumerateFiles(featuresRoot, "*Endpoints.*.cs", SearchOption.AllDirectories))
+            .Where(file => !IsBuildArtifactPath(file))
             .Distinct(System.StringComparer.Ordinal);
+    }
+
+    private static bool IsBuildArtifactPath(string path)
+    {
+        var sep = Path.DirectorySeparatorChar;
+        return path.Contains($"{sep}bin{sep}", System.StringComparison.Ordinal)
+            || path.Contains($"{sep}obj{sep}", System.StringComparison.Ordinal);
     }
 
     private static Dictionary<string, string> ResolveGroupPrefixes(string content)

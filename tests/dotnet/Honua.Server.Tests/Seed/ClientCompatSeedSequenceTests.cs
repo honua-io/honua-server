@@ -14,7 +14,7 @@ using YamlDotNet.Serialization.NamingConventions;
 namespace Honua.Server.Tests.Seed;
 
 [Collection("Database")]
-[Protocol(Protocols.Infrastructure)]
+[Protocol(TestProtocols.Infrastructure)]
 public sealed class ClientCompatSeedSequenceTests
 {
     private const string PostgisImage = "postgis/postgis:16-3.4";

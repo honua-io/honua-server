@@ -3,8 +3,8 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Styling.Sld;
+using Honua.Infrastructure.Models;
+using Honua.Server.Features.Styling.Sld;
 
 namespace Honua.Server.Features.Admin.Models;
 

@@ -2,9 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Migration.Abstractions;
+using Honua.Core.Features.FileImport.Abstractions;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.Infrastructure.Coordination;
+namespace Honua.Infrastructure.Coordination;
 
 /// <summary>
 /// Redis-based distributed leader election with automatic lease renewal.

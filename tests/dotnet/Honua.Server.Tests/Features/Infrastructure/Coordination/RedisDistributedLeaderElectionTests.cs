@@ -3,7 +3,7 @@
 
 using System.Reflection;
 using FluentAssertions;
-using Honua.Server.Features.Infrastructure.Coordination;
+using Honua.Infrastructure.Coordination;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;

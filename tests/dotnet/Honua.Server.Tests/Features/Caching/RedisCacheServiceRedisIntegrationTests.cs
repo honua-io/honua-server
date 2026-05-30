@@ -6,7 +6,7 @@ using Honua.Core.Features.Caching;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Shared.Models;
-using Honua.Server.Features.Infrastructure.Caching;
+using Honua.Infrastructure.Caching;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;

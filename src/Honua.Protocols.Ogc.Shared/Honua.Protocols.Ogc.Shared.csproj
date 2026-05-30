@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!--
+      Shared OGC protocol foundation: the Ogc.Common + Ogc.Shared types
+      (capability/landing models, parameter validators, CRS/exception helpers)
+      used by BOTH the OGC API (OgcApi) and classic OGC (OgcClassic) protocol
+      surfaces and by Stac (an OGC API Features extension). Carved out FIRST so
+      the Ogc folder can later be split into the OgcApi and OgcClassic assemblies
+      without duplicating this base. Deps are Core + Hosting only; it may not
+      reference Honua.Server or any sibling protocol assembly.
+    -->
+    <NoWarn>$(NoWarn);CS1591;IL2104;IL2026;IL3002;IL3050;CA1041;CA1000;CA1862;IDE0051;IDE0052;IDE0005;CA1844;IL2075</NoWarn>
+    <RootNamespace>Honua.Protocols.Ogc</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Honua.Core.Abstractions\Honua.Core.Abstractions.csproj" />
+    <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\Honua.Geometry\Honua.Geometry.csproj" />
+    <ProjectReference Include="..\Honua.Hosting\Honua.Hosting.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Server" />
+    <InternalsVisibleTo Include="Honua.Server.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.OgcApi" />
+    <InternalsVisibleTo Include="Honua.Protocols.OgcApi.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.OgcClassic" />
+    <InternalsVisibleTo Include="Honua.Protocols.OgcClassic.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.Stac" />
+    <InternalsVisibleTo Include="Honua.Protocols.Stac.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.GeoServices" />
+    <InternalsVisibleTo Include="Honua.Protocols.GeoServices.Tests" />
+    <InternalsVisibleTo Include="Honua.TestKit" />
+    <InternalsVisibleTo Include="Honua.Benchmarks" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+
+</Project>

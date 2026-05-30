@@ -6,9 +6,9 @@ using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Primitives;
 using Serilog.Context;
-using InfrastructureLog = Honua.Server.Features.Infrastructure.Logging.Log;
+using InfrastructureLog = Honua.Infrastructure.Logging.Log;
 
-namespace Honua.Server.Features.Infrastructure.Middleware;
+namespace Honua.Infrastructure.Middleware;
 
 /// <summary>
 /// Middleware to propagate or generate correlation IDs for distributed tracing across logs.

@@ -5,56 +5,57 @@ using Honua.Core.Features.Compliance;
 using Honua.Core.Features.Metadata;
 using Honua.Postgres.Features.Scene;
 using Honua.Server.Features.Admin;
-using Honua.Server.Features.AnalysisContent;
+using Honua.ControlPlane;
+using Honua.Ai.AnalysisContent;
 using Honua.Server.Features.Capabilities;
-using Honua.Server.Features.Infrastructure.Scene;
-using Honua.Server.Features.Alerts;
+using Honua.Infrastructure.Scene;
+using Honua.Alerts;
 using Honua.Server.Features.CloudDemo;
 using Honua.Server.Features.Protocols.Cog;
 using Honua.Server.Features.Protocols.Coverages.Multidimensional;
 using Honua.Server.Features.Protocols.Zarr;
-using Honua.Server.Features.Protocols.GeoServices.FeatureServer;
+using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Server.Features.Geocoding;
 using Honua.Server.Features.Forms;
-using Honua.Server.Features.Grounding.Spec;
-using Honua.Server.Features.Protocols.GeoServices.GeometryService;
-using Honua.Server.Features.Geoprocessing;
-using Honua.Server.Features.Protocols.GeoServices.GPServer;
-using Honua.Server.Features.Protocols.GeoServices.Catalog;
+using Honua.Ai.Grounding.Spec;
+using Honua.Protocols.GeoServices.GeometryService;
+using Honua.Geoprocessing;
+using Honua.Protocols.GeoServices.GPServer;
+using Honua.Protocols.GeoServices.Catalog;
 using Honua.Server.Features.Protocols.Grpc;
-using Honua.Server.Features.Protocols.GeoServices.ImageServer;
-using Honua.Server.Features.Infrastructure.Monitoring;
-using Honua.Server.Features.Infrastructure.Styling;
-using Honua.Server.Features.Protocols.GeoServices.MapServer;
-using Honua.Server.Features.Protocols.GeoServices.NAServer;
-using Honua.Server.Features.Protocols.Mcp;
-using Honua.Server.Features.NlQuery;
-using Honua.Server.Features.Protocols.OData;
-using Honua.Server.Features.Protocols.Ogc.Api.Coverages;
-using Honua.Server.Features.Protocols.Ogc.Api.Features;
-using Honua.Server.Features.Protocols.Ogc.Api.Maps;
-using Honua.Server.Features.Protocols.Ogc.Api.Processes;
-using Honua.Server.Features.Protocols.Ogc.Api.Records;
-using Honua.Server.Features.Protocols.Ogc.Api.Tiles;
+using Honua.Protocols.GeoServices.ImageServer;
+using Honua.Infrastructure.Monitoring;
+using Honua.Server.Features.Styling;
+using Honua.Protocols.GeoServices.MapServer;
+using Honua.Protocols.GeoServices.NAServer;
+using Honua.Ai.Protocols.Mcp;
+using Honua.Ai.NlQuery;
+using Honua.Protocols.OData;
+using Honua.Protocols.Ogc.Api.Coverages;
+using Honua.Protocols.Ogc.Api.Features;
+using Honua.Protocols.Ogc.Api.Maps;
+using Honua.Protocols.Ogc.Api.Processes;
+using Honua.Protocols.Ogc.Api.Records;
+using Honua.Protocols.Ogc.Api.Tiles;
 using Honua.Server.Features.Orchestration;
-using Honua.Server.Features.PackageReview;
+using Honua.PackageReview;
 using Honua.Server.Features.PrintingTools;
 using Honua.Server.Features.Protocols.Tiles;
 using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
-using Honua.Server.Features.Protocols.Ogc.Classic;
-using Honua.Server.Features.Protocols.Ogc.Classic.Wcs20;
-using Honua.Server.Features.Protocols.Scene;
+using Honua.Protocols.Ogc.Classic;
+using Honua.Protocols.Ogc.Classic.Wcs20;
+using Honua.Protocols.Scene;
 using Honua.Server.Features.Protocols.SpatialAnalytics;
 using Honua.Server.Features.Protocols.Elevation;
-using Honua.Server.Features.Protocols.Stac;
+using Honua.Protocols.Stac;
 using Honua.Server.Features.Protocols.Terrain;
 using Honua.Server.Features.Reporting;
 using Honua.Server.Features.Spec;
 using Honua.Server.Features.StaticMap;
-using Honua.Server.Features.Protocols.Ogc.Classic.Wfs20;
+using Honua.Protocols.Ogc.Classic.Wfs20;
 using Honua.Core.Features.Studio;
 
-namespace Honua.Server.Features.Infrastructure.Hosting;
+namespace Honua.Infrastructure.Hosting;
 
 /// <summary>
 /// Feature registration helpers for the Honua composition root.
@@ -99,6 +100,11 @@ internal static class FeatureRegistrationExtensions
         services.AddSceneGeneration(configuration);
         services.AddPrintingTools();
         services.AddGeoprocessing(configuration);
+        // Job-orchestration substrate (queue + log store) used by AddGeoprocessing.
+        // Lives in Honua.Server because it composes a Share-export terminal callback
+        // that depends on Honua.Server.Features.Admin.Share — out of reach for the
+        // carved Honua.Geoprocessing assembly.
+        services.AddJobOrchestration();
         services.AddAnalysisContent(configuration);
         services.AddAnalysisReporting(configuration);
         services.AddCapabilityManifest();
@@ -179,4 +185,86 @@ internal static class FeatureRegistrationExtensions
 
         return endpoints;
     }
+
+    /// <summary>
+    /// Discovers every <see cref="IHonuaProtocolModule"/> implementation in the
+    /// currently-loaded assemblies and invokes its <c>ConfigureServices</c>. The
+    /// optional <paramref name="enabledNames"/> filter (typically bound from
+    /// <c>Protocols:Enabled</c> in configuration) restricts which modules run;
+    /// when null or empty, every discovered module runs.
+    /// </summary>
+    /// <remarks>
+    /// This entry point is additive — it sits alongside
+    /// <see cref="AddServerFeatures"/>, which still owns the canonical direct
+    /// <c>AddXxx</c> wiring. A follow-up PR will migrate the per-protocol
+    /// registrations into modules and remove the duplicated direct calls.
+    /// Today calling this method <em>and</em> <c>AddServerFeatures</c> would
+    /// register the wrapped protocol services twice; callers must pick one
+    /// path until the migration completes.
+    /// </remarks>
+    public static IServiceCollection AddDiscoveredProtocolModules(
+        this IServiceCollection services,
+        Microsoft.Extensions.Configuration.IConfiguration configuration,
+        IReadOnlyCollection<string>? enabledNames = null)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        foreach (var module in DiscoverProtocolModules(enabledNames))
+        {
+            module.ConfigureServices(services, configuration);
+        }
+
+        return services;
+    }
+
+    /// <summary>
+    /// Discovers every <see cref="IHonuaProtocolModule"/> implementation and
+    /// invokes its <c>MapEndpoints</c>. Sequencing mirrors
+    /// <see cref="AddDiscoveredProtocolModules"/>: when the optional filter
+    /// is null or empty, every discovered module runs.
+    /// </summary>
+    /// <remarks>
+    /// This entry point is additive (see <see cref="AddDiscoveredProtocolModules"/>).
+    /// </remarks>
+    public static IEndpointRouteBuilder MapDiscoveredProtocolModules(
+        this IEndpointRouteBuilder endpoints,
+        IReadOnlyCollection<string>? enabledNames = null)
+    {
+        ArgumentNullException.ThrowIfNull(endpoints);
+
+        foreach (var module in DiscoverProtocolModules(enabledNames))
+        {
+            module.MapEndpoints(endpoints);
+        }
+
+        return endpoints;
+    }
+
+    private static IEnumerable<IHonuaProtocolModule> DiscoverProtocolModules(
+        IReadOnlyCollection<string>? enabledNames)
+    {
+        foreach (var module in BuiltInProtocolModules)
+        {
+            if (enabledNames is { Count: > 0 } && !enabledNames.Contains(module.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            yield return module;
+        }
+    }
+
+    // AOT-safe registry of built-in protocol modules. PublishAot=true on
+    // Honua.Server flags reflection-based type discovery + Activator.CreateInstance
+    // with IL2070 / IL2072 (no DynamicallyAccessedMembers annotation); maintaining
+    // an explicit list keeps the trim analyzer happy and surfaces module-add
+    // / module-remove in code review. Protocol-module assemblies extracted in
+    // Phase 1 follow-ups will append their new()-able module here.
+    private static readonly IReadOnlyList<IHonuaProtocolModule> BuiltInProtocolModules = new IHonuaProtocolModule[]
+    {
+        new Modules.ODataProtocolModule(),
+        new Modules.OgcApiProtocolModule(),
+        new Modules.OgcClassicProtocolModule(),
+        new Modules.GeoServicesProtocolModule(),
+    };
 }

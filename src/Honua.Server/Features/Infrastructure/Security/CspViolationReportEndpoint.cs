@@ -6,7 +6,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Honua.Server.Features.Infrastructure.Security;
+namespace Honua.Infrastructure.Security;
 
 /// <summary>
 /// Endpoint for receiving Content Security Policy (CSP) violation reports.

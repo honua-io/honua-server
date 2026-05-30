@@ -3,10 +3,10 @@
 
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
-using Honua.Server.Features.Infrastructure.Abstractions;
+using Honua.Infrastructure.Abstractions;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Alerts;
+namespace Honua.Alerts;
 
 internal static class AlertsServiceCollectionExtensions
 {

@@ -3,7 +3,7 @@
 
 using BenchmarkDotNet.Attributes;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Server.Features.Protocols.Stac.Services;
+using Honua.Protocols.Stac.Services;
 
 namespace Honua.Benchmarks;
 

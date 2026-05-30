@@ -5,7 +5,7 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.RateLimiting.Abstractions;
-using Honua.Server.Features.Infrastructure.RateLimiting;
+using Honua.Infrastructure.RateLimiting;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Distributed;

@@ -3,7 +3,7 @@
 
 using System.ComponentModel.DataAnnotations;
 
-namespace Honua.Server.Features.Infrastructure.RateLimiting;
+namespace Honua.Infrastructure.RateLimiting;
 
 /// <summary>
 /// Configuration options for rate limiting middleware.

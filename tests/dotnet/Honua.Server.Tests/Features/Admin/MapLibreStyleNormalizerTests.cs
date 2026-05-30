@@ -4,7 +4,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Server.Features.Infrastructure.Styling;
+using Honua.Server.Features.Styling;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Admin;

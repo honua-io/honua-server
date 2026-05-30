@@ -4,7 +4,7 @@
 using System.Text;
 using FluentAssertions;
 using System.IO.Compression;
-using Honua.Server.Features.Infrastructure.Compression;
+using Honua.Infrastructure.Compression;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Compression;
 

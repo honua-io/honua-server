@@ -8,7 +8,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Reporting;
 using Honua.Core.Features.Reporting.Abstractions;
 using Honua.Core.Features.Reporting.Domain;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;

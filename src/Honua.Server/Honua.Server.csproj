@@ -19,6 +19,14 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Honua.Server.Tests" />
+    <InternalsVisibleTo Include="Honua.TestKit" />
+    <InternalsVisibleTo Include="Honua.Protocols.OData.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.OgcApi.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.OgcClassic.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.GeoServices.Tests" />
+    <InternalsVisibleTo Include="Honua.Ai.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.Scene.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.Stac.Tests" />
     <InternalsVisibleTo Include="Honua.Benchmarks" />
     <!--
       The heavyweight GDAL worker (src/Honua.Worker.Gdal) reuses the internal
@@ -42,18 +50,39 @@
     <ProjectReference Include="..\Honua.SqlServer\Honua.SqlServer.csproj" />
     <ProjectReference Include="..\Honua.MySql\Honua.MySql.csproj" />
     <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
-    <ProjectReference
-      Include="..\..\samples\Honua.StacOpsDemo\Honua.StacOpsDemo.csproj"
-      Condition="'$(HonuaIncludeStacOpsDemo)' != 'false' and ('$(PublishAot)' != 'true' or '$(RuntimeIdentifier)' == '')"
-      GlobalPropertiesToRemove="PublishAot;RuntimeIdentifier;SelfContained;StripSymbols" />
+    <ProjectReference Include="..\Honua.Hosting\Honua.Hosting.csproj" />
+    <ProjectReference Include="..\Honua.Jobs\Honua.Jobs.csproj" />
+    <ProjectReference Include="..\Honua.Protocols.OData\Honua.Protocols.OData.csproj" />
+    <ProjectReference Include="..\Honua.Geocoding\Honua.Geocoding.csproj" />
+
+    <ProjectReference Include="..\Honua.Aws\Honua.Aws.csproj" />
+    <ProjectReference Include="..\Honua.Azure\Honua.Azure.csproj" />
+
+    <ProjectReference Include="..\Honua.Ai\Honua.Ai.csproj" />
+
+    <ProjectReference Include="..\Honua.Geometry\Honua.Geometry.csproj" />
+    <ProjectReference Include="..\Honua.Geoprocessing\Honua.Geoprocessing.csproj" />
+    <ProjectReference Include="..\Honua.Io\Honua.Io.csproj" />
+    <ProjectReference Include="..\Honua.Import\Honua.Import.csproj" />
+
+    <ProjectReference Include="..\..\samples\Honua.StacOpsDemo\Honua.StacOpsDemo.csproj" Condition="'$(HonuaIncludeStacOpsDemo)' != 'false' and ('$(PublishAot)' != 'true' or '$(RuntimeIdentifier)' == '')" GlobalPropertiesToRemove="PublishAot;RuntimeIdentifier;SelfContained;StripSymbols" />
+
+    <ProjectReference Include="..\Honua.Protocols.Scene\Honua.Protocols.Scene.csproj" />
+
+    <ProjectReference Include="..\Honua.Protocols.Ogc.Shared\Honua.Protocols.Ogc.Shared.csproj" />
+
+    <ProjectReference Include="..\Honua.Protocols.OgcApi\Honua.Protocols.OgcApi.csproj" />
+
+    <ProjectReference Include="..\Honua.Protocols.OgcClassic\Honua.Protocols.OgcClassic.csproj" />
+
+    <ProjectReference Include="..\Honua.Protocols.Stac\Honua.Protocols.Stac.csproj" />
+
+    <ProjectReference Include="..\Honua.Protocols.GeoServices\Honua.Protocols.GeoServices.csproj" />
   </ItemGroup>
 
 
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Http" />
-    <PackageReference Include="AWSSDK.S3" />
-    <PackageReference Include="Azure.Identity" />
-    <PackageReference Include="Azure.Storage.Blobs" />
     <PackageReference Include="BouncyCastle.Cryptography" />
     <PackageReference Include="Geospatial.Grpc" />
     <PackageReference Include="Google.Protobuf" />
@@ -77,29 +106,15 @@
 
   <ItemGroup>
     <PackageReference Include="NetTopologySuite" />
-    <PackageReference Include="NetTopologySuite.IO.Esri.Shapefile" />
     <PackageReference Include="SkiaSharp" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux" />
     <PackageReference Include="Apache.Arrow" />
     <EmbeddedResource Include="Migrations\*.sql" />
-    <EmbeddedResource Include="..\..\tests\fixtures\ai-builder\spatial-query-contract-v1.json"
-                      LogicalName="Honua.Server.Features.AiBuilder.Fixtures.spatial-query-contract-v1.json" />
-    <EmbeddedResource Include="..\..\tests\fixtures\ai-builder\operations-dashboard-contract-v1.json"
-                      LogicalName="Honua.Server.Features.AiBuilder.Fixtures.operations-dashboard-contract-v1.json" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="AWSSDK.Batch" />
-    <PackageReference Include="AWSSDK.ECS" />
-    <PackageReference Include="AWSSDK.ElasticLoadBalancingV2" />
-    <PackageReference Include="AWSSDK.Lambda" />
-    <PackageReference Include="AWSSDK.SimpleNotificationService" />
-    <PackageReference Include="AWSSDK.SQS" />
-    <PackageReference Include="Azure.Messaging.EventGrid" />
-    <PackageReference Include="Azure.Messaging.EventHubs" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Authentication" />
-    <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="ParquetSharp" />
     <PackageReference Include="Scalar.AspNetCore" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
@@ -123,13 +138,11 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
-    <Content Include="..\..\docs\developer\api-specs\admin-api.json" Link="admin-openapi.json"
-             Condition="Exists('..\..\docs\developer\api-specs\admin-api.json')">
+    <Content Include="..\..\docs\developer\api-specs\admin-api.json" Link="admin-openapi.json" Condition="Exists('..\..\docs\developer\api-specs\admin-api.json')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
-    <Content Include="..\..\docs\api-specs\admin-api.json" Link="admin-openapi.json"
-             Condition="!Exists('..\..\docs\developer\api-specs\admin-api.json') and Exists('..\..\docs\api-specs\admin-api.json')">
+    <Content Include="..\..\docs\api-specs\admin-api.json" Link="admin-openapi.json" Condition="!Exists('..\..\docs\developer\api-specs\admin-api.json') and Exists('..\..\docs\api-specs\admin-api.json')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>

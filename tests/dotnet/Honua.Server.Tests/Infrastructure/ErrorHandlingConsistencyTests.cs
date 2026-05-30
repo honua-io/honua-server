@@ -4,8 +4,8 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Protocols.OData.Models;
+using Honua.Infrastructure.Models;
+using Honua.Protocols.OData.Models;
 using Honua.TestKit;
 
 namespace Honua.Server.Tests.Infrastructure;

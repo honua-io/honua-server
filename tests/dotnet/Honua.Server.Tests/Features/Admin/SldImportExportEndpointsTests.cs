@@ -6,8 +6,8 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Server.Features.Admin.Models;
-using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.Infrastructure.Styling.Sld;
+using Honua.Infrastructure.Models;
+using Honua.Server.Features.Styling.Sld;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -148,7 +148,7 @@ public sealed class SldImportExportEndpointsTests : IAsyncLifetime
         response.Be200Ok();
         var apiResponse = await DeserializeImportAsync(response);
         apiResponse.Data!.Diagnostics.Should().Contain(d =>
-            d.Construct == "ExternalGraphic" && d.Severity == Honua.Server.Features.Infrastructure.Styling.Sld.SldDiagnosticSeverity.Warning);
+            d.Construct == "ExternalGraphic" && d.Severity == Honua.Server.Features.Styling.Sld.SldDiagnosticSeverity.Warning);
     }
 
     [IntegrationTest]

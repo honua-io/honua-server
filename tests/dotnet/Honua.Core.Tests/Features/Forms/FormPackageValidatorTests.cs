@@ -11,7 +11,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Tests.Features.Forms;
 
-[Protocol(Protocols.Admin)]
+[Protocol(ProtocolNames.Admin)]
 public sealed class FormPackageValidatorTests
 {
     [UnitTest]

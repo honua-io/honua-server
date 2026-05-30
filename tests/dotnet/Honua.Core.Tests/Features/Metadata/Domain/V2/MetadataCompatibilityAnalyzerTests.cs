@@ -9,7 +9,7 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 
-[Protocol(Protocols.TestQuality)]
+[Protocol(ProtocolNames.TestQuality)]
 [Operation(Operations.Validation)]
 public sealed class MetadataCompatibilityAnalyzerTests
 {

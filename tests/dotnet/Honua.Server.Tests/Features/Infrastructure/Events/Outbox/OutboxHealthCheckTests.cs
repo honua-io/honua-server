@@ -3,7 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
-using Honua.Server.Features.Infrastructure.Events.Outbox;
+using Honua.Infrastructure.Events.Outbox;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Diagnostics.HealthChecks;

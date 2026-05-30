@@ -5,7 +5,7 @@ using System.Collections.Concurrent;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Server.Features.Infrastructure.ControlPlane;
+using Honua.ControlPlane;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;

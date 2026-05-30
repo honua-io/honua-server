@@ -4,9 +4,9 @@
 using System.Globalization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Server.Features.Infrastructure.ControlPlane;
+using Honua.ControlPlane;
 using Honua.TestKit.Attributes;
-using Honua.Server.Tests.Helpers;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using StackExchange.Redis;

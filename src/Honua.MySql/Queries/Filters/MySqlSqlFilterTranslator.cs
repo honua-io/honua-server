@@ -15,17 +15,12 @@ namespace Honua.MySql.Queries.Filters;
 /// predicates use the canonical MySQL spatial functions. Cross-SRID geometry literals throw
 /// <see cref="NotSupportedException"/>; KNN is unsupported.
 /// </summary>
-internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
+internal sealed class MySqlSqlFilterTranslator : SqlFilterExpressionVisitorBase, ISqlFilterTranslator
 {
-    private const int MaxExpressionDepth = FilterExpressionNormalizer.MaxExpressionDepth;
-
     private readonly MySqlEngineFlavor _engineFlavor;
 
-    private int _paramIndex;
-    private int _depth;
-    private readonly List<object?> _parameters = [];
-
     public MySqlSqlFilterTranslator(MySqlEngineFlavor engineFlavor = MySqlEngineFlavor.Mysql)
+        : base(MySqlSqlDialect.Instance)
     {
         _engineFlavor = engineFlavor;
     }
@@ -35,49 +30,10 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
     {
         ArgumentNullException.ThrowIfNull(filter);
         ArgumentNullException.ThrowIfNull(resource);
-        return TranslateCore(filter, FilterTranslationContext.FromResource(resource));
+        return Translate(filter, FilterTranslationContext.FromResource(resource));
     }
 
-    private SqlFragment TranslateCore(FilterExpression filter, FilterTranslationContext context)
-    {
-        _paramIndex = 0;
-        _depth = 0;
-        _parameters.Clear();
-
-        var sql = TranslateExpression(filter, context);
-        return new SqlFragment(sql, _parameters);
-    }
-
-    private string TranslateExpression(FilterExpression filter, FilterTranslationContext context)
-    {
-        try
-        {
-            if (++_depth > MaxExpressionDepth)
-            {
-                throw new ArgumentException(
-                    $"Filter expression exceeds the maximum nesting depth of {MaxExpressionDepth}.");
-            }
-
-            return filter switch
-            {
-                BinaryExpression bin => TranslateBinary(bin, context),
-                UnaryExpression un => TranslateUnary(un, context),
-                PropertyReference prop => TranslateProperty(prop, context),
-                Literal lit => TranslateLiteral(lit),
-                SpatialPredicate spatial => TranslateSpatial(spatial, context),
-                SpatialDistancePredicate spatialDistance => TranslateSpatialDistance(spatialDistance, context),
-                ValueList list => TranslateValueList(list, context),
-                _ => throw new NotSupportedException(
-                    $"Filter expression '{filter.GetType().Name}' is not supported by the MySQL/MariaDB provider.")
-            };
-        }
-        finally
-        {
-            _depth--;
-        }
-    }
-
-    private string TranslateBinary(BinaryExpression binary, FilterTranslationContext context)
+    protected override string TranslateBinary(BinaryExpression binary, FilterTranslationContext context)
     {
         if (binary.Right is ValueList valueList && valueList.Values.Count == 0)
         {
@@ -134,7 +90,7 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
         return $"{left} {op} {right}";
     }
 
-    private string TranslateUnary(UnaryExpression unary, FilterTranslationContext context)
+    protected override string TranslateUnary(UnaryExpression unary, FilterTranslationContext context)
     {
         var operand = TranslateExpression(unary.Operand, context);
 
@@ -149,7 +105,7 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
         };
     }
 
-    private static string TranslateProperty(PropertyReference property, FilterTranslationContext context)
+    protected override string TranslateProperty(PropertyReference property, FilterTranslationContext context)
     {
         var field = context.TryGetField(property.PropertyName);
 
@@ -171,14 +127,7 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
             $"Field '{property.PropertyName}' is not defined on layer '{context.ResourceName}'.");
     }
 
-    private string TranslateLiteral(Literal literal)
-    {
-        var paramName = $"@p{_paramIndex++}";
-        _parameters.Add(literal.Value);
-        return paramName;
-    }
-
-    private string TranslateSpatial(SpatialPredicate spatial, FilterTranslationContext context)
+    protected override string TranslateSpatial(SpatialPredicate spatial, FilterTranslationContext context)
     {
         var left = TranslateGeometryExpression(spatial.Left, context);
         var right = TranslateGeometryExpression(spatial.Right, context);
@@ -200,7 +149,7 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
         };
     }
 
-    private string TranslateSpatialDistance(SpatialDistancePredicate spatial, FilterTranslationContext context)
+    protected override string TranslateSpatialDistance(SpatialDistancePredicate spatial, FilterTranslationContext context)
     {
         // ST_Distance_Sphere expects WGS84 point geometries; on polygons or lines it would
         // silently degrade to centroid math. The MySqlFeatureQueryBuilder distance path
@@ -257,8 +206,7 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
                             $"Pre-project geometries to the layer SRID before filtering.");
                     }
 
-                    var wkbParam = $"@p{_paramIndex++}";
-                    _parameters.Add(geometry.Wkb);
+                    var wkbParam = AddParameter(geometry.Wkb);
                     return MySqlSpatialSql.GeomFromWkb(wkbParam, context.Wkid, _engineFlavor);
                 }
             case PropertyReference property:
@@ -288,11 +236,8 @@ internal sealed class MySqlSqlFilterTranslator : ISqlFilterTranslator
         }
     }
 
-    private string TranslateValueList(ValueList valueList, FilterTranslationContext context)
-    {
-        var values = valueList.Values.Select(v => TranslateExpression(v, context));
-        return $"({string.Join(", ", values)})";
-    }
+    // TranslateValueList is inherited from SqlFilterExpressionVisitorBase — the MySQL
+    // form was identical to the base ($"({join})").
 
     private static string GetGeometryColumnExpression(FilterTranslationContext context)
     {

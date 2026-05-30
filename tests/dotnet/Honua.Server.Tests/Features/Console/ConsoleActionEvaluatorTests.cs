@@ -7,7 +7,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Console.Domain;
 using Honua.Server.Features.Admin.Services;
 using Honua.Server.Features.Console.Services;
-using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;

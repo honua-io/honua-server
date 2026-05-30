@@ -8,7 +8,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Publishing.Domain;
 using Honua.Core.Features.Scene.Domain;
-using Honua.Server.Features.Infrastructure.Scene;
+using Honua.Infrastructure.Scene;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;

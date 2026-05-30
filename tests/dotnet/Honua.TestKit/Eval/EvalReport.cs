@@ -162,7 +162,7 @@ public sealed record EvalProtocolParityOutcome
 /// <summary>Single protocol probe outcome (one protocol × one assertion).</summary>
 public sealed record EvalProtocolProbe
 {
-    /// <summary>Protocol identifier (matches <see cref="Constants.Protocols"/>).</summary>
+    /// <summary>Protocol identifier (matches <see cref="Constants.ProtocolNames"/>).</summary>
     [JsonPropertyName("protocol")]
     public string Protocol { get; init; } = string.Empty;
 

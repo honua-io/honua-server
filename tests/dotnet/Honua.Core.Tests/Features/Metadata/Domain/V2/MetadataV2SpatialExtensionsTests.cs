@@ -8,7 +8,7 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 
-[Protocol(Protocols.TestQuality)]
+[Protocol(ProtocolNames.TestQuality)]
 public sealed class MetadataV2SpatialExtensionsTests
 {
     [UnitTest]

@@ -19,7 +19,10 @@ using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
-using Honua.Core.Features.Import.Services;
+using Honua.Core.Features.Migration.Abstractions;
+using Honua.Core.Features.FileImport.Abstractions;
+using Honua.Core.Features.Migration.Services;
+using Honua.Core.Features.FileImport.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -41,7 +44,8 @@ using Honua.Postgres.Features.FeatureStore;
 using Honua.Postgres.Features.Geometry;
 using Honua.Postgres.Features.GeometryService;
 using Honua.Postgres.Features.HealthCheck;
-using Honua.Postgres.Features.Import;
+using Honua.Postgres.Features.Migration;
+using Honua.Postgres.Features.FileImport;
 using Honua.Postgres.Features.Infrastructure;
 using Honua.Postgres.Features.Infrastructure.Caching;
 using Honua.Postgres.Features.Infrastructure.Crs;
@@ -229,6 +233,9 @@ internal static class ServiceCollectionExtensions
         // Register geometry operation service for buffer/simplify/project
         services.AddScoped<IGeometryOperationService, PostgresGeometryOperationService>();
 
+        // Register SQL dialect (identifier quoting / parameter prefix)
+        services.AddSingleton<ISqlDialect>(PostgresSqlDialect.Instance);
+
         // Register SQL filter translator
         services.AddScoped<ISqlFilterTranslator>(_ => new PostgresSqlFilterTranslator(
             useJsonAttributes: true,
@@ -255,6 +262,11 @@ internal static class ServiceCollectionExtensions
 
         // Register enhanced database connection provider with prepared statement caching
         services.AddScoped<IDatabaseConnectionProvider, CachingDatabaseConnectionProvider>();
+
+        // Register the audit-C3 session abstraction alongside the legacy provider.
+        // Consumers migrate from IDatabaseConnectionProvider to IDatabaseSessionFactory
+        // tranche-by-tranche (see ADR 0046).
+        services.AddScoped<IDatabaseSessionFactory, Features.Infrastructure.Session.PostgresDatabaseSessionFactory>();
 
         // Register CRS detection service
         services.AddScoped<ICrsDetectionService>(serviceProvider =>

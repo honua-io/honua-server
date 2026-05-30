@@ -3,9 +3,14 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Migration.Domain;
+using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Server.Features.Import;
-using Honua.Server.Features.Infrastructure.Progress;
+using Honua.Import;
+using Honua.Migration;
+using Honua.Import.FileImport;
+using Honua.Import.RasterImport;
+using Honua.Infrastructure.Progress;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;

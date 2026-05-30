@@ -18,8 +18,8 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Tiles;
-using Honua.Server.Features.Infrastructure.Configuration;
-using Honua.Server.Features.Infrastructure.Authentication;
+using Honua.Infrastructure.Configuration;
+using Honua.Infrastructure.Authentication;
 using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.Admin.Services;

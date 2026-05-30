@@ -4,7 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Honua.Server.Features.Infrastructure.Caching;
+using Honua.Infrastructure.Caching;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging;

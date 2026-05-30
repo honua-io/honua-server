@@ -171,6 +171,19 @@ The targeted entrypoint runs the architecture tests on every PR regardless of
 diff content; that is the gate that catches the #802 class of issue (new
 endpoint without integration coverage).
 
+**Local pre-PR runs use the same smart filters.** `scripts/ci/pre-pr-check.sh`
+consumes the identical router (`honua-server-targeted-tests.sh`) and affected-
+projects closure (`compute-affected-projects.sh`) the CI workflow uses, so a
+local run scopes the build (affected-project solution filter), format check
+(changed `*.cs` only), unit-test projects (affected closure), and server-test
+shards (targeted subset) to the diff against `origin/trunk` instead of grinding
+the whole solution and every shard. The architecture tests still run on every
+invocation (cheap topology guard). Set `HONUA_PRE_PR_FULL=1` to force the full
+suite (recommended before a release or a large cross-cutting refactor);
+`HONUA_PRE_PR_BASE=<ref>` overrides the diff base, and `HONUA_PRE_PR_SKIP_AOT=1`
+skips the AOT publish. If the base ref is missing locally the script falls back
+to a full run so it never silently under-tests.
+
 ### Flaky-Test Quarantine
 
 - New `Honua.TestKit.Attributes.FlakyTestAttribute(reason)` adds the trait

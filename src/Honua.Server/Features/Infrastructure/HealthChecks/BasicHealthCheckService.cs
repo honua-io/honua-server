@@ -3,7 +3,7 @@
 
 using System.Diagnostics;
 
-namespace Honua.Server.Features.Infrastructure.HealthChecks;
+namespace Honua.Infrastructure.HealthChecks;
 
 /// <summary>
 /// Basic health check service implementation.

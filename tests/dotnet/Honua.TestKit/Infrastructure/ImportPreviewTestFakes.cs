@@ -4,10 +4,15 @@
 using System.Data;
 using System.Data.Common;
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Migration.Abstractions;
+using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Migration.Domain;
+using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Honua.Postgres.Features.Import;
+using Honua.Postgres.Features.Migration;
+using Honua.Postgres.Features.FileImport;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.TestKit.Infrastructure;

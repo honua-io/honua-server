@@ -1,0 +1,90 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!--
+      Honua.Hosting is the carved-out ASP.NET Core hosting surface that
+      protocol assemblies (Honua.Protocols.*) and Honua.Server can both
+      ProjectReference without cycles. Carved from
+      Honua.Infrastructure per ADR-0044 / audit-A1.
+      Namespaces preserved (Honua.Infrastructure.<SubArea>)
+      so consumers do not need using-clause changes.
+    -->
+    <NoWarn>$(NoWarn);CS1591;IL2104;IL2026;IL3002;IL3050;CA1041;CA1000;CA1862;IDE0051;IDE0052;IDE0005;CA1844;IL2075</NoWarn>
+    <RootNamespace>Honua.Infrastructure</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Honua.Core.Abstractions\Honua.Core.Abstractions.csproj" />
+    <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\Honua.Geometry\Honua.Geometry.csproj" />
+    <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Packages required by the carved Authentication sub-area. Mirrors the
+         Server csproj's auth-related references so the hosting surface
+         (JWT bearer, OIDC, JWT handler) compiles standalone. -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
+    <!-- NetTopologySuite is required by the carved Events / Validation surfaces
+         (FeatureChangeEventEnrichment's WKB→GeoJSON envelope extraction,
+         the unified IGeometryService abstraction surface). The concrete
+         IGeometryService implementation still lives in Server alongside the
+         heavier NTS-IO codecs; only the small thread-static WkbReaderCache
+         and envelope reader are carved into Hosting. -->
+    <PackageReference Include="NetTopologySuite" />
+    <!-- BouncyCastle.Cryptography is required by the carved Licensing sub-area
+         (BouncyCastleEd25519Verifier + FileBackedLicenseService signature
+         verification). Mirrors the corresponding Server csproj package ref. -->
+    <PackageReference Include="BouncyCastle.Cryptography" />
+    <!-- Grpc.AspNetCore brings Grpc.Core.Api transitively for LicenseGate's
+         RpcException factory (carved Licensing sub-area). Mirrors Server. -->
+    <PackageReference Include="Grpc.AspNetCore" />
+    <!-- SkiaSharp is required by the carved Rendering sub-area
+         (SkiaMapRenderer, WkbToSkiaConverter, raster tile pipeline).
+         The Linux native asset stays on Server.csproj; consumers that
+         actually rasterize already reference Server. -->
+    <PackageReference Include="SkiaSharp" />
+    <!-- StackExchange.Redis backs the carved Infrastructure/Redis base cluster
+         (RedisServiceBase + health/fallback + job-queue/leader-election), lifted
+         here so protocol assemblies (GeoServices) and Server can share it. The
+         cluster depends only on Honua.Core's Redis abstractions (no Jobs/Server
+         dependency, so no Hosting->Jobs cycle). -->
+    <PackageReference Include="StackExchange.Redis" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Server" />
+    <InternalsVisibleTo Include="Honua.Server.Tests" />
+    <InternalsVisibleTo Include="Honua.Aws" />
+    <InternalsVisibleTo Include="Honua.Azure" />
+    <InternalsVisibleTo Include="Honua.Ai" />
+    <InternalsVisibleTo Include="Honua.Ai.Tests" />
+    <InternalsVisibleTo Include="Honua.Io" />
+    <InternalsVisibleTo Include="Honua.Import" />
+    <InternalsVisibleTo Include="Honua.Architecture.Tests" />
+    <InternalsVisibleTo Include="Honua.Benchmarks" />
+    <InternalsVisibleTo Include="Honua.Protocols.OData" />
+    <InternalsVisibleTo Include="Honua.Protocols.OData.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.Ogc.Shared" />
+    <InternalsVisibleTo Include="Honua.Protocols.OgcApi" />
+    <InternalsVisibleTo Include="Honua.Protocols.OgcApi.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.OgcClassic" />
+    <InternalsVisibleTo Include="Honua.Protocols.OgcClassic.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.GeoServices" />
+    <InternalsVisibleTo Include="Honua.Protocols.GeoServices.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.Scene" />
+    <InternalsVisibleTo Include="Honua.Protocols.Scene.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.Stac" />
+    <InternalsVisibleTo Include="Honua.Protocols.Stac.Tests" />
+    <InternalsVisibleTo Include="Honua.Geoprocessing" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+
+</Project>

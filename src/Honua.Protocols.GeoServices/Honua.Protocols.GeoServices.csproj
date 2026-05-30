@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!--
+      Esri GeoServices REST protocol assembly (FeatureServer, MapServer, ImageServer,
+      GPServer, NAServer, GeometryService, catalog). Carved out of
+      Honua.Protocols.GeoServices per the modularization Phase 1 plan — the
+      final protocol family to extract. Its Infrastructure dependencies live in Honua.Hosting
+      (Authentication/Caching/Helpers/Models/Parsing/Rendering/Validation/GeoJson/Licensing/
+      Raster/Redis-base) or Honua.Core; the GeoServices-coupled geometry-converter +
+      spatial-reference base were relocated into this assembly's Geometry/ folder (cycle
+      resolution). GPServer adapts the canonical geoprocessing runtime, so it references
+      Honua.Geoprocessing. It may not reference Honua.Server.
+    -->
+    <NoWarn>$(NoWarn);CS1591;IL2104;IL2026;IL3002;IL3050;CA1041;CA1000;CA1862;IDE0051;IDE0052;IDE0005;CA1844;IL2075</NoWarn>
+    <RootNamespace>Honua.Protocols.GeoServices</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Honua.Core.Abstractions\Honua.Core.Abstractions.csproj" />
+    <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\Honua.Geometry\Honua.Geometry.csproj" />
+    <ProjectReference Include="..\Honua.Hosting\Honua.Hosting.csproj" />
+    <ProjectReference Include="..\Honua.Geoprocessing\Honua.Geoprocessing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Apache.Arrow" />
+    <PackageReference Include="ParquetSharp" />
+    <PackageReference Include="StackExchange.Redis" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Honua.Server" />
+    <InternalsVisibleTo Include="Honua.Server.Tests" />
+    <InternalsVisibleTo Include="Honua.Protocols.GeoServices.Tests" />
+    <InternalsVisibleTo Include="Honua.TestKit" />
+    <InternalsVisibleTo Include="Honua.Benchmarks" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+
+</Project>

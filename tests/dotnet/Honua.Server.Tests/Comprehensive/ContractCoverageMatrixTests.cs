@@ -152,7 +152,13 @@ public sealed class ContractCoverageMatrixTests
     [Trait("Category", "Architecture")]
     public void GeometryService_EndpointCoverage_MeetsMinimumDepth()
     {
-        var geometryTestTypes = typeof(ContractCoverageMatrixTests).Assembly.GetTypes()
+        // The GeometryService scenario tests were extracted into
+        // Honua.Protocols.GeoServices.Tests, so scan that assembly alongside
+        // Server.Tests (referenced by this project for exactly this reflection).
+        var geometryServiceTestAssembly =
+            System.Reflection.Assembly.Load("Honua.Protocols.GeoServices.Tests");
+        var geometryTestTypes = new[] { typeof(ContractCoverageMatrixTests).Assembly, geometryServiceTestAssembly }
+            .SelectMany(assembly => assembly.GetTypes())
             .Where(type => type.Namespace is not null
                 && type.Namespace.Contains("GeometryService", StringComparison.Ordinal))
             .ToArray();

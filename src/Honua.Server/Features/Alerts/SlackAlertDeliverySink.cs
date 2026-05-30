@@ -9,7 +9,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Alerts;
+namespace Honua.Alerts;
 
 internal sealed class SlackAlertDeliverySink : IAlertDeliverySink
 {

@@ -5,7 +5,7 @@ using System.Text.Json;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
-using Honua.Server.Features.Infrastructure.Styling;
+using Honua.Server.Features.Styling;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Styling;

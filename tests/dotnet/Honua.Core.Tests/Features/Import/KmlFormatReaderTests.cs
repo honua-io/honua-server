@@ -2,7 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text;
-using Honua.Core.Features.Import.Services;
+using Honua.Core.Features.Migration.Services;
+using Honua.Core.Features.FileImport.Services;
 using NetTopologySuite.Geometries;
 
 namespace Honua.Core.Tests.Features.Import;

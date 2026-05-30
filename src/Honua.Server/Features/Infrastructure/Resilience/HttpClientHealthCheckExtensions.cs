@@ -7,7 +7,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using Polly.CircuitBreaker;
 
-namespace Honua.Server.Features.Infrastructure.Resilience;
+namespace Honua.Infrastructure.Resilience;
 
 /// <summary>
 /// Extension methods for adding HTTP client health checks with circuit breaker awareness.

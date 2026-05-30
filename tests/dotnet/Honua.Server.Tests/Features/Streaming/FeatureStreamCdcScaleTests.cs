@@ -4,7 +4,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using FluentAssertions;
-using Honua.Server.Features.Infrastructure.Events;
+using Honua.Infrastructure.Events;
 using Honua.Server.Features.Streaming;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;

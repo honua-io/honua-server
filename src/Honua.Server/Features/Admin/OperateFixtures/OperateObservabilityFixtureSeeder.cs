@@ -11,8 +11,8 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Observability.Domain;
-using Honua.Server.Features.Infrastructure.ControlPlane;
-using Honua.Server.Features.Infrastructure.Monitoring;
+using Honua.ControlPlane;
+using Honua.Infrastructure.Monitoring;
 using Npgsql;
 using NpgsqlTypes;
 

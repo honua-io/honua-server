@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <RootNamespace>Honua.Server.Tests.Features.Protocols.Mcp</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Audit-A2 transitional: NlQueryTestResources is a Server.Tests-internal
+      helper consumed by both NlQuery unit tests in Server.Tests AND the
+      Mcp-coupled AiBuilderEndToEndContractTests in this project.
+      Compile-link until NlQuery has its own test project.
+    -->
+    <Compile Include="..\Honua.Server.Tests\Features\NlQuery\NlQueryTestResources.cs" Link="NlQueryTestResources.cs" />
+    <Compile Include="..\Honua.Server.Tests\Features\Reporting\ReportingFixtures.cs" Link="ReportingFixtures.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="xunit.runner.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Ai\Honua.Ai.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Server\Honua.Server.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Postgres\Honua.Postgres.csproj" />
+    <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
+  </ItemGroup>
+
+</Project>

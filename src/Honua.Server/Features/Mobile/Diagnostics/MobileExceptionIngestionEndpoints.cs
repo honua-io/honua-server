@@ -4,8 +4,8 @@
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.Infrastructure.Models;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 

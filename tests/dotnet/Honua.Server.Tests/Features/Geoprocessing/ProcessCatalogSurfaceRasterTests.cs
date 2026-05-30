@@ -3,7 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Domain;
-using Honua.Server.Features.Geoprocessing;
+using Honua.Geoprocessing;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;

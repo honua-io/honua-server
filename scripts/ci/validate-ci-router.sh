@@ -108,14 +108,14 @@ assert_descriptor \
 
 assert_descriptor \
   "feature-server-slice" \
-  "src/Honua.Server/Features/Protocols/GeoServices/FeatureServer/FeatureServerEndpoints.cs" \
+  "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerEndpoints.cs" \
   "targeted" \
   "false" \
   "FeatureServer Endpoints"
 
 assert_descriptor \
   "shared-infrastructure" \
-  "src/Honua.Server/Features/Infrastructure/Validation/ValidationExtensions.cs" \
+  "src/Honua.Server/Features/Infrastructure/Hosting/FeatureRegistrationExtensions.cs" \
   "infrastructure_change" \
   "true" \
   "Core"

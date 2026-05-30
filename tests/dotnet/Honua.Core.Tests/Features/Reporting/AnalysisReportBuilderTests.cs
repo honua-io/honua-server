@@ -21,7 +21,7 @@ namespace Honua.Core.Tests.Features.Reporting;
 /// deterministic narrative composition, LLM enrichment, and clean fallback
 /// when the LLM provider fails.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(ProtocolNames.TestQuality)]
 public sealed class AnalysisReportBuilderTests
 {
     private static readonly DateTimeOffset _fixedInstant = DateTimeOffset.Parse("2026-04-24T10:00:00Z", CultureInfo.InvariantCulture);

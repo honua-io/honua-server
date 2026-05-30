@@ -6,7 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Honua.Core.Features.Infrastructure.Monitoring;
-using Honua.Server.Features.Infrastructure.Monitoring;
+using Honua.Infrastructure.Monitoring;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;

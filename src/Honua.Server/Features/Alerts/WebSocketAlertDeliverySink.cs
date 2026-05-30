@@ -4,9 +4,9 @@
 using System.Collections.Concurrent;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
-using Honua.Server.Features.Infrastructure.Abstractions;
+using Honua.Infrastructure.Abstractions;
 
-namespace Honua.Server.Features.Alerts;
+namespace Honua.Alerts;
 
 /// <summary>
 /// Default in-memory implementation of the alert notification broadcaster.
