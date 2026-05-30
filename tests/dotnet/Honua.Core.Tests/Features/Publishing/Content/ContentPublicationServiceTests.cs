@@ -21,7 +21,7 @@ namespace Honua.Core.Tests.Features.Publishing.Content;
 /// immutable versions, route pointer semantics, rollback/republish, policy/public-link,
 /// generated-app revision preview, dependency validation, and JSON serialization.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(ProtocolNames.TestQuality)]
 public sealed class ContentPublicationServiceTests
 {
     private const string Actor = "tester";

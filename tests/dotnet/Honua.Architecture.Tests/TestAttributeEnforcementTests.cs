@@ -78,7 +78,7 @@ public sealed class TestAttributeEnforcementTests
 
                 var methodProtocols = GetProtocolValues(method);
                 var effectiveProtocols = classProtocols.Concat(methodProtocols).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-                var requiresEndpoint = !effectiveProtocols.Contains(Protocols.TestQuality, StringComparer.OrdinalIgnoreCase) &&
+                var requiresEndpoint = !effectiveProtocols.Contains(ProtocolNames.TestQuality, StringComparer.OrdinalIgnoreCase) &&
                     !effectiveOperations.Any(operation => _operationsWithoutEndpointRequirement.Contains(operation));
 
                 if (requiresEndpoint)
@@ -103,7 +103,7 @@ public sealed class TestAttributeEnforcementTests
         var testAssembly = typeof(Honua.Server.Tests.Import.UniversalProgressStoreIntegrationTests).Assembly;
         var invalidProtocolValues = new List<string>();
 
-        var validProtocols = GetConstantValues(typeof(Protocols));
+        var validProtocols = GetConstantValues(typeof(ProtocolNames));
 
         foreach (var type in ArchitectureTestHelpers.GetTypesSafely(testAssembly))
         {

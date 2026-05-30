@@ -18,7 +18,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Collaboration.Sessions;
 
-[Protocol(Honua.TestKit.Constants.Protocols.Streaming)]
+[Protocol(Honua.TestKit.Constants.ProtocolNames.Streaming)]
 [Operation(Honua.TestKit.Constants.Operations.Streaming)]
 public sealed class CollaborationSessionEndpointsTests
 {

@@ -13,7 +13,7 @@ namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 /// <summary>
 /// Tests for the Metadata v2 core model scaffold.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(ProtocolNames.TestQuality)]
 public sealed class MetadataV2ModelTests
 {
     [UnitTest]

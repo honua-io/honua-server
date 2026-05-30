@@ -19,7 +19,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Collaboration.FeatureLocks;
 
-[Protocol(Honua.TestKit.Constants.Protocols.Streaming)]
+[Protocol(Honua.TestKit.Constants.ProtocolNames.Streaming)]
 [Operation(Honua.TestKit.Constants.Operations.Update)]
 public sealed class FeatureLockEndpointsTests
 {

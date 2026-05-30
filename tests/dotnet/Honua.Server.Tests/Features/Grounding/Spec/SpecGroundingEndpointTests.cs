@@ -14,7 +14,7 @@ using Honua.TestKit.Constants;
 namespace Honua.Server.Tests.Features.Grounding.Spec;
 
 [Collection("Database")]
-[Protocol(global::Honua.TestKit.Constants.Protocols.Grounding)]
+[Protocol(global::Honua.TestKit.Constants.ProtocolNames.Grounding)]
 public sealed class SpecGroundingEndpointTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture;

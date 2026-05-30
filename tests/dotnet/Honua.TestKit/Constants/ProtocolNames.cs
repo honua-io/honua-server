@@ -7,7 +7,7 @@ namespace Honua.TestKit.Constants;
 /// Protocol identifiers for test trait attributes.
 /// Used with <see cref="Attributes.ProtocolAttribute"/> for test categorization.
 /// </summary>
-public static class Protocols
+public static class ProtocolNames
 {
     /// <summary>
     /// GeoServices REST API (Feature Server).

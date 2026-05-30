@@ -16,7 +16,7 @@ namespace Honua.Core.Tests.Features.AutoDocs;
 /// Tests verifying that the metadata document generator produces valid
 /// ISO 19115 XML, FGDC XML, and data dictionary output.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(ProtocolNames.TestQuality)]
 public sealed class MetadataDocumentGeneratorTests
 {
     private readonly MetadataDocumentGenerator _generator = new();

@@ -13,7 +13,7 @@ namespace Honua.Core.Tests.Features.Geoprocessing;
 /// <summary>
 /// Unit tests for packaging domain models.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(ProtocolNames.TestQuality)]
 public sealed class PackageDomainTests
 {
     [UnitTest]

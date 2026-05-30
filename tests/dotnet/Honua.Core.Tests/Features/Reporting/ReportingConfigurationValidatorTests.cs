@@ -14,7 +14,7 @@ namespace Honua.Core.Tests.Features.Reporting;
 /// enabled, including refusing unsupported provider tokens that would be
 /// silently ignored at registration time.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(ProtocolNames.TestQuality)]
 public sealed class ReportingConfigurationValidatorTests
 {
     [UnitTest]

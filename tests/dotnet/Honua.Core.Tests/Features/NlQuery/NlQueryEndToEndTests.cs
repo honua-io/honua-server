@@ -17,7 +17,7 @@ namespace Honua.Core.Tests.Features.NlQuery;
 /// correctly into the expected FilterExpression AST. These represent the 10
 /// acceptance criteria test cases for ticket #343.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(ProtocolNames.TestQuality)]
 public sealed class NlQueryEndToEndTests
 {
     private readonly MetadataV2Resource _parcelsResource;

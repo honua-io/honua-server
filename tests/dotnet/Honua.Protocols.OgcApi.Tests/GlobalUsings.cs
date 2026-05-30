@@ -8,4 +8,4 @@ global using Honua.Server.Features.Infrastructure.Authentication;
 global using Honua.Server.Features.Protocols.Ogc.Classic.Wfs20.Services;
 global using Honua.TestKit.Extensions;
 global using Operations = Honua.TestKit.Constants.Operations;
-global using TestProtocols = Honua.TestKit.Constants.Protocols;
+global using TestProtocols = Honua.TestKit.Constants.ProtocolNames;

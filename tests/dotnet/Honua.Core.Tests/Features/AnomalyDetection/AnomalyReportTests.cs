@@ -11,7 +11,7 @@ namespace Honua.Core.Tests.Features.AnomalyDetection;
 /// <summary>
 /// Unit tests for anomaly detection domain models and report structures.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(ProtocolNames.TestQuality)]
 public sealed class AnomalyReportTests
 {
     [UnitTest]

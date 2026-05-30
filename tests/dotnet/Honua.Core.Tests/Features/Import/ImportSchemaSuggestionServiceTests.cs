@@ -18,7 +18,7 @@ namespace Honua.Core.Tests.Features.Import;
 /// <summary>
 /// Tests for the import schema suggestion service.
 /// </summary>
-[Protocol(Protocols.TestQuality)]
+[Protocol(ProtocolNames.TestQuality)]
 public sealed class ImportSchemaSuggestionServiceTests
 {
     private readonly ImportSchemaSuggestionService _service = new();

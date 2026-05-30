@@ -18,7 +18,7 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Validation;
 
-[Protocol(Honua.TestKit.Constants.Protocols.TestQuality)]
+[Protocol(Honua.TestKit.Constants.ProtocolNames.TestQuality)]
 public sealed class LayerValidationHelpersV2Tests
 {
     [UnitTest]

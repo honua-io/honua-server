@@ -7,7 +7,7 @@ using Honua.TestKit.Constants;
 
 namespace Honua.Core.Tests.Features.Metadata;
 
-[Protocol(Protocols.TestQuality)]
+[Protocol(ProtocolNames.TestQuality)]
 public sealed class MetadataV2SecurityCacheMigrationScaffoldTests
 {
     [UnitTest]
