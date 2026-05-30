@@ -51,6 +51,12 @@
          The Linux native asset stays on Server.csproj; consumers that
          actually rasterize already reference Server. -->
     <PackageReference Include="SkiaSharp" />
+    <!-- StackExchange.Redis backs the carved Infrastructure/Redis base cluster
+         (RedisServiceBase + health/fallback + job-queue/leader-election), lifted
+         here so protocol assemblies (GeoServices) and Server can share it. The
+         cluster depends only on Honua.Core's Redis abstractions (no Jobs/Server
+         dependency, so no Hosting->Jobs cycle). -->
+    <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>
 
   <ItemGroup>
