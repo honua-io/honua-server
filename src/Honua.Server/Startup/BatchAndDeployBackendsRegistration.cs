@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.ControlPlane.Abstractions;
-using Honua.Server.Features.ControlPlane;
+using Honua.ControlPlane;
 using Honua.Server.Features.Orchestration;
 
 namespace Honua.Server.Startup;

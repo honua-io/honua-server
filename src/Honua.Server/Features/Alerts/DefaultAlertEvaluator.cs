@@ -10,7 +10,7 @@ using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using NetTopologySuite.IO;
 
-namespace Honua.Server.Features.Alerts;
+namespace Honua.Alerts;
 
 internal sealed class DefaultAlertEvaluator : IAlertEvaluator
 {

@@ -23,7 +23,7 @@ using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
 using Honua.Import;
-using Honua.Server.Features.Migration;
+using Honua.Migration;
 using Honua.Import.FileImport;
 using Honua.Import.RasterImport;
 

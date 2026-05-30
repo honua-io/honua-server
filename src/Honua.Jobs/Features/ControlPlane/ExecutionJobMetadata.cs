@@ -2,7 +2,7 @@
 
 using Honua.Core.Features.ControlPlane.Domain;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 internal static class ExecutionJobMetadata
 {

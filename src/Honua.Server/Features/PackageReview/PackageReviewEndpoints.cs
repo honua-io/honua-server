@@ -8,7 +8,7 @@ using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Server.Features.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Honua.Server.Features.PackageReview;
+namespace Honua.PackageReview;
 
 /// <summary>
 /// Admin endpoints for package validation and read-only preview planning.

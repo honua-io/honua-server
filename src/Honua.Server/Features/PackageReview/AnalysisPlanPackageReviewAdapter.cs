@@ -8,7 +8,7 @@ using Honua.Core.Features.PackageReview.Abstractions;
 using Honua.Core.Features.PackageReview.Domain;
 using Honua.Geoprocessing;
 
-namespace Honua.Server.Features.PackageReview;
+namespace Honua.PackageReview;
 
 internal sealed class AnalysisPlanPackageReviewAdapter : IPackageFamilyReviewAdapter
 {

@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,

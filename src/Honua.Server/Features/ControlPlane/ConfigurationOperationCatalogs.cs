@@ -5,7 +5,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 /// <summary>
 /// Configuration-backed deploy target registry for control-plane workflows.

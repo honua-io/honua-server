@@ -8,7 +8,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Share.Abstractions;
 using Honua.Core.Features.Share.Domain;
 using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.ControlPlane;
+using Honua.ControlPlane;
 using Honua.Server.Features.Infrastructure.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;

@@ -5,7 +5,7 @@ using System.Net;
 using Amazon.S3;
 using Honua.Core.Features.Infrastructure.Abstractions;
 
-namespace Honua.Server.Features.FileStorage;
+namespace Honua.FileStorage;
 
 /// <summary>
 /// Recognizes AWS S3 "missing object" failures (<see cref="AmazonS3Exception"/>

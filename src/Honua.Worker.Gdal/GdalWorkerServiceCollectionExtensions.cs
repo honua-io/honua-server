@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Server.Features.ControlPlane;
+using Honua.ControlPlane;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

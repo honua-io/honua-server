@@ -7,7 +7,7 @@ using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.PackageReview.Domain;
 using Honua.Geoprocessing;
-using Honua.Server.Features.PackageReview;
+using Honua.PackageReview;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using NSubstitute;

@@ -9,7 +9,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.FileStorage;
+namespace Honua.FileStorage;
 
 /// <summary>
 /// Local filesystem implementation of cloud file storage for development and testing

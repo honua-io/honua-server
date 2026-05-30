@@ -7,7 +7,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Microsoft.Extensions.Hosting;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 /// <summary>
 /// Reconciles durable execution-job records against pluggable batch-compute backends.

@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 using Honua.Core.Features.PackageReview.Domain;
 using Honua.Server.Features.Infrastructure.Models;
 
-namespace Honua.Server.Features.PackageReview;
+namespace Honua.PackageReview;
 
 /// <summary>
 /// Source-generated JSON context for package-review HTTP and MCP adapters.

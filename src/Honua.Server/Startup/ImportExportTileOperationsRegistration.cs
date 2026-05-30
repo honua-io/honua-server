@@ -14,7 +14,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Server.Features.Admin.TileOperations;
 using Honua.Io.Export;
 using Honua.Import;
-using Honua.Server.Features.Migration;
+using Honua.Migration;
 using Honua.Import.FileImport;
 using Honua.Import.RasterImport;
 using Honua.Server.Features.Infrastructure.Abstractions;

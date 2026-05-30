@@ -4,7 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 
-namespace Honua.Server.Features.FileStorage;
+namespace Honua.FileStorage;
 
 internal static class CloudStorageMetadata
 {

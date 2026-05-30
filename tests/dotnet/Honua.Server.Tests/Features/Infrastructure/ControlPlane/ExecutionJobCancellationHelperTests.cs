@@ -5,7 +5,7 @@ using System.Diagnostics.Metrics;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Server.Features.ControlPlane;
+using Honua.ControlPlane;
 using Honua.ServiceDefaults;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;

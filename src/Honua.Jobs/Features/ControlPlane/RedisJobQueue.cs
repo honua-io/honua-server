@@ -6,7 +6,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 /// <summary>
 /// Detects and recovers claims that were orphaned between the atomic queue move

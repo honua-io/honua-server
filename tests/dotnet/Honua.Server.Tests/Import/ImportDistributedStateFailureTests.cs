@@ -7,7 +7,7 @@ using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Import;
-using Honua.Server.Features.Migration;
+using Honua.Migration;
 using Honua.Import.FileImport;
 using Honua.Import.RasterImport;
 using Honua.Server.Features.Infrastructure.Progress;

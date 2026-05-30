@@ -5,7 +5,7 @@ using System.Collections.Concurrent;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 
-namespace Honua.Server.Features.FileStorage;
+namespace Honua.FileStorage;
 
 /// <summary>
 /// In-memory implementation of upload progress store.

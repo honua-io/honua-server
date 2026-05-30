@@ -5,7 +5,7 @@ using System.Net;
 using Azure;
 using Honua.Core.Features.Infrastructure.Abstractions;
 
-namespace Honua.Server.Features.FileStorage;
+namespace Honua.FileStorage;
 
 /// <summary>
 /// Recognizes Azure Blob "missing object" failures (<see cref="RequestFailedException"/>

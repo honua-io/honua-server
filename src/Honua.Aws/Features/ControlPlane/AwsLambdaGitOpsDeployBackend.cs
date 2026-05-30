@@ -7,7 +7,7 @@ using Amazon.Lambda.Model;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 /// <summary>
 /// Built-in GitOps deploy backend for AWS Lambda targets managed by Honua.

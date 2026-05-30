@@ -9,7 +9,7 @@ using Honua.Core.Features.Alerts.Domain;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Honua.Server.Features.Alerts;
+namespace Honua.Alerts;
 
 /// <summary>
 /// Registers the AWS-backed alert delivery sinks (SNS, SQS) and their thin

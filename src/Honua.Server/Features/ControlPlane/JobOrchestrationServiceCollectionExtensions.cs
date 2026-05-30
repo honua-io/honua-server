@@ -8,7 +8,7 @@ using Honua.Geoprocessing;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 /// <summary>
 /// Registers durable job orchestration services, separated into API-side and

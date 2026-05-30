@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Infrastructure.IO;
 
-namespace Honua.Server.Features.FileStorage;
+namespace Honua.FileStorage;
 
 internal sealed class CancellableReadStream : DelegatingStream
 {

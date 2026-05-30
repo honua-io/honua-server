@@ -4,7 +4,7 @@
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Infrastructure.Domain;
 
-namespace Honua.Server.Features.FileStorage;
+namespace Honua.FileStorage;
 
 /// <summary>
 /// JSON source generation context for local file storage metadata.

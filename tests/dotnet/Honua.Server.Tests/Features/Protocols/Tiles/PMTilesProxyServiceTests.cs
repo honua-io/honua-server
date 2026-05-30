@@ -8,7 +8,7 @@ using Azure;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Server.Features.FileStorage;
+using Honua.FileStorage;
 using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 using Microsoft.Extensions.Options;
 

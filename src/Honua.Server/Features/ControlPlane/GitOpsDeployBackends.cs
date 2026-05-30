@@ -4,7 +4,7 @@
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 /// <summary>
 /// Built-in GitOps deploy backend for Kubernetes targets managed by Honua.

@@ -6,7 +6,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.PackageReview.Abstractions;
 using Honua.Core.Features.PackageReview.Domain;
 using Honua.Geoprocessing;
-using Honua.Server.Features.PackageReview;
+using Honua.PackageReview;
 using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;

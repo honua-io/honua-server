@@ -11,7 +11,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Hosting;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.Migration;
+namespace Honua.Migration;
 
 internal sealed class ImportJobManagerState<TRequest, TProgress>
     where TRequest : class

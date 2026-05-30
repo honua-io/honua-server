@@ -11,11 +11,11 @@ using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
 using Honua.Import;
-using Honua.Server.Features.Migration;
+using Honua.Migration;
 using Honua.Import.FileImport;
 using Honua.Import.RasterImport;
 
-namespace Honua.Server.Features.Migration;
+namespace Honua.Migration;
 
 /// <summary>
 /// Source-generated JSON serialization context for OGC coverage import endpoint payloads.

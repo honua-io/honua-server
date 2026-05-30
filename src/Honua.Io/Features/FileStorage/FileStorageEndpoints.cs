@@ -3,7 +3,7 @@
 
 using Microsoft.AspNetCore.Routing;
 
-namespace Honua.Server.Features.FileStorage;
+namespace Honua.FileStorage;
 
 /// <summary>
 /// Placeholder for FileStorage feature endpoints.

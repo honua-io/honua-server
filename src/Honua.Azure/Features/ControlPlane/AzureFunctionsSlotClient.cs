@@ -8,7 +8,7 @@ using System.Text.Json;
 using Azure.Core;
 using Azure.Identity;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 internal sealed record AzureFunctionsSiteConfigState
 {

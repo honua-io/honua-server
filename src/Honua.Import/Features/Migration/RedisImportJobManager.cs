@@ -18,7 +18,7 @@ using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Microsoft.Extensions.Hosting;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.Migration;
+namespace Honua.Migration;
 
 /// <summary>
 /// Redis-based distributed import job manager with in-memory fallback.

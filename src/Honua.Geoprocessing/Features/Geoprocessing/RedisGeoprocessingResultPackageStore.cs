@@ -6,7 +6,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 /// <summary>
 /// Redis-backed store for terminal geoprocessing result packages.

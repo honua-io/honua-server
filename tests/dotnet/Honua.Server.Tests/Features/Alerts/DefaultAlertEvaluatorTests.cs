@@ -5,7 +5,7 @@ using System.Collections.Immutable;
 using FluentAssertions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Server.Features.Alerts;
+using Honua.Alerts;
 using Honua.TestKit.Attributes;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;

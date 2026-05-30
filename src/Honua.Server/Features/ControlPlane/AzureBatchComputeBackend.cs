@@ -6,7 +6,7 @@ using System.Net;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 /// <summary>
 /// Azure Batch execution adapter. Maps the canonical <see cref="ExecutionJobRecord"/>

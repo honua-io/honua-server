@@ -11,7 +11,7 @@ using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Server.Features.Infrastructure.Events;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Alerts;
+namespace Honua.Alerts;
 
 internal sealed class WebhookAlertDeliverySink : IAlertDeliverySink
 {

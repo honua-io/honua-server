@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Server.Features.ControlPlane;
+using Honua.ControlPlane;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;
 

@@ -6,7 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.PackageReview.Domain;
 using Honua.Server.Features.Infrastructure.Models;
-using Honua.Server.Features.PackageReview;
+using Honua.PackageReview;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;

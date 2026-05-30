@@ -8,7 +8,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 /// <summary>
 /// Evaluates live deploy telemetry signals against a queryable backend.

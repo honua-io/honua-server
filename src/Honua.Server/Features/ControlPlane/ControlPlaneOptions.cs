@@ -7,7 +7,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Validation;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 /// <summary>
 /// Configuration-backed catalogs for control-plane deploy targets and workload definitions.

@@ -8,7 +8,7 @@ using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.FileImport.Domain;
 
-namespace Honua.Server.Features.Migration;
+namespace Honua.Migration;
 
 internal interface IImportWorkerJobManager<TRequest, TProgress> : IImportCoordinationHealth
     where TRequest : class

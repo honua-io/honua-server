@@ -5,7 +5,7 @@ using Amazon;
 using Amazon.Batch;
 using Amazon.Batch.Model;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 /// <summary>
 /// Provider-neutral environment variable override for an AWS Batch container.

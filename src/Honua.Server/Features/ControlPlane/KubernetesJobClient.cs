@@ -9,7 +9,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 /// <summary>
 /// Result envelope returned by <see cref="IKubernetesJobClient.CreateJobAsync"/>.

@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Alerts.Domain;
 
-namespace Honua.Server.Features.Alerts;
+namespace Honua.Alerts;
 
 /// <summary>
 /// Shared metadata builder for alert delivery message attributes.

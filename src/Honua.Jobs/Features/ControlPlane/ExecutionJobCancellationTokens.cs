@@ -4,7 +4,7 @@
 using System.Collections.Concurrent;
 using Honua.Core.Features.Infrastructure.Abstractions;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 /// <summary>
 /// Tracks per-job cancellation token sources for execution jobs so that in-flight

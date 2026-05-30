@@ -69,7 +69,7 @@ public sealed class InfrastructureMisfileRatchetTests
 
         var relocatedTargets = new[]
         {
-            "Honua.Server.Features.ControlPlane",
+            "Honua.ControlPlane",
             "Honua.Server.Features.Styling",
         };
 

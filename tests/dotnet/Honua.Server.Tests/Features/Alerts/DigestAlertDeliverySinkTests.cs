@@ -6,7 +6,7 @@ using System.Globalization;
 using FluentAssertions;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
-using Honua.Server.Features.Alerts;
+using Honua.Alerts;
 using Honua.Server.Features.Infrastructure.Events;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;

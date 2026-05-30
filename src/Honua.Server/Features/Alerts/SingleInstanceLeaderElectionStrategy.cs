@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Alerts.Abstractions;
 
-namespace Honua.Server.Features.Alerts;
+namespace Honua.Alerts;
 
 /// <summary>
 /// Local fallback used when alert evaluation runs without a database-backed leader election dependency.

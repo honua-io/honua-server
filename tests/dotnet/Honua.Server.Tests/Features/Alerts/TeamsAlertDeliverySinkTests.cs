@@ -4,7 +4,7 @@
 using System.Net;
 using System.Text.Json;
 using Honua.Core.Features.Alerts.Domain;
-using Honua.Server.Features.Alerts;
+using Honua.Alerts;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Options;
 using NSubstitute;

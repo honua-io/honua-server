@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.CogParser;
-using Honua.Server.Features.FileStorage;
+using Honua.FileStorage;
 
 namespace Honua.Server.Features.Protocols.Cog;
 

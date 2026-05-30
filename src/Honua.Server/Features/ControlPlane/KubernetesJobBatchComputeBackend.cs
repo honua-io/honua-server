@@ -7,7 +7,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 /// <summary>
 /// Batch compute adapter that executes canonical execution jobs on a Kubernetes

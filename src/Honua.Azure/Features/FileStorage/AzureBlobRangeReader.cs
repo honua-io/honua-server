@@ -7,7 +7,7 @@ using Azure.Storage.Blobs.Models;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 
-namespace Honua.Server.Features.FileStorage;
+namespace Honua.FileStorage;
 
 /// <summary>
 /// Azure Blob Storage implementation of <see cref="ICloudRangeReader"/> using native range requests.

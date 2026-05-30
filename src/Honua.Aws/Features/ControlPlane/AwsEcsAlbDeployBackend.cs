@@ -14,7 +14,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ServiceDefaults;
 using AlbAction = Amazon.ElasticLoadBalancingV2.Model.Action;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 /// <summary>
 /// Weight entry for one ALB target group within a listener-rule forward action.

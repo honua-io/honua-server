@@ -4,7 +4,7 @@
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 
-namespace Honua.Server.Features.Alerts;
+namespace Honua.Alerts;
 
 internal sealed class UnsupportedAlertDeliverySink : IAlertDeliverySink
 {

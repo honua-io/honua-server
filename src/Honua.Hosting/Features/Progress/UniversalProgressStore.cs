@@ -22,7 +22,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.Migration;
+namespace Honua.Migration;
 
 /// <summary>
 /// Redis-based universal progress store with fallback to in-memory storage.

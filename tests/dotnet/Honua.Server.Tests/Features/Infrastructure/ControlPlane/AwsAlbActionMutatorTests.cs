@@ -4,7 +4,7 @@
 using Amazon.ElasticLoadBalancingV2;
 using Amazon.ElasticLoadBalancingV2.Model;
 using FluentAssertions;
-using Honua.Server.Features.ControlPlane;
+using Honua.ControlPlane;
 using AlbAction = Amazon.ElasticLoadBalancingV2.Model.Action;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;

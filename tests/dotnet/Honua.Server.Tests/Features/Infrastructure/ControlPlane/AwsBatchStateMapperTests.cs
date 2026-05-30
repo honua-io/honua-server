@@ -3,7 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
-using Honua.Server.Features.ControlPlane;
+using Honua.ControlPlane;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 

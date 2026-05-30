@@ -8,7 +8,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 // IJobExecutionContext is in the Abstractions namespace above.
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
-using Honua.Server.Features.ControlPlane;
+using Honua.ControlPlane;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Features;

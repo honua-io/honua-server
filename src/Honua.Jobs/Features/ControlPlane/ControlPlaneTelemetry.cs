@@ -6,7 +6,7 @@ using System.Diagnostics.Metrics;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ServiceDefaults;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 /// <summary>
 /// OpenTelemetry instrumentation for control-plane workflow operations.

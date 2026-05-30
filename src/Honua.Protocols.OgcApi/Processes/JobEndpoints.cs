@@ -12,7 +12,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Geoprocessing;
 using Honua.Server.Features.Infrastructure.Authentication;
-using Honua.Server.Features.ControlPlane;
+using Honua.ControlPlane;
 using Honua.Server.Features.Infrastructure.Helpers;
 using Honua.Server.Features.Infrastructure;
 using Honua.Protocols.Ogc.Common;

@@ -3,7 +3,7 @@
 
 using System.Text.Json;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 /// <summary>
 /// Low-level JSON helpers for Kubernetes Job and Pod payloads. Uses

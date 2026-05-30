@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 /// <summary>
 /// Normalized view of a Kubernetes Job's lifecycle-relevant fields, derived from the

@@ -4,7 +4,7 @@
 using System.Diagnostics;
 using Honua.Core.Features.Infrastructure.Domain;
 
-namespace Honua.Server.Features.FileStorage;
+namespace Honua.FileStorage;
 
 /// <summary>
 /// Stream wrapper that tracks upload progress and reports it via IProgress callback.

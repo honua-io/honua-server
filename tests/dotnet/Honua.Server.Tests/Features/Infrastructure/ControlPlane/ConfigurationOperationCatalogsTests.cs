@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Server.Features.ControlPlane;
+using Honua.ControlPlane;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;

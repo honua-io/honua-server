@@ -5,7 +5,7 @@ using Honua.Core.Features.PackageReview;
 using Honua.Core.Features.PackageReview.Abstractions;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Honua.Server.Features.PackageReview;
+namespace Honua.PackageReview;
 
 /// <summary>
 /// Dependency-injection wiring for package validation and preview planning.

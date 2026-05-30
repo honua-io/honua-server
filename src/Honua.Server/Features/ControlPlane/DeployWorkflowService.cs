@@ -14,7 +14,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 /// <summary>
 /// Server-side control-plane service for durable deploy workflow operations.

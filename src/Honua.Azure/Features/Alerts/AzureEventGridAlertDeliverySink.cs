@@ -8,7 +8,7 @@ using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Alerts;
+namespace Honua.Alerts;
 
 internal sealed class AzureEventGridAlertDeliverySink : IAlertDeliverySink
 {

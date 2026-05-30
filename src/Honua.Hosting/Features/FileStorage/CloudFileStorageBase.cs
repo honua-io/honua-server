@@ -6,7 +6,7 @@ using System.Diagnostics;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 
-namespace Honua.Server.Features.FileStorage;
+namespace Honua.FileStorage;
 
 internal abstract class CloudFileStorageBase : ICloudFileStorage
 {

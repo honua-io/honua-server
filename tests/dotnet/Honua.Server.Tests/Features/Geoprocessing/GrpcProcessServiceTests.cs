@@ -13,7 +13,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Geoprocessing;
-using Honua.Server.Features.ControlPlane;
+using Honua.ControlPlane;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;

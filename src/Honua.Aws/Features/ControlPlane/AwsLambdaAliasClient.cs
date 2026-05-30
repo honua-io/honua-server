@@ -5,7 +5,7 @@ using Amazon;
 using Amazon.Lambda;
 using Amazon.Lambda.Model;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 internal sealed record AwsLambdaAliasState
 {

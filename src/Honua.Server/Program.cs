@@ -35,11 +35,11 @@ using Honua.Server.Features.Console;
 using Honua.Server.Features.Collaboration.Sessions;
 using Honua.Io.Export;
 using Honua.Server.Features.PrintingTools;
-using Honua.Server.Features.ControlPlane;
-using Honua.Server.Features.FileStorage;
+using Honua.ControlPlane;
+using Honua.FileStorage;
 using Honua.Server.Features.HealthCheck;
 using Honua.Import;
-using Honua.Server.Features.Migration;
+using Honua.Migration;
 using Honua.Import.FileImport;
 using Honua.Import.RasterImport;
 using Honua.Server.Features.Infrastructure.Authentication;
@@ -63,7 +63,7 @@ using Honua.Server.Features.Mobile.Diagnostics;
 using Honua.Server.Features.Mobile.FieldCollection;
 using Honua.Server.Features.Orchestration;
 using Honua.Server.Features.Studio;
-using Honua.Server.Features.PackageReview;
+using Honua.PackageReview;
 using Honua.Server.Features.Streaming;
 using Honua.Server.Features.WorkflowPackages;
 using Honua.Server.Startup;
@@ -583,10 +583,10 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Infrastructure.Monitoring.MetricsJsonContext.Default,
         Honua.Import.FileImport.ImportJsonContext.Default,
         Honua.Import.RasterImport.RasterImportJsonContext.Default,
-        Honua.Server.Features.Migration.GeoservicesImportApiJsonContext.Default,
-        Honua.Server.Features.Migration.OgcWfsImportJsonContext.Default,
-        Honua.Server.Features.Migration.OgcCoverageImportJsonContext.Default,
-        Honua.Server.Features.Migration.OgcWcsImportJsonContext.Default,
+        Honua.Migration.GeoservicesImportApiJsonContext.Default,
+        Honua.Migration.OgcWfsImportJsonContext.Default,
+        Honua.Migration.OgcCoverageImportJsonContext.Default,
+        Honua.Migration.OgcWcsImportJsonContext.Default,
         Honua.Server.Features.Admin.OperationsProgressJsonContext.Default,
         Honua.Server.Features.Admin.FeatureEventReplayJsonContext.Default,
         Honua.Server.Features.Mobile.Auth.MobileAuthJsonContext.Default,
@@ -627,7 +627,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.CacheOperationsJsonContext.Default,
         Honua.Server.Features.Admin.Models.StreamingOperationsJsonContext.Default,
         Honua.Server.Features.Admin.Models.GeocodingOperationsJsonContext.Default,
-        Honua.Server.Features.PackageReview.PackageReviewJsonContext.Default,
+        Honua.PackageReview.PackageReviewJsonContext.Default,
         Honua.Server.Features.CloudDemo.CloudDemoJsonContext.Default,
         Honua.Server.Features.HealthCheck.HealthJsonContext.Default,
         Honua.Server.Features.Infrastructure.Models.ProblemJsonContext.Default,

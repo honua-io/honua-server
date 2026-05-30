@@ -11,11 +11,11 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageLicenseExpression>Elastic-2.0</PackageLicenseExpression>
     <!--
-      Namespaces are preserved as Honua.Server.Features.ControlPlane so consumers
+      Namespaces are preserved as Honua.ControlPlane so consumers
       (Server, Worker.Gdal, tests) keep their using clauses unchanged. This is the
       same approach used by Honua.Hosting (RootNamespace = Honua.Server.Features.Infrastructure).
     -->
-    <RootNamespace>Honua.Server.Features.ControlPlane</RootNamespace>
+    <RootNamespace>Honua.ControlPlane</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

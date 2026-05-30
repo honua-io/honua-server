@@ -8,7 +8,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Share.Abstractions;
 using Honua.Core.Features.Share.Domain;
 using Honua.Server.Features.Admin.Share;
-using Honua.Server.Features.ControlPlane;
+using Honua.ControlPlane;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;

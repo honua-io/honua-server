@@ -6,7 +6,7 @@ using Amazon.S3.Model;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 
-namespace Honua.Server.Features.FileStorage;
+namespace Honua.FileStorage;
 
 /// <summary>
 /// AWS S3 implementation of <see cref="ICloudRangeReader"/> using native byte-range requests.

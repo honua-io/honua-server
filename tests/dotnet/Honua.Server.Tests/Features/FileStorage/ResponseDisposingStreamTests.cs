@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
-using Honua.Server.Features.FileStorage;
+using Honua.FileStorage;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.FileStorage;

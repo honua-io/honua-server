@@ -7,7 +7,7 @@ using Amazon.Runtime;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 /// <summary>
 /// Parameter keys used on <see cref="ExecutionJobSpec.Parameters"/> to drive AWS Batch submissions.

@@ -10,7 +10,7 @@ using Honua.Core.Features.Alerts.Domain;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Honua.Server.Features.Alerts;
+namespace Honua.Alerts;
 
 /// <summary>
 /// Registers the Azure-backed alert delivery sinks (Event Grid, Event Hub) and

@@ -7,7 +7,7 @@ using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.Alerts;
+namespace Honua.Alerts;
 
 /// <summary>
 /// Thin adapter around <see cref="IAmazonSimpleNotificationService"/> for testability.

@@ -10,7 +10,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Server.Features.FileStorage;
+namespace Honua.FileStorage;
 
 internal sealed class AzureBlobFileStorage : CloudFileStorageBase
 {

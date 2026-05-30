@@ -7,7 +7,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 /// <summary>
 /// Redis-backed durable store for deploy workflow operations and reconciliation leases.

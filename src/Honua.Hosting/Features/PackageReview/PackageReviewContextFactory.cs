@@ -5,7 +5,7 @@ using System.Security.Claims;
 using Honua.Core.Features.PackageReview.Domain;
 using Microsoft.AspNetCore.Http;
 
-namespace Honua.Server.Features.PackageReview;
+namespace Honua.PackageReview;
 
 /// <summary>
 /// Builds a <see cref="PackageReviewContext"/> from the calling

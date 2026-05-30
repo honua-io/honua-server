@@ -6,7 +6,7 @@ using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Server.Features.Infrastructure.Helpers;
 
-namespace Honua.Server.Features.Migration;
+namespace Honua.Migration;
 
 internal static class ImportEndpointCoordinationHelper
 {

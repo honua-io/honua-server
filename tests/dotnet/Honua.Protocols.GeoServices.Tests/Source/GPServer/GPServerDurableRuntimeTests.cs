@@ -7,7 +7,7 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Geoprocessing;
-using Honua.Server.Features.ControlPlane;
+using Honua.ControlPlane;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Hosting;

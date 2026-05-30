@@ -8,7 +8,7 @@ using System.Text.Json;
 using Azure.Core;
 using Azure.Identity;
 
-namespace Honua.Server.Features.ControlPlane;
+namespace Honua.ControlPlane;
 
 /// <summary>
 /// Logical task-level execution state reported by Azure Batch.

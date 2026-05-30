@@ -8,7 +8,7 @@ using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Server.Features.Alerts;
+using Honua.Alerts;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.Logging.Abstractions;
