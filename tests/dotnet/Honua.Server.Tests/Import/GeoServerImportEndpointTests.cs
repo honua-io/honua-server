@@ -344,20 +344,41 @@ public class GeoServerImportEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/geoserver/jobs/{jobId}/cancel")]
     public async Task CancelJob_WithQueuedJob_ReturnsCancelled()
     {
-        var startResponse = await _client.PostAsJsonAsync("/api/v1/admin/import/geoserver/start", new
+        // Use an isolated fixture whose import blocks far longer than the cancel
+        // round-trip so the cancellation deterministically wins the race against
+        // completion. With the shared 250ms service, a loaded CI worker can
+        // dequeue and finish the dry-run import (writing the terminal Completed
+        // status) before the cancel request lands, after which the job can never
+        // reach Cancelled and the poll times out. A long, cancellation-honouring
+        // import keeps the job in-flight until the cancel token fires.
+        var slowImportService = new TestGeoServerImportService(TimeSpan.FromSeconds(30));
+        var fixture = new WebAppFixture()
+            .ReplaceService<IGeoServerImportService>(slowImportService);
+
+        try
         {
-            GeoServerRestUrl = "https://example.com/geoserver/rest",
-            DryRun = true
-        });
+            await fixture.InitializeAsync();
+            var client = fixture.Client;
 
-        startResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
-        var jobId = await GetJobIdAsync(startResponse);
+            var startResponse = await client.PostAsJsonAsync("/api/v1/admin/import/geoserver/start", new
+            {
+                GeoServerRestUrl = "https://example.com/geoserver/rest",
+                DryRun = true
+            });
 
-        var cancelResponse = await _client.PostAsync($"/api/v1/admin/import/geoserver/jobs/{jobId}/cancel", null);
-        cancelResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            startResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+            var jobId = await GetJobIdAsync(startResponse);
 
-        var cancelled = await WaitForJobStatusAsync(jobId, "Cancelled", TimeSpan.FromSeconds(10));
-        cancelled.RootElement.GetProperty("status").GetString().Should().Be("Cancelled");
+            var cancelResponse = await client.PostAsync($"/api/v1/admin/import/geoserver/jobs/{jobId}/cancel", null);
+            cancelResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var cancelled = await WaitForJobStatusAsync(client, jobId, "Cancelled", TimeSpan.FromSeconds(20));
+            cancelled.RootElement.GetProperty("status").GetString().Should().Be("Cancelled");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     private async Task<string> GetJobIdAsync(HttpResponseMessage response)

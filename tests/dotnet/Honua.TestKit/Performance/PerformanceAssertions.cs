@@ -71,8 +71,29 @@ public static class PerformanceAssertions
     public static async Task<PerformanceResult> BenchmarkAsync<T>(
         Func<Task<T>> operation,
         int iterations = 10,
-        string? operationName = null)
+        string? operationName = null,
+        int warmupIterations = 3)
     {
+        // Warm up before measuring so first-request costs (JIT, the first
+        // database connection, route/handler compilation) do not skew the
+        // steady-state average. These benchmarks assert steady-state latency
+        // targets, not cold-start cost; on a loaded shared CI runner a single
+        // cold first request over a handful of iterations is enough to push the
+        // average past a tight threshold and flake the run. Warmup failures are
+        // intentionally swallowed here — they resurface in the measured loop and
+        // are reported through SuccessRate.
+        for (int i = 0; i < warmupIterations; i++)
+        {
+            try
+            {
+                await operation();
+            }
+            catch
+            {
+                // Ignored: surfaced by the measured iterations below.
+            }
+        }
+
         var durations = new List<TimeSpan>();
         var errors = new List<Exception>();
 
