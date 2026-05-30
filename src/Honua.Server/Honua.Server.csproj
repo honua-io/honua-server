@@ -70,6 +70,8 @@
     <ProjectReference Include="..\Honua.Protocols.Scene\Honua.Protocols.Scene.csproj" />
 
     <ProjectReference Include="..\Honua.Protocols.Ogc.Shared\Honua.Protocols.Ogc.Shared.csproj" />
+
+    <ProjectReference Include="..\Honua.Protocols.OgcApi\Honua.Protocols.OgcApi.csproj" />
   </ItemGroup>
 
 

@@ -141,11 +141,24 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.SqlServer, ModuleRole.Core),
         (ModuleRole.SqlServer, ModuleRole.Geometry),
 
-        // Protocol modules: Abstractions + Core + Geometry + Hosting.
+        // Protocol modules: Abstractions + Core + Geometry + Hosting +
+        // ServiceDefaults. They may also reference Jobs + Geoprocessing: the OGC
+        // API Processes / GeoServices GPServer adapters are thin protocol surfaces
+        // over the canonical job/process runtime (IExecutionJobStore,
+        // IGeoprocessingJobService, the ControlPlane batch-backend helpers) and
+        // must not reimplement it — mirrors the Ai -> Jobs/Geoprocessing precedent.
+        // Protocols -> Protocols permits a shared protocol foundation
+        // (Honua.Protocols.Ogc.Shared) consumed by OgcApi/OgcClassic/Stac; the
+        // specific allowed protocol-to-protocol edges are governed by
+        // CrossProtocolIsolationTests, not this role-level matrix.
         (ModuleRole.Protocols, ModuleRole.Abstractions),
         (ModuleRole.Protocols, ModuleRole.Core),
         (ModuleRole.Protocols, ModuleRole.Geometry),
         (ModuleRole.Protocols, ModuleRole.Hosting),
+        (ModuleRole.Protocols, ModuleRole.Jobs),
+        (ModuleRole.Protocols, ModuleRole.Geoprocessing),
+        (ModuleRole.Protocols, ModuleRole.ServiceDefaults),
+        (ModuleRole.Protocols, ModuleRole.Protocols),
 
         // Jobs: the durable job-execution substrate. Depends on
         // Abstractions + Core + Hosting + ServiceDefaults (no AWS/Azure

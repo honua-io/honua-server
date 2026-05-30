@@ -136,18 +136,31 @@ public sealed class CrossProtocolIsolationTests
     /// <c>Honua.Protocols.&lt;X&gt;</c> assembly. Their namespace is preserved
     /// (<c>Honua.Server.Features.Protocols.{Family}</c>) so the cross-family matchers still
     /// work, but their source no longer lives under <c>Honua.Server/Features/Protocols</c>.
-    /// Each value is a repo-relative directory; unextracted families default to the Server
-    /// path. As more families are extracted, add their project root here.
+    /// Each value is one or more repo-relative directories that are scanned IN ADDITION to the
+    /// default Server path (<c>Honua.Server/Features/Protocols/{family}</c>). A family may span
+    /// several assemblies — e.g. <c>Ogc</c> covers the extracted <c>Honua.Protocols.OgcApi</c>
+    /// assembly, the shared <c>Honua.Protocols.Ogc.Shared</c> foundation, AND the still-in-Server
+    /// <c>Ogc/Classic</c> subfolder — so all of its roots are unioned. Fully-extracted families
+    /// (OData, Scene, Mcp) leave an empty Server path, which contributes nothing. As more families
+    /// are extracted, add their project roots here.
     /// </summary>
-    private static readonly Dictionary<string, string> _extractedFamilyRoots =
+    private static readonly Dictionary<string, string[]> _extractedFamilyRoots =
         new(StringComparer.Ordinal)
         {
-            ["OData"] = Path.Combine("src", "Honua.Protocols.OData"),
-            ["Scene"] = Path.Combine("src", "Honua.Protocols.Scene"),
+            ["OData"] = new[] { Path.Combine("src", "Honua.Protocols.OData") },
+            ["Scene"] = new[] { Path.Combine("src", "Honua.Protocols.Scene") },
             // MCP is the AI module's protocol surface (consolidated into Honua.Ai
             // rather than a standalone Honua.Protocols.Mcp, because Ai and Mcp are
             // mutually dependent — MCP tools delegate to AiBuilder/Grounding).
-            ["Mcp"] = Path.Combine("src", "Honua.Ai", "Features", "Protocols", "Mcp"),
+            ["Mcp"] = new[] { Path.Combine("src", "Honua.Ai", "Features", "Protocols", "Mcp") },
+            // Ogc spans the extracted OgcApi assembly + the shared Ogc.Shared
+            // foundation; Ogc/Classic is still under the Server path (unioned in
+            // below) until it is extracted into Honua.Protocols.OgcClassic.
+            ["Ogc"] = new[]
+            {
+                Path.Combine("src", "Honua.Protocols.OgcApi"),
+                Path.Combine("src", "Honua.Protocols.Ogc.Shared"),
+            },
         };
 
     private static string[] EnumerateFamilySource(string root) =>
@@ -185,10 +198,23 @@ public sealed class CrossProtocolIsolationTests
 
         var filesByFamily = _protocolFamilies.ToDictionary(
             family => family,
-            family => EnumerateFamilySource(
-                _extractedFamilyRoots.TryGetValue(family, out var extractedRoot)
-                    ? Path.Combine(repositoryRoot, extractedRoot)
-                    : Path.Combine(protocolsPath, family)),
+            family =>
+            {
+                // Always scan the in-Server path, then union any extracted assembly
+                // roots. A family can legitimately span several locations (e.g. Ogc =
+                // Server Ogc/Classic + Honua.Protocols.OgcApi + Honua.Protocols.Ogc.Shared);
+                // fully-extracted families simply have an empty Server path.
+                var roots = new List<string> { Path.Combine(protocolsPath, family) };
+                if (_extractedFamilyRoots.TryGetValue(family, out var extractedRoots))
+                {
+                    roots.AddRange(extractedRoots.Select(r => Path.Combine(repositoryRoot, r)));
+                }
+
+                return roots
+                    .SelectMany(EnumerateFamilySource)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray();
+            },
             StringComparer.Ordinal);
 
         // Sanity check: every guarded family must actually have source, otherwise a rename

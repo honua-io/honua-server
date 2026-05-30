@@ -368,7 +368,7 @@
       "csproj": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Features",
       "paths": [
-        "src/Honua.Server/Features/Protocols/Ogc/Api/Features/",
+        "src/Honua.Protocols.OgcApi/Features/",
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Features/"
       ]
     },
@@ -514,8 +514,8 @@
       "csproj": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles",
       "paths": [
-        "src/Honua.Server/Features/Protocols/Ogc/Api/Maps/",
-        "src/Honua.Server/Features/Protocols/Ogc/Api/Tiles/",
+        "src/Honua.Protocols.OgcApi/Maps/",
+        "src/Honua.Protocols.OgcApi/Tiles/",
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Maps/",
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Tiles/"
       ]
@@ -637,12 +637,12 @@
         "src/Honua.Geoprocessing/Features/Geoprocessing/",
         "src/Honua.Core/Features/Geoprocessing/",
         "src/Honua.Server/Features/Protocols/Grpc/",
-        "src/Honua.Server/Features/Protocols/Ogc/Api/Processes/",
+        "src/Honua.Protocols.OgcApi/Processes/",
         "src/Honua.Ai/Features/Protocols/Mcp/",
         "src/Honua.Server/Features/Protocols/GeoServices/GPServer/",
         "tests/dotnet/Honua.Server.Tests/Features/Eval/",
         "tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Ogc/Api/Processes/",
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Processes/",
         "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/",
         "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/"
