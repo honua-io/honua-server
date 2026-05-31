@@ -762,6 +762,29 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/legend")]
+    public async Task MapServer_Legend_Post_ReturnsLegendLayers()
+    {
+        var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json")
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend",
+            payload);
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var legend = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.LegendResponse);
+
+        legend.Should().NotBeNull();
+        legend!.Layers.Should().NotBeNullOrEmpty();
+        legend.Layers!.First().Legend.Should().NotBeNullOrEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/legend")]
     public async Task MapServer_Legend_WithUnsupportedFormat_ReturnsBadRequest()
     {
