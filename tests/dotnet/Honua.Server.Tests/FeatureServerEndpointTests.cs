@@ -423,6 +423,34 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    public async Task GetLayerMetadata_WithoutSavedStyle_SynthesizesDefaultRenderer()
+    {
+        // Only layer 0 carries a saved esri-drawing-info style in the fixture; layer 1
+        // has none. Esri FeatureServers always return drawingInfo for renderable layers,
+        // so the server must synthesize a default simple renderer from the geometry type
+        // rather than omit drawingInfo (which leaves Esri clients with no symbology).
+        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/1");
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(content);
+        var root = doc.RootElement;
+
+        root.TryGetProperty("drawingInfo", out var drawingInfo)
+            .Should().BeTrue("a style-less renderable layer must still expose a default drawingInfo");
+        drawingInfo.ValueKind.Should().Be(JsonValueKind.Object);
+
+        var renderer = drawingInfo.GetProperty("renderer");
+        renderer.GetProperty("type").GetString().Should().Be("simple");
+        renderer.TryGetProperty("symbol", out var symbol)
+            .Should().BeTrue("the default simple renderer must carry a symbol");
+        symbol.GetProperty("type").GetString().Should().NotBeNullOrEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task GetLayerMetadata_WithNonExistentService_Returns404()
     {
         // Act
