@@ -700,6 +700,8 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{id}/ImageServer/legend"),
         new("GET", "/rest/services/{id}/ImageServer/computeClassStatistics"),
         new("POST", "/rest/services/{id}/ImageServer/computeClassStatistics"),
+        new("GET", "/rest/services/{id}/ImageServer/multidimensionalInfo"),
+        new("POST", "/rest/services/{id}/ImageServer/multidimensionalInfo"),
 
         new("GET", "/rest/services/{serviceId}/ImageServer"),
         new("POST", "/rest/services/{serviceId}/ImageServer"),
@@ -715,6 +717,8 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/ImageServer/legend"),
         new("GET", "/rest/services/{serviceId}/ImageServer/computeClassStatistics"),
         new("POST", "/rest/services/{serviceId}/ImageServer/computeClassStatistics"),
+        new("GET", "/rest/services/{serviceId}/ImageServer/multidimensionalInfo"),
+        new("POST", "/rest/services/{serviceId}/ImageServer/multidimensionalInfo"),
 
         new("GET", "/odata"),
         new("GET", "/odata/$metadata"),

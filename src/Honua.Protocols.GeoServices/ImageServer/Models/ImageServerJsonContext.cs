@@ -15,6 +15,8 @@ namespace Honua.Protocols.GeoServices.ImageServer.Models;
 [JsonSerializable(typeof(ImageServerTimeReference))]
 [JsonSerializable(typeof(ImageServerMultidimensionalInfo))]
 [JsonSerializable(typeof(ImageServerMultidimensionalVariable))]
+[JsonSerializable(typeof(ImageServerMultidimensionalDimension))]
+[JsonSerializable(typeof(MultidimensionalInfoResponse))]
 [JsonSerializable(typeof(ExportImageResponse))]
 [JsonSerializable(typeof(IdentifyResponse))]
 [JsonSerializable(typeof(ExportImageRequest))]

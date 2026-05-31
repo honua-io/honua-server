@@ -20,6 +20,7 @@ internal static class ImageServerServiceCollectionExtensions
 
         // Register handlers
         services.AddScoped<ImageServerMetadataHandler>();
+        services.AddScoped<ImageServerMultidimensionalInfoHandler>();
         services.AddScoped<ImageServerExportHandler>();
         services.AddScoped<ImageServerIdentifyHandler>();
         services.AddScoped<ImageServerTileHandler>();
@@ -34,6 +35,14 @@ internal static class ImageServerServiceCollectionExtensions
         services.AddSingleton<IImageServerCatalogFilterEvaluator, ImageServerCatalogFilterEvaluator>();
         services.AddSingleton<IImageServerLegendSwatchBuilder, ImageServerLegendSwatchBuilder>();
         services.AddSingleton<IImageServerRasterFunctionPlanner, ImageServerRasterFunctionPlanner>();
+
+        // Multidimensional coverage info builder. IMultidimensionalCoverageStore is
+        // registered by the active data provider and is optional here: deployments
+        // without a multidimensional coverage store resolve a null store and always
+        // report "not multidimensional".
+        services.AddScoped<IImageServerMultidimensionalInfoBuilder>(static provider =>
+            new ImageServerMultidimensionalInfoBuilder(
+                provider.GetService<Core.Features.Raster.Multidimensional.Abstractions.IMultidimensionalCoverageStore>()));
 
         return services;
     }
