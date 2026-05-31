@@ -56,8 +56,11 @@ public sealed class FeatureServerResponse
     public string Units { get; init; } = "esriMeters";
 
     /// <summary>
-    /// Supported query formats
+    /// Supported query formats. The GeoServices spec defines this as a
+    /// comma-delimited string (the ArcGIS Maps SDK for JavaScript calls
+    /// <c>value.split(",")</c> on it), so it is serialized as one.
     /// </summary>
+    [System.Text.Json.Serialization.JsonConverter(typeof(CommaDelimitedStringArrayConverter))]
     public string[] SupportedQueryFormats { get; init; } = ["JSON", "GeoJSON"];
 
     /// <summary>
