@@ -31,6 +31,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
     private readonly ArcGisRestClient _restClient;
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly ICrsRegistry _crsRegistry;
+    private readonly IEsriConstructCapabilityRegistry _constructCapabilityRegistry;
     private readonly ILayerPublishingService? _layerPublishingService;
     private readonly ILogger<GeoservicesImportService> _logger;
     private readonly PostgresSchemaConfiguration _schemaConfiguration;
@@ -39,6 +40,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         ArcGisRestClient restClient,
         IDatabaseConnectionProvider connectionProvider,
         ICrsRegistry crsRegistry,
+        IEsriConstructCapabilityRegistry constructCapabilityRegistry,
         ILogger<GeoservicesImportService> logger,
         ILayerPublishingService? layerPublishingService = null,
         PostgresSchemaConfiguration? schemaConfiguration = null)
@@ -46,6 +48,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         _restClient = restClient ?? throw new ArgumentNullException(nameof(restClient));
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
+        _constructCapabilityRegistry = constructCapabilityRegistry ?? throw new ArgumentNullException(nameof(constructCapabilityRegistry));
         _layerPublishingService = layerPublishingService;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _schemaConfiguration = schemaConfiguration ?? new PostgresSchemaConfiguration(

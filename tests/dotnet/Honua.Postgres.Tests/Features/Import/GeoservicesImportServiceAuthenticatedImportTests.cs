@@ -144,6 +144,7 @@ public sealed class GeoservicesImportServiceAuthenticatedImportTests(PostgresFix
             restClient,
             new FixtureConnectionProvider(fixture),
             crsRegistry.Object,
+            new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance);
     }
 

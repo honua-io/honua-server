@@ -272,6 +272,7 @@ public sealed class GeoservicesImportServiceScanTests
             restClient,
             connectionProvider.Object,
             crsRegistry.Object,
+            new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance);
     }
 

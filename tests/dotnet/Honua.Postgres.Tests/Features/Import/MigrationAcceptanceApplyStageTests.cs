@@ -368,6 +368,7 @@ public sealed class MigrationAcceptanceApplyStageTests
             restClient,
             connectionProvider.Object,
             crsRegistry,
+            new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance);
     }
 
