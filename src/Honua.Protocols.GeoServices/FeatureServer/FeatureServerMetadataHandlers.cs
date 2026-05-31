@@ -370,7 +370,45 @@ internal static partial class FeatureServerEndpoints
             }
         }
 
-        return null;
+        // No author-supplied drawingInfo (extension or saved style): synthesize a
+        // default simple renderer keyed by geometry type. Esri FeatureServers always
+        // return drawingInfo for renderable layers, and Esri clients (ArcGIS Pro, the
+        // ArcGIS Maps SDKs, ArcGIS API for Python, the JS API) read it to draw
+        // features. Omitting it leaves those clients with no server symbology.
+        return BuildDefaultDrawingInfoV2(resource);
+    }
+
+    /// <summary>
+    /// Builds a default <c>drawingInfo</c> with a simple renderer derived from the
+    /// resource geometry type, mirroring the symbol the <c>generateRenderer</c>
+    /// operation returns. Returns <see langword="null"/> for layers whose geometry
+    /// type is unknown or unsupported (no default symbology can be inferred).
+    /// </summary>
+    private static JsonElement? BuildDefaultDrawingInfoV2(MetadataV2Resource resource)
+    {
+        var geometryType = resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None;
+        var symbol = BuildSimpleSymbol(geometryType);
+        if (symbol is null)
+        {
+            return null;
+        }
+
+        var drawingInfo = new Dictionary<string, object?>
+        {
+            ["renderer"] = new Dictionary<string, object?>
+            {
+                ["type"] = "simple",
+                ["symbol"] = symbol,
+                ["label"] = string.Empty,
+                ["description"] = string.Empty,
+            },
+            ["transparency"] = 0,
+            ["labelingInfo"] = null,
+        };
+
+        return JsonSerializer.SerializeToElement(
+            drawingInfo,
+            FeatureServerJsonContext.Default.DictionaryStringObject);
     }
 
     private static bool TryResolveDrawingInfoExtension(
