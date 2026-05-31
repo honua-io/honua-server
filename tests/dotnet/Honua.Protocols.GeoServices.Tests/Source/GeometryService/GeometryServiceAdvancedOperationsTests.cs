@@ -237,6 +237,73 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
         response.Be400BadRequest();
     }
 
+    // #1308: ArcGIS clients wrap the single operating geometry as
+    // {"geometryType":"...","geometry":{...}}. The parser must unwrap it.
+
+    [IntegrationTest]
+    [Operation(Operations.Intersect)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/intersect")]
+    public async Task Intersect_PostEsriWrappedGeometry_ReturnsGeometry()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolygon",
+                "geometries": [
+                    {"rings": [[[0,0],[2,0],[2,2],[0,2],[0,0]]]}
+                ]
+            },
+            "geometry": {
+                "geometryType": "esriGeometryPolygon",
+                "geometry": {"rings": [[[1,1],[3,1],[3,3],[1,3],[1,1]]]}
+            },
+            "sr": "4326"
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/intersect",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+        result.Should().NotBeNull();
+        result!.Geometries.Should().HaveCount(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Difference)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/difference")]
+    public async Task Difference_PostEsriWrappedGeometry_ReturnsGeometry()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolygon",
+                "geometries": [
+                    {"rings": [[[0,0],[3,0],[3,3],[0,3],[0,0]]]}
+                ]
+            },
+            "geometry": {
+                "geometryType": "esriGeometryPolygon",
+                "geometry": {"rings": [[[1,1],[2,1],[2,2],[1,2],[1,1]]]}
+            },
+            "sr": "4326"
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/difference",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+        result.Should().NotBeNull();
+        result!.Geometries.Should().HaveCount(1);
+    }
+
     [IntegrationTest]
     [Operation(Operations.Area)]
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/areasAndLengths")]

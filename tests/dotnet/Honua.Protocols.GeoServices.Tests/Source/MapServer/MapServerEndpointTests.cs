@@ -524,6 +524,47 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    // #1302: MapServer/export must accept the GeoServices-standard layers visibility
+    // prefixes (show:/hide:/include:/exclude:), not just a bare id list.
+    [Theory]
+    [InlineData("show")]
+    [InlineData("hide")]
+    [InlineData("include")]
+    [InlineData("exclude")]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithLayersVisibilityPrefix_ReturnsImageJson(string prefix)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&layers={prefix}:{WebAppFixture.TestLayerId}&f=json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportImageResponse);
+
+        export.Should().NotBeNull();
+        export!.Width.Should().Be(256);
+        export.Height.Should().Be(256);
+        export.Extent.Should().NotBeNull();
+        export.Href.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithBareLayerIdList_ReturnsImageJson()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=256,256&layers={WebAppFixture.TestLayerId}&f=json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var export = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.ExportImageResponse);
+
+        export.Should().NotBeNull();
+        export!.Extent.Should().NotBeNull();
+    }
+
     [IntegrationTest]
     [Operation(Operations.Identify)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]

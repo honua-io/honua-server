@@ -250,6 +250,9 @@ internal static class GeometryServiceRequestParser
 
     /// <summary>
     /// Parses a single geometry object from request parameters.
+    /// Accepts both a bare geometry object (<c>{"rings":...}</c> / <c>{"x":...}</c>) and the
+    /// Esri-wrapped form (<c>{"geometryType":"...","geometry":{...}}</c>) that ArcGIS clients
+    /// send, unwrapping the latter to its inner geometry.
     /// </summary>
     public static (string? GeometryJson, string? Error) ParseSingleGeometry(
         string? raw,
@@ -274,7 +277,22 @@ internal static class GeometryServiceRequestParser
                 return (null, $"Parameter '{parameterName}' must be a JSON object.");
             }
 
-            var geometryJson = doc.RootElement.GetRawText();
+            var geometryElement = doc.RootElement;
+
+            // Esri-wrapped form: {"geometryType":"...","geometry":{...}}.
+            // ArcGIS clients send the operating geometry wrapped; unwrap to the inner geometry.
+            if (geometryElement.TryGetProperty("geometryType", out _) &&
+                geometryElement.TryGetProperty("geometry", out var innerGeometry))
+            {
+                if (innerGeometry.ValueKind != JsonValueKind.Object)
+                {
+                    return (null, $"Parameter '{parameterName}' wrapper must contain a 'geometry' object.");
+                }
+
+                geometryElement = innerGeometry;
+            }
+
+            var geometryJson = geometryElement.GetRawText();
             if (geometryJson.Length > maxGeometryJsonLength)
             {
                 return (null, $"Parameter '{parameterName}' exceeds the maximum size of {maxGeometryJsonLength} characters.");
