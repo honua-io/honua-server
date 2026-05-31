@@ -74,6 +74,7 @@ public sealed class ModuleDependencyPolicyTests
         DuckDB,
         MySql,
         SqlServer,
+        ArcGisRest,
         Protocols,
         Server,
         ServiceDefaults,
@@ -140,6 +141,11 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.SqlServer, ModuleRole.Abstractions),
         (ModuleRole.SqlServer, ModuleRole.Core),
         (ModuleRole.SqlServer, ModuleRole.Geometry),
+        // ArcGIS REST federated read-through provider (#1251): consumes Abstractions
+        // + Core; needs no NTS bindings because all wire-format conversion happens
+        // inline against the canonical Feature/WKB seam.
+        (ModuleRole.ArcGisRest, ModuleRole.Abstractions),
+        (ModuleRole.ArcGisRest, ModuleRole.Core),
 
         // Protocol modules: Abstractions + Core + Geometry + Hosting +
         // ServiceDefaults. They may also reference Jobs + Geoprocessing: the OGC
@@ -246,6 +252,7 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Server, ModuleRole.DuckDB),
         (ModuleRole.Server, ModuleRole.MySql),
         (ModuleRole.Server, ModuleRole.SqlServer),
+        (ModuleRole.Server, ModuleRole.ArcGisRest),
         (ModuleRole.Server, ModuleRole.Protocols),
         (ModuleRole.Server, ModuleRole.ServiceDefaults),
 
@@ -612,6 +619,10 @@ public sealed class ModuleDependencyPolicyTests
         if (projectName.Equals("Honua.SqlServer", StringComparison.Ordinal))
         {
             return ModuleRole.SqlServer;
+        }
+        if (projectName.Equals("Honua.ArcGisRest", StringComparison.Ordinal))
+        {
+            return ModuleRole.ArcGisRest;
         }
 
         // Tier 6: Protocol modules.
