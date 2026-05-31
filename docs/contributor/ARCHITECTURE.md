@@ -4,9 +4,9 @@ This document describes the current Honua Server architecture and the constraint
 
 ## Goals
 
-- **Provider-backed**: PostgreSQL/PostGIS is the primary read/write provider; DuckDB is an embedded read-only provider for analytics and reference workloads; SQL Server and MySQL/MariaDB are read/query-only providers for enterprise/user-managed spatial tables.
+- **Provider-backed**: PostgreSQL/PostGIS is the primary read/write provider; DuckDB is an embedded read-only provider for analytics and reference workloads; SQL Server, Oracle Spatial, and MySQL/MariaDB are read/query-only providers for enterprise/user-managed spatial tables.
 - **Open standards**: serve multiple GIS and data protocols from one dataset.
-- **Clean dependencies**: `Honua.Core` <- `Honua.Postgres` / `Honua.DuckDB` / `Honua.SqlServer` / `Honua.MySql` <- `Honua.Server`.
+- **Clean dependencies**: `Honua.Core` <- `Honua.Postgres` / `Honua.DuckDB` / `Honua.SqlServer` / `Honua.Oracle` / `Honua.MySql` <- `Honua.Server`.
 - **Minimal API surface**: endpoints are defined with Minimal APIs, not MVC controllers.
 - **AOT-friendly**: avoid reflection in hot paths and use source-generated JSON/logging.
 
@@ -19,6 +19,7 @@ src/
 ├── Honua.Postgres/   # PostgreSQL/PostGIS implementation (read/write)
 ├── Honua.DuckDB/     # DuckDB implementation (read-only)
 ├── Honua.SqlServer/  # SQL Server geometry/geography implementation (read-only)
+├── Honua.Oracle/     # Oracle Spatial SDO_GEOMETRY implementation (read-only)
 └── Honua.MySql/      # MySQL/MariaDB implementation (read/query-only)
 ```
 
@@ -28,7 +29,7 @@ Key points:
 - **Honua.DuckDB** implements Core read interfaces (`IFeatureReader`, `IStreamingFeatureStore`, etc.) for embedded DuckDB databases. Write operations are rejected at startup via capability stripping.
 - **Honua.SqlServer** implements `IFeatureReader` against SQL Server `geometry`/`geography` tables. Registered as an additional `IFeatureDataProvider` and selected per-layer when the layer's `DataConnection` resolves to provider `sqlserver`/`mssql`. Edits, native MVT/FlatGeobuf/Geobuf/GML, and statistics aggregates are deliberately disabled in this slice.
 - **Honua.MySql** implements Core read interfaces against user-managed MySQL 8.0.11+ / MariaDB 10.6+ tables. The provider declares `FeatureProviderCapabilities.ReadOnlyMySql` and throws `NotSupportedException` for unsupported paths (edits, statistics, native MVT/FlatGeobuf/Geobuf/GML, streaming GeoJSON, KNN, cross-SRID filters). The provider name resolves under `mysql` and the `mariadb` alias.
-- **Honua.Server** composes endpoints and handlers, selecting the active primary provider via `DataSource:Provider` configuration; additional read-only providers (DuckDB, SQL Server, MySQL/MariaDB) plug in alongside or are selected through provider binding.
+- **Honua.Server** composes endpoints and handlers, selecting the active primary provider via `DataSource:Provider` configuration; additional read-only providers (DuckDB, SQL Server, Oracle, MySQL/MariaDB) plug in alongside or are selected through provider binding.
 - The Blazor admin UI lives in the separate `honua-server-admin` repo and talks to this server's Admin API.
 
 ## Feature Slices (Server)
@@ -125,7 +126,7 @@ The server is organized by vertical slices under `src/Honua.Server/Features/`.
 ## Architectural Constraints (Enforced)
 
 - **No controllers**: Minimal APIs only.
-- **Dependency flow**: Core <- Postgres / DuckDB / SqlServer / MySql <- Server.
+- **Dependency flow**: Core <- Postgres / DuckDB / SqlServer / Oracle / MySql <- Server.
 - **Public API docs**: all public types require XML documentation.
 - **AOT compatibility**: reflection avoided in hot paths; source-gen JSON.
 

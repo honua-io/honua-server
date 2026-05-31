@@ -42,7 +42,7 @@ Honua is a cloud-native geospatial feature server. It publishes, queries, edits,
 
 ## Protocols at a Glance
 
-Honua serves multiple protocols from a single dataset. No ETL, no data duplication. The PostGIS, DuckDB, SQL Server, and MySQL/MariaDB providers each expose the same protocol surface for the operations they support. Only PostGIS supports writes today; read-only providers report `false` on capabilities they do not implement (edits, native MVT, statistics) and the protocol layer surfaces those limitations as `NotSupportedException` or HTTP 501.
+Honua serves multiple protocols from a single dataset. No ETL, no data duplication. The PostGIS, DuckDB, SQL Server, Oracle Spatial, and MySQL/MariaDB providers each expose the same protocol surface for the operations they support. Only PostGIS supports writes today; read-only providers report `false` on capabilities they do not implement (edits, native MVT, statistics) and the protocol layer surfaces those limitations as `NotSupportedException` or HTTP 501.
 
 | Protocol | Primary Clients | Use Case |
 |---|---|---|
@@ -88,6 +88,12 @@ Honua serves multiple protocols from a single dataset. No ETL, no data duplicati
                          ┌──────────────┐
                          │ MySQL/MariaDB├──Serve──▶ Same clients
                          │ (read/query) │          (query only)
+                         └──────────────┘
+
+                         ┌──────────────┐
+                         │ Oracle       ├──Serve──▶ Same clients
+                         │ (read-only,  │          (query only)
+                         │  SDO_GEOMETRY)│
                          └──────────────┘
 ```
 
