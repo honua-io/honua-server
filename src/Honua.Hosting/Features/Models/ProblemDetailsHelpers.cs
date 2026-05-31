@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Validation.Contracts;
 
 namespace Honua.Infrastructure.Models;
 
@@ -11,6 +12,7 @@ internal static class ProblemDetailsHelpers
     private const string OgcType = "about:blank";
     private const string AdminType = "https://honua.io/problems/admin";
     private const string SecurityType = "https://honua.io/problems/security";
+    private const string ValidationType = "https://honua.io/problems/validation";
 
     public static IResult CreateOgcProblem(HttpContext context, int statusCode, string detail)
         => CreateProblem(context, OgcType, statusCode, GetTitle(statusCode), detail);
@@ -38,6 +40,48 @@ internal static class ProblemDetailsHelpers
 
     public static IResult CreateSecurityProblem(HttpContext context, int statusCode, string title, string detail)
         => CreateProblem(context, SecurityType, statusCode, title, detail);
+
+    /// <summary>
+    /// Creates an RFC 7807 problem response carrying the shared field-level
+    /// validation contract as an <c>errors[]</c> extension member.
+    /// </summary>
+    /// <param name="context">Current request context.</param>
+    /// <param name="statusCode">HTTP status code (typically 400).</param>
+    /// <param name="errors">Field-level validation errors to surface.</param>
+    /// <param name="detail">Optional detail; a count-based default is used when omitted.</param>
+    /// <returns>A problem result with the <c>errors[]</c> extension.</returns>
+    public static IResult CreateValidationProblem(
+        HttpContext context,
+        int statusCode,
+        IReadOnlyList<FieldValidationError> errors,
+        string? detail = null)
+    {
+        ArgumentNullException.ThrowIfNull(errors);
+
+        var instance = BuildInstance(context);
+        var resolvedDetail = detail ?? BuildValidationDetail(errors.Count);
+        var problemDetails = CreateProblemDetails(
+            ValidationType,
+            statusCode,
+            GetTitle(statusCode),
+            resolvedDetail,
+            instance,
+            context) with
+        {
+            Errors = errors,
+        };
+
+        return Results.Json(
+            problemDetails,
+            ProblemJsonContext.Default.ProblemDetailsResponse,
+            statusCode: statusCode,
+            contentType: ContentType);
+    }
+
+    private static string BuildValidationDetail(int errorCount)
+        => errorCount == 1
+            ? "1 validation error occurred."
+            : string.Create(CultureInfo.InvariantCulture, $"{errorCount} validation errors occurred.");
 
     public static IResult CreateProblem(HttpContext context, string type, int statusCode, string title, string detail)
     {

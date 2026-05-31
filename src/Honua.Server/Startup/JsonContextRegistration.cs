@@ -86,6 +86,7 @@ internal static class JsonContextRegistration
                 Honua.PackageReview.PackageReviewJsonContext.Default,
                 Honua.Server.Features.CloudDemo.CloudDemoJsonContext.Default,
                 Honua.Server.Features.HealthCheck.HealthJsonContext.Default,
+                Honua.Core.Features.Validation.Contracts.ValidationContractJsonContext.Default,
                 Honua.Infrastructure.Models.ProblemJsonContext.Default,
                 Honua.Infrastructure.Middleware.LimitsEnforcementJsonContext.Default,
                 Honua.Infrastructure.Security.CspViolationJsonContext.Default,
