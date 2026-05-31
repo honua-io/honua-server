@@ -177,7 +177,10 @@ internal sealed partial class ArcGisRestClient
             MinScale = layerResponse.MinScale,
             MaxScale = layerResponse.MaxScale,
             Extent = ParseExtent(layerResponse.Extent),
-            FeatureCount = featureCount
+            FeatureCount = featureCount,
+            DrawingInfoJson = layerResponse.DrawingInfo is { ValueKind: JsonValueKind.Object } drawingInfo
+                ? drawingInfo.GetRawText()
+                : null
         };
     }
 
@@ -961,6 +964,9 @@ internal sealed record ArcGisLayerResponse
 
     [JsonPropertyName("fields")]
     public ArcGisField[]? Fields { get; init; }
+
+    [JsonPropertyName("drawingInfo")]
+    public JsonElement? DrawingInfo { get; init; }
 }
 
 internal sealed record ArcGisSpatialReference

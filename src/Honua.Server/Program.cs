@@ -465,6 +465,8 @@ Honua.Core.Features.Publishing.Content.ContentPublishingServiceCollectionExtensi
 builder.Services.AddScoped<Honua.Infrastructure.Services.IGeometryConverter,
     Honua.Infrastructure.Services.GeometryConverter>();
 builder.Services.AddScoped<ILayerStyleService, LayerStyleService>();
+builder.Services.AddSingleton<Honua.Core.Features.Styling.Abstractions.IGeoServicesStyleConverter,
+    Honua.Server.Features.Styling.GeoServicesStyleConverter>();
 builder.Services.AddSingleton<Honua.Core.Features.Styling.Abstractions.ISldStyleConverter,
     Honua.Server.Features.Styling.Sld.SldStyleConverter>();
 builder.Services.AddStyleSuggestionCore();
