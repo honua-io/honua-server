@@ -64,6 +64,15 @@ internal static class InfrastructureCompositionRoot
             Honua.SqlServer.ServiceCollectionExtensions.AddSqlServerFeatureProvider(services, configuration);
         }
 
+        // Register the federated ArcGIS REST read-through provider (#1251). Metadata v2 publications whose
+        // backing connection resolves to provider 'arcgis-rest' are routed here so customers can register a
+        // live ArcGIS FeatureServer/MapServer as a Honua layer on day one without copying data. Disabled
+        // when ArcGisRest:Enabled is explicitly false.
+        if (configuration.GetValue("ArcGisRest:Enabled", true))
+        {
+            Honua.ArcGisRest.ServiceCollectionExtensions.AddArcGisRestFeatureProvider(services, configuration);
+        }
+
         services.TryAddScoped<IFeatureDataProviderRegistry>(serviceProvider =>
             new FeatureDataProviderRegistry(serviceProvider.GetServices<IFeatureDataProvider>()));
         services.TryAddScoped(serviceProvider =>

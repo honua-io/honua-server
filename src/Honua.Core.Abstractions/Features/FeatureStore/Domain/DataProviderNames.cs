@@ -34,6 +34,13 @@ public static class DataProviderNames
     public const string DuckDb = "duckdb";
 
     /// <summary>
+    /// Canonical ArcGIS REST FeatureServer/MapServer read-through provider name.
+    /// Bound to secure-connection records whose connection-string field holds a
+    /// remote ArcGIS service root URL.
+    /// </summary>
+    public const string ArcGisRest = "arcgis-rest";
+
+    /// <summary>
     /// Normalizes a provider name or alias into the canonical provider identifier.
     /// Unknown non-empty provider names are lower-cased so external provider registrations
     /// can participate without changing the core model.
@@ -60,6 +67,15 @@ public static class DataProviderNames
             "mysql" => MySql,
             "mariadb" => MySql,
             "duckdb" => DuckDb,
+            "arcgisrest" => ArcGisRest,
+            "arcgis-rest" => ArcGisRest,
+            "arcgis" => ArcGisRest,
+            "esri" => ArcGisRest,
+            "esri-rest" => ArcGisRest,
+            "esrirest" => ArcGisRest,
+            "esri-featureserver" => ArcGisRest,
+            "esrifeatureserver" => ArcGisRest,
+            "featureserver" => ArcGisRest,
             _ => normalized
         };
     }
