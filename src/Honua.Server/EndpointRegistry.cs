@@ -213,6 +213,10 @@ public static class EndpointRegistry
         new("GET", "/api/v1/console/share/content/{id}"),
         new("GET", "/api/v1/console/share/link/{token}"),
         new("POST", "/api/v1/console/share/embed/{token}/redeem"),
+        // v1 Console catalog discovery-endpoints registry read API (#1279)
+        new("GET", "/api/v1/console/catalog-endpoints/{workspaceId}"),
+        new("GET", "/api/v1/console/catalog-endpoints/{workspaceId}/{endpointKey}"),
+        new("GET", "/api/v1/console/catalog-endpoints/{workspaceId}/{endpointKey}/items/{itemId}"),
         new("POST", "/api/v1/admin/packages/validate"),
         new("POST", "/api/v1/admin/packages/preview"),
         new("GET", "/api/v1/console/workflow-node-registry"),

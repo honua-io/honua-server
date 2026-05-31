@@ -448,6 +448,12 @@ builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleS
         sp.GetService<TimeProvider>() ?? TimeProvider.System));
 builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleDependencyClosureValidator,
     Honua.Server.Features.Console.Services.ConsoleDependencyClosureValidator>();
+// Console catalog discovery-endpoints registry read model (#1279). The discovery
+// dialects a server publishes are a server-wide config/metadata concern; this
+// config-backed read model materialises them into the Console projection. A
+// durable/metadata-v2-backed source can replace this registration later.
+builder.Services.AddSingleton<Honua.Server.Features.Console.Services.ICatalogDiscoveryRegistryStore>(
+    _ => new Honua.Server.Features.Console.Services.ConfigCatalogDiscoveryRegistryStore());
 
 // Content publication registry for Studio-generated maps/dashboards/reports/apps (#1183).
 // In-memory store is the default; Postgres registration (AddPostgreSqlServices) overrides
@@ -1046,6 +1052,7 @@ app.MapConsoleContentEndpoints();
 app.MapConsoleActionEndpoints();
 // Console Share access public-link + embed API (#1215)
 app.MapConsoleShareEndpoints();
+app.MapCatalogDiscoveryEndpoints();
 app.MapConsoleSharePublicEndpoints();
 app.MapStudioPackageEndpoints();
 app.MapWorkflowPackageEndpoints();
