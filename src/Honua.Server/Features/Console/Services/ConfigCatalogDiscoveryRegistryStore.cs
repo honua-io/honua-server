@@ -10,10 +10,11 @@ namespace Honua.Server.Features.Console.Services;
 /// Configuration-backed read model for the Console catalog discovery-endpoints
 /// registry (honua-server#1279). The discovery dialects a server publishes are
 /// a server-wide concern owned by config/metadata; this store materialises that
-/// configuration into the Console projection. The default seed mirrors the five
-/// supported dialects so the Console Catalogs surface binds immediately, while
-/// the per-workspace map can be replaced/extended by configuration without
-/// touching the endpoints.
+/// configuration into the Console projection. When no configuration is supplied
+/// the store is empty: an unconfigured deployment publishes no discovery
+/// endpoints rather than fabricated sample data (no-fabrication principle,
+/// server analog of Console Charter §11). Real endpoints come only from actual
+/// config/metadata seeds.
 /// </summary>
 public sealed class ConfigCatalogDiscoveryRegistryStore : ICatalogDiscoveryRegistryStore
 {
@@ -23,7 +24,9 @@ public sealed class ConfigCatalogDiscoveryRegistryStore : ICatalogDiscoveryRegis
 
     /// <summary>
     /// Creates a store seeded with the supplied per-workspace registries. When
-    /// no seed is supplied a single default workspace is materialised.
+    /// no seed is supplied the store is empty (no workspaces, no endpoints):
+    /// an unconfigured deployment exposes no discovery endpoints rather than
+    /// fabricated sample data.
     /// </summary>
     public ConfigCatalogDiscoveryRegistryStore(IEnumerable<CatalogDiscoveryWorkspaceSeed>? seeds = null)
     {
@@ -31,8 +34,12 @@ public sealed class ConfigCatalogDiscoveryRegistryStore : ICatalogDiscoveryRegis
         _details = new ConcurrentDictionary<(string, string), CatalogEndpointDetail>(WorkspaceEndpointComparer.Instance);
         _items = new ConcurrentDictionary<(string, string, string), CatalogItem>(WorkspaceEndpointItemComparer.Instance);
 
-        var materialised = (seeds ?? DefaultSeeds()).ToList();
-        foreach (var seed in materialised)
+        if (seeds is null)
+        {
+            return;
+        }
+
+        foreach (var seed in seeds)
         {
             Ingest(seed);
         }
@@ -99,202 +106,6 @@ public sealed class ConfigCatalogDiscoveryRegistryStore : ICatalogDiscoveryRegis
             }
         }
     }
-
-    private static IEnumerable<CatalogDiscoveryWorkspaceSeed> DefaultSeeds()
-    {
-        yield return new CatalogDiscoveryWorkspaceSeed
-        {
-            WorkspaceId = "default",
-            WorkspaceName = "Default workspace",
-            PublicHost = "https://localhost:8080",
-            Endpoints =
-            [
-                BuildEsriEndpoint(),
-                BuildOgcEndpoint(),
-                BuildODataEndpoint(),
-                BuildStacEndpoint(),
-                BuildDcatEndpoint(),
-            ],
-        };
-    }
-
-    private static CatalogEndpointSeed BuildEsriEndpoint()
-    {
-        var itemDetail = new CatalogItem
-        {
-            Id = "parcels",
-            Title = "Parcels",
-            AutoMirror = true,
-            Live = true,
-            BackingServiceCount = 1,
-            TagCount = 2,
-            IssueCount = 0,
-            Groups =
-            [
-                new CatalogItemFieldGroup
-                {
-                    Title = "Identity",
-                    Subtitle = "Resource-derived",
-                    Scope = "resource-derived",
-                    Fields =
-                    [
-                        new CatalogItemField { Label = "Item id", State = CatalogFieldStates.System, Value = "parcels" },
-                        new CatalogItemField { Label = "Type", State = CatalogFieldStates.Calculated, Value = "Feature Layer", DerivedFrom = "Parcels FeatureServer" },
-                    ],
-                },
-                new CatalogItemFieldGroup
-                {
-                    Title = "Catalog presentation",
-                    Subtitle = "Catalog-only input",
-                    Scope = "catalog-only",
-                    Fields =
-                    [
-                        new CatalogItemField { Label = "Title", State = CatalogFieldStates.Input, Value = "Parcels" },
-                        new CatalogItemField { Label = "Tags", State = CatalogFieldStates.Input, Value = "parcels, cadastre" },
-                    ],
-                },
-                new CatalogItemFieldGroup
-                {
-                    Title = "Service bindings",
-                    Scope = "resource-derived",
-                    Fields =
-                    [
-                        new CatalogItemField { Label = "FeatureServer", State = CatalogFieldStates.Calculated, Value = "/rest/services/Parcels/FeatureServer", DerivedFrom = "Parcels FeatureServer" },
-                    ],
-                },
-                new CatalogItemFieldGroup
-                {
-                    Title = "Standards mapping",
-                    Scope = "resource-derived",
-                    Fields =
-                    [
-                        new CatalogItemField { Label = "ISO 19115", State = CatalogFieldStates.Calculated, Value = "dataset", DerivedFrom = "Parcels FeatureServer" },
-                    ],
-                },
-            ],
-        };
-
-        return new CatalogEndpointSeed
-        {
-            Endpoint = new CatalogEndpoint
-            {
-                Key = "esri",
-                Title = "Esri catalog",
-                Description = "ArcGIS-compatible portal item discovery.",
-                Dialect = CatalogDialects.Esri,
-                Enabled = true,
-                AutoDefault = true,
-                Url = "/rest/portal",
-                Entries = 1,
-                FedBy = "FeatureServer, MapServer, ImageServer",
-                Feeders =
-                [
-                    new CatalogFeeder { Kind = "feature-server", Label = "Parcels FeatureServer" },
-                ],
-                IssueCount = 0,
-            },
-            LastRebuild = "2026-05-01T00:00:00Z",
-            Items =
-            [
-                new CatalogItemSeed
-                {
-                    Row = new CatalogEndpointItem
-                    {
-                        Id = "parcels",
-                        Title = "Parcels",
-                        FromService = "Parcels FeatureServer",
-                        Resource = "/rest/services/Parcels/FeatureServer",
-                        Tags = ["parcels", "cadastre"],
-                        HasThumbnail = false,
-                        License = "CC-BY-4.0",
-                        IssueCount = 0,
-                        Updated = "2026-05-01T00:00:00Z",
-                    },
-                    Detail = itemDetail,
-                },
-            ],
-        };
-    }
-
-    private static CatalogEndpointSeed BuildOgcEndpoint() => new()
-    {
-        Endpoint = new CatalogEndpoint
-        {
-            Key = "ogc",
-            Title = "OGC API Records",
-            Description = "OGC API - Records catalogue of published collections.",
-            Dialect = CatalogDialects.Ogc,
-            Enabled = true,
-            AutoDefault = true,
-            Url = "/ogc/features/collections",
-            Entries = 0,
-            FedBy = "OGC API Features collections",
-            Feeders = [new CatalogFeeder { Kind = "ogc-features", Label = "OGC API Features" }],
-            IssueCount = 0,
-        },
-        LastRebuild = "2026-05-01T00:00:00Z",
-        Items = [],
-    };
-
-    private static CatalogEndpointSeed BuildODataEndpoint() => new()
-    {
-        Endpoint = new CatalogEndpoint
-        {
-            Key = "odata",
-            Title = "OData v4",
-            Description = "OData v4 service document of exposed entity sets.",
-            Dialect = CatalogDialects.ODataV4,
-            Enabled = false,
-            AutoDefault = false,
-            Url = "/odata",
-            Entries = 0,
-            FedBy = "OData entity sets",
-            Feeders = [new CatalogFeeder { Kind = "odata-entity-set", Label = "OData entity sets" }],
-            IssueCount = 0,
-        },
-        LastRebuild = null,
-        Items = [],
-    };
-
-    private static CatalogEndpointSeed BuildStacEndpoint() => new()
-    {
-        Endpoint = new CatalogEndpoint
-        {
-            Key = "stac",
-            Title = "STAC",
-            Description = "SpatioTemporal Asset Catalog of raster/coverage assets.",
-            Dialect = CatalogDialects.Stac,
-            Enabled = true,
-            AutoDefault = false,
-            Url = "/stac",
-            Entries = 0,
-            FedBy = "ImageServer, coverages",
-            Feeders = [new CatalogFeeder { Kind = "image-server", Label = "ImageServer" }],
-            IssueCount = 0,
-        },
-        LastRebuild = "2026-05-01T00:00:00Z",
-        Items = [],
-    };
-
-    private static CatalogEndpointSeed BuildDcatEndpoint() => new()
-    {
-        Endpoint = new CatalogEndpoint
-        {
-            Key = "dcat",
-            Title = "DCAT",
-            Description = "DCAT data-catalog feed for open-data portals.",
-            Dialect = CatalogDialects.Dcat,
-            Enabled = false,
-            AutoDefault = false,
-            Url = "/dcat/catalog.json",
-            Entries = 0,
-            FedBy = "Published open-data items",
-            Feeders = [new CatalogFeeder { Kind = "open-data", Label = "Open-data items" }],
-            IssueCount = 0,
-        },
-        LastRebuild = null,
-        Items = [],
-    };
 
     private sealed class WorkspaceEndpointComparer : IEqualityComparer<(string Workspace, string Endpoint)>
     {

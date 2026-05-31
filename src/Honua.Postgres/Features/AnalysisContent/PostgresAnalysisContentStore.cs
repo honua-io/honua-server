@@ -225,11 +225,26 @@ internal sealed class PostgresAnalysisContentStore : IAnalysisContentStore
 
             var items = new List<AnalysisContentItem>();
             long totalCount = 0;
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            var sawRow = false;
+            await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
             {
-                items.Add(ReadItem(reader));
-                totalCount = reader.GetInt64(12);
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    items.Add(ReadItem(reader));
+                    totalCount = reader.GetInt64(12);
+                    sawRow = true;
+                }
+            }
+
+            // COUNT(*) OVER () only materialises on returned rows; when the requested offset
+            // is past the last matching row the page is empty and the window count never
+            // appears. Issue a dedicated COUNT in that case so TotalCount still reflects the
+            // true filtered total (matching InMemoryAnalysisContentStore, which always reports
+            // the full filtered count regardless of the page window).
+            if (!sawRow)
+            {
+                totalCount = await CountItemsAsync(connection, lifecycle, kindFilter, kind, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             return new AnalysisContentItemPage
@@ -238,6 +253,30 @@ internal sealed class PostgresAnalysisContentStore : IAnalysisContentStore
                 TotalCount = totalCount
             };
         });
+
+    private async Task<long> CountItemsAsync(
+        NpgsqlConnection connection,
+        string lifecycle,
+        string kindFilter,
+        string? kind,
+        CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            SELECT COUNT(*)
+            FROM {_itemsTable}
+            WHERE lifecycle = @lifecycle{kindFilter}
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@lifecycle", lifecycle);
+        if (kind is not null)
+        {
+            command.Parameters.AddWithValue("@kind", kind);
+        }
+
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result is long count ? count : 0L;
+    }
 
     public Task<ResultArtifactRecord> UpsertArtifactAsync(
         ResultArtifactRecord artifact,

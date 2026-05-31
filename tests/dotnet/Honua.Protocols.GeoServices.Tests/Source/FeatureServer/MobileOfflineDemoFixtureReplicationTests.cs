@@ -230,7 +230,11 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
         // attributes columns via Options (matching WebAppFixtureMetadataV2Mixin.BuildDefaultTestGraph).
         var options = new Dictionary<string, JsonElement>
         {
-            ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry")
+            ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry"),
+            // Shared 'features' table => declare the layer discriminator so the reader
+            // constrains reads to this binding's StorageLayerId (cross-layer isolation,
+            // honua-server#1238 follow-up).
+            ["layerDiscriminatorColumn"] = JsonSerializer.SerializeToElement("layer_id")
         };
 
         // When omitted (includeAttributesAccessor: false) the binding reproduces the

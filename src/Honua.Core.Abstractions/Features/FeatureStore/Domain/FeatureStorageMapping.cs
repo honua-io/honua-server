@@ -23,6 +23,14 @@ namespace Honua.Core.Features.FeatureStore.Domain;
 /// document (e.g. the seed's shared <c>features</c> table). When set, the Postgres feature
 /// reader projects schema fields via <c>{AttributesColumn}-&gt;&gt;'fieldname'</c> instead of
 /// expecting a column per field.</param>
+/// <param name="LayerDiscriminatorColumn">Optional column that discriminates which layer a row
+/// belongs to when the physical table is shared across multiple layers (e.g. the shared
+/// <c>features</c> table's <c>layer_id</c> column). When set together with
+/// <see cref="LayerDiscriminatorValue"/>, every read is constrained with a
+/// <c>WHERE {LayerDiscriminatorColumn} = {LayerDiscriminatorValue}</c> predicate so a query for
+/// one layer cannot return another layer's rows stored in the same table.</param>
+/// <param name="LayerDiscriminatorValue">The discriminator value identifying the bound layer's
+/// rows in a shared table. Paired with <see cref="LayerDiscriminatorColumn"/>.</param>
 /// <param name="ProviderOptions">Provider-specific extension values when a neutral field is not enough.</param>
 public sealed record FeatureStorageMapping(
     string TableName,
@@ -34,7 +42,9 @@ public sealed record FeatureStorageMapping(
     int? StorageSrid = null,
     string? TemporalColumn = null,
     IReadOnlyDictionary<string, string>? ProviderOptions = null,
-    string? AttributesColumn = null)
+    string? AttributesColumn = null,
+    string? LayerDiscriminatorColumn = null,
+    int? LayerDiscriminatorValue = null)
 {
     /// <summary>
     /// Provider option key indicating that reads should be routed back to the source table.
@@ -125,6 +135,13 @@ public sealed record FeatureStorageMapping(
                 ?? resource.ReadSrid(),
             TemporalColumn: ReadStringOption(storageBinding.Options, "temporalColumn"),
             AttributesColumn: ReadStringOption(storageBinding.Options, "attributesColumn"),
+            // When the binding advertises a layer-discriminator column (set for layers that
+            // share a single physical table, e.g. the shared `features` table keyed by
+            // `layer_id`), carry the column name and the bound layer's id so the reader can
+            // constrain every query to this layer's rows. The value comes from the binding's
+            // StorageLayerId — the same integer the runtime queries by.
+            LayerDiscriminatorColumn: ReadStringOption(storageBinding.Options, "layerDiscriminatorColumn"),
+            LayerDiscriminatorValue: storageBinding.StorageLayerId,
             ProviderOptions: providerOptions);
 
         var errors = mapping.Validate();

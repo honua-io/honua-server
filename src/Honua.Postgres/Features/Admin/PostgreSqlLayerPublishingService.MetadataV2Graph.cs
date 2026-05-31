@@ -257,7 +257,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         };
     }
 
-    private static MetadataV2StorageBinding BuildPublishedStorageBinding(
+    private MetadataV2StorageBinding BuildPublishedStorageBinding(
         LayerPublishRequest request,
         int layerId,
         string resourceId,
@@ -279,15 +279,24 @@ internal sealed partial class PostgreSqlLayerPublishingService
             ["storageSrid"] = JsonSerializer.SerializeToElement(storageSrid)
         };
 
-        // Layers published onto the shared 'features' table store their non-key
-        // attributes as keys inside the 'features.attributes' JSONB column rather than
-        // as physical columns. Declare the JSONB accessor so the storage-mapped reader
-        // projects attributes->>'field' instead of bare columns (Postgres 42703). Gate
-        // strictly on the shared features table; dedicated per-layer tables keep their
-        // column-per-field projection. (See honua-server#1238.)
-        if (string.Equals(table, DatabaseSchema.FeaturesTable, StringComparison.OrdinalIgnoreCase))
+        // Layers published onto the shared Honua 'features' table store their non-key
+        // attributes as keys inside the 'features.attributes' JSONB column (not as
+        // physical columns) and share the table across layers via the 'layer_id'
+        // discriminator column. Declare both so the storage-mapped reader projects
+        // attributes->>'field' instead of bare columns (Postgres 42703) AND constrains
+        // reads to this layer's rows (WHERE layer_id = StorageLayerId) — without the
+        // discriminator a query for layer A would return layer B's features.
+        //
+        // Gate on the ACTUAL shared table: name == 'features' AND schema == the Honua
+        // metadata schema. A user source table that merely happens to be named
+        // 'features' in another schema (e.g. public.features) has neither the JSONB
+        // 'attributes' column nor 'layer_id', so applying these options there would make
+        // the reader emit columns the table lacks and fail with 42703. (honua-server#1238.)
+        if (string.Equals(table, DatabaseSchema.FeaturesTable, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(schema, _metadataSchema, StringComparison.OrdinalIgnoreCase))
         {
             options["attributesColumn"] = JsonSerializer.SerializeToElement("attributes");
+            options["layerDiscriminatorColumn"] = JsonSerializer.SerializeToElement(DatabaseSchema.LayerIdColumn);
         }
 
         return new MetadataV2StorageBinding

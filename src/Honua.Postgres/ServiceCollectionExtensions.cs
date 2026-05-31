@@ -212,7 +212,12 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<ITableDiscoveryService, PostgreSqlTableDiscoveryService>();
 
         // Register layer publishing implementation
-        services.AddScoped<ILayerPublishingService, PostgreSqlLayerPublishingService>();
+        services.AddScoped<ILayerPublishingService>(serviceProvider =>
+            new PostgreSqlLayerPublishingService(
+                serviceProvider.GetRequiredService<ITableDiscoveryService>(),
+                serviceProvider.GetRequiredService<IMetadataV2GraphStore>(),
+                serviceProvider.GetRequiredService<ILogger<PostgreSqlLayerPublishingService>>(),
+                configuration["Database:Schema"]));
 
         // Register health checker
         services.AddScoped<IDatabaseHealthChecker, PostgresDatabaseHealthChecker>();
