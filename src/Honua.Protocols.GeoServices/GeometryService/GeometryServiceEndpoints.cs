@@ -207,6 +207,72 @@ internal static class GeometryServiceEndpoints
             .WithTags("GeometryService")
             .AllowAnonymous();
 
+        endpoints.MapGet($"{GeometryRoutePrefix}/cut", (Delegate)HandleCut)
+            .WithDisplayName("Geometry Service Cut (GET)")
+            .WithName("GeometryServiceCutGet")
+            .WithTags("GeometryService");
+
+        endpoints.MapPost($"{GeometryRoutePrefix}/cut", (Delegate)HandleCut)
+            .WithDisplayName("Geometry Service Cut (POST)")
+            .WithName("GeometryServiceCutPost")
+            .WithTags("GeometryService")
+            .AllowAnonymous();
+
+        endpoints.MapGet($"{GeometryRoutePrefix}/trimExtend", (Delegate)HandleTrimExtend)
+            .WithDisplayName("Geometry Service Trim Extend (GET)")
+            .WithName("GeometryServiceTrimExtendGet")
+            .WithTags("GeometryService");
+
+        endpoints.MapPost($"{GeometryRoutePrefix}/trimExtend", (Delegate)HandleTrimExtend)
+            .WithDisplayName("Geometry Service Trim Extend (POST)")
+            .WithName("GeometryServiceTrimExtendPost")
+            .WithTags("GeometryService")
+            .AllowAnonymous();
+
+        endpoints.MapGet($"{GeometryRoutePrefix}/offset", (Delegate)HandleOffset)
+            .WithDisplayName("Geometry Service Offset (GET)")
+            .WithName("GeometryServiceOffsetGet")
+            .WithTags("GeometryService");
+
+        endpoints.MapPost($"{GeometryRoutePrefix}/offset", (Delegate)HandleOffset)
+            .WithDisplayName("Geometry Service Offset (POST)")
+            .WithName("GeometryServiceOffsetPost")
+            .WithTags("GeometryService")
+            .AllowAnonymous();
+
+        endpoints.MapGet($"{GeometryRoutePrefix}/autoComplete", (Delegate)HandleAutoComplete)
+            .WithDisplayName("Geometry Service Auto Complete (GET)")
+            .WithName("GeometryServiceAutoCompleteGet")
+            .WithTags("GeometryService");
+
+        endpoints.MapPost($"{GeometryRoutePrefix}/autoComplete", (Delegate)HandleAutoComplete)
+            .WithDisplayName("Geometry Service Auto Complete (POST)")
+            .WithName("GeometryServiceAutoCompletePost")
+            .WithTags("GeometryService")
+            .AllowAnonymous();
+
+        endpoints.MapGet($"{GeometryRoutePrefix}/reshape", (Delegate)HandleReshape)
+            .WithDisplayName("Geometry Service Reshape (GET)")
+            .WithName("GeometryServiceReshapeGet")
+            .WithTags("GeometryService");
+
+        endpoints.MapPost($"{GeometryRoutePrefix}/reshape", (Delegate)HandleReshape)
+            .WithDisplayName("Geometry Service Reshape (POST)")
+            .WithName("GeometryServiceReshapePost")
+            .WithTags("GeometryService")
+            .AllowAnonymous();
+
+        endpoints.MapGet($"{GeometryRoutePrefix}/findTransformations", (Delegate)HandleFindTransformations)
+            .WithDisplayName("Geometry Service Find Transformations (GET)")
+            .WithName("GeometryServiceFindTransformationsGet")
+            .WithTags("GeometryService");
+
+        endpoints.MapPost($"{GeometryRoutePrefix}/findTransformations", (Delegate)HandleFindTransformations)
+            .WithDisplayName("Geometry Service Find Transformations (POST)")
+            .WithName("GeometryServiceFindTransformationsPost")
+            .WithTags("GeometryService")
+            .AllowAnonymous();
+
         return endpoints;
     }
 
@@ -215,7 +281,7 @@ internal static class GeometryServiceEndpoints
     // their discovery handshake before invoking buffer/simplify/etc.
     private const string GeometryServerInfoJson =
         "{\"currentVersion\":11.1,"
-        + "\"serviceDescription\":\"Honua Geometry Service — buffer, simplify, project, intersect, union, clip, difference, areasAndLengths, lengths, distance, relation, densify, convexHull, generalize, labelPoints.\","
+        + "\"serviceDescription\":\"Honua Geometry Service — buffer, simplify, project, intersect, union, clip, difference, areasAndLengths, lengths, distance, relation, densify, convexHull, generalize, labelPoints, cut, trimExtend, offset, autoComplete, reshape, findTransformations.\","
         + "\"maxBufferCount\":1000,"
         + "\"maxSimplifyCount\":1000,"
         + "\"resampled\":true}";
@@ -341,5 +407,53 @@ internal static class GeometryServiceEndpoints
     {
         var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         return await handler.HandleLabelPointsAsync(context, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> HandleCut(
+        HttpContext context,
+        GeometryServiceHandler handler)
+    {
+        var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        return await handler.HandleCutAsync(context, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> HandleTrimExtend(
+        HttpContext context,
+        GeometryServiceHandler handler)
+    {
+        var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        return await handler.HandleTrimExtendAsync(context, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> HandleOffset(
+        HttpContext context,
+        GeometryServiceHandler handler)
+    {
+        var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        return await handler.HandleOffsetAsync(context, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> HandleAutoComplete(
+        HttpContext context,
+        GeometryServiceHandler handler)
+    {
+        var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        return await handler.HandleAutoCompleteAsync(context, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> HandleReshape(
+        HttpContext context,
+        GeometryServiceHandler handler)
+    {
+        var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        return await handler.HandleReshapeAsync(context, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> HandleFindTransformations(
+        HttpContext context,
+        GeometryServiceHandler handler)
+    {
+        var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        return await handler.HandleFindTransformationsAsync(context, ct).ConfigureAwait(false);
     }
 }
