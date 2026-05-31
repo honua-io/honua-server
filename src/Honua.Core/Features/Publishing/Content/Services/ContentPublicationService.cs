@@ -72,6 +72,7 @@ public sealed class ContentPublicationService : IContentPublicationService
         ValidateKind(request.Kind);
         ValidateBbox(request.DefaultViewBbox);
         ValidatePolicyShape(request.Policy);
+        ContentPublicationBodyValidator.Validate(request.Kind, request.ContentPayload);
 
         var slug = ContentPublicationSlug.Normalize(request.RouteSlug, request.Title);
 
@@ -166,7 +167,10 @@ public sealed class ContentPublicationService : IContentPublicationService
 
         if (string.IsNullOrWhiteSpace(versionSelector))
         {
-            throw new ContentPublicationValidationException("A version selector is required.");
+            throw new ContentPublicationValidationException(
+                "A version selector is required.",
+                code: "publication.versionSelector.required",
+                path: "/versionSelector");
         }
 
         if (TryParseRevision(versionSelector, out var revision))
@@ -179,7 +183,10 @@ public sealed class ContentPublicationService : IContentPublicationService
             return await _store.GetVersionByIdAsync(publicationId, versionSelector, cancellationToken).ConfigureAwait(false);
         }
 
-        throw new ContentPublicationValidationException("Version selector must be a revision number, 'v{n}', or a version id.");
+        throw new ContentPublicationValidationException(
+            "Version selector must be a revision number, 'v{n}', or a version id.",
+            code: "publication.versionSelector.invalid",
+            path: "/versionSelector");
     }
 
     /// <inheritdoc />
@@ -197,6 +204,8 @@ public sealed class ContentPublicationService : IContentPublicationService
         var route = await _store.GetRouteByPublicationIdAsync(publicationId, cancellationToken).ConfigureAwait(false)
             ?? throw new ContentPublicationNotFoundException("Publication not found.");
         EnsureEtagMatches(route, request.ExpectedEtag);
+
+        ContentPublicationBodyValidator.Validate(route.Kind, request.ContentPayload);
 
         await ValidateDependenciesAsync(request.Dependencies, cancellationToken).ConfigureAwait(false);
 
@@ -280,17 +289,26 @@ public sealed class ContentPublicationService : IContentPublicationService
         }
         else
         {
-            throw new ContentPublicationValidationException("A rollback target (targetVersionId or targetRevision) is required.");
+            throw new ContentPublicationValidationException(
+                "A rollback target (targetVersionId or targetRevision) is required.",
+                code: "publication.rollback.target.required",
+                path: "/targetVersionId");
         }
 
         if (target is null)
         {
-            throw new ContentPublicationValidationException("The rollback target version was not found.");
+            throw new ContentPublicationValidationException(
+                "The rollback target version was not found.",
+                code: "publication.rollback.target.notFound",
+                path: "/targetVersionId");
         }
 
         if (string.Equals(target.VersionId, route.ActiveVersionId, StringComparison.Ordinal))
         {
-            throw new ContentPublicationValidationException("The rollback target is already the active version.");
+            throw new ContentPublicationValidationException(
+                "The rollback target is already the active version.",
+                code: "publication.rollback.target.active",
+                path: "/targetVersionId");
         }
 
         var now = _timeProvider.GetUtcNow();
@@ -361,7 +379,10 @@ public sealed class ContentPublicationService : IContentPublicationService
             var index = links.FindIndex(l => string.Equals(l.LinkId, revokeId, StringComparison.Ordinal));
             if (index < 0)
             {
-                throw new ContentPublicationValidationException("The public link to revoke was not found.");
+                throw new ContentPublicationValidationException(
+                    "The public link to revoke was not found.",
+                    code: "publication.publicLink.revoke.notFound",
+                    path: "/revokePublicLinkId");
             }
 
             links[index] = links[index] with { Revoked = true, RevokedAt = now };
@@ -451,7 +472,10 @@ public sealed class ContentPublicationService : IContentPublicationService
     {
         if (!Guid.TryParse(publicationId, out _))
         {
-            throw new ContentPublicationValidationException("publicationId must be a valid GUID.");
+            throw new ContentPublicationValidationException(
+                "publicationId must be a valid GUID.",
+                code: "publication.publicationId.invalid",
+                path: "/publicationId");
         }
     }
 
@@ -469,7 +493,10 @@ public sealed class ContentPublicationService : IContentPublicationService
     {
         if (!IsDefinedKind(kind))
         {
-            throw new ContentPublicationValidationException("kind is not a defined content publication kind.");
+            throw new ContentPublicationValidationException(
+                "kind is not a defined content publication kind.",
+                code: "publication.kind.invalid",
+                path: "/kind");
         }
     }
 
@@ -492,7 +519,10 @@ public sealed class ContentPublicationService : IContentPublicationService
     {
         if (!IsDefinedVisibility(visibility))
         {
-            throw new ContentPublicationValidationException("visibility is not a defined content publication visibility scope.");
+            throw new ContentPublicationValidationException(
+                "visibility is not a defined content publication visibility scope.",
+                code: "publication.visibility.invalid",
+                path: "/policy/visibility");
         }
     }
 
@@ -525,7 +555,9 @@ public sealed class ContentPublicationService : IContentPublicationService
             if (string.IsNullOrWhiteSpace(token) || ContainsWhitespaceOrControl(token))
             {
                 throw new ContentPublicationValidationException(
-                    $"{field} entries must be non-empty values without whitespace or control characters.");
+                    $"{field} entries must be non-empty values without whitespace or control characters.",
+                    code: "publication.embed.token.invalid",
+                    path: "/policy/" + field.Replace('.', '/'));
             }
         }
     }
@@ -552,18 +584,27 @@ public sealed class ContentPublicationService : IContentPublicationService
 
         if (string.IsNullOrWhiteSpace(bbox.Crs))
         {
-            throw new ContentPublicationValidationException("defaultViewBbox.crs must be declared.");
+            throw new ContentPublicationValidationException(
+                "defaultViewBbox.crs must be declared.",
+                code: "publication.bbox.crs.required",
+                path: "/defaultViewBbox/crs");
         }
 
         if (bbox.MinX > bbox.MaxX || bbox.MinY > bbox.MaxY)
         {
-            throw new ContentPublicationValidationException("defaultViewBbox minimum must not exceed maximum.");
+            throw new ContentPublicationValidationException(
+                "defaultViewBbox minimum must not exceed maximum.",
+                code: "publication.bbox.order",
+                path: "/defaultViewBbox");
         }
 
         if (IsWgs84(bbox.Crs)
             && (bbox.MinX < -180 || bbox.MaxX > 180 || bbox.MinY < -90 || bbox.MaxY > 90))
         {
-            throw new ContentPublicationValidationException("defaultViewBbox is out of range for EPSG:4326 lon/lat.");
+            throw new ContentPublicationValidationException(
+                "defaultViewBbox is out of range for EPSG:4326 lon/lat.",
+                code: "publication.bbox.range",
+                path: "/defaultViewBbox");
         }
     }
 
@@ -596,7 +637,10 @@ public sealed class ContentPublicationService : IContentPublicationService
 
             if (string.IsNullOrWhiteSpace(dependency.RefId))
             {
-                throw new ContentPublicationValidationException("Each dependency must carry a non-empty refId.");
+                throw new ContentPublicationValidationException(
+                    "Each dependency must carry a non-empty refId.",
+                    code: "publication.dependency.refId.required",
+                    path: "/dependencies");
             }
 
             switch (dependency.Kind)
@@ -648,7 +692,10 @@ public sealed class ContentPublicationService : IContentPublicationService
     {
         if (!IsDefinedDependencyKind(kind))
         {
-            throw new ContentPublicationValidationException("dependency.kind is not a defined content publication dependency kind.");
+            throw new ContentPublicationValidationException(
+                "dependency.kind is not a defined content publication dependency kind.",
+                code: "publication.dependency.kind.invalid",
+                path: "/dependencies");
         }
     }
 

@@ -95,7 +95,7 @@ internal static class ContentPublicationEndpoints
         }
         catch (ContentPublicationException ex)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(context, ex.StatusCode, ex.Message);
+            return ToProblem(context, ex);
         }
         catch (OperationCanceledException)
         {
@@ -123,7 +123,7 @@ internal static class ContentPublicationEndpoints
         }
         catch (ContentPublicationException ex)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(context, ex.StatusCode, ex.Message);
+            return ToProblem(context, ex);
         }
         catch (OperationCanceledException)
         {
@@ -158,7 +158,7 @@ internal static class ContentPublicationEndpoints
         }
         catch (ContentPublicationException ex)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(context, ex.StatusCode, ex.Message);
+            return ToProblem(context, ex);
         }
         catch (OperationCanceledException)
         {
@@ -199,7 +199,7 @@ internal static class ContentPublicationEndpoints
         }
         catch (ContentPublicationException ex)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(context, ex.StatusCode, ex.Message);
+            return ToProblem(context, ex);
         }
         catch (OperationCanceledException)
         {
@@ -240,7 +240,7 @@ internal static class ContentPublicationEndpoints
         }
         catch (ContentPublicationException ex)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(context, ex.StatusCode, ex.Message);
+            return ToProblem(context, ex);
         }
         catch (OperationCanceledException)
         {
@@ -293,7 +293,7 @@ internal static class ContentPublicationEndpoints
         }
         catch (ContentPublicationException ex)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(context, ex.StatusCode, ex.Message);
+            return ToProblem(context, ex);
         }
         catch (OperationCanceledException)
         {
@@ -305,6 +305,18 @@ internal static class ContentPublicationEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status500InternalServerError, "An internal error occurred while updating the policy.");
         }
     }
+
+    /// <summary>
+    /// Maps a <see cref="ContentPublicationException"/> to an RFC-7807 problem result. Validation
+    /// failures (a <see cref="ContentPublicationValidationException"/>) are field-addressable, so they
+    /// flow through <see cref="ProblemDetailsHelpers.CreateValidationProblem"/> with the shared
+    /// <c>errors[]</c> extension the console binds onto report/dashboard inputs; all other publication
+    /// errors (404/409/503) keep the flat admin problem shape.
+    /// </summary>
+    private static IResult ToProblem(HttpContext context, ContentPublicationException exception)
+        => exception is ContentPublicationValidationException validation
+            ? ProblemDetailsHelpers.CreateValidationProblem(context, validation.StatusCode, validation.Errors, validation.Message)
+            : ProblemDetailsHelpers.CreateAdminProblem(context, exception.StatusCode, exception.Message);
 
     private static async Task InvalidateAsync(HttpContext context, string publicationId, string routeSlug)
     {
