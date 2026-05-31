@@ -45,6 +45,11 @@ internal sealed partial class FeatureQueryBuilder
                 AppendGroupByClause(sql, groupByFields.Value);
             }
 
+            if (query.Having.HasValue && !query.Having.Value.IsDefaultOrEmpty)
+            {
+                AppendHavingClause(sql, query.Having.Value, ref paramIndex, parameters);
+            }
+
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }
         finally
@@ -153,6 +158,54 @@ internal sealed partial class FeatureQueryBuilder
 
             sql.Append(GetFieldExpression(groupByFields[i]));
         }
+    }
+
+    private static void AppendHavingClause(
+        StringBuilder sql,
+        ImmutableArray<HavingCondition> conditions,
+        ref int paramIndex,
+        List<object> parameters)
+    {
+        sql.Append(" HAVING ");
+        for (var i = 0; i < conditions.Length; i++)
+        {
+            var condition = conditions[i];
+
+            if (!IsValidFieldName(condition.OnStatisticField))
+            {
+                throw new ArgumentException($"Invalid having field name: {condition.OnStatisticField}");
+            }
+
+            if (i > 0)
+            {
+                sql.Append(" AND ");
+            }
+
+            var fieldExpr = GetFieldExpression(condition.OnStatisticField);
+            var aggregateExpr = BuildAggregateExpression(condition.StatisticType, fieldExpr, condition.FieldType);
+            var op = MapHavingOperator(condition.Operator);
+
+            // The comparison literal is bound as a positional parameter rather than
+            // concatenated, keeping HAVING on the same parameterized path as WHERE.
+            var valueParam = $"${paramIndex++}";
+            parameters.Add(condition.Value);
+
+            sql.Append(CultureInfo.InvariantCulture, $"{aggregateExpr} {op} {valueParam}");
+        }
+    }
+
+    private static string MapHavingOperator(HavingComparisonOperator op)
+    {
+        return op switch
+        {
+            HavingComparisonOperator.Equal => "=",
+            HavingComparisonOperator.NotEqual => "<>",
+            HavingComparisonOperator.GreaterThan => ">",
+            HavingComparisonOperator.GreaterThanOrEqual => ">=",
+            HavingComparisonOperator.LessThan => "<",
+            HavingComparisonOperator.LessThanOrEqual => "<=",
+            _ => throw new ArgumentOutOfRangeException(nameof(op), op, "Unsupported having operator")
+        };
     }
 
     private static string SanitizeAlias(string alias)

@@ -239,6 +239,7 @@ internal static partial class FeatureServerEndpoints
         {
             UseStandardizedQueries = true,
             SupportsStatistics = supportsStatistics,
+            SupportsHavingClause = supportsStatistics,
             SupportsOrderBy = supportsOrderBy,
             SupportsDistinct = supportsDistinct,
             SupportsCountDistinct = supportsStatistics,
