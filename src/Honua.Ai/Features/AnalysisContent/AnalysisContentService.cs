@@ -36,6 +36,21 @@ internal sealed partial class AnalysisContentService(
 {
     private const int DefaultPreviewLimit = 25;
     private const int MaxPreviewLimit = 200;
+    private const int DefaultListLimit = 50;
+    private const int MaxListLimit = 200;
+
+    // Backend-neutral compute-unit projection. A query step costs a base unit plus a unit per
+    // estimated million input features it reads; a geoprocessing step costs a fixed compute unit;
+    // any other step costs a small fixed overhead. These coefficients are deliberate, documented
+    // constants so the estimate is deterministic and reproducible for a given plan + statistics.
+    private const double ComputeUnitsPerStepOverhead = 0.25d;
+    private const double ComputeUnitsPerQueryStep = 1.0d;
+    private const double ComputeUnitsPerGeoprocessStep = 2.0d;
+    private const double ComputeUnitsPerMillionInputFeatures = 1.5d;
+    private const decimal CostUsdPerComputeUnit = 0.02m;
+    private const double RuntimeSecondsPerComputeUnit = 4.0d;
+
+    private static readonly string[] LayerInputKeys = ["layerId", "layer", "storageLayerId", "sourceLayerId"];
     private const int DefaultLogLimit = 100;
     private const int MaxLogLimit = 200;
     private const int MaxDiagnosticLength = 512;
@@ -108,6 +123,161 @@ internal sealed partial class AnalysisContentService(
                 AnalysisContentTelemetry.SetContentTags(activity, item.ItemId, item.Kind, version.Version, version.VersionId);
                 return new AnalysisContentItemResult(item, version);
             }).ConfigureAwait(false);
+
+    public async Task<AnalysisContentListResult> ListItemsAsync(
+        ListAnalysisContentItemsQuery query,
+        CancellationToken cancellationToken)
+        => await AnalysisContentTelemetry.TrackAsync(
+            AnalysisContentTelemetry.OperationsNames.ListItems,
+            async activity =>
+            {
+                ArgumentNullException.ThrowIfNull(query);
+
+                var limit = ResolveLimit(query.Limit, DefaultListLimit, MaxListLimit);
+                var offset = query.Offset.GetValueOrDefault();
+                if (offset < 0)
+                {
+                    throw new AnalysisContentValidationException("Offset must be zero or greater.");
+                }
+
+                var page = await store.ListItemsAsync(
+                    new AnalysisContentItemQuery
+                    {
+                        Kind = query.Kind,
+                        Lifecycle = query.Lifecycle,
+                        Limit = limit,
+                        Offset = offset
+                    },
+                    cancellationToken).ConfigureAwait(false);
+
+                activity?.SetTag("honua.analysis_content.list_count", page.Items.Count);
+                activity?.SetTag("honua.analysis_content.list_total", page.TotalCount);
+                return new AnalysisContentListResult(page.Items, page.TotalCount, limit, offset);
+            }).ConfigureAwait(false);
+
+    public async Task<AnalysisContentEstimateResult> EstimateVersionAsync(
+        string itemId,
+        int version,
+        CancellationToken cancellationToken)
+        => await AnalysisContentTelemetry.TrackAsync(
+            AnalysisContentTelemetry.OperationsNames.EstimateVersion,
+            async activity =>
+            {
+                var contentVersion = await GetRequiredVersionAsync(itemId, version, cancellationToken).ConfigureAwait(false);
+                var package = contentVersion.AnalysisPackage
+                    ?? throw new AnalysisContentValidationException("The requested version is not an analysis package.");
+                AnalysisContentTelemetry.SetContentTags(
+                    activity,
+                    contentVersion.ItemId,
+                    contentVersion.Kind,
+                    contentVersion.Version,
+                    contentVersion.VersionId);
+
+                var estimate = await ComputePackageEstimateAsync(package, cancellationToken).ConfigureAwait(false);
+                activity?.SetTag("honua.analysis_content.estimated_compute_units", estimate.EstimatedComputeUnits);
+                return new AnalysisContentEstimateResult(
+                    contentVersion.ItemId,
+                    contentVersion.Version,
+                    contentVersion.VersionId,
+                    estimate);
+            }).ConfigureAwait(false);
+
+    private async Task<AnalysisContentEstimate> ComputePackageEstimateAsync(
+        AnalysisPackageContent package,
+        CancellationToken cancellationToken)
+    {
+        var steps = package.Plan.Steps;
+        var queryStepCount = 0;
+        var geoprocessStepCount = 0;
+        var inputs = new List<AnalysisContentLayerEstimate>();
+        long? estimatedInputFeatures = null;
+        var isLowerBound = false;
+
+        foreach (var step in steps)
+        {
+            switch (step.Kind)
+            {
+                case AnalysisPlanStepKind.QueryFeatures:
+                    queryStepCount++;
+                    break;
+                case AnalysisPlanStepKind.Geoprocess:
+                    geoprocessStepCount++;
+                    break;
+            }
+
+            if (!TryResolveLayerInput(step, out var layerId))
+            {
+                continue;
+            }
+
+            long? layerCount = null;
+            var unresolved = false;
+            try
+            {
+                var layerEstimate = await featureReader.GetEstimatesAsync(layerId, cancellationToken).ConfigureAwait(false);
+                layerCount = layerEstimate.EstimatedCount;
+                estimatedInputFeatures = (estimatedInputFeatures ?? 0) + layerEstimate.EstimatedCount;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // A missing or unreadable layer must not fail the estimate; record it as an
+                // unresolved input so the projection is reported as a lower bound instead.
+                unresolved = true;
+                isLowerBound = true;
+                Log.EstimateLayerUnresolved(logger, layerId, ex);
+            }
+
+            inputs.Add(new AnalysisContentLayerEstimate
+            {
+                StepId = step.StepId,
+                LayerId = layerId,
+                EstimatedFeatureCount = layerCount,
+                Unresolved = unresolved
+            });
+        }
+
+        var featureUnits = estimatedInputFeatures.HasValue
+            ? estimatedInputFeatures.Value / 1_000_000d * ComputeUnitsPerMillionInputFeatures
+            : 0d;
+        var computeUnits =
+            steps.Count * ComputeUnitsPerStepOverhead
+            + queryStepCount * ComputeUnitsPerQueryStep
+            + geoprocessStepCount * ComputeUnitsPerGeoprocessStep
+            + featureUnits;
+        computeUnits = Math.Round(computeUnits, 4, MidpointRounding.AwayFromZero);
+
+        var costUsd = Math.Round((decimal)computeUnits * CostUsdPerComputeUnit, 4, MidpointRounding.AwayFromZero);
+        var runtimeSeconds = Math.Round(computeUnits * RuntimeSecondsPerComputeUnit, 2, MidpointRounding.AwayFromZero);
+
+        return new AnalysisContentEstimate
+        {
+            StepCount = steps.Count,
+            QueryStepCount = queryStepCount,
+            GeoprocessStepCount = geoprocessStepCount,
+            EstimatedInputFeatureCount = estimatedInputFeatures,
+            EstimatedComputeUnits = computeUnits,
+            EstimatedCostUsd = costUsd,
+            EstimatedRuntimeSeconds = runtimeSeconds,
+            IsLowerBound = isLowerBound,
+            Inputs = inputs
+        };
+    }
+
+    private static bool TryResolveLayerInput(AnalysisPlanStep step, out int layerId)
+    {
+        foreach (var key in LayerInputKeys)
+        {
+            if (step.Inputs.TryGetValue(key, out var raw)
+                && int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out layerId)
+                && layerId >= 0)
+            {
+                return true;
+            }
+        }
+
+        layerId = 0;
+        return false;
+    }
 
     public async Task<AnalysisContentVersionResult> GetVersionAsync(
         string itemId,
@@ -987,5 +1157,8 @@ internal sealed partial class AnalysisContentService(
 
         [LoggerMessage(12006, LogLevel.Debug, "Retrying analysis content version creation for {ItemId} after conflict on attempt {Attempt}")]
         public static partial void ContentVersionConflictRetry(ILogger logger, string itemId, int attempt);
+
+        [LoggerMessage(12007, LogLevel.Debug, "Analysis content estimate could not resolve statistics for layer {LayerId}; reporting a lower bound")]
+        public static partial void EstimateLayerUnresolved(ILogger logger, int layerId, Exception exception);
     }
 }

@@ -54,6 +54,32 @@ public sealed class PostgresAnalysisContentStoreTests
     }
 
     [Fact]
+    public async Task ListItemsAsync_WhenConnectionFails_ThrowsStoreUnavailable()
+    {
+        var store = CreateStoreWithUnavailableConnection();
+
+        var act = () => store.ListItemsAsync(new AnalysisContentItemQuery { Limit = 50, Offset = 0 });
+
+        await act.Should().ThrowAsync<AnalysisContentStoreUnavailableException>();
+    }
+
+    [Fact]
+    public async Task ListItemsAsync_WhenConnectionProviderReportsServiceUnavailable_ThrowsStoreUnavailable()
+    {
+        var store = CreateStoreWithServiceUnavailableConnection();
+
+        var act = () => store.ListItemsAsync(
+            new AnalysisContentItemQuery
+            {
+                Kind = AnalysisContentKind.AnalysisPackage,
+                Limit = 25,
+                Offset = 0
+            });
+
+        await act.Should().ThrowAsync<AnalysisContentStoreUnavailableException>();
+    }
+
+    [Fact]
     public async Task GetArtifactAsync_WhenConnectionFails_ThrowsStoreUnavailable()
     {
         var store = CreateStoreWithUnavailableConnection();

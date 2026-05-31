@@ -124,6 +124,38 @@ internal sealed class InMemoryAnalysisContentStore : IAnalysisContentStore
         return Task.FromResult<IReadOnlyList<AnalysisContentVersion>>(snapshot);
     }
 
+    public Task<AnalysisContentItemPage> ListItemsAsync(
+        AnalysisContentItemQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        AnalysisContentItem[] snapshot;
+        lock (_gate)
+        {
+            snapshot = _items.Values.ToArray();
+        }
+
+        var lifecycle = query.Lifecycle ?? AnalysisContentLifecycle.Active;
+        var filtered = snapshot
+            .Where(item => item.Lifecycle == lifecycle)
+            .Where(item => query.Kind is null || item.Kind == query.Kind.Value)
+            .OrderByDescending(item => item.UpdatedAt)
+            .ThenBy(item => item.ItemId, StringComparer.Ordinal)
+            .ToArray();
+
+        var page = filtered
+            .Skip(query.Offset)
+            .Take(query.Limit)
+            .ToArray();
+
+        return Task.FromResult(new AnalysisContentItemPage
+        {
+            Items = page,
+            TotalCount = filtered.Length
+        });
+    }
+
     public Task<ResultArtifactRecord> UpsertArtifactAsync(
         ResultArtifactRecord artifact,
         CancellationToken cancellationToken = default)

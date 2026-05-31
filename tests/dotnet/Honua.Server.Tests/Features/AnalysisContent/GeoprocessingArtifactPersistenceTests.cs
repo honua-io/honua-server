@@ -188,6 +188,11 @@ public sealed class GeoprocessingArtifactPersistenceTests
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
+        public Task<AnalysisContentItemPage> ListItemsAsync(
+            AnalysisContentItemQuery query,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
         public Task<ResultArtifactRecord> UpsertArtifactAsync(
             ResultArtifactRecord artifact,
             CancellationToken cancellationToken = default)

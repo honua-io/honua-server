@@ -122,6 +122,17 @@ public interface IAnalysisContentStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Lists content item roots in a stable, paged order (most recently updated first,
+    /// then by item identifier). Supports optional filtering by kind and lifecycle.
+    /// </summary>
+    /// <param name="query">Paging and filter query.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The requested page of items and the total count matching the filter.</returns>
+    Task<AnalysisContentItemPage> ListItemsAsync(
+        AnalysisContentItemQuery query,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Inserts or updates durable result artifact metadata.
     /// </summary>
     /// <param name="artifact">Artifact metadata record.</param>

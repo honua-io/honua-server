@@ -27,6 +27,10 @@ internal static partial class AnalysisContentEndpoints
             .WithName("CreateAnalysisContentItem")
             .WithSummary("Create a saved-query or analysis-package content item.");
 
+        _ = content.MapGet("/items", HandleListItemsAsync)
+            .WithName("ListAnalysisContentItems")
+            .WithSummary("List analysis content items in a stable, paged, filterable order.");
+
         _ = content.MapGet("/items/{itemId}", HandleGetItemAsync)
             .WithName("GetAnalysisContentItem")
             .WithSummary("Open an analysis content item at its latest version.");
@@ -42,6 +46,10 @@ internal static partial class AnalysisContentEndpoints
         _ = content.MapPost("/items/{itemId}/versions", HandleCreateVersionAsync)
             .WithName("CreateAnalysisContentVersion")
             .WithSummary("Create a new immutable analysis content version.");
+
+        _ = content.MapPost("/items/{itemId}/versions/{contentVersion:int}/estimate", HandleEstimateAsync)
+            .WithName("EstimateAnalysisPackageVersion")
+            .WithSummary("Compute a server-side runtime and cost estimate for an analysis-package version.");
 
         _ = content.MapPost("/items/{itemId}/versions/{contentVersion:int}/preview", HandlePreviewAsync)
             .WithName("PreviewSavedQueryVersion")
@@ -133,6 +141,93 @@ internal static partial class AnalysisContentEndpoints
         catch (Exception ex)
         {
             LogEndpointFailed(context, "analysis-content.get", ex);
+            return CreateGenericProblem(context);
+        }
+    }
+
+    private static async Task<IResult> HandleListItemsAsync(
+        [FromQuery] string? kind,
+        [FromQuery] string? lifecycle,
+        [FromQuery] int? limit,
+        [FromQuery] int? offset,
+        [FromServices] IAnalysisContentService service,
+        HttpContext context)
+    {
+        try
+        {
+            if (!TryParseKind(kind, out var parsedKind))
+            {
+                return ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status400BadRequest,
+                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                    $"Unknown analysis content kind '{kind}'.");
+            }
+
+            if (!TryParseLifecycle(lifecycle, out var parsedLifecycle))
+            {
+                return ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status400BadRequest,
+                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                    $"Unknown analysis content lifecycle '{lifecycle}'.");
+            }
+
+            var result = await service.ListItemsAsync(
+                new ListAnalysisContentItemsQuery(parsedKind, parsedLifecycle, limit, offset),
+                context.RequestAborted).ConfigureAwait(false);
+
+            return Results.Json(
+                new AnalysisContentItemListResponse
+                {
+                    Items = result.Items,
+                    TotalCount = result.TotalCount,
+                    Limit = result.Limit,
+                    Offset = result.Offset
+                },
+                AnalysisContentApiJsonContext.Default.AnalysisContentItemListResponse);
+        }
+        catch (Exception ex) when (TryMapException(ex, context, out var problem))
+        {
+            return problem;
+        }
+        catch (Exception ex)
+        {
+            LogEndpointFailed(context, "analysis-content.list", ex);
+            return CreateGenericProblem(context);
+        }
+    }
+
+    private static async Task<IResult> HandleEstimateAsync(
+        string itemId,
+        int contentVersion,
+        [FromServices] IAnalysisContentService service,
+        HttpContext context)
+    {
+        try
+        {
+            var result = await service.EstimateVersionAsync(
+                itemId,
+                contentVersion,
+                context.RequestAborted).ConfigureAwait(false);
+
+            return Results.Json(
+                new AnalysisContentEstimateResponse
+                {
+                    ItemId = result.ItemId,
+                    Version = result.Version,
+                    VersionId = result.VersionId,
+                    Estimate = result.Estimate
+                },
+                AnalysisContentApiJsonContext.Default.AnalysisContentEstimateResponse);
+        }
+        catch (Exception ex) when (TryMapException(ex, context, out var problem))
+        {
+            return problem;
+        }
+        catch (Exception ex)
+        {
+            LogEndpointFailed(context, "analysis-content.estimate", ex);
             return CreateGenericProblem(context);
         }
     }
@@ -376,6 +471,54 @@ internal static partial class AnalysisContentEndpoints
             LogEndpointFailed(context, "analysis-content.job.failure", ex);
             return CreateGenericProblem(context);
         }
+    }
+
+    // Query-string enums use the JSON wire names (camelCase, e.g. "savedQuery"). Minimal-API's
+    // built-in enum binding only matches the CLR member name, so parse leniently here against both.
+    private static bool TryParseKind(string? value, out AnalysisContentKind? kind)
+    {
+        kind = null;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        if (string.Equals(value, "savedQuery", StringComparison.OrdinalIgnoreCase))
+        {
+            kind = AnalysisContentKind.SavedQuery;
+            return true;
+        }
+
+        if (string.Equals(value, "analysisPackage", StringComparison.OrdinalIgnoreCase))
+        {
+            kind = AnalysisContentKind.AnalysisPackage;
+            return true;
+        }
+
+        if (Enum.TryParse(value, ignoreCase: true, out AnalysisContentKind parsed))
+        {
+            kind = parsed;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryParseLifecycle(string? value, out AnalysisContentLifecycle? lifecycle)
+    {
+        lifecycle = null;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        if (Enum.TryParse(value, ignoreCase: true, out AnalysisContentLifecycle parsed))
+        {
+            lifecycle = parsed;
+            return true;
+        }
+
+        return false;
     }
 
     private static AnalysisContentItemResponse ToItemResponse(AnalysisContentItemResult result)

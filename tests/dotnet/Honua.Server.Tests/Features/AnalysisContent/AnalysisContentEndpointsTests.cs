@@ -154,6 +154,176 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /api/v1/analysis/content/items")]
+    [Endpoint("GET /api/v1/analysis/content/items")]
+    public async Task ListItems_IsPagedFilterableAndStable()
+    {
+        // Empty list before any item of this kind exists in a fresh slice: assert the paged
+        // envelope shape (the shared database may carry items from sibling tests, so assert on the
+        // envelope contract, not on a global empty set).
+        var emptyResponse = await _client.GetAsync(
+            "/api/v1/analysis/content/items?kind=analysisPackage&limit=1&offset=1000000");
+        var empty = await ReadJsonAsync<AnalysisContentItemListResponse>(emptyResponse, HttpStatusCode.OK);
+        Assert.NotNull(empty);
+        Assert.Empty(empty!.Items);
+        Assert.Equal(1, empty.Limit);
+        Assert.Equal(1000000, empty.Offset);
+
+        var marker = $"list-marker-{Guid.NewGuid():N}";
+        var createdIds = new List<string>();
+        for (var index = 0; index < 3; index++)
+        {
+            var create = new CreateAnalysisContentItemRequest
+            {
+                Kind = AnalysisContentKind.SavedQuery,
+                Name = $"{marker}-{index}",
+                Title = $"List Marker {index}",
+                SavedQuery = new SavedQueryContent
+                {
+                    LayerId = WebAppFixture.TestLayerId,
+                    ServiceName = WebAppFixture.TestServiceId,
+                    NaturalLanguageQuery = "show incidents"
+                }
+            };
+
+            var response = await _client.PostAsJsonAsync("/api/v1/analysis/content/items", create, JsonOptions);
+            var created = await ReadJsonAsync<AnalysisContentItemResponse>(response, HttpStatusCode.Created);
+            createdIds.Add(created!.Item.ItemId);
+        }
+
+        // Kind filter: every returned item must be the requested kind, and our three markers
+        // must be present in the total.
+        var savedQueryResponse = await _client.GetAsync(
+            "/api/v1/analysis/content/items?kind=savedQuery&limit=200");
+        var savedQueryPage = await ReadJsonAsync<AnalysisContentItemListResponse>(savedQueryResponse, HttpStatusCode.OK);
+        Assert.NotNull(savedQueryPage);
+        Assert.All(savedQueryPage!.Items, item => Assert.Equal(AnalysisContentKind.SavedQuery, item.Kind));
+        var markerItems = savedQueryPage.Items.Where(item => item.Name.StartsWith(marker, StringComparison.Ordinal)).ToArray();
+        Assert.Equal(3, markerItems.Length);
+        Assert.True(savedQueryPage.TotalCount >= 3);
+
+        // Stable order: most-recently-updated first, then by item id. Our three markers were
+        // created in order, so they must appear newest-first among themselves.
+        var orderedMarkers = markerItems.Select(item => item.ItemId).ToArray();
+        var expectedOrder = createdIds.AsEnumerable().Reverse().ToArray();
+        Assert.Equal(expectedOrder, orderedMarkers);
+
+        // Paging: limit 2 returns at most 2 and reports the limit/offset back; the second page
+        // continues the same stable order without overlap.
+        var firstPageResponse = await _client.GetAsync(
+            "/api/v1/analysis/content/items?kind=savedQuery&limit=2&offset=0");
+        var firstPage = await ReadJsonAsync<AnalysisContentItemListResponse>(firstPageResponse, HttpStatusCode.OK);
+        Assert.Equal(2, firstPage!.Limit);
+        Assert.Equal(0, firstPage.Offset);
+        Assert.True(firstPage.Items.Count <= 2);
+
+        var secondPageResponse = await _client.GetAsync(
+            "/api/v1/analysis/content/items?kind=savedQuery&limit=2&offset=2");
+        var secondPage = await ReadJsonAsync<AnalysisContentItemListResponse>(secondPageResponse, HttpStatusCode.OK);
+        Assert.Equal(2, secondPage!.Offset);
+        var firstIds = firstPage.Items.Select(item => item.ItemId).ToHashSet(StringComparer.Ordinal);
+        Assert.DoesNotContain(secondPage.Items, item => firstIds.Contains(item.ItemId));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetEstimates)]
+    [Endpoint("POST /api/v1/analysis/content/items")]
+    [Endpoint("POST /api/v1/analysis/content/items/{itemId}/versions/{contentVersion}/estimate")]
+    public async Task EstimateVersion_ReturnsServerComputedRuntimeAndCostProjection()
+    {
+        var create = new CreateAnalysisContentItemRequest
+        {
+            Kind = AnalysisContentKind.AnalysisPackage,
+            Name = $"estimate-package-{Guid.NewGuid():N}",
+            AnalysisPackage = new AnalysisPackageContent
+            {
+                Intent = new AnalysisIntent
+                {
+                    IntentId = "intent-estimate",
+                    Goal = "buffer incidents",
+                    RequestedOutputs = [ArtifactKind.FeatureLayer]
+                },
+                Plan = new AnalysisPlan
+                {
+                    PlanId = "plan-estimate",
+                    IntentId = "intent-estimate",
+                    Steps =
+                    [
+                        new AnalysisPlanStep
+                        {
+                            StepId = "query-1",
+                            Kind = AnalysisPlanStepKind.QueryFeatures,
+                            Inputs = new Dictionary<string, string>
+                            {
+                                ["layerId"] = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture)
+                            }
+                        },
+                        new AnalysisPlanStep
+                        {
+                            StepId = "buffer-1",
+                            Kind = AnalysisPlanStepKind.Geoprocess,
+                            ProcessId = "geometry.buffer",
+                            Inputs = new Dictionary<string, string> { ["distance"] = "10" },
+                            DependsOn = ["query-1"]
+                        }
+                    ],
+                    Outputs = [ArtifactKind.FeatureLayer]
+                },
+                RequestedArtifacts = [ArtifactKind.FeatureLayer]
+            }
+        };
+
+        var createResponse = await _client.PostAsJsonAsync("/api/v1/analysis/content/items", create, JsonOptions);
+        var created = await ReadJsonAsync<AnalysisContentItemResponse>(createResponse, HttpStatusCode.Created);
+
+        var estimateResponse = await _client.PostAsync(
+            $"/api/v1/analysis/content/items/{created!.Item.ItemId}/versions/1/estimate",
+            content: null);
+        var estimate = await ReadJsonAsync<AnalysisContentEstimateResponse>(estimateResponse, HttpStatusCode.OK);
+
+        Assert.NotNull(estimate);
+        Assert.Equal(created.Item.ItemId, estimate!.ItemId);
+        Assert.Equal(1, estimate.Version);
+        Assert.Equal(created.Version.VersionId, estimate.VersionId);
+        Assert.Equal(2, estimate.Estimate.StepCount);
+        Assert.Equal(1, estimate.Estimate.QueryStepCount);
+        Assert.Equal(1, estimate.Estimate.GeoprocessStepCount);
+        // The projection is deterministic and strictly positive for a non-empty plan.
+        Assert.True(estimate.Estimate.EstimatedComputeUnits > 0);
+        Assert.True(estimate.Estimate.EstimatedCostUsd >= 0m);
+        Assert.True(estimate.Estimate.EstimatedRuntimeSeconds >= 0);
+        // The query step resolved an input layer, so the breakdown carries that layer.
+        Assert.Contains(estimate.Estimate.Inputs, input => input.LayerId == WebAppFixture.TestLayerId);
+
+        // A saved-query version has no analysis package and must be rejected as a bad request.
+        var savedQueryCreate = new CreateAnalysisContentItemRequest
+        {
+            Kind = AnalysisContentKind.SavedQuery,
+            Name = $"estimate-savedquery-{Guid.NewGuid():N}",
+            SavedQuery = new SavedQueryContent
+            {
+                LayerId = WebAppFixture.TestLayerId,
+                ServiceName = WebAppFixture.TestServiceId,
+                NaturalLanguageQuery = "show incidents"
+            }
+        };
+        var savedQueryResponse = await _client.PostAsJsonAsync("/api/v1/analysis/content/items", savedQueryCreate, JsonOptions);
+        var savedQuery = await ReadJsonAsync<AnalysisContentItemResponse>(savedQueryResponse, HttpStatusCode.Created);
+
+        var rejected = await _client.PostAsync(
+            $"/api/v1/analysis/content/items/{savedQuery!.Item.ItemId}/versions/1/estimate",
+            content: null);
+        Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+
+        // An unknown item is a 404.
+        var missing = await _client.PostAsync(
+            "/api/v1/analysis/content/items/does-not-exist/versions/1/estimate",
+            content: null);
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /api/v1/analysis/content/items")]
     [Endpoint("POST /api/v1/analysis/content/items/{itemId}/versions/{contentVersion}/runs")]

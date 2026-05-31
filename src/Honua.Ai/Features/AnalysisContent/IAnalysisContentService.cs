@@ -18,6 +18,15 @@ internal interface IAnalysisContentService
         string itemId,
         CancellationToken cancellationToken);
 
+    Task<AnalysisContentListResult> ListItemsAsync(
+        ListAnalysisContentItemsQuery query,
+        CancellationToken cancellationToken);
+
+    Task<AnalysisContentEstimateResult> EstimateVersionAsync(
+        string itemId,
+        int version,
+        CancellationToken cancellationToken);
+
     Task<AnalysisContentVersionResult> GetVersionAsync(
         string itemId,
         int? version,
@@ -68,6 +77,24 @@ internal interface IAnalysisContentService
 internal sealed record AnalysisContentItemResult(
     AnalysisContentItem Item,
     AnalysisContentVersion Version);
+
+internal sealed record ListAnalysisContentItemsQuery(
+    AnalysisContentKind? Kind,
+    AnalysisContentLifecycle? Lifecycle,
+    int? Limit,
+    int? Offset);
+
+internal sealed record AnalysisContentListResult(
+    IReadOnlyList<AnalysisContentItem> Items,
+    long TotalCount,
+    int Limit,
+    int Offset);
+
+internal sealed record AnalysisContentEstimateResult(
+    string ItemId,
+    int Version,
+    string VersionId,
+    AnalysisContentEstimate Estimate);
 
 internal sealed record AnalysisContentVersionResult(
     AnalysisContentItem Item,
