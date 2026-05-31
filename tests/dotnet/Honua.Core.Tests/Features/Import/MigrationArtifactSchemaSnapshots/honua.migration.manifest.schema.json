@@ -1118,6 +1118,35 @@
                   "Nullable": true
                 },
                 {
+                  "JsonName": "domainRange",
+                  "ClrName": "DomainRange",
+                  "Container": "scalar",
+                  "ElementType": "MigrationInventoryDomainRange",
+                  "Required": false,
+                  "Nullable": true,
+                  "Schema": {
+                    "TypeName": "MigrationInventoryDomainRange",
+                    "Properties": [
+                      {
+                        "JsonName": "max",
+                        "ClrName": "Max",
+                        "Container": "scalar",
+                        "ElementType": "string",
+                        "Required": true,
+                        "Nullable": false
+                      },
+                      {
+                        "JsonName": "min",
+                        "ClrName": "Min",
+                        "Container": "scalar",
+                        "ElementType": "string",
+                        "Required": true,
+                        "Nullable": false
+                      }
+                    ]
+                  }
+                },
+                {
                   "JsonName": "domainType",
                   "ClrName": "DomainType",
                   "Container": "scalar",
