@@ -458,7 +458,7 @@ public sealed class QueryFormatterTests
         queryResponse.Fields.Should().Contain(field =>
             field.Name == "id" && field.Type == "esriFieldTypeString");
         queryResponse.Fields.Should().Contain(field =>
-            field.Name == FieldNames.ObjectId && field.Type == "esriFieldTypeInteger");
+            field.Name == FieldNames.ObjectId && field.Type == "esriFieldTypeOID");
 
         var attributes = queryResponse.Features.Should().ContainSingle().Subject.Attributes;
         attributes.Should().Contain("id", "alpha-1");

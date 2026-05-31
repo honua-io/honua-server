@@ -46,7 +46,7 @@ public sealed class MapServerObjectIdFieldTests
         layer.Should().NotBeNull();
         layer!.ObjectIdField.Should().Be(FieldNames.ObjectId);
         layer.Fields.Should().Contain(field => field.Name == "id" && field.Type == "esriFieldTypeString");
-        layer.Fields.Should().Contain(field => field.Name == FieldNames.ObjectId && field.Type == "esriFieldTypeInteger");
+        layer.Fields.Should().Contain(field => field.Name == FieldNames.ObjectId && field.Type == "esriFieldTypeOID");
     }
 
     [IntegrationTest]
@@ -67,7 +67,7 @@ public sealed class MapServerObjectIdFieldTests
         query.Should().NotBeNull();
         query!.ObjectIdFieldName.Should().Be(FieldNames.ObjectId);
         query.Fields.Should().Contain(field => field.Name == "id" && field.Type == "esriFieldTypeString");
-        query.Fields.Should().Contain(field => field.Name == FieldNames.ObjectId && field.Type == "esriFieldTypeInteger");
+        query.Fields.Should().Contain(field => field.Name == FieldNames.ObjectId && field.Type == "esriFieldTypeOID");
 
         var attributes = query.Features.Should().ContainSingle().Subject.Attributes;
         ReadStringAttribute(attributes, "id").Should().Be("alpha-1");
