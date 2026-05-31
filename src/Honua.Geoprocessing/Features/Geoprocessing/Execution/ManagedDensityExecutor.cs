@@ -58,7 +58,11 @@ internal sealed class ManagedDensityExecutor(
 
         var bins = new Dictionary<(int Col, int Row), BinAccumulator>();
         var binOrder = new List<(int Col, int Row)>();
-        var factory = new GeometryFactory();
+        // Cell geometries reuse the first non-empty source geometry's factory so
+        // the output cells inherit the input CRS / SRID (CRS-units cellSize is
+        // meaningless without it). Falls back to a default factory only if the
+        // input is empty, in which case there are no cells to emit anyway.
+        GeometryFactory? factory = null;
 
         foreach (var feature in source)
         {
@@ -74,6 +78,8 @@ internal sealed class ManagedDensityExecutor(
             {
                 continue;
             }
+
+            factory ??= geometry.Factory;
 
             var (col, row) = mode == BinMode.Hex
                 ? AssignHex(representative.X, representative.Y, cellSize)

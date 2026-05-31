@@ -2068,6 +2068,197 @@ public sealed class ProcessCatalogTests
     }
 
     // -----------------------------------------------------------------------
+    // Validator — managed analytics counterparts (#1260) mirror the executor's
+    // TransformInputException checks so ValidatePlan refuses plans the executor
+    // would terminally fail at runtime.
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsClusterManaged_UnknownAlgorithm_ProducesEnumViolation()
+    {
+        var plan = ManagedAnalyticsPlan("analytics.cluster-managed", new Dictionary<string, string>
+        {
+            ["input"] = "data:application/geo+json;base64,e30=",
+            ["algorithm"] = "fancy"
+        });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.algorithm");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsClusterManaged_DbscanWithoutEpsAndMinPoints_ProducesMissingViolations()
+    {
+        var plan = ManagedAnalyticsPlan("analytics.cluster-managed", new Dictionary<string, string>
+        {
+            ["input"] = "data:application/geo+json;base64,e30=",
+            ["algorithm"] = "dbscan"
+        });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v =>
+            v.Code == "MISSING_REQUIRED_PARAMETER" &&
+            v.FieldPath == "steps[s1].inputs.eps");
+        violations.Should().Contain(v =>
+            v.Code == "MISSING_REQUIRED_PARAMETER" &&
+            v.FieldPath == "steps[s1].inputs.minPoints");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsClusterManaged_KMeansWithoutK_ProducesMissingViolation()
+    {
+        var plan = ManagedAnalyticsPlan("analytics.cluster-managed", new Dictionary<string, string>
+        {
+            ["input"] = "data:application/geo+json;base64,e30=",
+            ["algorithm"] = "kmeans"
+        });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v =>
+            v.Code == "MISSING_REQUIRED_PARAMETER" &&
+            v.FieldPath == "steps[s1].inputs.k");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsClusterManaged_NonPositiveEps_ProducesRangeViolation()
+    {
+        var plan = ManagedAnalyticsPlan("analytics.cluster-managed", new Dictionary<string, string>
+        {
+            ["input"] = "data:application/geo+json;base64,e30=",
+            ["algorithm"] = "dbscan",
+            ["eps"] = "-1",
+            ["minPoints"] = "3"
+        });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.eps");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsBufferAggregateManaged_UnknownUnit_ProducesEnumViolation()
+    {
+        var plan = ManagedAnalyticsPlan("analytics.buffer-aggregate-managed", new Dictionary<string, string>
+        {
+            ["input"] = "data:application/geo+json;base64,e30=",
+            ["distance"] = "1",
+            ["unit"] = "leagues"
+        });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.unit");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsBufferAggregateManaged_NegativeDistance_ProducesRangeViolation()
+    {
+        var plan = ManagedAnalyticsPlan("analytics.buffer-aggregate-managed", new Dictionary<string, string>
+        {
+            ["input"] = "data:application/geo+json;base64,e30=",
+            ["distance"] = "-5"
+        });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.distance");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsDensityManaged_UnknownMode_ProducesEnumViolation()
+    {
+        var plan = ManagedAnalyticsPlan("analytics.density-managed", new Dictionary<string, string>
+        {
+            ["input"] = "data:application/geo+json;base64,e30=",
+            ["mode"] = "triangle",
+            ["cellSize"] = "10"
+        });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.mode");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsDensityManaged_MissingCellSize_ProducesMissingViolation()
+    {
+        var plan = ManagedAnalyticsPlan("analytics.density-managed", new Dictionary<string, string>
+        {
+            ["input"] = "data:application/geo+json;base64,e30="
+        });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v =>
+            v.Code == "MISSING_REQUIRED_PARAMETER" &&
+            v.FieldPath == "steps[s1].inputs.cellSize");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_AnalyticsDensityManaged_NonPositiveCellSize_ProducesRangeViolation()
+    {
+        var plan = ManagedAnalyticsPlan("analytics.density-managed", new Dictionary<string, string>
+        {
+            ["input"] = "data:application/geo+json;base64,e30=",
+            ["cellSize"] = "0"
+        });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().Contain(v =>
+            v.Code == "INVALID_PARAMETER_VALUE" &&
+            v.FieldPath == "steps[s1].inputs.cellSize");
+    }
+
+    private static AnalysisPlan ManagedAnalyticsPlan(string processId, Dictionary<string, string> inputs)
+        => new()
+        {
+            PlanId = "p1",
+            IntentId = "i1",
+            Steps =
+            [
+                new AnalysisPlanStep
+                {
+                    StepId = "s1",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = processId,
+                    Inputs = inputs
+                }
+            ]
+        };
+
+    // -----------------------------------------------------------------------
     // Catalog — immutability contract
     // -----------------------------------------------------------------------
 

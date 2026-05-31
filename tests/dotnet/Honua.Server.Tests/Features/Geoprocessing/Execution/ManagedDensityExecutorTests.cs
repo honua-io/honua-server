@@ -132,6 +132,29 @@ public sealed class ManagedDensityExecutorTests
     }
 
     [UnitTest]
+    public async Task OutputCells_PreserveTheInputSrid()
+    {
+        var executor = new ManagedDensityExecutor(Options());
+
+        // Source factory uses SRID 4326; emitted cell polygons must inherit it.
+        var input = BuildUri(
+            Feature(Point(0, 0)),
+            Feature(Point(20, 20)));
+
+        var (status, uri) = await RunAsync(
+            executor,
+            ManagedDensityExecutor.HandledProcessId,
+            ("input", input),
+            ("mode", "square"),
+            ("cellSize", "10"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        var features = ReadFeatures(uri!);
+        features.Should().NotBeEmpty();
+        features.Should().AllSatisfy(f => f.Geometry.SRID.Should().Be(4326));
+    }
+
+    [UnitTest]
     public async Task MissingCellSize_FailsCleanly()
     {
         var executor = new ManagedDensityExecutor(Options());
