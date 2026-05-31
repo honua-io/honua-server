@@ -29,6 +29,13 @@ namespace Honua.Server.Features.Console.Models;
 [JsonSerializable(typeof(ApiResponse<ConsoleEmbedToken>))]
 [JsonSerializable(typeof(ApiResponse<ConsoleEmbedRedeemResponse>))]
 [JsonSerializable(typeof(ApiResponse<ConsoleShareDependencyClosureResponse>))]
+// Catalog discovery-endpoints registry read API (#1279).
+[JsonSerializable(typeof(ApiResponse<CatalogDiscoveryRegistry>))]
+[JsonSerializable(typeof(ApiResponse<CatalogEndpointDetail>))]
+[JsonSerializable(typeof(ApiResponse<CatalogItem>))]
+[JsonSerializable(typeof(CatalogDiscoveryRegistry))]
+[JsonSerializable(typeof(CatalogEndpointDetail))]
+[JsonSerializable(typeof(CatalogItem))]
 [JsonSerializable(typeof(CreateConsoleContentItemRequest))]
 [JsonSerializable(typeof(UpdateConsoleContentItemRequest))]
 [JsonSerializable(typeof(PatchConsoleContentItemRequest))]
