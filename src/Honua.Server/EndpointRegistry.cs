@@ -537,6 +537,10 @@ public static class EndpointRegistry
 
         new("POST", "/csp-violation-report"),
 
+        // ArcGIS Portal Sharing token issuance (#1241).
+        new("POST", "/sharing/rest/generateToken"),
+        new("GET", "/sharing/rest/generateToken"),
+
         new("GET", "/rest/services"),
         new("GET", "/rest/info"),
         new("GET", "/rest/services/{locatorName}/GeocodeServer"),
@@ -863,13 +867,15 @@ public static class EndpointRegistry
         new("GET", "/static/{serviceId}/{center}/{dimensions}.{format}"),
         new("GET", "/static/{serviceId}/bbox/{bbox}/{dimensions}.{format}"),
 
-        // GPServer generic adapter (#723)
+        // GPServer generic adapter (#723, #1262 sync execute)
         new("GET", "/rest/services/{serviceId}/GPServer"),
         new("POST", "/rest/services/{serviceId}/GPServer"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}"),
         new("POST", "/rest/services/{serviceId}/GPServer/{taskName}"),
         new("POST", "/rest/services/{serviceId}/GPServer/{taskName}/submitJob"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/submitJob"),
+        new("POST", "/rest/services/{serviceId}/GPServer/{taskName}/execute"),
+        new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/execute"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}"),
         new("GET", "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel"),

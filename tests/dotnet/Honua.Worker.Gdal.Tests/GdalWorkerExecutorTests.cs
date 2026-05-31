@@ -51,10 +51,7 @@ public sealed class GdalWorkerExecutorTests
     [UnitTest]
     public void Dispatcher_DeclaresNativeProfile_AndRoutesSupportedProcessIds()
     {
-        var dispatcher = new GdalDispatchJobExecutor(
-            NewVectorExecutor(FakeGdalCommandRunner.Failing(1, "n/a"), out _),
-            NewRasterExecutor(FakeGdalCommandRunner.Failing(1, "n/a"), out _),
-            NullLogger<GdalDispatchJobExecutor>.Instance);
+        var dispatcher = NewDispatcher();
 
         dispatcher.AcceptedRuntimeProfiles.Should().NotBeNull().And.ContainSingle()
             .Which.Should().Be(RuntimeProfiles.Native);
@@ -65,16 +62,28 @@ public sealed class GdalWorkerExecutorTests
     [UnitTest]
     public async Task Dispatcher_RejectsUnsupportedProcessId_WithFailedResult()
     {
-        var dispatcher = new GdalDispatchJobExecutor(
-            NewVectorExecutor(FakeGdalCommandRunner.Failing(1, "n/a"), out _),
-            NewRasterExecutor(FakeGdalCommandRunner.Failing(1, "n/a"), out _),
-            NullLogger<GdalDispatchJobExecutor>.Instance);
+        var dispatcher = NewDispatcher();
 
         var job = GdalJobFactory.Job("geometry.buffer");
         var result = await dispatcher.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
 
         result.Status.Should().Be(ExecutionJobStatus.Failed);
         result.ErrorMessage.Should().Contain("not supported by the GDAL worker runtime");
+    }
+
+    private static GdalDispatchJobExecutor NewDispatcher()
+    {
+        var runner = FakeGdalCommandRunner.Failing(1, "n/a");
+        var options = GdalJobFactory.Options(Path.Combine(Path.GetTempPath(), "honua-gdal-dispatch-test"));
+        return new GdalDispatchJobExecutor(
+            new GdalVectorConvertJobExecutor(runner, options, NullLogger<GdalVectorConvertJobExecutor>.Instance),
+            new GdalRasterReprojectJobExecutor(runner, options, NullLogger<GdalRasterReprojectJobExecutor>.Instance),
+            new GdalSurfaceJobExecutor(runner, options, NullLogger<GdalSurfaceJobExecutor>.Instance),
+            new GdalRasterClipJobExecutor(runner, options, NullLogger<GdalRasterClipJobExecutor>.Instance),
+            new GdalRasterReprojectCatalogJobExecutor(runner, options, NullLogger<GdalRasterReprojectCatalogJobExecutor>.Instance),
+            new GdalRasterStatisticsJobExecutor(runner, options, NullLogger<GdalRasterStatisticsJobExecutor>.Instance),
+            new GdalRasterZonalStatisticsJobExecutor(runner, options, NullLogger<GdalRasterZonalStatisticsJobExecutor>.Instance),
+            NullLogger<GdalDispatchJobExecutor>.Instance);
     }
 
     // -------------------------------------------------------------------------

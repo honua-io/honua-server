@@ -10,6 +10,7 @@ This map summarizes source-backed runtime capabilities in `honua-server`.
 - Server-owned field form packages with versioned drafts, immutable published versions, offline policy discovery, and idempotent published-package submissions through the shared edit and attachment pipelines.
 - File import for GeoJSON, Shapefile, GeoPackage, GPX, KML, WKT, FlatGeobuf, File Geodatabase zips, GeoParquet, and raster import; ArcGIS GeoServices REST layer import and migration inventory; GeoServer REST migration inventory, dry-run validation, and bounded PostGIS-backed catalog apply; and cross-server consume probes.
 - Streaming feature change/events endpoints, async geoprocessing over the canonical process runtime, and durable analysis content for saved-query/package versions plus reusable result artifacts.
+- ArcGIS-compatible Portal Sharing token issuance at `POST`/`GET /sharing/rest/generateToken`, so Esri clients can exchange username/password credentials for an opaque bearer token and reuse it against `/rest/services/*` via `?token=`, `Authorization: Bearer`, or `X-Esri-Authorization: Bearer` (Community-tier, gated by the `identity.portal-token` entitlement; see [Security](../operator/security.md#authentication)).
 
 ## Control Plane
 
@@ -38,6 +39,7 @@ This map summarizes source-backed runtime capabilities in `honua-server`.
 - Console workflow packages: `src/Honua.Server/Features/WorkflowPackages/`
 - Content publication registry: `src/Honua.Core/Features/Publishing/Content/`, `src/Honua.Server/Features/Console/Publications/`, `src/Honua.Postgres/Features/Publishing/`
 - Import/migration: `src/Honua.Server/Features/Import/`
+- Portal Sharing token issuer + auth handler: `src/Honua.Core/Features/Authorization/Abstractions/IPortalTokenIssuer.cs`, `src/Honua.Hosting/Features/Authentication/PortalTokenIssuer.cs`, `src/Honua.Hosting/Features/Authentication/PortalTokenAuthentication*.cs`, `src/Honua.Protocols.GeoServices/Sharing/SharingRestEndpoints.cs`
 - Forms package/submission contracts: `src/Honua.Core/Features/Forms/Packages/`, `src/Honua.Server/Features/Forms/`, `src/Honua.Postgres/Features/Forms/`
 - Monitoring and health: `src/Honua.Server/Features/Infrastructure/Monitoring/`, `src/Honua.Server/Features/HealthCheck/`
 

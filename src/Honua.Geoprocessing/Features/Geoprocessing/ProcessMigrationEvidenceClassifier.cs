@@ -66,7 +66,7 @@ internal static class ProcessMigrationEvidenceClassifier
                 ProcessMigrationAutomationTier.Assisted,
                 RequiresApproval: false,
                 IsProjectedThroughOgcApiProcesses: false,
-                "Heavyweight raster/surface family; catalog and validation only in this evidence slice."),
+                "Heavyweight raster/surface family; native-profile execution routed to the GDAL worker image, validation-only in the lean image."),
 
             "conversion" when definition.OutputArtifactKinds.Contains(ArtifactKind.Raster) => new ProcessMigrationEvidenceClassification(
                 ProcessMigrationAutomationTier.Assisted,

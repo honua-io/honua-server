@@ -60,7 +60,11 @@ internal static class GdalJobInputReader
     }
 
     /// <summary>
-    /// Reads and decodes a required base64-encoded source payload step input.
+    /// Reads and decodes a required base64-encoded step input. Use the
+    /// <see cref="TryGetBase64Input(IReadOnlyDictionary{string, string}, string, long, out byte[], out string)"/>
+    /// overload to apply the worker's <c>MaxArtifactBytes</c> ceiling in the
+    /// same call — the cross-cutting size guard belongs at the decoder so
+    /// every executor enforces it uniformly.
     /// </summary>
     public static bool TryGetBase64Input(
         IReadOnlyDictionary<string, string> parameters,
@@ -90,6 +94,36 @@ internal static class GdalJobInputReader
         if (bytes.Length == 0)
         {
             error = $"input '{name}' decoded to zero bytes";
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Reads and decodes a required base64-encoded step input, rejecting any
+    /// payload that exceeds <paramref name="maxBytes"/>. Centralizes the
+    /// <c>MaxArtifactBytes</c> guard so every base64 input — primary source
+    /// AND secondary inputs like clip boundaries or zones GeoJSON — is bounded
+    /// by the same worker-wide ceiling without depending on each executor to
+    /// remember to add an after-the-fact size check.
+    /// </summary>
+    public static bool TryGetBase64Input(
+        IReadOnlyDictionary<string, string> parameters,
+        string name,
+        long maxBytes,
+        out byte[] bytes,
+        out string error)
+    {
+        if (!TryGetBase64Input(parameters, name, out bytes, out error))
+        {
+            return false;
+        }
+
+        if (bytes.Length > maxBytes)
+        {
+            error = $"input '{name}' size {bytes.Length} bytes exceeds configured MaxArtifactBytes={maxBytes}";
+            bytes = [];
             return false;
         }
 

@@ -115,6 +115,10 @@ public static class FeatureCatalog
         new("geocoding.batch", "Batch Geocoding", Categories.Geocoding,
             HonuaEdition.Enterprise, "Geocode multiple addresses in a single request."),
 
+        // Identity — Community (ArcGIS Portal interop)
+        new("identity.portal-token", "ArcGIS Portal Token Issuance", Categories.Identity,
+            HonuaEdition.Community, "Expose POST/GET /sharing/rest/generateToken so Esri clients can authenticate against Honua-secured /rest/services."),
+
         // Identity — Enterprise
         new("identity.oidc", "OIDC Authentication", Categories.Identity,
             HonuaEdition.Enterprise, "OpenID Connect multi-provider authentication with Azure AD, Google, and generic OIDC."),

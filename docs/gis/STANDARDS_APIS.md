@@ -7,6 +7,7 @@ Honua exposes multiple industry-standard geospatial APIs. This page highlights t
 | If you're using... | Use this API | Endpoint Pattern | Why |
 |-------------------|-------------|------------------|-----|
 | **ArcGIS Pro/Desktop** | FeatureServer / MapServer | `/rest/services/{id}/FeatureServer` or `/rest/services/{id}/MapServer` | Esri compatibility (data + maps) |
+| **ArcGIS clients needing portal auth** | Portal Sharing | `/sharing/rest/generateToken` | Exchange username/password for an opaque token used via `?token=`, `Authorization: Bearer`, or `X-Esri-Authorization: Bearer` |
 | **QGIS/OpenLayers** | OGC API Features | `/ogc/features` | Open standards |
 | **STAC browsers/catalog tooling** | STAC API | `/stac` | Catalog discovery, item search, extension-aware metadata |
 | **QGIS/GeoServer clients (legacy OGC)** | WMS 1.1.1/1.3, WFS 1.0/1.1/2.0, WMTS 1.0 | `.../MapServer/WMS`, `/wfs`, or `.../MapServer/WMTS` | Legacy OGC raster map and feature services |
@@ -79,6 +80,32 @@ Honua exposes multiple industry-standard geospatial APIs. This page highlights t
 - ArcGIS Pro map rendering
 - Dynamic map images for web clients
 - Identify and legend requests from Esri tooling
+
+---
+
+## **ArcGIS Portal Sharing (Token Issuance)**
+
+**Best for**: Esri clients that authenticate against `/rest/services/*` with a portal-issued token instead of an `X-API-Key` header.
+
+**Endpoint structure:**
+```
+/sharing/rest/generateToken          (POST form-encoded or GET query string)
+```
+
+**Request parameters:** `username`, `password`, `client=referer|ip` (default `referer`), optional `referer`, optional `expiration` (minutes, clamped to `Authentication:PortalToken:MaxExpirationMinutes`, default 14400 / 10 days), `f=json`.
+
+**Response shape (matches ArcGIS Portal):**
+```json
+{ "token": "<opaque>", "expires": 1735689600000, "ssl": true }
+```
+
+`expires` is Unix milliseconds. Tokens are opaque, stored in the distributed cache (Redis when wired, in-memory fallback), and bound to either the supplied referer URL (host-normalized) or the client IP that issued them. Issuance is HTTPS-only by default.
+
+**How callers reuse the token on `/rest/services/*`:** any of `?token=<opaque>`, `Authorization: Bearer <opaque>`, or `X-Esri-Authorization: Bearer <opaque>`. The token hydrates a `ClaimsPrincipal` so the existing `AccessPolicyEvaluator` and tenant middleware authorize unchanged.
+
+**Edition gating:** Community-tier, gated by the `identity.portal-token` entitlement (always active in Community mode). The endpoint returns `402 Payment Required` when the entitlement is not active. Configuration knobs (`Authentication:PortalToken:Enabled`, `RequireHttps`, `DefaultExpirationMinutes`, `MaxExpirationMinutes`) are documented in [Security](../operator/security.md#authentication).
+
+**Out of scope here:** OAuth2 named-user flow and item editing are tracked under separate tickets; this surface only issues opaque tokens.
 
 ---
 

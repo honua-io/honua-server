@@ -269,37 +269,184 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     }
 
     // -----------------------------------------------------------------------
-    // Execute
+    // Execute (synchronous)
     // -----------------------------------------------------------------------
 
     [IntegrationTest]
     [Operation(Operations.Query)]
-    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/execute")]
-    public async Task ExecuteGet_GenericAsyncTaskRouteIsNotPublished()
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    public async Task ExecutePost_SyncEligibleTask_ReturnsInlineResults()
     {
-        var response = await _client.GetAsync(
-            $"/rest/services/{ServiceId}/GPServer/geometry.buffer/execute?f=json");
+        var executeFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IGeoprocessingJobService>();
+                services.AddSingleton<IGeoprocessingJobService>(new SyncExecuteGeoprocessingJobService());
+            });
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await executeFixture.InitializeAsync();
+        try
+        {
+            using var client = executeFixture.CreateAdminClient();
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["f"] = "json",
+                ["wkb"] = PointWkbBase64,
+                ["srid"] = "4326",
+                ["distance"] = "10"
+            });
+
+            var response = await client.PostAsync(
+                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/execute", content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = doc.RootElement;
+            root.GetProperty("jobStatus").GetString().Should().Be("esriJobSucceeded");
+            var results = root.GetProperty("results").EnumerateArray().ToArray();
+            results.Should().NotBeEmpty();
+            results[0].GetProperty("paramName").GetString().Should().Be("outputFeatureLayer");
+            results[0].GetProperty("dataType").GetString().Should().Be("GPFeatureRecordSetLayer");
+        }
+        finally
+        {
+            await executeFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    public async Task ExecuteGet_SyncEligibleTask_ReturnsInlineResults()
+    {
+        var executeFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IGeoprocessingJobService>();
+                services.AddSingleton<IGeoprocessingJobService>(new SyncExecuteGeoprocessingJobService());
+            });
+
+        await executeFixture.InitializeAsync();
+        try
+        {
+            using var client = executeFixture.CreateAdminClient();
+
+            var response = await client.GetAsync(
+                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/execute?f=json&wkb={Uri.EscapeDataString(PointWkbBase64)}&srid=4326&distance=10");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            doc.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSucceeded");
+        }
+        finally
+        {
+            await executeFixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
-    public async Task ExecutePost_GenericAsyncTaskRouteIsNotPublished()
+    public async Task ExecutePost_AsyncOnlyTask_Returns400WithCapabilityMessage()
     {
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        // analytics.cluster is NOT in GPServerExecutionPolicy.SyncEligibleProcessIds —
+        // the synchronous /execute path must surface a capability error rather
+        // than try to run a long-running task inline.
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["f"] = "json",
-            ["wkb"] = PointWkbBase64,
-            ["srid"] = "4326",
-            ["distance"] = "10"
+            ["layerId"] = "1",
+            ["algorithm"] = "dbscan",
+            ["eps"] = "10",
+            ["minPoints"] = "3"
         });
 
         var response = await _client.PostAsync(
-            $"/rest/services/{ServiceId}/GPServer/geometry.buffer/execute", content);
+            $"/rest/services/{ServiceId}/GPServer/analytics.cluster/execute", content);
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("submitJob");
+        body.Should().Contain("asynchronous");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    public async Task ExecutePost_WithEnvOutSR_HonorsControl()
+    {
+        var executeFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IGeoprocessingJobService>();
+                services.AddSingleton<IGeoprocessingJobService>(new SyncExecuteGeoprocessingJobService());
+            });
+
+        await executeFixture.InitializeAsync();
+        try
+        {
+            using var client = executeFixture.CreateAdminClient();
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["f"] = "json",
+                ["wkb"] = PointWkbBase64,
+                ["srid"] = "4326",
+                ["distance"] = "10",
+                ["env:outSR"] = "3857"
+            });
+
+            var response = await client.PostAsync(
+                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/execute", content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK,
+                "env:outSR is accepted on the synchronous execute route (unlike submitJob which rejects all env controls)");
+        }
+        finally
+        {
+            await executeFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    public async Task ExecutePost_InvalidGPChoice_Returns400()
+    {
+        // conversion.geometry-format declares AllowedValues=[wkt,geojson,wkb,ewkt]
+        // on its 'target' parameter; an out-of-set value must be rejected before
+        // the canonical pipeline is touched.
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["geometry"] = PointWkbBase64,
+            ["target"] = "not-a-real-format"
+        });
+
+        var response = await _client.PostAsync(
+            $"/rest/services/{ServiceId}/GPServer/conversion.geometry-format/execute", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("target");
+        body.Should().Contain("not-a-real-format");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
+    public async Task TaskInfo_ParameterWithAllowedValues_PopulatesChoiceList()
+    {
+        var response = await _client.GetAsync(
+            $"/rest/services/{ServiceId}/GPServer/conversion.geometry-format");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var target = doc.RootElement.GetProperty("parameters").EnumerateArray()
+            .Single(p => p.GetProperty("name").GetString() == "target");
+        target.TryGetProperty("choiceList", out var choices).Should().BeTrue(
+            "target carries an enum constraint and must surface it as choiceList");
+        choices.EnumerateArray().Select(c => c.GetString()).Should()
+            .BeEquivalentTo(["wkt", "geojson", "wkb", "ewkt"]);
     }
 
     // -----------------------------------------------------------------------
@@ -1168,6 +1315,111 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             ClaimsPrincipal principal,
             CancellationToken cancellationToken = default)
             => Task.FromResult(_results);
+
+        public Task CancelJobAsync(
+            string jobId,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    /// <summary>
+    /// Test double for the synchronous /execute path: submission returns a
+    /// terminal Succeeded job immediately, so the PollUntilTerminalAsync loop
+    /// completes on the first tick. Submission echoes the protocol metadata
+    /// back through the job's spec so the binding-validation gate (which
+    /// reads gpserver.serviceId/gpserver.taskName from Parameters) sees the
+    /// values that the adapter stamped on the plan.
+    /// </summary>
+    private sealed class SyncExecuteGeoprocessingJobService : IGeoprocessingJobService
+    {
+        private static readonly AnalysisResultPackage SuccessPackage =
+            AnalysisResultPackage.CreateCompleted(
+                resultPackageId: "pkg-gpserver-sync-execute",
+                summary: new ResultSummary { Title = "Synchronous GP execute" },
+                artifacts:
+                [
+                    new ArtifactRef
+                    {
+                        ArtifactId = "art-sync-execute-1",
+                        Kind = ArtifactKind.FeatureLayer,
+                        Label = "Buffered Output",
+                        Uri = "https://example.test/artifacts/sync-execute.geojson"
+                    }
+                ],
+                workspaceRefs: [],
+                provenance: new ProvenanceRecord
+                {
+                    Sources = [],
+                    ProcessDefinitions = ["geometry.buffer"],
+                    ExecutedAt = DateTimeOffset.UtcNow
+                });
+
+        public void EnsureCallerAuthorized(ClaimsPrincipal principal, OperatorResourceType resourceType, OperatorOperation operation)
+        {
+        }
+
+        public PlanValidationResult ValidatePlan(AnalysisPlan plan, ClaimsPrincipal principal)
+            => throw new NotSupportedException();
+
+        public DryRunResult DryRunPlan(AnalysisPlan plan, ClaimsPrincipal principal)
+            => throw new NotSupportedException();
+
+        public Task<ExecutionJobRecord> SubmitJobAsync(
+            AnalysisPlan plan,
+            string? idempotencyKey,
+            ClaimsPrincipal principal,
+            IReadOnlyDictionary<string, string>? protocolMetadata = null,
+            CancellationToken cancellationToken = default)
+        {
+            var parameters = protocolMetadata != null
+                ? new Dictionary<string, string>(protocolMetadata)
+                : new Dictionary<string, string>();
+            var jobId = $"gp-sync-{Guid.NewGuid():N}";
+            return Task.FromResult(new ExecutionJobRecord
+            {
+                OperationId = jobId,
+                Status = ExecutionJobStatus.Succeeded,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                CompletedAt = DateTimeOffset.UtcNow,
+                Spec = new ExecutionJobSpec
+                {
+                    Kind = ExecutionJobKind.Geoprocessing,
+                    TargetKind = BatchComputeTargetKind.KubernetesJob,
+                    Backend = "local",
+                    WorkloadName = "gp-sync-execute",
+                    Parameters = parameters
+                }
+            });
+        }
+
+        public Task<ExecutionJobRecord> GetJobAsync(
+            string jobId,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new ExecutionJobRecord
+            {
+                OperationId = jobId,
+                Status = ExecutionJobStatus.Succeeded,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                CompletedAt = DateTimeOffset.UtcNow,
+                Spec = new ExecutionJobSpec
+                {
+                    Kind = ExecutionJobKind.Geoprocessing,
+                    TargetKind = BatchComputeTargetKind.KubernetesJob,
+                    Backend = "local",
+                    WorkloadName = "gp-sync-execute",
+                    Parameters = new Dictionary<string, string>()
+                }
+            });
+
+        public Task<AnalysisResultPackage> GetJobResultsAsync(
+            string jobId,
+            ClaimsPrincipal principal,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(SuccessPackage);
 
         public Task CancelJobAsync(
             string jobId,

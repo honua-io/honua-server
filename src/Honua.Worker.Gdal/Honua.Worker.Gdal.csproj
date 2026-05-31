@@ -38,6 +38,15 @@
   <ItemGroup>
     <!-- Microsoft.Extensions.Hosting is provided by the Worker SDK. -->
     <PackageReference Include="StackExchange.Redis" />
+    <!--
+      Managed-only NTS dependencies used by the raster.clip / raster.zonal-statistics
+      executors to convert the catalog's WKB clip boundary into an OGR-readable
+      GeoJSON cutline file (gdalwarp's -cutline option does not accept inline WKB)
+      and to enumerate inline zone-polygon GeoJSON features. No native dependencies
+      are added; GDAL is reached via the worker image's CLI tools.
+    -->
+    <PackageReference Include="NetTopologySuite" />
+    <PackageReference Include="NetTopologySuite.IO.GeoJSON" />
   </ItemGroup>
 
 </Project>

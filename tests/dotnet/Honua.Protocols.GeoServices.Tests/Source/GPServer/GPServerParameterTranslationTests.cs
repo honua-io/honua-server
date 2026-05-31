@@ -1,8 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Geoprocessing;
 using Honua.Protocols.GeoServices.GPServer;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -162,6 +164,144 @@ public sealed class GPServerParameterTranslationTests
 
         result["Notes"].Should().Be("{not valid json");
     }
+
+    // -----------------------------------------------------------------------
+    // GPMultiValue inbound unpacking (spec-aware)
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    public void TranslateInbound_GPMultiValue_NormalisesJsonArrayInput()
+    {
+        var definition = MultiValueDefinition();
+        var input = new Dictionary<string, string>
+        {
+            ["wkbs"] = """["AAAA","BBBB"]"""
+        };
+
+        var result = GPServerParameterTranslation.TranslateInbound(input, definition);
+
+        using var doc = JsonDocument.Parse(result["wkbs"]);
+        doc.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+        doc.RootElement.EnumerateArray().Select(e => e.GetString())
+            .Should().BeEquivalentTo(["AAAA", "BBBB"]);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    public void TranslateInbound_GPMultiValue_UnpacksCommaDelimitedInput()
+    {
+        var definition = MultiValueDefinition();
+        var input = new Dictionary<string, string>
+        {
+            ["wkbs"] = "AAAA,BBBB,CCCC"
+        };
+
+        var result = GPServerParameterTranslation.TranslateInbound(input, definition);
+
+        using var doc = JsonDocument.Parse(result["wkbs"]);
+        doc.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+        doc.RootElement.EnumerateArray().Select(e => e.GetString())
+            .Should().BeEquivalentTo(["AAAA", "BBBB", "CCCC"]);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    public void TranslateInbound_GPMultiValue_DoesNotSplitScalarParameters()
+    {
+        // Without a definition the comma-delimited form must pass through —
+        // otherwise scalar inputs like coordinate pairs would be corrupted.
+        var input = new Dictionary<string, string>
+        {
+            ["coords"] = "1.5,2.5"
+        };
+
+        var result = GPServerParameterTranslation.TranslateInbound(input);
+
+        result["coords"].Should().Be("1.5,2.5");
+    }
+
+    // -----------------------------------------------------------------------
+    // GPChoice / AllowedValues validation
+    // -----------------------------------------------------------------------
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    public void TranslateInbound_GPChoice_AcceptsAllowedValueCaseInsensitively()
+    {
+        var definition = ChoiceDefinition();
+        var input = new Dictionary<string, string>
+        {
+            ["target"] = "GeoJSON"
+        };
+
+        var result = GPServerParameterTranslation.TranslateInbound(input, definition);
+
+        result["target"].Should().Be("GeoJSON");
+    }
+
+    [UnitTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    public void TranslateInbound_GPChoice_RejectsValueNotInAllowedList()
+    {
+        var definition = ChoiceDefinition();
+        var input = new Dictionary<string, string>
+        {
+            ["target"] = "not-a-format"
+        };
+
+        var act = () => GPServerParameterTranslation.TranslateInbound(input, definition);
+
+        act.Should().Throw<GeoprocessingValidationException>()
+            .Where(ex => ex.Message.Contains("target", StringComparison.Ordinal)
+                && ex.Message.Contains("not-a-format", StringComparison.Ordinal));
+    }
+
+    private static ProcessDefinition MultiValueDefinition() => new()
+    {
+        ProcessId = "test.multi",
+        Title = "Test Multi",
+        Description = "Test",
+        Category = "test",
+        Parameters =
+        [
+            new ProcessParameterSpec
+            {
+                Name = "wkbs",
+                DisplayName = "WKBs",
+                Description = "Multi-value WKB inputs",
+                ValueType = ProcessParameterValueType.WkbArray,
+                Required = true
+            }
+        ],
+        OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+    };
+
+    private static ProcessDefinition ChoiceDefinition() => new()
+    {
+        ProcessId = "test.choice",
+        Title = "Test Choice",
+        Description = "Test",
+        Category = "test",
+        Parameters =
+        [
+            new ProcessParameterSpec
+            {
+                Name = "target",
+                DisplayName = "Target",
+                Description = "Enumerated target",
+                ValueType = ProcessParameterValueType.Text,
+                Required = true,
+                AllowedValues = ["wkt", "geojson", "wkb", "ewkt"]
+            }
+        ],
+        OutputArtifactKinds = [ArtifactKind.Scalar]
+    };
 
     // -----------------------------------------------------------------------
     // Outbound type mapping

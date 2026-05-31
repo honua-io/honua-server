@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
@@ -8,7 +9,10 @@ using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Resilience;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Styling.Abstractions;
+using Honua.Core.Features.Styling.Domain;
 using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -33,6 +37,8 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
     private readonly ICrsRegistry _crsRegistry;
     private readonly IEsriConstructCapabilityRegistry _constructCapabilityRegistry;
     private readonly ILayerPublishingService? _layerPublishingService;
+    private readonly IGeoServicesStyleConverter? _styleConverter;
+    private readonly ILayerStyleCatalog? _styleCatalog;
     private readonly ILogger<GeoservicesImportService> _logger;
     private readonly PostgresSchemaConfiguration _schemaConfiguration;
 
@@ -43,6 +49,8 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         IEsriConstructCapabilityRegistry constructCapabilityRegistry,
         ILogger<GeoservicesImportService> logger,
         ILayerPublishingService? layerPublishingService = null,
+        IGeoServicesStyleConverter? styleConverter = null,
+        ILayerStyleCatalog? styleCatalog = null,
         PostgresSchemaConfiguration? schemaConfiguration = null)
     {
         _restClient = restClient ?? throw new ArgumentNullException(nameof(restClient));
@@ -50,6 +58,8 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
         _constructCapabilityRegistry = constructCapabilityRegistry ?? throw new ArgumentNullException(nameof(constructCapabilityRegistry));
         _layerPublishingService = layerPublishingService;
+        _styleConverter = styleConverter;
+        _styleCatalog = styleCatalog;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _schemaConfiguration = schemaConfiguration ?? new PostgresSchemaConfiguration(
             PostgresSchemaConfiguration.DefaultMetadataSchema,
@@ -172,11 +182,21 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                 Enabled = true
             };
 
-            return await _layerPublishingService.PublishLayerAsync(
+            var published = await _layerPublishingService.PublishLayerAsync(
                     _connectionProvider.GetConnectionString(),
                     publishRequest,
                     cancellationToken)
                 .ConfigureAwait(false);
+
+            await TryAttachLayerStyleAsync(
+                    published,
+                    layerInfo,
+                    request,
+                    warnings,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            return published;
         }
         catch (LayerPublishingException ex)
         {
@@ -189,6 +209,109 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             warnings.Add("AutoPublish was requested, but publishing did not complete.");
             return null;
         }
+    }
+
+    private async Task TryAttachLayerStyleAsync(
+        PublishedLayerSummary published,
+        GeoservicesLayerInfo layerInfo,
+        GeoservicesImportRequest request,
+        List<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        if (_styleConverter == null || _styleCatalog == null)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(layerInfo.DrawingInfoJson))
+        {
+            return;
+        }
+
+        JsonElement drawingInfoElement;
+        JsonDocument? drawingInfoDocument = null;
+        try
+        {
+            drawingInfoDocument = JsonDocument.Parse(layerInfo.DrawingInfoJson);
+            drawingInfoElement = drawingInfoDocument.RootElement.Clone();
+        }
+        catch (JsonException)
+        {
+            warnings.Add(
+                "Source service returned a malformed 'drawingInfo' payload; the published layer was left unstyled.");
+            return;
+        }
+        finally
+        {
+            drawingInfoDocument?.Dispose();
+        }
+
+        try
+        {
+            var geometryType = MapEsriGeometryTypeToMetadataV2(layerInfo.GeometryType);
+            var conversion = _styleConverter.Convert(
+                drawingInfoElement,
+                published.LayerId,
+                published.LayerName,
+                geometryType);
+
+            await _styleCatalog
+                .SetStyleAsync(
+                    published.LayerId,
+                    conversion.MapLibreStyleJson,
+                    layerInfo.DrawingInfoJson!,
+                    revisedBy: GeoservicesStyleRevisedBy,
+                    changeSummary: $"Style attached during Geoservices auto-publish from {request.ServiceUrl}",
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            foreach (var unsupported in conversion.Unsupported)
+            {
+                Log.AutoPublishStyleUnsupportedSymbolizer(
+                    _logger,
+                    published.LayerId,
+                    unsupported.Code,
+                    unsupported.SymbolizerType);
+                warnings.Add(BuildUnsupportedSymbolizerWarning(unsupported));
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.AutoPublishStyleAttachFailed(_logger, published.LayerId, ex);
+            warnings.Add(
+                "AutoPublish succeeded, but attaching the converted MapLibre style to the published layer failed; drawingInfo was not persisted.");
+        }
+    }
+
+    private const string GeoservicesStyleRevisedBy = "geoservices-import";
+
+    private static string BuildUnsupportedSymbolizerWarning(UnsupportedSymbolizerInfo unsupported)
+    {
+        if (string.IsNullOrWhiteSpace(unsupported.SymbolizerType))
+        {
+            return $"Imported renderer carried unsupported input ({unsupported.Code}): {unsupported.Guidance}";
+        }
+
+        return $"Imported renderer carried unsupported input ({unsupported.Code}, '{unsupported.SymbolizerType}'): {unsupported.Guidance}";
+    }
+
+    private static MetadataV2GeometryType MapEsriGeometryTypeToMetadataV2(string? esriGeometryType)
+    {
+        if (string.IsNullOrWhiteSpace(esriGeometryType))
+        {
+            return MetadataV2GeometryType.None;
+        }
+
+        return esriGeometryType.Trim().ToUpperInvariant() switch
+        {
+            "ESRIGEOMETRYPOINT" => MetadataV2GeometryType.Point,
+            "ESRIGEOMETRYMULTIPOINT" => MetadataV2GeometryType.MultiPoint,
+            "ESRIGEOMETRYPOLYLINE" => MetadataV2GeometryType.MultiLineString,
+            "ESRIGEOMETRYLINE" => MetadataV2GeometryType.LineString,
+            "ESRIGEOMETRYPOLYGON" => MetadataV2GeometryType.MultiPolygon,
+            "ESRIGEOMETRYENVELOPE" => MetadataV2GeometryType.Polygon,
+            _ => MetadataV2GeometryType.None
+        };
     }
 
     private static void ReportProgress(
@@ -317,5 +440,17 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
 
         [LoggerMessage(7832, LogLevel.Warning, "Auto-publish failed for imported table {TableName} into service {ServiceName}")]
         public static partial void AutoPublishFailed(ILogger logger, string tableName, string serviceName, Exception exception);
+
+        [LoggerMessage(7833, LogLevel.Warning,
+            "Auto-publish style attach failed for layer {LayerId}; drawingInfo and MapLibre style were not persisted")]
+        public static partial void AutoPublishStyleAttachFailed(ILogger logger, int layerId, Exception exception);
+
+        [LoggerMessage(7834, LogLevel.Information,
+            "Geoservices auto-publish flagged unsupported style input {Code} ('{SymbolizerType}') on layer {LayerId}")]
+        public static partial void AutoPublishStyleUnsupportedSymbolizer(
+            ILogger logger,
+            int layerId,
+            string code,
+            string symbolizerType);
     }
 }

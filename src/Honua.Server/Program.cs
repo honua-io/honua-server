@@ -465,6 +465,8 @@ Honua.Core.Features.Publishing.Content.ContentPublishingServiceCollectionExtensi
 builder.Services.AddScoped<Honua.Infrastructure.Services.IGeometryConverter,
     Honua.Infrastructure.Services.GeometryConverter>();
 builder.Services.AddScoped<ILayerStyleService, LayerStyleService>();
+builder.Services.AddSingleton<Honua.Core.Features.Styling.Abstractions.IGeoServicesStyleConverter,
+    Honua.Server.Features.Styling.GeoServicesStyleConverter>();
 builder.Services.AddSingleton<Honua.Core.Features.Styling.Abstractions.ISldStyleConverter,
     Honua.Server.Features.Styling.Sld.SldStyleConverter>();
 builder.Services.AddStyleSuggestionCore();
@@ -944,6 +946,12 @@ app.UseHonuaClientCertificateAuthentication();
 
 // Add authentication and authorization middleware early to short-circuit unauthorized requests
 app.UseApiKeyAuthentication();
+
+// Bridge ArcGIS-style portal tokens (?token=, X-Esri-Authorization, Authorization: Bearer)
+// for requests that the default scheme did not authenticate. Must run after
+// UseAuthentication (inside UseApiKeyAuthentication) and before tenant resolution
+// so the tenant middleware sees the hydrated principal claims (#1241).
+app.UsePortalTokenAuthentication();
 
 // Resolve tenant context immediately after authentication so claims (and the
 // X-Honua-Tenant override header) are evaluated against the resolved principal

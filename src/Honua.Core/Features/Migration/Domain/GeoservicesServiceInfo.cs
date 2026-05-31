@@ -133,6 +133,14 @@ public sealed record GeoservicesLayerInfo
     /// Estimated feature count (if available from service).
     /// </summary>
     public int? FeatureCount { get; init; }
+
+    /// <summary>
+    /// Raw GeoServices <c>drawingInfo</c> JSON payload exactly as returned by
+    /// the source service (or <c>null</c> when the layer did not advertise one).
+    /// Carried through so the auto-publish pipeline can attach the canonical
+    /// MapLibre style alongside the original Esri renderer.
+    /// </summary>
+    public string? DrawingInfoJson { get; init; }
 }
 
 /// <summary>

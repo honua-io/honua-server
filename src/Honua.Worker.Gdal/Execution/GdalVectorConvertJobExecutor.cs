@@ -90,16 +90,10 @@ public sealed partial class GdalVectorConvertJobExecutor(
                 $"Supported: {supported}.");
         }
 
-        if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", out var sourceBytes, out var inputError))
+        if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", opts.MaxArtifactBytes, out var sourceBytes, out var inputError))
         {
             Log.InvalidInputs(logger, job.OperationId, inputError);
             return JobExecutionResult.Failed($"Invalid conversion inputs: {inputError}");
-        }
-
-        if (sourceBytes.Length > opts.MaxArtifactBytes)
-        {
-            return JobExecutionResult.Failed(
-                $"Source payload {sourceBytes.Length} bytes exceeds configured MaxArtifactBytes={opts.MaxArtifactBytes}.");
         }
 
         var sourceExtension = SupportedFormats.TryGetValue(sourceFormat, out var sourceMeta)
@@ -145,7 +139,7 @@ public sealed partial class GdalVectorConvertJobExecutor(
             {
                 Log.ToolFailed(logger, job.OperationId, result.ExitCode, Truncate(result.StandardError));
                 return JobExecutionResult.Failed(
-                    $"ogr2ogr exited with code {result.ExitCode}: {Truncate(result.StandardError)}");
+                    $"ogr2ogr exited with code {result.ExitCode}: {GdalErrorSanitizer.Sanitize(result.StandardError, workspace)}");
             }
 
             if (!File.Exists(outputPath))

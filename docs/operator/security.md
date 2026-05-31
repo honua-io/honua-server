@@ -24,6 +24,26 @@ This guide covers authentication, authorization, edge security, and related oper
 - Optional static signing-key mode for controlled environments/tests:
 - `Oidc__TokenValidation__SymmetricSigningKey=<shared-secret>`
 
+**ArcGIS portal tokens** (`/sharing/rest/generateToken`): always-on, edition-gated by
+`identity.portal-token` (Community-tier; included in every license).
+- Clients call `POST /sharing/rest/generateToken` (or `GET` with the same
+  parameters) with `username`, `password`, `client=referer|ip`, optional
+  `referer`, optional `expiration` (minutes), `f=json`. The response is
+  `{ token, expires, ssl }` matching the ArcGIS Portal shape.
+- Tokens are opaque, stored in the distributed cache (Redis when enabled,
+  in-memory fallback), and bound to either the supplied referer URL or the
+  client IP that issued them. Mismatched bindings fail validation.
+- Subsequent `/rest/services/...` requests authenticate by passing the token
+  via `?token=...`, `Authorization: Bearer ...`, or
+  `X-Esri-Authorization: Bearer ...`.
+- Issuance is HTTPS-only by default. Override only for in-process test
+  fixtures with `Authentication__PortalToken__RequireHttps=false`.
+- Tunables (rare): `Authentication__PortalToken__Enabled`,
+  `Authentication__PortalToken__DefaultExpirationMinutes` (default `60`),
+  `Authentication__PortalToken__MaxExpirationMinutes` (default `14400`, the
+  ArcGIS Portal default of 10 days). Requested `expiration` is clamped to
+  the maximum.
+
 **Client certificates / mTLS**: optional for native operator clients and
 admin/control-plane surfaces.
 - Configure `Authentication__ClientCertificates__Mode` as `Disabled`,
