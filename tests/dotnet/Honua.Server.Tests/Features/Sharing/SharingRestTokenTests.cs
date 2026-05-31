@@ -24,7 +24,6 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
     private const string AdminPassword = WebAppFixture.SharedAdminPassword;
     private const string TokenEndpoint = "/sharing/rest/generateToken";
     private const string SecureRefererA = "https://app.example.com/maps/";
-    private const string SecureRefererB = "https://other.example.com/";
 
     private readonly WebAppFixture _fixture;
 
@@ -52,8 +51,15 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
     public async Task GenerateToken_WithFormCredentials_ReturnsTokenAndExpiry()
     {
         using var client = _fixture.CreateClient();
-        using var response = await PostFormAsync(client, ("username", "admin"), ("password", AdminPassword),
-            ("client", "referer"), ("referer", SecureRefererA), ("f", "json"));
+        var content = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>("username", "admin"),
+            new KeyValuePair<string, string>("password", AdminPassword),
+            new KeyValuePair<string, string>("client", "referer"),
+            new KeyValuePair<string, string>("referer", SecureRefererA),
+            new KeyValuePair<string, string>("f", "json"),
+        });
+        using var response = await client.PostAsync("/sharing/rest/generateToken", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await ReadTokenPayloadAsync(response);
@@ -68,13 +74,16 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
     public async Task GenerateToken_WithQueryStringCredentials_ReturnsToken()
     {
         using var client = _fixture.CreateClient();
-        using var response = await client.GetAsync(BuildQuery(
-            ("username", "admin"), ("password", AdminPassword),
-            ("client", "ip"), ("f", "json")));
+        var query = $"/sharing/rest/generateToken?username=admin" +
+            $"&password={Uri.EscapeDataString(AdminPassword)}" +
+            $"&client=referer&referer={Uri.EscapeDataString(SecureRefererA)}&f=json";
+        using var response = await client.GetAsync(query);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await ReadTokenPayloadAsync(response);
         payload.Token.Should().NotBeNullOrWhiteSpace();
+        payload.Expires.Should().BeGreaterThan(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        payload.Ssl.Should().BeTrue();
     }
 
     [IntegrationTest]
@@ -196,6 +205,80 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
         // 200/404 depending on whether the seed registers the layer, but it must NOT
         // be 401 because the portal token authenticated the request.
         response.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    public async Task IssuedToken_AcceptedViaAuthorizationBearerHeader_Authenticates()
+    {
+        using var client = _fixture.CreateClient();
+        var token = await IssueTokenAsync(client, ("client", "referer"), ("referer", SecureRefererA));
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/rest/services/test/FeatureServer?f=json");
+        request.Headers.Referrer = new Uri(SecureRefererA);
+        request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {token}");
+        using var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    public async Task IssuedToken_AcceptedViaEsriAuthorizationHeader_Authenticates()
+    {
+        using var client = _fixture.CreateClient();
+        var token = await IssueTokenAsync(client, ("client", "referer"), ("referer", SecureRefererA));
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/rest/services/test/FeatureServer?f=json");
+        request.Headers.Referrer = new Uri(SecureRefererA);
+        request.Headers.TryAddWithoutValidation("X-Esri-Authorization", $"Bearer {token}");
+        using var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/generateToken")]
+    public async Task GenerateToken_UnsupportedFormat_Returns400()
+    {
+        using var client = _fixture.CreateClient();
+        using var response = await PostFormAsync(client,
+            ("username", "admin"), ("password", AdminPassword),
+            ("client", "referer"), ("referer", SecureRefererA), ("f", "xml"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/generateToken")]
+    public async Task GenerateToken_WhenDisabled_Returns404()
+    {
+        var fixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                builder.UseSetting("Authentication:PortalToken:RequireHttps", "false");
+                builder.UseSetting("Authentication:PortalToken:Enabled", "false");
+            });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateClient();
+            using var response = await PostFormAsync(client,
+                ("username", "admin"), ("password", AdminPassword),
+                ("client", "referer"), ("referer", SecureRefererA), ("f", "json"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     private static async Task<HttpResponseMessage> PostFormAsync(HttpClient client, params (string Key, string Value)[] pairs)
