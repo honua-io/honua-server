@@ -261,6 +261,11 @@ public static class EndpointRegistry
         new("POST", "/api/v1/console/publications/{publicationId}/republish"),
         new("POST", "/api/v1/console/publications/{publicationId}/rollback"),
         new("PATCH", "/api/v1/console/publications/{publicationId}/policy"),
+
+        // Temporal data history (slice 1 of #1166): capability discovery + as-of read.
+        new("GET", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/capabilities"),
+        new("GET", "/api/v1/temporal/services/{serviceId}/layers/{layerId}/as-of"),
+
         new("GET", "/api/v1/published/{*routeSlug}"),
 
         // v1 admin metadata resource CRUD endpoints removed in #1035 cutover.
