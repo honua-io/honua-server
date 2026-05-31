@@ -269,6 +269,27 @@ internal sealed partial class PostgreSqlLayerPublishingService
         DateTimeOffset now)
     {
         var connectionId = request.ConnectionId?.ToString("D");
+        var options = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+        {
+            [FeatureStorageMapping.SourceBackedOption] = JsonSerializer.SerializeToElement(true),
+            ["schemaName"] = JsonSerializer.SerializeToElement(schema),
+            ["tableName"] = JsonSerializer.SerializeToElement(table),
+            ["primaryKeyColumn"] = JsonSerializer.SerializeToElement(primaryKeyColumn),
+            ["geometryColumn"] = JsonSerializer.SerializeToElement(geometryColumn),
+            ["storageSrid"] = JsonSerializer.SerializeToElement(storageSrid)
+        };
+
+        // Layers published onto the shared 'features' table store their non-key
+        // attributes as keys inside the 'features.attributes' JSONB column rather than
+        // as physical columns. Declare the JSONB accessor so the storage-mapped reader
+        // projects attributes->>'field' instead of bare columns (Postgres 42703). Gate
+        // strictly on the shared features table; dedicated per-layer tables keep their
+        // column-per-field projection. (See honua-server#1238.)
+        if (string.Equals(table, DatabaseSchema.FeaturesTable, StringComparison.OrdinalIgnoreCase))
+        {
+            options["attributesColumn"] = JsonSerializer.SerializeToElement("attributes");
+        }
+
         return new MetadataV2StorageBinding
         {
             Metadata = new MetadataV2ObjectMetadata
@@ -291,15 +312,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 MetadataV2StorageBindingCapability.Sort,
                 MetadataV2StorageBindingCapability.Aggregate
             ],
-            Options = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
-            {
-                [FeatureStorageMapping.SourceBackedOption] = JsonSerializer.SerializeToElement(true),
-                ["schemaName"] = JsonSerializer.SerializeToElement(schema),
-                ["tableName"] = JsonSerializer.SerializeToElement(table),
-                ["primaryKeyColumn"] = JsonSerializer.SerializeToElement(primaryKeyColumn),
-                ["geometryColumn"] = JsonSerializer.SerializeToElement(geometryColumn),
-                ["storageSrid"] = JsonSerializer.SerializeToElement(storageSrid)
-            },
+            Options = options,
             Status = ActiveReadyStatus(now)
         };
     }

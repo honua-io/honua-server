@@ -127,6 +127,7 @@ INSERT INTO honua.layers (
     table_name,
     primary_key_column,
     geometry_column,
+    storage_options,
     storage_srid,
     temporal_column,
     geometry_type,
@@ -145,6 +146,11 @@ VALUES
         'features',
         'objectid',
         'geometry',
+        -- Non-key fields (globalid, site_name, status, ...) live as keys in the shared
+        -- honua.features.attributes JSONB column, not as physical columns. Declare the
+        -- accessor so the storage-mapped reader projects attributes->>'field' instead of
+        -- bare columns (which produce Postgres 42703 "column ... does not exist").
+        jsonb_build_object('attributesColumn', 'attributes'),
         4326,
         'inspection_date',
         'Point',
@@ -186,6 +192,8 @@ VALUES
         'features',
         'objectid',
         'geometry',
+        -- See 68910: shared features.attributes JSONB column holds the declared fields.
+        jsonb_build_object('attributesColumn', 'attributes'),
         4326,
         NULL,
         'Polygon',
