@@ -381,33 +381,33 @@ internal sealed partial class FeatureServerQueryHandler
                 return (min.Value, BuildEqualIntervalBreaks(min.Value, max.Value, breakCount));
 
             case ClassificationMethod.StandardDeviation:
-            {
-                var avg = ToDouble(GetStat(stats, "avg_value"));
-                var stddev = ToDouble(GetStat(stats, "stddev_value"));
-                if (!avg.HasValue || !stddev.HasValue || stddev.Value <= 0)
                 {
-                    // Fall back to equal interval when stddev is unavailable/zero.
-                    return (min.Value, BuildEqualIntervalBreaks(min.Value, max.Value, breakCount));
-                }
+                    var avg = ToDouble(GetStat(stats, "avg_value"));
+                    var stddev = ToDouble(GetStat(stats, "stddev_value"));
+                    if (!avg.HasValue || !stddev.HasValue || stddev.Value <= 0)
+                    {
+                        // Fall back to equal interval when stddev is unavailable/zero.
+                        return (min.Value, BuildEqualIntervalBreaks(min.Value, max.Value, breakCount));
+                    }
 
-                return (min.Value, BuildStandardDeviationBreaks(min.Value, max.Value, avg.Value, stddev.Value));
-            }
+                    return (min.Value, BuildStandardDeviationBreaks(min.Value, max.Value, avg.Value, stddev.Value));
+                }
 
             case ClassificationMethod.Quantile:
             case ClassificationMethod.NaturalBreaks:
-            {
-                var values = await MaterializeOrderedValuesAsync(queryLayer, classificationField, cancellationToken)
-                    .ConfigureAwait(false);
-                if (values.Length == 0)
                 {
-                    return (min.Value, []);
-                }
+                    var values = await MaterializeOrderedValuesAsync(queryLayer, classificationField, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (values.Length == 0)
+                    {
+                        return (min.Value, []);
+                    }
 
-                var breaks = method == ClassificationMethod.Quantile
-                    ? BuildQuantileBreaks(values, breakCount)
-                    : BuildNaturalBreaks(values, breakCount);
-                return (values[0], breaks);
-            }
+                    var breaks = method == ClassificationMethod.Quantile
+                        ? BuildQuantileBreaks(values, breakCount)
+                        : BuildNaturalBreaks(values, breakCount);
+                    return (values[0], breaks);
+                }
 
             default:
                 return (min.Value, BuildEqualIntervalBreaks(min.Value, max.Value, breakCount));
