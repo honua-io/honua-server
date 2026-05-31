@@ -26,7 +26,6 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
     [Theory]
     [InlineData("returnTrueCurves=true", "returnTrueCurves")]
     [InlineData("returnExceededLimitFeatures=true", "returnExceededLimitFeatures")]
-    [InlineData("having=1=1", "having")]
     [InlineData("sqlFormat=standard", "sqlFormat")]
     [InlineData("returnCentroid=true", "returnCentroid")]
     [Operation(Operations.Query)]
@@ -526,6 +525,92 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
 
         categories.Should().NotBeEmpty();
         categories.Distinct(StringComparer.OrdinalIgnoreCase).Should().HaveCount(categories.Count);
+    }
+
+    // The test layer (layer 0) has five features whose `category` is either
+    // "test" (objectids 1, 3, 5) or "sample" (objectids 2, 4). Grouping by
+    // category and filtering COUNT(objectid) > 2 keeps only the "test" group.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithHavingFilteringGroups_ReturnsOnlyPassingGroups()
+    {
+        var outStats = Uri.EscapeDataString(
+            """[{"statisticType":"count","onStatisticField":"objectid","outStatisticFieldName":"cnt"}]""");
+        var having = Uri.EscapeDataString("COUNT(objectid) > 2");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
+            $"?f=json&groupByFieldsForStatistics=category&outStatistics={outStats}&having={having}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+
+        var categories = queryResponse.Features!
+            .Select(feature => GetStringAttribute(feature.Attributes, "category"))
+            .ToList();
+
+        categories.Should().ContainSingle()
+            .Which.Should().Be("test", "only the 'test' group has COUNT(objectid) > 2");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithHavingButNoOutStatistics_ReturnsBadRequest()
+    {
+        var having = Uri.EscapeDataString("COUNT(objectid) > 2");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
+            $"?f=json&groupByFieldsForStatistics=category&having={having}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("having");
+        content.Should().Contain("outStatistics");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithHavingAggregateNotInOutStatistics_ReturnsBadRequest()
+    {
+        var outStats = Uri.EscapeDataString(
+            """[{"statisticType":"count","onStatisticField":"objectid","outStatisticFieldName":"cnt"}]""");
+        // SUM(objectid) is not declared in outStatistics, so the HAVING term is rejected.
+        var having = Uri.EscapeDataString("SUM(objectid) > 2");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
+            $"?f=json&groupByFieldsForStatistics=category&outStatistics={outStats}&having={having}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("having");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetLayerInfo)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}")]
+    public async Task LayerMetadata_AdvertisesSupportsHavingClause()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}?f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.TryGetProperty("advancedQueryCapabilities", out var capabilities)
+            .Should().BeTrue("layer metadata should expose advancedQueryCapabilities");
+        capabilities.TryGetProperty("supportsHavingClause", out var supportsHaving)
+            .Should().BeTrue("advancedQueryCapabilities should expose supportsHavingClause");
+        supportsHaving.GetBoolean().Should().BeTrue();
     }
 
     private static string? GetStringAttribute(Dictionary<string, object?> attributes, string key)

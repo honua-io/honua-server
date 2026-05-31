@@ -258,6 +258,16 @@ internal sealed partial class FeatureServerQueryHandler(
                     [unsupportedError!]));
             }
 
+            // A having clause only filters aggregated groups, so reject it when no
+            // outStatistics are present rather than silently ignoring it.
+            if (!string.IsNullOrWhiteSpace(validatedParams.Having) &&
+                string.IsNullOrWhiteSpace(validatedParams.OutStatistics))
+            {
+                return (null, StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid having",
+                    ["having requires outStatistics (and typically groupByFieldsForStatistics)."]));
+            }
+
             var requestedFormat = validatedParams.FormatSpecified ? validatedParams.F : "json";
             if (!FeatureServerEndpoints.TryValidateOutputFormat(
                 requestedFormat,
@@ -530,6 +540,17 @@ internal sealed partial class FeatureServerQueryHandler(
                 canCache = false;
             }
 
+            // A having clause filters aggregated groups, so it is only meaningful
+            // alongside outStatistics. Reject it explicitly rather than silently
+            // ignoring it on a non-statistics query.
+            if (!string.IsNullOrWhiteSpace(validatedParams.Having) &&
+                string.IsNullOrWhiteSpace(validatedParams.OutStatistics))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid having",
+                    ["having requires outStatistics (and typically groupByFieldsForStatistics)."]);
+            }
+
             // Handle statistics queries (outStatistics)
             if (!string.IsNullOrWhiteSpace(validatedParams.OutStatistics))
             {
@@ -557,10 +578,24 @@ internal sealed partial class FeatureServerQueryHandler(
                     groupByFields = parsed;
                 }
 
+                ImmutableArray<HavingCondition>? havingConditions = null;
+                if (!string.IsNullOrWhiteSpace(validatedParams.Having))
+                {
+                    if (!TryParseHavingConditions(validatedParams.Having, statisticsDefs, queryLayer.Resource, out var parsedHaving, out var havingError))
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(context,
+                            "Invalid having",
+                            [havingError ?? "having clause could not be parsed."]);
+                    }
+
+                    havingConditions = parsedHaving;
+                }
+
                 var statisticsQuery = query with
                 {
                     OutStatistics = statisticsDefs,
                     GroupByFields = groupByFields,
+                    Having = havingConditions,
                     Limit = null,
                     Offset = null,
                     OrderBy = null,
@@ -1380,10 +1415,22 @@ internal sealed partial class FeatureServerQueryHandler(
                 groupByFields = parsed;
             }
 
+            ImmutableArray<HavingCondition>? havingConditions = null;
+            if (!string.IsNullOrWhiteSpace(validatedParams.Having))
+            {
+                if (!TryParseHavingConditions(validatedParams.Having, statisticsDefs, queryLayer.Resource, out var parsedHaving, out var havingError))
+                {
+                    throw new ArgumentException(havingError ?? "having clause could not be parsed.");
+                }
+
+                havingConditions = parsedHaving;
+            }
+
             var statisticsQuery = query with
             {
                 OutStatistics = statisticsDefs,
                 GroupByFields = groupByFields,
+                Having = havingConditions,
                 Limit = null,
                 Offset = null,
                 OrderBy = null,
@@ -2045,11 +2092,6 @@ internal sealed partial class FeatureServerQueryHandler(
             unsupported.Add("returnExceededLimitFeatures");
         }
 
-        if (!string.IsNullOrWhiteSpace(queryParams.Having))
-        {
-            unsupported.Add("having");
-        }
-
         if (!string.IsNullOrWhiteSpace(queryParams.SqlFormat))
         {
             unsupported.Add("sqlFormat");
@@ -2150,6 +2192,138 @@ internal sealed partial class FeatureServerQueryHandler(
         {
             error = InvalidOutStatisticsJsonMessage;
             return false;
+        }
+    }
+
+    // Parses a GeoServices `having` expression into structured aggregate
+    // conditions. The grammar is deliberately narrow — `AGG(field) OP number`
+    // terms joined by AND — so the provider can rebuild a fully parameterized
+    // HAVING clause without ever concatenating client text into SQL. Each
+    // aggregate must already be declared in outStatistics, mirroring the Esri
+    // contract and reusing the same field-type hints as the SELECT aggregates.
+    private static bool TryParseHavingConditions(
+        string having,
+        ImmutableArray<StatisticDefinition> statistics,
+        MetadataV2Resource resource,
+        out ImmutableArray<HavingCondition> conditions,
+        out string? error)
+    {
+        error = null;
+        conditions = default;
+
+        var fieldTypes = new Dictionary<string, MetadataV2FieldType>(StringComparer.OrdinalIgnoreCase);
+        foreach (var field in resource.SchemaFields)
+        {
+            fieldTypes[field.Name] = field.Type;
+        }
+
+        var terms = HavingConjunctionRegex().Split(having);
+        var parsed = new List<HavingCondition>();
+
+        foreach (var rawTerm in terms)
+        {
+            var term = rawTerm.Trim();
+            if (term.Length == 0)
+            {
+                error = "having must contain one or more 'AGG(field) <op> value' conditions.";
+                return false;
+            }
+
+            var match = HavingTermRegex().Match(term);
+            if (!match.Success)
+            {
+                error = $"Unsupported having condition: '{term}'. Expected 'AGG(field) <op> number' where AGG is one of count, sum, min, max, avg, stddev, var.";
+                return false;
+            }
+
+            if (!TryParseStatisticType(match.Groups["agg"].Value, out var statisticType))
+            {
+                error = $"Unsupported aggregate function in having: '{match.Groups["agg"].Value}'.";
+                return false;
+            }
+
+            var field = match.Groups["field"].Value;
+            if (!fieldTypes.ContainsKey(field) &&
+                !string.Equals(field, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
+            {
+                error = $"Field '{field}' referenced in having does not exist on the layer.";
+                return false;
+            }
+
+            // The aggregate referenced by HAVING must also be requested in
+            // outStatistics; ArcGIS clients always pair the two and it lets us
+            // reuse the resolved field-type hint for correct numeric casting.
+            var matchingStat = statistics.FirstOrDefault(s =>
+                s.StatisticType == statisticType &&
+                string.Equals(s.OnStatisticField, field, StringComparison.OrdinalIgnoreCase));
+            if (string.IsNullOrEmpty(matchingStat.OnStatisticField))
+            {
+                error = $"having condition '{term}' references an aggregate that is not declared in outStatistics.";
+                return false;
+            }
+
+            if (!TryParseHavingOperator(match.Groups["op"].Value, out var op))
+            {
+                error = $"Unsupported comparison operator in having: '{match.Groups["op"].Value}'.";
+                return false;
+            }
+
+            if (!double.TryParse(match.Groups["value"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
+            {
+                error = $"Invalid numeric value in having condition: '{term}'.";
+                return false;
+            }
+
+            var fieldType = fieldTypes.TryGetValue(field, out var resolvedType)
+                ? resolvedType
+                : (MetadataV2FieldType?)null;
+
+            parsed.Add(new HavingCondition
+            {
+                StatisticType = statisticType,
+                OnStatisticField = field,
+                Operator = op,
+                Value = value,
+                FieldType = fieldType
+            });
+        }
+
+        if (parsed.Count == 0)
+        {
+            error = "having must contain one or more 'AGG(field) <op> value' conditions.";
+            return false;
+        }
+
+        conditions = parsed.ToImmutableArray();
+        return true;
+    }
+
+    private static bool TryParseHavingOperator(string value, out HavingComparisonOperator op)
+    {
+        switch (value)
+        {
+            case "=":
+                op = HavingComparisonOperator.Equal;
+                return true;
+            case "<>":
+            case "!=":
+                op = HavingComparisonOperator.NotEqual;
+                return true;
+            case ">":
+                op = HavingComparisonOperator.GreaterThan;
+                return true;
+            case ">=":
+                op = HavingComparisonOperator.GreaterThanOrEqual;
+                return true;
+            case "<":
+                op = HavingComparisonOperator.LessThan;
+                return true;
+            case "<=":
+                op = HavingComparisonOperator.LessThanOrEqual;
+                return true;
+            default:
+                op = default;
+                return false;
         }
     }
 
@@ -2302,4 +2476,18 @@ internal sealed partial class FeatureServerQueryHandler(
 
         return string.Join("\0", parts);
     }
+
+    // Splits a having expression on the boolean AND conjunction (case-insensitive,
+    // word-bounded). OR is intentionally unsupported; aggregate group filters are
+    // conjunctive in the Esri contract.
+    [GeneratedRegex(@"\s+AND\s+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex HavingConjunctionRegex();
+
+    // Matches a single 'AGG(field) <op> number' term. The field token is a bare
+    // SQL identifier and the value is a plain decimal literal, so no client text
+    // can reach the SQL string beyond the validated aggregate/field/operator.
+    [GeneratedRegex(
+        @"^(?<agg>count|sum|min|max|avg|stddev|var)\s*\(\s*(?<field>[A-Za-z_][A-Za-z0-9_]*)\s*\)\s*(?<op>!=|<>|<=|>=|=|<|>)\s*(?<value>-?\d+(?:\.\d+)?)$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex HavingTermRegex();
 }
