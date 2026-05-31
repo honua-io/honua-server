@@ -151,7 +151,7 @@ public sealed partial class GdalRasterReprojectCatalogJobExecutor(
             {
                 Log.ToolFailed(logger, job.OperationId, result.ExitCode, Truncate(result.StandardError));
                 return JobExecutionResult.Failed(
-                    $"gdalwarp exited with code {result.ExitCode}: {Truncate(result.StandardError)}");
+                    $"gdalwarp exited with code {result.ExitCode}: {GdalErrorSanitizer.Sanitize(result.StandardError, workspace)}");
             }
 
             if (!File.Exists(outputPath))

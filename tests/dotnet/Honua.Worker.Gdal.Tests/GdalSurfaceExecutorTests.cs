@@ -123,18 +123,22 @@ public sealed class GdalSurfaceExecutorTests
     }
 
     [UnitTest]
-    public async Task Hillshade_PassesAzimuthAltitudeAndZ()
+    public async Task Hillshade_PassesAzimuthAltitudeAndScaleFactor()
     {
         var runner = FakeGdalCommandRunner.Succeeding(Encoding.UTF8.GetBytes("ok"));
         var executor = NewExecutor(runner, out var scratch);
         try
         {
+            // 111120 is the canonical degrees-to-meters scale that callers
+            // working with geographic DEMs supply. The catalog declares
+            // zFactor as a vertical-to-horizontal scale ratio, so it must
+            // reach gdaldem as -s/-scale, NOT -z (vertical exaggeration).
             var job = GdalJobFactory.Job(
                 GdalSurfaceJobExecutor.HillshadeProcessId,
                 ("source", Base64("fake-dem")),
                 ("azimuth", "270"),
                 ("altitude", "30"),
-                ("zFactor", "2.5"));
+                ("zFactor", "111120"));
 
             var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
             result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
@@ -143,7 +147,9 @@ public sealed class GdalSurfaceExecutorTests
             args.Should().StartWith(new[] { "hillshade" });
             args.Should().ContainInOrder("-az", "270");
             args.Should().ContainInOrder("-alt", "30");
-            args.Should().ContainInOrder("-z", "2.5");
+            args.Should().ContainInOrder("-s", "111120");
+            args.Should().NotContain("-z",
+                because: "the catalog declares zFactor as a unit ratio, which maps to gdaldem -s rather than -z (vertical exaggeration)");
         }
         finally
         {

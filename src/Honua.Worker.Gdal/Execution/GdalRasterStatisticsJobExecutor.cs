@@ -122,7 +122,7 @@ public sealed partial class GdalRasterStatisticsJobExecutor(
             {
                 Log.ToolFailed(logger, job.OperationId, result.ExitCode, Truncate(result.StandardError));
                 return JobExecutionResult.Failed(
-                    $"gdalinfo exited with code {result.ExitCode}: {Truncate(result.StandardError)}");
+                    $"gdalinfo exited with code {result.ExitCode}: {GdalErrorSanitizer.Sanitize(result.StandardError, workspace)}");
             }
 
             cancellationToken.ThrowIfCancellationRequested();

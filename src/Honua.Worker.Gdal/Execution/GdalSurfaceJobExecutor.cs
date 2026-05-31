@@ -150,9 +150,11 @@ public sealed partial class GdalSurfaceJobExecutor(
 
             if (!result.Succeeded)
             {
+                // Log raw stderr (operator-facing) but persist only the
+                // path-redacted message onto the job's client-visible result.
                 Log.ToolFailed(logger, job.OperationId, result.ExitCode, Truncate(result.StandardError));
                 return JobExecutionResult.Failed(
-                    $"gdaldem exited with code {result.ExitCode}: {Truncate(result.StandardError)}");
+                    $"gdaldem exited with code {result.ExitCode}: {GdalErrorSanitizer.Sanitize(result.StandardError, workspace)}");
             }
 
             if (!File.Exists(outputPath))
@@ -249,7 +251,7 @@ public sealed partial class GdalSurfaceJobExecutor(
                     failure = altErr;
                     return false;
                 }
-                if (!TryReadPositiveDouble(parameters, "zFactor", defaultValue: 1.0, out var hillZ, out var hillZErr))
+                if (!TryReadPositiveDouble(parameters, "zFactor", defaultValue: 1.0, out var hillScale, out var hillZErr))
                 {
                     failure = hillZErr;
                     return false;
@@ -258,8 +260,13 @@ public sealed partial class GdalSurfaceJobExecutor(
                 modeArgs.Add(FormatDouble(azimuth));
                 modeArgs.Add("-alt");
                 modeArgs.Add(FormatDouble(altitude));
-                modeArgs.Add("-z");
-                modeArgs.Add(FormatDouble(hillZ));
+                // Catalog declares zFactor as the "vertical-to-horizontal scale
+                // factor", which is gdaldem's -s/-scale (unit ratio) — NOT -z
+                // (vertical exaggeration). Map to -s so a caller passing the
+                // canonical 111120 degrees-to-meters scale gets unit-correct
+                // shading instead of extreme vertical exaggeration.
+                modeArgs.Add("-s");
+                modeArgs.Add(FormatDouble(hillScale));
                 return true;
 
             case RugosityTriProcessId:

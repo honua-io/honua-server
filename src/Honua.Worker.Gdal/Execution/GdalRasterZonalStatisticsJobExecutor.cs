@@ -149,9 +149,6 @@ public sealed partial class GdalRasterZonalStatisticsJobExecutor(
             var inputPath = Path.Combine(workspace, "input.tif");
             await File.WriteAllBytesAsync(inputPath, sourceBytes, cancellationToken).ConfigureAwait(false);
 
-            using var timeoutCts = new CancellationTokenSource(opts.ToolTimeout);
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
-
             var zonalResults = new List<ZonalRow>();
             var index = 0;
             foreach (var feature in zones)
@@ -193,40 +190,52 @@ public sealed partial class GdalRasterZonalStatisticsJobExecutor(
                     $"Clipping zone {zoneIndex + 1}/{zones.Count}",
                     cancellationToken).ConfigureAwait(false);
 
+                // ToolTimeout is documented as the per-invocation ceiling.
+                // Each gdalwarp/gdalinfo call gets its own CTS so a multi-zone
+                // job whose cumulative runtime exceeds the per-tool ceiling is
+                // not aborted unless an individual invocation actually hangs.
                 GdalCommandResult clipResult;
-                try
+                using (var clipTimeoutCts = new CancellationTokenSource(opts.ToolTimeout))
+                using (var clipLinked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, clipTimeoutCts.Token))
                 {
-                    clipResult = await runner.RunAsync("gdalwarp", clipArgs, workspace, linked.Token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-                {
-                    Log.ToolTimedOut(logger, job.OperationId, opts.ToolTimeout);
-                    return JobExecutionResult.Failed($"gdalwarp timed out after {opts.ToolTimeout}.");
+                    try
+                    {
+                        clipResult = await runner.RunAsync("gdalwarp", clipArgs, workspace, clipLinked.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (clipTimeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                    {
+                        Log.ToolTimedOut(logger, job.OperationId, opts.ToolTimeout);
+                        return JobExecutionResult.Failed($"gdalwarp timed out after {opts.ToolTimeout}.");
+                    }
                 }
 
                 if (!clipResult.Succeeded || !File.Exists(clippedPath))
                 {
                     zonalResults.Add(ZonalRow.Skipped(zoneIndex, ZoneId(feature, zoneIndex),
-                        $"gdalwarp clip failed: {Truncate(clipResult.StandardError)}"));
+                        $"gdalwarp clip failed: {GdalErrorSanitizer.Sanitize(clipResult.StandardError, workspace)}"));
                     continue;
                 }
 
                 var infoArgs = new List<string> { "-json", "-stats", clippedPath };
                 GdalCommandResult infoResult;
-                try
+                using (var infoTimeoutCts = new CancellationTokenSource(opts.ToolTimeout))
+                using (var infoLinked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, infoTimeoutCts.Token))
                 {
-                    infoResult = await runner.RunAsync("gdalinfo", infoArgs, workspace, linked.Token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-                {
-                    Log.ToolTimedOut(logger, job.OperationId, opts.ToolTimeout);
-                    return JobExecutionResult.Failed($"gdalinfo timed out after {opts.ToolTimeout}.");
+                    try
+                    {
+                        infoResult = await runner.RunAsync("gdalinfo", infoArgs, workspace, infoLinked.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (infoTimeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+                    {
+                        Log.ToolTimedOut(logger, job.OperationId, opts.ToolTimeout);
+                        return JobExecutionResult.Failed($"gdalinfo timed out after {opts.ToolTimeout}.");
+                    }
                 }
 
                 if (!infoResult.Succeeded)
                 {
                     zonalResults.Add(ZonalRow.Skipped(zoneIndex, ZoneId(feature, zoneIndex),
-                        $"gdalinfo failed: {Truncate(infoResult.StandardError)}"));
+                        $"gdalinfo failed: {GdalErrorSanitizer.Sanitize(infoResult.StandardError, workspace)}"));
                     continue;
                 }
 

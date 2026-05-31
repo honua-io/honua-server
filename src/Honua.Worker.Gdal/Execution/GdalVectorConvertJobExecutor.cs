@@ -145,7 +145,7 @@ public sealed partial class GdalVectorConvertJobExecutor(
             {
                 Log.ToolFailed(logger, job.OperationId, result.ExitCode, Truncate(result.StandardError));
                 return JobExecutionResult.Failed(
-                    $"ogr2ogr exited with code {result.ExitCode}: {Truncate(result.StandardError)}");
+                    $"ogr2ogr exited with code {result.ExitCode}: {GdalErrorSanitizer.Sanitize(result.StandardError, workspace)}");
             }
 
             if (!File.Exists(outputPath))
