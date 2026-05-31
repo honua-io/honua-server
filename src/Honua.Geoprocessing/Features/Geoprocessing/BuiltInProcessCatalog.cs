@@ -508,7 +508,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Parameters =
             [
                 Param("geometry", "Geometry", "Input geometry in WKB format.", ProcessParameterValueType.Wkb, required: true),
-                Param("target", "Target Format", "Target geometry encoding. Allowed values: wkt, geojson, wkb, ewkt.", ProcessParameterValueType.Text, required: true),
+                Param("target", "Target Format", "Target geometry encoding. Allowed values: wkt, geojson, wkb, ewkt.", ProcessParameterValueType.Text, required: true,
+                    allowedValues: ["wkt", "geojson", "wkb", "ewkt"]),
             ],
             OutputArtifactKinds = [ArtifactKind.Scalar]
         },
@@ -949,13 +950,15 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         string description,
         ProcessParameterValueType valueType,
         bool required = false,
-        string? defaultValue = null) => new()
+        string? defaultValue = null,
+        IReadOnlyList<string>? allowedValues = null) => new()
         {
             Name = name,
             DisplayName = displayName,
             Description = description,
             ValueType = valueType,
             Required = required,
-            DefaultValue = defaultValue
+            DefaultValue = defaultValue,
+            AllowedValues = allowedValues
         };
 }
