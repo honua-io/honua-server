@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Validation.Contracts;
 
 namespace Honua.Infrastructure.Models;
 
@@ -9,6 +10,8 @@ namespace Honua.Infrastructure.Models;
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(ProblemDetailsResponse))]
+[JsonSerializable(typeof(FieldValidationError))]
+[JsonSerializable(typeof(IReadOnlyList<FieldValidationError>))]
 internal sealed partial class ProblemJsonContext : JsonSerializerContext
 {
 }

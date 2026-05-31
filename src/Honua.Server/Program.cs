@@ -639,6 +639,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.CloudDemo.CloudDemoJsonContext.Default,
         Honua.Server.Features.HealthCheck.HealthJsonContext.Default,
         Honua.Infrastructure.Models.ProblemJsonContext.Default,
+        Honua.Core.Features.Validation.Contracts.ValidationContractJsonContext.Default,
         Honua.Infrastructure.Authentication.ClientCertificates.ClientCertificateInfrastructureJsonContext.Default,
         Honua.Infrastructure.Middleware.LimitsEnforcementJsonContext.Default,
         Honua.Infrastructure.Security.CspViolationJsonContext.Default,

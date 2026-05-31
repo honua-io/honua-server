@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Validation.Contracts;
+
 namespace Honua.Infrastructure.Models;
 
 /// <summary>
@@ -42,4 +44,10 @@ internal sealed record ProblemDetailsResponse
     /// Timestamp for when the error occurred (UTC, ISO 8601).
     /// </summary>
     public string? Timestamp { get; init; }
+
+    /// <summary>
+    /// Field-level validation errors (RFC 7807 extension member). Emitted only
+    /// by validation problems; null/omitted for all other problem responses.
+    /// </summary>
+    public IReadOnlyList<FieldValidationError>? Errors { get; init; }
 }
