@@ -307,6 +307,10 @@ public sealed class GdalRasterExecutorTests
     [UnitTest]
     public async Task RasterHistogram_PublishesBucketsFromGdalinfo()
     {
+        // gdalinfo -hist returns a fixed 256-bucket histogram; the executor
+        // copies whatever the CLI emits and records the fixed-bucketing
+        // disclosure on the artifact so callers know not to assume the
+        // catalog can drive bin granularity.
         const string fakeGdalinfo =
             """{"bands":[{"band":1,"histogram":{"min":0,"max":255,"buckets":[10,20,30,40]}}]}""";
 
@@ -320,8 +324,7 @@ public sealed class GdalRasterExecutorTests
         {
             var job = GdalJobFactory.Job(
                 GdalRasterStatisticsJobExecutor.HistogramProcessId,
-                ("source", Base64("fake-input-raster")),
-                ("binCount", "4"));
+                ("source", Base64("fake-input-raster")));
 
             var context = new RecordingJobExecutionContext(job.OperationId);
             var result = await executor.ExecuteAsync(job, context, default);
@@ -330,7 +333,7 @@ public sealed class GdalRasterExecutorTests
             var scalar = ReadScalar(context.Artifacts.Single());
             using var doc = JsonDocument.Parse(scalar);
             doc.RootElement.GetProperty("kind").GetString().Should().Be("raster.histogram");
-            doc.RootElement.GetProperty("requestedBinCount").GetInt32().Should().Be(4);
+            doc.RootElement.GetProperty("bucketSource").GetString().Should().Contain("gdalinfo -hist");
             var band = doc.RootElement.GetProperty("bands").EnumerateArray().Single();
             band.GetProperty("buckets").EnumerateArray().Count().Should().Be(4);
 
@@ -418,6 +421,72 @@ public sealed class GdalRasterExecutorTests
             zone.GetProperty("min").GetDouble().Should().Be(1d);
             zone.GetProperty("max").GetDouble().Should().Be(5d);
             zone.GetProperty("sum").GetDouble().Should().Be(75d);
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task ZonalStatistics_BandAboveOne_ReadsClippedOutputBandOne_AndReportsOriginalBand()
+    {
+        // gdalwarp -b N writes the requested source band as output band 1 (the
+        // clipped raster is single-band). The executor must read stats from
+        // output band 1 even when the caller requested band 2 on the source,
+        // and the artifact must surface the original requested band number so
+        // callers can correlate back to the source. Regression for the gap
+        // where ExtractZoneStatistics searched the clipped JSON for the
+        // original band index and returned nulls.
+        var runner = new FakeGdalCommandRunner((tool, args, _) =>
+        {
+            if (string.Equals(tool, "gdalwarp", StringComparison.Ordinal))
+            {
+                var outputPath = args[^1];
+                File.WriteAllBytes(outputPath, Encoding.UTF8.GetBytes("clipped"));
+                // Carry the -b 2 flag through so the test asserts the executor
+                // actually selected the requested source band.
+                args.Should().ContainInOrder("-b", "2");
+                return new GdalCommandResult { ExitCode = 0 };
+            }
+            // gdalinfo on the clipped output reports a single band labeled 1.
+            return new GdalCommandResult
+            {
+                ExitCode = 0,
+                StandardOutput =
+                    """{"bands":[{"band":1,"type":"Float32","minimum":7.0,"maximum":11.0,"mean":9.0,"stdDev":1.0,"validCount":4}]}"""
+            };
+        });
+
+        var executor = NewZonalExecutor(runner, out var scratch);
+        try
+        {
+            var zonesGeoJson =
+                """{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"Z"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,1],[0,0]]]}}]}""";
+
+            var job = GdalJobFactory.Job(
+                GdalRasterZonalStatisticsJobExecutor.HandledProcessId,
+                ("source", Base64("fake-input-raster")),
+                ("zones", Base64(zonesGeoJson)),
+                ("band", "2"),
+                ("statistics", "count,mean,min,max"));
+
+            var context = new RecordingJobExecutionContext(job.OperationId);
+            var result = await executor.ExecuteAsync(job, context, default);
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+
+            var scalar = ReadScalar(context.Artifacts.Single());
+            using var doc = JsonDocument.Parse(scalar);
+
+            // The artifact reports the ORIGINAL requested source band so the
+            // caller can correlate the result back to the input raster.
+            doc.RootElement.GetProperty("band").GetInt32().Should().Be(2);
+
+            var zone = doc.RootElement.GetProperty("zones").EnumerateArray().Single();
+            zone.GetProperty("count").GetDouble().Should().Be(4d);
+            zone.GetProperty("mean").GetDouble().Should().Be(9d);
+            zone.GetProperty("min").GetDouble().Should().Be(7d);
+            zone.GetProperty("max").GetDouble().Should().Be(11d);
         }
         finally
         {

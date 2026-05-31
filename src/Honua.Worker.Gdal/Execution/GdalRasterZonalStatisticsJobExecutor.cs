@@ -232,7 +232,13 @@ public sealed partial class GdalRasterZonalStatisticsJobExecutor(
 
                 try
                 {
-                    var stats = ExtractZoneStatistics(infoResult.StandardOutput, band, requestedStatistics);
+                    // gdalwarp -b <band> writes the requested input band as
+                    // output band 1 (single-band raster); read stats from band
+                    // 1 of the clipped output even though the source band can
+                    // be any positive index. The original 'band' index is kept
+                    // separately and emitted onto the artifact below.
+                    const int ClippedOutputBand = 1;
+                    var stats = ExtractZoneStatistics(infoResult.StandardOutput, ClippedOutputBand, requestedStatistics);
                     zonalResults.Add(new ZonalRow(zoneIndex, ZoneId(feature, zoneIndex), stats, SkipReason: null));
                 }
                 catch (JsonException ex)

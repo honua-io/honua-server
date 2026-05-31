@@ -87,17 +87,6 @@ public sealed partial class GdalRasterStatisticsJobExecutor(
             return JobExecutionResult.Failed($"Invalid {processId} inputs: {bandError}");
         }
 
-        var binCount = 256;
-        if (isHistogram
-            && GdalJobInputReader.TryGetInput(parameters, "binCount", out var binCountRaw))
-        {
-            if (!int.TryParse(binCountRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out binCount) || binCount < 1)
-            {
-                return JobExecutionResult.Failed(
-                    $"Invalid {processId} inputs: 'binCount' value '{binCountRaw}' is not a positive integer.");
-            }
-        }
-
         var workspace = Path.Combine(opts.ScratchRoot, job.OperationId);
         Directory.CreateDirectory(workspace);
         try
@@ -143,7 +132,7 @@ public sealed partial class GdalRasterStatisticsJobExecutor(
             try
             {
                 scalar = isHistogram
-                    ? ProjectHistogramScalar(result.StandardOutput, bandFilter, binCount)
+                    ? ProjectHistogramScalar(result.StandardOutput, bandFilter)
                     : ProjectStatisticsScalar(result.StandardOutput, bandFilter);
             }
             catch (JsonException ex)
@@ -262,11 +251,12 @@ public sealed partial class GdalRasterStatisticsJobExecutor(
     /// <summary>
     /// Extracts the histogram block per band from the gdalinfo JSON document
     /// (gdalinfo embeds <c>histogram</c> inside each band when <c>-hist</c> is
-    /// passed). Filters to the requested band list when one was supplied.
-    /// The requested <paramref name="binCount"/> is recorded on the artifact so
-    /// downstream callers can confirm the bucketing they asked for.
+    /// passed). Filters to the requested band list when one was supplied. The
+    /// bucket count is fixed by gdalinfo (the CLI has no rebucketing switch)
+    /// and recorded on the artifact alongside the buckets so downstream
+    /// callers know not to assume a configurable bucketing.
     /// </summary>
-    internal static string ProjectHistogramScalar(string gdalinfoJson, HashSet<int>? bandFilter, int binCount)
+    internal static string ProjectHistogramScalar(string gdalinfoJson, HashSet<int>? bandFilter)
     {
         using var document = JsonDocument.Parse(gdalinfoJson);
         var root = document.RootElement;
@@ -281,7 +271,10 @@ public sealed partial class GdalRasterStatisticsJobExecutor(
         {
             writer.WriteStartObject();
             writer.WriteString("kind", "raster.histogram");
-            writer.WriteNumber("requestedBinCount", binCount);
+            // gdalinfo -hist is fixed-bucket and exposes no rebucketing switch;
+            // record the actual bucket count so callers do not assume the
+            // catalog can drive bin granularity.
+            writer.WriteString("bucketSource", "gdalinfo -hist (fixed bucketing)");
             writer.WriteStartArray("bands");
             foreach (var band in bandsElement.EnumerateArray())
             {
