@@ -50,6 +50,7 @@
     <ProjectReference Include="..\Honua.SqlServer\Honua.SqlServer.csproj" />
     <ProjectReference Include="..\Honua.MySql\Honua.MySql.csproj" />
     <ProjectReference Include="..\Honua.ArcGisRest\Honua.ArcGisRest.csproj" />
+    <ProjectReference Include="..\Honua.Oracle\Honua.Oracle.csproj" />
     <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Honua.Hosting\Honua.Hosting.csproj" />
     <ProjectReference Include="..\Honua.Jobs\Honua.Jobs.csproj" />

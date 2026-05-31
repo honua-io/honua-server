@@ -75,6 +75,7 @@ public sealed class ModuleDependencyPolicyTests
         MySql,
         SqlServer,
         ArcGisRest,
+        Oracle,
         Protocols,
         Server,
         ServiceDefaults,
@@ -146,6 +147,9 @@ public sealed class ModuleDependencyPolicyTests
         // inline against the canonical Feature/WKB seam.
         (ModuleRole.ArcGisRest, ModuleRole.Abstractions),
         (ModuleRole.ArcGisRest, ModuleRole.Core),
+        (ModuleRole.Oracle,    ModuleRole.Abstractions),
+        (ModuleRole.Oracle,    ModuleRole.Core),
+        (ModuleRole.Oracle,    ModuleRole.Geometry),
 
         // Protocol modules: Abstractions + Core + Geometry + Hosting +
         // ServiceDefaults. They may also reference Jobs + Geoprocessing: the OGC
@@ -253,6 +257,7 @@ public sealed class ModuleDependencyPolicyTests
         (ModuleRole.Server, ModuleRole.MySql),
         (ModuleRole.Server, ModuleRole.SqlServer),
         (ModuleRole.Server, ModuleRole.ArcGisRest),
+        (ModuleRole.Server, ModuleRole.Oracle),
         (ModuleRole.Server, ModuleRole.Protocols),
         (ModuleRole.Server, ModuleRole.ServiceDefaults),
 
@@ -623,6 +628,10 @@ public sealed class ModuleDependencyPolicyTests
         if (projectName.Equals("Honua.ArcGisRest", StringComparison.Ordinal))
         {
             return ModuleRole.ArcGisRest;
+        }
+        if (projectName.Equals("Honua.Oracle", StringComparison.Ordinal))
+        {
+            return ModuleRole.Oracle;
         }
 
         // Tier 6: Protocol modules.

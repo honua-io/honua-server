@@ -9,6 +9,7 @@
 - [Database Support Matrix](operator/database-support-matrix.md)
 - [DuckDB Provider](operator/duckdb-provider.md)
 - [SQL Server Provider](operator/sqlserver-provider.md)
+- [Oracle Provider](operator/oracle-provider.md)
 - [MySQL / MariaDB Provider](operator/mysql-provider.md)
 - [TLS Connection Guide](operator/tls-connection-guide.md)
 - [Security](operator/security.md)

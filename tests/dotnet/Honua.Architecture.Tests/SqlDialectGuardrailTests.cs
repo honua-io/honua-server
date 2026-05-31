@@ -13,8 +13,8 @@ namespace Honua.Architecture.Tests;
 /// quoting reimplemented per-provider, SQL-injection boundary risk).
 /// </summary>
 /// <remarks>
-/// The asserts are deliberately tied to the four shipped data providers (Postgres, MySql,
-/// SqlServer, DuckDB). When a fifth provider is added, extend <see cref="ProviderAssemblies"/>
+/// The asserts are deliberately tied to the shipped data providers (Postgres, MySql, SqlServer,
+/// DuckDB, Oracle). When another provider is added, extend <see cref="ProviderAssemblies"/>
 /// — letting a new provider through without a dialect would re-open the per-provider quoting
 /// drift the audit called out.
 /// </remarks>
@@ -31,6 +31,7 @@ public sealed class SqlDialectGuardrailTests
         ("Honua.MySql", typeof(Honua.MySql.Queries.Filters.MySqlSqlDialect).Assembly),
         ("Honua.SqlServer", typeof(Honua.SqlServer.Queries.Filters.SqlServerSqlDialect).Assembly),
         ("Honua.DuckDB", typeof(Honua.DuckDB.Queries.Filters.DuckDbSqlDialect).Assembly),
+        ("Honua.Oracle", typeof(Honua.Oracle.Queries.Filters.OracleSqlDialect).Assembly),
     };
 
     [ArchitectureTest]

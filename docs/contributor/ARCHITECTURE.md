@@ -75,6 +75,16 @@ The server is organized by vertical slices under `src/Honua.Server/Features/`.
 - **Identifier safety**: all configured identifiers (table, schema, primary key, geometry column, attribute fields) are validated against `[A-Za-z_][A-Za-z0-9_]*` and bracket-quoted.
 - See the [SQL Server Provider Guide](../operator/sqlserver-provider.md) for operator configuration.
 
+### Oracle Provider
+
+- **Oracle.ManagedDataAccess.Core (ODP.NET)**: fully managed Oracle driver with built-in pooling. **Not Native AOT compatible** — operators publishing AOT artifacts must disable the provider.
+- Same **QueryBuilder + DataAccess** split as the other providers, translating to Oracle SQL with `SDO_RELATE` / `SDO_AGGR_MBR` / `SDO_UTIL.TO_WKBGEOMETRY` / `SDO_UTIL.FROM_WKBGEOMETRY` and 12c+ `OFFSET ... FETCH NEXT` paging.
+- **Read-only by design**: `IFeatureDataProvider.Writer` is `null`; statistics, top-features, date/value/H3 bins, and temporal extents throw `NotSupportedException`.
+- **ArcSDE / versioning refusal**: `OracleSpatialGuard` probes `ALL_TAB_COLUMNS` once per binding (cached for the deployment's lifetime) and refuses any column whose `DATA_TYPE` is not `SDO_GEOMETRY` (BLOB, `ST_GEOMETRY`, ...) or whose table carries `GDB_FROM_DATE` / `GDB_TO_DATE` / `SDE_STATE_ID`. Throws `NotSupportedException` before any geometry bytes are read — this is the IP / clean-room enforcement point.
+- **Plug-in registration**: `AddOracleFeatureProvider` wires the provider as an additional `IFeatureDataProvider` selected per-layer through `FeatureProviderQueryRouter`. The primary backend (Postgres, DuckDB, MySQL) remains in place.
+- **Identifier safety**: all configured identifiers (table, schema, primary key, geometry column, attribute fields) are validated against `[A-Za-z_][A-Za-z0-9_]*` and double-quoted (case-preserving).
+- See the [Oracle Provider Guide](../operator/oracle-provider.md) for operator configuration.
+
 ### MySQL / MariaDB Provider
 
 - **MySqlConnector**: pooled `MySqlDataSource` against MySQL 8.0.11+ / MariaDB 10.6+; no ORM.

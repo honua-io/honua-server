@@ -24,6 +24,7 @@ Deploy, configure, monitor, and manage Honua Server.
 - [Database Support Matrix](database-support-matrix.md) — Tested PostgreSQL/PostGIS versions, Aurora, Azure
 - [DuckDB Provider](duckdb-provider.md) — Embedded read-only provider for analytics, GeoParquet, and edge deployments
 - [SQL Server Provider](sqlserver-provider.md) — Read-only SQL Server (`geometry`/`geography`) provider for enterprise data sources
+- [Oracle Provider](oracle-provider.md) — Read-only Oracle Spatial (`SDO_GEOMETRY`) provider for enterprise-geodatabase data sources (ArcSDE `ST_Geometry` and versioned tables refused)
 - [MySQL/MariaDB Provider](mysql-provider.md) — Read/query-only provider for MySQL 8.0.11+ and MariaDB 10.6+ tables
 - [TLS Connection Guide](tls-connection-guide.md) — SSL/TLS configuration for managed and self-hosted deployments
 

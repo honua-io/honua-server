@@ -85,6 +85,7 @@ How to deploy, run, harden, and respond to incidents.
 
 - [DuckDB Provider](operator/duckdb-provider.md)
 - [MySQL / MariaDB Provider](operator/mysql-provider.md)
+- [Oracle Provider](operator/oracle-provider.md)
 - [SQL Server Provider](operator/sqlserver-provider.md)
 
 ### Runbooks
