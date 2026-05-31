@@ -2686,7 +2686,7 @@
         },
         {
           "proofClass": "scenario-depth",
-          "proofMechanism": "Deterministic tileset.json/GLB byte-equality across runs, ECEF projection of WGS-84 vertices, EXT_structural_metadata attribute round-trip (Integer→INT32 with clamping warnings, BigInteger→INT64 with 8-byte bufferView alignment and coercion warnings, all-null STRING column emits a >=1-byte values bufferView), fan triangulation of polygon outer rings, polygon extrusion bounding-region uses BaseHeightField/extrusionHeight (not vertex Z), layer-not-found / unsupported-geometry / feature-cap / scene-id-conflict / options-invalid problem-detail mapping, staging-then-promote concurrency contract (loser's 409 leaves winner's final-path bytes byte-identical), Postgres feature-source cancellation throws between batches, and scene-registry registration after a successful generation are exercised by core and server tests",
+          "proofMechanism": "Deterministic tileset.json/GLB byte-equality across runs, ECEF projection of WGS-84 vertices, EXT_structural_metadata attribute round-trip (Integer\u2192INT32 with clamping warnings, BigInteger\u2192INT64 with 8-byte bufferView alignment and coercion warnings, all-null STRING column emits a >=1-byte values bufferView), fan triangulation of polygon outer rings, polygon extrusion bounding-region uses BaseHeightField/extrusionHeight (not vertex Z), layer-not-found / unsupported-geometry / feature-cap / scene-id-conflict / options-invalid problem-detail mapping, staging-then-promote concurrency contract (loser's 409 leaves winner's final-path bytes byte-identical), Postgres feature-source cancellation throws between batches, and scene-registry registration after a successful generation are exercised by core and server tests",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Core.Tests/Features/Scene/Generation/EcefCoordinateTransformTests.cs",
@@ -2882,7 +2882,7 @@
       "displayName": "MCP operator surface (server-owned)",
       "surfaceKind": "http-route-family",
       "protocol": "MCP",
-      "canonicalIdentifier": "POST /mcp — JSON-RPC 2.0 operator surface",
+      "canonicalIdentifier": "POST /mcp \u2014 JSON-RPC 2.0 operator surface",
       "parentSurfaceId": null,
       "endpointPrefixes": [],
       "endpointExactMatches": [
@@ -3121,6 +3121,48 @@
           "ownerRepo": "honua-server",
           "status": "implemented",
           "linkedTicket": "#1182",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
+      "surfaceId": "temporal-data-history",
+      "displayName": "Temporal data history HTTP surface (capability discovery + as-of read)",
+      "surfaceKind": "http-route-family",
+      "protocol": "Temporal",
+      "canonicalIdentifier": "/api/v1/temporal/services/{serviceId}/layers/{layerId}/*",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/v1/temporal/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus temporal capability-discovery and as-of read integration tests (supported/unsupported/empty/unknown-layer cases)",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Temporal/TemporalHistoryEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1166",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Slice 1 of #1166 ships capability discovery and as-of read on the existing change tracker + temporal column; diff, timeline, attribution, and governed rollback are deferred and tracked in the follow-up ticket",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Server.Tests/Features/Temporal/TemporalHistoryEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "bounded-child-ticket",
+          "linkedTicket": "#1285",
           "versionCaptureRule": null
         }
       ]
