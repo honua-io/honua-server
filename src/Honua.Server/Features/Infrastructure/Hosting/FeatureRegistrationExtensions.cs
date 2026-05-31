@@ -116,6 +116,10 @@ internal static class FeatureRegistrationExtensions
         services.AddEnhancedAdminServices();
         services.AddMetadataReleaseServices();
         services.AddStudioPackageLifecycle();
+        // Durable Studio map collaboration: comment threads + activity feed (#1278, slice 1).
+        // In-memory store is the default; AddPostgreSqlServices overrides it with durable storage.
+        Honua.Core.Features.Console.Collaboration.StudioMapCollaborationServiceCollectionExtensions
+            .AddStudioMapCollaboration(services);
         services.AddCompliance(configuration);
         services.AddOrchestration();
         services.AddPMTilesProxy();

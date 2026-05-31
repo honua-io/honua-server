@@ -254,6 +254,13 @@ public static class EndpointRegistry
         new("POST", "/api/v1/studio/content-items/{itemId}/versions/{versionId}/reopen"),
         new("POST", "/api/v1/studio/content-items/{itemId}/rollback-requests"),
 
+        // v1 Studio map collaboration: comment threads + activity feed (#1278, slice 1)
+        new("GET", "/api/v1/console/maps/{mapId}/collab/comments"),
+        new("POST", "/api/v1/console/maps/{mapId}/collab/comments"),
+        new("POST", "/api/v1/console/maps/{mapId}/collab/comments/{threadId}/replies"),
+        new("POST", "/api/v1/console/maps/{mapId}/collab/comments/{threadId}/resolve"),
+        new("GET", "/api/v1/console/maps/{mapId}/collab/activity"),
+
         // v1 content publication registry for Studio-generated artifacts (#1183)
         new("POST", "/api/v1/console/publications"),
         new("GET", "/api/v1/console/publications/{publicationId}"),

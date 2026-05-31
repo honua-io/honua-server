@@ -32,6 +32,7 @@ using Honua.Server.Features.Admin.TileOperations;
 using Honua.Server.Features.CloudDemo;
 using Honua.Server.Features.Collaboration;
 using Honua.Server.Features.Console;
+using Honua.Server.Features.Console.Collaboration;
 using Honua.Server.Features.Collaboration.Sessions;
 using Honua.Io.Export;
 using Honua.Server.Features.PrintingTools;
@@ -609,6 +610,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Server.Features.Admin.Models.UserManagementJsonContext.Default,
         Honua.Server.Features.Admin.Models.RoleJsonContext.Default,
         Honua.Server.Features.Console.Models.ConsoleJsonContext.Default,
+        Honua.Server.Features.Console.Collaboration.Models.StudioMapCollaborationJsonContext.Default,
         Honua.Server.Features.Studio.Models.StudioApiJsonContext.Default,
         Honua.Core.Features.Studio.Domain.StudioJsonContext.Default,
         Honua.Ai.AnalysisContent.AnalysisContentApiJsonContext.Default,
@@ -1056,6 +1058,7 @@ app.MapConsoleShareEndpoints();
 app.MapCatalogDiscoveryEndpoints();
 app.MapConsoleSharePublicEndpoints();
 app.MapStudioPackageEndpoints();
+app.MapStudioMapCollaborationEndpoints();
 app.MapWorkflowPackageEndpoints();
 Honua.Server.Features.Console.Publications.ContentPublicationEndpoints.MapContentPublicationEndpoints(app);
 Honua.Server.Features.Console.Publications.PublishedRouteEndpoints.MapPublishedRouteEndpoints(app);

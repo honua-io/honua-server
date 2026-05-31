@@ -183,6 +183,13 @@ internal static class ServiceCollectionExtensions
             new PostgresStudioPackageStore(
                 serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
+        // Durable Studio map collaboration store (#1278). Overrides the in-memory
+        // default registered by AddStudioMapCollaboration when Postgres is active.
+        services.AddScoped<Honua.Core.Features.Console.Collaboration.Abstractions.IStudioMapCollaborationStore>(serviceProvider =>
+            new Features.Console.Collaboration.PostgresStudioMapCollaborationStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                serviceProvider.GetService<TimeProvider>(),
+                configuration["Database:Schema"]));
         services.AddScoped<IAnalysisContentStore>(serviceProvider =>
             new PostgresAnalysisContentStore(
                 serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
