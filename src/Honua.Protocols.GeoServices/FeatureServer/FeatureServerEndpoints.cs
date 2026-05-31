@@ -28,6 +28,22 @@ internal static partial class FeatureServerEndpoints
             .Produces<FeatureServerResponse>(200, "application/json")
             .Produces(404);
 
+        // Esri clients (ArcGIS Pro, ArcGIS Python SDK) hydrate service metadata by
+        // POSTing {"f":"json"}; mirror the GET form so discovery succeeds. The POST
+        // companion shares the read-only handler and is anonymous by design (access
+        // is enforced by the handler via the layer access policy). It deliberately
+        // omits CacheOutput/WithETag to match the existing query/identify POST
+        // companions.
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer", (Delegate)HandleGetServiceMetadata)
+            .WithDisplayName("Get FeatureServer Service Metadata (POST)")
+            .WithName("GetServiceMetadataPost")
+            .WithSummary("Get FeatureServer service metadata using POST")
+            .WithDescription("Returns metadata for a FeatureServer service including all layers")
+            .WithTags("FeatureServer")
+            .AllowAnonymous()
+            .Produces<FeatureServerResponse>(200, "application/json")
+            .Produces(404);
+
         var layerMetadata = endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}", (Delegate)HandleLayerMetadata)
             .WithDisplayName("Get FeatureServer Layer Metadata")
             .WithName("GetLayerMetadata")
@@ -36,6 +52,17 @@ internal static partial class FeatureServerEndpoints
             .WithTags("FeatureServer")
             .CacheOutput("LayerMetadata")
             .WithETag()
+            .Produces<LayerResponse>(200, "application/json")
+            .Produces(404)
+            .Produces(StatusCodes.Status422UnprocessableEntity);
+
+        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}", (Delegate)HandleLayerMetadata)
+            .WithDisplayName("Get FeatureServer Layer Metadata (POST)")
+            .WithName("GetLayerMetadataPost")
+            .WithSummary("Get FeatureServer layer metadata using POST")
+            .WithDescription("Returns detailed layer metadata for a specific layer")
+            .WithTags("FeatureServer")
+            .AllowAnonymous()
             .Produces<LayerResponse>(200, "application/json")
             .Produces(404)
             .Produces(StatusCodes.Status422UnprocessableEntity);
