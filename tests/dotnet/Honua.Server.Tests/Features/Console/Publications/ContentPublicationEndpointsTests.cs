@@ -370,6 +370,33 @@ public sealed class ContentPublicationEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Created);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/publications")]
+    public async Task Publish_ReportWithWrongTypedBindingsAndPanels_IsRejected()
+    {
+        // A report document whose bindings/panels members are present but the wrong JSON type must be
+        // rejected (not silently treated as opaque), since the document declares the bindings/panels graph.
+        const string payload = """{ "format": "honua.report-document.v1", "bindings": {}, "panels": "nope" }""";
+
+        var body = SerializePublish(new PublishContentRequest
+        {
+            Kind = ContentPublicationKind.Report,
+            RouteSlug = "wrong-typed-report",
+            Title = "Wrong Typed Report",
+            ContentPayload = payload,
+        });
+
+        var response = await _client.PostAsync("/api/v1/console/publications", JsonContent(body));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var codes = document.RootElement.GetProperty("errors").EnumerateArray()
+            .Select(i => i.GetProperty("code").GetString())
+            .ToList();
+        codes.Should().Contain("publication.bindings.invalid");
+        codes.Should().Contain("publication.panels.invalid");
+    }
+
     private async Task<ContentPublicationDetail> PublishAsync(string slug, ContentPublicationKind kind, string? payload = null)
     {
         var body = SerializePublish(new PublishContentRequest { Kind = kind, RouteSlug = slug, Title = slug, ContentPayload = payload });

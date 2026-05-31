@@ -64,17 +64,40 @@ internal static class ContentPublicationBodyValidator
                 return;
             }
 
-            var hasBindings = root.TryGetProperty("bindings", out var bindings) && bindings.ValueKind == JsonValueKind.Array;
-            var hasPanels = root.TryGetProperty("panels", out var panels) && panels.ValueKind == JsonValueKind.Array;
-            if (!hasBindings && !hasPanels)
+            var bindingsPresent = root.TryGetProperty("bindings", out var bindings);
+            var panelsPresent = root.TryGetProperty("panels", out var panels);
+            if (!bindingsPresent && !panelsPresent)
             {
                 // Not a recognised bindings/panels document; accept opaquely.
                 return;
             }
 
+            // The document IS a report/dashboard bindings/panels graph, so enforce it. A present-but-wrong-type
+            // bindings/panels member is itself a violation (it would otherwise silently bypass validation).
             var errors = new List<FieldValidationError>();
-            var aliases = ValidateBindings(hasBindings ? bindings : default, errors);
-            if (hasPanels)
+
+            HashSet<string> aliases;
+            if (bindingsPresent && bindings.ValueKind != JsonValueKind.Array)
+            {
+                errors.Add(FieldValidationError.Create(
+                    "publication.bindings.invalid",
+                    "The report/dashboard document's bindings must be an array.",
+                    path: "/bindings"));
+                aliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            }
+            else
+            {
+                aliases = ValidateBindings(bindingsPresent ? bindings : default, errors);
+            }
+
+            if (panelsPresent && panels.ValueKind != JsonValueKind.Array)
+            {
+                errors.Add(FieldValidationError.Create(
+                    "publication.panels.invalid",
+                    "The report/dashboard document's panels must be an array.",
+                    path: "/panels"));
+            }
+            else if (panelsPresent)
             {
                 ValidatePanels(panels, aliases, errors);
             }
