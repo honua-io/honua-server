@@ -802,17 +802,106 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer")]
-    public async Task GenerateRenderer_WithClassificationDef_ReturnsBadRequest()
+    public async Task GenerateRenderer_WithUnsupportedClassificationType_ReturnsBadRequest()
     {
         var classificationDef = Uri.EscapeDataString("""{"type":"uniqueValue"}""");
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/generateRenderer?classificationDef={classificationDef}");
 
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest,
-            "classification-based renderers are not yet supported and should return 400");
+            "only classBreaksDef and uniqueValueDef classification types are supported");
 
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("classification");
+        content.Should().Contain("classificationDef");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer")]
+    public async Task GenerateRenderer_WithClassBreaksDef_ReturnsClassBreaksRenderer()
+    {
+        var classificationDef = Uri.EscapeDataString(
+            """{"type":"classBreaksDef","classificationField":"objectid","classificationMethod":"esriClassifyEqualInterval","breakCount":3}""");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/generateRenderer?classificationDef={classificationDef}");
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var jsonDoc = JsonDocument.Parse(content);
+        var root = jsonDoc.RootElement;
+
+        root.GetProperty("type").GetString().Should().Be("classBreaks");
+        root.GetProperty("field").GetString().Should().Be("objectid");
+        root.TryGetProperty("minValue", out _).Should().BeTrue();
+
+        var classBreakInfos = root.GetProperty("classBreakInfos");
+        classBreakInfos.ValueKind.Should().Be(JsonValueKind.Array);
+        classBreakInfos.GetArrayLength().Should().BeGreaterThan(0);
+
+        foreach (var info in classBreakInfos.EnumerateArray())
+        {
+            info.TryGetProperty("classMaxValue", out _).Should().BeTrue();
+            info.TryGetProperty("label", out _).Should().BeTrue();
+            var symbol = info.GetProperty("symbol");
+            symbol.ValueKind.Should().Be(JsonValueKind.Object);
+            symbol.GetProperty("type").GetString().Should().NotBeNullOrEmpty();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer")]
+    public async Task GenerateRenderer_WithClassBreaksDefQuantile_ReturnsClassBreaksRenderer()
+    {
+        var classificationDef = Uri.EscapeDataString(
+            """{"type":"classBreaksDef","classificationField":"objectid","classificationMethod":"esriClassifyQuantile","breakCount":2}""");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/generateRenderer?classificationDef={classificationDef}");
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var jsonDoc = JsonDocument.Parse(content);
+        var root = jsonDoc.RootElement;
+
+        root.GetProperty("type").GetString().Should().Be("classBreaks");
+        root.GetProperty("classificationMethod").GetString().Should().Be("esriClassifyQuantile");
+        root.GetProperty("classBreakInfos").GetArrayLength().Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer")]
+    public async Task GenerateRenderer_WithUniqueValueDef_ReturnsUniqueValueRenderer()
+    {
+        var classificationDef = Uri.EscapeDataString(
+            """{"type":"uniqueValueDef","uniqueValueFields":["category"],"fieldDelimiter":","}""");
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/generateRenderer?classificationDef={classificationDef}");
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var jsonDoc = JsonDocument.Parse(content);
+        var root = jsonDoc.RootElement;
+
+        root.GetProperty("type").GetString().Should().Be("uniqueValue");
+        root.GetProperty("field1").GetString().Should().Be("category");
+        root.GetProperty("fieldDelimiter").GetString().Should().Be(",");
+
+        var uniqueValueInfos = root.GetProperty("uniqueValueInfos");
+        uniqueValueInfos.ValueKind.Should().Be(JsonValueKind.Array);
+        uniqueValueInfos.GetArrayLength().Should().BeGreaterThan(0);
+
+        foreach (var info in uniqueValueInfos.EnumerateArray())
+        {
+            info.GetProperty("value").GetString().Should().NotBeNull();
+            info.TryGetProperty("label", out _).Should().BeTrue();
+            var symbol = info.GetProperty("symbol");
+            symbol.ValueKind.Should().Be(JsonValueKind.Object);
+            symbol.GetProperty("type").GetString().Should().NotBeNullOrEmpty();
+        }
     }
 
     [IntegrationTest]

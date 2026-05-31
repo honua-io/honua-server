@@ -38,7 +38,7 @@ namespace Honua.Protocols.GeoServices.FeatureServer;
 /// <summary>
 /// Handler for FeatureServer query operations.
 /// </summary>
-internal sealed class FeatureServerQueryHandler(
+internal sealed partial class FeatureServerQueryHandler(
     FeatureServerQueryDependencies dependencies,
     ILogger<FeatureServerQueryHandler> logger) : IFeatureQueryDispatcher
 {

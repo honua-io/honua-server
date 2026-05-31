@@ -63,13 +63,16 @@ internal static partial class FeatureServerEndpoints
 
         var values = ToCaseInsensitiveDictionary(context.Request.Query);
         var classificationDef = GetValueString(values, "classificationDef");
+        JsonDocument? classificationDocument = null;
         if (!string.IsNullOrWhiteSpace(classificationDef)
-            && !TryParseJsonPayload(classificationDef, out var jsonError))
+            && !TryParseJsonDocument(classificationDef, out classificationDocument, out var jsonError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid classificationDef",
                 [jsonError ?? InvalidRendererJsonMessage]);
         }
+
+        using var _classificationDocument = classificationDocument;
 
         var geometryType = resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None;
         // V2 canonical sources may carry geometry on Spatial OR via a
@@ -83,13 +86,19 @@ internal static partial class FeatureServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "Layer does not support renderers");
         }
 
-        // When a classificationDef is provided, return an error rather than
-        // silently ignoring it and returning a simple renderer.
-        if (!string.IsNullOrWhiteSpace(classificationDef))
+        // When a classificationDef is provided, generate the corresponding
+        // classified renderer (classBreaksDef / uniqueValueDef) by reusing the
+        // shared FeatureServer query/statistics pipeline.
+        if (classificationDocument is not null)
         {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "Classification renderers are not supported",
-                ["classBreaksDef and uniqueValueDef classification types are not yet implemented. Omit classificationDef to generate a simple renderer."]);
+            var classifiedHandler = context.RequestServices.GetRequiredService<FeatureServerQueryHandler>();
+            return await classifiedHandler.HandleGenerateClassifiedRendererAsync(
+                serviceId,
+                layerId,
+                classificationDocument.RootElement,
+                geometryType,
+                context,
+                cancellationToken);
         }
 
         var symbol = BuildSimpleSymbol(geometryType);
@@ -147,13 +156,14 @@ internal static partial class FeatureServerEndpoints
         };
     }
 
-    private static bool TryParseJsonPayload(string payload, out string? error)
+    private static bool TryParseJsonDocument(string payload, out JsonDocument? document, out string? error)
     {
         error = null;
+        document = null;
 
         try
         {
-            using var _ = JsonDocument.Parse(payload);
+            document = JsonDocument.Parse(payload);
             return true;
         }
         catch (JsonException)
