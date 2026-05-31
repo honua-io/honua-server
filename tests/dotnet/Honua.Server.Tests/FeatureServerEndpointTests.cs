@@ -636,6 +636,100 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         queryResponse.HasM.Should().BeFalse();
     }
 
+    // Regression: returnDistinctValues=true with a paramless WHERE clause (the canonical
+    // ArcGIS "where=1=1" select-all) plus a named outFields previously returned HTTP 500
+    // ("Parameter '' cannot be null") because the unlimited count path mis-bound parameters.
+    // See issue #1280 — ArcGIS Pro's Unique Values renderer relies on this exact request.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_ReturnDistinctValuesWithTautologicalWhere_Returns200WithDistinctValues()
+    {
+        // Act: where=1=1 produces no bound parameters; category has duplicate values across rows.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&outFields=category&returnDistinctValues=true&returnGeometry=false&f=json");
+
+        // Assert
+        response.Be200Ok();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+
+        // Seed layer 0 has categories test/sample/test/sample/test -> two distinct values.
+        var distinctCategories = queryResponse.Features!
+            .Select(feature => feature.Attributes.TryGetValue("category", out var value) ? value?.ToString() : null)
+            .Where(value => value is not null)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        queryResponse.Features!.Length.Should().Be(distinctCategories.Length);
+        distinctCategories.Should().HaveCount(2);
+        distinctCategories.Should().Contain("test");
+        distinctCategories.Should().Contain("sample");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_ReturnDistinctValuesWithContradictoryWhere_Returns200Empty()
+    {
+        // Act: where=1=2 is also paramless and matches nothing.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D2&outFields=category&returnDistinctValues=true&returnGeometry=false&f=json");
+
+        // Assert
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+        queryResponse.Features!.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_ReturnDistinctValuesWithRealPredicate_Returns200WithDistinctValues()
+    {
+        // Act: a real bound predicate exercises the parameterized path alongside distinct.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=category='test'&outFields=category&returnDistinctValues=true&returnGeometry=false&f=json");
+
+        // Assert
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+        queryResponse.Features!.Length.Should().Be(1);
+        queryResponse.Features![0].Attributes.TryGetValue("category", out var category).Should().BeTrue();
+        category?.ToString().Should().Be("test");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_ReturnDistinctValuesWithAllFields_Returns200()
+    {
+        // Act: outFields=* does not apply distinct, but must still succeed with where=1=1.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&outFields=*&returnDistinctValues=true&returnGeometry=false&f=json");
+
+        // Assert
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNull();
+        queryResponse.Features!.Should().NotBeEmpty();
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
