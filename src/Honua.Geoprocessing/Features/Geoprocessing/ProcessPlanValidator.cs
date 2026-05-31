@@ -304,6 +304,15 @@ internal static partial class ProcessPlanValidator
             case "analytics.spatial-join-managed":
                 ValidateManagedSpatialJoinSemantics(step, violations);
                 break;
+            case "analytics.cluster-managed":
+                ValidateManagedClusterSemantics(step, violations);
+                break;
+            case "analytics.buffer-aggregate-managed":
+                ValidateManagedBufferAggregateSemantics(step, violations);
+                break;
+            case "analytics.density-managed":
+                ValidateManagedDensitySemantics(step, violations);
+                break;
             case "analytics.density":
                 ValidateDensitySemantics(step, analyticsLimits, violations);
                 ApplySharedAnalyticsFilterSemantics(step, violations);
@@ -481,6 +490,89 @@ internal static partial class ProcessPlanValidator
                 return;
             }
         }
+    }
+
+    // Managed analytics counterparts (#1260) read an inline FeatureCollection
+    // and reject bad values at the executor with TransformInputException. These
+    // validators mirror the executors' enum / conditional-required / range
+    // checks so ValidatePlan rejects plans the executor would terminally fail.
+    // The unsuffixed analytics.* ids stay layer-scoped + AnalyticsLimits-aware
+    // (PostGIS sync path); these managed ids are FeatureCollection-scoped and
+    // have no AnalyticsLimits upper bound (cellSize / eps are CRS units, not
+    // meters, so the meter-based caps do not apply).
+    private static void ValidateManagedClusterSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        var hasAlgorithm = step.Inputs.TryGetValue("algorithm", out var algorithmRaw)
+            && !string.IsNullOrWhiteSpace(algorithmRaw);
+        var algorithm = hasAlgorithm ? algorithmRaw!.Trim() : "dbscan";
+
+        if (hasAlgorithm && !ClusterAlgorithmValues.Contains(algorithm))
+        {
+            AddEnumViolation(step, "algorithm", algorithm, "dbscan, kmeans", violations);
+            return;
+        }
+
+        var isDbscan = string.Equals(algorithm, "dbscan", StringComparison.OrdinalIgnoreCase);
+        var isKMeans = string.Equals(algorithm, "kmeans", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(algorithm, "k-means", StringComparison.OrdinalIgnoreCase);
+
+        if (isDbscan)
+        {
+            RequireConditionalParameter(step, "eps", "algorithm=dbscan", violations);
+            RequireConditionalParameter(step, "minPoints", "algorithm=dbscan", violations);
+        }
+        else if (isKMeans)
+        {
+            RequireConditionalParameter(step, "k", "algorithm=kmeans", violations);
+        }
+
+        // eps / minPoints / k bound checks mirror ManagedClusterExecutor.
+        RequirePositiveFiniteDouble(step, "eps", violations);
+        RequireIntAtLeast(step, "minPoints", 1, violations);
+        RequireIntAtLeast(step, "k", 1, violations);
+    }
+
+    private static void ValidateManagedBufferAggregateSemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (step.Inputs.TryGetValue("unit", out var unitRaw)
+            && !string.IsNullOrWhiteSpace(unitRaw)
+            && !BufferAggregateUnitValues.Contains(unitRaw.Trim()))
+        {
+            AddEnumViolation(step, "unit", unitRaw, "meters, kilometers, feet, miles", violations);
+        }
+
+        // distance must be a finite non-negative number (matches the executor).
+        if (step.Inputs.TryGetValue("distance", out var distanceRaw)
+            && !string.IsNullOrWhiteSpace(distanceRaw))
+        {
+            if (!double.TryParse(distanceRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out var distance)
+                || double.IsNaN(distance) || double.IsInfinity(distance)
+                || distance < 0d)
+            {
+                AddRangeViolationIfNew(step, "distance",
+                    $"expected non-negative finite number, got '{distanceRaw}'",
+                    violations);
+            }
+        }
+    }
+
+    private static void ValidateManagedDensitySemantics(
+        AnalysisPlanStep step,
+        List<GeoprocessingValidationFailure> violations)
+    {
+        if (step.Inputs.TryGetValue("mode", out var modeRaw)
+            && !string.IsNullOrWhiteSpace(modeRaw)
+            && !DensityModeValues.Contains(modeRaw.Trim()))
+        {
+            AddEnumViolation(step, "mode", modeRaw, "hex, square", violations);
+        }
+
+        // cellSize must be a finite positive number (CRS units, not meters).
+        RequirePositiveFiniteDouble(step, "cellSize", violations);
     }
 
     private static void ValidateSpatialFilterSemantics(

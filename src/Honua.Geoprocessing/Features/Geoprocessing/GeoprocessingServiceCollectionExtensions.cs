@@ -134,6 +134,15 @@ internal static class GeoprocessingServiceCollectionExtensions
         // STRtree aggregate join over two inline FeatureCollections; no Postgres.
         services.TryAddSingleton<ManagedSpatialJoinExecutor>();
 
+        // Managed analytics counterparts for cluster / buffer-aggregate / density
+        // (#1260). Each is the workflow/codemod-reachable counterpart to the
+        // matching analytics.* PostGIS-protocol path: NTS over an inline
+        // FeatureCollection, no Postgres dependency, so the lean dispatcher can
+        // construct them unconditionally.
+        services.TryAddSingleton<ManagedClusterExecutor>();
+        services.TryAddSingleton<ManagedBufferAggregateExecutor>();
+        services.TryAddSingleton<ManagedDensityExecutor>();
+
         // GeoETL transform executors reconciled from feat/geoetl-baseline onto the
         // #1185 add-a-capability contract. Each reads/writes a FeatureCollection
         // data URI and is composed behind GeoprocessingDispatchJobExecutor.
