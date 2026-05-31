@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Geocoding;
 using Honua.Core.Features.Geocoding.Integration;
+using Honua.Protocols.GeoServices.Catalog;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Geocoding;
@@ -41,6 +42,10 @@ internal static class GeocodingServiceCollectionExtensions
 
         // Register the handler for GeoServices-compatible geocoding endpoints
         services.AddScoped<GeocodingHandler>();
+
+        // Advertise GeocodeServer in the /rest/services catalog so Esri-style clients
+        // can discover the locator alongside FeatureServer/MapServer/ImageServer.
+        services.AddSingleton<IGeoServicesCatalogContributor, GeocodeServerCatalogContributor>();
 
         return services;
     }

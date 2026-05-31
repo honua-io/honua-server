@@ -4,6 +4,7 @@
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.ImageServer;
 using Honua.Protocols.GeoServices.MapServer;
+using Honua.Server.Features.Geocoding;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,12 +12,12 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Honua.Infrastructure.Hosting.Modules;
 
 /// <summary>
-/// Esri GeoServices protocol module (FeatureServer / MapServer / ImageServer
-/// and the GPServer / NAServer family). Wraps the existing
+/// Esri GeoServices protocol module (FeatureServer / MapServer / ImageServer /
+/// GeocodeServer and the GPServer / NAServer family). Wraps the existing
 /// <c>MapFeatureServerEndpoints</c> / <c>MapMapServerEndpoints</c> /
-/// <c>MapImageServerEndpoints</c> registration calls behind the
-/// <see cref="IHonuaProtocolModule"/> contract. Service registration is
-/// spread across multiple <c>AddXxx</c> calls in
+/// <c>MapImageServerEndpoints</c> / <c>MapGeocodingEndpoints</c> registration
+/// calls behind the <see cref="IHonuaProtocolModule"/> contract. Service
+/// registration is spread across multiple <c>AddXxx</c> calls in
 /// <c>FeatureRegistrationExtensions</c>; this module wraps the canonical
 /// endpoint mapping set.
 /// </summary>
@@ -28,10 +29,10 @@ public sealed class GeoServicesProtocolModule : IHonuaProtocolModule
     /// <inheritdoc />
     public void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
-        // FeatureServer, MapServer, ImageServer, GPServer, NAServer are
-        // registered individually in FeatureRegistrationExtensions. This
-        // module's umbrella registration surface lives there until follow-up
-        // work consolidates it.
+        // FeatureServer, MapServer, ImageServer, GeocodeServer, GPServer,
+        // NAServer are registered individually in
+        // FeatureRegistrationExtensions. This module's umbrella registration
+        // surface lives there until follow-up work consolidates it.
         ArgumentNullException.ThrowIfNull(services);
     }
 
@@ -42,5 +43,6 @@ public sealed class GeoServicesProtocolModule : IHonuaProtocolModule
         endpoints.MapFeatureServerEndpoints();
         endpoints.MapMapServerEndpoints();
         endpoints.MapImageServerEndpoints();
+        endpoints.MapGeocodingEndpoints();
     }
 }

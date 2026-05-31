@@ -55,6 +55,7 @@ internal static class GeoservicesCatalogEndpoints
         string? f,
         [FromServices] IMetadataV2GraphProvider graphProvider,
         [FromServices] IRasterStore rasterStore,
+        [FromServices] IEnumerable<IGeoServicesCatalogContributor> contributors,
         [FromServices] ILogger<GeoservicesCatalogLog> logger)
     {
         if (!IsSupportedFormat(f))
@@ -140,8 +141,22 @@ internal static class GeoservicesCatalogEndpoints
             }
         }
 
+        // Append entries contributed by non-metadata-graph protocols (GeocodeServer today).
+        // Access policy is the contributor's responsibility; the directory does not gate them.
+        foreach (var contributor in contributors)
+        {
+            var contributed = await contributor.GetServicesAsync(context, cancellationToken).ConfigureAwait(false);
+            if (contributed.Count > 0)
+            {
+                entries.AddRange(contributed);
+            }
+        }
+
         // If nothing was emitted but there were publications the caller could not see,
         // surface the standard 401/403 access decision instead of an empty directory.
+        // Contributor entries (e.g. anonymous-by-design GeocodeServer) count as visible
+        // content, so an authenticated-only graph state with a visible contributor still
+        // returns 200.
         if (entries.Count == 0 && deniedPublications.Count > 0)
         {
             var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(context, deniedPublications);

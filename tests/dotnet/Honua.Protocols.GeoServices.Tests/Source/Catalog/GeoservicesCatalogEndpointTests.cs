@@ -106,6 +106,31 @@ public sealed class GeoservicesCatalogEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services")]
+    public async Task GetServicesDirectory_AdvertisesGeocodeServer()
+    {
+        var response = await _fixture.Client.GetAsync("/rest/services?f=json");
+
+        response.Be200Ok();
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var geocodeEntries = payload.RootElement
+            .GetProperty("services")
+            .EnumerateArray()
+            .Where(service =>
+                service.TryGetProperty("type", out var type) &&
+                string.Equals(type.GetString(), "GeocodeServer", StringComparison.Ordinal))
+            .ToArray();
+
+        geocodeEntries.Should().HaveCount(1);
+        var entry = geocodeEntries[0];
+        entry.GetProperty("name").GetString().Should().NotBeNullOrWhiteSpace();
+        entry.GetProperty("url").GetString()
+            .Should().Match(url => url != null && url.EndsWith("/GeocodeServer", StringComparison.Ordinal));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services")]
     public async Task GetServicesDirectory_ImageServerEntriesUseNumericLayerUrls()
     {
         var rasterStore = Substitute.For<IRasterStore>();
