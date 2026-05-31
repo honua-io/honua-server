@@ -558,4 +558,75 @@ public class ImageServerEndpointsTests
             await fixture.DisposeAsync();
         }
     }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/multidimensionalInfo")]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task MultidimensionalInfo_Get_NonMultidimensionalLayer_ReturnsEmptyVariables()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/multidimensionalInfo?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            json.RootElement.GetProperty("multidimensionalInfo")
+                .GetProperty("variables").GetArrayLength().Should().Be(0);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /rest/services/{id}/ImageServer/multidimensionalInfo")]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task MultidimensionalInfo_Post_NonMultidimensionalLayer_ReturnsEmptyVariables()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var content = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("f", "json"),
+            });
+
+            var response = await fixture.Client.PostAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/multidimensionalInfo",
+                content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            json.RootElement.GetProperty("multidimensionalInfo")
+                .GetProperty("variables").GetArrayLength().Should().Be(0);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/multidimensionalInfo")]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task MultidimensionalInfo_NonExistentLayer_ReturnsNotFound()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                "/rest/services/99999/ImageServer/multidimensionalInfo?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
 }

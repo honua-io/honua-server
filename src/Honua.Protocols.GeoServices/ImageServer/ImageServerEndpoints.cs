@@ -231,6 +231,24 @@ internal static class ImageServerEndpoints
             .Produces(404)
             .Produces(501);
 
+        // Multidimensional info endpoint - exposes cube variables/dimensions
+        group.MapGet("/multidimensionalInfo", GetMultidimensionalInfo)
+            .WithDisplayName("Get Multidimensional Info (GET)")
+            .WithName("ImageServerMultidimensionalInfoGet")
+            .WithSummary("Get multidimensional variables and dimensions")
+            .WithDescription("Returns the Esri multidimensionalInfo document (variables with dimensions) for a multidimensional raster; returns an empty variables array when the layer is not multidimensional")
+            .Produces<MultidimensionalInfoResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        group.MapPost("/multidimensionalInfo", GetMultidimensionalInfoPost)
+            .WithDisplayName("Get Multidimensional Info (POST)")
+            .WithName("ImageServerMultidimensionalInfoPost")
+            .WithSummary("Get multidimensional variables and dimensions via POST")
+            .WithDescription("POST equivalent of the ArcGIS ImageServer multidimensionalInfo endpoint")
+            .Produces<MultidimensionalInfoResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
         var serviceGroup = app.MapGroup("/rest/services/{serviceId:regex(^(?!\\d+$).+$)}/ImageServer")
             .WithTags("ImageServer")
             // Read-only Esri ImageServer surface; access is enforced by the
@@ -390,6 +408,21 @@ internal static class ImageServerEndpoints
             .Produces(400)
             .Produces(404)
             .Produces(501);
+
+        serviceGroup.MapGet("/multidimensionalInfo", GetMultidimensionalInfoByService)
+            .WithDisplayName("Get Multidimensional Info by Service (GET)")
+            .WithName("ImageServerMultidimensionalInfoGetByService")
+            .WithSummary("Get multidimensional variables and dimensions")
+            .Produces<MultidimensionalInfoResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        serviceGroup.MapPost("/multidimensionalInfo", GetMultidimensionalInfoPostByService)
+            .WithDisplayName("Get Multidimensional Info by Service (POST)")
+            .WithName("ImageServerMultidimensionalInfoPostByService")
+            .WithSummary("Get multidimensional variables and dimensions via POST")
+            .Produces<MultidimensionalInfoResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
     }
 
     /// <summary>
@@ -425,6 +458,72 @@ internal static class ImageServerEndpoints
     {
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
         return resolution.ErrorResult ?? await GetServiceInfo(resolution.LayerId, f, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Get the Esri multidimensionalInfo document for a multidimensional raster layer.
+    /// </summary>
+    private static async Task<IResult> GetMultidimensionalInfo(
+        int id,
+        string? f,
+        HttpContext context,
+        ImageServerMultidimensionalInfoHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsSupportedJsonResponseFormat(f))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        return await handler.GetMultidimensionalInfoAsync(context, id, cancellationToken);
+    }
+
+    private static async Task<IResult> GetMultidimensionalInfoByService(
+        string serviceId,
+        string? f,
+        HttpContext context,
+        ImageServerMultidimensionalInfoHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await GetMultidimensionalInfo(resolution.LayerId, f, context, handler, cancellationToken);
+    }
+
+    private static async Task<IResult> GetMultidimensionalInfoPost(
+        int id,
+        HttpContext context,
+        ImageServerMultidimensionalInfoHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var bodyValues = await ReadPostValuesAsync(context, cancellationToken);
+        if (bodyValues.Error != null)
+        {
+            return bodyValues.Error;
+        }
+
+        var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
+        return await GetMultidimensionalInfo(id, GetString(merged, "f"), context, handler, cancellationToken);
+    }
+
+    private static async Task<IResult> GetMultidimensionalInfoPostByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerMultidimensionalInfoHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        if (resolution.ErrorResult is not null)
+        {
+            return resolution.ErrorResult;
+        }
+
+        return await GetMultidimensionalInfoPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
     /// <summary>
