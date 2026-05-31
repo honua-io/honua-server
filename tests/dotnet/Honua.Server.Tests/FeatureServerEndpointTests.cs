@@ -389,6 +389,75 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    public async Task GetLayerMetadata_ObjectIdField_IsTypedEsriFieldTypeOid()
+    {
+        // Regression for #1299: Esri clients (including the ArcGIS Python SDK) locate the
+        // object-id field by filtering fields for type == "esriFieldTypeOID". The field that
+        // matches objectIdField must therefore be typed esriFieldTypeOID, and there must be
+        // exactly one such field per layer.
+
+        // Act
+        var layerResponse = await GetLayerMetadataAsync();
+
+        // Assert
+        layerResponse.ObjectIdField.Should().NotBeNullOrEmpty();
+
+        var oidFields = layerResponse.Fields
+            .Where(f => f.Type.Equals("esriFieldTypeOID", StringComparison.Ordinal))
+            .ToList();
+
+        oidFields.Should().ContainSingle("there must be exactly one esriFieldTypeOID field per layer");
+        oidFields[0].Name.Should().Be(layerResponse.ObjectIdField);
+
+        // No field named like the object-id field should leak a non-OID Esri type.
+        layerResponse.Fields
+            .Where(f => f.Name.Equals(layerResponse.ObjectIdField, StringComparison.OrdinalIgnoreCase))
+            .Should().OnlyContain(f => f.Type == "esriFieldTypeOID");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task QueryFeatures_ObjectIdField_IsTypedEsriFieldTypeOid()
+    {
+        // Regression for #1299: the query response fields[] array must also type the
+        // object-id field as esriFieldTypeOID so feature-returning queries resolve the OID.
+
+        // Act
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?where=1%3D1&f=json");
+
+        // Assert
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var queryResponse = JsonSerializer.Deserialize<QueryResponse>(
+            content, FeatureServerJsonContext.Default.QueryResponse);
+        queryResponse.Should().NotBeNull();
+        queryResponse!.ObjectIdFieldName.Should().NotBeNullOrEmpty();
+        queryResponse.Fields.Should().NotBeNullOrEmpty();
+
+        var oidFields = queryResponse.Fields!
+            .Where(f => f.Type.Equals("esriFieldTypeOID", StringComparison.Ordinal))
+            .ToList();
+
+        oidFields.Should().ContainSingle("the query response must expose exactly one esriFieldTypeOID field");
+        oidFields[0].Name.Should().Be(queryResponse.ObjectIdFieldName);
+    }
+
+    private async Task<LayerResponse> GetLayerMetadataAsync()
+    {
+        var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}");
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var layerResponse = JsonSerializer.Deserialize<LayerResponse>(
+            content, FeatureServerJsonContext.Default.LayerResponse);
+        layerResponse.Should().NotBeNull();
+        return layerResponse!;
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task GetLayerMetadata_WithUnsupportedFormat_Returns400()
     {
         var response = await _fixture.Client.GetAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}?f=html");

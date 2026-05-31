@@ -436,7 +436,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             .Where(static field => !IsGeometryField(field))
             .Where(static field => !field.Hidden)
             .Where(field => includeAllFields || requestedFields!.Contains(field.Name))
-            .Select(MapFieldInfo)
+            .Select(field => MapFieldInfo(field, objectIdFieldName))
             .ToList();
 
         if (!mappedFields.Any(field => field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase)))
@@ -563,18 +563,21 @@ internal sealed class QueryFormatter : IQueryFormatter
         return firstStringField?.Name ?? objectIdFieldName;
     }
 
-    internal static GeoServicesFieldInfo MapFieldInfo(MetadataV2Field field)
+    internal static GeoServicesFieldInfo MapFieldInfo(MetadataV2Field field, string objectIdFieldName)
     {
         var isGeometry = IsGeometryField(field);
+        // The layer's object-id field must be typed esriFieldTypeOID regardless of its
+        // SQL type so Esri clients can locate the OID field by type (see issue #1299).
+        var isObjectId = field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase);
         return new GeoServicesFieldInfo
         {
             Name = field.Name,
-            Type = MapFieldTypeToGeoServices(field.Type),
+            Type = isObjectId ? "esriFieldTypeOID" : MapFieldTypeToGeoServices(field.Type),
             SqlType = field.SqlType ?? MapFieldTypeToSql(field.Type),
             Alias = field.Alias ?? field.Title ?? field.Name,
             Length = field.Length,
-            Nullable = field.Nullable,
-            Editable = field.Editable && !isGeometry,
+            Nullable = field.Nullable && !isObjectId,
+            Editable = field.Editable && !isGeometry && !isObjectId,
             DefaultValue = field.DefaultValue.HasValue ? ConvertJsonElement(field.DefaultValue.Value) : null,
             Domain = GeoServicesFieldDomainMapper.Map(field.Domain),
             Visible = !field.Hidden

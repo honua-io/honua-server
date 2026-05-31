@@ -144,13 +144,15 @@ internal static partial class FeatureServerEndpoints
         var geometryType = resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None;
         var hasGeometry = geometryType is not MetadataV2GeometryType.None;
         var srid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
+        var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         var response = new QueryResponse
         {
             GeometryType = hasGeometry ? MapGeometryTypeV2(geometryType) : null,
             SpatialReference = hasGeometry
                 ? new GeoServicesSpatialReference { Wkid = srid, LatestWkid = srid }
                 : null,
-            Fields = [.. ResolveVisibleFieldsV2(resource).Select(MapFieldInfoV2)],
+            ObjectIdFieldName = objectIdField,
+            Fields = [.. ResolveVisibleFieldsV2(resource).Select(field => MapFieldInfoV2(field, objectIdField))],
             Features = responseFeatures,
             ExceededTransferLimit = result.HasMoreResults
         };
