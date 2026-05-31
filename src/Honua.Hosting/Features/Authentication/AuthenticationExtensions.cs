@@ -27,6 +27,14 @@ public static class AuthenticationExtensions
     public const string AdminPolicyAlias = "AdminPolicy";
 
     /// <summary>
+    /// Authorization policy name for temporal-history read access (honua-server#1166).
+    /// Distinct from the current-read and admin surfaces so it can be tightened to a
+    /// dedicated permission grant in a later slice without touching endpoint code. In
+    /// this slice it requires the admin role, matching the admin baseline.
+    /// </summary>
+    public const string TemporalHistoryReadPolicy = "TemporalHistoryRead";
+
+    /// <summary>
     /// Adds API key authentication and authorization services
     /// </summary>
     public static IServiceCollection AddApiKeyAuthentication(this IServiceCollection services)
@@ -58,6 +66,14 @@ public static class AuthenticationExtensions
                 policy.AuthenticationSchemes.Add(ClientCertificateAuthenticationDefaults.AuthenticationScheme);
             });
 
+            options.AddPolicy(TemporalHistoryReadPolicy, policy =>
+            {
+                _ = policy.RequireAuthenticatedUser();
+                _ = policy.RequireRole("admin");
+                policy.AuthenticationSchemes.Add(ApiKeyScheme);
+                policy.AuthenticationSchemes.Add(ClientCertificateAuthenticationDefaults.AuthenticationScheme);
+            });
+
         });
 
         return services;
@@ -77,4 +93,11 @@ public static class AuthenticationExtensions
     /// </summary>
     public static TBuilder RequireAdminAuthorization<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(AdminPolicy);
+
+    /// <summary>
+    /// Requires the distinct temporal-history read authorization for an endpoint or group
+    /// (honua-server#1166).
+    /// </summary>
+    public static TBuilder RequireTemporalHistoryRead<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(TemporalHistoryReadPolicy);
 }

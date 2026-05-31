@@ -218,6 +218,12 @@ public static class OidcAuthenticationExtensions
                 AuthenticationExtensions.AdminPolicyAlias,
                 adminRoles,
                 schemes);
+
+            UpdateRolePolicy(
+                authzOptions,
+                AuthenticationExtensions.TemporalHistoryReadPolicy,
+                adminRoles,
+                schemes);
         });
 
         return services;
