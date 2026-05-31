@@ -383,7 +383,9 @@ internal static class ServiceCollectionExtensions
             configureHandler: static () => ArcGisRestClient.CreatePinnedDnsHttpMessageHandler())
             .AddHttpMessageHandler<MigrationRequestCountingHandler>();
 
-        // Register Geoservices import service
+        // Register Geoservices import service. The optional IAttachmentStore parameter is
+        // automatically resolved from the container when registered above so attachment
+        // copy runs during ArcGIS layer imports without a separate wiring step.
         services.AddScoped<IGeoservicesImportService, GeoservicesImportService>();
 
         // Register Core-level services via their own extensions

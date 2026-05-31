@@ -185,6 +185,100 @@ internal sealed partial class ArcGisRestClient
     }
 
     /// <summary>
+    /// Query attachment metadata for one or more features in a layer.
+    /// </summary>
+    /// <param name="serviceUrl">Service root URL (FeatureServer or MapServer).</param>
+    /// <param name="layerId">Layer identifier.</param>
+    /// <param name="objectIds">Source ObjectIds whose attachments should be enumerated.</param>
+    /// <param name="timeoutSeconds">Per-request timeout in seconds.</param>
+    /// <param name="maxRetries">Maximum HTTP retry attempts.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="credentials">Optional credential descriptor.</param>
+    /// <returns>Attachment groupings keyed by parent ObjectId. Empty when no objectIds are supplied.</returns>
+    public async Task<ArcGisAttachmentQueryResponse> QueryAttachmentsAsync(
+        string serviceUrl,
+        int layerId,
+        IReadOnlyCollection<long> objectIds,
+        int timeoutSeconds,
+        int maxRetries,
+        CancellationToken cancellationToken,
+        GeoservicesCredentialDescriptor? credentials = null)
+    {
+        ArgumentNullException.ThrowIfNull(objectIds);
+
+        if (objectIds.Count == 0)
+        {
+            return new ArcGisAttachmentQueryResponse { AttachmentGroups = [] };
+        }
+
+        var normalizedUrl = NormalizeServiceUrl(serviceUrl);
+        var objectIdCsv = string.Join(
+            ",",
+            objectIds.Select(id => id.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        var queryUrl = $"{normalizedUrl}/{layerId}/queryAttachments?objectIds={Uri.EscapeDataString(objectIdCsv)}&returnUrl=false&f=json";
+
+        return await GetJsonAsync(
+            queryUrl,
+            ArcGisJsonContext.Default.ArcGisAttachmentQueryResponse,
+            maxRetries,
+            timeoutSeconds,
+            credentials,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Download a single attachment as a binary stream. The caller owns the returned stream
+    /// and the disposable wrapper that backs it.
+    /// </summary>
+    public async Task<ArcGisAttachmentDownload> DownloadAttachmentAsync(
+        string serviceUrl,
+        int layerId,
+        long featureObjectId,
+        long attachmentId,
+        int timeoutSeconds,
+        int maxRetries,
+        CancellationToken cancellationToken,
+        GeoservicesCredentialDescriptor? credentials = null)
+    {
+        var normalizedUrl = NormalizeServiceUrl(serviceUrl);
+        var url = $"{normalizedUrl}/{layerId}/{featureObjectId}/attachments/{attachmentId}";
+
+        await EnsureSafeOutboundUriAsync(url, cancellationToken).ConfigureAwait(false);
+
+        var options = BuildHttpOptions(maxRetries);
+        var policy = CreateHttpPolicy(options, maxRetries, cancellationToken);
+        var response = await policy.ExecuteAsync(
+            async ct =>
+            {
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+                using var request = CreateGetRequest(url, credentials);
+                return await _httpClient.SendAsync(
+                    request,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    timeoutCts.Token).ConfigureAwait(false);
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            ThrowIfAuthenticationFailure(response, url, credentials);
+            response.EnsureSuccessStatusCode();
+
+            var contentType = response.Content.Headers.ContentType?.MediaType
+                ?? "application/octet-stream";
+            var contentLength = response.Content.Headers.ContentLength;
+            var content = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            return new ArcGisAttachmentDownload(content, contentType, contentLength, response);
+        }
+        catch
+        {
+            response.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>
     /// Query features from a layer with pagination support.
     /// </summary>
     public async Task<ArcGisQueryResult> QueryFeaturesAsync(
@@ -1056,7 +1150,93 @@ internal sealed record ArcGisError
     public string[]? Details { get; init; }
 }
 
+internal sealed record ArcGisAttachmentQueryResponse
+{
+    [JsonPropertyName("attachmentGroups")]
+    public ArcGisAttachmentGroup[]? AttachmentGroups { get; init; }
+}
+
+internal sealed record ArcGisAttachmentGroup
+{
+    [JsonPropertyName("parentObjectId")]
+    public long ParentObjectId { get; init; }
+
+    [JsonPropertyName("parentGlobalId")]
+    public string? ParentGlobalId { get; init; }
+
+    [JsonPropertyName("attachmentInfos")]
+    public ArcGisAttachmentInfo[]? AttachmentInfos { get; init; }
+}
+
+internal sealed record ArcGisAttachmentInfo
+{
+    [JsonPropertyName("id")]
+    public long Id { get; init; }
+
+    [JsonPropertyName("name")]
+    public string? Name { get; init; }
+
+    [JsonPropertyName("contentType")]
+    public string? ContentType { get; init; }
+
+    [JsonPropertyName("size")]
+    public long Size { get; init; }
+
+    [JsonPropertyName("keywords")]
+    public string? Keywords { get; init; }
+}
+
 #pragma warning restore CA1812
+
+/// <summary>
+/// Wraps a single ArcGIS attachment download: the binary content stream plus the
+/// underlying <see cref="HttpResponseMessage"/> whose lifetime the caller controls.
+/// </summary>
+internal sealed class ArcGisAttachmentDownload : IAsyncDisposable, IDisposable
+{
+    private readonly HttpResponseMessage _response;
+    private bool _disposed;
+
+    public ArcGisAttachmentDownload(
+        Stream content,
+        string contentType,
+        long? contentLength,
+        HttpResponseMessage response)
+    {
+        Content = content ?? throw new ArgumentNullException(nameof(content));
+        ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType;
+        ContentLength = contentLength;
+        _response = response ?? throw new ArgumentNullException(nameof(response));
+    }
+
+    public Stream Content { get; }
+    public string ContentType { get; }
+    public long? ContentLength { get; }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        Content.Dispose();
+        _response.Dispose();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        await Content.DisposeAsync().ConfigureAwait(false);
+        _response.Dispose();
+    }
+}
 
 /// <summary>
 /// JSON serialization context for ArcGIS REST API responses.
@@ -1065,6 +1245,7 @@ internal sealed record ArcGisError
 [JsonSerializable(typeof(ArcGisLayerResponse))]
 [JsonSerializable(typeof(ArcGisCountResponse))]
 [JsonSerializable(typeof(ArcGisFeatureResponse))]
+[JsonSerializable(typeof(ArcGisAttachmentQueryResponse))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 internal sealed partial class ArcGisJsonContext : JsonSerializerContext
 {

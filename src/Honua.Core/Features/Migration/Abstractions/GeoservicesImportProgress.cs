@@ -54,6 +54,17 @@ public sealed record GeoservicesImportProgress : IOperationProgress, ICancellabl
     public int FailedFeatures { get; init; }
 
     /// <summary>
+    /// Number of feature attachments copied so far while the import is in the
+    /// <see cref="GeoservicesImportStatus.CopyingAttachments"/> phase.
+    /// </summary>
+    public int AttachmentsProcessed { get; init; }
+
+    /// <summary>
+    /// Number of source attachments that failed to copy.
+    /// </summary>
+    public int FailedAttachments { get; init; }
+
+    /// <summary>
     /// Progress percentage (0-100), null if total is unknown.
     /// </summary>
     public double? PercentComplete => EstimatedTotalFeatures > 0
@@ -146,6 +157,7 @@ public sealed record GeoservicesImportProgress : IOperationProgress, ICancellabl
         GeoservicesImportStatus.CreatingTable => OperationStatus.Processing,
         GeoservicesImportStatus.InsertingFeatures => OperationStatus.Processing,
         GeoservicesImportStatus.Publishing => OperationStatus.Processing,
+        GeoservicesImportStatus.CopyingAttachments => OperationStatus.Processing,
         GeoservicesImportStatus.Completed => OperationStatus.Completed,
         GeoservicesImportStatus.Failed => OperationStatus.Failed,
         GeoservicesImportStatus.Cancelled => OperationStatus.Cancelled,
@@ -219,6 +231,11 @@ public enum GeoservicesImportStatus
     /// Publishing the imported layer.
     /// </summary>
     Publishing,
+
+    /// <summary>
+    /// Copying source feature attachments into the Honua attachment store.
+    /// </summary>
+    CopyingAttachments,
 
     /// <summary>
     /// Import completed successfully.

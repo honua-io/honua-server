@@ -185,8 +185,8 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
         artifact.FidelityClassifications.Should().Contain(record =>
             record.SourceId == resource.Id &&
             record.Category == "attachments" &&
-            record.Code == ImportCompatibilityCodes.ArcGisAttachments &&
-            record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview);
+            record.Code == ImportCompatibilityCodes.Compatible &&
+            record.AutomationStatus == MigrationFidelityAutomationStatuses.Automated);
         artifact.FidelityClassifications.Should().Contain(record =>
             record.Category == "renderers" &&
             record.AutomationStatus == MigrationFidelityAutomationStatuses.ManualReview);
@@ -198,9 +198,9 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
 
         artifact.FidelityMatrix.Should().NotBeNull();
         artifact.FidelityMatrix!.Summary.Should().Match<MigrationFidelityMatrixSummary>(summary =>
-            summary.AutomatedCount >= 4 &&
+            summary.AutomatedCount >= 5 &&
             summary.AssistedCount >= 1 &&
-            summary.ManualReviewCount >= 5 &&
+            summary.ManualReviewCount >= 4 &&
             summary.UnsupportedCount == 0);
         artifact.FidelityMatrix.Cells.Should().Contain(cell =>
             cell.Category == "domains" &&

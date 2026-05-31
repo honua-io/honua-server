@@ -173,7 +173,6 @@ internal sealed partial class GeoservicesImportService
 
         if (resource.HasAttachments == true)
         {
-            var attachments = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceAttachments);
             var attachmentDependencyIds = dependencies
                 .Where(static dependency => string.Equals(dependency.Kind, "attachments", StringComparison.Ordinal))
                 .Select(static dependency => dependency.Id)
@@ -184,10 +183,9 @@ internal sealed partial class GeoservicesImportService
                 "attachment",
                 "attachments",
                 resource.Name,
-                attachments.AutomationStatus,
-                attachments.Code,
-                attachments.Reason,
-                attachments.ManualSteps,
+                MigrationFidelityAutomationStatuses.Automated,
+                ImportCompatibilityCodes.Compatible,
+                "Attachments are automatically copied to the Honua attachment store during import when ImportAttachments is enabled and auto-publish succeeds.",
                 relatedIds: attachmentDependencyIds));
         }
 
