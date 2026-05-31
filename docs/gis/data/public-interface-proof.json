@@ -1096,6 +1096,52 @@
       ]
     },
     {
+      "surfaceId": "arcgis-portal-sharing",
+      "displayName": "ArcGIS Portal Sharing token issuance",
+      "surfaceKind": "http-route-family",
+      "protocol": "ArcGIS Portal Sharing",
+      "canonicalIdentifier": "/sharing/rest/generateToken",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [],
+      "endpointExactMatches": [
+        "/sharing/rest/generateToken"
+      ],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus ArcGIS Portal token integration tests",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "src/Honua.Protocols.GeoServices/Sharing/SharingRestEndpoints.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Sharing/SharingRestTokenTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-io/honua-server#1241",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "GeoServices parity docs and nightly scorecard governance covering the portal-sharing surface",
+          "executionLane": "nightly:geoservices-parity+parity-scorecard",
+          "evidenceLocations": [
+            ".github/workflows/geoservices-parity-nightly.yml",
+            ".github/workflows/parity-scorecard-governance.yml",
+            "docs/gis/geoservices-rest-parity.md",
+            "docs/gis/data/geoservices-rest-parity.json"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-io/honua-server#1241",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "geocode-server",
       "displayName": "GeoServices REST GeocodeServer",
       "surfaceKind": "http-route-family",

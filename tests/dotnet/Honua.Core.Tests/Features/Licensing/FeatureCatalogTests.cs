@@ -106,7 +106,8 @@ public sealed class FeatureCatalogTests
         [
             "styling.defaults",
             "temporal.filtering",
-            "temporal.extent-discovery"
+            "temporal.extent-discovery",
+            "identity.portal-token"
         ]);
     }
 

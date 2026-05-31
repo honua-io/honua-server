@@ -537,6 +537,10 @@ public static class EndpointRegistry
 
         new("POST", "/csp-violation-report"),
 
+        // ArcGIS Portal Sharing token issuance (#1241).
+        new("POST", "/sharing/rest/generateToken"),
+        new("GET", "/sharing/rest/generateToken"),
+
         new("GET", "/rest/services"),
         new("GET", "/rest/info"),
         new("GET", "/rest/services/{locatorName}/GeocodeServer"),
