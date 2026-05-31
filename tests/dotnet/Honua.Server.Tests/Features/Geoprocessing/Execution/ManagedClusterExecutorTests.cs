@@ -76,6 +76,47 @@ public sealed class ManagedClusterExecutorTests
     }
 
     [UnitTest]
+    public async Task Dbscan_NoisePointReachableFromLaterCorePoint_IsReclaimedAsBorderMember()
+    {
+        var executor = new ManagedClusterExecutor(Options());
+
+        // Border point at (4,0) sits between two core neighborhoods: the visit
+        // order labels it noise first (only 2 self+neighbour points within eps=1),
+        // but it is within eps of (5,0), (5,1), (5,-1) which form a dense core
+        // neighbourhood. After the refactor it must STILL be reclaimed into the
+        // (5,*) cluster instead of staying noise.
+        var input = BuildUri(
+            Feature(Point(4, 0), ("id", 1)),
+            Feature(Point(5, 0), ("id", 2)),
+            Feature(Point(5, 1), ("id", 3)),
+            Feature(Point(5, -1), ("id", 4)),
+            Feature(Point(100, 100), ("id", 5)));
+
+        var (status, uri) = await RunAsync(
+            executor,
+            ManagedClusterExecutor.HandledProcessId,
+            ("input", input),
+            ("algorithm", "dbscan"),
+            ("eps", "1.5"),
+            ("minPoints", "3"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        var features = ReadFeatures(uri!);
+        var ids = features.Select(f => (
+            Convert.ToInt64(f.Attributes.GetOptionalValue("id"), CultureInfo.InvariantCulture),
+            ClusterId(f))).ToDictionary(t => t.Item1, t => t.Item2);
+
+        // Core cluster covers (5,0)/(5,1)/(5,-1); the (4,0) border point joins it.
+        ids[2].Should().BeGreaterOrEqualTo(0);
+        ids[3].Should().Be(ids[2]);
+        ids[4].Should().Be(ids[2]);
+        ids[1].Should().Be(ids[2], "border point reachable from a core neighbourhood must be reclaimed, not stay noise");
+
+        // The far outlier is still noise.
+        ids[5].Should().Be(ManagedClusterExecutor.NoiseClusterId);
+    }
+
+    [UnitTest]
     public async Task KMeans_AssignsEveryFeatureToOneOfKClusters()
     {
         var executor = new ManagedClusterExecutor(Options());

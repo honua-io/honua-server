@@ -122,6 +122,16 @@ internal sealed class ManagedClusterExecutor(
     /// Returns one label per input point: cluster ids start at 0; noise points
     /// get <see cref="NoiseClusterId"/>. Density-reachability is expanded
     /// breadth-first from each seed core point.
+    ///
+    /// Candidates are labeled at ENQUEUE time so each point is queued at most
+    /// once per cluster — without this, a dense neighborhood can re-enqueue
+    /// the same Unassigned point from every overlapping core point's neighbor
+    /// scan and queue storage / dequeue work grow quadratically on exactly the
+    /// high-density inputs DBSCAN is meant to handle. Noise-then-border reclaim
+    /// is preserved: a candidate already labeled <see cref="NoiseClusterId"/>
+    /// is re-labeled to the current cluster but NOT re-queued, because a noise
+    /// point has fewer than minPoints neighbors by definition and so cannot be
+    /// a core point of any cluster.
     /// </summary>
     private static int[] RunDbscan(
         List<MaterializedPoint> points,
@@ -146,6 +156,7 @@ internal sealed class ManagedClusterExecutor(
 
         index.Build();
 
+        var queue = new Queue<int>();
         var nextClusterId = 0;
         for (var i = 0; i < points.Count; i++)
         {
@@ -164,40 +175,64 @@ internal sealed class ManagedClusterExecutor(
 
             var clusterId = nextClusterId++;
             labels[i] = clusterId;
+            queue.Clear();
 
-            var queue = new Queue<int>(seed.Where(n => n != i));
+            // Seed expansion: skip the core point itself (already labeled above).
+            AssignAndEnqueueNewMembers(queue, labels, seed, clusterId, skipIndex: i);
+
             while (queue.Count > 0)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var current = queue.Dequeue();
-                if (labels[current] == NoiseClusterId)
-                {
-                    // Border point: reclaim into the cluster.
-                    labels[current] = clusterId;
-                    continue;
-                }
-
-                if (labels[current] != Unassigned)
-                {
-                    continue;
-                }
-
-                labels[current] = clusterId;
+                // labels[current] was assigned to clusterId at enqueue time; we
+                // are here purely to expand its neighborhood if it is a core
+                // point.
                 var neighbors = QueryNeighbors(index, points, current, eps);
                 if (neighbors.Count >= minPoints)
                 {
-                    foreach (var neighbor in neighbors)
-                    {
-                        if (labels[neighbor] == Unassigned || labels[neighbor] == NoiseClusterId)
-                        {
-                            queue.Enqueue(neighbor);
-                        }
-                    }
+                    AssignAndEnqueueNewMembers(queue, labels, neighbors, clusterId, skipIndex: -1);
                 }
             }
         }
 
         return labels;
+    }
+
+    /// <summary>
+    /// Walks the candidate neighbor list and either (a) labels + enqueues each
+    /// Unassigned candidate exactly once or (b) relabels each NoiseClusterId
+    /// candidate into the current cluster as a border-point reclaim WITHOUT
+    /// enqueueing it (noise points have &lt; minPoints neighbors by definition
+    /// and so cannot be core). Candidates already assigned to any cluster
+    /// (including this one) are skipped — this is the dedup guard that keeps
+    /// dense neighborhoods from re-queueing the same point repeatedly.
+    /// </summary>
+    private static void AssignAndEnqueueNewMembers(
+        Queue<int> queue,
+        int[] labels,
+        List<int> candidates,
+        int clusterId,
+        int skipIndex)
+    {
+        foreach (var candidate in candidates)
+        {
+            if (candidate == skipIndex)
+            {
+                continue;
+            }
+
+            var label = labels[candidate];
+            if (label == Unassigned)
+            {
+                labels[candidate] = clusterId;
+                queue.Enqueue(candidate);
+            }
+            else if (label == NoiseClusterId)
+            {
+                // Border-point reclaim: in this cluster but not a core seed.
+                labels[candidate] = clusterId;
+            }
+        }
     }
 
     /// <summary>
