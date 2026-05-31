@@ -2114,10 +2114,20 @@ internal sealed class GeometryServiceHandler(
             points.Add(writer.Write(labelPoint));
         }
 
-        var response = ConvertToResponse(points, parameters.SR, "esriGeometryPoint");
+        // The Esri /labelPoints operation returns the result points under a
+        // `labelPoints` key (not the generic `geometries` array). Emitting the
+        // array shape made the ArcGIS Maps SDK for JavaScript read labelPoints ->
+        // undefined and return [].
+        var labelPointElements = new JsonElement[points.Count];
+        for (var i = 0; i < points.Count; i++)
+        {
+            labelPointElements[i] = _geometryConverter.ConvertWkbToGeoServicesGeometry(points[i], parameters.SR);
+        }
+
+        var response = new GeometryServiceLabelPointsResponse { LabelPoints = labelPointElements };
         GeometryServiceLog.BinaryOperationCompleted(_logger, "labelPoints", points.Count);
         scope.SetSuccess(points.Count);
-        return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceResponse, contentType: "application/json");
+        return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceLabelPointsResponse, contentType: "application/json");
     }
 
     private Geometry ReadGeometry(string geometryJson)
@@ -2283,10 +2293,14 @@ internal sealed class GeometryServiceHandler(
         }
 
         var unionResult = await _operationService.UnionAsync(wkbs, parameters.SR, ct).ConfigureAwait(false);
-        var response = ConvertToResponse(new List<byte[]> { unionResult }, parameters.SR, parameters.GeometryType);
+        // The Esri /union operation returns a single `geometry`, not a `geometries`
+        // array (union produces one merged geometry). The array shape broke the
+        // ArcGIS Maps SDK for JavaScript, which reads result.geometry (singular).
+        var geometryElement = _geometryConverter.ConvertWkbToGeoServicesGeometry(unionResult, parameters.SR);
+        var response = new GeometryServiceGeometryResponse { Geometry = geometryElement };
         GeometryServiceLog.UnionOperationCompleted(_logger, parameters.GeometryJsonStrings.Length);
         scope.SetSuccess(1);
-        return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceResponse, contentType: "application/json");
+        return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceGeometryResponse, contentType: "application/json");
     }
 
     private async Task<IResult> HandleBinaryGeometryOperationAsync(

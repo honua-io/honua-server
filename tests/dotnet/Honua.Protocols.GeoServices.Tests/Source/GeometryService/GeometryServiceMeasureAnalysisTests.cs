@@ -365,11 +365,11 @@ public sealed class GeometryServiceMeasureAnalysisTests : IAsyncLifetime
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceLabelPointsResponse);
         result.Should().NotBeNull();
-        result!.Geometries.Should().HaveCount(1);
-        result.Geometries![0].TryGetProperty("x", out _).Should().BeTrue();
-        result.Geometries[0].TryGetProperty("y", out _).Should().BeTrue();
+        result!.LabelPoints.Should().HaveCount(1);
+        result.LabelPoints![0].TryGetProperty("x", out _).Should().BeTrue();
+        result.LabelPoints[0].TryGetProperty("y", out _).Should().BeTrue();
     }
 
     [IntegrationTest]

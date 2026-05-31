@@ -115,6 +115,20 @@ public sealed class GeometryServiceGeometryResponse
 }
 
 /// <summary>
+/// Response payload for the <c>labelPoints</c> operation. The Esri operation
+/// returns the result points under a <c>labelPoints</c> key (not the generic
+/// <c>geometries</c> array), which is what the ArcGIS clients read.
+/// </summary>
+public sealed class GeometryServiceLabelPointsResponse
+{
+    /// <summary>
+    /// Label placement points, one per input polygon, in GeoServices JSON format.
+    /// </summary>
+    [JsonPropertyName("labelPoints")]
+    public JsonElement[]? LabelPoints { get; init; }
+}
+
+/// <summary>
 /// Response payload for the <c>cut</c> operation.
 /// </summary>
 public sealed class GeometryServiceCutResponse

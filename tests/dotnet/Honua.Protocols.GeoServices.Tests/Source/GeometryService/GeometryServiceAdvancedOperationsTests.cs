@@ -89,9 +89,9 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceGeometryResponse);
         result.Should().NotBeNull();
-        result!.Geometries.Should().HaveCount(1);
+        result!.Geometry.TryGetProperty("rings", out _).Should().BeTrue("the Esri union operation returns a single geometry");
     }
 
     [IntegrationTest]
@@ -615,8 +615,9 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceGeometryResponse);
         result.Should().NotBeNull();
+        result!.Geometry.TryGetProperty("rings", out _).Should().BeTrue("the Esri union operation returns a single geometry");
     }
 
     [IntegrationTest]
@@ -642,9 +643,9 @@ public sealed class GeometryServiceAdvancedOperationsTests : IAsyncLifetime
 
         response.Be200Ok();
         var content = await response.Content.ReadAsStringAsync();
-        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceResponse);
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceGeometryResponse);
         result.Should().NotBeNull();
-        result!.Geometries.Should().HaveCount(1);
+        result!.Geometry.TryGetProperty("rings", out _).Should().BeTrue();
     }
 
     [IntegrationTest]

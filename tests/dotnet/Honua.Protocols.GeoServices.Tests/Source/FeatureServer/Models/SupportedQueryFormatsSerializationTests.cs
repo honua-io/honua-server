@@ -1,7 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using FluentAssertions;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 
@@ -13,54 +15,64 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Models
 /// so emitting it as a JSON array broke <c>FeatureLayer.load()</c> ("split is not a
 /// function") and prevented the JS SDK from loading any FeatureServer layer. These
 /// tests pin the spec-compliant string wire format while preserving the lenient
-/// (string-or-array) read path the internal <c>string[]</c> contract relies on.
+/// (string-or-array) read path the internal <c>string[]</c> contract relies on, and
+/// verify the response DTOs apply the converter.
 /// </summary>
 public sealed class SupportedQueryFormatsSerializationTests
 {
-    [Fact]
-    public void Serialize_Layer_EmitsSupportedQueryFormatsAsCommaDelimitedString()
+    private sealed record Holder
     {
-        var layer = new LayerResponse { SupportedQueryFormats = ["JSON", "PBF", "FGB"] };
+        [JsonConverter(typeof(CommaDelimitedStringArrayConverter))]
+        public string[] Formats { get; init; } = [];
+    }
 
-        var json = JsonSerializer.Serialize(layer);
+    [Fact]
+    public void Serialize_EmitsCommaDelimitedString()
+    {
+        var json = JsonSerializer.Serialize(new Holder { Formats = ["JSON", "PBF", "FGB"] });
 
         using var doc = JsonDocument.Parse(json);
-        var prop = doc.RootElement.GetProperty("supportedQueryFormats");
+        var prop = doc.RootElement.GetProperty("Formats");
         prop.ValueKind.Should().Be(JsonValueKind.String, "the GeoServices spec defines it as a comma-delimited string");
         prop.GetString().Should().Be("JSON, PBF, FGB");
     }
 
     [Fact]
-    public void Serialize_Service_EmitsSupportedQueryFormatsAsCommaDelimitedString()
-    {
-        var service = new FeatureServerResponse { SupportedQueryFormats = ["JSON", "GeoJSON", "PBF"] };
-
-        var json = JsonSerializer.Serialize(service);
-
-        using var doc = JsonDocument.Parse(json);
-        var prop = doc.RootElement.GetProperty("supportedQueryFormats");
-        prop.ValueKind.Should().Be(JsonValueKind.String);
-        prop.GetString().Should().Be("JSON, GeoJSON, PBF");
-    }
-
-    [Fact]
     public void Deserialize_FromCommaDelimitedString_RoundTripsToArray()
     {
-        const string json = """{"supportedQueryFormats":"JSON, PBF, FGB"}""";
+        var holder = JsonSerializer.Deserialize<Holder>("""{"Formats":"JSON, PBF, FGB"}""");
 
-        var layer = JsonSerializer.Deserialize<LayerResponse>(json);
-
-        layer!.SupportedQueryFormats.Should().BeEquivalentTo("JSON", "PBF", "FGB");
+        holder!.Formats.Should().BeEquivalentTo("JSON", "PBF", "FGB");
     }
 
     [Fact]
     public void Deserialize_FromJsonArray_StillAccepted()
     {
         // The read path stays lenient so any legacy array payload still round-trips.
-        const string json = """{"supportedQueryFormats":["JSON","PBF"]}""";
+        var holder = JsonSerializer.Deserialize<Holder>("""{"Formats":["JSON","PBF"]}""");
 
-        var layer = JsonSerializer.Deserialize<LayerResponse>(json);
+        holder!.Formats.Should().BeEquivalentTo("JSON", "PBF");
+    }
 
-        layer!.SupportedQueryFormats.Should().BeEquivalentTo("JSON", "PBF");
+    [Fact]
+    public void Serialize_EmptyArray_EmitsEmptyString()
+    {
+        var json = JsonSerializer.Serialize(new Holder { Formats = [] });
+
+        using var doc = JsonDocument.Parse(json);
+        doc.RootElement.GetProperty("Formats").GetString().Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(typeof(LayerResponse))]
+    [InlineData(typeof(FeatureServerResponse))]
+    public void ResponseDto_AppliesCommaDelimitedConverter(Type dtoType)
+    {
+        var property = dtoType.GetProperty("SupportedQueryFormats");
+        property.Should().NotBeNull();
+
+        var attribute = property!.GetCustomAttribute<JsonConverterAttribute>();
+        attribute.Should().NotBeNull("the FeatureServer metadata DTOs must emit supportedQueryFormats as a spec-compliant string");
+        attribute!.ConverterType.Should().Be<CommaDelimitedStringArrayConverter>();
     }
 }
