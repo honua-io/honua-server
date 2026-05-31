@@ -422,6 +422,7 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
             restClient,
             connectionProvider.Object,
             crsRegistry.Object,
+            new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance);
     }
 

@@ -1529,6 +1529,7 @@ jobs:
       - name: Validate server compatibility
         run: |
           # Build server with SDK packages to ensure no conflicts
+          dotnet restore src/Honua.Server/Honua.Server.csproj
           dotnet build src/Honua.Server/Honua.Server.csproj --configuration Release --no-restore
 
   aot-build:

@@ -18,13 +18,17 @@ namespace Honua.Postgres.Features.Migration;
 
 internal sealed partial class GeoservicesImportService
 {
-    private static MigrationFidelityClassificationRecord[] BuildServiceFidelityClassifications(
+    private MigrationFidelityClassificationRecord[] BuildServiceFidelityClassifications(
         string containerId,
         string serviceKey,
         string serviceDisplayName,
         string serviceType,
         string[] serviceCapabilities)
     {
+        var identity = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ServiceIdentity);
+        var capabilities = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ServiceCapabilities);
+        var hasCapabilities = serviceCapabilities.Length > 0;
+
         var records = new List<MigrationFidelityClassificationRecord>
         {
             CreateFidelityRecord(
@@ -33,9 +37,10 @@ internal sealed partial class GeoservicesImportService
                 "service",
                 "identity",
                 serviceDisplayName,
-                MigrationFidelityAutomationStatuses.Automated,
-                ImportCompatibilityCodes.Compatible,
-                "Service identity and source URL were captured for deterministic migration planning.",
+                identity.AutomationStatus,
+                identity.Code,
+                identity.Reason,
+                manualSteps: identity.ManualSteps,
                 metadata: new Dictionary<string, string>(StringComparer.Ordinal)
                 {
                     ["serviceKey"] = serviceKey,
@@ -47,15 +52,11 @@ internal sealed partial class GeoservicesImportService
                 "service",
                 "capabilities",
                 serviceDisplayName,
-                serviceCapabilities.Length > 0
-                    ? MigrationFidelityAutomationStatuses.Automated
-                    : MigrationFidelityAutomationStatuses.ManualReview,
-                serviceCapabilities.Length > 0 ? ImportCompatibilityCodes.Compatible : ImportCompatibilityCodes.ManualReview,
-                serviceCapabilities.Length > 0
-                    ? "Service capabilities were captured from the ArcGIS service root."
-                    : "Service capabilities were not advertised and require operator confirmation.",
-                manualSteps: serviceCapabilities.Length > 0 ? [] : ["Confirm source service capabilities before migration."],
-                metadata: serviceCapabilities.Length > 0
+                hasCapabilities ? capabilities.AutomationStatus : capabilities.UnsupportedAutomationStatus!,
+                hasCapabilities ? capabilities.Code : capabilities.UnsupportedCode!,
+                hasCapabilities ? capabilities.Reason : capabilities.UnsupportedReason!,
+                manualSteps: hasCapabilities ? capabilities.ManualSteps : capabilities.UnsupportedManualSteps,
+                metadata: hasCapabilities
                     ? new Dictionary<string, string>(StringComparer.Ordinal)
                     {
                         ["capabilities"] = string.Join(",", serviceCapabilities)
@@ -66,12 +67,18 @@ internal sealed partial class GeoservicesImportService
         return records.ToArray();
     }
 
-    private static MigrationFidelityClassificationRecord[] BuildResourceFidelityClassifications(
+    private MigrationFidelityClassificationRecord[] BuildResourceFidelityClassifications(
         MigrationInventoryResource resource,
         JsonElement resourceElement,
         MigrationInventoryStyle? style,
         IReadOnlyCollection<MigrationExternalDependency> dependencies)
     {
+        var identity = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceIdentity);
+        var capabilities = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceCapabilities);
+        var fields = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceFields);
+        var hasQuery = resource.Capabilities.Contains("Query", StringComparer.OrdinalIgnoreCase);
+        var hasFields = resource.Fields.Length > 0;
+
         var records = new List<MigrationFidelityClassificationRecord>
         {
             CreateFidelityRecord(
@@ -80,27 +87,20 @@ internal sealed partial class GeoservicesImportService
                 resource.Kind,
                 "identity",
                 resource.Name,
-                MigrationFidelityAutomationStatuses.Automated,
-                ImportCompatibilityCodes.Compatible,
-                "Layer or table identity was captured with a stable source identifier."),
+                identity.AutomationStatus,
+                identity.Code,
+                identity.Reason,
+                manualSteps: identity.ManualSteps),
             CreateFidelityRecord(
                 $"{resource.Id}:capabilities",
                 resource.Id,
                 resource.Kind,
                 "capabilities",
                 resource.Name,
-                resource.Capabilities.Contains("Query", StringComparer.OrdinalIgnoreCase)
-                    ? MigrationFidelityAutomationStatuses.Automated
-                    : MigrationFidelityAutomationStatuses.Unsupported,
-                resource.Capabilities.Contains("Query", StringComparer.OrdinalIgnoreCase)
-                    ? ImportCompatibilityCodes.Compatible
-                    : ImportCompatibilityCodes.ArcGisQueryCapabilityMissing,
-                resource.Capabilities.Contains("Query", StringComparer.OrdinalIgnoreCase)
-                    ? "Queryable resource capabilities were captured for import planning."
-                    : "The resource does not advertise query capability.",
-                manualSteps: resource.Capabilities.Contains("Query", StringComparer.OrdinalIgnoreCase)
-                    ? []
-                    : ["Enable query access or export the source data through another path before migration."],
+                hasQuery ? capabilities.AutomationStatus : capabilities.UnsupportedAutomationStatus!,
+                hasQuery ? capabilities.Code : capabilities.UnsupportedCode!,
+                hasQuery ? capabilities.Reason : capabilities.UnsupportedReason!,
+                manualSteps: hasQuery ? capabilities.ManualSteps : capabilities.UnsupportedManualSteps,
                 metadata: new Dictionary<string, string>(StringComparer.Ordinal)
                 {
                     ["capabilities"] = string.Join(",", resource.Capabilities)
@@ -111,14 +111,10 @@ internal sealed partial class GeoservicesImportService
                 "field",
                 "fields",
                 resource.Name,
-                resource.Fields.Length > 0
-                    ? MigrationFidelityAutomationStatuses.Automated
-                    : MigrationFidelityAutomationStatuses.ManualReview,
-                resource.Fields.Length > 0 ? ImportCompatibilityCodes.Compatible : ImportCompatibilityCodes.ManualReview,
-                resource.Fields.Length > 0
-                    ? "Field names, aliases, source types, nullability, and compact domain metadata were captured."
-                    : "No field metadata was advertised for this resource.",
-                manualSteps: resource.Fields.Length > 0 ? [] : ["Confirm source fields before import."],
+                hasFields ? fields.AutomationStatus : fields.UnsupportedAutomationStatus!,
+                hasFields ? fields.Code : fields.UnsupportedCode!,
+                hasFields ? fields.Reason : fields.UnsupportedReason!,
+                manualSteps: hasFields ? fields.ManualSteps : fields.UnsupportedManualSteps,
                 metadata: new Dictionary<string, string>(StringComparer.Ordinal)
                 {
                     ["fieldCount"] = resource.Fields.Length.ToString(CultureInfo.InvariantCulture)
@@ -128,16 +124,17 @@ internal sealed partial class GeoservicesImportService
         var domainFieldCount = resource.Fields.Count(field => !string.IsNullOrWhiteSpace(field.DomainType));
         if (domainFieldCount > 0)
         {
+            var domains = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceDomains);
             records.Add(CreateFidelityRecord(
                 $"{resource.Id}:domains",
                 resource.Id,
                 "field-domain",
                 "domains",
                 resource.Name,
-                MigrationFidelityAutomationStatuses.Assisted,
-                ImportCompatibilityCodes.ManualReview,
-                "Domain metadata was captured for review; target domain enforcement is not automated by this import slice.",
-                ["Review coded-value and range domains before publishing target field configuration."],
+                domains.AutomationStatus,
+                domains.Code,
+                domains.Reason,
+                domains.ManualSteps,
                 metadata: new Dictionary<string, string>(StringComparer.Ordinal)
                 {
                     ["domainFieldCount"] = domainFieldCount.ToString(CultureInfo.InvariantCulture)
@@ -146,34 +143,37 @@ internal sealed partial class GeoservicesImportService
 
         if (HasSubtypeMetadata(resourceElement))
         {
+            var subtypes = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceSubtypes);
             records.Add(CreateFidelityRecord(
                 $"{resource.Id}:subtypes",
                 resource.Id,
                 "subtype",
                 "subtypes",
                 resource.Name,
-                MigrationFidelityAutomationStatuses.ManualReview,
-                ImportCompatibilityCodes.ArcGisSubtypesManualReview,
-                "Subtype metadata was detected and captured for operator review; automated subtype migration is not implemented.",
-                ["Recreate subtype behavior or document an accepted gap before cutover."]));
+                subtypes.AutomationStatus,
+                subtypes.Code,
+                subtypes.Reason,
+                subtypes.ManualSteps));
         }
 
         if (HasRelationshipMetadata(resourceElement))
         {
+            var relationships = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceRelationships);
             records.Add(CreateFidelityRecord(
                 $"{resource.Id}:relationships",
                 resource.Id,
                 "relationship",
                 "relationships",
                 resource.Name,
-                MigrationFidelityAutomationStatuses.ManualReview,
-                ImportCompatibilityCodes.ArcGisRelationshipsManualReview,
-                "Relationship metadata was detected and captured for operator review; automated relationship migration is not implemented.",
-                ["Map related layers or tables to target relationship configuration before cutover."]));
+                relationships.AutomationStatus,
+                relationships.Code,
+                relationships.Reason,
+                relationships.ManualSteps));
         }
 
         if (resource.HasAttachments == true)
         {
+            var attachments = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceAttachments);
             var attachmentDependencyIds = dependencies
                 .Where(static dependency => string.Equals(dependency.Kind, "attachments", StringComparison.Ordinal))
                 .Select(static dependency => dependency.Id)
@@ -184,15 +184,16 @@ internal sealed partial class GeoservicesImportService
                 "attachment",
                 "attachments",
                 resource.Name,
-                MigrationFidelityAutomationStatuses.ManualReview,
-                ImportCompatibilityCodes.ArcGisAttachments,
-                "Attachment capability was detected, but attachment content migration is not implemented by this slice.",
-                ["Plan a separate attachment migration alongside the core data import."],
+                attachments.AutomationStatus,
+                attachments.Code,
+                attachments.Reason,
+                attachments.ManualSteps,
                 relatedIds: attachmentDependencyIds));
         }
 
         if (style != null)
         {
+            var renderers = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceRenderers);
             records.Add(CreateFidelityRecord(
                 $"{style.Id}:renderer",
                 style.Id,
@@ -200,7 +201,7 @@ internal sealed partial class GeoservicesImportService
                 "renderers",
                 style.Name,
                 ToFidelityAutomationStatus(style.Compatibility.Level),
-                style.Compatibility.Code ?? ImportCompatibilityCodes.ManualReview,
+                style.Compatibility.Code ?? renderers.Code,
                 style.Compatibility.Reason,
                 style.Compatibility.ManualSteps,
                 [resource.Id, .. style.ExternalDependencyIds],
@@ -209,16 +210,17 @@ internal sealed partial class GeoservicesImportService
 
         if (resourceElement.TryGetProperty("timeInfo", out var timeInfo) && timeInfo.ValueKind == JsonValueKind.Object)
         {
+            var time = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceTimeMetadata);
             records.Add(CreateFidelityRecord(
                 $"{resource.Id}:time-metadata",
                 resource.Id,
                 "time",
                 "time-metadata",
                 resource.Name,
-                MigrationFidelityAutomationStatuses.ManualReview,
-                ImportCompatibilityCodes.ArcGisTimeMetadataManualReview,
-                "Time metadata was detected and captured for operator review; automated temporal service configuration is not implemented.",
-                ["Configure or waive target temporal metadata before cutover."],
+                time.AutomationStatus,
+                time.Code,
+                time.Reason,
+                time.ManualSteps,
                 metadata: BuildTimeMetadata(timeInfo)));
         }
 
