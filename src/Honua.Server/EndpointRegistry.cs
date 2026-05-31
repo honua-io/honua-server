@@ -118,6 +118,10 @@ public static class EndpointRegistry
         new("PUT", "/api/v1/admin/services/{serviceName}/timeinfo"),
         new("PUT", "/api/v1/admin/services/{serviceName}/layers/{layerId}/metadata"),
 
+        // v1 admin named-replica management endpoints (#1167, slice 1)
+        new("GET", "/api/v1/admin/services/{serviceId}/replicas"),
+        new("GET", "/api/v1/admin/services/{serviceId}/replicas/{replicaId}"),
+
         // v1 admin secure connection endpoints
         new("GET", "/api/v1/admin/connections"),
         new("GET", "/api/v1/admin/connections/{id}"),

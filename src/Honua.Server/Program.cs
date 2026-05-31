@@ -1005,6 +1005,7 @@ app.MapDeployControlEndpoints();
 app.MapAdminLayerStyleEndpoints();
 app.MapAdminLayerFieldConfigurationEndpoints();
 app.MapAdminLayerFilterConfigurationEndpoints();
+app.MapReplicaManagementEndpoints();
 app.MapAdminLayerValidationEndpoints();
 app.MapAdminStyleSuggestionEndpoints();
 app.MapAdminSldStyleEndpoints();
