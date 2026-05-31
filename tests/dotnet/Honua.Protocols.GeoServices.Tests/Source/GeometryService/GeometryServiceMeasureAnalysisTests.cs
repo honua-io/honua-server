@@ -84,6 +84,33 @@ public sealed class GeometryServiceMeasureAnalysisTests : IAsyncLifetime
         response.Be400BadRequest();
     }
 
+    // #1308: ArcGIS clients wrap geometry1/geometry2 as
+    // {"geometryType":"...","geometry":{...}}. The parser must unwrap them.
+    [IntegrationTest]
+    [Operation(Operations.Distance)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/distance")]
+    public async Task Distance_PostEsriWrappedGeometries_ReturnsClosestDistance()
+    {
+        var body = """
+        {
+            "geometry1": {"geometryType": "esriGeometryPoint", "geometry": {"x": 0, "y": 0}},
+            "geometry2": {"geometryType": "esriGeometryPoint", "geometry": {"x": 3, "y": 4}},
+            "sr": "3857",
+            "distanceUnit": "esriMeters"
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/distance",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceDistanceResponse);
+        result.Should().NotBeNull();
+        result!.Distance.Should().BeApproximately(5.0, 0.001);
+    }
+
     // --- relation ---
 
     [IntegrationTest]
