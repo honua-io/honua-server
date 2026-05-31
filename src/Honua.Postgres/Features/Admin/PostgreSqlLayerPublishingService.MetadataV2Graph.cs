@@ -288,6 +288,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
         if (string.Equals(table, DatabaseSchema.FeaturesTable, StringComparison.OrdinalIgnoreCase))
         {
             options["attributesColumn"] = JsonSerializer.SerializeToElement("attributes");
+
+            // The shared 'features' table holds rows for every layer keyed by the
+            // 'layer_id' discriminator column. Declare it so the storage-mapped reader
+            // constrains reads to this layer's rows (WHERE layer_id = StorageLayerId);
+            // without it a query for layer A would return layer B's features that live
+            // in the same table. (See honua-server#1238.)
+            options["layerDiscriminatorColumn"] = JsonSerializer.SerializeToElement(DatabaseSchema.LayerIdColumn);
         }
 
         return new MetadataV2StorageBinding

@@ -40,6 +40,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private readonly string _primaryKeyColumn;
     private readonly string? _geometryColumn;
     private readonly int _storageSrid;
+    private readonly string? _layerDiscriminatorColumn;
+    private readonly int? _layerDiscriminatorValue;
 
     public PostgresStorageMappedFeatureReader(
         IDatabaseConnectionProvider connectionProvider,
@@ -61,6 +63,15 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             ? null
             : ValidateAndQuoteIdentifier(_mapping.GeometryColumn!);
         _storageSrid = _mapping.StorageSrid ?? _resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
+        // When the binding declares a layer-discriminator column (rows for many layers
+        // share one physical table, e.g. the shared 'features' table keyed by 'layer_id'),
+        // capture the column and the bound layer's id so every read is constrained to this
+        // layer's rows. Without it, a query for one layer would leak features of other
+        // layers stored in the same table.
+        _layerDiscriminatorColumn = string.IsNullOrWhiteSpace(_mapping.LayerDiscriminatorColumn)
+            ? null
+            : ValidateAndQuoteIdentifier(_mapping.LayerDiscriminatorColumn!);
+        _layerDiscriminatorValue = _mapping.LayerDiscriminatorValue;
     }
 
     public async Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
@@ -468,6 +479,14 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private void AppendFilter(SqlBuilder sql, FeatureQuery query, string prefix = "WHERE")
     {
         var conditions = new List<string>();
+
+        // Constrain shared-table reads to the bound layer's rows. The discriminator
+        // (e.g. 'layer_id' on the shared 'features' table) is applied to every read path
+        // because they all funnel through AppendFilter, preventing cross-layer leakage.
+        if (_layerDiscriminatorColumn is not null && _layerDiscriminatorValue is int discriminator)
+        {
+            conditions.Add($"{_layerDiscriminatorColumn} = {sql.AddParameter(discriminator)}");
+        }
 
         if (query.SqlFilter != null)
         {

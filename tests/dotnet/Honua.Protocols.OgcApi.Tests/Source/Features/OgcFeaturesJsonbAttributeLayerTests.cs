@@ -76,4 +76,78 @@ public sealed class OgcFeaturesJsonbAttributeLayerTests : IAsyncLifetime
         json.RootElement.GetProperty("features").GetArrayLength().Should().BeGreaterThanOrEqualTo(3,
             "the v1 seed inserts three deterministic offline-site features");
     }
+
+    /// <summary>
+    /// Regression for honua-server#1238 follow-up (post-merge Codex P1): layers 68910 (3 point
+    /// features) and 68920 (2 polygon features) both live in the shared <c>features</c> table,
+    /// discriminated by <c>layer_id</c>. A query for one layer must return only that layer's
+    /// rows — never the other layer's features stored in the same table. We assert isolation via
+    /// both the OGC API Features <c>/items</c> and the GeoServices FeatureServer <c>/query</c>
+    /// surfaces, since both adapt through the storage-mapped reader.
+    /// </summary>
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/68910/items")]
+    public async Task GetItems_SharedFeaturesTable_IsolatesByLayerDiscriminator()
+    {
+        MobileOfflineDemoGraphPublisher.Publish(Provider, includeAttributesAccessor: true);
+
+        // OGC API Features: layer 68910 returns its 3 site features only (not the 2 zones).
+        await AssertLayerIsolatedAsync(
+            $"/ogc/features/collections/{MobileOfflineDemoGraphPublisher.OfflineSitesLayerId}/items",
+            "features",
+            expectedCount: 3,
+            presentField: "site_name",
+            absentField: "zone_name");
+
+        // OGC API Features: layer 68920 returns its 2 zone features only (not the 3 sites).
+        await AssertLayerIsolatedAsync(
+            $"/ogc/features/collections/{MobileOfflineDemoGraphPublisher.OfflineZonesLayerId}/items",
+            "features",
+            expectedCount: 2,
+            presentField: "zone_name",
+            absentField: "site_name");
+
+        // FeatureServer /query: same isolation through the GeoServices adapter.
+        await AssertLayerIsolatedAsync(
+            $"/rest/services/{MobileOfflineDemoGraphPublisher.ServiceName}/FeatureServer/{MobileOfflineDemoGraphPublisher.OfflineSitesLayerId}/query?where=1%3D1&outFields=*&f=geojson",
+            "features",
+            expectedCount: 3,
+            presentField: "site_name",
+            absentField: "zone_name");
+
+        await AssertLayerIsolatedAsync(
+            $"/rest/services/{MobileOfflineDemoGraphPublisher.ServiceName}/FeatureServer/{MobileOfflineDemoGraphPublisher.OfflineZonesLayerId}/query?where=1%3D1&outFields=*&f=geojson",
+            "features",
+            expectedCount: 2,
+            presentField: "zone_name",
+            absentField: "site_name");
+    }
+
+    private async Task AssertLayerIsolatedAsync(
+        string requestUri,
+        string featuresProperty,
+        int expectedCount,
+        string presentField,
+        string absentField)
+    {
+        var response = await _fixture.Client.GetAsync(requestUri);
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"GET {requestUri} should succeed");
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var features = json.RootElement.GetProperty(featuresProperty);
+        features.GetArrayLength().Should().Be(expectedCount,
+            $"only the requested layer's rows must be returned by {requestUri}");
+
+        foreach (var feature in features.EnumerateArray())
+        {
+            var properties = feature.TryGetProperty("properties", out var props)
+                ? props
+                : feature.GetProperty("attributes");
+
+            properties.TryGetProperty(presentField, out _).Should().BeTrue(
+                $"every returned feature must belong to the requested layer (has '{presentField}')");
+            properties.TryGetProperty(absentField, out _).Should().BeFalse(
+                $"no feature from the other layer (carrying '{absentField}') may leak across the shared table");
+        }
+    }
 }
