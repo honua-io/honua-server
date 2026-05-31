@@ -83,6 +83,27 @@ public class ImageServerEndpointsTests
         return store;
     }
 
+    private static IRasterStore CreateSamplingRasterStoreSubstitute()
+    {
+        var store = CreateRasterStoreSubstitute();
+        store.IdentifyAsync(
+                Arg.Any<int>(),
+                Arg.Any<long>(),
+                Arg.Any<double>(),
+                Arg.Any<double>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo => new PixelValueResult
+            {
+                X = callInfo.ArgAt<double>(2),
+                Y = callInfo.ArgAt<double>(3),
+                Srid = 4326,
+                BandValues = new Dictionary<int, object?> { [1] = 42 },
+                HasData = true,
+            });
+        return store;
+    }
+
     private static async Task<WebAppFixture> CreateFixtureAsync(IRasterStore rasterStore)
     {
         var fixture = new WebAppFixture()
@@ -186,9 +207,36 @@ public class ImageServerEndpointsTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/computeStatisticsHistograms")]
+    [Operation(Operations.Query)]
+    public async Task ComputeStatisticsHistograms_Get_WithEnvelope_ReturnsStatisticsAndHistograms()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var geometry = Uri.EscapeDataString(
+                """{"xmin":-180,"ymin":-90,"xmax":180,"ymax":90,"spatialReference":{"wkid":4326}}""");
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/computeStatisticsHistograms?f=json&geometryType=esriGeometryEnvelope&geometry={geometry}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            json.RootElement.GetProperty("statistics").GetArrayLength().Should().Be(1);
+            json.RootElement.GetProperty("statistics")[0].GetProperty("min").GetDouble().Should().Be(0);
+            json.RootElement.GetProperty("statistics")[0].GetProperty("max").GetDouble().Should().Be(255);
+            json.RootElement.GetProperty("histograms").GetArrayLength().Should().Be(1);
+            json.RootElement.GetProperty("histograms")[0].GetProperty("counts").GetArrayLength().Should().Be(4);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /rest/services/{id}/ImageServer/computeStatisticsHistograms")]
     [Operation(Operations.Query)]
-    public async Task ComputeStatisticsHistograms_Post_WithGeometry_ReturnsNotImplemented()
+    public async Task ComputeStatisticsHistograms_Post_WithGeometry_ReturnsStatisticsAndHistograms()
     {
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
@@ -204,7 +252,199 @@ public class ImageServerEndpointsTests
                 $"/rest/services/{TestLayerId}/ImageServer/computeStatisticsHistograms",
                 content);
 
-            response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            json.RootElement.GetProperty("statistics").GetArrayLength().Should().Be(1);
+            json.RootElement.GetProperty("histograms").GetArrayLength().Should().Be(1);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/computeHistograms")]
+    [Operation(Operations.Query)]
+    public async Task ComputeHistograms_Get_WithEnvelope_ReturnsHistograms()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var geometry = Uri.EscapeDataString(
+                """{"xmin":-180,"ymin":-90,"xmax":180,"ymax":90,"spatialReference":{"wkid":4326}}""");
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/computeHistograms?f=json&geometryType=esriGeometryEnvelope&geometry={geometry}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            json.RootElement.GetProperty("histograms").GetArrayLength().Should().Be(1);
+            json.RootElement.GetProperty("histograms")[0].GetProperty("size").GetInt32().Should().Be(4);
+            json.RootElement.TryGetProperty("statistics", out _).Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /rest/services/{id}/ImageServer/computeHistograms")]
+    [Operation(Operations.Query)]
+    public async Task ComputeHistograms_Post_WithGeometry_ReturnsHistograms()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var content = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("geometryType", "esriGeometryEnvelope"),
+                new KeyValuePair<string, string>("geometry", "{\"xmin\":-180,\"ymin\":-90,\"xmax\":180,\"ymax\":90}"),
+            });
+
+            var response = await fixture.Client.PostAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/computeHistograms",
+                content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            json.RootElement.GetProperty("histograms").GetArrayLength().Should().Be(1);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/computeHistograms")]
+    [Operation(Operations.Query)]
+    public async Task ComputeHistograms_Get_WithoutGeometry_ReturnsBadRequest()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/computeHistograms?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/getSamples")]
+    [Operation(Operations.Query)]
+    public async Task GetSamples_Get_WithMultipoint_ReturnsSamples()
+    {
+        var fixture = await CreateFixtureAsync(CreateSamplingRasterStoreSubstitute());
+        try
+        {
+            var geometry = Uri.EscapeDataString(
+                """{"points":[[0,0],[1,1]],"spatialReference":{"wkid":4326}}""");
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/getSamples?f=json&geometryType=esriGeometryMultipoint&geometry={geometry}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            json.RootElement.GetProperty("samples").GetArrayLength().Should().Be(2);
+            json.RootElement.GetProperty("samples")[0].GetProperty("value").GetString().Should().Be("42");
+            json.RootElement.GetProperty("samples")[0].GetProperty("location").GetProperty("x").GetDouble().Should().Be(0);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /rest/services/{id}/ImageServer/getSamples")]
+    [Operation(Operations.Query)]
+    public async Task GetSamples_Post_WithPoint_ReturnsSample()
+    {
+        var fixture = await CreateFixtureAsync(CreateSamplingRasterStoreSubstitute());
+        try
+        {
+            var content = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("geometryType", "esriGeometryPoint"),
+                new KeyValuePair<string, string>("geometry", "{\"x\":0,\"y\":0,\"spatialReference\":{\"wkid\":4326}}"),
+            });
+
+            var response = await fixture.Client.PostAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/getSamples",
+                content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            json.RootElement.GetProperty("samples").GetArrayLength().Should().Be(1);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/getSamples")]
+    [Operation(Operations.Query)]
+    public async Task GetSamples_Get_WithoutGeometry_ReturnsBadRequest()
+    {
+        var fixture = await CreateFixtureAsync(CreateSamplingRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/getSamples?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/keyProperties")]
+    [Operation(Operations.Metadata)]
+    public async Task KeyProperties_Get_ReturnsBandProperties()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute(bandCount: 3));
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/keyProperties?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            json.RootElement.GetProperty("BandCount").GetInt32().Should().Be(3);
+            json.RootElement.GetProperty("DataType").GetString().Should().Be("U8");
+            json.RootElement.GetProperty("BandProperties").GetArrayLength().Should().Be(3);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/keyProperties")]
+    [Operation(Operations.Metadata)]
+    public async Task KeyProperties_NonExistentLayer_ReturnsNotFound()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                "/rest/services/99999/ImageServer/keyProperties?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
         finally
         {

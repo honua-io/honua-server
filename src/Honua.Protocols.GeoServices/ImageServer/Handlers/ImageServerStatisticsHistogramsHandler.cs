@@ -44,17 +44,37 @@ internal sealed class ImageServerStatisticsHistogramsHandler
     /// <summary>
     /// Computes statistics and histograms for the layer's primary raster.
     /// </summary>
-    public async Task<IResult> ComputeAsync(
+    public Task<IResult> ComputeAsync(
         HttpContext context,
         int layerId,
         IReadOnlyDictionary<string, StringValues> values,
         CancellationToken cancellationToken)
+        => ComputeCoreAsync(context, layerId, values, histogramsOnly: false, cancellationToken);
+
+    /// <summary>
+    /// Computes histograms only for the layer's primary raster (<c>computeHistograms</c>).
+    /// Reuses the same raster selection / store path as <see cref="ComputeAsync"/>.
+    /// </summary>
+    public Task<IResult> ComputeHistogramsAsync(
+        HttpContext context,
+        int layerId,
+        IReadOnlyDictionary<string, StringValues> values,
+        CancellationToken cancellationToken)
+        => ComputeCoreAsync(context, layerId, values, histogramsOnly: true, cancellationToken);
+
+    private async Task<IResult> ComputeCoreAsync(
+        HttpContext context,
+        int layerId,
+        IReadOnlyDictionary<string, StringValues> values,
+        bool histogramsOnly,
+        CancellationToken cancellationToken)
     {
+        var operationName = histogramsOnly ? "compute-histograms" : "compute-statistics-histograms";
         using var scope = HonuaTelemetryScope.StartFeature(
-            "compute-statistics-histograms",
+            operationName,
             HonuaTelemetry.Protocols.ImageServer,
             layerId.ToString(CultureInfo.InvariantCulture));
-        scope.WithTag(HonuaTelemetry.Tags.Operation, "compute-statistics-histograms");
+        scope.WithTag(HonuaTelemetry.Tags.Operation, operationName);
 
         try
         {
@@ -105,6 +125,24 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 return editionError;
             }
 
+            // When the caller supplies an AOI geometry we scope raster selection to the rasters
+            // intersecting its bounding envelope (the shared raster selection path), rather than
+            // building a parallel geometry-clipped raster reader.
+            byte[]? selectionGeometry = null;
+            int? selectionSrid = null;
+            var rawGeometry = GetString(values, "geometry");
+            if (!string.IsNullOrWhiteSpace(rawGeometry))
+            {
+                if (!ImageServerGeometryHelpers.TryGetEnvelope(rawGeometry, out var aoi, out var geometryError))
+                {
+                    ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, geometryError ?? "Invalid geometry");
+                    return StandardErrorHelpers.CreateBadRequest(context, geometryError ?? "Invalid geometry.");
+                }
+
+                selectionGeometry = ImageServerMosaicHelpers.CreateEnvelopeGeometry(aoi.XMin, aoi.YMin, aoi.XMax, aoi.YMax);
+                selectionSrid = aoi.Srid;
+            }
+
             // Resolve the catalog rasters to analyse. When rasterIds is omitted we fall back to the
             // selected layer mosaic instead of arbitrarily picking the newest raster.
             var targetRasters = new List<RasterInfo>();
@@ -131,7 +169,12 @@ internal sealed class ImageServerStatisticsHistogramsHandler
             {
                 var selected = await _rasterStore.QueryRastersAsync(
                     layerId,
-                    new RasterSelectionQuery { Timestamp = timestamp },
+                    new RasterSelectionQuery
+                    {
+                        Timestamp = timestamp,
+                        Geometry = selectionGeometry,
+                        GeometrySrid = selectionSrid,
+                    },
                     cancellationToken);
                 if (selected.Length == 0)
                 {
@@ -168,14 +211,24 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 }
             }
 
+            ImageServerLog.StatisticsHistogramsComputed(_logger, layerId, statisticsList.Count);
+            scope.SetSuccess(histogramsOnly ? histogramsList.Count : statisticsList.Count);
+
+            if (histogramsOnly)
+            {
+                var histogramsResponse = new ComputeHistogramsResponse
+                {
+                    Histograms = histogramsList.ToArray(),
+                };
+
+                return Results.Json(histogramsResponse, ImageServerJsonContext.Default.ComputeHistogramsResponse);
+            }
+
             var response = new ComputeStatisticsHistogramsResponse
             {
                 Statistics = statisticsList.ToArray(),
                 Histograms = histogramsList.ToArray(),
             };
-
-            ImageServerLog.StatisticsHistogramsComputed(_logger, layerId, statisticsList.Count);
-            scope.SetSuccess(statisticsList.Count);
 
             return Results.Json(response, ImageServerJsonContext.Default.ComputeStatisticsHistogramsResponse);
         }

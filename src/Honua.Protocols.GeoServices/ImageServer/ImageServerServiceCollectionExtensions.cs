@@ -25,6 +25,8 @@ internal static class ImageServerServiceCollectionExtensions
         services.AddScoped<ImageServerTileHandler>();
         services.AddScoped<ImageServerCatalogQueryHandler>();
         services.AddScoped<ImageServerStatisticsHistogramsHandler>();
+        services.AddScoped<ImageServerSamplesHandler>();
+        services.AddScoped<ImageServerKeyPropertiesHandler>();
         services.AddScoped<ImageServerLegendHandler>();
         services.AddScoped<ImageServerAnalyzeHandler>();
 
