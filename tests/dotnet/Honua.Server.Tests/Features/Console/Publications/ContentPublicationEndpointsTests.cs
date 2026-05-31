@@ -219,6 +219,157 @@ public sealed class ContentPublicationEndpointsTests : IAsyncLifetime
         AssertNoSensitiveLeak(payload);
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/publications")]
+    public async Task Publish_ReportWithUnresolvedPanelAlias_ReturnsFieldAddressableErrors()
+    {
+        // A report document whose only panel references a binding alias that is not declared, plus a chart
+        // panel with no Vega-Lite spec, must be rejected with field-level errors[] addressed by JSON Pointer.
+        const string payload = """
+            {
+              "format": "honua.report-document.v1",
+              "title": "Bad Report",
+              "bindings": [ { "alias": "incidents", "contentRef": "content:incidents" } ],
+              "panels": [ { "title": "Chart", "kind": "chart", "bindingAlias": "missing", "chartSpec": null } ]
+            }
+            """;
+
+        var body = SerializePublish(new PublishContentRequest
+        {
+            Kind = ContentPublicationKind.Report,
+            RouteSlug = "bad-report",
+            Title = "Bad Report",
+            ContentPayload = payload,
+        });
+
+        var response = await _client.PostAsync("/api/v1/console/publications", JsonContent(body));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        AssertNoSensitiveLeak(responseBody);
+
+        using var document = JsonDocument.Parse(responseBody);
+        var root = document.RootElement;
+        root.TryGetProperty("errors", out var errors).Should().BeTrue("the rejection must carry the field-level errors[] extension");
+        errors.ValueKind.Should().Be(JsonValueKind.Array);
+
+        var items = errors.EnumerateArray().ToList();
+        items.Should().NotBeEmpty();
+
+        // Every item carries the shared FieldValidationError shape: code, severity, message, and an
+        // addressable JSON Pointer path.
+        foreach (var item in items)
+        {
+            item.GetProperty("code").GetString().Should().NotBeNullOrEmpty();
+            item.GetProperty("severity").GetString().Should().NotBeNullOrEmpty();
+            item.GetProperty("message").GetString().Should().NotBeNullOrEmpty();
+            item.GetProperty("path").GetString().Should().NotBeNullOrEmpty();
+        }
+
+        var paths = items.Select(i => i.GetProperty("path").GetString()).ToList();
+        paths.Should().Contain("/panels/0/bindingAlias");
+        paths.Should().Contain("/panels/0/chartSpec");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/publications")]
+    public async Task Publish_ReportWithDuplicateBindingAlias_ReturnsDuplicateError()
+    {
+        const string payload = """
+            {
+              "format": "honua.report-document.v1",
+              "title": "Dup Report",
+              "bindings": [
+                { "alias": "incidents", "contentRef": "content:a" },
+                { "alias": "incidents", "contentRef": "content:b" }
+              ],
+              "panels": [
+                {
+                  "title": "Chart",
+                  "kind": "chart",
+                  "bindingAlias": "incidents",
+                  "chartSpec": { "$schema": "https://vega.github.io/schema/vega-lite/v5.json", "mark": "bar" }
+                }
+              ]
+            }
+            """;
+
+        var body = SerializePublish(new PublishContentRequest
+        {
+            Kind = ContentPublicationKind.Report,
+            RouteSlug = "dup-report",
+            Title = "Dup Report",
+            ContentPayload = payload,
+        });
+
+        var response = await _client.PostAsync("/api/v1/console/publications", JsonContent(body));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var codes = document.RootElement.GetProperty("errors").EnumerateArray()
+            .Select(i => i.GetProperty("code").GetString())
+            .ToList();
+        codes.Should().Contain("publication.binding.alias.duplicate");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/publications")]
+    public async Task Publish_ValidReportDocument_Succeeds()
+    {
+        // A well-formed report document (declared binding, referencing chart panel, valid Vega-Lite) passes
+        // body validation and publishes — proving the validator is not over-eager.
+        const string payload = """
+            {
+              "format": "honua.report-document.v1",
+              "title": "Good Report",
+              "bindings": [ { "alias": "incidents", "contentRef": "content:incidents" } ],
+              "panels": [
+                {
+                  "title": "Chart",
+                  "kind": "chart",
+                  "bindingAlias": "incidents",
+                  "chartSpec": { "$schema": "https://vega.github.io/schema/vega-lite/v5.json", "mark": "bar" }
+                }
+              ]
+            }
+            """;
+
+        var body = SerializePublish(new PublishContentRequest
+        {
+            Kind = ContentPublicationKind.Report,
+            RouteSlug = "good-report",
+            Title = "Good Report",
+            ContentPayload = payload,
+        });
+
+        var response = await _client.PostAsync("/api/v1/console/publications", JsonContent(body));
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/publications")]
+    public async Task Publish_MapWithBindingsLikePayload_IsNotBodyValidated()
+    {
+        // Map/non-report-dashboard kinds carry opaque payloads; the body validator must not reject them even
+        // if they happen to look like a bindings/panels document.
+        const string payload = """
+            { "bindings": [ { "alias": "", "contentRef": "" } ], "panels": [ { "kind": "chart", "bindingAlias": "x" } ] }
+            """;
+
+        var body = SerializePublish(new PublishContentRequest
+        {
+            Kind = ContentPublicationKind.Map,
+            RouteSlug = "opaque-map",
+            Title = "Opaque Map",
+            ContentPayload = payload,
+        });
+
+        var response = await _client.PostAsync("/api/v1/console/publications", JsonContent(body));
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
     private async Task<ContentPublicationDetail> PublishAsync(string slug, ContentPublicationKind kind, string? payload = null)
     {
         var body = SerializePublish(new PublishContentRequest { Kind = kind, RouteSlug = slug, Title = slug, ContentPayload = payload });
