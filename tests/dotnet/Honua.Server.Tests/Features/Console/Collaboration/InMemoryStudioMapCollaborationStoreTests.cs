@@ -6,7 +6,6 @@ using Honua.Core.Features.Console.Collaboration.Domain;
 using Honua.Core.Features.Console.Collaboration.Services;
 using Honua.Server.Features.Console.Collaboration;
 using Honua.TestKit.Attributes;
-using Microsoft.Extensions.Time.Testing;
 
 namespace Honua.Server.Tests.Features.Console.Collaboration;
 
@@ -194,5 +193,19 @@ public sealed class InMemoryStudioMapCollaborationStoreTests
         dto.Messages.Should().ContainSingle();
         dto.Messages[0].AuthorInitials.Should().Be("KT");
         dto.Messages[0].RelativeTime.Should().Be("just now");
+    }
+
+    /// <summary>
+    /// Minimal controllable clock for deterministic store tests. Mirrors the local
+    /// <c>FakeTimeProvider</c> convention used elsewhere in the test suite (no
+    /// external test-time package dependency) while supporting <see cref="Advance"/>.
+    /// </summary>
+    private sealed class FakeTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        private DateTimeOffset _utcNow = utcNow;
+
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+
+        public void Advance(TimeSpan delta) => _utcNow = _utcNow.Add(delta);
     }
 }
