@@ -94,6 +94,7 @@ internal static class AuthenticationOptionsRegistration
         services.AddHonuaClientCertificateAuthentication(configuration);
         services.AddOidcAuthentication(configuration);
         services.AddOidcAuthorization(configuration);
+        services.AddPortalTokenAuthentication(configuration);
         services.AddSingleton<AdminAuthSessionStore>();
 
         return services;

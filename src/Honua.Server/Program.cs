@@ -945,6 +945,12 @@ app.UseHonuaClientCertificateAuthentication();
 // Add authentication and authorization middleware early to short-circuit unauthorized requests
 app.UseApiKeyAuthentication();
 
+// Bridge ArcGIS-style portal tokens (?token=, X-Esri-Authorization, Authorization: Bearer)
+// for requests that the default scheme did not authenticate. Must run after
+// UseAuthentication (inside UseApiKeyAuthentication) and before tenant resolution
+// so the tenant middleware sees the hydrated principal claims (#1241).
+app.UsePortalTokenAuthentication();
+
 // Resolve tenant context immediately after authentication so claims (and the
 // X-Honua-Tenant override header) are evaluated against the resolved principal
 // before any downstream feature handler reads ITenantContext (#1144).
