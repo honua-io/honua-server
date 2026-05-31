@@ -41,6 +41,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
     private readonly IGeoServicesStyleConverter? _styleConverter;
     private readonly ILayerStyleCatalog? _styleCatalog;
     private readonly IAttachmentStore? _attachmentStore;
+    private readonly IMigrationCatalogWriter? _catalogWriter;
     private readonly ILogger<GeoservicesImportService> _logger;
     private readonly PostgresSchemaConfiguration _schemaConfiguration;
 
@@ -54,6 +55,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         IGeoServicesStyleConverter? styleConverter = null,
         ILayerStyleCatalog? styleCatalog = null,
         IAttachmentStore? attachmentStore = null,
+        IMigrationCatalogWriter? catalogWriter = null,
         PostgresSchemaConfiguration? schemaConfiguration = null)
     {
         _restClient = restClient ?? throw new ArgumentNullException(nameof(restClient));
@@ -64,6 +66,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         _styleConverter = styleConverter;
         _styleCatalog = styleCatalog;
         _attachmentStore = attachmentStore;
+        _catalogWriter = catalogWriter;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _schemaConfiguration = schemaConfiguration ?? new PostgresSchemaConfiguration(
             PostgresSchemaConfiguration.DefaultMetadataSchema,
@@ -505,5 +508,8 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             "Attachment metadata query failed for layer {LayerId} batch of {BatchSize} ObjectIds")]
         public static partial void AttachmentQueryBatchFailed(
             ILogger logger, int layerId, int batchSize, Exception exception);
+
+        [LoggerMessage(7839, LogLevel.Debug, "Relationship apply skipped: {Reason}")]
+        public static partial void RelationshipApplySkipped(ILogger logger, string reason);
     }
 }

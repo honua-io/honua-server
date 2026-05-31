@@ -431,5 +431,12 @@ public sealed class GeoServerImportServiceStyleApplyTests
                 : MigrationCatalogWriteOutcome.AlreadyExists;
             return Task.FromResult(outcome);
         }
+
+        public Task<MigrationRelationshipApplyOutcome[]> EnsureRelationshipsAsync(
+            string connectionString,
+            Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphStore? graphStore,
+            MigrationRelationshipApplyRequest[] requests,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(Array.Empty<MigrationRelationshipApplyOutcome>());
     }
 }

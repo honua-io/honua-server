@@ -676,5 +676,15 @@ public sealed class GeoServerImportServiceApplyPlanTests
             MigrationStyleRequest request,
             CancellationToken cancellationToken = default)
             => Task.FromResult(MigrationCatalogWriteOutcome.Created);
+
+        // Issue #1256: GeoServer apply tests do not exercise relationship
+        // persistence; return an empty outcome set so the interface remains
+        // satisfied.
+        public Task<MigrationRelationshipApplyOutcome[]> EnsureRelationshipsAsync(
+            string connectionString,
+            Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphStore? graphStore,
+            MigrationRelationshipApplyRequest[] requests,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(Array.Empty<MigrationRelationshipApplyOutcome>());
     }
 }
