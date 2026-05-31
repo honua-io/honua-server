@@ -250,13 +250,112 @@ public sealed class GeoservicesImportServiceScanTests
         spatialReference.IsGeographic.Should().BeFalse();
     }
 
-    private static GeoservicesImportService CreateService(HttpMessageHandler handler)
+    [Fact]
+    public async Task GetLayerInfoAsync_FieldWithCodedValueDomain_PopulatesGeoservicesFieldInfoDomain()
+    {
+        var restClient = CreateRestClient(new SingleLayerDomainHandler(BuildCodedValueLayerJson()));
+
+        var layerInfo = await restClient.GetLayerInfoAsync(
+            "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            layerId: 0,
+            timeoutSeconds: 5,
+            maxRetries: 0,
+            cancellationToken: default);
+
+        var zoning = layerInfo.Fields.Single(f => f.Name == "ZONING");
+        zoning.Domain.Should().NotBeNull();
+        zoning.Domain!.Type.Should().Be("codedValue");
+        zoning.Domain.Name.Should().Be("ZoningCode");
+        zoning.Domain.CodedValues.Should().HaveCount(2);
+        zoning.Domain.CodedValues[0].Name.Should().Be("Residential 1");
+        zoning.Domain.CodedValues[0].Code.GetString().Should().Be("R1");
+        zoning.Domain.CodedValues[1].Name.Should().Be("Commercial 1");
+        zoning.Domain.CodedValues[1].Code.GetString().Should().Be("C1");
+
+        var objectId = layerInfo.Fields.Single(f => f.Name == "OBJECTID");
+        objectId.Domain.Should().BeNull("fields without a domain should not synthesize one");
+    }
+
+    [Fact]
+    public async Task GetLayerInfoAsync_FieldWithRangeDomain_PopulatesGeoservicesFieldInfoDomain()
+    {
+        var restClient = CreateRestClient(new SingleLayerDomainHandler(BuildRangeLayerJson()));
+
+        var layerInfo = await restClient.GetLayerInfoAsync(
+            "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            layerId: 0,
+            timeoutSeconds: 5,
+            maxRetries: 0,
+            cancellationToken: default);
+
+        var elevation = layerInfo.Fields.Single(f => f.Name == "ELEVATION");
+        elevation.Domain.Should().NotBeNull();
+        elevation.Domain!.Type.Should().Be("range");
+        elevation.Domain.Name.Should().Be("ElevationRange");
+        elevation.Domain.CodedValues.Should().BeEmpty();
+        elevation.Domain.Range.Should().NotBeNull();
+        elevation.Domain.Range!.Should().HaveCount(2);
+        elevation.Domain.Range[0].GetInt32().Should().Be(0);
+        elevation.Domain.Range[1].GetInt32().Should().Be(8848);
+    }
+
+    private static string BuildCodedValueLayerJson() =>
+        """
+        {
+          "id": 0,
+          "name": "Parcels",
+          "geometryType": "esriGeometryPolygon",
+          "capabilities": "Query",
+          "spatialReference": { "wkid": 3857 },
+          "fields": [
+            { "name": "OBJECTID", "type": "esriFieldTypeOID" },
+            { "name": "ZONING", "type": "esriFieldTypeString", "nullable": true,
+              "domain": {
+                "type": "codedValue",
+                "name": "ZoningCode",
+                "codedValues": [
+                  { "code": "R1", "name": "Residential 1" },
+                  { "code": "C1", "name": "Commercial 1" }
+                ]
+              }
+            }
+          ]
+        }
+        """;
+
+    private static string BuildRangeLayerJson() =>
+        """
+        {
+          "id": 0,
+          "name": "Summits",
+          "geometryType": "esriGeometryPoint",
+          "capabilities": "Query",
+          "spatialReference": { "wkid": 3857 },
+          "fields": [
+            { "name": "OBJECTID", "type": "esriFieldTypeOID" },
+            { "name": "ELEVATION", "type": "esriFieldTypeInteger", "nullable": true,
+              "domain": {
+                "type": "range",
+                "name": "ElevationRange",
+                "range": [0, 8848]
+              }
+            }
+          ]
+        }
+        """;
+
+    private static ArcGisRestClient CreateRestClient(HttpMessageHandler handler)
     {
         var httpClient = new HttpClient(handler);
-        var restClient = new ArcGisRestClient(
+        return new ArcGisRestClient(
             httpClient,
             NullLogger<ArcGisRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+    }
+
+    private static GeoservicesImportService CreateService(HttpMessageHandler handler)
+    {
+        var restClient = CreateRestClient(handler);
         var connectionProvider = new Mock<IDatabaseConnectionProvider>(MockBehavior.Strict);
         var crsRegistry = new Mock<ICrsRegistry>(MockBehavior.Strict);
 
@@ -274,6 +373,32 @@ public sealed class GeoservicesImportServiceScanTests
             crsRegistry.Object,
             new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance);
+    }
+
+    private sealed class SingleLayerDomainHandler : HttpMessageHandler
+    {
+        private readonly string _layerJson;
+
+        public SingleLayerDomainHandler(string layerJson)
+        {
+            _layerJson = layerJson;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var pathAndQuery = request.RequestUri?.PathAndQuery ?? string.Empty;
+            var payload = pathAndQuery switch
+            {
+                "/arcgis/rest/services/Parcels/FeatureServer/0?f=json" => _layerJson,
+                "/arcgis/rest/services/Parcels/FeatureServer/0/query?where=1=1&returnCountOnly=true&f=json" => "{\"count\":1}",
+                _ => throw new InvalidOperationException($"Unexpected ArcGIS request path: {pathAndQuery}")
+            };
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(payload, Encoding.UTF8, "application/json")
+            });
+        }
     }
 
     private sealed class GeoservicesScanHandler : HttpMessageHandler

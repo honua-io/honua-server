@@ -4,6 +4,7 @@
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
@@ -152,6 +153,14 @@ public sealed record GeoservicesFieldInfo : FieldDefinitionBase
     /// Whether this is the ObjectID field.
     /// </summary>
     public bool IsObjectId => Type.Equals("esriFieldTypeOID", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Optional value domain (coded-value enumeration or numeric range) advertised
+    /// by the ArcGIS service for this field. Carried through to
+    /// <c>LayerPublishRequest.FieldDomains</c> during auto-publish so imported
+    /// layers expose the same constraint metadata via queryDomains.
+    /// </summary>
+    public MetadataV2FieldDomain? Domain { get; init; }
 
     /// <summary>
     /// Determines if this field represents a string type based on Esri type

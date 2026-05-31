@@ -217,6 +217,28 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
     }
 
     [Fact]
+    public async Task ScanSourceAsync_FeatureServerRangeDomain_CapturesRangeBounds()
+    {
+        const string serviceUrl = "https://example.com/arcgis/rest/services/RangeDomain/FeatureServer";
+        var service = CreateService(new FixtureHttpHandler(BuildRangeDomainFixtureResponses()));
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = serviceUrl,
+            TimeoutSeconds = 5
+        });
+
+        var resource = artifact.Resources.Should().ContainSingle().Subject;
+        var elevation = resource.Fields.Single(f => f.Name == "ELEVATION");
+        elevation.DomainType.Should().Be("range");
+        elevation.DomainName.Should().Be("ElevationRange");
+        elevation.DomainValues.Should().BeNull("range domains never carry coded values");
+        elevation.DomainRange.Should().NotBeNull();
+        elevation.DomainRange!.Min.Should().Be("0");
+        elevation.DomainRange.Max.Should().Be("8848");
+    }
+
+    [Fact]
     public async Task ScanSourceAsync_FeatureServerOverCapDomains_EmitsArcGisDomainTruncatedWarning()
     {
         const string serviceUrl = "https://example.com/arcgis/rest/services/Truncation/FeatureServer";
@@ -294,6 +316,37 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
             ["/arcgis/rest/services/Truncation/FeatureServer?f=json"] = rootJson,
             ["/arcgis/rest/services/Truncation/FeatureServer/0?f=json"] = layerJson,
             ["/arcgis/rest/services/Truncation/FeatureServer/0/query?where=1%3D1&returnCountOnly=true&f=json"] = countJson
+        };
+    }
+
+    private static Dictionary<string, string> BuildRangeDomainFixtureResponses()
+    {
+        var rootJson = "{" +
+            "\"currentVersion\":11.2," +
+            "\"serviceDescription\":\"Range Domain Test\"," +
+            "\"capabilities\":\"Query\"," +
+            "\"layers\":[{\"id\":0,\"name\":\"Summits\"}]" +
+            "}";
+
+        var layerJson = "{" +
+            "\"id\":0,\"name\":\"Summits\"," +
+            "\"geometryType\":\"esriGeometryPoint\"," +
+            "\"capabilities\":\"Query\"," +
+            "\"spatialReference\":{\"wkid\":3857}," +
+            "\"drawingInfo\":{\"renderer\":{\"type\":\"simple\"}}," +
+            "\"fields\":[" +
+                "{\"name\":\"OBJECTID\",\"type\":\"esriFieldTypeOID\"}," +
+                "{\"name\":\"ELEVATION\",\"type\":\"esriFieldTypeInteger\",\"nullable\":true," +
+                    "\"domain\":{\"type\":\"range\",\"name\":\"ElevationRange\",\"range\":[0,8848]}}" +
+            "]}";
+
+        var countJson = "{\"count\":1}";
+
+        return new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["/arcgis/rest/services/RangeDomain/FeatureServer?f=json"] = rootJson,
+            ["/arcgis/rest/services/RangeDomain/FeatureServer/0?f=json"] = layerJson,
+            ["/arcgis/rest/services/RangeDomain/FeatureServer/0/query?where=1%3D1&returnCountOnly=true&f=json"] = countJson
         };
     }
 

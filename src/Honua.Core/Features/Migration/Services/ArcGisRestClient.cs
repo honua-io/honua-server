@@ -11,6 +11,7 @@ using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Resilience;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Microsoft.Extensions.Logging;
 using Polly;
 using Honua.Core.Features.Import.Abstractions;
@@ -774,8 +775,60 @@ internal sealed partial class ArcGisRestClient
             Type = f.Type ?? "esriFieldTypeString",
             Alias = f.Alias,
             Length = f.Length,
-            Nullable = f.Nullable ?? true
+            Nullable = f.Nullable ?? true,
+            Domain = MapFieldDomain(f.Domain)
         }).ToArray();
+    }
+
+    private static MetadataV2FieldDomain? MapFieldDomain(ArcGisFieldDomain? source)
+    {
+        if (source == null || string.IsNullOrWhiteSpace(source.Type))
+        {
+            return null;
+        }
+
+        var type = source.Type!.Trim();
+        if (string.Equals(type, "codedValue", StringComparison.Ordinal))
+        {
+            var coded = (source.CodedValues ?? [])
+                .Where(static cv => !string.IsNullOrWhiteSpace(cv.Name)
+                    && cv.Code.ValueKind is not JsonValueKind.Undefined and not JsonValueKind.Null)
+                .Select(static cv => new MetadataV2CodedValue
+                {
+                    Code = cv.Code.Clone(),
+                    Name = cv.Name!
+                })
+                .ToArray();
+
+            if (coded.Length == 0)
+            {
+                return null;
+            }
+
+            return new MetadataV2FieldDomain
+            {
+                Type = type,
+                Name = string.IsNullOrWhiteSpace(source.Name) ? null : source.Name,
+                CodedValues = coded,
+                MergePolicy = source.MergePolicy,
+                SplitPolicy = source.SplitPolicy
+            };
+        }
+
+        if (string.Equals(type, "range", StringComparison.Ordinal) &&
+            source.Range is { Length: >= 2 } range)
+        {
+            return new MetadataV2FieldDomain
+            {
+                Type = type,
+                Name = string.IsNullOrWhiteSpace(source.Name) ? null : source.Name,
+                Range = [range[0].Clone(), range[1].Clone()],
+                MergePolicy = source.MergePolicy,
+                SplitPolicy = source.SplitPolicy
+            };
+        }
+
+        return null;
     }
 
     private static EsriExtent? ParseExtent(ArcGisExtent? extent)
@@ -1012,6 +1065,39 @@ internal sealed record ArcGisField
 
     [JsonPropertyName("nullable")]
     public bool? Nullable { get; init; }
+
+    [JsonPropertyName("domain")]
+    public ArcGisFieldDomain? Domain { get; init; }
+}
+
+internal sealed record ArcGisFieldDomain
+{
+    [JsonPropertyName("type")]
+    public string? Type { get; init; }
+
+    [JsonPropertyName("name")]
+    public string? Name { get; init; }
+
+    [JsonPropertyName("codedValues")]
+    public ArcGisCodedValue[]? CodedValues { get; init; }
+
+    [JsonPropertyName("range")]
+    public JsonElement[]? Range { get; init; }
+
+    [JsonPropertyName("mergePolicy")]
+    public string? MergePolicy { get; init; }
+
+    [JsonPropertyName("splitPolicy")]
+    public string? SplitPolicy { get; init; }
+}
+
+internal sealed record ArcGisCodedValue
+{
+    [JsonPropertyName("name")]
+    public string? Name { get; init; }
+
+    [JsonPropertyName("code")]
+    public JsonElement Code { get; init; }
 }
 
 internal sealed record ArcGisCountResponse

@@ -241,7 +241,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private static List<LayerFieldInsert> BuildLayerFields(
         List<ColumnInfo> selectedColumns,
         ColumnInfo primaryKeyColumn,
-        string geometryColumn)
+        string geometryColumn,
+        IReadOnlyDictionary<string, MetadataV2FieldDomain>? fieldDomains = null)
     {
         var fields = new List<LayerFieldInsert>();
         var added = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -252,7 +253,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
             primaryKeyType,
             primaryKeyColumn.MaxLength,
             primaryKeyColumn.IsNullable,
-            null));
+            null,
+            Domain: ResolveDomain(fieldDomains, primaryKeyColumn.Name)));
         _ = added.Add(primaryKeyColumn.Name);
 
         foreach (var column in selectedColumns)
@@ -268,7 +270,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 fieldType,
                 column.MaxLength,
                 column.IsNullable,
-                null));
+                null,
+                Domain: ResolveDomain(fieldDomains, column.Name)));
             _ = added.Add(column.Name);
         }
 
@@ -283,6 +286,33 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
 
         return fields;
+    }
+
+    private static MetadataV2FieldDomain? ResolveDomain(
+        IReadOnlyDictionary<string, MetadataV2FieldDomain>? fieldDomains,
+        string fieldName)
+    {
+        if (fieldDomains is null || fieldDomains.Count == 0)
+        {
+            return null;
+        }
+
+        // The collection may be case-sensitive (e.g. ImmutableDictionary), so fall
+        // back to an explicit case-insensitive scan when the direct lookup misses.
+        if (fieldDomains.TryGetValue(fieldName, out var direct))
+        {
+            return direct;
+        }
+
+        foreach (var pair in fieldDomains)
+        {
+            if (string.Equals(pair.Key, fieldName, StringComparison.OrdinalIgnoreCase))
+            {
+                return pair.Value;
+            }
+        }
+
+        return null;
     }
 
     private static MetadataV2FieldType MapPostgresType(string dataType)

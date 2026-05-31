@@ -255,7 +255,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 "Primary key must be an integer column.");
         }
 
-        var fields = BuildLayerFields(selectedColumns, primaryKeyColumn, geometryColumn);
+        var fields = BuildLayerFields(selectedColumns, primaryKeyColumn, geometryColumn, request.FieldDomains);
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -639,7 +639,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         int? MaxLength,
         bool Nullable,
         string? Description,
-        object? DefaultValue = null);
+        object? DefaultValue = null,
+        MetadataV2FieldDomain? Domain = null);
 
     private sealed record LayerExtentInsert(
         double MinX,

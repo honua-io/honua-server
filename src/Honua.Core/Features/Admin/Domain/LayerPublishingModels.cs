@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Metadata.Domain.V2;
+
 namespace Honua.Core.Features.Admin.Domain;
 
 /// <summary>
@@ -67,6 +69,14 @@ public sealed class LayerPublishRequest
     /// Whether the layer should be enabled after publishing.
     /// </summary>
     public bool Enabled { get; init; } = true;
+
+    /// <summary>
+    /// Optional per-field domain definitions to attach during publishing, keyed by
+    /// field name (case-insensitive). Used to carry coded-value/range domains
+    /// discovered during import (e.g. Esri service metadata) onto
+    /// <c>MetadataV2Resource.SchemaFields</c> so queryDomains can serve them.
+    /// </summary>
+    public IReadOnlyDictionary<string, MetadataV2FieldDomain>? FieldDomains { get; init; }
 }
 
 /// <summary>

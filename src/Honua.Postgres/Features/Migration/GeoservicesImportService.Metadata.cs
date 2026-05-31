@@ -128,7 +128,7 @@ internal sealed partial class GeoservicesImportService
             var fieldType = GetOptionalStringProperty(fieldElement, "type") ?? "esriFieldTypeUnknown";
             var alias = GetOptionalStringProperty(fieldElement, "alias");
             var nullable = GetOptionalBoolProperty(fieldElement, "nullable");
-            var (domainType, domainName, domainValues, domainTruncated) = ExtractDomain(fieldElement);
+            var (domainType, domainName, domainValues, domainRange, domainTruncated) = ExtractDomain(fieldElement);
 
             if (domainTruncated)
             {
@@ -146,7 +146,8 @@ internal sealed partial class GeoservicesImportService
                 Nullable = nullable,
                 DomainType = domainType,
                 DomainName = domainName,
-                DomainValues = domainValues
+                DomainValues = domainValues,
+                DomainRange = domainRange
             });
         }
 
@@ -162,26 +163,31 @@ internal sealed partial class GeoservicesImportService
             .ToArray();
     }
 
-    private static (string? Type, string? Name, MigrationInventoryCodedValue[]? Values, bool Truncated) ExtractDomain(JsonElement fieldElement)
+    private static (string? Type, string? Name, MigrationInventoryCodedValue[]? Values, MigrationInventoryDomainRange? Range, bool Truncated) ExtractDomain(JsonElement fieldElement)
     {
         if (!fieldElement.TryGetProperty("domain", out var domainElement) ||
             domainElement.ValueKind != JsonValueKind.Object)
         {
-            return (null, null, null, false);
+            return (null, null, null, null, false);
         }
 
         var type = GetOptionalStringProperty(domainElement, "type");
         var name = GetOptionalStringProperty(domainElement, "name");
 
+        if (string.Equals(type, "range", StringComparison.Ordinal))
+        {
+            return (type, name, null, ExtractRange(domainElement), false);
+        }
+
         if (!string.Equals(type, "codedValue", StringComparison.Ordinal))
         {
-            return (type, name, null, false);
+            return (type, name, null, null, false);
         }
 
         if (!domainElement.TryGetProperty("codedValues", out var codedValuesElement) ||
             codedValuesElement.ValueKind != JsonValueKind.Array)
         {
-            return (type, name, [], false);
+            return (type, name, [], null, false);
         }
 
         var entries = new List<MigrationInventoryCodedValue>();
@@ -219,26 +225,67 @@ internal sealed partial class GeoservicesImportService
             .ToArray();
 
         return truncated
-            ? (type, name, null, true)
-            : (type, name, ordered, false);
+            ? (type, name, null, null, true)
+            : (type, name, ordered, null, false);
     }
 
-    private static string? ConvertCodedValueCode(JsonElement entry)
+    private static MigrationInventoryDomainRange? ExtractRange(JsonElement domainElement)
     {
-        if (!entry.TryGetProperty("code", out var codeElement))
+        if (!domainElement.TryGetProperty("range", out var rangeElement) ||
+            rangeElement.ValueKind != JsonValueKind.Array)
         {
             return null;
         }
 
-        return codeElement.ValueKind switch
+        string? min = null;
+        string? max = null;
+        var index = 0;
+        foreach (var bound in rangeElement.EnumerateArray())
         {
-            JsonValueKind.String => codeElement.GetString(),
-            JsonValueKind.Number => codeElement.GetRawText(),
+            var raw = ReadJsonScalarRaw(bound);
+            if (raw is null)
+            {
+                continue;
+            }
+
+            if (index == 0)
+            {
+                min = raw;
+            }
+            else if (index == 1)
+            {
+                max = raw;
+            }
+
+            index++;
+            if (index >= 2)
+            {
+                break;
+            }
+        }
+
+        if (min is null || max is null)
+        {
+            return null;
+        }
+
+        return new MigrationInventoryDomainRange { Min = min, Max = max };
+    }
+
+    private static string? ReadJsonScalarRaw(JsonElement element)
+        => element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number => element.GetRawText(),
             JsonValueKind.True => "true",
             JsonValueKind.False => "false",
             _ => null
         };
-    }
+
+    private static string? ConvertCodedValueCode(JsonElement entry)
+        => entry.TryGetProperty("code", out var codeElement)
+            ? ReadJsonScalarRaw(codeElement)
+            : null;
 
     private static MigrationInventoryStyle? BuildRendererStyle(
         string containerId,

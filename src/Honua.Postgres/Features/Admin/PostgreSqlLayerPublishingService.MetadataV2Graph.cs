@@ -409,7 +409,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
             SemanticRoles = semanticRoles.ToArray(),
             Alias = field.Name,
             Editable = field.Type != MetadataV2FieldType.Geometry,
-            Length = field.MaxLength
+            Length = field.MaxLength,
+            Domain = field.Domain
         };
     }
 

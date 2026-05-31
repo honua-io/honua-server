@@ -598,6 +598,13 @@ public sealed record MigrationInventoryField
     /// Coded values for <c>codedValue</c> domains. Capped to keep artifacts deterministic.
     /// </summary>
     public MigrationInventoryCodedValue[]? DomainValues { get; init; }
+
+    /// <summary>
+    /// Inclusive minimum/maximum bounds for <c>range</c> domains. Each bound is
+    /// captured as raw JSON text so numeric, date, and other typed ranges survive
+    /// round-tripping without coercion loss.
+    /// </summary>
+    public MigrationInventoryDomainRange? DomainRange { get; init; }
 }
 
 /// <summary>
@@ -614,6 +621,24 @@ public sealed record MigrationInventoryCodedValue
     /// Display name for the coded value.
     /// </summary>
     public required string Name { get; init; }
+}
+
+/// <summary>
+/// Inclusive bounds for a <c>range</c> field domain. Min/Max are stored as the raw
+/// JSON token text exactly as advertised by the source so typed range domains
+/// (numeric, date, etc.) survive without coercion.
+/// </summary>
+public sealed record MigrationInventoryDomainRange
+{
+    /// <summary>
+    /// Lower bound advertised by the source.
+    /// </summary>
+    public required string Min { get; init; }
+
+    /// <summary>
+    /// Upper bound advertised by the source.
+    /// </summary>
+    public required string Max { get; init; }
 }
 
 /// <summary>

@@ -16,6 +16,7 @@ using Honua.Core.Features.Styling.Domain;
 using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
@@ -179,7 +180,8 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                 PrimaryKey = FieldNames.ObjectId,
                 Fields = [],
                 ServiceName = request.ServiceName,
-                Enabled = true
+                Enabled = true,
+                FieldDomains = BuildFieldDomains(layerInfo.Fields)
             };
 
             var published = await _layerPublishingService.PublishLayerAsync(
@@ -361,6 +363,29 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
     private static string QuoteIdentifier(string identifier)
     {
         return $"\"{identifier.Replace("\"", "\"\"")}\"";
+    }
+
+    private static Dictionary<string, MetadataV2FieldDomain>? BuildFieldDomains(
+        GeoservicesFieldInfo[] fields)
+    {
+        if (fields.Length == 0)
+        {
+            return null;
+        }
+
+        Dictionary<string, MetadataV2FieldDomain>? map = null;
+        foreach (var field in fields)
+        {
+            if (field.Domain is null)
+            {
+                continue;
+            }
+
+            map ??= new Dictionary<string, MetadataV2FieldDomain>(StringComparer.OrdinalIgnoreCase);
+            map[field.Name] = field.Domain;
+        }
+
+        return map;
     }
 
     private static partial class Log
