@@ -299,6 +299,53 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         },
         new ProcessDefinition
         {
+            ProcessId = "analytics.cluster-managed",
+            Title = "Spatial Clustering (Managed)",
+            Description = "Job-executable, managed (NetTopologySuite) spatial clustering over an inline FeatureCollection. Distinct from analytics.cluster, which runs only synchronously through the layer-scoped PostGIS SpatialAnalytics protocol and is NOT job-dispatchable; this id is the workflow/codemod-reachable counterpart. DBSCAN (eps, minPoints) or K-Means (k); every input feature is preserved one-to-one with a CLUSTER_ID attribute appended (-1 = noise for DBSCAN). Distances are evaluated in the CRS units of the supplied feature geometries — geodesic conversion is not performed.",
+            Category = "analytics",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI. Non-point geometries cluster on their centroid; features with null/empty geometry are dropped before clustering.", ProcessParameterValueType.Text, required: true),
+                Param("algorithm", "Algorithm", "Clustering algorithm. Allowed values: dbscan (default), kmeans.", ProcessParameterValueType.Text, defaultValue: "dbscan"),
+                Param("eps", "Epsilon", "Maximum distance between neighbours for DBSCAN, in CRS units. Must be a finite positive number. Required when algorithm is dbscan.", ProcessParameterValueType.FloatingPoint),
+                Param("minPoints", "Min Points", "Minimum cluster size for DBSCAN. Must be an integer >= 1. Required when algorithm is dbscan.", ProcessParameterValueType.WholeNumber),
+                Param("k", "K", "Number of clusters for K-Means. Must be an integer >= 1. Required when algorithm is kmeans.", ProcessParameterValueType.WholeNumber),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "analytics.buffer-aggregate-managed",
+            Title = "Buffer Aggregate (Managed)",
+            Description = "Job-executable, managed (NetTopologySuite) buffer-and-dissolve over an inline FeatureCollection. Distinct from analytics.buffer-aggregate, which runs only synchronously through the layer-scoped PostGIS SpatialAnalytics protocol and is NOT job-dispatchable; this id is the workflow/codemod-reachable counterpart. Buffers every input feature by 'distance' in the supplied unit, then optionally dissolves the result into one feature per groupByFields group via CascadedPolygonUnion. Each emitted feature carries a COUNT attribute. Distance is normalised to CRS units after applying the unit factor (meters/kilometers/feet/miles) — geodesic conversion is not performed.",
+            Category = "analytics",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI.", ProcessParameterValueType.Text, required: true),
+                Param("distance", "Distance", "Buffer distance in the supplied unit. Must be a finite non-negative number.", ProcessParameterValueType.FloatingPoint, required: true),
+                Param("unit", "Unit", "Distance unit. Allowed values: meters (default), kilometers, feet, miles.", ProcessParameterValueType.Text, defaultValue: "meters"),
+                Param("dissolve", "Dissolve", "Dissolve buffered geometries per group (true) or emit one buffered feature per input (false). Defaults to true.", ProcessParameterValueType.Flag, defaultValue: "true"),
+                Param("groupByFields", "Group By Fields", "Comma-separated attribute names used to group dissolved buffers; one feature is emitted per group. When empty, all inputs dissolve into a single feature.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
+            ProcessId = "analytics.density-managed",
+            Title = "Density Binning (Managed)",
+            Description = "Job-executable, managed (NetTopologySuite) density binning over an inline FeatureCollection. Distinct from analytics.density, which runs only synchronously through the layer-scoped PostGIS SpatialAnalytics protocol and is NOT job-dispatchable; this id is the workflow/codemod-reachable counterpart. Snaps every input geometry's point representative (centroid for non-point inputs) onto a square or pointy-top hex grid of cellSize CRS units and emits one feature per non-empty cell with COUNT and (optionally) SUM_<weightField> attributes. Geodesic conversion is not performed — cellSize is treated as CRS units.",
+            Category = "analytics",
+            Parameters =
+            [
+                Param("input", "Input Features", "Input FeatureCollection as a data:application/geo+json;base64 data URI. Features with null/empty geometry are dropped before binning.", ProcessParameterValueType.Text, required: true),
+                Param("mode", "Bin Mode", "Binning mode. Allowed values: hex (default), square.", ProcessParameterValueType.Text, defaultValue: "hex"),
+                Param("cellSize", "Cell Size", "Grid cell size in CRS units. Must be a finite positive number.", ProcessParameterValueType.FloatingPoint, required: true),
+                Param("weightField", "Weight Field", "Optional attribute name whose numeric values are summed per cell as SUM_<weightField>. Non-numeric or missing values are skipped.", ProcessParameterValueType.Text),
+            ],
+            OutputArtifactKinds = [ArtifactKind.FeatureLayer]
+        },
+        new ProcessDefinition
+        {
             ProcessId = "analytics.buffer-aggregate",
             Title = "Buffer Aggregate",
             Description = "Buffers features by a fixed distance and optionally dissolves per group with aggregate statistics.",

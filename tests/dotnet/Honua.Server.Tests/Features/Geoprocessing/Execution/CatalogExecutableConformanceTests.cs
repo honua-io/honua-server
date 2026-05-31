@@ -65,6 +65,12 @@ public sealed class CatalogExecutableConformanceTests
         "geometry.snap",
         // Managed spatial-join (distinct from the PostGIS-protocol analytics.spatial-join).
         "analytics.spatial-join-managed",
+        // Managed analytics counterparts for cluster / buffer-aggregate / density (#1260).
+        // The unsuffixed ids stay in the protocol-only bucket; these -managed ids are
+        // their workflow-reachable, FeatureCollection-in/out, no-Postgres counterparts.
+        "analytics.cluster-managed",
+        "analytics.buffer-aggregate-managed",
+        "analytics.density-managed",
         // GeoETL transforms (managed NTS, FeatureCollection in/out).
         "transform.attribute-rename",
         "transform.attribute-cast",
@@ -298,6 +304,9 @@ public sealed class CatalogExecutableConformanceTests
             new GeometryMakeValidJobExecutor(monitor, NullLogger<GeometryMakeValidJobExecutor>.Instance),
             new GeometryDifferenceJobExecutor(monitor, NullLogger<GeometryDifferenceJobExecutor>.Instance),
             new ManagedSpatialJoinExecutor(monitor),
+            new ManagedClusterExecutor(monitor),
+            new ManagedBufferAggregateExecutor(monitor),
+            new ManagedDensityExecutor(monitor),
             new AttributeRenameTransformExecutor(monitor),
             new AttributeCastTransformExecutor(monitor),
             new ComputedFieldTransformExecutor(monitor),

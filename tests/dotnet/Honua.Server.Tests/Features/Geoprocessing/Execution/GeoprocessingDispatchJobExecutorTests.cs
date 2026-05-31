@@ -33,10 +33,10 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         var context = Substitute.For<IJobExecutionContext>();
         context.OperationId.Returns("op-unknown");
 
-        // analytics.cluster is a catalog process that is NOT job-routed (it
-        // executes through the layer-scoped PostGIS analytics protocol path,
-        // not the dispatcher) — pick it for the unknown-id smoke now that the
-        // reconciliation routes geometry.make-valid / geometry.difference.
+        // analytics.cluster is the bare-id catalog process that is NOT job-routed (it
+        // executes through the layer-scoped PostGIS analytics protocol path, not the
+        // dispatcher) — pick it for the unknown-id smoke. The managed counterpart
+        // analytics.cluster-managed IS job-routed (#1260) and so cannot be used here.
         var record = CreateJobRecord("analytics.cluster");
 
         var result = await dispatcher.ExecuteAsync(record, context, CancellationToken.None);
@@ -92,6 +92,9 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         "geometry.make-valid",
         "geometry.difference",
         "analytics.spatial-join-managed",
+        "analytics.cluster-managed",
+        "analytics.buffer-aggregate-managed",
+        "analytics.density-managed",
         "transform.attribute-rename",
         "transform.attribute-cast",
         "transform.computed-field",
@@ -147,6 +150,9 @@ public sealed class GeoprocessingDispatchJobExecutorTests
             new GeometryMakeValidJobExecutor(monitor, NullLogger<GeometryMakeValidJobExecutor>.Instance),
             new GeometryDifferenceJobExecutor(monitor, NullLogger<GeometryDifferenceJobExecutor>.Instance),
             new ManagedSpatialJoinExecutor(monitor),
+            new ManagedClusterExecutor(monitor),
+            new ManagedBufferAggregateExecutor(monitor),
+            new ManagedDensityExecutor(monitor),
             new AttributeRenameTransformExecutor(monitor),
             new AttributeCastTransformExecutor(monitor),
             new ComputedFieldTransformExecutor(monitor),

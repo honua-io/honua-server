@@ -35,16 +35,18 @@ public sealed class ProcessCatalogTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
-    public void Catalog_ListProcesses_ReturnsExactly54BuiltIns()
+    public void Catalog_ListProcesses_ReturnsExactly57BuiltIns()
     {
         var all = _catalog.ListProcesses();
 
         // 38 original trunk processes + 13 GeoETL transform/source/sink processes
         // reconciled from feat/geoetl-baseline + 1 managed spatial-join
         // (analytics.spatial-join-managed) added for the workflow/codemod job path
-        // + 2 native-profile GDAL worker processes (gdal.gdalwarp, gdal.ogr2ogr)
-        // reconciled from feat/gdal-heavy-worker.
-        all.Should().HaveCount(54);
+        // + 3 managed analytics counterparts (analytics.cluster-managed,
+        // analytics.buffer-aggregate-managed, analytics.density-managed) added by
+        // #1260 + 2 native-profile GDAL worker processes (gdal.gdalwarp,
+        // gdal.ogr2ogr) reconciled from feat/gdal-heavy-worker.
+        all.Should().HaveCount(57);
         all.Select(p => p.ProcessId).Should().OnlyHaveUniqueItems();
     }
 
@@ -62,13 +64,15 @@ public sealed class ProcessCatalogTests
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
-    public void Catalog_AnalyticsCategory_Returns5Processes()
+    public void Catalog_AnalyticsCategory_Returns8Processes()
     {
         var analytics = _catalog.GetProcessesByCategory("analytics");
 
-        // 4 trunk analytics + analytics.spatial-join-managed (the job-dispatchable
-        // managed counterpart to the PostGIS-protocol analytics.spatial-join).
-        analytics.Should().HaveCount(5);
+        // 4 trunk analytics + analytics.spatial-join-managed +
+        // 3 managed counterparts from #1260 (analytics.cluster-managed,
+        // analytics.buffer-aggregate-managed, analytics.density-managed) — the
+        // job-dispatchable managed counterparts to the PostGIS-protocol entries.
+        analytics.Should().HaveCount(8);
         analytics.Should().AllSatisfy(p => p.Category.Should().Be("analytics"));
     }
 
@@ -222,6 +226,9 @@ public sealed class ProcessCatalogTests
             "geometry.dissolve", "geometry.snap",
             "analytics.cluster", "analytics.spatial-join",
             "analytics.spatial-join-managed",
+            "analytics.cluster-managed",
+            "analytics.buffer-aggregate-managed",
+            "analytics.density-managed",
             "analytics.buffer-aggregate", "analytics.density",
             "surface.slope", "surface.aspect", "surface.hillshade",
             "surface.rugosity-tri", "surface.rugosity-tpi", "surface.roughness",

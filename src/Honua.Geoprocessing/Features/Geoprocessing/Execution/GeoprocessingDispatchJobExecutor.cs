@@ -51,6 +51,9 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         GeometryMakeValidJobExecutor makeValid,
         GeometryDifferenceJobExecutor difference,
         ManagedSpatialJoinExecutor spatialJoinManaged,
+        ManagedClusterExecutor clusterManaged,
+        ManagedBufferAggregateExecutor bufferAggregateManaged,
+        ManagedDensityExecutor densityManaged,
         AttributeRenameTransformExecutor attributeRename,
         AttributeCastTransformExecutor attributeCast,
         ComputedFieldTransformExecutor computedField,
@@ -81,6 +84,9 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         ArgumentNullException.ThrowIfNull(makeValid);
         ArgumentNullException.ThrowIfNull(difference);
         ArgumentNullException.ThrowIfNull(spatialJoinManaged);
+        ArgumentNullException.ThrowIfNull(clusterManaged);
+        ArgumentNullException.ThrowIfNull(bufferAggregateManaged);
+        ArgumentNullException.ThrowIfNull(densityManaged);
         ArgumentNullException.ThrowIfNull(attributeRename);
         ArgumentNullException.ThrowIfNull(attributeCast);
         ArgumentNullException.ThrowIfNull(computedField);
@@ -113,6 +119,9 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             [GeometryMakeValidJobExecutor.HandledProcessId] = makeValid,
             [GeometryDifferenceJobExecutor.HandledProcessId] = difference,
             [ManagedSpatialJoinExecutor.HandledProcessId] = spatialJoinManaged,
+            [ManagedClusterExecutor.HandledProcessId] = clusterManaged,
+            [ManagedBufferAggregateExecutor.HandledProcessId] = bufferAggregateManaged,
+            [ManagedDensityExecutor.HandledProcessId] = densityManaged,
             [AttributeRenameTransformExecutor.HandledProcessId] = attributeRename,
             [AttributeCastTransformExecutor.HandledProcessId] = attributeCast,
             [ComputedFieldTransformExecutor.HandledProcessId] = computedField,
