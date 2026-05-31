@@ -53,6 +53,7 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 [JsonSerializable(typeof(double[]))]
 [JsonSerializable(typeof(double[][]))]
 [JsonSerializable(typeof(double[][][]))]
+[JsonSerializable(typeof(int[]))]
 [JsonSerializable(typeof(ApiErrorResponse))]
 [JsonSerializable(typeof(GeoServicesError))]
 [JsonSerializable(typeof(Dictionary<string, object>))]
