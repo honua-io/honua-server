@@ -356,7 +356,7 @@ internal static partial class MapServerEndpoints
             Extent = ResolveLayerExtent(resource, serviceExtent),
             DisplayField = displayField,
             ObjectIdField = objectIdField,
-            Fields = [.. resource.SchemaFields.Select(MapFieldInfoV2)],
+            Fields = [.. resource.SchemaFields.Select(field => MapFieldInfoV2(field, objectIdField))],
             Capabilities = layerCapabilities,
             SupportsAdvancedQueries = true,
             HasAttachments = resource.Editing?.SupportsAttachments ?? false,
@@ -538,17 +538,23 @@ internal static partial class MapServerEndpoints
                resource.FindPrimaryGeometryField() is not null;
     }
 
-    private static MapServerFieldInfo MapFieldInfoV2(MetadataV2Field field)
-        => new()
+    private static MapServerFieldInfo MapFieldInfoV2(MetadataV2Field field, string objectIdFieldName)
+    {
+        // The layer's object-id field must be typed esriFieldTypeOID regardless of its
+        // SQL type so Esri clients can locate the OID field by type (see issue #1299).
+        var isObjectId = field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase);
+        return new()
         {
             Name = field.Name,
-            Type = MapFieldTypeToGeoServicesV2(field.Type),
+            Type = isObjectId ? "esriFieldTypeOID" : MapFieldTypeToGeoServicesV2(field.Type),
             Alias = field.Alias ?? field.Title ?? field.Name,
             Length = field.Length,
-            Nullable = field.Nullable,
-            Editable = field.Editable && field.Type is not MetadataV2FieldType.Geometry and not MetadataV2FieldType.Geography,
+            Nullable = field.Nullable && !isObjectId,
+            Editable = field.Editable && !isObjectId
+                && field.Type is not MetadataV2FieldType.Geometry and not MetadataV2FieldType.Geography,
             DefaultValue = field.DefaultValue.HasValue ? field.DefaultValue.Value : null
         };
+    }
 
     private static string MapFieldTypeToGeoServicesV2(MetadataV2FieldType type)
         => type switch

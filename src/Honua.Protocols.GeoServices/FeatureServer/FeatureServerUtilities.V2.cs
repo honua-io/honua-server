@@ -64,7 +64,7 @@ internal static partial class FeatureServerEndpoints
 
         var visibleFields = publications
             .SelectMany(pair => ResolveVisibleFieldsV2(pair.Resource))
-            .Select(MapFieldInfoV2)
+            .Select(field => MapFieldInfoV2(field, objectIdField))
             .ToArray();
 
         var supportedFormats = ReadServiceSupportedFormatsV2(service);
@@ -151,7 +151,7 @@ internal static partial class FeatureServerEndpoints
             Extent = extent,
             TimeInfo = timeInfo,
             ExtrusionInfo = extrusionInfo,
-            Fields = [.. ResolveVisibleFieldsV2(resource).Select(MapFieldInfoV2)],
+            Fields = [.. ResolveVisibleFieldsV2(resource).Select(field => MapFieldInfoV2(field, objectIdField))],
             MaxRecordCount = queryLimits.MaxRecordCount,
             ObjectIdField = objectIdField,
             DisplayField = displayField,
@@ -210,13 +210,16 @@ internal static partial class FeatureServerEndpoints
 
     /// <summary>
     /// Maps a canonical <see cref="MetadataV2Field"/> to the Esri-style GeoServices
-    /// field info shape.
+    /// field info shape. The layer's object-id field is forced to
+    /// <c>esriFieldTypeOID</c> regardless of its SQL type so that Esri clients can
+    /// locate the OID field by type (see issue #1299).
     /// </summary>
-    private static GeoServicesFieldInfo MapFieldInfoV2(MetadataV2Field field)
+    private static GeoServicesFieldInfo MapFieldInfoV2(MetadataV2Field field, string objectIdFieldName)
     {
         ArgumentNullException.ThrowIfNull(field);
 
-        var geoServicesType = MapFieldTypeToGeoServicesV2(field.Type);
+        var isObjectId = field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase);
+        var geoServicesType = isObjectId ? "esriFieldTypeOID" : MapFieldTypeToGeoServicesV2(field.Type);
         var sqlType = MapFieldTypeToSqlV2(field.Type);
         var isGeometry = field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography;
 
@@ -229,8 +232,8 @@ internal static partial class FeatureServerEndpoints
             // V2 has no length slot on the canonical field model (length lives in the
             // storage binding when needed). Pass null so the response omits the key.
             Length = null,
-            Nullable = field.Nullable,
-            Editable = !isGeometry,
+            Nullable = field.Nullable && !isObjectId,
+            Editable = !isGeometry && !isObjectId,
             // V2 has no default-value slot on the canonical field; the catalog/admin layer
             // owns insertion defaults.
             DefaultValue = null,
