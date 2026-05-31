@@ -50,9 +50,13 @@ internal static partial class ProcessPlanValidator
         "miles", "mile", "mi"
     };
 
+    // gdaldem emits degrees by default and percent slope under -p; radians are
+    // not a first-class gdaldem output, so the native worker rejects them up
+    // front. The validator stays in lockstep so plans accepted here are also
+    // accepted by the executor at runtime.
     private static readonly HashSet<string> SurfaceSlopeUnitValues = new(StringComparer.OrdinalIgnoreCase)
     {
-        "degrees", "degree", "percent", "radians", "radian"
+        "degrees", "degree", "percent"
     };
 
     private static readonly HashSet<string> RasterResamplingValues = new(StringComparer.OrdinalIgnoreCase)
@@ -737,7 +741,7 @@ internal static partial class ProcessPlanValidator
             && !string.IsNullOrWhiteSpace(unitsRaw)
             && !SurfaceSlopeUnitValues.Contains(unitsRaw.Trim()))
         {
-            AddEnumViolation(step, "units", unitsRaw, "degrees, percent, radians", violations);
+            AddEnumViolation(step, "units", unitsRaw, "degrees, percent", violations);
         }
 
         RequirePositiveFiniteDouble(step, "zFactor", violations);

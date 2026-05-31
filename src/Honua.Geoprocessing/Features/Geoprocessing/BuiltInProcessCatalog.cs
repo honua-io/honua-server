@@ -381,164 +381,183 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
 
         // -----------------------------------------------------------------------
         // Surface-analysis operations (6)
-        // DEM-derived raster products. These are catalog-first declarations only;
-        // heavyweight execution still flows through the canonical job/runtime path.
+        // DEM-derived raster products implemented natively by the heavyweight GDAL
+        // worker via the gdaldem CLI. Declared RuntimeProfile = native so the
+        // submit path stamps ExecutionJobSpec.RuntimeProfile = "native" and the
+        // claim fence routes the job to the GDAL worker and away from the lean
+        // dispatcher. The lean image still validates these plans (parameter
+        // shape + per-process semantic rules) but never executes them.
         // -----------------------------------------------------------------------
         new ProcessDefinition
         {
             ProcessId = "surface.slope",
             Title = "Slope",
-            Description = "Computes a slope raster from an elevation surface using PostGIS ST_Slope.",
+            Description = "Computes a slope raster from an elevation source. Executed out-of-process by the heavyweight GDAL worker via gdaldem. Reads a base64-encoded GeoTIFF DEM from 'source' and publishes the slope raster as a GeoTIFF data-URI artifact.",
             Category = "surface",
             Parameters =
             [
-                .. SharedRasterSourceParameters,
-                Param("units", "Units", "Slope units. Allowed values: degrees, percent, radians. Defaults to degrees.", ProcessParameterValueType.Text, defaultValue: "degrees"),
+                .. NativeRasterSourceParameters,
+                Param("units", "Units", "Slope units. Allowed values: degrees, percent. Defaults to degrees. Radians are not emitted directly by gdaldem and are rejected at submit time.", ProcessParameterValueType.Text, defaultValue: "degrees"),
                 Param("zFactor", "Z Factor", "Vertical-to-horizontal scale factor. Must be > 0. Defaults to 1.0.", ProcessParameterValueType.FloatingPoint, defaultValue: "1.0"),
             ],
-            OutputArtifactKinds = [ArtifactKind.Raster]
+            OutputArtifactKinds = [ArtifactKind.Raster],
+            RuntimeProfile = RuntimeProfiles.Native
         },
         new ProcessDefinition
         {
             ProcessId = "surface.aspect",
             Title = "Aspect",
-            Description = "Computes a compass-bearing aspect raster from an elevation surface using PostGIS ST_Aspect.",
+            Description = "Computes a compass-bearing aspect raster from an elevation source. Executed out-of-process by the heavyweight GDAL worker via gdaldem aspect. Reads a base64-encoded GeoTIFF DEM from 'source' and publishes the aspect raster as a GeoTIFF data-URI artifact.",
             Category = "surface",
             Parameters =
             [
-                .. SharedRasterSourceParameters,
+                .. NativeRasterSourceParameters,
             ],
-            OutputArtifactKinds = [ArtifactKind.Raster]
+            OutputArtifactKinds = [ArtifactKind.Raster],
+            RuntimeProfile = RuntimeProfiles.Native
         },
         new ProcessDefinition
         {
             ProcessId = "surface.hillshade",
             Title = "Hillshade",
-            Description = "Computes a hillshade raster using illumination azimuth, altitude, and vertical scale inputs.",
+            Description = "Computes a hillshade raster using illumination azimuth, altitude, and vertical scale. Executed out-of-process by the heavyweight GDAL worker via gdaldem hillshade. Reads a base64-encoded GeoTIFF DEM from 'source' and publishes the hillshade raster as a GeoTIFF data-URI artifact.",
             Category = "surface",
             Parameters =
             [
-                .. SharedRasterSourceParameters,
+                .. NativeRasterSourceParameters,
                 Param("azimuth", "Azimuth", "Illumination azimuth in degrees clockwise from north. Must be between 0 and 360. Defaults to 315.", ProcessParameterValueType.FloatingPoint, defaultValue: "315"),
                 Param("altitude", "Altitude", "Illumination altitude above the horizon in degrees. Must be between 0 and 90. Defaults to 45.", ProcessParameterValueType.FloatingPoint, defaultValue: "45"),
                 Param("zFactor", "Z Factor", "Vertical-to-horizontal scale factor. Must be > 0. Defaults to 1.0.", ProcessParameterValueType.FloatingPoint, defaultValue: "1.0"),
             ],
-            OutputArtifactKinds = [ArtifactKind.Raster]
+            OutputArtifactKinds = [ArtifactKind.Raster],
+            RuntimeProfile = RuntimeProfiles.Native
         },
         new ProcessDefinition
         {
             ProcessId = "surface.rugosity-tri",
             Title = "Terrain Ruggedness Index",
-            Description = "Computes a terrain ruggedness index raster using PostGIS ST_TRI. The current canonical implementation supports only a 3x3 neighborhood (windowRadius=1).",
+            Description = "Computes a terrain ruggedness index raster. Executed out-of-process by the heavyweight GDAL worker via gdaldem TRI. The current canonical implementation supports only a 3x3 neighborhood (windowRadius=1).",
             Category = "surface",
             Parameters =
             [
-                .. SharedRasterSourceParameters,
+                .. NativeRasterSourceParameters,
                 Param("windowRadius", "Window Radius", "Neighborhood radius in pixels. Must currently be 1.", ProcessParameterValueType.WholeNumber, defaultValue: "1"),
             ],
-            OutputArtifactKinds = [ArtifactKind.Raster]
+            OutputArtifactKinds = [ArtifactKind.Raster],
+            RuntimeProfile = RuntimeProfiles.Native
         },
         new ProcessDefinition
         {
             ProcessId = "surface.rugosity-tpi",
             Title = "Topographic Position Index",
-            Description = "Computes a topographic position index raster using PostGIS ST_TPI. The current canonical implementation supports only a 3x3 neighborhood (windowRadius=1).",
+            Description = "Computes a topographic position index raster. Executed out-of-process by the heavyweight GDAL worker via gdaldem TPI. The current canonical implementation supports only a 3x3 neighborhood (windowRadius=1).",
             Category = "surface",
             Parameters =
             [
-                .. SharedRasterSourceParameters,
+                .. NativeRasterSourceParameters,
                 Param("windowRadius", "Window Radius", "Neighborhood radius in pixels. Must currently be 1.", ProcessParameterValueType.WholeNumber, defaultValue: "1"),
             ],
-            OutputArtifactKinds = [ArtifactKind.Raster]
+            OutputArtifactKinds = [ArtifactKind.Raster],
+            RuntimeProfile = RuntimeProfiles.Native
         },
         new ProcessDefinition
         {
             ProcessId = "surface.roughness",
             Title = "Roughness",
-            Description = "Computes a roughness raster using PostGIS ST_Roughness. The current canonical implementation supports only a 3x3 neighborhood (windowRadius=1).",
+            Description = "Computes a roughness raster. Executed out-of-process by the heavyweight GDAL worker via gdaldem roughness. The current canonical implementation supports only a 3x3 neighborhood (windowRadius=1).",
             Category = "surface",
             Parameters =
             [
-                .. SharedRasterSourceParameters,
+                .. NativeRasterSourceParameters,
                 Param("windowRadius", "Window Radius", "Neighborhood radius in pixels. Must currently be 1.", ProcessParameterValueType.WholeNumber, defaultValue: "1"),
             ],
-            OutputArtifactKinds = [ArtifactKind.Raster]
+            OutputArtifactKinds = [ArtifactKind.Raster],
+            RuntimeProfile = RuntimeProfiles.Native
         },
 
         // -----------------------------------------------------------------------
         // Raster operations (5)
-        // Raster analysis and mutation workflows surfaced through the seeded
-        // process catalog rather than a separate discovery plane.
+        // Raster analysis and mutation workflows implemented natively by the
+        // heavyweight GDAL worker via the gdalwarp / gdalinfo CLI tools. Declared
+        // RuntimeProfile = native so the submit path stamps the spec native and
+        // the claim fence routes the job to the GDAL worker and away from the
+        // lean dispatcher. The lean image validates these plans (parameter shape
+        // + per-process semantic rules) but never executes them.
         // -----------------------------------------------------------------------
         new ProcessDefinition
         {
             ProcessId = "raster.clip",
             Title = "Clip Raster",
-            Description = "Clips a raster to the supplied boundary geometry.",
+            Description = "Clips a raster to the supplied boundary geometry. Executed out-of-process by the heavyweight GDAL worker via gdalwarp -cutline. Reads a base64-encoded GeoTIFF from 'source' and the boundary WKB; publishes the clipped raster as a GeoTIFF data-URI artifact.",
             Category = "raster",
             Parameters =
             [
-                .. SharedRasterSourceParameters,
+                .. NativeRasterSourceParameters,
                 Param("boundary", "Boundary", "Clip boundary geometry in WKB format.", ProcessParameterValueType.Wkb, required: true),
                 Param("boundarySrid", "Boundary SRID", "Spatial reference identifier of the boundary geometry when it differs from the raster SRID.", ProcessParameterValueType.Srid),
             ],
-            OutputArtifactKinds = [ArtifactKind.Raster]
+            OutputArtifactKinds = [ArtifactKind.Raster],
+            RuntimeProfile = RuntimeProfiles.Native
         },
         new ProcessDefinition
         {
             ProcessId = "raster.reproject",
             Title = "Reproject Raster",
-            Description = "Reprojects a raster into a new spatial reference using the requested resampling algorithm.",
+            Description = "Reprojects a raster into a new spatial reference using the requested resampling algorithm. Executed out-of-process by the heavyweight GDAL worker via gdalwarp -t_srs. Reads a base64-encoded GeoTIFF from 'source'; publishes the reprojected GeoTIFF as a data-URI artifact.",
             Category = "raster",
             Parameters =
             [
-                .. SharedRasterSourceParameters,
+                .. NativeRasterSourceParameters,
                 Param("targetSrid", "Target SRID", "Target spatial reference identifier.", ProcessParameterValueType.Srid, required: true),
                 Param("resampling", "Resampling", "Resampling algorithm. Allowed values: nearestneighbor, bilinear, cubic, lanczos. Defaults to bilinear.", ProcessParameterValueType.Text, defaultValue: "bilinear"),
             ],
-            OutputArtifactKinds = [ArtifactKind.Raster]
+            OutputArtifactKinds = [ArtifactKind.Raster],
+            RuntimeProfile = RuntimeProfiles.Native
         },
         new ProcessDefinition
         {
             ProcessId = "raster.statistics",
             Title = "Raster Statistics",
-            Description = "Computes per-band statistics for a raster. Band selection is optional and uses a comma-separated list.",
+            Description = "Computes per-band statistics for a raster. Band selection is optional and uses a comma-separated list. Executed out-of-process by the heavyweight GDAL worker via gdalinfo -stats. Publishes a JSON scalar artifact (min/max/mean/stddev per band).",
             Category = "raster",
             Parameters =
             [
-                .. SharedRasterSourceParameters,
+                .. NativeRasterSourceParameters,
                 Param("bands", "Bands", "Optional comma-separated 1-based band numbers to analyze. When omitted, all bands are analyzed.", ProcessParameterValueType.Text),
             ],
-            OutputArtifactKinds = [ArtifactKind.Scalar]
+            OutputArtifactKinds = [ArtifactKind.Scalar],
+            RuntimeProfile = RuntimeProfiles.Native
         },
         new ProcessDefinition
         {
             ProcessId = "raster.histogram",
             Title = "Raster Histogram",
-            Description = "Computes per-band histograms for a raster.",
+            Description = "Computes per-band histograms for a raster. Executed out-of-process by the heavyweight GDAL worker via gdalinfo -hist. Publishes a JSON scalar artifact (256 bin counts per band, fixed by gdalinfo).",
             Category = "raster",
             Parameters =
             [
-                .. SharedRasterSourceParameters,
+                .. NativeRasterSourceParameters,
                 Param("bands", "Bands", "Optional comma-separated 1-based band numbers to analyze. When omitted, all bands are analyzed.", ProcessParameterValueType.Text),
-                Param("binCount", "Bin Count", "Histogram bin count. Must be a positive integer. Defaults to 256.", ProcessParameterValueType.WholeNumber, defaultValue: "256"),
             ],
-            OutputArtifactKinds = [ArtifactKind.Scalar]
+            OutputArtifactKinds = [ArtifactKind.Scalar],
+            RuntimeProfile = RuntimeProfiles.Native
         },
         new ProcessDefinition
         {
             ProcessId = "raster.zonal-statistics",
             Title = "Zonal Statistics",
-            Description = "Computes zonal aggregates by intersecting a raster with polygonal zones from another layer.",
+            Description = "Computes zonal aggregates by intersecting a raster with polygonal zones. Executed out-of-process by the heavyweight GDAL worker via per-zone gdalwarp clip + gdalinfo. Reads 'source' (raster) and 'zones' (inline GeoJSON FeatureCollection of zone polygons); zonesLayerId-driven sourcing is deferred to a follow-on.",
             Category = "raster",
             Parameters =
             [
-                .. SharedRasterSourceParameters,
-                Param("zonesLayerId", "Zones Layer", "Layer identifier whose feature geometries define the aggregation zones.", ProcessParameterValueType.LayerId, required: true),
+                .. NativeRasterSourceParameters,
+                Param("zones", "Zones Inline", "Inline zone polygons as a base64-encoded GeoJSON FeatureCollection. Required by the native worker execution path; zonesLayerId-resolved sourcing is a follow-on.", ProcessParameterValueType.Text, required: true),
+                Param("zonesLayerId", "Zones Layer", "Layer identifier whose feature geometries define the aggregation zones. Optional today; reserved for submit-time zones-layer-to-zones resolution (a follow-on).", ProcessParameterValueType.LayerId),
                 Param("band", "Band", "1-based raster band to aggregate. Defaults to 1.", ProcessParameterValueType.WholeNumber, defaultValue: "1"),
                 Param("statistics", "Statistics", "Comma-separated stat names. Allowed values: count, sum, mean, min, max, stddev, variance.", ProcessParameterValueType.Text, defaultValue: "count,mean,stddev,min,max,sum"),
             ],
-            OutputArtifactKinds = [ArtifactKind.Table]
+            OutputArtifactKinds = [ArtifactKind.Table],
+            RuntimeProfile = RuntimeProfiles.Native
         },
 
         // -----------------------------------------------------------------------
@@ -981,13 +1000,29 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         Param("timeRelation", "Time Relation", "Temporal predicate paired with the 'time' filter.", ProcessParameterValueType.Text),
     ];
 
-    // Shared layer/raster selector used by surface, raster, and raster-conversion
-    // families. `rasterId` is modeled as Text rather than WholeNumber so the
-    // validator can admit full 64-bit ids instead of truncating to Int32.
+    // Shared layer/raster selector used by the validation-only raster-conversion
+    // family (conversion.raster-*) where layerId still carries the eventual
+    // execution intent even though no executor is wired yet. `rasterId` is
+    // modeled as Text rather than WholeNumber so the validator can admit full
+    // 64-bit ids instead of truncating to Int32.
     private static readonly ProcessParameterSpec[] SharedRasterSourceParameters =
     [
         Param("layerId", "Layer", "Target raster layer identifier.", ProcessParameterValueType.LayerId, required: true),
         Param("rasterId", "Raster", "Optional raster identifier. When omitted, the primary raster for the layer is used. When supplied, it must be a positive 64-bit integer.", ProcessParameterValueType.Text),
+    ];
+
+    // Native worker raster source selector for surface.* and raster.* entries.
+    // The native GDAL worker reads a base64 GeoTIFF directly from 'source';
+    // layer-resolved sourcing (`layerId`/`rasterId`) is a follow-on, so both are
+    // declared OPTIONAL here even though future submit-side resolution will
+    // populate `source` from them. Marking `source` as REQUIRED keeps the
+    // catalog honest about what the worker accepts today: plans that omit
+    // `source` would route to the native worker and fail at runtime.
+    private static readonly ProcessParameterSpec[] NativeRasterSourceParameters =
+    [
+        Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes. Required by the native worker execution path; layer-resolved sourcing (layerId/rasterId) is a follow-on.", ProcessParameterValueType.Text, required: true),
+        Param("layerId", "Layer", "Target raster layer identifier. Optional today; reserved for submit-time layer-to-source resolution (a follow-on).", ProcessParameterValueType.LayerId),
+        Param("rasterId", "Raster", "Optional raster identifier. Reserved for submit-time layer-to-source resolution (a follow-on). When supplied, it must be a positive 64-bit integer.", ProcessParameterValueType.Text),
     ];
 
     private static ProcessParameterSpec Param(
