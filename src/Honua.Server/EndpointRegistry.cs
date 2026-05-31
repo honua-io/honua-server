@@ -844,6 +844,18 @@ public static class EndpointRegistry
         new("POST", "/rest/services/Utilities/Geometry/GeometryServer/generalize"),
         new("GET", "/rest/services/Utilities/Geometry/GeometryServer/labelPoints"),
         new("POST", "/rest/services/Utilities/Geometry/GeometryServer/labelPoints"),
+        new("GET", "/rest/services/Utilities/Geometry/GeometryServer/cut"),
+        new("POST", "/rest/services/Utilities/Geometry/GeometryServer/cut"),
+        new("GET", "/rest/services/Utilities/Geometry/GeometryServer/trimExtend"),
+        new("POST", "/rest/services/Utilities/Geometry/GeometryServer/trimExtend"),
+        new("GET", "/rest/services/Utilities/Geometry/GeometryServer/offset"),
+        new("POST", "/rest/services/Utilities/Geometry/GeometryServer/offset"),
+        new("GET", "/rest/services/Utilities/Geometry/GeometryServer/autoComplete"),
+        new("POST", "/rest/services/Utilities/Geometry/GeometryServer/autoComplete"),
+        new("GET", "/rest/services/Utilities/Geometry/GeometryServer/reshape"),
+        new("POST", "/rest/services/Utilities/Geometry/GeometryServer/reshape"),
+        new("GET", "/rest/services/Utilities/Geometry/GeometryServer/findTransformations"),
+        new("POST", "/rest/services/Utilities/Geometry/GeometryServer/findTransformations"),
 
         // NAServer minimal mobile routing compatibility (#366)
         new("POST", "/rest/services/{serviceId}/NAServer/Route/solve"),
