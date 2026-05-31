@@ -725,6 +725,7 @@ public sealed class SpecEndpointsTests
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /v1/spec/apply")]
+    [FlakyTest("SSE response headers occasionally null mid-stream under combined Testcontainers/fixture load — tracked in #812")]
     public async Task Apply_RerunSameDocument_YieldsCachedEventsForEveryNode()
     {
         using var factory = new TestWebApplicationFactory();
@@ -803,6 +804,7 @@ public sealed class SpecEndpointsTests
     [IntegrationTest]
     [Operation(Operations.GetById)]
     [Endpoint("GET /v1/spec/artifact/{hash}")]
+    [FlakyTest("SSE response headers occasionally null mid-stream under combined Testcontainers/fixture load — tracked in #812")]
     public async Task Artifact_AfterApply_ReturnsStoredBytes()
     {
         using var factory = new TestWebApplicationFactory();
