@@ -40,6 +40,7 @@ using Honua.ControlPlane;
 using Honua.FileStorage;
 using Honua.Server.Features.HealthCheck;
 using Honua.Import;
+using Honua.Import.Features.I3sImport;
 using Honua.Migration;
 using Honua.Import.FileImport;
 using Honua.Import.RasterImport;
@@ -1116,6 +1117,9 @@ app.MapOgcCoverageImportEndpoints();
 
 // Configure legacy OGC WCS coverage import endpoints (issue #1030 slice 3)
 app.MapOgcWcsImportEndpoints();
+
+// Configure Esri I3S/.slpk scene-layer → 3D Tiles import endpoints (#1268)
+app.MapI3sSlpkImportEndpoints();
 
 // Configure GeoServer migration run admin orchestration endpoints (issue #1015 slice 5)
 app.MapMigrationRunAdminEndpoints();

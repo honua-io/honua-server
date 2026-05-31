@@ -5,6 +5,7 @@ using Honua.Core.Features.Compliance;
 using Honua.Core.Features.Metadata;
 using Honua.Core.Features.Temporal;
 using Honua.Server.Features.Temporal;
+using Honua.Import.Features.I3sImport;
 using Honua.Postgres.Features.Scene;
 using Honua.Server.Features.Admin;
 using Honua.ControlPlane;
@@ -98,6 +99,7 @@ internal static class FeatureRegistrationExtensions
         services.AddTerrain();
         services.AddScene(configuration);
         services.AddPostgresSceneRegistry(configuration);
+        services.AddI3sSlpkImport(configuration);
         services.AddElevation();
         services.AddSceneGeneration(configuration);
         services.AddPrintingTools();

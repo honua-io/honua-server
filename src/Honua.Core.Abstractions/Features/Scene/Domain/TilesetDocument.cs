@@ -110,14 +110,33 @@ public sealed class TileNode
 }
 
 /// <summary>
-/// Tile bounding volume; v1 emits a WGS-84 region in radians (west, south,
-/// east, north, minHeight, maxHeight).
+/// Tile bounding volume per the OGC 3D Tiles 1.1 specification. Exactly one of
+/// <see cref="Region"/>, <see cref="Sphere"/>, or <see cref="Box"/> should be
+/// populated. The deterministic generation pipeline emits a WGS-84
+/// <see cref="Region"/>; converters that ingest source formats (I3S MBS,
+/// gltf/i3dm tiles, etc.) may emit <see cref="Sphere"/> or <see cref="Box"/>
+/// instead.
 /// </summary>
 public sealed class BoundingVolume
 {
     /// <summary>WGS-84 region (radians); 6 elements: west, south, east, north, minHeight, maxHeight.</summary>
     [JsonPropertyName("region")]
-    public double[] Region { get; set; } = new double[6];
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double[]? Region { get; set; }
+
+    /// <summary>ECEF bounding sphere; 4 elements: centerX, centerY, centerZ (meters), radius (meters).</summary>
+    [JsonPropertyName("sphere")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double[]? Sphere { get; set; }
+
+    /// <summary>
+    /// Oriented bounding box; 12 elements per the OGC 3D Tiles spec
+    /// (centerX, centerY, centerZ, halfAxis0X, halfAxis0Y, halfAxis0Z,
+    /// halfAxis1X, halfAxis1Y, halfAxis1Z, halfAxis2X, halfAxis2Y, halfAxis2Z).
+    /// </summary>
+    [JsonPropertyName("box")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double[]? Box { get; set; }
 }
 
 /// <summary>

@@ -44,12 +44,12 @@ public sealed class TilesetDocumentWriterTests
             geometricError: 1.0,
             tileContentUris: ["a.glb"]);
 
-        doc.Root.BoundingVolume.Region[0].Should().BeApproximately(-Math.PI, 1e-12);
-        doc.Root.BoundingVolume.Region[1].Should().BeApproximately(-Math.PI / 2, 1e-12);
-        doc.Root.BoundingVolume.Region[2].Should().BeApproximately(Math.PI, 1e-12);
-        doc.Root.BoundingVolume.Region[3].Should().BeApproximately(Math.PI / 2, 1e-12);
-        doc.Root.BoundingVolume.Region[4].Should().Be(-10.0);
-        doc.Root.BoundingVolume.Region[5].Should().Be(10.0);
+        doc.Root.BoundingVolume.Region![0].Should().BeApproximately(-Math.PI, 1e-12);
+        doc.Root.BoundingVolume.Region![1].Should().BeApproximately(-Math.PI / 2, 1e-12);
+        doc.Root.BoundingVolume.Region![2].Should().BeApproximately(Math.PI, 1e-12);
+        doc.Root.BoundingVolume.Region![3].Should().BeApproximately(Math.PI / 2, 1e-12);
+        doc.Root.BoundingVolume.Region![4].Should().Be(-10.0);
+        doc.Root.BoundingVolume.Region![5].Should().Be(10.0);
     }
 
     [UnitTest]
