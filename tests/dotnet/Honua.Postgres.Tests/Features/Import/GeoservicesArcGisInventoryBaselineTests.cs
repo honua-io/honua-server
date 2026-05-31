@@ -236,6 +236,14 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
         elevation.DomainRange.Should().NotBeNull();
         elevation.DomainRange!.Min.Should().Be("0");
         elevation.DomainRange.Max.Should().Be("8848");
+
+        var inspected = resource.Fields.Single(f => f.Name == "INSPECTED_AT");
+        inspected.DomainType.Should().Be("range");
+        inspected.DomainName.Should().Be("InspectionWindow");
+        inspected.DomainRange.Should().NotBeNull();
+        inspected.DomainRange!.Min.Should().Be("\"2020-01-01\"",
+            "string range bounds must keep JSON quoting so typed ranges round-trip without ambiguity");
+        inspected.DomainRange.Max.Should().Be("\"2026-12-31\"");
     }
 
     [Fact]
@@ -337,7 +345,9 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
             "\"fields\":[" +
                 "{\"name\":\"OBJECTID\",\"type\":\"esriFieldTypeOID\"}," +
                 "{\"name\":\"ELEVATION\",\"type\":\"esriFieldTypeInteger\",\"nullable\":true," +
-                    "\"domain\":{\"type\":\"range\",\"name\":\"ElevationRange\",\"range\":[0,8848]}}" +
+                    "\"domain\":{\"type\":\"range\",\"name\":\"ElevationRange\",\"range\":[0,8848]}}," +
+                "{\"name\":\"INSPECTED_AT\",\"type\":\"esriFieldTypeDate\",\"nullable\":true," +
+                    "\"domain\":{\"type\":\"range\",\"name\":\"InspectionWindow\",\"range\":[\"2020-01-01\",\"2026-12-31\"]}}" +
             "]}";
 
         var countJson = "{\"count\":1}";

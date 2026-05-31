@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Migration.Services;
@@ -274,6 +275,70 @@ public sealed class GeoservicesImportServiceScanTests
 
         var objectId = layerInfo.Fields.Single(f => f.Name == "OBJECTID");
         objectId.Domain.Should().BeNull("fields without a domain should not synthesize one");
+    }
+
+    [Fact]
+    public void BuildFieldDomains_OverCapCodedValueDomain_DropsFieldFromPublishMap()
+    {
+        // Mirror inventory's CodedValueDomainCap=100 truncation policy so the
+        // domain that reaches LayerPublishRequest.FieldDomains stays consistent
+        // with the inventory artifact (which omits values when truncated).
+        var withinCap = BuildCodedValueDomain(100);
+        var overCap = BuildCodedValueDomain(105);
+        var rangeDomain = new MetadataV2FieldDomain
+        {
+            Type = "range",
+            Name = "ElevationRange",
+            Range =
+            [
+                System.Text.Json.JsonSerializer.SerializeToElement(0),
+                System.Text.Json.JsonSerializer.SerializeToElement(8848)
+            ]
+        };
+
+        var fields = new[]
+        {
+            new GeoservicesFieldInfo { Name = "WITHIN_CAP", Type = "esriFieldTypeString", Domain = withinCap },
+            new GeoservicesFieldInfo { Name = "OVER_CAP", Type = "esriFieldTypeString", Domain = overCap },
+            new GeoservicesFieldInfo { Name = "ELEVATION", Type = "esriFieldTypeInteger", Domain = rangeDomain },
+            new GeoservicesFieldInfo { Name = "PLAIN", Type = "esriFieldTypeString", Domain = null }
+        };
+
+        var method = typeof(GeoservicesImportService).GetMethod(
+            "BuildFieldDomains",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        method.Should().NotBeNull();
+
+        var result = method!.Invoke(null, [fields]);
+        var map = (System.Collections.Generic.IReadOnlyDictionary<string, MetadataV2FieldDomain>?)result;
+
+        map.Should().NotBeNull();
+        map!.Keys.Should().BeEquivalentTo(["WITHIN_CAP", "ELEVATION"]);
+        map["WITHIN_CAP"].Should().BeSameAs(withinCap);
+        map["ELEVATION"].Should().BeSameAs(rangeDomain);
+        map.Should().NotContainKey("OVER_CAP",
+            "over-cap coded-value domains are dropped to match inventory truncation semantics");
+    }
+
+    private static MetadataV2FieldDomain BuildCodedValueDomain(int entryCount)
+    {
+        var values = new MetadataV2CodedValue[entryCount];
+        for (var i = 0; i < entryCount; i++)
+        {
+            var code = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Z{i:D3}");
+            values[i] = new MetadataV2CodedValue
+            {
+                Code = System.Text.Json.JsonSerializer.SerializeToElement(code),
+                Name = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Zone {i:D3}")
+            };
+        }
+
+        return new MetadataV2FieldDomain
+        {
+            Type = "codedValue",
+            Name = "ZoningCode",
+            CodedValues = values
+        };
     }
 
     [Fact]

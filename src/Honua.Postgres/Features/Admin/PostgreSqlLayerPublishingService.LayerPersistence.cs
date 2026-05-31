@@ -12,7 +12,9 @@
 // catalog-mutating SQL stays together and is easy to review for transactional consistency.
 
 using System.Globalization;
+using System.Text.Json;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -284,9 +286,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 max_length,
                 nullable,
                 default_value,
-                description
+                description,
+                domain
             )
-            VALUES (@layerId, @fieldName, @fieldType, @fieldOrder, @maxLength, @nullable, @defaultValue, @description);
+            VALUES (@layerId, @fieldName, @fieldType, @fieldOrder, @maxLength, @nullable, @defaultValue, @description, @domain);
             """;
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
@@ -298,6 +301,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var nullableParameter = command.Parameters.Add("@nullable", NpgsqlDbType.Boolean);
         var defaultValueParameter = command.Parameters.Add("@defaultValue", NpgsqlDbType.Text);
         var descriptionParameter = command.Parameters.Add("@description", NpgsqlDbType.Text);
+        var domainParameter = command.Parameters.Add("@domain", NpgsqlDbType.Jsonb);
 
         for (var i = 0; i < fields.Count; i++)
         {
@@ -310,6 +314,15 @@ internal sealed partial class PostgreSqlLayerPublishingService
             nullableParameter.Value = field.Nullable;
             defaultValueParameter.Value = (object?)field.DefaultValue ?? DBNull.Value;
             descriptionParameter.Value = (object?)field.Description ?? DBNull.Value;
+            // Use the source-generated context (same path as
+            // PostgresLayerFieldConfigurationStore) so an operator viewing the
+            // admin field-configuration response sees the same domain JSON the
+            // V2 graph + queryDomains expose.
+            domainParameter.Value = field.Domain is null
+                ? DBNull.Value
+                : JsonSerializer.Serialize(
+                    field.Domain,
+                    MetadataV2JsonContext.Default.MetadataV2FieldDomain);
 
             await command.ExecuteNonQueryAsync(cancellationToken);
         }

@@ -242,11 +242,14 @@ internal sealed partial class GeoservicesImportService
         var index = 0;
         foreach (var bound in rangeElement.EnumerateArray())
         {
-            var raw = ReadJsonScalarRaw(bound);
-            if (raw is null)
+            // Range bounds are stored as raw JSON token text so typed ranges
+            // (numeric, date strings, etc.) round-trip without losing quoting.
+            if (bound.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
             {
                 continue;
             }
+
+            var raw = bound.GetRawText();
 
             if (index == 0)
             {
@@ -272,20 +275,25 @@ internal sealed partial class GeoservicesImportService
         return new MigrationInventoryDomainRange { Min = min, Max = max };
     }
 
-    private static string? ReadJsonScalarRaw(JsonElement element)
-        => element.ValueKind switch
+    private static string? ConvertCodedValueCode(JsonElement entry)
+    {
+        if (!entry.TryGetProperty("code", out var codeElement))
         {
-            JsonValueKind.String => element.GetString(),
-            JsonValueKind.Number => element.GetRawText(),
+            return null;
+        }
+
+        // Coded-value codes are stored as unquoted scalar text (the inventory
+        // model documents Code as a string, and existing baselines/tests assert
+        // bare values such as "R1" rather than "\"R1\"").
+        return codeElement.ValueKind switch
+        {
+            JsonValueKind.String => codeElement.GetString(),
+            JsonValueKind.Number => codeElement.GetRawText(),
             JsonValueKind.True => "true",
             JsonValueKind.False => "false",
             _ => null
         };
-
-    private static string? ConvertCodedValueCode(JsonElement entry)
-        => entry.TryGetProperty("code", out var codeElement)
-            ? ReadJsonScalarRaw(codeElement)
-            : null;
+    }
 
     private static MigrationInventoryStyle? BuildRendererStyle(
         string containerId,

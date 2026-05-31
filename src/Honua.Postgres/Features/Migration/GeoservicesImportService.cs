@@ -381,6 +381,16 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
                 continue;
             }
 
+            // Match the inventory-side cap (CodedValueDomainCap = 100): when a
+            // coded-value source exceeds the cap we drop the domain from the
+            // publish payload so the persisted/served domain stays consistent
+            // with the inventory artifact (which omits values when truncated).
+            if (string.Equals(field.Domain.Type, "codedValue", StringComparison.Ordinal) &&
+                field.Domain.CodedValues.Count > CodedValueDomainCap)
+            {
+                continue;
+            }
+
             map ??= new Dictionary<string, MetadataV2FieldDomain>(StringComparer.OrdinalIgnoreCase);
             map[field.Name] = field.Domain;
         }
