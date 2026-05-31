@@ -149,12 +149,17 @@ public static class SharingRestEndpoints
                 ExpiresAt: expiresAt),
             context.RequestAborted).ConfigureAwait(false);
 
-        PortalTokenLog.TokenIssued(
-            logger,
-            LogValueRedactor.Hash(verified.PrincipalId),
-            LogValueRedactor.Hash(verified.TenantId ?? tenantContext.TenantId ?? string.Empty),
-            clientType.ToString(),
-            issuance.ExpiresAt);
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+#pragma warning disable CA1873 // LogValueRedactor.Hash / ToString only invoked inside the IsEnabled gate above
+            PortalTokenLog.TokenIssued(
+                logger,
+                LogValueRedactor.Hash(verified.PrincipalId),
+                LogValueRedactor.Hash(verified.TenantId ?? tenantContext.TenantId ?? string.Empty),
+                clientType.ToString(),
+                issuance.ExpiresAt);
+#pragma warning restore CA1873
+        }
 
         var response = new GenerateTokenResponse
         {
