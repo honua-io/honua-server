@@ -27,7 +27,8 @@ namespace Honua.Postgres.Features.Admin;
 internal sealed partial class PostgreSqlLayerPublishingService(
     ITableDiscoveryService tableDiscoveryService,
     IMetadataV2GraphStore metadataGraphStore,
-    ILogger<PostgreSqlLayerPublishingService> logger) : ILayerPublishingService
+    ILogger<PostgreSqlLayerPublishingService> logger,
+    string? metadataSchema = null) : ILayerPublishingService
 {
     private const string DefaultServiceName = "default";
     private const int CatalogExtentSrid = 4326;
@@ -46,6 +47,16 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     private readonly ITableDiscoveryService _tableDiscoveryService = tableDiscoveryService;
     private readonly IMetadataV2GraphStore _metadataGraphStore = metadataGraphStore;
     private readonly ILogger<PostgreSqlLayerPublishingService> _logger = logger;
+
+    // The Honua-managed metadata schema that owns the shared `features` table
+    // (default 'honua', overridable via Database:Schema). Only a `features` table in
+    // THIS schema is the shared multi-layer table whose rows carry the JSONB
+    // `attributes` column and the `layer_id` discriminator; a user source table that
+    // merely happens to be named `features` in another schema (e.g. public.features)
+    // must NOT be treated as the shared table. (honua-server#1238 follow-up.)
+    private readonly string _metadataSchema = string.IsNullOrWhiteSpace(metadataSchema)
+        ? "honua"
+        : metadataSchema.Trim();
 
     public async Task<IReadOnlyList<PublishedLayerSummary>> ListPublishedLayersAsync(
         string connectionString,
