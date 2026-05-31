@@ -202,6 +202,15 @@ public static class MigrationCatalogReconciliationCodes
     /// <summary>Coded values captured at inventory time are not all present on the published domain.</summary>
     public const string DomainValuesMismatch = "catalog.field.domain-values-mismatch";
 
+    /// <summary>The published domain type (e.g. <c>codedValue</c> vs <c>range</c>) differs from the inventory-captured domain type.</summary>
+    public const string DomainTypeMismatch = "catalog.field.domain-type-mismatch";
+
+    /// <summary>The published range-domain bounds differ from the inventory-captured bounds.</summary>
+    public const string DomainRangeMismatch = "catalog.field.domain-range-mismatch";
+
+    /// <summary>The inventory captured a coded-value domain over the capture cap; the published catalog intentionally omits the values to stay consistent with the inventory artifact.</summary>
+    public const string DomainTruncated = "catalog.field.domain-truncated";
+
     /// <summary>The published geometry type differs from the inventory geometry type.</summary>
     public const string GeometryTypeMismatch = "catalog.spatial.geometry-type-mismatch";
 

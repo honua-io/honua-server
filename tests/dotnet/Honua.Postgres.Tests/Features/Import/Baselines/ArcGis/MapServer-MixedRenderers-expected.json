@@ -94,16 +94,19 @@
         {
           "name": "GEOID",
           "fieldType": "esriFieldTypeString",
-          "nullable": false
+          "nullable": false,
+          "domainTruncated": false
         },
         {
           "name": "OBJECTID",
-          "fieldType": "esriFieldTypeOID"
+          "fieldType": "esriFieldTypeOID",
+          "domainTruncated": false
         },
         {
           "name": "POP_DENS",
           "fieldType": "esriFieldTypeDouble",
-          "nullable": true
+          "nullable": true,
+          "domainTruncated": false
         }
       ],
       "styleIds": [
@@ -146,12 +149,14 @@
       "fields": [
         {
           "name": "OBJECTID",
-          "fieldType": "esriFieldTypeOID"
+          "fieldType": "esriFieldTypeOID",
+          "domainTruncated": false
         },
         {
           "name": "WEIGHT",
           "fieldType": "esriFieldTypeDouble",
-          "nullable": true
+          "nullable": true,
+          "domainTruncated": false
         }
       ],
       "styleIds": [

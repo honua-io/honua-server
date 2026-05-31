@@ -80,17 +80,20 @@
         {
           "name": "AREA_SQM",
           "fieldType": "esriFieldTypeDouble",
-          "nullable": true
+          "nullable": true,
+          "domainTruncated": false
         },
         {
           "name": "OBJECTID",
-          "fieldType": "esriFieldTypeOID"
+          "fieldType": "esriFieldTypeOID",
+          "domainTruncated": false
         },
         {
           "name": "PARCEL_ID",
           "alias": "Parcel ID",
           "fieldType": "esriFieldTypeString",
-          "nullable": false
+          "nullable": false,
+          "domainTruncated": false
         },
         {
           "name": "ZONING",
@@ -112,7 +115,8 @@
               "code": "R2",
               "name": "Residential 2"
             }
-          ]
+          ],
+          "domainTruncated": false
         }
       ],
       "styleIds": [
@@ -152,17 +156,20 @@
       "fields": [
         {
           "name": "OBJECTID",
-          "fieldType": "esriFieldTypeOID"
+          "fieldType": "esriFieldTypeOID",
+          "domainTruncated": false
         },
         {
           "name": "PERMIT_NO",
           "fieldType": "esriFieldTypeString",
-          "nullable": false
+          "nullable": false,
+          "domainTruncated": false
         },
         {
           "name": "STATUS",
           "fieldType": "esriFieldTypeString",
-          "nullable": false
+          "nullable": false,
+          "domainTruncated": false
         }
       ],
       "styleIds": [

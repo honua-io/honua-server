@@ -871,6 +871,14 @@
                   }
                 },
                 {
+                  "JsonName": "domainTruncated",
+                  "ClrName": "DomainTruncated",
+                  "Container": "scalar",
+                  "ElementType": "bool",
+                  "Required": false,
+                  "Nullable": false
+                },
+                {
                   "JsonName": "domainType",
                   "ClrName": "DomainType",
                   "Container": "scalar",

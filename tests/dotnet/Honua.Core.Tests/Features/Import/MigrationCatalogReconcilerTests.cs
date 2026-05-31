@@ -162,6 +162,197 @@ public sealed class MigrationCatalogReconcilerTests
     }
 
     [Fact]
+    public void Reconcile_WhenInventoryDomainTruncated_EmitsInfoSeverityDomainTruncatedAndNoFailFinding()
+    {
+        // The publish path drops over-cap coded-value domains to stay consistent
+        // with the inventory artifact (which omits values when truncated). The
+        // reconciler must recognise this as the expected paired state instead of
+        // failing on the missing publish-side domain.
+        var inventory = BuildInventoryResource() with
+        {
+            Fields =
+            [
+                BuildInventoryResource().Fields[0],
+                BuildInventoryResource().Fields[1],
+                new MigrationInventoryField
+                {
+                    Name = "TYPE",
+                    FieldType = "esriFieldTypeString",
+                    Nullable = true,
+                    DomainType = "codedValue",
+                    DomainName = "ParcelType",
+                    DomainValues = null,
+                    DomainTruncated = true
+                }
+            ]
+        };
+        var published = BuildPublishedResource() with
+        {
+            SchemaFields = BuildPublishedResource().SchemaFields
+                .Select(field => field.Name == "TYPE" ? field with { Domain = null } : field)
+                .ToArray()
+        };
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(inventory, published);
+
+        outcome.Findings.Should().NotContain(f => f.Code == MigrationCatalogReconciliationCodes.DomainMissing);
+        var truncated = outcome.Findings.Should()
+            .ContainSingle(f => f.Code == MigrationCatalogReconciliationCodes.DomainTruncated).Subject;
+        truncated.Severity.Should().Be(MigrationCatalogReconciliationSeverities.Info);
+        truncated.Subject.Should().Be("TYPE");
+        outcome.Classification.Should().Be(
+            MigrationCatalogReconciliationClassifications.Pass,
+            "informational findings do not gate the resource");
+    }
+
+    [Fact]
+    public void Reconcile_WhenPublishedDomainTypeDiffers_EmitsDomainTypeMismatchAndSkipsShapeChecks()
+    {
+        var inventory = BuildInventoryResource();
+        var published = BuildPublishedResource() with
+        {
+            SchemaFields = BuildPublishedResource().SchemaFields
+                .Select(field => field.Name == "TYPE"
+                    ? field with
+                    {
+                        Domain = new MetadataV2FieldDomain
+                        {
+                            Name = "ParcelType",
+                            Type = "range",
+                            Range =
+                            [
+                                JsonDocument.Parse("0").RootElement,
+                                JsonDocument.Parse("100").RootElement
+                            ]
+                        }
+                    }
+                    : field)
+                .ToArray()
+        };
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(inventory, published);
+
+        var finding = outcome.Findings.Should()
+            .ContainSingle(f => f.Code == MigrationCatalogReconciliationCodes.DomainTypeMismatch).Subject;
+        finding.Severity.Should().Be(MigrationCatalogReconciliationSeverities.Fail);
+        finding.Subject.Should().Be("TYPE");
+        finding.Expected.Should().Be("codedValue");
+        finding.Actual.Should().Be("range");
+        outcome.Findings.Should()
+            .NotContain(f => f.Code == MigrationCatalogReconciliationCodes.DomainValuesMismatch,
+                "shape-specific checks are skipped once the domain class swaps");
+        outcome.Findings.Should()
+            .NotContain(f => f.Code == MigrationCatalogReconciliationCodes.DomainNameMismatch);
+    }
+
+    [Fact]
+    public void Reconcile_WhenInventoryRangeBoundsDifferFromPublished_EmitsDomainRangeMismatch()
+    {
+        var inventory = BuildInventoryResource() with
+        {
+            Fields =
+            [
+                BuildInventoryResource().Fields[0],
+                BuildInventoryResource().Fields[1],
+                BuildInventoryResource().Fields[2],
+                new MigrationInventoryField
+                {
+                    Name = "ELEVATION",
+                    FieldType = "esriFieldTypeInteger",
+                    Nullable = true,
+                    DomainType = "range",
+                    DomainName = "ElevationRange",
+                    DomainRange = new MigrationInventoryDomainRange { Min = "0", Max = "8848" }
+                }
+            ]
+        };
+        var publishedTemplate = BuildPublishedResource();
+        var published = publishedTemplate with
+        {
+            SchemaFields =
+            [
+                .. publishedTemplate.SchemaFields,
+                new MetadataV2Field
+                {
+                    Name = "ELEVATION",
+                    Type = MetadataV2FieldType.Integer,
+                    Nullable = true,
+                    Domain = new MetadataV2FieldDomain
+                    {
+                        Name = "ElevationRange",
+                        Type = "range",
+                        Range =
+                        [
+                            JsonDocument.Parse("0").RootElement,
+                            JsonDocument.Parse("9000").RootElement
+                        ]
+                    }
+                }
+            ]
+        };
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(inventory, published);
+
+        var finding = outcome.Findings.Should()
+            .ContainSingle(f => f.Code == MigrationCatalogReconciliationCodes.DomainRangeMismatch).Subject;
+        finding.Severity.Should().Be(MigrationCatalogReconciliationSeverities.Fail);
+        finding.Subject.Should().Be("ELEVATION");
+        finding.Expected.Should().Be("[0,8848]");
+        finding.Actual.Should().Be("[0,9000]");
+    }
+
+    [Fact]
+    public void Reconcile_WhenInventoryRangeMatchesPublished_ProducesNoRangeFinding()
+    {
+        var inventory = BuildInventoryResource() with
+        {
+            Fields =
+            [
+                BuildInventoryResource().Fields[0],
+                BuildInventoryResource().Fields[1],
+                BuildInventoryResource().Fields[2],
+                new MigrationInventoryField
+                {
+                    Name = "INSPECTED_AT",
+                    FieldType = "esriFieldTypeDate",
+                    Nullable = true,
+                    DomainType = "range",
+                    DomainName = "InspectionWindow",
+                    DomainRange = new MigrationInventoryDomainRange { Min = "\"2020-01-01\"", Max = "\"2026-12-31\"" }
+                }
+            ]
+        };
+        var publishedTemplate = BuildPublishedResource();
+        var published = publishedTemplate with
+        {
+            SchemaFields =
+            [
+                .. publishedTemplate.SchemaFields,
+                new MetadataV2Field
+                {
+                    Name = "INSPECTED_AT",
+                    Type = MetadataV2FieldType.DateTime,
+                    Nullable = true,
+                    Domain = new MetadataV2FieldDomain
+                    {
+                        Name = "InspectionWindow",
+                        Type = "range",
+                        Range =
+                        [
+                            JsonDocument.Parse("\"2020-01-01\"").RootElement,
+                            JsonDocument.Parse("\"2026-12-31\"").RootElement
+                        ]
+                    }
+                }
+            ]
+        };
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(inventory, published);
+
+        outcome.Findings.Should().NotContain(f => f.Code == MigrationCatalogReconciliationCodes.DomainRangeMismatch);
+    }
+
+    [Fact]
     public void Reconcile_WhenGeometryTypeDiffers_EmitsGeometryTypeMismatch()
     {
         var inventory = BuildInventoryResource();

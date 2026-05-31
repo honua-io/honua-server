@@ -605,6 +605,14 @@ public sealed record MigrationInventoryField
     /// round-tripping without coercion loss.
     /// </summary>
     public MigrationInventoryDomainRange? DomainRange { get; init; }
+
+    /// <summary>
+    /// <c>true</c> when the source advertised a coded-value domain that exceeded
+    /// the capture cap; <see cref="DomainValues"/> is intentionally omitted in
+    /// that state. Reconciliation treats a publish-side null domain as expected
+    /// when this flag is set instead of raising a missing-domain finding.
+    /// </summary>
+    public bool DomainTruncated { get; init; }
 }
 
 /// <summary>

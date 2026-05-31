@@ -147,7 +147,8 @@ internal sealed partial class GeoservicesImportService
                 DomainType = domainType,
                 DomainName = domainName,
                 DomainValues = domainValues,
-                DomainRange = domainRange
+                DomainRange = domainRange,
+                DomainTruncated = domainTruncated
             });
         }
 

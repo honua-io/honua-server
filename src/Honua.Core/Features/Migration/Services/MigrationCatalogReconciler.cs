@@ -210,7 +210,11 @@ public static class MigrationCatalogReconciler
         List<MigrationCatalogReconciliationFinding> findings)
     {
         var inventoryDomainName = string.IsNullOrWhiteSpace(inventoryField.DomainName) ? null : inventoryField.DomainName.Trim();
-        var hasInventoryDomain = !string.IsNullOrWhiteSpace(inventoryField.DomainType) || inventoryDomainName is not null || (inventoryField.DomainValues?.Length ?? 0) > 0;
+        var inventoryDomainType = NormalizeDomainType(inventoryField.DomainType);
+        var hasInventoryDomain = inventoryDomainType is not null
+            || inventoryDomainName is not null
+            || (inventoryField.DomainValues?.Length ?? 0) > 0
+            || inventoryField.DomainRange is not null;
 
         if (!hasInventoryDomain)
         {
@@ -219,14 +223,49 @@ public static class MigrationCatalogReconciler
 
         if (publishedField.Domain is null)
         {
+            if (inventoryField.DomainTruncated)
+            {
+                // Publish-side null is the expected state when the inventory cap
+                // dropped over-cap values; surface the situation as informational
+                // so operators still see the truncation.
+                findings.Add(new MigrationCatalogReconciliationFinding
+                {
+                    Code = MigrationCatalogReconciliationCodes.DomainTruncated,
+                    Severity = MigrationCatalogReconciliationSeverities.Info,
+                    Subject = inventoryField.Name,
+                    Expected = inventoryDomainName ?? inventoryDomainType,
+                    Summary = $"Inventory captured a {inventoryDomainType ?? "domain"} on field '{inventoryField.Name}' that exceeded the capture cap; the published catalog omits values to match."
+                });
+                return;
+            }
+
             findings.Add(new MigrationCatalogReconciliationFinding
             {
                 Code = MigrationCatalogReconciliationCodes.DomainMissing,
                 Severity = MigrationCatalogReconciliationSeverities.Fail,
                 Subject = inventoryField.Name,
-                Expected = inventoryDomainName ?? inventoryField.DomainType,
-                Summary = $"Inventory captured a {inventoryField.DomainType ?? "domain"} on field '{inventoryField.Name}' but the published field has no domain attached."
+                Expected = inventoryDomainName ?? inventoryDomainType,
+                Summary = $"Inventory captured a {inventoryDomainType ?? "domain"} on field '{inventoryField.Name}' but the published field has no domain attached."
             });
+            return;
+        }
+
+        var publishedDomainType = NormalizeDomainType(publishedField.Domain.Type);
+        if (inventoryDomainType is not null &&
+            publishedDomainType is not null &&
+            !string.Equals(inventoryDomainType, publishedDomainType, StringComparison.Ordinal))
+        {
+            findings.Add(new MigrationCatalogReconciliationFinding
+            {
+                Code = MigrationCatalogReconciliationCodes.DomainTypeMismatch,
+                Severity = MigrationCatalogReconciliationSeverities.Fail,
+                Subject = inventoryField.Name,
+                Expected = inventoryDomainType,
+                Actual = publishedDomainType,
+                Summary = $"Published domain type on field '{inventoryField.Name}' differs from the inventory-captured domain type."
+            });
+            // A type mismatch makes the per-shape checks below ambiguous;
+            // skip them so the operator focuses on the underlying class swap.
             return;
         }
 
@@ -246,7 +285,7 @@ public static class MigrationCatalogReconciler
         }
 
         if (inventoryField.DomainValues is { Length: > 0 } captured &&
-            string.Equals(inventoryField.DomainType, "codedValue", StringComparison.OrdinalIgnoreCase))
+            string.Equals(inventoryDomainType, "codedValue", StringComparison.Ordinal))
         {
             var publishedCodes = publishedField.Domain.CodedValues
                 .Select(static coded => CodeToString(coded.Code))
@@ -271,7 +310,41 @@ public static class MigrationCatalogReconciler
                 });
             }
         }
+
+        if (inventoryField.DomainRange is { } inventoryRange &&
+            string.Equals(inventoryDomainType, "range", StringComparison.Ordinal))
+        {
+            var publishedRange = publishedField.Domain.Range;
+            string? publishedMin = null;
+            string? publishedMax = null;
+            if (publishedRange is { Count: >= 2 })
+            {
+                publishedMin = publishedRange[0].GetRawText();
+                publishedMax = publishedRange[1].GetRawText();
+            }
+
+            if (publishedMin is null
+                || publishedMax is null
+                || !string.Equals(publishedMin, inventoryRange.Min, StringComparison.Ordinal)
+                || !string.Equals(publishedMax, inventoryRange.Max, StringComparison.Ordinal))
+            {
+                findings.Add(new MigrationCatalogReconciliationFinding
+                {
+                    Code = MigrationCatalogReconciliationCodes.DomainRangeMismatch,
+                    Severity = MigrationCatalogReconciliationSeverities.Fail,
+                    Subject = inventoryField.Name,
+                    Expected = $"[{inventoryRange.Min},{inventoryRange.Max}]",
+                    Actual = publishedMin is null || publishedMax is null
+                        ? "[]"
+                        : $"[{publishedMin},{publishedMax}]",
+                    Summary = $"Published range-domain bounds on field '{inventoryField.Name}' differ from the inventory-captured bounds."
+                });
+            }
+        }
     }
+
+    private static string? NormalizeDomainType(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static void CollectSpatialFindings(
         MigrationInventoryResource resource,
