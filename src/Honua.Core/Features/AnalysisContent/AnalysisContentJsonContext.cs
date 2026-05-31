@@ -19,6 +19,8 @@ namespace Honua.Core.Features.AnalysisContent;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     UseStringEnumConverter = true)]
 [JsonSerializable(typeof(AnalysisContentItem))]
+[JsonSerializable(typeof(AnalysisContentItem[]))]
+[JsonSerializable(typeof(AnalysisContentItemPage))]
 [JsonSerializable(typeof(AnalysisContentVersion))]
 [JsonSerializable(typeof(AnalysisContentVersion[]))]
 [JsonSerializable(typeof(SavedQueryContent))]
@@ -27,6 +29,9 @@ namespace Honua.Core.Features.AnalysisContent;
 [JsonSerializable(typeof(ArtifactBindingRef[]))]
 [JsonSerializable(typeof(ResultArtifactRecord))]
 [JsonSerializable(typeof(ResultArtifactRecord[]))]
+[JsonSerializable(typeof(AnalysisContentEstimate))]
+[JsonSerializable(typeof(AnalysisContentLayerEstimate))]
+[JsonSerializable(typeof(AnalysisContentLayerEstimate[]))]
 [JsonSerializable(typeof(SavedQueryPreviewResult))]
 [JsonSerializable(typeof(SavedQueryPreviewFeature))]
 [JsonSerializable(typeof(SavedQueryPreviewFeature[]))]

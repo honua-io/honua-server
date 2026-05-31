@@ -387,6 +387,11 @@ public sealed class AnalysisContentServiceTests
             CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<AnalysisContentVersion>>(_versions.Values.ToArray());
 
+        public Task<AnalysisContentItemPage> ListItemsAsync(
+            AnalysisContentItemQuery query,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new AnalysisContentItemPage { Items = [_item], TotalCount = 1 });
+
         public Task<ResultArtifactRecord> UpsertArtifactAsync(
             ResultArtifactRecord artifact,
             CancellationToken cancellationToken = default)

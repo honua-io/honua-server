@@ -22,6 +22,8 @@ internal static class AnalysisContentTelemetry
     {
         public const string CreateItem = "create_item";
         public const string GetItem = "get_item";
+        public const string ListItems = "list_items";
+        public const string EstimateVersion = "estimate_version";
         public const string GetVersion = "get_version";
         public const string AddVersion = "add_version";
         public const string PreviewSavedQuery = "preview_saved_query";

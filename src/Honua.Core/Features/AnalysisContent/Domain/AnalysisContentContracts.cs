@@ -226,6 +226,49 @@ public sealed record AnalysisContentItem
 }
 
 /// <summary>
+/// Paged, filterable query over durable analysis content item roots.
+/// </summary>
+public sealed record AnalysisContentItemQuery
+{
+    /// <summary>
+    /// Optional kind filter. When null, items of every kind are returned.
+    /// </summary>
+    public AnalysisContentKind? Kind { get; init; }
+
+    /// <summary>
+    /// Optional lifecycle filter. When null, only <see cref="AnalysisContentLifecycle.Active"/>
+    /// items are returned so archived and soft-deleted content stays out of primary lists.
+    /// </summary>
+    public AnalysisContentLifecycle? Lifecycle { get; init; }
+
+    /// <summary>
+    /// Maximum number of items to return.
+    /// </summary>
+    public required int Limit { get; init; }
+
+    /// <summary>
+    /// Number of items to skip from the start of the stable order.
+    /// </summary>
+    public required int Offset { get; init; }
+}
+
+/// <summary>
+/// A page of analysis content item roots plus the total count matching the query filter.
+/// </summary>
+public sealed record AnalysisContentItemPage
+{
+    /// <summary>
+    /// Items in this page, ordered most-recently-updated first then by item identifier.
+    /// </summary>
+    public IReadOnlyList<AnalysisContentItem> Items { get; init; } = [];
+
+    /// <summary>
+    /// Total number of items matching the query filter across all pages.
+    /// </summary>
+    public required long TotalCount { get; init; }
+}
+
+/// <summary>
 /// Immutable analysis content version payload.
 /// </summary>
 public sealed record AnalysisContentVersion
@@ -523,6 +566,88 @@ public sealed record ResultArtifactRecord
     /// Optional UTC expiry timestamp.
     /// </summary>
     public DateTimeOffset? ExpiresAt { get; init; }
+}
+
+/// <summary>
+/// Server-computed runtime and cost estimate for an analysis-package version. The projection is
+/// derived from the plan (step count and category) and from catalog statistics for any input layers
+/// the plan reads, so the pre-submit gate can use an authoritative value instead of a local guess.
+/// </summary>
+public sealed record AnalysisContentEstimate
+{
+    /// <summary>
+    /// Number of executable steps in the plan.
+    /// </summary>
+    public required int StepCount { get; init; }
+
+    /// <summary>
+    /// Number of steps that read features from a data source.
+    /// </summary>
+    public required int QueryStepCount { get; init; }
+
+    /// <summary>
+    /// Number of steps that run a geoprocessing operation.
+    /// </summary>
+    public required int GeoprocessStepCount { get; init; }
+
+    /// <summary>
+    /// Approximate total input feature count summed across the plan's resolved input layers, using
+    /// catalog statistics. Null when the plan reads no resolvable layer.
+    /// </summary>
+    public long? EstimatedInputFeatureCount { get; init; }
+
+    /// <summary>
+    /// Approximate compute units the plan is expected to consume. A compute unit is a normalized,
+    /// backend-neutral measure derived from step categories and estimated input volume.
+    /// </summary>
+    public required double EstimatedComputeUnits { get; init; }
+
+    /// <summary>
+    /// Approximate monetary cost in USD for the estimated compute units, at the published unit rate.
+    /// </summary>
+    public required decimal EstimatedCostUsd { get; init; }
+
+    /// <summary>
+    /// Approximate wall-clock runtime, in seconds, the plan is expected to take.
+    /// </summary>
+    public required double EstimatedRuntimeSeconds { get; init; }
+
+    /// <summary>
+    /// True when the estimate could not resolve input statistics for one or more layers and is
+    /// therefore a lower bound rather than a full projection.
+    /// </summary>
+    public required bool IsLowerBound { get; init; }
+
+    /// <summary>
+    /// Per-input-layer estimate breakdown.
+    /// </summary>
+    public IReadOnlyList<AnalysisContentLayerEstimate> Inputs { get; init; } = [];
+}
+
+/// <summary>
+/// Per-layer input statistics contributing to an analysis-package estimate.
+/// </summary>
+public sealed record AnalysisContentLayerEstimate
+{
+    /// <summary>
+    /// Plan step identifier that reads this layer.
+    /// </summary>
+    public required string StepId { get; init; }
+
+    /// <summary>
+    /// Storage layer identifier read by the step.
+    /// </summary>
+    public required int LayerId { get; init; }
+
+    /// <summary>
+    /// Approximate feature count from catalog statistics, when resolvable.
+    /// </summary>
+    public long? EstimatedFeatureCount { get; init; }
+
+    /// <summary>
+    /// True when catalog statistics for this layer could not be resolved.
+    /// </summary>
+    public required bool Unresolved { get; init; }
 }
 
 /// <summary>

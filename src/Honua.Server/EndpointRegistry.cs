@@ -895,12 +895,14 @@ public static class EndpointRegistry
         new("POST", "/v1/spec/cancel"),
         new("GET", "/v1/spec/artifact/{hash}"),
 
-        // Analysis content HTTP surface (#1182).
+        // Analysis content HTTP surface (#1182, #1237).
         new("POST", "/api/v1/analysis/content/items"),
+        new("GET", "/api/v1/analysis/content/items"),
         new("GET", "/api/v1/analysis/content/items/{itemId}"),
         new("GET", "/api/v1/analysis/content/items/{itemId}/versions/latest"),
         new("GET", "/api/v1/analysis/content/items/{itemId}/versions/{contentVersion}"),
         new("POST", "/api/v1/analysis/content/items/{itemId}/versions"),
+        new("POST", "/api/v1/analysis/content/items/{itemId}/versions/{contentVersion}/estimate"),
         new("POST", "/api/v1/analysis/content/items/{itemId}/versions/{contentVersion}/preview"),
         new("POST", "/api/v1/analysis/content/items/{itemId}/versions/{contentVersion}/runs"),
         new("POST", "/api/v1/analysis/content/items/{itemId}/versions/{contentVersion}/reruns"),

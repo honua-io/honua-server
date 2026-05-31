@@ -187,6 +187,58 @@ internal sealed class PostgresAnalysisContentStore : IAnalysisContentStore
             return versions;
         });
 
+    public Task<AnalysisContentItemPage> ListItemsAsync(
+        AnalysisContentItemQuery query,
+        CancellationToken cancellationToken = default)
+        => TranslateStoreFailuresAsync(async () =>
+        {
+            ArgumentNullException.ThrowIfNull(query);
+
+            var lifecycle = (query.Lifecycle ?? AnalysisContentLifecycle.Active).ToString();
+            var kindFilter = query.Kind.HasValue ? " AND kind = @kind" : string.Empty;
+            var kind = query.Kind?.ToString();
+
+            // Stable order: most-recently-updated first, then by item_id. Backed by
+            // idx_analysis_content_items_kind_updated (kind, updated_at DESC, item_id) when a
+            // kind filter is supplied. The total count lets callers compute remaining pages.
+            var sql = $"""
+                SELECT item_id, kind, name, title, owner_id, visibility, current_version,
+                       current_version_id, lifecycle, created_at, updated_at, created_by,
+                       COUNT(*) OVER () AS total_count
+                FROM {_itemsTable}
+                WHERE lifecycle = @lifecycle{kindFilter}
+                ORDER BY updated_at DESC, item_id ASC
+                LIMIT @limit OFFSET @offset
+                """;
+
+            await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await using var command = new NpgsqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@lifecycle", lifecycle);
+            if (kind is not null)
+            {
+                command.Parameters.AddWithValue("@kind", kind);
+            }
+
+            command.Parameters.AddWithValue("@limit", query.Limit);
+            command.Parameters.AddWithValue("@offset", query.Offset);
+
+            var items = new List<AnalysisContentItem>();
+            long totalCount = 0;
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                items.Add(ReadItem(reader));
+                totalCount = reader.GetInt64(12);
+            }
+
+            return new AnalysisContentItemPage
+            {
+                Items = items,
+                TotalCount = totalCount
+            };
+        });
+
     public Task<ResultArtifactRecord> UpsertArtifactAsync(
         ResultArtifactRecord artifact,
         CancellationToken cancellationToken = default)

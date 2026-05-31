@@ -65,6 +65,28 @@ internal sealed record AnalysisContentItemResponse
     public required AnalysisContentVersion Version { get; init; }
 }
 
+internal sealed record AnalysisContentItemListResponse
+{
+    public IReadOnlyList<AnalysisContentItem> Items { get; init; } = [];
+
+    public required long TotalCount { get; init; }
+
+    public required int Limit { get; init; }
+
+    public required int Offset { get; init; }
+}
+
+internal sealed record AnalysisContentEstimateResponse
+{
+    public required string ItemId { get; init; }
+
+    public required int Version { get; init; }
+
+    public required string VersionId { get; init; }
+
+    public required AnalysisContentEstimate Estimate { get; init; }
+}
+
 internal sealed record AnalysisContentVersionResponse
 {
     public required AnalysisContentItem Item { get; init; }
@@ -98,6 +120,8 @@ internal sealed record AnalysisArtifactResponse
 [JsonSerializable(typeof(RunAnalysisContentVersionRequest))]
 [JsonSerializable(typeof(RerunAnalysisContentVersionRequest))]
 [JsonSerializable(typeof(AnalysisContentItemResponse))]
+[JsonSerializable(typeof(AnalysisContentItemListResponse))]
+[JsonSerializable(typeof(AnalysisContentEstimateResponse))]
 [JsonSerializable(typeof(AnalysisContentVersionResponse))]
 [JsonSerializable(typeof(AnalysisContentJobResponse))]
 [JsonSerializable(typeof(AnalysisArtifactResponse))]
@@ -107,6 +131,8 @@ internal sealed record AnalysisArtifactResponse
 [JsonSerializable(typeof(ProblemDetailsResponse))]
 [JsonSerializable(typeof(AnalysisContentItem))]
 [JsonSerializable(typeof(AnalysisContentVersion))]
+[JsonSerializable(typeof(AnalysisContentEstimate))]
+[JsonSerializable(typeof(AnalysisContentLayerEstimate))]
 [JsonSerializable(typeof(SavedQueryContent))]
 [JsonSerializable(typeof(AnalysisPackageContent))]
 [JsonSerializable(typeof(ResultArtifactRecord))]
