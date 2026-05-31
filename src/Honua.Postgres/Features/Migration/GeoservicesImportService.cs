@@ -16,7 +16,6 @@ using Honua.Core.Features.Styling.Domain;
 using Honua.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Npgsql;
-using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
