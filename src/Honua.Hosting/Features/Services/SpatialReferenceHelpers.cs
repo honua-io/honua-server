@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Shared.Models;
 
@@ -71,7 +72,60 @@ internal static class SpatialReferenceHelpers
             return true;
         }
 
+        if (normalized.Length > 1 && normalized[0] == '{' &&
+            TryParseEsriSpatialReferenceJson(normalized, out srid))
+        {
+            definition = CreateEpsgDefinition(srid);
+            return true;
+        }
+
         return false;
+    }
+
+    /// <summary>
+    /// Parses the Esri JSON spatial-reference form (<c>{"wkid":N}</c> /
+    /// <c>{"latestWkid":N}</c>) that ArcGIS SDK clients send for parameters such
+    /// as <c>bboxSR</c>/<c>imageSR</c>. Only the WKID-bearing form is resolved
+    /// synchronously here; <c>wkt</c>-only payloads require CRS detection and are
+    /// handled by the async resolver path.
+    /// </summary>
+    private static bool TryParseEsriSpatialReferenceJson(string value, out int srid)
+    {
+        srid = 0;
+
+        try
+        {
+            using var document = JsonDocument.Parse(value);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            if (root.TryGetProperty("wkid", out var wkidElement) &&
+                wkidElement.ValueKind == JsonValueKind.Number &&
+                wkidElement.TryGetInt32(out var wkid) &&
+                wkid > 0)
+            {
+                srid = wkid;
+                return true;
+            }
+
+            if (root.TryGetProperty("latestWkid", out var latestElement) &&
+                latestElement.ValueKind == JsonValueKind.Number &&
+                latestElement.TryGetInt32(out var latestWkid) &&
+                latestWkid > 0)
+            {
+                srid = latestWkid;
+                return true;
+            }
+
+            return false;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static string TrimWrappers(string value)

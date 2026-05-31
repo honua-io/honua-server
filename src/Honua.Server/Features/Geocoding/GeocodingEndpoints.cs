@@ -24,6 +24,14 @@ internal static class GeocodingEndpoints
             .WithDescription("Returns metadata for the configured geocoding service")
             .WithTags("GeocodeServer");
 
+        endpoints.MapPost("/rest/services/{locatorName}/GeocodeServer", HandleMetadata)
+            .WithDisplayName("Get GeocodeServer Metadata (POST)")
+            .WithName("GetGeocodeServerMetadataPost")
+            .WithSummary("Get GeocodeServer metadata using POST")
+            .WithDescription("Returns metadata for the configured geocoding service")
+            .WithTags("GeocodeServer")
+            .AllowAnonymous();
+
         endpoints.MapGet("/rest/services/{locatorName}/GeocodeServer/findAddressCandidates", HandleFindAddressCandidates)
             .WithDisplayName("Find Address Candidates")
             .WithName("FindAddressCandidates")
@@ -89,6 +97,13 @@ internal static class GeocodingEndpoints
             .WithDisplayName("Get GeocodeServer Metadata (Alias)")
             .WithName("GetGeocodeServerMetadataAlias")
             .WithTags("GeocodeServer");
+
+        endpoints.MapPost("/rest/services/GeocodeServer", static (HttpContext context, GeocodingHandler handler) =>
+                handler.HandleMetadataAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
+            .WithDisplayName("Get GeocodeServer Metadata (Alias, POST)")
+            .WithName("GetGeocodeServerMetadataAliasPost")
+            .WithTags("GeocodeServer")
+            .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/GeocodeServer/findAddressCandidates", static (HttpContext context, GeocodingHandler handler) =>
                 handler.HandleFindAddressCandidatesAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))

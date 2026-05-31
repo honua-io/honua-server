@@ -175,6 +175,38 @@ public class ImageServerParameterValidationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
+    public async Task ExportImage_WithEsriJsonSpatialReferences_ReturnsSuccessOrNotFound()
+    {
+        // ArcGIS SDK clients send spatial references as Esri JSON, e.g. bboxSR={"wkid":4326}.
+        var imageSr = Uri.EscapeDataString("{\"wkid\":4326}");
+        var bboxSr = Uri.EscapeDataString("{\"wkid\":4326}");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/exportImage" +
+            $"?f=json&bbox=-180,-90,180,90&imageSr={imageSr}&bboxSr={bboxSr}");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+        response.StatusCode.Should().NotBe(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
+    public async Task ExportImage_WithEsriJsonLatestWkidSpatialReference_ReturnsSuccessOrNotFound()
+    {
+        var bboxSr = Uri.EscapeDataString("{\"latestWkid\":3857}");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/exportImage" +
+            $"?f=json&bbox=-180,-90,180,90&bboxSr={bboxSr}");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+        response.StatusCode.Should().NotBe(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
     public async Task ExportImage_MinimumSize_ReturnsSuccessOrNotFound()
     {
         var response = await _fixture.Client.GetAsync(
