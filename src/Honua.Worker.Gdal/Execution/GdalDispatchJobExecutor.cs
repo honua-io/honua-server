@@ -35,17 +35,44 @@ public sealed partial class GdalDispatchJobExecutor : IJobExecutor
     public GdalDispatchJobExecutor(
         GdalVectorConvertJobExecutor vectorConvert,
         GdalRasterReprojectJobExecutor rasterReproject,
+        GdalSurfaceJobExecutor surface,
+        GdalRasterClipJobExecutor rasterClip,
+        GdalRasterReprojectCatalogJobExecutor rasterReprojectCatalog,
+        GdalRasterStatisticsJobExecutor rasterStatistics,
+        GdalRasterZonalStatisticsJobExecutor rasterZonalStatistics,
         ILogger<GdalDispatchJobExecutor> logger)
     {
         ArgumentNullException.ThrowIfNull(vectorConvert);
         ArgumentNullException.ThrowIfNull(rasterReproject);
+        ArgumentNullException.ThrowIfNull(surface);
+        ArgumentNullException.ThrowIfNull(rasterClip);
+        ArgumentNullException.ThrowIfNull(rasterReprojectCatalog);
+        ArgumentNullException.ThrowIfNull(rasterStatistics);
+        ArgumentNullException.ThrowIfNull(rasterZonalStatistics);
         ArgumentNullException.ThrowIfNull(logger);
 
-        _handlers = new Dictionary<string, IJobExecutor>(StringComparer.Ordinal)
+        var handlers = new Dictionary<string, IJobExecutor>(StringComparer.Ordinal)
         {
             [GdalVectorConvertJobExecutor.HandledProcessId] = vectorConvert,
             [GdalRasterReprojectJobExecutor.HandledProcessId] = rasterReproject,
-        }.ToFrozenDictionary(StringComparer.Ordinal);
+            [GdalRasterClipJobExecutor.HandledProcessId] = rasterClip,
+            [GdalRasterReprojectCatalogJobExecutor.HandledProcessId] = rasterReprojectCatalog,
+            [GdalRasterZonalStatisticsJobExecutor.HandledProcessId] = rasterZonalStatistics,
+        };
+
+        // surface.* and raster.statistics/histogram each fan out a single executor
+        // over several process ids; copy them into the dispatcher's flat handler map
+        // so the routing decision stays O(1) per call.
+        foreach (var processId in GdalSurfaceJobExecutor.SupportedProcessIds)
+        {
+            handlers[processId] = surface;
+        }
+        foreach (var processId in GdalRasterStatisticsJobExecutor.SupportedProcessIds)
+        {
+            handlers[processId] = rasterStatistics;
+        }
+
+        _handlers = handlers.ToFrozenDictionary(StringComparer.Ordinal);
 
         _logger = logger;
     }

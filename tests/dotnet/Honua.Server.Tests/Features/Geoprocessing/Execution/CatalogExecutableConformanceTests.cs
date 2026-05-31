@@ -234,16 +234,32 @@ public sealed class CatalogExecutableConformanceTests
     [UnitTest]
     public void NativeRoutedGdalProcesses_DeclareTheNativeRuntimeProfile_AndAreAbsentFromTheManagedDispatcher()
     {
-        // The data-driven native-profile contract: only the gdal.* family declares
-        // RuntimeProfile = native (the submit path reads ProcessDefinition.RuntimeProfile
-        // to stamp the spec and route the job to the out-of-process GDAL worker). The
-        // worker's own test project asserts the worker dispatcher routes exactly these
-        // ids; here we lock in the catalog declaration AND that the lean dispatcher has
-        // no executor for them, so the routing decision and the GDAL-free baseline agree.
-        var gdalProcessIds = new[] { "gdal.gdalwarp", "gdal.ogr2ogr" };
+        // The data-driven native-profile contract: every gdal.* / surface.* /
+        // raster.* process declares RuntimeProfile = native so the submit path
+        // stamps the spec native and routes the job to the out-of-process GDAL
+        // worker. The worker's own test project asserts the worker dispatcher
+        // routes these ids; here we lock in the catalog declaration AND that
+        // the lean dispatcher has no executor for them, so the routing decision
+        // and the GDAL-free baseline agree.
+        var nativeExecutableProcessIds = new[]
+        {
+            "gdal.gdalwarp",
+            "gdal.ogr2ogr",
+            "surface.slope",
+            "surface.aspect",
+            "surface.hillshade",
+            "surface.rugosity-tri",
+            "surface.rugosity-tpi",
+            "surface.roughness",
+            "raster.clip",
+            "raster.reproject",
+            "raster.statistics",
+            "raster.histogram",
+            "raster.zonal-statistics",
+        };
         var managedExecutable = DispatcherSupportedProcessIds();
 
-        foreach (var processId in gdalProcessIds)
+        foreach (var processId in nativeExecutableProcessIds)
         {
             var definition = _catalog.GetProcess(processId);
             definition.Should().NotBeNull($"the catalog must advertise native process '{processId}'");

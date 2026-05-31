@@ -19,12 +19,65 @@ public sealed class ProcessCatalogSurfaceRasterTests
     public void Catalog_SurfaceRasterAndConversionCategories_AreRegistered()
     {
         _catalog.GetProcessesByCategory("surface").Should().HaveCount(6);
-        // 5 managed raster idioms + gdal.gdalwarp (the native-profile raster
+        // 5 native raster idioms + gdal.gdalwarp (the native-profile raster
         // reproject executed out-of-process by the GDAL worker).
         _catalog.GetProcessesByCategory("raster").Should().HaveCount(6);
         // 4 managed conversion idioms + gdal.ogr2ogr (the native-profile vector
         // conversion executed out-of-process by the GDAL worker).
         _catalog.GetProcessesByCategory("conversion").Should().HaveCount(5);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Catalog_SurfaceAndRasterProcesses_DeclareNativeProfile_AndExposeSourceInput()
+    {
+        // The native worker pipeline reads a base64 GeoTIFF from the canonical
+        // 'source' input. The catalog must advertise it as an accepted parameter
+        // so the validator does not reject 'source' as UNKNOWN_PARAMETER.
+        string[] nativeProcessIds =
+        [
+            "surface.slope", "surface.aspect", "surface.hillshade",
+            "surface.rugosity-tri", "surface.rugosity-tpi", "surface.roughness",
+            "raster.clip", "raster.reproject", "raster.statistics",
+            "raster.histogram", "raster.zonal-statistics",
+        ];
+        foreach (var processId in nativeProcessIds)
+        {
+            var definition = _catalog.GetProcess(processId);
+            definition.Should().NotBeNull($"catalog must advertise native process '{processId}'");
+            definition!.RuntimeProfile.Should().Be(
+                Core.Features.ControlPlane.Domain.RuntimeProfiles.Native,
+                $"'{processId}' is executed by the native worker");
+            definition.Parameters.Should().Contain(p => p.Name == "source",
+                $"'{processId}' must accept the canonical 'source' base64 GeoTIFF input");
+        }
+
+        // raster.zonal-statistics additionally accepts an inline 'zones' input.
+        var zonal = _catalog.GetProcess("raster.zonal-statistics");
+        zonal!.Parameters.Should().Contain(p => p.Name == "zones",
+            "raster.zonal-statistics must accept the canonical inline 'zones' GeoJSON input");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/ValidatePlan")]
+    public void Validator_SurfaceSlope_Radians_ProducesViolation()
+    {
+        // gdaldem does not emit radians directly. The validator must reject
+        // radians/radian up front so plans accepted here are also accepted at
+        // execution time by the GdalSurfaceJobExecutor.
+        var plan = CreateSingleStepPlan(
+            "surface.slope",
+            new Dictionary<string, string>
+            {
+                ["layerId"] = "7",
+                ["units"] = "radians"
+            });
+
+        var (violations, _) = ProcessPlanValidator.Validate(plan, _catalog);
+
+        violations.Should().ContainSingle(v => v.FieldPath == "steps[s1].inputs.units");
     }
 
     [UnitTest]
