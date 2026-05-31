@@ -190,19 +190,19 @@ internal sealed partial class FeatureServerQueryHandler
                 ["The layer has no non-null values for the classification field; cannot generate class breaks."]);
         }
 
-        var classBreakInfos = new List<Dictionary<string, object?>>(breaks.Length);
+        var classBreakInfos = new Dictionary<string, object?>[breaks.Length];
         var previous = minValue;
         for (var i = 0; i < breaks.Length; i++)
         {
             var max = breaks[i];
             var color = RampColor(i, breaks.Length);
-            classBreakInfos.Add(new Dictionary<string, object?>
+            classBreakInfos[i] = new Dictionary<string, object?>
             {
                 ["classMinValue"] = previous,
                 ["classMaxValue"] = max,
                 ["label"] = FormatRangeLabel(previous, max),
                 ["symbol"] = BuildClassifiedSymbol(geometryType, color)
-            });
+            };
             previous = max;
         }
 
@@ -287,18 +287,18 @@ internal sealed partial class FeatureServerQueryHandler
             return StandardErrorHelpers.CreateBadRequest(context, "Invalid classification", [ex.Message]);
         }
 
-        var uniqueValueInfos = new List<Dictionary<string, object?>>(distinctRows.Length);
+        var uniqueValueInfos = new Dictionary<string, object?>[distinctRows.Length];
         for (var i = 0; i < distinctRows.Length; i++)
         {
             var row = distinctRows[i];
             var value = string.Join(delimiter, row.Select(static v => v ?? string.Empty));
             var color = RampColor(i, distinctRows.Length);
-            uniqueValueInfos.Add(new Dictionary<string, object?>
+            uniqueValueInfos[i] = new Dictionary<string, object?>
             {
                 ["value"] = value,
                 ["label"] = value,
                 ["symbol"] = BuildClassifiedSymbol(geometryType, color)
-            });
+            };
         }
 
         var renderer = new Dictionary<string, object?>

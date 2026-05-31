@@ -825,9 +825,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/generateRenderer?classificationDef={classificationDef}");
 
-        response.Be200Ok();
-
         var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
         using var jsonDoc = JsonDocument.Parse(content);
         var root = jsonDoc.RootElement;
 
