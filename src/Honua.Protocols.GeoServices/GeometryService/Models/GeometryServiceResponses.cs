@@ -61,6 +61,60 @@ public sealed class GeometryServiceLengthResponse
 }
 
 /// <summary>
+/// Response payload for the <c>distance</c> operation.
+/// </summary>
+public sealed class GeometryServiceDistanceResponse
+{
+    /// <summary>
+    /// Distance between the two input geometries, expressed in the requested distance unit.
+    /// </summary>
+    [JsonPropertyName("distance")]
+    public double Distance { get; init; }
+}
+
+/// <summary>
+/// Response payload for the <c>relation</c> operation.
+/// </summary>
+public sealed class GeometryServiceRelationResponse
+{
+    /// <summary>
+    /// Index pairs identifying which input geometries satisfy the requested spatial relation.
+    /// </summary>
+    [JsonPropertyName("relations")]
+    public GeometryServiceRelationPair[]? Relations { get; init; }
+}
+
+/// <summary>
+/// A single relation match identifying a geometry from each input set.
+/// </summary>
+public sealed class GeometryServiceRelationPair
+{
+    /// <summary>
+    /// Zero-based index of the matching geometry in the first input set (<c>geometries1</c>).
+    /// </summary>
+    [JsonPropertyName("geometry1Index")]
+    public int Geometry1Index { get; init; }
+
+    /// <summary>
+    /// Zero-based index of the matching geometry in the second input set (<c>geometries2</c>).
+    /// </summary>
+    [JsonPropertyName("geometry2Index")]
+    public int Geometry2Index { get; init; }
+}
+
+/// <summary>
+/// Response payload for operations that return a single geometry (for example <c>convexHull</c>).
+/// </summary>
+public sealed class GeometryServiceGeometryResponse
+{
+    /// <summary>
+    /// Result geometry in GeoServices JSON format.
+    /// </summary>
+    [JsonPropertyName("geometry")]
+    public JsonElement Geometry { get; init; }
+}
+
+/// <summary>
 /// Error response for geometry service operations.
 /// </summary>
 public sealed class GeometryServiceErrorResponse

@@ -812,6 +812,18 @@ public static class EndpointRegistry
         new("POST", "/rest/services/Utilities/Geometry/GeometryServer/areasAndLengths"),
         new("GET", "/rest/services/Utilities/Geometry/GeometryServer/lengths"),
         new("POST", "/rest/services/Utilities/Geometry/GeometryServer/lengths"),
+        new("GET", "/rest/services/Utilities/Geometry/GeometryServer/distance"),
+        new("POST", "/rest/services/Utilities/Geometry/GeometryServer/distance"),
+        new("GET", "/rest/services/Utilities/Geometry/GeometryServer/relation"),
+        new("POST", "/rest/services/Utilities/Geometry/GeometryServer/relation"),
+        new("GET", "/rest/services/Utilities/Geometry/GeometryServer/densify"),
+        new("POST", "/rest/services/Utilities/Geometry/GeometryServer/densify"),
+        new("GET", "/rest/services/Utilities/Geometry/GeometryServer/convexHull"),
+        new("POST", "/rest/services/Utilities/Geometry/GeometryServer/convexHull"),
+        new("GET", "/rest/services/Utilities/Geometry/GeometryServer/generalize"),
+        new("POST", "/rest/services/Utilities/Geometry/GeometryServer/generalize"),
+        new("GET", "/rest/services/Utilities/Geometry/GeometryServer/labelPoints"),
+        new("POST", "/rest/services/Utilities/Geometry/GeometryServer/labelPoints"),
 
         // NAServer minimal mobile routing compatibility (#366)
         new("POST", "/rest/services/{serviceId}/NAServer/Route/solve"),

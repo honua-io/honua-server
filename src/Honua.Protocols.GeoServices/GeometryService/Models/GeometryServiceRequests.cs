@@ -65,6 +65,71 @@ internal sealed class UnionParameters
 }
 
 /// <summary>
+/// Parsed parameters for the distance operation (closest distance between two geometries).
+/// </summary>
+internal sealed class DistanceParameters
+{
+    public required string Geometry1Json { get; init; }
+    public required string Geometry2Json { get; init; }
+    public int SR { get; init; }
+    public string? DistanceUnit { get; init; }
+    public bool Geodesic { get; init; }
+}
+
+/// <summary>
+/// Parsed parameters for the relation operation (pairwise spatial relation testing).
+/// </summary>
+internal sealed class RelationParameters
+{
+    public required string[] Geometries1Json { get; init; }
+    public required string[] Geometries2Json { get; init; }
+    public int SR { get; init; }
+    public required string Relation { get; init; }
+    public string? RelationParam { get; init; }
+}
+
+/// <summary>
+/// Parsed parameters for the densify operation (insert vertices along segments).
+/// </summary>
+internal sealed class DensifyParameters
+{
+    public required string[] GeometryJsonStrings { get; init; }
+    public string? GeometryType { get; init; }
+    public int SR { get; init; }
+    public double MaxSegmentLength { get; init; }
+}
+
+/// <summary>
+/// Parsed parameters for the convexHull operation.
+/// </summary>
+internal sealed class ConvexHullParameters
+{
+    public required string[] GeometryJsonStrings { get; init; }
+    public string? GeometryType { get; init; }
+    public int SR { get; init; }
+}
+
+/// <summary>
+/// Parsed parameters for the generalize operation (Douglas-Peucker simplification).
+/// </summary>
+internal sealed class GeneralizeParameters
+{
+    public required string[] GeometryJsonStrings { get; init; }
+    public string? GeometryType { get; init; }
+    public int SR { get; init; }
+    public double MaxDeviation { get; init; }
+}
+
+/// <summary>
+/// Parsed parameters for the labelPoints operation (interior point of each polygon).
+/// </summary>
+internal sealed class LabelPointsParameters
+{
+    public required string[] GeometryJsonStrings { get; init; }
+    public int SR { get; init; }
+}
+
+/// <summary>
 /// Parsed parameters for area and length operations.
 /// </summary>
 internal enum MeasurementCalculationType

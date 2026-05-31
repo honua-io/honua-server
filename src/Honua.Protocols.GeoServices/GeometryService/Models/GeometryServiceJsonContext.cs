@@ -16,6 +16,9 @@ namespace Honua.Protocols.GeoServices.GeometryService.Models;
 [JsonSerializable(typeof(GeometryServiceSpatialReference))]
 [JsonSerializable(typeof(GeometryServiceAreasAndLengthsResponse))]
 [JsonSerializable(typeof(GeometryServiceLengthResponse))]
+[JsonSerializable(typeof(GeometryServiceDistanceResponse))]
+[JsonSerializable(typeof(GeometryServiceRelationResponse))]
+[JsonSerializable(typeof(GeometryServiceGeometryResponse))]
 [JsonSerializable(typeof(GeometryServiceErrorResponse))]
 [JsonSerializable(typeof(JsonElement))]
 internal sealed partial class GeometryServiceJsonContext : JsonSerializerContext;
