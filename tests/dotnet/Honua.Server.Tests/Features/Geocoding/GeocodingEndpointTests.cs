@@ -79,6 +79,37 @@ public sealed class GeocodingEndpointTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /rest/services/{locatorName}/GeocodeServer")]
+    [Endpoint("POST /rest/services/GeocodeServer")]
+    public async Task GeocodeServerMetadata_Post_ReturnsSamePayloadAsGet()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var getResponse = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
+        using var postContent = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>("f", "json"),
+        });
+        using var postResponse = await client.PostAsync("/rest/services/World/GeocodeServer", postContent);
+
+        using var aliasPostContent = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>("f", "json"),
+        });
+        using var aliasPostResponse = await client.PostAsync("/rest/services/GeocodeServer", aliasPostContent);
+
+        Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, postResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, aliasPostResponse.StatusCode);
+
+        var getBody = await getResponse.Content.ReadAsStringAsync();
+        var postBody = await postResponse.Content.ReadAsStringAsync();
+        Assert.Equal(getBody, postBody);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/suggest")]
     [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/suggest")]
