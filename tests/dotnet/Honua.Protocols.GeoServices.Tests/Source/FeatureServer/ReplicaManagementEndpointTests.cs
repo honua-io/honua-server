@@ -68,7 +68,11 @@ public sealed class ReplicaManagementEndpointTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/services/{serviceId}/replicas")]
     public async Task ListReplicas_WhenNoneRegistered_ReturnsEmptyCollection()
     {
-        var response = await _fixture.Client.GetAsync(ListPath(WebAppFixture.TestServiceId));
+        // Inline the route literal here (rather than only via the ListPath helper) so the
+        // EndpointRegistry drift scanner — which inspects integration-test method bodies for a
+        // same-method HTTP request to each registered route — detects this endpoint as backed.
+        var response = await _fixture.Client.GetAsync(
+            $"/api/v1/admin/services/{WebAppFixture.TestServiceId}/replicas");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await ReadListAsync(response);
@@ -152,7 +156,10 @@ public sealed class ReplicaManagementEndpointTests : IAsyncLifetime
     {
         var replicaId = await CreateReplicaAsync("DetailReplica");
 
-        var response = await _fixture.Client.GetAsync(DetailPath(WebAppFixture.TestServiceId, replicaId));
+        // Inline the route literal here (rather than only via the DetailPath helper) so the
+        // EndpointRegistry drift scanner detects this endpoint as backed by an HTTP request.
+        var response = await _fixture.Client.GetAsync(
+            $"/api/v1/admin/services/{WebAppFixture.TestServiceId}/replicas/{replicaId}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
