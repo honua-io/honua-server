@@ -284,11 +284,10 @@ internal sealed partial class GeoservicesImportService
                     ["advertised"] = "true"
                 },
                 SpatialReferences = [],
-                Compatibility = MigrationInventoryHelpers.Partial(
-                    "Attachments require a separate migration path.",
+                Compatibility = MigrationInventoryHelpers.Compatible(
+                    "Attachments are migrated automatically when ImportAttachments is enabled and the layer auto-publishes.",
                     ["The source resource advertises attachments."],
-                    ["Plan a separate attachment migration alongside the core data import."],
-                    code: ImportCompatibilityCodes.ArcGisAttachments)
+                    code: ImportCompatibilityCodes.Compatible)
             });
         }
 

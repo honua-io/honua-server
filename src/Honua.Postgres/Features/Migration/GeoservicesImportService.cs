@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -39,6 +40,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
     private readonly ILayerPublishingService? _layerPublishingService;
     private readonly IGeoServicesStyleConverter? _styleConverter;
     private readonly ILayerStyleCatalog? _styleCatalog;
+    private readonly IAttachmentStore? _attachmentStore;
     private readonly ILogger<GeoservicesImportService> _logger;
     private readonly PostgresSchemaConfiguration _schemaConfiguration;
 
@@ -51,6 +53,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         ILayerPublishingService? layerPublishingService = null,
         IGeoServicesStyleConverter? styleConverter = null,
         ILayerStyleCatalog? styleCatalog = null,
+        IAttachmentStore? attachmentStore = null,
         PostgresSchemaConfiguration? schemaConfiguration = null)
     {
         _restClient = restClient ?? throw new ArgumentNullException(nameof(restClient));
@@ -60,6 +63,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         _layerPublishingService = layerPublishingService;
         _styleConverter = styleConverter;
         _styleCatalog = styleCatalog;
+        _attachmentStore = attachmentStore;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _schemaConfiguration = schemaConfiguration ?? new PostgresSchemaConfiguration(
             PostgresSchemaConfiguration.DefaultMetadataSchema,
@@ -350,7 +354,9 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         int featuresProcessed,
         int? totalFeatures,
         string? layerName = null,
-        int? publishedLayerId = null)
+        int? publishedLayerId = null,
+        int attachmentsProcessed = 0,
+        int failedAttachments = 0)
     {
         progress?.Report(new GeoservicesImportProgress
         {
@@ -365,7 +371,9 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             ServiceName = request.ServiceName,
             PublishedLayerId = publishedLayerId,
             StartedAt = startedAt,
-            CurrentPhase = phase
+            CurrentPhase = phase,
+            AttachmentsProcessed = attachmentsProcessed,
+            FailedAttachments = failedAttachments
         });
     }
 
@@ -478,5 +486,24 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             int layerId,
             string code,
             string symbolizerType);
+
+        [LoggerMessage(7835, LogLevel.Information,
+            "Starting attachment copy for layer {LayerId}: {FeatureCount} parent features in scope")]
+        public static partial void AttachmentCopyStarting(ILogger logger, int layerId, int featureCount);
+
+        [LoggerMessage(7836, LogLevel.Information,
+            "Attachment copy completed for layer {LayerId}: {AttachmentCount} copied, {FailedCount} failed")]
+        public static partial void AttachmentCopyCompleted(
+            ILogger logger, int layerId, int attachmentCount, int failedCount);
+
+        [LoggerMessage(7837, LogLevel.Warning,
+            "Failed to copy attachment {AttachmentId} for source feature {SourceObjectId} in layer {LayerId}")]
+        public static partial void AttachmentCopyFailed(
+            ILogger logger, long attachmentId, long sourceObjectId, int layerId, Exception exception);
+
+        [LoggerMessage(7838, LogLevel.Warning,
+            "Attachment metadata query failed for layer {LayerId} batch of {BatchSize} ObjectIds")]
+        public static partial void AttachmentQueryBatchFailed(
+            ILogger logger, int layerId, int batchSize, Exception exception);
     }
 }
