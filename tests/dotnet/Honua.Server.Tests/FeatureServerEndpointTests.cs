@@ -572,11 +572,12 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
-    [Endpoint("POST /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
     public async Task GetServiceMetadata_WithWrongHttpMethod_Returns405()
     {
-        // Act
-        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer", null);
+        // Service metadata answers GET and POST (Esri clients hydrate via POST);
+        // a genuinely unsupported method (DELETE) must still return 405.
+        var response = await _fixture.Client.DeleteAsync($"/rest/services/{TestServiceId}/FeatureServer");
 
         // Assert
         response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);
@@ -584,11 +585,11 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
-    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task GetLayerMetadata_WithWrongHttpMethod_Returns405()
     {
-        // Act
-        var response = await _fixture.Client.PostAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}", null);
+        // Layer metadata answers GET and POST; DELETE remains unsupported -> 405.
+        var response = await _fixture.Client.DeleteAsync($"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}");
 
         // Assert
         response.HaveStatusCode(System.Net.HttpStatusCode.MethodNotAllowed);

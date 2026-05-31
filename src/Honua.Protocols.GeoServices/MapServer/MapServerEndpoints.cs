@@ -29,6 +29,18 @@ internal static partial class MapServerEndpoints
             .WithTags("MapServer")
             .CacheOutput("ServiceMetadata");
 
+        // Esri clients hydrate metadata by POSTing {"f":"json"}; mirror the GET
+        // form so discovery succeeds. Anonymous by design and without the
+        // CacheOutput companion, matching the export/identify POST variants.
+        endpoints.MapPost("/rest/services/{serviceId}/MapServer",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleGetServiceMetadata(context))
+            .WithDisplayName("Get MapServer Service Metadata (POST)")
+            .WithName("GetMapServerMetadataPost")
+            .WithSummary("Get MapServer service metadata using POST")
+            .WithDescription("Returns metadata for a MapServer service including all layers")
+            .WithTags("MapServer")
+            .AllowAnonymous();
+
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/{layerId:int}",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleGetLayerMetadata(context))
             .WithDisplayName("Get MapServer Layer Metadata")
@@ -37,6 +49,15 @@ internal static partial class MapServerEndpoints
             .WithDescription("Returns metadata for a specific MapServer layer")
             .WithTags("MapServer")
             .CacheOutput("LayerMetadata");
+
+        endpoints.MapPost("/rest/services/{serviceId}/MapServer/{layerId:int}",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleGetLayerMetadata(context))
+            .WithDisplayName("Get MapServer Layer Metadata (POST)")
+            .WithName("GetMapServerLayerMetadataPost")
+            .WithSummary("Get MapServer layer metadata using POST")
+            .WithDescription("Returns metadata for a specific MapServer layer")
+            .WithTags("MapServer")
+            .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/export",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleExport(context))

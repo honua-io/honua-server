@@ -28,6 +28,15 @@ internal static class GeometryServiceEndpoints
             .WithName("GeometryServiceInfo")
             .WithTags("GeometryService");
 
+        // Esri clients hydrate the GeometryServer descriptor by POSTing
+        // {"f":"json"}; mirror the GET root so discovery succeeds. Anonymous by
+        // design like the other GeometryServer POST companions in this file.
+        endpoints.MapPost(GeometryRoutePrefix, HandleServiceInfo)
+            .WithDisplayName("Geometry Service Info (POST)")
+            .WithName("GeometryServiceInfoPost")
+            .WithTags("GeometryService")
+            .AllowAnonymous();
+
         endpoints.MapGet($"{GeometryRoutePrefix}/buffer", (Delegate)HandleBuffer)
             .WithDisplayName("Geometry Service Buffer (GET)")
             .WithName("GeometryServiceBufferGet")

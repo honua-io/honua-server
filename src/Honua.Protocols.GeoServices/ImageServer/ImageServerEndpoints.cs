@@ -48,6 +48,16 @@ internal static class ImageServerEndpoints
             .Produces<ImageServerServiceInfo>()
             .Produces(404)
             .CacheOutput("ImageServerMetadata");
+        // Esri clients hydrate metadata by POSTing {"f":"json"}; mirror the GET
+        // root so discovery succeeds. The group is already AllowAnonymous and the
+        // POST companion omits CacheOutput to match the other POST variants.
+        group.MapPost("", GetServiceInfo)
+            .WithDisplayName("Get Image Service Info (POST)")
+            .WithName("GetImageServiceInfoPost")
+            .WithSummary("Get Image Server service metadata using POST")
+            .WithDescription("Returns comprehensive metadata about the image service including extent, capabilities, and raster properties")
+            .Produces<ImageServerServiceInfo>()
+            .Produces(404);
 
         // Export image endpoint - core rendering capability
         group.MapGet("/exportImage", ExportImage)
@@ -188,6 +198,13 @@ internal static class ImageServerEndpoints
             .Produces<ImageServerServiceInfo>()
             .Produces(404)
             .CacheOutput("ImageServerMetadata");
+        serviceGroup.MapPost("", GetServiceInfoByService)
+            .WithDisplayName("Get Image Service Info by Service (POST)")
+            .WithName("GetImageServiceInfoByServicePost")
+            .WithSummary("Get Image Server service metadata using POST")
+            .WithDescription("Returns comprehensive metadata about the named image service")
+            .Produces<ImageServerServiceInfo>()
+            .Produces(404);
 
         serviceGroup.MapGet("/exportImage", ExportImageByService)
             .WithDisplayName("Export Image by Service")

@@ -555,7 +555,9 @@ public static class EndpointRegistry
         new("GET", "/rest/services/GeocodeServer/geocodeAddresses"),
 
         new("GET", "/rest/services/{serviceId}/FeatureServer"),
+        new("POST", "/rest/services/{serviceId}/FeatureServer"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}"),
+        new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/query"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/query"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/query"),
@@ -658,7 +660,9 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/FeatureServer/replicas/{replicaId}"),
 
         new("GET", "/rest/services/{serviceId}/MapServer"),
+        new("POST", "/rest/services/{serviceId}/MapServer"),
         new("GET", "/rest/services/{serviceId}/MapServer/{layerId}"),
+        new("POST", "/rest/services/{serviceId}/MapServer/{layerId}"),
         new("GET", "/rest/services/{serviceId}/MapServer/export"),
         new("POST", "/rest/services/{serviceId}/MapServer/export"),
         new("GET", "/rest/services/{serviceId}/MapServer/generateKml"),
@@ -682,6 +686,7 @@ public static class EndpointRegistry
         new("GET", "/ogc/services/{serviceId}/wcs"),
 
         new("GET", "/rest/services/{id}/ImageServer"),
+        new("POST", "/rest/services/{id}/ImageServer"),
         new("GET", "/rest/services/{id}/ImageServer/WCS"),
         new("GET", "/rest/services/{id}/ImageServer/exportImage"),
         new("POST", "/rest/services/{id}/ImageServer/exportImage"),
@@ -697,6 +702,7 @@ public static class EndpointRegistry
         new("POST", "/rest/services/{id}/ImageServer/computeClassStatistics"),
 
         new("GET", "/rest/services/{serviceId}/ImageServer"),
+        new("POST", "/rest/services/{serviceId}/ImageServer"),
         new("GET", "/rest/services/{serviceId}/ImageServer/exportImage"),
         new("POST", "/rest/services/{serviceId}/ImageServer/exportImage"),
         new("GET", "/rest/services/{serviceId}/ImageServer/identify"),
@@ -807,6 +813,7 @@ public static class EndpointRegistry
         new("GET", "/ogc/tiles/tileMatrixSets/{tileMatrixSetId}"),
 
         new("GET", "/rest/services/Utilities/Geometry/GeometryServer"),
+        new("POST", "/rest/services/Utilities/Geometry/GeometryServer"),
         new("GET", "/rest/services/Utilities/Geometry/GeometryServer/buffer"),
         new("POST", "/rest/services/Utilities/Geometry/GeometryServer/buffer"),
         new("GET", "/rest/services/Utilities/Geometry/GeometryServer/simplify"),
