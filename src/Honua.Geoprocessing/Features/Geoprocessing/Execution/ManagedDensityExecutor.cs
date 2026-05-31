@@ -209,29 +209,46 @@ internal sealed class ManagedDensityExecutor(
                 return false;
             case double d:
                 value = d;
-                return true;
+                break;
             case float f:
                 value = f;
-                return true;
+                break;
             case int i:
                 value = i;
-                return true;
+                break;
             case long l:
                 value = l;
-                return true;
+                break;
             case short s:
                 value = s;
-                return true;
+                break;
             case decimal m:
                 value = (double)m;
-                return true;
+                break;
             default:
-                return double.TryParse(
-                    Convert.ToString(raw, CultureInfo.InvariantCulture),
-                    NumberStyles.Float,
-                    CultureInfo.InvariantCulture,
-                    out value);
+                if (!double.TryParse(
+                        Convert.ToString(raw, CultureInfo.InvariantCulture),
+                        NumberStyles.Float,
+                        CultureInfo.InvariantCulture,
+                        out value))
+                {
+                    return false;
+                }
+
+                break;
         }
+
+        // Reject non-finite weights (NaN / +-Infinity, including parsed "NaN"/
+        // "Infinity" strings). The catalog contract skips non-numeric values, and
+        // a non-finite SUM_<field> aggregate would poison the GeoJSON artifact and
+        // break downstream JSON re-encoding.
+        if (!double.IsFinite(value))
+        {
+            value = 0;
+            return false;
+        }
+
+        return true;
     }
 
     private static BinMode ReadMode(StepInputReader inputs)

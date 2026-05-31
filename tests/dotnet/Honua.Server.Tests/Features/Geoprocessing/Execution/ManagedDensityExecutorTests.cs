@@ -107,11 +107,15 @@ public sealed class ManagedDensityExecutorTests
     {
         var executor = new ManagedDensityExecutor(Options());
 
-        // All three points fall in the same square cell.
+        // All points fall in the same square cell. "n/a" is non-numeric and the
+        // "NaN"/"Infinity" strings parse as non-finite doubles — all three must be
+        // skipped from SUM (but still counted), so SUM_pop stays 15.
         var input = BuildUri(
             Feature(Point(1, 1), ("pop", 10)),
             Feature(Point(2, 2), ("pop", 5)),
-            Feature(Point(3, 3), ("pop", "n/a")));
+            Feature(Point(3, 3), ("pop", "n/a")),
+            Feature(Point(4, 4), ("pop", "NaN")),
+            Feature(Point(5, 5), ("pop", "Infinity")));
 
         var (status, uri) = await RunAsync(
             executor,
@@ -126,9 +130,10 @@ public sealed class ManagedDensityExecutorTests
         features.Should().HaveCount(1);
 
         Convert.ToInt64(features[0].Attributes.GetOptionalValue(ManagedDensityExecutor.CountAttribute), CultureInfo.InvariantCulture)
-            .Should().Be(3);
-        Convert.ToDouble(features[0].Attributes.GetOptionalValue("SUM_pop"), CultureInfo.InvariantCulture)
-            .Should().BeApproximately(15, 1e-6);
+            .Should().Be(5);
+        var sum = Convert.ToDouble(features[0].Attributes.GetOptionalValue("SUM_pop"), CultureInfo.InvariantCulture);
+        sum.Should().BeApproximately(15, 1e-6);
+        double.IsFinite(sum).Should().BeTrue();
     }
 
     [UnitTest]
