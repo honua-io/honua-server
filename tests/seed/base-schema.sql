@@ -373,6 +373,7 @@ BEGIN
                 COALESCE(NULLIF(l.table_schema, ''), 'public') AS table_schema,
                 l.table_name,
                 l.geometry_type,
+                COALESCE(l.storage_options, '{}'::jsonb) AS storage_options,
                 l.srid,
                 ST_XMin(l.extent)::double precision AS west,
                 ST_YMin(l.extent)::double precision AS south,
@@ -558,7 +559,7 @@ BEGIN
                     'locator', table_schema || '.' || table_name,
                     'storageLayerId', layer_id,
                     'capabilities', to_jsonb(ARRAY['query', 'filter', 'sort', 'aggregate', 'edit', 'transactions', 'render', 'tile', 'search']::text[]),
-                    'options', '{}'::jsonb,
+                    'options', storage_options,
                     'status', (SELECT value FROM status_doc),
                     'extensions', '{}'::jsonb
                 ) AS value,
