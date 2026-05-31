@@ -45,7 +45,7 @@ internal static partial class TemporalHistoryEndpoints
 
         _ = group.MapGet("/as-of", HandleReadAsOfAsync)
             .WithName("ReadTemporalAsOf")
-            .WithSummary("Read a layer's collapsed feature changes as-of a generation/timestamp cursor.");
+            .WithSummary("Read a layer's collapsed feature changes as-of a generation cursor (timestamp cursors are a deferred #1166 follow-up).");
 
         return endpoints;
     }

@@ -203,6 +203,33 @@ public sealed class TemporalHistoryEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/temporal/services/{serviceId}/layers/{layerId}/as-of")]
+    public async Task AsOf_WithTimestampCursor_ReturnsBadRequest()
+    {
+        // Slice 1 keys on the change-tracker generation only; there is no timestamp -> generation
+        // index, so a timestamp cursor must be rejected with a 400 rather than silently treated as
+        // generation 0 (which would return the full change feed even for a future timestamp).
+        // Make the full feed non-empty so a regression to generation-0 behavior would be observable.
+        _changeTracker.CurrentGeneration = 5;
+        _changeTracker.ChangesSince = sinceGeneration => sinceGeneration == 0
+            ?
+            [
+                new FeatureChange
+                {
+                    ChangeId = 1, Generation = 1, LayerId = TemporalLayerId, ObjectId = 100,
+                    Operation = FeatureChangeOperation.Insert,
+                    ChangedAt = DateTimeOffset.Parse("2026-05-01T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture)
+                }
+            ]
+            : [];
+
+        var response = await _client.GetAsync(
+            $"/api/v1/temporal/services/{ServiceId}/layers/{TemporalLayerId}/as-of?timestamp=2099-01-01T00:00:00Z");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     private static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response)
     {
         var content = await response.Content.ReadAsStringAsync();

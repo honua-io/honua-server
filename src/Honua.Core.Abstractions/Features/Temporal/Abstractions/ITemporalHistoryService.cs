@@ -37,16 +37,17 @@ public interface ITemporalHistoryService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Reads the layer's collapsed feature changes as-of a generation/timestamp cursor.
+    /// Reads the layer's collapsed feature changes as-of a generation cursor. A timestamp cursor is
+    /// rejected in slice 1 (timestamp-to-generation resolution is a deferred #1166 follow-up).
     /// </summary>
     /// <param name="serviceId">Metadata v2 service id.</param>
     /// <param name="layerId">Service-local layer index.</param>
-    /// <param name="request">Normalized as-of request (generation or timestamp cursor).</param>
+    /// <param name="request">Normalized as-of request (slice 1: generation cursor only).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The deterministic as-of result for the resolved cursor.</returns>
     /// <exception cref="TemporalLayerNotFoundException">Thrown when the service/layer does not resolve.</exception>
     /// <exception cref="TemporalNotSupportedException">Thrown when the layer does not support history reads.</exception>
-    /// <exception cref="TemporalValidationException">Thrown when the request is malformed.</exception>
+    /// <exception cref="TemporalValidationException">Thrown when the request is malformed or supplies a timestamp cursor.</exception>
     Task<TemporalAsOfResult> ReadAsOfAsync(
         string serviceId,
         int layerId,

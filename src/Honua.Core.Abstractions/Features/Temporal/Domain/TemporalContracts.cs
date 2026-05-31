@@ -56,14 +56,18 @@ public sealed record TemporalDeferredCapabilities(
 
 /// <summary>
 /// Identifies the kind of temporal cursor a client supplied or that the server resolved.
-/// Slice 1 supports <see cref="Generation"/>; <see cref="Timestamp"/> is resolved to a generation.
+/// Slice 1 supports <see cref="Generation"/> only; a <see cref="Timestamp"/> cursor is rejected with a
+/// 400 (timestamp-to-generation resolution is a deferred #1166 follow-up).
 /// </summary>
 public enum TemporalCursorKind
 {
     /// <summary>Monotonic change-tracker generation (the slice-1 canonical cursor).</summary>
     Generation = 0,
 
-    /// <summary>Wall-clock timestamp, resolved against the temporal column / change log.</summary>
+    /// <summary>
+    /// Wall-clock timestamp. Reserved for a later slice; rejected in slice 1 because the change tracker
+    /// exposes no timestamp -> generation index.
+    /// </summary>
     Timestamp = 1
 }
 
@@ -120,11 +124,12 @@ public sealed record TemporalAsOfResult(
     ImmutableArray<TemporalFeatureState> Features);
 
 /// <summary>
-/// A normalized as-of read request. Exactly one of <see cref="Generation"/> or <see cref="Timestamp"/>
-/// should be supplied by the client; the service resolves either to a generation cursor.
+/// A normalized as-of read request. Slice 1 accepts a <see cref="Generation"/> cursor; a
+/// <see cref="Timestamp"/> cursor is rejected with a 400 (timestamp-to-generation resolution is a
+/// deferred #1166 follow-up). The two cursors are mutually exclusive.
 /// </summary>
 /// <param name="Generation">Generation cursor (changes since this generation, exclusive).</param>
-/// <param name="Timestamp">Timestamp cursor, resolved to a generation by the service.</param>
+/// <param name="Timestamp">Timestamp cursor. Rejected in slice 1; reserved for a later slice.</param>
 /// <param name="Limit">Optional cap on returned feature states.</param>
 public sealed record TemporalAsOfRequest(
     long? Generation = null,

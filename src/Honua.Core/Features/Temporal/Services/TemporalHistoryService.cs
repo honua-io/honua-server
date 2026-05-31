@@ -97,6 +97,19 @@ public sealed class TemporalHistoryService : ITemporalHistoryService
                 "Specify either a generation cursor or a timestamp cursor, not both.");
         }
 
+        // Slice 1 keys exclusively on the change-tracker generation sequence (IChangeTracker exposes
+        // GetCurrentGenerationAsync/GetChangesSinceAsync(generation, ...) only — there is no
+        // timestamp -> generation index). Rather than silently treating a timestamp as generation 0
+        // (which would return the full change feed for any timestamp, including future ones), reject
+        // timestamp cursors with a clear 400. Resolving a timestamp to the generation in effect at
+        // that point is tracked as a #1166 follow-up.
+        if (request.Timestamp is not null)
+        {
+            throw new TemporalValidationException(
+                "Timestamp cursors are not yet supported in this slice; use a generation cursor. "
+                + "Timestamp-to-generation resolution is a #1166 follow-up.");
+        }
+
         if (request.Generation is < 0)
         {
             throw new TemporalValidationException("Generation cursor must be non-negative.");
@@ -120,17 +133,16 @@ public sealed class TemporalHistoryService : ITemporalHistoryService
         }
 
         var storageLayerId = resolved.StorageLayerId.Value;
-        var requestedKind = request.Timestamp is not null
-            ? TemporalCursorKind.Timestamp
-            : TemporalCursorKind.Generation;
+
+        // Timestamp cursors are rejected above; slice 1 only resolves generation cursors.
+        const TemporalCursorKind requestedKind = TemporalCursorKind.Generation;
 
         var currentGeneration = await _changeTracker
             .GetCurrentGenerationAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        // Slice 1 resolves any cursor to a generation. A timestamp cursor before any recorded change
-        // resolves to generation 0 (full state); the change tracker stores per-change timestamps but
-        // the slice-1 primitive keys on generation, so a timestamp clamps to "since the beginning".
+        // The cursor is a generation (changes since this generation, exclusive). A cursor at or beyond
+        // the current generation resolves to the current generation, yielding an empty delta.
         var resolvedGeneration = request.Generation ?? 0L;
         if (resolvedGeneration > currentGeneration)
         {
