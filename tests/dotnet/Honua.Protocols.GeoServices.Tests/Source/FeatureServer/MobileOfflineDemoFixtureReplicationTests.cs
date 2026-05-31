@@ -61,7 +61,10 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    private async Task PublishMobileOfflineMetadataV2Async()
+    private Task PublishMobileOfflineMetadataV2Async()
+        => PublishMobileOfflineMetadataV2Async(includeAttributesAccessor: true);
+
+    private async Task PublishMobileOfflineMetadataV2Async(bool includeAttributesAccessor)
     {
         var provider = _fixture.GetService<IMetadataV2GraphProvider>() as TestMetadataV2GraphProvider
             ?? throw new InvalidOperationException(
@@ -142,8 +145,8 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
 
         var storageBindings = new[]
         {
-            CreateMobileOfflineStorageBinding(OfflineSitesLayerId),
-            CreateMobileOfflineStorageBinding(68920)
+            CreateMobileOfflineStorageBinding(OfflineSitesLayerId, includeAttributesAccessor),
+            CreateMobileOfflineStorageBinding(68920, includeAttributesAccessor)
         };
         var publications = new[]
         {
@@ -215,8 +218,32 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
         };
     }
 
-    private static MetadataV2StorageBinding CreateMobileOfflineStorageBinding(int layerId)
-        => new()
+    private static MetadataV2StorageBinding CreateMobileOfflineStorageBinding(
+        int layerId,
+        bool includeAttributesAccessor = true)
+    {
+        // The seed's shared 'features' table holds rows for every test layer keyed by a
+        // 'layer_id' discriminator; the geometry lives in the 'geometry' column and the
+        // mobile-offline schema fields are persisted in the 'attributes' JSONB column.
+        // FeatureStorageMapping.ParseRelationalLocator rejects any locator that
+        // contains ':' so use the table name directly and expose the layer/geometry/
+        // attributes columns via Options (matching WebAppFixtureMetadataV2Mixin.BuildDefaultTestGraph).
+        var options = new Dictionary<string, JsonElement>
+        {
+            ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry")
+        };
+
+        // When omitted (includeAttributesAccessor: false) the binding reproduces the
+        // honua-server#1238 drift: the seed left storage_options empty so the reader
+        // projects bare columns ('globalid', ...) against the shared features table,
+        // which has no such columns => Postgres 42703. The seed/bridge fix supplies
+        // this accessor so declared fields resolve as attributes->>'field'.
+        if (includeAttributesAccessor)
+        {
+            options["attributesColumn"] = JsonSerializer.SerializeToElement("attributes");
+        }
+
+        return new()
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -225,19 +252,9 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
             },
             ResourceId = $"res-layer-{layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
             StorageType = MetadataV2StorageType.RelationalTable,
-            // The seed's shared 'features' table holds rows for every test layer keyed by a
-            // 'layer_id' discriminator; the geometry lives in the 'geometry' column and the
-            // mobile-offline schema fields are persisted in the 'attributes' JSONB column.
-            // FeatureStorageMapping.ParseRelationalLocator rejects any locator that
-            // contains ':' so use the table name directly and expose the layer/geometry/
-            // attributes columns via Options (matching WebAppFixtureMetadataV2Mixin.BuildDefaultTestGraph).
             Locator = "features",
             StorageLayerId = layerId,
-            Options = new Dictionary<string, JsonElement>
-            {
-                ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry"),
-                ["attributesColumn"] = JsonSerializer.SerializeToElement("attributes")
-            },
+            Options = options,
             Capabilities =
             [
                 MetadataV2StorageBindingCapability.Query,
@@ -248,6 +265,7 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
                 MetadataV2StorageBindingCapability.Transactions
             ]
         };
+    }
 
     private static MetadataV2Publication CreateMobileOfflinePublication(int layerId)
         => new()
@@ -316,6 +334,45 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
         var features = root.GetProperty("features");
         features.GetArrayLength().Should().BeGreaterThanOrEqualTo(3,
             "the v1 seed inserts three deterministic offline-site features");
+    }
+
+    // Regression for honua-server#1238: the JSONB-attribute layer must be queryable
+    // ONLY because the binding declares attributesColumn=attributes. This test republishes
+    // the graph WITHOUT that accessor to prove the bug reproduces (bare columns =>
+    // Postgres 42703 => GeoServices 400 "Invalid query syntax."), then republishes WITH
+    // the accessor (what the seed/bridge fix now supplies) to prove 200 with features.
+    // This guards against the TestKit attributesColumn shortcut silently masking the drift.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/mobile_offline_demo/FeatureServer/68910/query")]
+    public async Task MobileOfflineFixture_JsonbAttributes_RequireStorageAccessorForQuery()
+    {
+        var requestUri =
+            $"/rest/services/{ServiceId}/FeatureServer/{OfflineSitesLayerId}/query"
+            + "?where=1%3D1&outFields=*&returnGeometry=true&f=json";
+
+        // Reproduce the drift: no attributesColumn => bare-column projection => 42703.
+        await PublishMobileOfflineMetadataV2Async(includeAttributesAccessor: false);
+
+        var brokenResponse = await _fixture.Client.GetAsync(requestUri);
+        using (var brokenDocument = await ReadJsonDocumentAsync(brokenResponse))
+        {
+            brokenDocument.RootElement.TryGetProperty("error", out _).Should().BeTrue(
+                "without the JSONB accessor the reader projects bare columns and Postgres "
+                + "rejects the query with 42703 (the honua-server#1238 failure)");
+        }
+
+        // The fix: with the accessor, declared fields resolve as attributes->>'field'.
+        await PublishMobileOfflineMetadataV2Async(includeAttributesAccessor: true);
+
+        var fixedResponse = await _fixture.Client.GetAsync(requestUri);
+        fixedResponse.Be200Ok();
+
+        using var fixedDocument = await ReadJsonDocumentAsync(fixedResponse);
+        var root = fixedDocument.RootElement;
+        root.TryGetProperty("error", out _).Should().BeFalse(
+            "with attributesColumn=attributes the JSONB-backed layer is queryable");
+        root.GetProperty("features").GetArrayLength().Should().BeGreaterThanOrEqualTo(3);
     }
 
     private async Task<string> CreateReplicaAsync()
