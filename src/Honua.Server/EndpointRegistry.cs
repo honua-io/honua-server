@@ -666,6 +666,7 @@ public static class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/MapServer/identify"),
         new("POST", "/rest/services/{serviceId}/MapServer/identify"),
         new("GET", "/rest/services/{serviceId}/MapServer/legend"),
+        new("POST", "/rest/services/{serviceId}/MapServer/legend"),
         new("GET", "/rest/services/{serviceId}/MapServer/find"),
         new("POST", "/rest/services/{serviceId}/MapServer/find"),
         new("GET", "/rest/services/{serviceId}/MapServer/{layerId}/query"),

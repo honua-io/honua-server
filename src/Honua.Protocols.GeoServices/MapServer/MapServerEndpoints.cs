@@ -98,6 +98,15 @@ internal static partial class MapServerEndpoints
             .WithTags("MapServer")
             .CacheOutput("MapServerLegend");
 
+        endpoints.MapPost("/rest/services/{serviceId}/MapServer/legend",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleLegend(context))
+            .WithDisplayName("Get Map Legend (POST)")
+            .WithName("MapServerLegendPost")
+            .WithSummary("Get map legend using POST")
+            .WithDescription("Returns legend information with swatch images for all visible layers")
+            .WithTags("MapServer")
+            .AllowAnonymous();
+
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/find",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleFind(context))
             .WithDisplayName("Find Features")
