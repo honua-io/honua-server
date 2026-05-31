@@ -24,6 +24,8 @@ namespace Honua.Server.Tests.Features.Console.Collaboration;
 /// feed, including anchor metadata, not-found, and admin permission gating.
 /// </summary>
 [Collection("Database")]
+[Protocol(TestProtocols.Admin)]
+[Operation(Operations.Configuration)]
 public sealed class StudioMapCollaborationEndpointsTests : IAsyncLifetime
 {
     private const string MapId = "map-draft-collab";
