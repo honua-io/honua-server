@@ -64,19 +64,17 @@ public sealed partial class GdalRasterClipJobExecutor(
 
         var opts = options.CurrentValue;
 
-        if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", out var sourceBytes, out var sourceError))
+        if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", opts.MaxArtifactBytes, out var sourceBytes, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
             return JobExecutionResult.Failed($"Invalid clip inputs: {sourceError}");
         }
 
-        if (sourceBytes.Length > opts.MaxArtifactBytes)
-        {
-            return JobExecutionResult.Failed(
-                $"Source raster {sourceBytes.Length} bytes exceeds configured MaxArtifactBytes={opts.MaxArtifactBytes}.");
-        }
-
-        if (!GdalJobInputReader.TryGetBase64Input(parameters, "boundary", out var boundaryWkb, out var boundaryError))
+        // Secondary base64 inputs share the same per-worker payload ceiling as
+        // the primary source, otherwise a caller could bypass MaxArtifactBytes
+        // by stuffing arbitrary bytes into the boundary WKB and consuming
+        // worker memory at NTS read time.
+        if (!GdalJobInputReader.TryGetBase64Input(parameters, "boundary", opts.MaxArtifactBytes, out var boundaryWkb, out var boundaryError))
         {
             Log.InvalidInputs(logger, job.OperationId, boundaryError);
             return JobExecutionResult.Failed($"Invalid clip inputs: {boundaryError}");

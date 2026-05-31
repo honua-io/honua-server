@@ -92,16 +92,10 @@ public sealed partial class GdalSurfaceJobExecutor(
 
         var opts = options.CurrentValue;
 
-        if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", out var sourceBytes, out var inputError))
+        if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", opts.MaxArtifactBytes, out var sourceBytes, out var inputError))
         {
             Log.InvalidInputs(logger, job.OperationId, inputError);
             return JobExecutionResult.Failed($"Invalid {processId} inputs: {inputError}");
-        }
-
-        if (sourceBytes.Length > opts.MaxArtifactBytes)
-        {
-            return JobExecutionResult.Failed(
-                $"Source raster {sourceBytes.Length} bytes exceeds configured MaxArtifactBytes={opts.MaxArtifactBytes}.");
         }
 
         if (!TryBuildArguments(processId, parameters, out var subcommand, out var modeArgs, out var failure))

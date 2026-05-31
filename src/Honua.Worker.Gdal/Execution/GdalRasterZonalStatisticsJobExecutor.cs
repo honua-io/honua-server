@@ -74,19 +74,17 @@ public sealed partial class GdalRasterZonalStatisticsJobExecutor(
 
         var opts = options.CurrentValue;
 
-        if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", out var sourceBytes, out var sourceError))
+        if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", opts.MaxArtifactBytes, out var sourceBytes, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
             return JobExecutionResult.Failed($"Invalid zonal statistics inputs: {sourceError}");
         }
 
-        if (sourceBytes.Length > opts.MaxArtifactBytes)
-        {
-            return JobExecutionResult.Failed(
-                $"Source raster {sourceBytes.Length} bytes exceeds configured MaxArtifactBytes={opts.MaxArtifactBytes}.");
-        }
-
-        if (!GdalJobInputReader.TryGetBase64Input(parameters, "zones", out var zonesBytes, out var zonesError))
+        // Secondary base64 inputs (zone polygons) share the same per-worker
+        // payload ceiling as the primary source so a caller cannot bypass
+        // MaxArtifactBytes via inline GeoJSON and consume worker memory at
+        // parse time.
+        if (!GdalJobInputReader.TryGetBase64Input(parameters, "zones", opts.MaxArtifactBytes, out var zonesBytes, out var zonesError))
         {
             Log.InvalidInputs(logger, job.OperationId, zonesError);
             return JobExecutionResult.Failed(
@@ -129,8 +127,19 @@ public sealed partial class GdalRasterZonalStatisticsJobExecutor(
         if (GdalJobInputReader.TryGetInput(parameters, "statistics", out var statsRaw)
             && !string.IsNullOrWhiteSpace(statsRaw))
         {
+            var statTokens = statsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (statTokens.Length == 0)
+            {
+                // 'statistics' supplied but empty after splitting (e.g. ',' or
+                // ' , ,'). Reject explicitly so callers do not silently end up
+                // with an empty requested set; matches the submit-time
+                // validator's comma-only rejection.
+                return JobExecutionResult.Failed(
+                    $"Invalid zonal statistics inputs: 'statistics' must be a comma-separated list of names from " +
+                    $"(count, sum, mean, min, max, stddev, variance); got '{statsRaw}'.");
+            }
             requestedStatistics.Clear();
-            foreach (var token in statsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            foreach (var token in statTokens)
             {
                 if (!SupportedStatistics.Contains(token))
                 {

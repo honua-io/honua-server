@@ -100,16 +100,10 @@ public sealed partial class GdalRasterReprojectCatalogJobExecutor(
             }
         }
 
-        if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", out var sourceBytes, out var sourceError))
+        if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", opts.MaxArtifactBytes, out var sourceBytes, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
             return JobExecutionResult.Failed($"Invalid reproject inputs: {sourceError}");
-        }
-
-        if (sourceBytes.Length > opts.MaxArtifactBytes)
-        {
-            return JobExecutionResult.Failed(
-                $"Source raster {sourceBytes.Length} bytes exceeds configured MaxArtifactBytes={opts.MaxArtifactBytes}.");
         }
 
         var workspace = Path.Combine(opts.ScratchRoot, job.OperationId);

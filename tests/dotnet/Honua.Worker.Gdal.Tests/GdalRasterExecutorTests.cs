@@ -72,6 +72,35 @@ public sealed class GdalRasterExecutorTests
     }
 
     [UnitTest]
+    public async Task RasterClip_OversizedBoundary_RejectedAgainstMaxArtifactBytes()
+    {
+        // Secondary base64 inputs share the per-worker payload ceiling with the
+        // primary source so a caller cannot bypass MaxArtifactBytes by stuffing
+        // arbitrary bytes into the boundary WKB and consuming worker memory at
+        // NTS parse time.
+        var executor = NewClipExecutor(FakeGdalCommandRunner.Failing(1, "n/a"), out var scratch);
+        try
+        {
+            // Build a boundary payload larger than the test options' MaxArtifactBytes
+            // (50 MiB by default in GdalJobFactory.Options).
+            var oversized = new byte[60L * 1024L * 1024L];
+            var job = GdalJobFactory.Job(
+                GdalRasterClipJobExecutor.HandledProcessId,
+                ("source", Base64("fake-input-raster")),
+                ("boundary", Convert.ToBase64String(oversized)));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("boundary");
+            result.ErrorMessage.Should().Contain("MaxArtifactBytes");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
     public async Task RasterClip_NonPolygonBoundary_RejectedWithClearMessage()
     {
         var executor = NewClipExecutor(FakeGdalCommandRunner.Failing(1, "n/a"), out var scratch);
@@ -487,6 +516,85 @@ public sealed class GdalRasterExecutorTests
             zone.GetProperty("mean").GetDouble().Should().Be(9d);
             zone.GetProperty("min").GetDouble().Should().Be(7d);
             zone.GetProperty("max").GetDouble().Should().Be(11d);
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task ZonalStatistics_OversizedZones_RejectedAgainstMaxArtifactBytes()
+    {
+        // Inline zones GeoJSON is bounded by the same per-worker payload
+        // ceiling as the primary source.
+        var runner = FakeGdalCommandRunner.Failing(1, "n/a");
+        var executor = NewZonalExecutor(runner, out var scratch);
+        try
+        {
+            var oversized = new byte[60L * 1024L * 1024L];
+            var job = GdalJobFactory.Job(
+                GdalRasterZonalStatisticsJobExecutor.HandledProcessId,
+                ("source", Base64("fake-input-raster")),
+                ("zones", Convert.ToBase64String(oversized)));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("zones");
+            result.ErrorMessage.Should().Contain("MaxArtifactBytes");
+            runner.Invocations.Should().BeEmpty();
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task RasterStatistics_BandsCommaOnly_RejectedWithSameShapeAsValidator()
+    {
+        // bands=',' produces an empty list after Split(...RemoveEmptyEntries).
+        // The submit-time validator rejects this; the executor must too so
+        // valid plans accepted at submit can never silently emit no bands.
+        var executor = NewStatsExecutor(FakeGdalCommandRunner.Failing(1, "n/a"), out var scratch);
+        try
+        {
+            var job = GdalJobFactory.Job(
+                GdalRasterStatisticsJobExecutor.StatisticsProcessId,
+                ("source", Base64("fake-input-raster")),
+                ("bands", ","));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("bands");
+            result.ErrorMessage.Should().Contain("comma-separated");
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    [UnitTest]
+    public async Task ZonalStatistics_StatisticsCommaOnly_RejectedWithSameShapeAsValidator()
+    {
+        var runner = FakeGdalCommandRunner.Failing(1, "n/a");
+        var executor = NewZonalExecutor(runner, out var scratch);
+        try
+        {
+            var zonesGeoJson =
+                """{"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,1],[0,0]]]}}]}""";
+            var job = GdalJobFactory.Job(
+                GdalRasterZonalStatisticsJobExecutor.HandledProcessId,
+                ("source", Base64("fake-input-raster")),
+                ("zones", Base64(zonesGeoJson)),
+                ("statistics", " , ,"));
+
+            var result = await executor.ExecuteAsync(job, new RecordingJobExecutionContext(job.OperationId), default);
+            result.Status.Should().Be(ExecutionJobStatus.Failed);
+            result.ErrorMessage.Should().Contain("statistics");
+            result.ErrorMessage.Should().Contain("comma-separated");
+            runner.Invocations.Should().BeEmpty();
         }
         finally
         {

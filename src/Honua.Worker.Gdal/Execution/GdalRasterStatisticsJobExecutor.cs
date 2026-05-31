@@ -70,16 +70,10 @@ public sealed partial class GdalRasterStatisticsJobExecutor(
 
         var opts = options.CurrentValue;
 
-        if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", out var sourceBytes, out var sourceError))
+        if (!GdalJobInputReader.TryGetBase64Input(parameters, "source", opts.MaxArtifactBytes, out var sourceBytes, out var sourceError))
         {
             Log.InvalidInputs(logger, job.OperationId, sourceError);
             return JobExecutionResult.Failed($"Invalid {processId} inputs: {sourceError}");
-        }
-
-        if (sourceBytes.Length > opts.MaxArtifactBytes)
-        {
-            return JobExecutionResult.Failed(
-                $"Source raster {sourceBytes.Length} bytes exceeds configured MaxArtifactBytes={opts.MaxArtifactBytes}.");
         }
 
         if (!TryParseBands(parameters, out var bandFilter, out var bandError))
@@ -181,6 +175,14 @@ public sealed partial class GdalRasterStatisticsJobExecutor(
         }
 
         var parts = raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0)
+        {
+            // 'bands' supplied but empty after splitting (e.g. ',' or ' , ,').
+            // Matches the validator's empty-list rejection so the executor and
+            // submit-time validation agree on the same edge case.
+            failure = $"'bands' must be a comma-separated list of 1-based positive integers; got '{raw}'";
+            return false;
+        }
         var parsed = new HashSet<int>();
         foreach (var part in parts)
         {
