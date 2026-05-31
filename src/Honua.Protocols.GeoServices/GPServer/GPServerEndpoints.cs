@@ -101,11 +101,30 @@ internal static class GPServerEndpoints
             .WithDescription("Queues a GP task for background processing and returns a job ID")
             .WithTags("GPServer");
 
-        // Note: the generic <c>/{taskName}/execute</c> route is intentionally NOT
-        // published — sync-eligible tasks run via <c>/{taskName}</c> directly, async
-        // tasks via <c>/{taskName}/submitJob</c>. The /execute path is reserved for
-        // future per-task explicit routes (a 404 here is the contract — see
-        // GPServerEndpointTests.ExecuteGet_GenericAsyncTaskRouteIsNotPublished).
+        // Synchronous execute (POST + GET). Sync-eligible tasks
+        // (GPServerExecutionPolicy.SyncEligibleProcessIds) run inline and return
+        // the result envelope on the same request; async-only tasks get a 400 with
+        // a capability message pointing at submitJob. HANDLER-AUTHORIZED: the
+        // handler calls IGeoprocessingJobService.EnsureCallerAuthorized before
+        // reading the body, mirroring the submitJob pattern, so 401/403 are
+        // returned ahead of 400 for unauth callers. Marked AllowAnonymous so the
+        // audit guard records the explicit decision.
+        endpoints.MapPost($"{RouteBase}/{{taskName}}/execute",
+                static (HttpContext context, CancellationToken ct) => HandleExecute(context, ct))
+            .WithDisplayName("GPServer Execute")
+            .WithName("GPServerExecute")
+            .WithSummary("Execute a synchronous GP task")
+            .WithDescription("Runs a sync-eligible GP task inline and returns its result envelope")
+            .WithTags("GPServer")
+            .AllowAnonymous();
+
+        endpoints.MapGet($"{RouteBase}/{{taskName}}/execute",
+                static (HttpContext context, CancellationToken ct) => HandleExecute(context, ct))
+            .WithDisplayName("GPServer Execute (GET)")
+            .WithName("GPServerExecuteGet")
+            .WithSummary("Execute a synchronous GP task using GET")
+            .WithDescription("Runs a sync-eligible GP task inline and returns its result envelope")
+            .WithTags("GPServer");
 
         // Job status
         endpoints.MapGet($"{RouteBase}/{{taskName}}/jobs/{{jobId}}",
@@ -329,7 +348,11 @@ internal static class GPServerEndpoints
         var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? "";
         var taskName = context.Request.RouteValues["taskName"]?.ToString() ?? "";
         EnrichActivity("Execute", serviceId, taskName);
+        // Tag the activity so telemetry can distinguish sync /execute from
+        // async /submitJob even though both flow through the same job runtime.
+        Activity.Current?.SetTag("gpserver.syncExecute", true);
         var logger = ResolveLogger(context);
+        GPServerLog.ExecuteRequested(logger, taskName);
 
         var jobService = context.RequestServices.GetRequiredService<IGeoprocessingJobService>();
 
@@ -1122,7 +1145,10 @@ internal static class GPServerEndpoints
                 DefaultValue = parameter.DefaultValue,
                 ParameterType = parameter.Required
                     ? "esriGPParameterTypeRequired"
-                    : "esriGPParameterTypeOptional"
+                    : "esriGPParameterTypeOptional",
+                ChoiceList = parameter.AllowedValues is { Count: > 0 } allowed
+                    ? [.. allowed]
+                    : null
             });
         }
 
@@ -1195,7 +1221,7 @@ internal static class GPServerEndpoints
             return new SubmissionPlanResult(Plan: null, esriResult.CapabilityMessage, esriResult.InputSpatialReference);
         }
 
-        var translatedInputs = GPServerParameterTranslation.TranslateInbound(esriResult.Inputs);
+        var translatedInputs = GPServerParameterTranslation.TranslateInbound(esriResult.Inputs, definition);
         var taskSlug = definition.ProcessId.Replace(".", "-", StringComparison.Ordinal);
 
         var plan = new AnalysisPlan

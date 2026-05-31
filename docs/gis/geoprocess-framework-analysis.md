@@ -340,7 +340,7 @@ REST contract. Key mappings:
 | --- | --- |
 | Service root / task list | `CatalogService` process definitions |
 | Task parameters | Process definition inputs → Esri GP type descriptors |
-| `/{task}/execute` | Reserved for synchronous GP tasks; not published on the current generic built-in GPServer surface |
+| `/{task}/execute` | `ProcessService.SubmitJob` + inline polling for tasks declared in `GPServerExecutionPolicy.SyncEligibleProcessIds`; async-only tasks return HTTP 400 pointing at `/submitJob`. Accepts `env:outSR`/`env:processSR` GP environment controls (unlike `/submitJob`, which rejects all `env:*` controls). |
 | `/{task}/submitJob` | `ProcessService.SubmitJob` (async) |
 | `/{task}/jobs/{jobId}` | `ProcessService.GetJob` → `ExecutionJobRecord` |
 | `/{task}/jobs/{jobId}/results/{paramName}` | `ProcessService.GetJobResult` → individual `ArtifactRef` from `AnalysisResultPackage.Artifacts` |

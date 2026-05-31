@@ -89,6 +89,15 @@ public sealed record ProcessParameterSpec
     /// Default value used when the parameter is not supplied, serialized as a string.
     /// </summary>
     public string? DefaultValue { get; init; }
+
+    /// <summary>
+    /// Optional finite enumeration of accepted values. When populated, protocol
+    /// adapters surface it as a choice list (GPServer <c>choiceList</c>, OGC
+    /// JSON Schema <c>enum</c>) and reject inbound values that fall outside the
+    /// set. Comparison is case-insensitive at the adapter boundary so callers
+    /// can match ArcGIS-style mixed-case strings.
+    /// </summary>
+    public IReadOnlyList<string>? AllowedValues { get; init; }
 }
 
 /// <summary>
