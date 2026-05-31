@@ -41,6 +41,12 @@ public static class Operations
     public const string Difference = "Difference";
     public const string Area = "Area";
     public const string Length = "Length";
+    public const string Distance = "Distance";
+    public const string Relation = "Relation";
+    public const string Densify = "Densify";
+    public const string ConvexHull = "ConvexHull";
+    public const string Generalize = "Generalize";
+    public const string LabelPoints = "LabelPoints";
 
     // Metadata Operations
     public const string GetMetadata = "GetMetadata";

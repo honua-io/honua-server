@@ -641,6 +641,724 @@ internal sealed class GeometryServiceHandler(
         }
     }
 
+    public async Task<IResult> HandleDistanceAsync(HttpContext context, CancellationToken ct)
+    {
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "distance", HonuaTelemetry.Protocols.GeometryService, "geometry");
+
+        try
+        {
+            var (values, parseError) = await GeometryServiceRequestParser.TryReadRequestValuesAsync(context.Request, ct);
+            var requestLimits = ResolveRequestLimits(context);
+            if (values is null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "distance", parseError ?? "No parameters");
+                return CreateRequestParameterError(context, parseError);
+            }
+
+            var formatError = GeometryServiceRequestParser.ValidateFormat(
+                GeometryServiceRequestParser.GetValue(values, "f"));
+            if (formatError is not null)
+            {
+                return CreateError(context, 400, formatError);
+            }
+
+            var (geometry1, geom1Error) = GeometryServiceRequestParser.ParseSingleGeometry(
+                GeometryServiceRequestParser.GetValue(values, "geometry1"),
+                "geometry1",
+                requestLimits.MaxGeometryJsonLength);
+            if (geom1Error is not null || string.IsNullOrWhiteSpace(geometry1))
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "distance", geom1Error ?? "Missing geometry1");
+                return CreateError(context, 400, geom1Error ?? "Parameter 'geometry1' is required.");
+            }
+
+            var (geometry2, geom2Error) = GeometryServiceRequestParser.ParseSingleGeometry(
+                GeometryServiceRequestParser.GetValue(values, "geometry2"),
+                "geometry2",
+                requestLimits.MaxGeometryJsonLength);
+            if (geom2Error is not null || string.IsNullOrWhiteSpace(geometry2))
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "distance", geom2Error ?? "Missing geometry2");
+                return CreateError(context, 400, geom2Error ?? "Parameter 'geometry2' is required.");
+            }
+
+            var (sr, srError) = await ResolveRequiredSpatialReferenceAsync(values, "sr", ct);
+            if (srError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "distance", srError);
+                return CreateError(context, 400, srError);
+            }
+
+            var parameters = new DistanceParameters
+            {
+                Geometry1Json = geometry1,
+                Geometry2Json = geometry2,
+                SR = sr!.Value,
+                DistanceUnit = GeometryServiceRequestParser.GetValue(values, "distanceUnit"),
+                Geodesic = GeometryServiceRequestParser.ParseBool(
+                    GeometryServiceRequestParser.GetValue(values, "geodesic"))
+            };
+
+            var spatialContext = await ResolveMeasurementSpatialContextAsync(
+                context.RequestServices,
+                parameters.SR,
+                ct).ConfigureAwait(false);
+
+            return await ExecuteDistanceAsync(parameters, spatialContext, scope, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (ArgumentException ex)
+        {
+            GeometryServiceLog.InvalidGeometryInput(_logger, "distance", ex.Message);
+            scope.RecordException(ex);
+            return CreateError(context, 400, InvalidGeometryInputMessage);
+        }
+        catch (Exception ex)
+        {
+            GeometryServiceLog.GeometryOperationFailed(_logger, "distance", ex.Message, ex);
+            scope.RecordException(ex);
+            return CreateError(context, 500, "An internal error occurred during the distance operation.");
+        }
+    }
+
+    public async Task<IResult> HandleRelationAsync(HttpContext context, CancellationToken ct)
+    {
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "relation", HonuaTelemetry.Protocols.GeometryService, "geometry");
+
+        try
+        {
+            var (values, parseError) = await GeometryServiceRequestParser.TryReadRequestValuesAsync(context.Request, ct);
+            var requestLimits = ResolveRequestLimits(context);
+            if (values is null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "relation", parseError ?? "No parameters");
+                return CreateRequestParameterError(context, parseError);
+            }
+
+            var formatError = GeometryServiceRequestParser.ValidateFormat(
+                GeometryServiceRequestParser.GetValue(values, "f"));
+            if (formatError is not null)
+            {
+                return CreateError(context, 400, formatError);
+            }
+
+            var (geometries1, _, geom1Error) = GeometryServiceRequestParser.ParseGeometries(
+                GeometryServiceRequestParser.GetValue(values, "geometries1"),
+                requestLimits.MaxGeometriesPerRequest,
+                requestLimits.MaxGeometryJsonLength);
+            if (geom1Error is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "relation", geom1Error);
+                return CreateError(context, 400, geom1Error.Replace("'geometries'", "'geometries1'", StringComparison.Ordinal));
+            }
+
+            var (geometries2, _, geom2Error) = GeometryServiceRequestParser.ParseGeometries(
+                GeometryServiceRequestParser.GetValue(values, "geometries2"),
+                requestLimits.MaxGeometriesPerRequest,
+                requestLimits.MaxGeometryJsonLength);
+            if (geom2Error is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "relation", geom2Error);
+                return CreateError(context, 400, geom2Error.Replace("'geometries'", "'geometries2'", StringComparison.Ordinal));
+            }
+
+            if (geometries1.Length == 0 || geometries2.Length == 0)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "relation", "No geometries provided");
+                return CreateError(context, 400, "Parameters 'geometries1' and 'geometries2' must each contain at least one geometry.");
+            }
+
+            var (sr, srError) = await ResolveRequiredSpatialReferenceAsync(values, "sr", ct);
+            if (srError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "relation", srError);
+                return CreateError(context, 400, srError);
+            }
+
+            var relation = GeometryServiceRequestParser.GetValue(values, "relation");
+            if (string.IsNullOrWhiteSpace(relation))
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "relation", "Missing relation");
+                return CreateError(context, 400, "Parameter 'relation' is required.");
+            }
+
+            var relationParam = GeometryServiceRequestParser.GetValue(values, "relationParam");
+            if (RelationRequiresRelationParam(relation) && string.IsNullOrWhiteSpace(relationParam))
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "relation", "Missing relationParam");
+                return CreateError(
+                    context,
+                    400,
+                    "Parameter 'relationParam' (a DE-9IM pattern) is required when 'relation' is 'esriGeometryRelationRelation'.");
+            }
+
+            if (!IsSupportedRelation(relation))
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "relation", $"Unsupported relation '{relation}'");
+                return CreateError(
+                    context,
+                    400,
+                    $"Parameter 'relation' value '{relation}' is not supported.");
+            }
+
+            var parameters = new RelationParameters
+            {
+                Geometries1Json = geometries1,
+                Geometries2Json = geometries2,
+                SR = sr!.Value,
+                Relation = relation,
+                RelationParam = relationParam
+            };
+
+            return ExecuteRelation(parameters, scope);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (ArgumentException ex)
+        {
+            GeometryServiceLog.InvalidGeometryInput(_logger, "relation", ex.Message);
+            scope.RecordException(ex);
+            return CreateError(context, 400, InvalidGeometryInputMessage);
+        }
+        catch (Exception ex)
+        {
+            GeometryServiceLog.GeometryOperationFailed(_logger, "relation", ex.Message, ex);
+            scope.RecordException(ex);
+            return CreateError(context, 500, "An internal error occurred during the relation operation.");
+        }
+    }
+
+    public async Task<IResult> HandleDensifyAsync(HttpContext context, CancellationToken ct)
+    {
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "densify", HonuaTelemetry.Protocols.GeometryService, "geometry");
+
+        try
+        {
+            var (values, parseError) = await GeometryServiceRequestParser.TryReadRequestValuesAsync(context.Request, ct);
+            var requestLimits = ResolveRequestLimits(context);
+            if (values is null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "densify", parseError ?? "No parameters");
+                return CreateRequestParameterError(context, parseError);
+            }
+
+            var formatError = GeometryServiceRequestParser.ValidateFormat(
+                GeometryServiceRequestParser.GetValue(values, "f"));
+            if (formatError is not null)
+            {
+                return CreateError(context, 400, formatError);
+            }
+
+            var (geomStrings, geomType, geomError) = GeometryServiceRequestParser.ParseGeometries(
+                GeometryServiceRequestParser.GetValue(values, "geometries"),
+                requestLimits.MaxGeometriesPerRequest,
+                requestLimits.MaxGeometryJsonLength);
+            if (geomError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "densify", geomError);
+                return CreateError(context, 400, geomError);
+            }
+
+            if (geomStrings.Length == 0)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "densify", "No geometries provided");
+                return CreateError(context, 400, "Parameter 'geometries' must contain at least one geometry.");
+            }
+
+            var (sr, srError) = await ResolveRequiredSpatialReferenceAsync(values, "sr", ct);
+            if (srError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "densify", srError);
+                return CreateError(context, 400, srError);
+            }
+
+            var (maxSegmentLength, segmentError) = ParseRequiredPositiveDouble(
+                GeometryServiceRequestParser.GetValue(values, "maxSegmentLength"),
+                "maxSegmentLength");
+            if (segmentError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "densify", segmentError);
+                return CreateError(context, 400, segmentError);
+            }
+
+            var parameters = new DensifyParameters
+            {
+                GeometryJsonStrings = geomStrings,
+                GeometryType = geomType,
+                SR = sr!.Value,
+                MaxSegmentLength = maxSegmentLength
+            };
+
+            GeometryServiceLog.RequestParsed(_logger, "densify", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
+            return ExecuteDensify(parameters, scope);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (ArgumentException ex)
+        {
+            GeometryServiceLog.InvalidGeometryInput(_logger, "densify", ex.Message);
+            scope.RecordException(ex);
+            return CreateError(context, 400, InvalidGeometryInputMessage);
+        }
+        catch (Exception ex)
+        {
+            GeometryServiceLog.GeometryOperationFailed(_logger, "densify", ex.Message, ex);
+            scope.RecordException(ex);
+            return CreateError(context, 500, "An internal error occurred during the densify operation.");
+        }
+    }
+
+    public async Task<IResult> HandleConvexHullAsync(HttpContext context, CancellationToken ct)
+    {
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "convexHull", HonuaTelemetry.Protocols.GeometryService, "geometry");
+
+        try
+        {
+            var (values, parseError) = await GeometryServiceRequestParser.TryReadRequestValuesAsync(context.Request, ct);
+            var requestLimits = ResolveRequestLimits(context);
+            if (values is null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "convexHull", parseError ?? "No parameters");
+                return CreateRequestParameterError(context, parseError);
+            }
+
+            var formatError = GeometryServiceRequestParser.ValidateFormat(
+                GeometryServiceRequestParser.GetValue(values, "f"));
+            if (formatError is not null)
+            {
+                return CreateError(context, 400, formatError);
+            }
+
+            var (geomStrings, geomType, geomError) = GeometryServiceRequestParser.ParseGeometries(
+                GeometryServiceRequestParser.GetValue(values, "geometries"),
+                requestLimits.MaxGeometriesPerRequest,
+                requestLimits.MaxGeometryJsonLength);
+            if (geomError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "convexHull", geomError);
+                return CreateError(context, 400, geomError);
+            }
+
+            if (geomStrings.Length == 0)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "convexHull", "No geometries provided");
+                return CreateError(context, 400, "Parameter 'geometries' must contain at least one geometry.");
+            }
+
+            var (sr, srError) = await ResolveRequiredSpatialReferenceAsync(values, "sr", ct);
+            if (srError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "convexHull", srError);
+                return CreateError(context, 400, srError);
+            }
+
+            var parameters = new ConvexHullParameters
+            {
+                GeometryJsonStrings = geomStrings,
+                GeometryType = geomType,
+                SR = sr!.Value
+            };
+
+            GeometryServiceLog.RequestParsed(_logger, "convexHull", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
+            return ExecuteConvexHull(parameters, scope);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (ArgumentException ex)
+        {
+            GeometryServiceLog.InvalidGeometryInput(_logger, "convexHull", ex.Message);
+            scope.RecordException(ex);
+            return CreateError(context, 400, InvalidGeometryInputMessage);
+        }
+        catch (Exception ex)
+        {
+            GeometryServiceLog.GeometryOperationFailed(_logger, "convexHull", ex.Message, ex);
+            scope.RecordException(ex);
+            return CreateError(context, 500, "An internal error occurred during the convexHull operation.");
+        }
+    }
+
+    public async Task<IResult> HandleGeneralizeAsync(HttpContext context, CancellationToken ct)
+    {
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "generalize", HonuaTelemetry.Protocols.GeometryService, "geometry");
+
+        try
+        {
+            var (values, parseError) = await GeometryServiceRequestParser.TryReadRequestValuesAsync(context.Request, ct);
+            var requestLimits = ResolveRequestLimits(context);
+            if (values is null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "generalize", parseError ?? "No parameters");
+                return CreateRequestParameterError(context, parseError);
+            }
+
+            var formatError = GeometryServiceRequestParser.ValidateFormat(
+                GeometryServiceRequestParser.GetValue(values, "f"));
+            if (formatError is not null)
+            {
+                return CreateError(context, 400, formatError);
+            }
+
+            var (geomStrings, geomType, geomError) = GeometryServiceRequestParser.ParseGeometries(
+                GeometryServiceRequestParser.GetValue(values, "geometries"),
+                requestLimits.MaxGeometriesPerRequest,
+                requestLimits.MaxGeometryJsonLength);
+            if (geomError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "generalize", geomError);
+                return CreateError(context, 400, geomError);
+            }
+
+            if (geomStrings.Length == 0)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "generalize", "No geometries provided");
+                return CreateError(context, 400, "Parameter 'geometries' must contain at least one geometry.");
+            }
+
+            var (sr, srError) = await ResolveRequiredSpatialReferenceAsync(values, "sr", ct);
+            if (srError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "generalize", srError);
+                return CreateError(context, 400, srError);
+            }
+
+            var (maxDeviation, deviationError) = ParseRequiredPositiveDouble(
+                GeometryServiceRequestParser.GetValue(values, "maxDeviation"),
+                "maxDeviation");
+            if (deviationError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "generalize", deviationError);
+                return CreateError(context, 400, deviationError);
+            }
+
+            var parameters = new GeneralizeParameters
+            {
+                GeometryJsonStrings = geomStrings,
+                GeometryType = geomType,
+                SR = sr!.Value,
+                MaxDeviation = maxDeviation
+            };
+
+            GeometryServiceLog.RequestParsed(_logger, "generalize", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
+            return ExecuteGeneralize(parameters, scope);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (ArgumentException ex)
+        {
+            GeometryServiceLog.InvalidGeometryInput(_logger, "generalize", ex.Message);
+            scope.RecordException(ex);
+            return CreateError(context, 400, InvalidGeometryInputMessage);
+        }
+        catch (Exception ex)
+        {
+            GeometryServiceLog.GeometryOperationFailed(_logger, "generalize", ex.Message, ex);
+            scope.RecordException(ex);
+            return CreateError(context, 500, "An internal error occurred during the generalize operation.");
+        }
+    }
+
+    public async Task<IResult> HandleLabelPointsAsync(HttpContext context, CancellationToken ct)
+    {
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "labelPoints", HonuaTelemetry.Protocols.GeometryService, "geometry");
+
+        try
+        {
+            var (values, parseError) = await GeometryServiceRequestParser.TryReadRequestValuesAsync(context.Request, ct);
+            var requestLimits = ResolveRequestLimits(context);
+            if (values is null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "labelPoints", parseError ?? "No parameters");
+                return CreateRequestParameterError(context, parseError);
+            }
+
+            var formatError = GeometryServiceRequestParser.ValidateFormat(
+                GeometryServiceRequestParser.GetValue(values, "f"));
+            if (formatError is not null)
+            {
+                return CreateError(context, 400, formatError);
+            }
+
+            var polygons = GetPreferredValue(values, "polygons", "geometries");
+            if (string.IsNullOrWhiteSpace(polygons))
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "labelPoints", "Missing polygons");
+                return CreateError(context, 400, "Parameter 'polygons' is required.");
+            }
+
+            var (geomStrings, _, geomError) = GeometryServiceRequestParser.ParseGeometries(
+                polygons,
+                requestLimits.MaxGeometriesPerRequest,
+                requestLimits.MaxGeometryJsonLength);
+            if (geomError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "labelPoints", geomError);
+                return CreateError(context, 400, geomError.Replace("'geometries'", "'polygons'", StringComparison.Ordinal));
+            }
+
+            if (geomStrings.Length == 0)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "labelPoints", "No geometries provided");
+                return CreateError(context, 400, "Parameter 'polygons' must contain at least one geometry.");
+            }
+
+            var (sr, srError) = await ResolveRequiredSpatialReferenceAsync(values, "sr", ct);
+            if (srError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "labelPoints", srError);
+                return CreateError(context, 400, srError);
+            }
+
+            var parameters = new LabelPointsParameters
+            {
+                GeometryJsonStrings = geomStrings,
+                SR = sr!.Value
+            };
+
+            GeometryServiceLog.RequestParsed(_logger, "labelPoints", parameters.GeometryJsonStrings.Length, "esriGeometryPolygon");
+            return ExecuteLabelPoints(parameters, scope);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (ArgumentException ex)
+        {
+            GeometryServiceLog.InvalidGeometryInput(_logger, "labelPoints", ex.Message);
+            scope.RecordException(ex);
+            return CreateError(context, 400, InvalidGeometryInputMessage);
+        }
+        catch (Exception ex)
+        {
+            GeometryServiceLog.GeometryOperationFailed(_logger, "labelPoints", ex.Message, ex);
+            scope.RecordException(ex);
+            return CreateError(context, 500, "An internal error occurred during the labelPoints operation.");
+        }
+    }
+
+    private async Task<IResult> ExecuteDistanceAsync(
+        DistanceParameters parameters,
+        MeasurementSpatialContext spatialContext,
+        HonuaTelemetryScope scope,
+        CancellationToken ct)
+    {
+        var geometry1 = ReadGeometry(parameters.Geometry1Json);
+        var geometry2 = ReadGeometry(parameters.Geometry2Json);
+
+        double distanceMeters;
+        if (parameters.Geodesic)
+        {
+            // Build a polyline between the closest points of the two geometries and
+            // measure it geodesically through the shared measurement pipeline (projects
+            // to EPSG:4326 and uses ST_Length on geography). This reuses the same
+            // geodesic path that 'lengths' relies on.
+            var nearest = NetTopologySuite.Operation.Distance.DistanceOp.NearestPoints(geometry1, geometry2);
+            var lineWkb = new WKBWriter().Write(
+                geometry1.Factory.CreateLineString([nearest[0], nearest[1]]));
+            var measurementGeometry = await ProjectForGeodeticMeasurementAsync(lineWkb, parameters.SR, ct).ConfigureAwait(false);
+            distanceMeters = await _operationService.LengthAsync(measurementGeometry, 4326, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            distanceMeters = geometry1.Distance(geometry2) * spatialContext.MetersPerNativeUnit;
+        }
+
+        var distance = string.IsNullOrWhiteSpace(parameters.DistanceUnit)
+            ? (parameters.Geodesic
+                ? distanceMeters
+                : geometry1.Distance(geometry2))
+            : ConvertLengthFromMeters(distanceMeters, parameters.DistanceUnit);
+
+        var response = new GeometryServiceDistanceResponse { Distance = distance };
+        GeometryServiceLog.MeasurementOperationCompleted(_logger, "distance", 1);
+        scope.SetSuccess(1);
+        return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceDistanceResponse, contentType: "application/json");
+    }
+
+    private IResult ExecuteRelation(RelationParameters parameters, HonuaTelemetryScope scope)
+    {
+        var geometries1 = new Geometry[parameters.Geometries1Json.Length];
+        for (var i = 0; i < geometries1.Length; i++)
+        {
+            geometries1[i] = ReadGeometry(parameters.Geometries1Json[i]);
+        }
+
+        var geometries2 = new Geometry[parameters.Geometries2Json.Length];
+        for (var j = 0; j < geometries2.Length; j++)
+        {
+            geometries2[j] = ReadGeometry(parameters.Geometries2Json[j]);
+        }
+
+        var matches = new List<GeometryServiceRelationPair>();
+        for (var i = 0; i < geometries1.Length; i++)
+        {
+            for (var j = 0; j < geometries2.Length; j++)
+            {
+                if (EvaluateRelation(parameters.Relation, parameters.RelationParam, geometries1[i], geometries2[j]))
+                {
+                    matches.Add(new GeometryServiceRelationPair { Geometry1Index = i, Geometry2Index = j });
+                }
+            }
+        }
+
+        var response = new GeometryServiceRelationResponse { Relations = matches.ToArray() };
+        GeometryServiceLog.BinaryOperationCompleted(_logger, "relation", matches.Count);
+        scope.SetSuccess(matches.Count);
+        return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceRelationResponse, contentType: "application/json");
+    }
+
+    private IResult ExecuteDensify(DensifyParameters parameters, HonuaTelemetryScope scope)
+    {
+        var densified = new List<byte[]>(parameters.GeometryJsonStrings.Length);
+        var writer = new WKBWriter();
+        foreach (var geomJson in parameters.GeometryJsonStrings)
+        {
+            var geometry = ReadGeometry(geomJson);
+            var result = NetTopologySuite.Densify.Densifier.Densify(geometry, parameters.MaxSegmentLength);
+            densified.Add(writer.Write(result));
+        }
+
+        var response = ConvertToResponse(densified, parameters.SR, parameters.GeometryType);
+        GeometryServiceLog.SimplifyOperationCompleted(_logger, parameters.GeometryJsonStrings.Length);
+        scope.SetSuccess(densified.Count);
+        return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceResponse, contentType: "application/json");
+    }
+
+    private IResult ExecuteConvexHull(ConvexHullParameters parameters, HonuaTelemetryScope scope)
+    {
+        var factory = NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory();
+        var geometries = new Geometry[parameters.GeometryJsonStrings.Length];
+        for (var i = 0; i < geometries.Length; i++)
+        {
+            geometries[i] = ReadGeometry(parameters.GeometryJsonStrings[i]);
+        }
+
+        // convexHull computes a single hull over the union of all input geometries.
+        var combined = geometries.Length == 1
+            ? geometries[0]
+            : factory.CreateGeometryCollection(geometries);
+        var hull = combined.ConvexHull();
+        var hullWkb = new WKBWriter().Write(hull);
+        var hullElement = _geometryConverter.ConvertWkbToGeoServicesGeometry(hullWkb, parameters.SR);
+
+        var response = new GeometryServiceGeometryResponse { Geometry = hullElement };
+        GeometryServiceLog.BinaryOperationCompleted(_logger, "convexHull", parameters.GeometryJsonStrings.Length);
+        scope.SetSuccess(1);
+        return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceGeometryResponse, contentType: "application/json");
+    }
+
+    private IResult ExecuteGeneralize(GeneralizeParameters parameters, HonuaTelemetryScope scope)
+    {
+        var generalized = new List<byte[]>(parameters.GeometryJsonStrings.Length);
+        var writer = new WKBWriter();
+        foreach (var geomJson in parameters.GeometryJsonStrings)
+        {
+            var geometry = ReadGeometry(geomJson);
+            var result = NetTopologySuite.Simplify.DouglasPeuckerSimplifier.Simplify(geometry, parameters.MaxDeviation);
+            generalized.Add(writer.Write(result));
+        }
+
+        var response = ConvertToResponse(generalized, parameters.SR, parameters.GeometryType);
+        GeometryServiceLog.SimplifyOperationCompleted(_logger, parameters.GeometryJsonStrings.Length);
+        scope.SetSuccess(generalized.Count);
+        return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceResponse, contentType: "application/json");
+    }
+
+    private IResult ExecuteLabelPoints(LabelPointsParameters parameters, HonuaTelemetryScope scope)
+    {
+        var points = new List<byte[]>(parameters.GeometryJsonStrings.Length);
+        var writer = new WKBWriter();
+        foreach (var geomJson in parameters.GeometryJsonStrings)
+        {
+            var geometry = ReadGeometry(geomJson);
+            // InteriorPoint is guaranteed to lie inside the polygon, matching the
+            // semantics ArcGIS uses for label placement points.
+            var labelPoint = geometry.InteriorPoint;
+            points.Add(writer.Write(labelPoint));
+        }
+
+        var response = ConvertToResponse(points, parameters.SR, "esriGeometryPoint");
+        GeometryServiceLog.BinaryOperationCompleted(_logger, "labelPoints", points.Count);
+        scope.SetSuccess(points.Count);
+        return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceResponse, contentType: "application/json");
+    }
+
+    private Geometry ReadGeometry(string geometryJson)
+    {
+        var wkb = _geometryConverter.ConvertGeoServicesJsonToWkb(geometryJson);
+        return new WKBReader().Read(wkb);
+    }
+
+    private static (double Value, string? Error) ParseRequiredPositiveDouble(string? raw, string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return (0, $"Parameter '{parameterName}' is required.");
+        }
+
+        if (!double.TryParse(raw.Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value)
+            || double.IsNaN(value) || double.IsInfinity(value) || value <= 0)
+        {
+            return (0, $"Parameter '{parameterName}' must be a positive number.");
+        }
+
+        return (value, null);
+    }
+
+    private static bool RelationRequiresRelationParam(string relation)
+        => string.Equals(relation, "esriGeometryRelationRelation", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsSupportedRelation(string relation)
+        => relation.ToLowerInvariant() switch
+        {
+            "esrigeometryrelationcross" => true,
+            "esrigeometryrelationdisjoint" => true,
+            "esrigeometryrelationin" => true,
+            "esrigeometryrelationinteriorintersection" => true,
+            "esrigeometryrelationintersection" => true,
+            "esrigeometryrelationlinetouch" => true,
+            "esrigeometryrelationoverlap" => true,
+            "esrigeometryrelationpointtouch" => true,
+            "esrigeometryrelationtouch" => true,
+            "esrigeometryrelationwithin" => true,
+            "esrigeometryrelationrelation" => true,
+            _ => false
+        };
+
+    private static bool EvaluateRelation(string relation, string? relationParam, Geometry geometry1, Geometry geometry2)
+        => relation.ToLowerInvariant() switch
+        {
+            "esrigeometryrelationcross" => geometry1.Crosses(geometry2),
+            "esrigeometryrelationdisjoint" => geometry1.Disjoint(geometry2),
+            "esrigeometryrelationin" => geometry1.Within(geometry2),
+            "esrigeometryrelationwithin" => geometry1.Within(geometry2),
+            "esrigeometryrelationinteriorintersection" => geometry1.Relate(geometry2, "T********"),
+            "esrigeometryrelationintersection" => geometry1.Intersects(geometry2),
+            "esrigeometryrelationoverlap" => geometry1.Overlaps(geometry2),
+            "esrigeometryrelationtouch" => geometry1.Touches(geometry2),
+            "esrigeometryrelationlinetouch" => geometry1.Relate(geometry2, "F***T****"),
+            "esrigeometryrelationpointtouch" => geometry1.Relate(geometry2, "FT*******"),
+            "esrigeometryrelationrelation" => geometry1.Relate(geometry2, relationParam!),
+            _ => false
+        };
+
     private async Task<IResult> ExecuteBufferAsync(BufferParameters parameters, HonuaTelemetryScope scope, CancellationToken ct)
     {
         // bufferSR cascade: buffer in bufferSR ?? outSR ?? inSR, then project to outSR ?? inSR

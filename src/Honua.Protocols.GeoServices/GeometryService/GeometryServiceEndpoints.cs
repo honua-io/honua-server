@@ -132,6 +132,72 @@ internal static class GeometryServiceEndpoints
             .WithTags("GeometryService")
             .AllowAnonymous();
 
+        endpoints.MapGet($"{GeometryRoutePrefix}/distance", (Delegate)HandleDistance)
+            .WithDisplayName("Geometry Service Distance (GET)")
+            .WithName("GeometryServiceDistanceGet")
+            .WithTags("GeometryService");
+
+        endpoints.MapPost($"{GeometryRoutePrefix}/distance", (Delegate)HandleDistance)
+            .WithDisplayName("Geometry Service Distance (POST)")
+            .WithName("GeometryServiceDistancePost")
+            .WithTags("GeometryService")
+            .AllowAnonymous();
+
+        endpoints.MapGet($"{GeometryRoutePrefix}/relation", (Delegate)HandleRelation)
+            .WithDisplayName("Geometry Service Relation (GET)")
+            .WithName("GeometryServiceRelationGet")
+            .WithTags("GeometryService");
+
+        endpoints.MapPost($"{GeometryRoutePrefix}/relation", (Delegate)HandleRelation)
+            .WithDisplayName("Geometry Service Relation (POST)")
+            .WithName("GeometryServiceRelationPost")
+            .WithTags("GeometryService")
+            .AllowAnonymous();
+
+        endpoints.MapGet($"{GeometryRoutePrefix}/densify", (Delegate)HandleDensify)
+            .WithDisplayName("Geometry Service Densify (GET)")
+            .WithName("GeometryServiceDensifyGet")
+            .WithTags("GeometryService");
+
+        endpoints.MapPost($"{GeometryRoutePrefix}/densify", (Delegate)HandleDensify)
+            .WithDisplayName("Geometry Service Densify (POST)")
+            .WithName("GeometryServiceDensifyPost")
+            .WithTags("GeometryService")
+            .AllowAnonymous();
+
+        endpoints.MapGet($"{GeometryRoutePrefix}/convexHull", (Delegate)HandleConvexHull)
+            .WithDisplayName("Geometry Service Convex Hull (GET)")
+            .WithName("GeometryServiceConvexHullGet")
+            .WithTags("GeometryService");
+
+        endpoints.MapPost($"{GeometryRoutePrefix}/convexHull", (Delegate)HandleConvexHull)
+            .WithDisplayName("Geometry Service Convex Hull (POST)")
+            .WithName("GeometryServiceConvexHullPost")
+            .WithTags("GeometryService")
+            .AllowAnonymous();
+
+        endpoints.MapGet($"{GeometryRoutePrefix}/generalize", (Delegate)HandleGeneralize)
+            .WithDisplayName("Geometry Service Generalize (GET)")
+            .WithName("GeometryServiceGeneralizeGet")
+            .WithTags("GeometryService");
+
+        endpoints.MapPost($"{GeometryRoutePrefix}/generalize", (Delegate)HandleGeneralize)
+            .WithDisplayName("Geometry Service Generalize (POST)")
+            .WithName("GeometryServiceGeneralizePost")
+            .WithTags("GeometryService")
+            .AllowAnonymous();
+
+        endpoints.MapGet($"{GeometryRoutePrefix}/labelPoints", (Delegate)HandleLabelPoints)
+            .WithDisplayName("Geometry Service Label Points (GET)")
+            .WithName("GeometryServiceLabelPointsGet")
+            .WithTags("GeometryService");
+
+        endpoints.MapPost($"{GeometryRoutePrefix}/labelPoints", (Delegate)HandleLabelPoints)
+            .WithDisplayName("Geometry Service Label Points (POST)")
+            .WithName("GeometryServiceLabelPointsPost")
+            .WithTags("GeometryService")
+            .AllowAnonymous();
+
         return endpoints;
     }
 
@@ -140,7 +206,7 @@ internal static class GeometryServiceEndpoints
     // their discovery handshake before invoking buffer/simplify/etc.
     private const string GeometryServerInfoJson =
         "{\"currentVersion\":11.1,"
-        + "\"serviceDescription\":\"Honua Geometry Service — buffer, simplify, project, intersect, union, clip, difference, areasAndLengths, lengths.\","
+        + "\"serviceDescription\":\"Honua Geometry Service — buffer, simplify, project, intersect, union, clip, difference, areasAndLengths, lengths, distance, relation, densify, convexHull, generalize, labelPoints.\","
         + "\"maxBufferCount\":1000,"
         + "\"maxSimplifyCount\":1000,"
         + "\"resampled\":true}";
@@ -218,5 +284,53 @@ internal static class GeometryServiceEndpoints
     {
         var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         return await handler.HandleLengthAsync(context, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> HandleDistance(
+        HttpContext context,
+        GeometryServiceHandler handler)
+    {
+        var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        return await handler.HandleDistanceAsync(context, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> HandleRelation(
+        HttpContext context,
+        GeometryServiceHandler handler)
+    {
+        var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        return await handler.HandleRelationAsync(context, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> HandleDensify(
+        HttpContext context,
+        GeometryServiceHandler handler)
+    {
+        var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        return await handler.HandleDensifyAsync(context, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> HandleConvexHull(
+        HttpContext context,
+        GeometryServiceHandler handler)
+    {
+        var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        return await handler.HandleConvexHullAsync(context, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> HandleGeneralize(
+        HttpContext context,
+        GeometryServiceHandler handler)
+    {
+        var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        return await handler.HandleGeneralizeAsync(context, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> HandleLabelPoints(
+        HttpContext context,
+        GeometryServiceHandler handler)
+    {
+        var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        return await handler.HandleLabelPointsAsync(context, ct).ConfigureAwait(false);
     }
 }
