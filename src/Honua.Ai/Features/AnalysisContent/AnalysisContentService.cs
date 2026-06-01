@@ -137,7 +137,7 @@ internal sealed partial class AnalysisContentService(
                 var offset = query.Offset.GetValueOrDefault();
                 if (offset < 0)
                 {
-                    throw new AnalysisContentValidationException("Offset must be zero or greater.");
+                    throw new AnalysisContentValidationException("Offset must be zero or greater.", "analysis.content.offset.range", "/offset");
                 }
 
                 var page = await store.ListItemsAsync(
@@ -165,7 +165,7 @@ internal sealed partial class AnalysisContentService(
             {
                 var contentVersion = await GetRequiredVersionAsync(itemId, version, cancellationToken).ConfigureAwait(false);
                 var package = contentVersion.AnalysisPackage
-                    ?? throw new AnalysisContentValidationException("The requested version is not an analysis package.");
+                    ?? throw new AnalysisContentValidationException("The requested version is not an analysis package.", "analysis.content.kind.mismatch", "/kind");
                 AnalysisContentTelemetry.SetContentTags(
                     activity,
                     contentVersion.ItemId,
@@ -373,7 +373,7 @@ internal sealed partial class AnalysisContentService(
             {
                 var contentVersion = await GetRequiredVersionAsync(itemId, version, cancellationToken).ConfigureAwait(false);
                 var savedQuery = contentVersion.SavedQuery
-                    ?? throw new AnalysisContentValidationException("The requested version is not a saved query.");
+                    ?? throw new AnalysisContentValidationException("The requested version is not a saved query.", "analysis.content.kind.mismatch", "/kind");
                 AnalysisContentTelemetry.SetContentTags(
                     activity,
                     contentVersion.ItemId,
@@ -395,7 +395,9 @@ internal sealed partial class AnalysisContentService(
                     if (!compiled.IsSuccess || compiled.Expression is null)
                     {
                         throw new AnalysisContentValidationException(
-                            compiled.ErrorMessage ?? "Saved query filter plan could not be compiled.");
+                            compiled.ErrorMessage ?? "Saved query filter plan could not be compiled.",
+                            "analysis.content.savedQuery.filter.invalid",
+                            "/savedQuery/filter");
                     }
 
                     filter = QueryFilter.FromExpression(
@@ -419,7 +421,9 @@ internal sealed partial class AnalysisContentService(
                 if (!validation.IsValid)
                 {
                     throw new AnalysisContentValidationException(
-                        validation.ErrorMessage ?? "Saved query preview request is invalid.");
+                        validation.ErrorMessage ?? "Saved query preview request is invalid.",
+                        "analysis.content.savedQuery.preview.invalid",
+                        "/savedQuery");
                 }
 
                 var optimized = queryProcessor.OptimizeQuery(query, resource);
@@ -489,7 +493,7 @@ internal sealed partial class AnalysisContentService(
             {
                 var contentVersion = await GetRequiredVersionAsync(itemId, version, cancellationToken).ConfigureAwait(false);
                 var package = contentVersion.AnalysisPackage
-                    ?? throw new AnalysisContentValidationException("The requested version is not an analysis package.");
+                    ?? throw new AnalysisContentValidationException("The requested version is not an analysis package.", "analysis.content.kind.mismatch", "/kind");
                 AnalysisContentTelemetry.SetContentTags(
                     activity,
                     contentVersion.ItemId,
@@ -522,7 +526,7 @@ internal sealed partial class AnalysisContentService(
             {
                 var contentVersion = await GetRequiredVersionAsync(itemId, version, cancellationToken).ConfigureAwait(false);
                 var package = contentVersion.AnalysisPackage
-                    ?? throw new AnalysisContentValidationException("The requested version is not an analysis package.");
+                    ?? throw new AnalysisContentValidationException("The requested version is not an analysis package.", "analysis.content.kind.mismatch", "/kind");
                 AnalysisContentTelemetry.SetContentTags(
                     activity,
                     contentVersion.ItemId,
@@ -737,7 +741,7 @@ internal sealed partial class AnalysisContentService(
     {
         if (string.IsNullOrWhiteSpace(command.Name))
         {
-            throw new AnalysisContentValidationException("Analysis content name is required.");
+            throw new AnalysisContentValidationException("Analysis content name is required.", "analysis.content.name.required", "/name");
         }
 
         ValidatePayload(command.Kind, command.SavedQuery, command.AnalysisPackage);
@@ -753,29 +757,29 @@ internal sealed partial class AnalysisContentService(
             case AnalysisContentKind.SavedQuery:
                 if (savedQuery is null || analysisPackage is not null)
                 {
-                    throw new AnalysisContentValidationException("Saved-query content requires a savedQuery payload only.");
+                    throw new AnalysisContentValidationException("Saved-query content requires a savedQuery payload only.", "analysis.content.savedQuery.exclusive", "/savedQuery");
                 }
 
                 if (savedQuery.LayerId < 0)
                 {
-                    throw new AnalysisContentValidationException("Saved-query layerId must be non-negative.");
+                    throw new AnalysisContentValidationException("Saved-query layerId must be non-negative.", "analysis.content.savedQuery.layerId.range", "/savedQuery/layerId");
                 }
 
                 break;
             case AnalysisContentKind.AnalysisPackage:
                 if (analysisPackage is null || savedQuery is not null)
                 {
-                    throw new AnalysisContentValidationException("Analysis-package content requires an analysisPackage payload only.");
+                    throw new AnalysisContentValidationException("Analysis-package content requires an analysisPackage payload only.", "analysis.content.analysisPackage.exclusive", "/analysisPackage");
                 }
 
                 if (analysisPackage.Plan.Steps.Count == 0)
                 {
-                    throw new AnalysisContentValidationException("Analysis package plan must contain at least one step.");
+                    throw new AnalysisContentValidationException("Analysis package plan must contain at least one step.", "analysis.content.analysisPackage.plan.required", "/analysisPackage/plan/steps");
                 }
 
                 break;
             default:
-                throw new AnalysisContentValidationException("Unsupported analysis content kind.");
+                throw new AnalysisContentValidationException("Unsupported analysis content kind.", "analysis.content.kind.unsupported", "/kind");
         }
     }
 
@@ -788,7 +792,7 @@ internal sealed partial class AnalysisContentService(
         {
             if (string.IsNullOrWhiteSpace(pair.Key))
             {
-                throw new AnalysisContentValidationException("Parameter override keys are required.");
+                throw new AnalysisContentValidationException("Parameter override keys are required.", "analysis.content.parameterOverrides.key.required", "/parameterOverrides");
             }
 
             normalizedOverrides[pair.Key.Trim()] = pair.Value;
@@ -828,7 +832,9 @@ internal sealed partial class AnalysisContentService(
             if (!matchedKeys.Contains(pair.Key))
             {
                 throw new AnalysisContentValidationException(
-                    $"Parameter override '{pair.Key}' does not match an executable analysis plan input.");
+                    $"Parameter override '{pair.Key}' does not match an executable analysis plan input.",
+                    "analysis.content.parameterOverrides.unmatched",
+                    "/parameterOverrides");
             }
         }
 
@@ -965,7 +971,7 @@ internal sealed partial class AnalysisContentService(
         var resolved = limit.GetValueOrDefault(defaultLimit);
         if (resolved <= 0)
         {
-            throw new AnalysisContentValidationException("Limit must be greater than zero.");
+            throw new AnalysisContentValidationException("Limit must be greater than zero.", "analysis.content.limit.range", "/limit");
         }
 
         return Math.Min(resolved, maxLimit);
