@@ -41,6 +41,11 @@ public static class DataProviderNames
     public const string ArcGisRest = "arcgis-rest";
 
     /// <summary>
+    /// Canonical Oracle provider name.
+    /// </summary>
+    public const string Oracle = "oracle";
+
+    /// <summary>
     /// Normalizes a provider name or alias into the canonical provider identifier.
     /// Unknown non-empty provider names are lower-cased so external provider registrations
     /// can participate without changing the core model.
@@ -76,6 +81,8 @@ public static class DataProviderNames
             "esri-featureserver" => ArcGisRest,
             "esrifeatureserver" => ArcGisRest,
             "featureserver" => ArcGisRest,
+            "oracle" => Oracle,
+            "oracledb" => Oracle,
             _ => normalized
         };
     }

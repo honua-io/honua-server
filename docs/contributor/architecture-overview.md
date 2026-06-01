@@ -19,7 +19,7 @@ direction. From bottom (most depended on) to top (most dependent):
 | **1. Abstractions** | `Honua.Core.Abstractions` | Public contract surface: interfaces, DTOs, attributes, option records. Zero heavy package dependencies. Reference assembly for protocol modules. |
 | **2. Core** | `Honua.Core` | Default implementations of the abstractions, shared domain primitives (filter AST, metadata v2 graph, security helpers, geometry helpers). Provider-agnostic. |
 | **3. Hosting** | `Honua.Hosting` | Cross-cutting host concerns extracted from `Honua.Server`: routing, validation, authentication wiring, OpenAPI plumbing, infrastructure conventions. Independent of any HTTP protocol module. |
-| **4a. Storage providers** | `Honua.Postgres`, `Honua.DuckDB`, `Honua.MySql`, `Honua.SqlServer` | One assembly per database backend; each depends only on `Honua.Core`. |
+| **4a. Storage providers** | `Honua.Postgres`, `Honua.DuckDB`, `Honua.MySql`, `Honua.SqlServer`, `Honua.Oracle` | One assembly per database backend; each depends only on `Honua.Core`. |
 | **4b. Protocol modules** | `Honua.Protocols.OData` (and future siblings) | One assembly per HTTP protocol surface. Depend on Abstractions + Core + Hosting; never on `Honua.Server` (that's the cycle Phase 1 is solving). |
 | **5. Server** | `Honua.Server` | Composition root. References every storage provider and every protocol module and wires them into an executable host. |
 
@@ -62,6 +62,7 @@ graph BT
     DuckDB[Honua.DuckDB]
     MySql[Honua.MySql]
     SqlServer[Honua.SqlServer]
+    Oracle[Honua.Oracle]
     Protocols[Honua.Protocols.OData]
     Server[Honua.Server]
 
@@ -73,6 +74,7 @@ graph BT
     DuckDB --> Core
     MySql --> Core
     SqlServer --> Core
+    Oracle --> Core
     Protocols --> Abstractions
     Protocols --> Core
     Protocols --> Hosting
@@ -83,6 +85,7 @@ graph BT
     Server --> DuckDB
     Server --> MySql
     Server --> SqlServer
+    Server --> Oracle
     Server --> Protocols
 ```
 

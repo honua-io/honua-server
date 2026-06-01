@@ -8,7 +8,7 @@
 [![PostGIS](https://img.shields.io/badge/PostGIS-3.5-brightgreen.svg)](https://postgis.net/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue.svg)](https://hub.docker.com/r/honuaio/honua-server)
 
-**Cloud-native geospatial feature server.** Publish, query, edit, and render spatial data through industry-standard protocols — GeoServices REST (catalog + FeatureServer + MapServer + ImageServer + Geometry Service + GPServer), classic OGC WMS/WFS/WCS/WMTS, STAC API, OGC API (Features, Maps, Tiles, Processes), OData v4, vector tiles, and Terrain-RGB elevation tiles — backed by PostGIS, with an embedded DuckDB provider for read-only analytical and reference workloads, a read-only SQL Server provider for `geometry`/`geography` tables, and a read/query-only MySQL/MariaDB provider for serving spatial data already in MySQL 8.0.11+ or MariaDB 10.6+ tables.
+**Cloud-native geospatial feature server.** Publish, query, edit, and render spatial data through industry-standard protocols — GeoServices REST (catalog + FeatureServer + MapServer + ImageServer + Geometry Service + GPServer), classic OGC WMS/WFS/WCS/WMTS, STAC API, OGC API (Features, Maps, Tiles, Processes), OData v4, vector tiles, and Terrain-RGB elevation tiles — backed by PostGIS, with an embedded DuckDB provider for read-only analytical and reference workloads, a read-only SQL Server provider for `geometry`/`geography` tables, a read-only Oracle provider for standard Oracle Spatial (`SDO_GEOMETRY`) tables, and a read/query-only MySQL/MariaDB provider for serving spatial data already in MySQL 8.0.11+ or MariaDB 10.6+ tables.
 
 ## Documentation
 
@@ -198,6 +198,13 @@ SqlServer__Enabled=true
 SqlServer__ConnectionString="Server=mssql.example.com,1433;Database=geo;User Id=honua;Password=${SQLSERVER_PASSWORD};Encrypt=True;TrustServerCertificate=False"
 ```
 See the [SQL Server Provider Guide](docs/operator/sqlserver-provider.md) for supported versions, layer mapping, and limitations.
+
+**Oracle provider** (read-only against standard Oracle Spatial `SDO_GEOMETRY` tables; ArcSDE `ST_Geometry` and versioned tables refused):
+```bash
+Oracle__Enabled=true
+Oracle__ConnectionString="User Id=honua;Password=${ORACLE_PASSWORD};Data Source=oracle.example.com:1521/ORCL"
+```
+Not Native AOT compatible (`Oracle.ManagedDataAccess.Core` reflection). See the [Oracle Provider Guide](docs/operator/oracle-provider.md) for supported sources, layer mapping, and limitations.
 
 **MySQL / MariaDB provider** (read/query-only against existing tables):
 ```bash

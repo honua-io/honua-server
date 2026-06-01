@@ -7,9 +7,9 @@ inputs:
     required: false
     default: '10.0.x'
   enable-build-cache:
-    description: 'Restore/save per-project bin/obj across jobs (modularization Phase 3, ADR-0043)'
+    description: 'Restore/save per-project bin/obj across jobs (opt-in; broad binary caches can exhaust hosted runner disk)'
     required: false
-    default: 'true'
+    default: 'false'
 
 runs:
   using: composite
@@ -33,8 +33,8 @@ runs:
     # compilation for unchanged projects entirely; a miss falls through to a
     # normal build, so a stale or empty cache never breaks CI.
     #
-    # Opt-out via `with: enable-build-cache: 'false'` on the calling job for
-    # cases where reproducible-from-scratch is required (e.g. release builds).
+    # Opt in via `with: enable-build-cache: 'true'` on the calling job after
+    # confirming the restored binary payload fits the hosted runner disk budget.
     - name: Cache .NET build outputs
       if: inputs.enable-build-cache == 'true'
       uses: actions/cache@v5

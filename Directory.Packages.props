@@ -87,6 +87,7 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.Process" Version="1.15.1-beta.1" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.StackExchangeRedis" Version="1.14.0-beta.1" />
+    <PackageVersion Include="Oracle.ManagedDataAccess.Core" Version="23.9.1" />
     <PackageVersion Include="Parquet.Net" Version="5.6.0" />
     <PackageVersion Include="ParquetSharp" Version="23.0.0.1" />
     <PackageVersion Include="Polly" Version="8.6.6" />
