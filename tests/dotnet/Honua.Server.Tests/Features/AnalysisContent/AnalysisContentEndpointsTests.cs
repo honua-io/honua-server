@@ -462,6 +462,73 @@ public sealed class AnalysisContentEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /api/v1/analysis/content/items")]
+    public async Task CreateItem_MissingName_ReturnsFieldAddressableValidationProblem()
+    {
+        // A blank name must be rejected with the shared field-addressable validation contract: an
+        // RFC-7807 ProblemDetails carrying errors[] of FieldValidationError, not a flat admin problem.
+        var create = new CreateAnalysisContentItemRequest
+        {
+            Kind = AnalysisContentKind.SavedQuery,
+            Name = "   ",
+            SavedQuery = new SavedQueryContent
+            {
+                LayerId = WebAppFixture.TestLayerId,
+                ServiceName = WebAppFixture.TestServiceId,
+                NaturalLanguageQuery = "show incidents"
+            }
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/analysis/content/items", create, JsonOptions);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+
+        // The validation problem type and a non-empty errors[] extension.
+        Assert.Equal("https://honua.io/problems/validation", root.GetProperty("type").GetString());
+        Assert.True(root.TryGetProperty("errors", out var errors));
+        Assert.Equal(JsonValueKind.Array, errors.ValueKind);
+        Assert.NotEmpty(errors.EnumerateArray());
+
+        var first = errors.EnumerateArray().First();
+        Assert.Equal("analysis.content.name.required", first.GetProperty("code").GetString());
+        Assert.Equal("/name", first.GetProperty("path").GetString());
+        Assert.Equal("error", first.GetProperty("severity").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(first.GetProperty("message").GetString()));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /api/v1/analysis/content/items")]
+    public async Task CreateItem_NegativeSavedQueryLayerId_ReturnsPathScopedValidationError()
+    {
+        // A negative layerId must be addressed to the offending field path so the console can bind the
+        // finding inline next to the layer-id input.
+        var create = new CreateAnalysisContentItemRequest
+        {
+            Kind = AnalysisContentKind.SavedQuery,
+            Name = $"neg-layer-{Guid.NewGuid():N}",
+            SavedQuery = new SavedQueryContent
+            {
+                LayerId = -5,
+                ServiceName = WebAppFixture.TestServiceId,
+                NaturalLanguageQuery = "show incidents"
+            }
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/v1/analysis/content/items", create, JsonOptions);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var first = document.RootElement.GetProperty("errors").EnumerateArray().First();
+        Assert.Equal("analysis.content.savedQuery.layerId.range", first.GetProperty("code").GetString());
+        Assert.Equal("/savedQuery/layerId", first.GetProperty("path").GetString());
+    }
+
     private static async Task<T?> ReadJsonAsync<T>(HttpResponseMessage response, HttpStatusCode expectedStatus)
     {
         var body = await response.Content.ReadAsStringAsync();

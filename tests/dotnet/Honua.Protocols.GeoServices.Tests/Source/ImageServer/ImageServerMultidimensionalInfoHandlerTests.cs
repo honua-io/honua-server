@@ -154,19 +154,19 @@ public class ImageServerMultidimensionalInfoHandlerTests
 
     private static MultidimensionalCoverageRegistration CreateRegistration(
         MultidimensionalCoverageMetadata? metadata) => new()
-    {
-        Id = 7,
-        LayerId = 1,
-        Name = "cube",
-        Format = MultidimensionalCoverageFormat.NetCdf4,
-        Provider = CloudStorageProvider.AwsS3,
-        Bucket = "bucket",
-        ObjectKey = "cube.nc",
-        Variables = Array.Empty<string>(),
-        Metadata = metadata,
-        MetadataScannedAt = metadata is null ? null : DateTimeOffset.UtcNow,
-        CreatedAt = DateTimeOffset.UtcNow
-    };
+        {
+            Id = 7,
+            LayerId = 1,
+            Name = "cube",
+            Format = MultidimensionalCoverageFormat.NetCdf4,
+            Provider = CloudStorageProvider.AwsS3,
+            Bucket = "bucket",
+            ObjectKey = "cube.nc",
+            Variables = Array.Empty<string>(),
+            Metadata = metadata,
+            MetadataScannedAt = metadata is null ? null : DateTimeOffset.UtcNow,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
 
     private static DefaultHttpContext CreateImageServerContext()
     {
