@@ -105,6 +105,7 @@ internal static class ServiceCollectionExtensions
         // write-shaped surfaces are no-op or NotSupportedException stubs.
         services.AddScoped<IFeatureWriter>(_ => new ReadOnlyFeatureWriter("MySQL/MariaDB"));
         services.AddScoped<IReplicaRepository>(_ => new NoOpReplicaRepository());
+        services.AddScoped<IReplicaConflictRepository>(_ => new NoOpReplicaConflictRepository());
         services.AddScoped<IChangeTracker>(_ => new NoOpChangeTracker());
         services.AddScoped<ITileProvider>(_ => new ReadOnlyTileProvider("MySQL/MariaDB"));
         services.AddScoped<IGmlFeatureStore>(_ => new ReadOnlyGmlFeatureStore("MySQL/MariaDB"));

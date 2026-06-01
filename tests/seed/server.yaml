@@ -848,6 +848,35 @@ sql:
           changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
           CONSTRAINT feature_changes_valid_operation CHECK(operation IN (1, 2, 3))
       );
+  - |
+      CREATE TABLE IF NOT EXISTS honua.replica_conflicts (
+          conflict_id TEXT PRIMARY KEY,
+          replica_id TEXT NOT NULL,
+          service_id TEXT NOT NULL,
+          layer_id INT NOT NULL,
+          objectid BIGINT NOT NULL,
+          conflict_type SMALLINT NOT NULL,
+          status SMALLINT NOT NULL DEFAULT 0,
+          sync_operation_id TEXT,
+          device_id TEXT,
+          user_id TEXT,
+          server_generation BIGINT NOT NULL,
+          base_state_json JSONB,
+          client_state_json JSONB,
+          server_state_json JSONB,
+          detected_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          resolution_action SMALLINT,
+          resolved_by TEXT,
+          resolved_at TIMESTAMPTZ,
+          resolved_server_generation BIGINT,
+          CONSTRAINT replica_conflicts_valid_replica CHECK(LENGTH(replica_id) > 0),
+          CONSTRAINT replica_conflicts_valid_service CHECK(LENGTH(service_id) > 0),
+          CONSTRAINT replica_conflicts_valid_type CHECK(conflict_type BETWEEN 0 AND 6),
+          CONSTRAINT replica_conflicts_valid_status CHECK(status BETWEEN 0 AND 2),
+          CONSTRAINT replica_conflicts_valid_action CHECK(resolution_action IS NULL OR resolution_action BETWEEN 0 AND 5)
+      );
+  - "CREATE INDEX IF NOT EXISTS idx_replica_conflicts_replica_status ON honua.replica_conflicts(replica_id, status, detected_at DESC);"
+  - "CREATE INDEX IF NOT EXISTS idx_replica_conflicts_service_feature ON honua.replica_conflicts(service_id, layer_id, objectid);"
   - "CREATE INDEX IF NOT EXISTS idx_feature_changes_generation_layer ON honua.feature_changes(generation, layer_id);"
   - "CREATE INDEX IF NOT EXISTS idx_feature_changes_changed_at ON honua.feature_changes(changed_at);"
   - "CREATE INDEX IF NOT EXISTS idx_feature_changes_layer_objectid ON honua.feature_changes(layer_id, objectid, generation);"
@@ -1031,6 +1060,7 @@ sql:
   - "DELETE FROM honua.feature_changes;"
   - "DELETE FROM honua.gitops_change_records;"
   - "DELETE FROM honua.gitops_watch_configs;"
+  - "DELETE FROM honua.replica_conflicts;"
   - "DELETE FROM honua.replicas;"
   - "DELETE FROM honua.encryption_keys;"
   - "DELETE FROM honua.data_connections;"
