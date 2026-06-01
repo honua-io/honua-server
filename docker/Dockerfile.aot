@@ -23,20 +23,20 @@ RUN apk add --no-cache \
     zlib-dev \
     && rm -rf /var/cache/apk/*
 
-# Copy solution and project files first for better layer caching
+# Copy the full project graph (all .csproj) plus build/config files first so the
+# RID-specific restore below covers every transitive project the publish needs.
+# We copy the whole src/ tree's project files via the source checkout to avoid a
+# hand-maintained csproj copy-list that rots whenever projects are added/split
+# (e.g. the #1236 modularization). The dedicated restore layer keeps caching.
 COPY Honua.sln Directory.Build.props Directory.Packages.props NuGet.config .editorconfig ./
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
-COPY src/Honua.Core/*.csproj src/Honua.Core/
-COPY src/Honua.DuckDB/*.csproj src/Honua.DuckDB/
-COPY src/Honua.MySql/*.csproj src/Honua.MySql/
-COPY src/Honua.Postgres/*.csproj src/Honua.Postgres/
-COPY src/Honua.ServiceDefaults/*.csproj src/Honua.ServiceDefaults/
-COPY src/Honua.Server/*.csproj src/Honua.Server/
-COPY src/Honua.SqlServer/*.csproj src/Honua.SqlServer/
+COPY src/ src/
 
 ARG TARGETARCH
 
-# Restore dependencies
+# Restore dependencies for the target runtime so the AOT self-contained publish
+# (which runs --no-restore) finds obj/project.assets.json for every project in
+# the Honua.Server graph at the RID it builds.
 RUN --mount=type=cache,target=/root/.nuget/packages \
     --mount=type=secret,id=github_actor \
     --mount=type=secret,id=github_token \
@@ -52,14 +52,22 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 # Copy source code
 COPY . .
 
-# Build Native AOT application for minimal image size
+# Build Native AOT application for minimal image size.
+# Re-restore for the target RID before publishing so the assets cover the full
+# project graph as copied by `COPY . .` (the dedicated restore layer above
+# warms the NuGet cache; this is a near-instant no-op cache hit on success).
 ARG CONFIGURATION=Release
 RUN --mount=type=cache,target=/root/.nuget/packages \
+    --mount=type=secret,id=github_actor \
+    --mount=type=secret,id=github_token \
     case "${TARGETARCH:-amd64}" in \
         amd64) RUNTIME_ID="linux-musl-x64" ; ILC_SINGLE_THREADED="false" ;; \
         arm64) RUNTIME_ID="linux-musl-arm64" ; ILC_SINGLE_THREADED="true" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
+    sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
+      --runtime "$RUNTIME_ID" \
+      -p:RuntimeIdentifier="$RUNTIME_ID" && \
     dotnet publish src/Honua.Server/Honua.Server.csproj \
       --configuration "$CONFIGURATION" \
       --runtime "$RUNTIME_ID" \
