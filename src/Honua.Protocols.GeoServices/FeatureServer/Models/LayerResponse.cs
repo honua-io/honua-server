@@ -219,6 +219,19 @@ public sealed class LayerResponse
     public bool UseStandardizedQueries { get; init; } = true;
 
     /// <summary>
+    /// Whether the layer honors the query <c>sqlFormat</c> parameter
+    /// (<c>standard</c> for SQL-92 standardized where syntax, <c>native</c> for provider-native).
+    /// </summary>
+    public bool SupportsSqlFormat { get; init; } = true;
+
+    /// <summary>
+    /// SQL formats accepted by the layer's query endpoint. The GeoServices spec defines this as a
+    /// comma-delimited string, so it is serialized as one.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonConverter(typeof(CommaDelimitedStringArrayConverter))]
+    public string[] SupportedSqlFormats { get; init; } = ["none", "standard", "native"];
+
+    /// <summary>
     /// Whether the layer supports spatial queries
     /// </summary>
     public bool SupportsCoordinatesQuantization { get; init; } = true;
