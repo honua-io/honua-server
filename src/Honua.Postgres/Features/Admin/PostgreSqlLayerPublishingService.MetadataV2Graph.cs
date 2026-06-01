@@ -12,6 +12,7 @@
 
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -19,6 +20,21 @@ using Honua.Postgres.Features.Infrastructure;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Postgres.Features.Admin;
+
+/// <summary>
+/// AOT-safe source-generated context for the primitive storage-binding option values.
+/// The published server image sets <c>JsonSerializerIsReflectionEnabledByDefault=false</c>,
+/// so the reflection-based <c>JsonSerializer.SerializeToElement(value)</c> overload throws at
+/// runtime ("Reflection-based serialization has been disabled"). Building the option
+/// <see cref="JsonElement"/>s through these typed metadata providers keeps the first layer
+/// publish working on a real (trimmed/AOT) deployment (honua-server#1341).
+/// </summary>
+[JsonSerializable(typeof(bool))]
+[JsonSerializable(typeof(int))]
+[JsonSerializable(typeof(string))]
+internal sealed partial class LayerPublishingStorageOptionJsonContext : JsonSerializerContext
+{
+}
 
 internal sealed partial class PostgreSqlLayerPublishingService
 {
@@ -271,12 +287,12 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var connectionId = request.ConnectionId?.ToString("D");
         var options = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
         {
-            [FeatureStorageMapping.SourceBackedOption] = JsonSerializer.SerializeToElement(true),
-            ["schemaName"] = JsonSerializer.SerializeToElement(schema),
-            ["tableName"] = JsonSerializer.SerializeToElement(table),
-            ["primaryKeyColumn"] = JsonSerializer.SerializeToElement(primaryKeyColumn),
-            ["geometryColumn"] = JsonSerializer.SerializeToElement(geometryColumn),
-            ["storageSrid"] = JsonSerializer.SerializeToElement(storageSrid)
+            [FeatureStorageMapping.SourceBackedOption] = BoolOption(true),
+            ["schemaName"] = StringOption(schema),
+            ["tableName"] = StringOption(table),
+            ["primaryKeyColumn"] = StringOption(primaryKeyColumn),
+            ["geometryColumn"] = StringOption(geometryColumn),
+            ["storageSrid"] = IntOption(storageSrid)
         };
 
         // Layers published onto the shared Honua 'features' table store their non-key
@@ -295,8 +311,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         if (string.Equals(table, DatabaseSchema.FeaturesTable, StringComparison.OrdinalIgnoreCase)
             && string.Equals(schema, _metadataSchema, StringComparison.OrdinalIgnoreCase))
         {
-            options["attributesColumn"] = JsonSerializer.SerializeToElement("attributes");
-            options["layerDiscriminatorColumn"] = JsonSerializer.SerializeToElement(DatabaseSchema.LayerIdColumn);
+            options["attributesColumn"] = StringOption("attributes");
+            options["layerDiscriminatorColumn"] = StringOption(DatabaseSchema.LayerIdColumn);
         }
 
         return new MetadataV2StorageBinding
@@ -538,6 +554,15 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
     private static string BuildStorageBindingId(int layerId)
         => $"binding-layer-{layerId.ToString(CultureInfo.InvariantCulture)}";
+
+    private static JsonElement BoolOption(bool value)
+        => JsonSerializer.SerializeToElement(value, LayerPublishingStorageOptionJsonContext.Default.Boolean);
+
+    private static JsonElement IntOption(int value)
+        => JsonSerializer.SerializeToElement(value, LayerPublishingStorageOptionJsonContext.Default.Int32);
+
+    private static JsonElement StringOption(string value)
+        => JsonSerializer.SerializeToElement(value, LayerPublishingStorageOptionJsonContext.Default.String);
 
     private static string SanitizeMetadataId(string value)
     {
