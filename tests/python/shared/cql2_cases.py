@@ -25,9 +25,9 @@ CQL2_TEXT_CASES: list[tuple[str, str]] = [
     ("function_upper", "UPPER(name) = 'ALPHA'"),
     ("function_concat", "CONCAT(name, 'x') LIKE 'alphax'"),
     ("function_mod", "MOD(count, 2) = 0"),
-    ("spatial_intersects", "S_INTERSECTS(shape, POINT(-122.4194 37.7749))"),
-    ("spatial_dwithin", "S_DWITHIN(shape, POINT(-122.4194 37.7749), 1000)"),
-    ("spatial_bbox", "S_INTERSECTS(shape, BBOX(-122.5, 37.7, -122.4, 37.8))"),
+    ("spatial_intersects", "S_INTERSECTS(geometry, POINT(-122.4194 37.7749))"),
+    ("spatial_dwithin", "S_DWITHIN(geometry, POINT(-122.4194 37.7749), 1000)"),
+    ("spatial_bbox", "S_INTERSECTS(geometry, BBOX(-122.5, 37.7, -122.4, 37.8))"),
     ("temporal_after", "T_AFTER(created_at, TIMESTAMP('2024-01-01T00:00:00Z'))"),
     ("temporal_during", "T_DURING(created_at, INTERVAL('2024-01-01T00:00:00Z', '2024-01-31T23:59:59Z'))"),
     ("array_contains", "A_CONTAINS(tags, ('red', 'blue'))"),
@@ -70,7 +70,7 @@ CQL2_JSON_CASES: list[tuple[str, dict]] = [
         {
             "op": "s_intersects",
             "args": [
-                {"property": "shape"},
+                {"property": "geometry"},
                 {"type": "Point", "coordinates": [-122.4194, 37.7749]},
             ],
         },
@@ -80,7 +80,7 @@ CQL2_JSON_CASES: list[tuple[str, dict]] = [
         {
             "op": "s_dwithin",
             "args": [
-                {"property": "shape"},
+                {"property": "geometry"},
                 {"type": "Point", "coordinates": [-122.4194, 37.7749]},
                 1000,
             ],

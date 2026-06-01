@@ -40,6 +40,6 @@ class TestGeometryMatrix:
         geom = getattr(geometry_generator, geometry_method)()
         response = http_client.get(
             f"/ogc/features/collections/{test_collection_id}/items",
-            params={"filter": f"S_INTERSECTS(shape, {geom.wkt})"},
+            params={"filter": f"S_INTERSECTS(geometry, {geom.wkt})"},
         )
         assert response.status_code == 200
