@@ -55,7 +55,6 @@ public sealed class MgrsConverterTests
     [InlineData(151.2093, -33.8688)]  // Sydney (southern hemisphere)
     [InlineData(139.6917, 35.6895)]   // Tokyo
     [InlineData(0.0, 0.1)]            // Near equator / prime meridian
-    [UnitTest]
     [Operation(Operations.FromGeoCoordinateString)]
     public void RoundTrip_ToMgrsThenFromMgrs_RecoversOriginalWithinOneMeter(double longitude, double latitude)
     {
