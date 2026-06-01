@@ -8,6 +8,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Honua.Protocols.OData;
 using Honua.Protocols.OData.Models;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -30,6 +31,14 @@ public class GlobalExceptionMiddlewareTests : IDisposable
 
     public GlobalExceptionMiddlewareTests()
     {
+        // The OData-formatted error path (OData-Version header + ODataError JSON
+        // envelope) is dispatched through StandardErrorResponseFormatter's
+        // ODataErrorFormatterOverride delegate, which production installs in
+        // ODataServiceCollectionExtensions.AddOData(). This minimal test host
+        // does not call AddOData(), so install just the error-formatter override
+        // it relies on (idempotent — production assigns the same delegate).
+        StandardErrorResponseFormatter.ODataErrorFormatterOverride = ODataErrorFormatter.Format;
+
         var builder = new HostBuilder()
             .ConfigureWebHost(webHost =>
             {
