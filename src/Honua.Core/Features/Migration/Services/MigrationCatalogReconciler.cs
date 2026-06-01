@@ -269,6 +269,47 @@ public static class MigrationCatalogReconciler
             return;
         }
 
+        if (inventoryField.DomainTruncated)
+        {
+            // Truncation parity: the inventory dropped over-cap coded values, so
+            // the publish path is expected to omit them too. If the published
+            // domain still exposes coded values, the truncation contract is
+            // violated and the operator should treat it as a publish-side bug
+            // (or an operator override that diverges from inventory).
+            if (publishedField.Domain.CodedValues.Count > 0)
+            {
+                var publishedCodes = publishedField.Domain.CodedValues
+                    .Select(static coded => CodeToString(coded.Code))
+                    .Where(static code => code is not null)
+                    .OrderBy(static code => code, StringComparer.Ordinal)
+                    .ToArray();
+                findings.Add(new MigrationCatalogReconciliationFinding
+                {
+                    Code = MigrationCatalogReconciliationCodes.DomainTruncationMismatch,
+                    Severity = MigrationCatalogReconciliationSeverities.Fail,
+                    Subject = inventoryField.Name,
+                    Expected = inventoryDomainName ?? inventoryDomainType,
+                    Actual = string.Join(",", publishedCodes),
+                    Summary = $"Inventory truncated the coded-value domain on field '{inventoryField.Name}' but the published catalog still exposes {publishedField.Domain.CodedValues.Count} coded value(s)."
+                });
+            }
+            else
+            {
+                findings.Add(new MigrationCatalogReconciliationFinding
+                {
+                    Code = MigrationCatalogReconciliationCodes.DomainTruncated,
+                    Severity = MigrationCatalogReconciliationSeverities.Info,
+                    Subject = inventoryField.Name,
+                    Expected = inventoryDomainName ?? inventoryDomainType,
+                    Summary = $"Inventory captured a {inventoryDomainType ?? "domain"} on field '{inventoryField.Name}' that exceeded the capture cap; the published catalog omits values to match."
+                });
+            }
+            // Inventory has no captured values to compare further; skip the
+            // name/values/range checks so the truncation parity finding stays
+            // the single deterministic signal for this state.
+            return;
+        }
+
         if (inventoryDomainName is not null &&
             !string.IsNullOrWhiteSpace(publishedField.Domain.Name) &&
             !string.Equals(publishedField.Domain.Name, inventoryDomainName, StringComparison.Ordinal))

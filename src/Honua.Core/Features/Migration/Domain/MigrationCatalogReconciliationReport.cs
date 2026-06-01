@@ -211,6 +211,9 @@ public static class MigrationCatalogReconciliationCodes
     /// <summary>The inventory captured a coded-value domain over the capture cap; the published catalog intentionally omits the values to stay consistent with the inventory artifact.</summary>
     public const string DomainTruncated = "catalog.field.domain-truncated";
 
+    /// <summary>The inventory truncated a coded-value domain but the published catalog still exposes values, violating the truncation parity contract.</summary>
+    public const string DomainTruncationMismatch = "catalog.field.domain-truncation-mismatch";
+
     /// <summary>The published geometry type differs from the inventory geometry type.</summary>
     public const string GeometryTypeMismatch = "catalog.spatial.geometry-type-mismatch";
 

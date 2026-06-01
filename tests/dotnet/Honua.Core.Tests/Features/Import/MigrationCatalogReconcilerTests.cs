@@ -206,6 +206,90 @@ public sealed class MigrationCatalogReconcilerTests
     }
 
     [Fact]
+    public void Reconcile_WhenInventoryTruncatedButPublishedStillExposesValues_EmitsDomainTruncationMismatch()
+    {
+        // The publish path is supposed to drop over-cap coded-value domains so
+        // the catalog matches the inventory artifact. A non-null published
+        // domain with values therefore violates the truncation parity contract
+        // (e.g. an operator override or an auto-publish-path regression).
+        var inventory = BuildInventoryResource() with
+        {
+            Fields =
+            [
+                BuildInventoryResource().Fields[0],
+                BuildInventoryResource().Fields[1],
+                new MigrationInventoryField
+                {
+                    Name = "TYPE",
+                    FieldType = "esriFieldTypeString",
+                    Nullable = true,
+                    DomainType = "codedValue",
+                    DomainName = "ParcelType",
+                    DomainValues = null,
+                    DomainTruncated = true
+                }
+            ]
+        };
+        var published = BuildPublishedResource();
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(inventory, published);
+
+        var finding = outcome.Findings.Should()
+            .ContainSingle(f => f.Code == MigrationCatalogReconciliationCodes.DomainTruncationMismatch).Subject;
+        finding.Severity.Should().Be(MigrationCatalogReconciliationSeverities.Fail);
+        finding.Subject.Should().Be("TYPE");
+        finding.Actual.Should().Contain("R").And.Contain("C");
+        outcome.Findings.Should().NotContain(f => f.Code == MigrationCatalogReconciliationCodes.DomainTruncated,
+            "info-severity expected-truncation finding must not double with the fail-severity parity violation");
+        outcome.Findings.Should().NotContain(f => f.Code == MigrationCatalogReconciliationCodes.DomainNameMismatch,
+            "truncation parity supersedes name/values/range checks");
+        outcome.Classification.Should().Be(MigrationCatalogReconciliationClassifications.Fail);
+    }
+
+    [Fact]
+    public void Reconcile_WhenInventoryTruncatedAndPublishedDomainCodedValuesEmpty_EmitsInfoTruncated()
+    {
+        // Inventory dropped values to null; published exposes the type/name but
+        // also omits values (CodedValues empty). The truncation invariant is
+        // honoured on both sides, so reconciliation should pass with an
+        // informational finding rather than fail.
+        var inventory = BuildInventoryResource() with
+        {
+            Fields =
+            [
+                BuildInventoryResource().Fields[0],
+                BuildInventoryResource().Fields[1],
+                new MigrationInventoryField
+                {
+                    Name = "TYPE",
+                    FieldType = "esriFieldTypeString",
+                    Nullable = true,
+                    DomainType = "codedValue",
+                    DomainName = "ParcelType",
+                    DomainValues = null,
+                    DomainTruncated = true
+                }
+            ]
+        };
+        var published = BuildPublishedResource() with
+        {
+            SchemaFields = BuildPublishedResource().SchemaFields
+                .Select(field => field.Name == "TYPE"
+                    ? field with { Domain = field.Domain! with { CodedValues = Array.Empty<MetadataV2CodedValue>() } }
+                    : field)
+                .ToArray()
+        };
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(inventory, published);
+
+        var truncated = outcome.Findings.Should()
+            .ContainSingle(f => f.Code == MigrationCatalogReconciliationCodes.DomainTruncated).Subject;
+        truncated.Severity.Should().Be(MigrationCatalogReconciliationSeverities.Info);
+        outcome.Findings.Should().NotContain(f => f.Code == MigrationCatalogReconciliationCodes.DomainTruncationMismatch);
+        outcome.Classification.Should().Be(MigrationCatalogReconciliationClassifications.Pass);
+    }
+
+    [Fact]
     public void Reconcile_WhenPublishedDomainTypeDiffers_EmitsDomainTypeMismatchAndSkipsShapeChecks()
     {
         var inventory = BuildInventoryResource();
