@@ -283,6 +283,7 @@ public class ImageServerBasicTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/getSamples")]
     [Endpoint("POST /rest/services/{serviceId}/ImageServer/getSamples")]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/keyProperties")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/keyProperties")]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/legend")]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/computeClassStatistics")]
     [Endpoint("POST /rest/services/{serviceId}/ImageServer/computeClassStatistics")]
@@ -366,6 +367,12 @@ public class ImageServerBasicTests : IAsyncLifetime
                 new("classDescriptions", """{"classes":[{"id":1,"name":"water","geometry":{"rings":[[[-1,-1],[-1,1],[1,1],[1,-1],[-1,-1]]]}}]}""")
             ]),
             ($"/rest/services/{serviceId}/ImageServer/multidimensionalInfo",
+            [
+                new("f", "json")
+            ]),
+            // #1344: the service-level POST keyProperties route (added in #1338)
+            // needs integration coverage for the ApiSurfaceCoverage arch test.
+            ($"/rest/services/{serviceId}/ImageServer/keyProperties",
             [
                 new("f", "json")
             ]),
