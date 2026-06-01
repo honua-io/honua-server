@@ -84,7 +84,7 @@ class TestCrsAndDatetime:
         response = http_client.get(
             f"/ogc/features/collections/{test_collection_id}/items",
             params={
-                "filter": "S_INTERSECTS(shape, POINT(37.7749 -122.4194))",
+                "filter": "S_INTERSECTS(geometry, POINT(37.7749 -122.4194))",
                 "filter-crs": EPSG4326,
             },
         )
