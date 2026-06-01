@@ -91,7 +91,8 @@ internal static partial class FeatureServerEndpoints
             SupportsAdvancedQueries = supportsAdvancedQueries,
             SupportsStatistics = supportsStatistics,
             HasGeometryProperties = hasGeometry,
-            AllowGeometryUpdates = supportsEditing
+            AllowGeometryUpdates = supportsEditing,
+            SyncEnabled = ServiceSupportsSyncV2(service)
         };
     }
 
@@ -807,6 +808,17 @@ internal static partial class FeatureServerEndpoints
     private static bool ServiceSupportsAdvancedQueriesV2(MetadataV2Service service)
         => ReadServiceCapabilitiesV2(service)
             .Any(capability => capability.Equals("Query", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Whether the service opts into the sync/replica surface (createReplica /
+    /// synchronizeReplica / extractChanges), driven by a declared <c>Sync</c>
+    /// capability in <c>service.Options["capabilities"]</c>. The replica handlers
+    /// are served unconditionally; this flag only advertises the surface so Esri
+    /// clients enable their offline/replica workflows against the service.
+    /// </summary>
+    private static bool ServiceSupportsSyncV2(MetadataV2Service service)
+        => ReadServiceCapabilitiesV2(service)
+            .Any(capability => capability.Equals("Sync", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// V2 equivalent of <c>layer.SupportsAttachments</c>. V2 doesn't model attachments on the
