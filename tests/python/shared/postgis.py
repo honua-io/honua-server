@@ -1069,7 +1069,22 @@ class PostGISFixture:
                     "tile",
                     "search",
                 ],
-                "options": {},
+                # The seed stores every layer's rows in a single shared `features`
+                # table (objectid BIGSERIAL PK, layer_id INT discriminator, geometry
+                # GEOMETRY, attributes JSONB). Bind the metadata-v2 storage mapping to
+                # those physical columns explicitly so the Postgres storage-mapped
+                # reader (a) projects schema fields out of the `attributes` JSONB
+                # document instead of expecting a column per field (otherwise
+                # `name`/`description`/etc. resolve to non-existent columns) and
+                # (b) constrains every read to this layer's rows via the
+                # `layer_id` discriminator. Without these, FromMetadata falls back to
+                # field-name heuristics and the v2 read path 500s against the shared table.
+                "options": {
+                    "geometryColumn": "geometry",
+                    "primaryKeyColumn": "objectid",
+                    "attributesColumn": "attributes",
+                    "layerDiscriminatorColumn": "layer_id",
+                },
                 "status": status,
             })
             storage_by_id.setdefault(image_storage_id, {
