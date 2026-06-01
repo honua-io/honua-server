@@ -782,12 +782,19 @@ internal sealed partial class ArcGisRestClient
 
     private static MetadataV2FieldDomain? MapFieldDomain(ArcGisFieldDomain? source)
     {
+        // Truly absent or malformed source → null. Everything else preserves
+        // type/name/policies so the publish-side state matches what the
+        // inventory artifact captures (see MigrationCatalogReconciler:
+        // empty/missing values still count as an inventory-captured domain
+        // and the reconciler would otherwise raise DomainMissing).
         if (source == null || string.IsNullOrWhiteSpace(source.Type))
         {
             return null;
         }
 
         var type = source.Type!.Trim();
+        var name = string.IsNullOrWhiteSpace(source.Name) ? null : source.Name;
+
         if (string.Equals(type, "codedValue", StringComparison.Ordinal))
         {
             var coded = (source.CodedValues ?? [])
@@ -800,35 +807,44 @@ internal sealed partial class ArcGisRestClient
                 })
                 .ToArray();
 
-            if (coded.Length == 0)
-            {
-                return null;
-            }
-
             return new MetadataV2FieldDomain
             {
                 Type = type,
-                Name = string.IsNullOrWhiteSpace(source.Name) ? null : source.Name,
+                Name = name,
                 CodedValues = coded,
                 MergePolicy = source.MergePolicy,
                 SplitPolicy = source.SplitPolicy
             };
         }
 
-        if (string.Equals(type, "range", StringComparison.Ordinal) &&
-            source.Range is { Length: >= 2 } range)
+        if (string.Equals(type, "range", StringComparison.Ordinal))
         {
+            IReadOnlyList<JsonElement>? rangeBounds = null;
+            if (source.Range is { Length: >= 2 })
+            {
+                rangeBounds = [source.Range[0].Clone(), source.Range[1].Clone()];
+            }
+
             return new MetadataV2FieldDomain
             {
                 Type = type,
-                Name = string.IsNullOrWhiteSpace(source.Name) ? null : source.Name,
-                Range = [range[0].Clone(), range[1].Clone()],
+                Name = name,
+                Range = rangeBounds,
                 MergePolicy = source.MergePolicy,
                 SplitPolicy = source.SplitPolicy
             };
         }
 
-        return null;
+        // Unknown domain type (e.g. "inherited"): preserve type/name so the
+        // reconciler treats the publish state the same way it treats the
+        // inventory's non-codedValue/non-range branch at ExtractDomain.
+        return new MetadataV2FieldDomain
+        {
+            Type = type,
+            Name = name,
+            MergePolicy = source.MergePolicy,
+            SplitPolicy = source.SplitPolicy
+        };
     }
 
     private static EsriExtent? ParseExtent(ArcGisExtent? extent)

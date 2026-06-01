@@ -278,6 +278,132 @@ public sealed class GeoservicesImportServiceScanTests
     }
 
     [Fact]
+    public async Task GetLayerInfoAsync_CodedValueDomainWithEmptyValues_PreservesTypeAndName()
+    {
+        // Inventory's ExtractDomain preserves an advertised codedValue domain
+        // with an empty codedValues array (DomainType + DomainName +
+        // DomainValues=[]). The publish-side mapper must match so reconciliation
+        // does not raise DomainMissing on the divergent state.
+        var restClient = CreateRestClient(new SingleLayerDomainHandler(
+            """
+            {
+              "id": 0,
+              "name": "Parcels",
+              "geometryType": "esriGeometryPolygon",
+              "capabilities": "Query",
+              "spatialReference": { "wkid": 3857 },
+              "fields": [
+                { "name": "OBJECTID", "type": "esriFieldTypeOID" },
+                { "name": "STATUS", "type": "esriFieldTypeString", "nullable": true,
+                  "domain": {
+                    "type": "codedValue",
+                    "name": "StatusCode",
+                    "codedValues": []
+                  }
+                }
+              ]
+            }
+            """));
+
+        var layerInfo = await restClient.GetLayerInfoAsync(
+            "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            layerId: 0,
+            timeoutSeconds: 5,
+            maxRetries: 0,
+            cancellationToken: default);
+
+        var status = layerInfo.Fields.Single(f => f.Name == "STATUS");
+        status.Domain.Should().NotBeNull(
+            "an empty codedValues array still represents an advertised domain that inventory captures");
+        status.Domain!.Type.Should().Be("codedValue");
+        status.Domain.Name.Should().Be("StatusCode");
+        status.Domain.CodedValues.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetLayerInfoAsync_UnknownDomainType_PreservesTypeAndName()
+    {
+        // Inventory's ExtractDomain returns (type, name, null, null, false) for
+        // non-codedValue/non-range types. The publish-side mapper must surface
+        // the same type/name pair so reconciliation does not raise DomainMissing
+        // when the source advertises domains such as "inherited".
+        var restClient = CreateRestClient(new SingleLayerDomainHandler(
+            """
+            {
+              "id": 0,
+              "name": "Parcels",
+              "geometryType": "esriGeometryPolygon",
+              "capabilities": "Query",
+              "spatialReference": { "wkid": 3857 },
+              "fields": [
+                { "name": "OBJECTID", "type": "esriFieldTypeOID" },
+                { "name": "PARENT_TYPE", "type": "esriFieldTypeString", "nullable": true,
+                  "domain": {
+                    "type": "inherited",
+                    "name": "InheritedFromSubtype"
+                  }
+                }
+              ]
+            }
+            """));
+
+        var layerInfo = await restClient.GetLayerInfoAsync(
+            "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            layerId: 0,
+            timeoutSeconds: 5,
+            maxRetries: 0,
+            cancellationToken: default);
+
+        var parent = layerInfo.Fields.Single(f => f.Name == "PARENT_TYPE");
+        parent.Domain.Should().NotBeNull();
+        parent.Domain!.Type.Should().Be("inherited");
+        parent.Domain.Name.Should().Be("InheritedFromSubtype");
+        parent.Domain.CodedValues.Should().BeEmpty();
+        parent.Domain.Range.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetLayerInfoAsync_RangeDomainWithMissingBounds_PreservesTypeAndName()
+    {
+        // Inventory's ExtractRange returns null when bounds are missing/invalid
+        // but ExtractDomain still preserves DomainType + DomainName. The mapper
+        // must do the same so reconciliation finds matching type/name on both
+        // sides instead of raising DomainMissing.
+        var restClient = CreateRestClient(new SingleLayerDomainHandler(
+            """
+            {
+              "id": 0,
+              "name": "Parcels",
+              "geometryType": "esriGeometryPolygon",
+              "capabilities": "Query",
+              "spatialReference": { "wkid": 3857 },
+              "fields": [
+                { "name": "OBJECTID", "type": "esriFieldTypeOID" },
+                { "name": "ELEVATION", "type": "esriFieldTypeInteger", "nullable": true,
+                  "domain": {
+                    "type": "range",
+                    "name": "ElevationRange"
+                  }
+                }
+              ]
+            }
+            """));
+
+        var layerInfo = await restClient.GetLayerInfoAsync(
+            "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            layerId: 0,
+            timeoutSeconds: 5,
+            maxRetries: 0,
+            cancellationToken: default);
+
+        var elevation = layerInfo.Fields.Single(f => f.Name == "ELEVATION");
+        elevation.Domain.Should().NotBeNull();
+        elevation.Domain!.Type.Should().Be("range");
+        elevation.Domain.Name.Should().Be("ElevationRange");
+        elevation.Domain.Range.Should().BeNull("missing bounds must not synthesize a fake range pair");
+    }
+
+    [Fact]
     public void BuildFieldDomains_OverCapCodedValueDomain_DropsFieldFromPublishMap()
     {
         // Mirror inventory's CodedValueDomainCap=100 truncation policy so the

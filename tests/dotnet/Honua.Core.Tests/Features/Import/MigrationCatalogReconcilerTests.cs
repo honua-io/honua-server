@@ -247,6 +247,47 @@ public sealed class MigrationCatalogReconcilerTests
     }
 
     [Fact]
+    public void Reconcile_WhenInventoryAndPublishedBothHaveEmptyCodedValueDomain_ProducesNoFinding()
+    {
+        // Sources sometimes advertise a codedValue domain with an empty
+        // codedValues array. Inventory preserves type/name+DomainValues=[];
+        // the publish-side mapper must do the same so this paired state
+        // reconciles silently rather than failing on DomainMissing.
+        var inventory = BuildInventoryResource() with
+        {
+            Fields =
+            [
+                BuildInventoryResource().Fields[0],
+                BuildInventoryResource().Fields[1],
+                new MigrationInventoryField
+                {
+                    Name = "TYPE",
+                    FieldType = "esriFieldTypeString",
+                    Nullable = true,
+                    DomainType = "codedValue",
+                    DomainName = "ParcelType",
+                    DomainValues = []
+                }
+            ]
+        };
+        var published = BuildPublishedResource() with
+        {
+            SchemaFields = BuildPublishedResource().SchemaFields
+                .Select(field => field.Name == "TYPE"
+                    ? field with { Domain = field.Domain! with { CodedValues = Array.Empty<MetadataV2CodedValue>() } }
+                    : field)
+                .ToArray()
+        };
+
+        var outcome = MigrationCatalogReconciler.ReconcileResource(inventory, published);
+
+        outcome.Findings.Should().NotContain(f => f.Code == MigrationCatalogReconciliationCodes.DomainMissing);
+        outcome.Findings.Should().NotContain(f => f.Code == MigrationCatalogReconciliationCodes.DomainTruncationMismatch);
+        outcome.Findings.Should().NotContain(f => f.Code == MigrationCatalogReconciliationCodes.DomainValuesMismatch);
+        outcome.Classification.Should().Be(MigrationCatalogReconciliationClassifications.Pass);
+    }
+
+    [Fact]
     public void Reconcile_WhenInventoryTruncatedAndPublishedDomainCodedValuesEmpty_EmitsInfoTruncated()
     {
         // Inventory dropped values to null; published exposes the type/name but
