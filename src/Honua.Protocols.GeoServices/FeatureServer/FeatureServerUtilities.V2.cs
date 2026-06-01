@@ -165,6 +165,7 @@ internal static partial class FeatureServerEndpoints
             SupportsDistinct = supportsDistinct,
             SupportsPagination = supportsPagination,
             SupportsTrueCurve = false,
+            SupportsReturningQueryExtent = supportsAdvancedQueries,
             SupportsRollbackOnFailureParameter = supportsEditing,
             SupportsApplyEditsWithGlobalIds = false,
             HasAttachments = supportsAttachments && supportsAttachmentUploads,

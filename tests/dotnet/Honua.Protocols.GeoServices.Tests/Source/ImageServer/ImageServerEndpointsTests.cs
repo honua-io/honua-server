@@ -434,6 +434,37 @@ public class ImageServerEndpointsTests
     }
 
     [IntegrationTest]
+    [Endpoint("POST /rest/services/{id}/ImageServer/keyProperties")]
+    [Operation(Operations.Metadata)]
+    public async Task KeyProperties_Post_ReturnsNonEmptyBandProperties()
+    {
+        // The ArcGIS API for Python ImageryLayer.key_properties() issues an HTTP POST.
+        // Without a POST route the server returns 405 and the SDK surfaces an empty {}.
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute(bandCount: 3));
+        try
+        {
+            var content = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("f", "json"),
+            });
+
+            var response = await fixture.Client.PostAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/keyProperties",
+                content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            json.RootElement.GetProperty("BandCount").GetInt32().Should().Be(3);
+            json.RootElement.GetProperty("BandProperties").GetArrayLength().Should().Be(3);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/keyProperties")]
     [Operation(Operations.Metadata)]
     public async Task KeyProperties_Get_ReturnsEsriConformantKeyPropertyShape()

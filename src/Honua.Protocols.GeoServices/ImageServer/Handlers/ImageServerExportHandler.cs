@@ -244,11 +244,11 @@ internal sealed class ImageServerExportHandler
                 return false;
             }
 
-            if (!RasterParsingHelpers.TryParseRasterFormat(request.Format ?? "png", out var outputFormat) ||
+            if (!TryParseExportFormat(request.Format, out var outputFormat) ||
                 outputFormat is RasterFormat.COG or RasterFormat.Raw)
             {
                 error = new ExportParameterParseError(
-                    "format must be one of the supported export formats: png, jpg, jpeg, tiff, tif.");
+                    "format must be one of the supported export formats: png, png8, png24, png32, jpg, jpeg, jpgpng, tiff, tif.");
                 return false;
             }
 
@@ -314,6 +314,36 @@ internal sealed class ImageServerExportHandler
         {
             error = new ExportParameterParseError("Invalid export parameter.");
             return false;
+        }
+    }
+
+    // The ArcGIS Maps SDK clients (ArcGIS API for Python ImageryLayer.export_image,
+    // ArcGIS Maps SDK for JavaScript ImageryLayer) default to and send Esri-specific
+    // ImageServer format tokens such as "jpgpng" and the PNG bit-depth variants
+    // (png8/png24/png32). Those are not raster container formats the shared
+    // RasterParsingHelpers parser recognizes, so normalize them to a concrete
+    // export format here before delegating to the shared parser.
+    private static bool TryParseExportFormat(string? format, out RasterFormat outputFormat)
+    {
+        var normalized = format?.Trim().ToLowerInvariant();
+
+        switch (normalized)
+        {
+            case "jpgpng":
+                // Esri "jpgpng" means "JPEG where opaque, PNG where transparency is needed".
+                // This service emits a single concrete encoding; PNG preserves transparency
+                // and is the safe lossless choice for the combined token.
+                outputFormat = RasterFormat.PNG;
+                return true;
+            case "png8":
+            case "png24":
+            case "png32":
+                outputFormat = RasterFormat.PNG;
+                return true;
+            default:
+                return RasterParsingHelpers.TryParseRasterFormat(
+                    string.IsNullOrWhiteSpace(normalized) ? "png" : normalized,
+                    out outputFormat);
         }
     }
 

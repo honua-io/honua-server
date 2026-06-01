@@ -98,6 +98,15 @@ public sealed class FeatureServerQueryGapsTests : IAsyncLifetime
         capabilities.TryGetProperty("supportsReturningQueryExtent", out var supportsExtent)
             .Should().BeTrue("advancedQueryCapabilities should expose supportsReturningQueryExtent");
         supportsExtent.GetBoolean().Should().BeTrue();
+
+        // The ArcGIS Maps SDK for JavaScript reads supportsReturningQueryExtent from the
+        // layer object ROOT (p(layer, "supportsReturningQueryExtent", false)) when deciding
+        // whether FeatureLayer.queryExtent() is permitted. It must be present at the top level
+        // in addition to advancedQueryCapabilities, and stay consistent with it.
+        document.RootElement.TryGetProperty("supportsReturningQueryExtent", out var rootSupportsExtent)
+            .Should().BeTrue("layer root must expose supportsReturningQueryExtent for the JS SDK queryExtent() guard");
+        rootSupportsExtent.GetBoolean().Should().Be(supportsExtent.GetBoolean(),
+            "root supportsReturningQueryExtent must match advancedQueryCapabilities.supportsReturningQueryExtent");
     }
 
     // Gap 2: a point geometry plus distance + units must buffer the input before the
