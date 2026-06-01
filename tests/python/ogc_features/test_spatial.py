@@ -131,7 +131,7 @@ class TestSpatialPredicates:
         """S_INTERSECTS spatial predicate."""
         polygon = geometry_generator.polygon_simple()
         # CQL2 spatial function syntax
-        filter_expr = f"S_INTERSECTS(shape, {polygon.wkt})"
+        filter_expr = f"S_INTERSECTS(geometry, {polygon.wkt})"
 
         response = http_client.get(
             f"/ogc/features/collections/{test_collection_id}/items",

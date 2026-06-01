@@ -644,7 +644,7 @@ class PostGISFixture:
                         (%s, 'objectid', 'Integer', 0, NULL, false, NULL, 'Object ID'),
                         (%s, 'name', 'String', 1, 255, true, NULL, 'Name'),
                         (%s, 'description', 'String', 2, 1024, true, NULL, 'Description'),
-                        (%s, 'shape', 'Geometry', 3, NULL, true, NULL, 'Geometry')
+                        (%s, 'geometry', 'Geometry', 3, NULL, true, NULL, 'Geometry')
                     ON CONFLICT (layer_id, field_name) DO NOTHING;
                     """,
                     (layer_id, layer_id, layer_id, layer_id),
@@ -974,7 +974,7 @@ class PostGISFixture:
                     "isGeographic": srid == 4326,
                 },
                 "geometryType": geometry_type_token,
-                "primaryGeometryField": "shape",
+                "primaryGeometryField": "geometry",
                 "bbox": {
                     "west": west,
                     "south": south,
