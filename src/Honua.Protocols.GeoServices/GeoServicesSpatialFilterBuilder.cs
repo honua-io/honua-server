@@ -41,6 +41,23 @@ internal static class GeoServicesSpatialFilterBuilder
                 inputSrid);
         }
 
+        // Esri semantics: a `distance` (+ optional `units`) supplied alongside the default
+        // intersects relationship buffers the input geometry by that distance before the
+        // spatial test, matching every feature within the buffer. Without this, the distance
+        // was silently ignored and an exact intersects against a point returned nothing.
+        // A `distance` paired with an explicit non-distance relationship (within/contains/...)
+        // is left to that relationship's exact predicate.
+        if (queryParams.Distance is > 0 && relationship == SpatialRelationship.Intersects)
+        {
+            var unit = ParseDistanceUnit(queryParams.Units);
+            return SpatialFilter.CreateDistanceFilter(
+                wkbBytes,
+                queryParams.Distance.Value,
+                unit,
+                withinDistance: true,
+                inputSrid);
+        }
+
         var isSimpleEnvelope = geometry is
         {
             Xmin: not null,
