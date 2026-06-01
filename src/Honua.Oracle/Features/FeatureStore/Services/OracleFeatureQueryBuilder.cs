@@ -171,8 +171,11 @@ internal static partial class OracleFeatureQueryBuilder
 
     private static void AppendWhereClause(StringBuilder sb, FeatureQuery query, List<object> parameters)
     {
-        // Same divergence as the SQL Server provider: the canonical Where text is parsed locally
-        // so Postgres-styled SqlFilter fragments are not pasted into Oracle SQL.
+        // Only the canonical Where text is consumed here. The shared ISqlFilterTranslator
+        // pipeline registers a PostgreSQL translator (FeatureQuery.SqlFilter is therefore
+        // Postgres-flavored: JSONB ->> operators, ::casts, ST_* calls). Pasting that through
+        // to Oracle would produce invalid SQL, so a translated SqlFilter without a canonical
+        // Where is rejected up front rather than masked as an opaque ORA-* failure.
         if (!string.IsNullOrWhiteSpace(query.Where))
         {
             var parameterized = ParseAndParameterizeWhereClause(query.Where!.Trim(), parameters);
@@ -180,14 +183,13 @@ internal static partial class OracleFeatureQueryBuilder
             return;
         }
 
-        if (query.SqlFilter is { } sqlFilter)
+        if (query.SqlFilter is not null)
         {
-            var rebound = RebindNamedParameters(sqlFilter.Sql, parameters.Count);
-            sb.Append(" AND (").Append(rebound).Append(')');
-            foreach (var param in sqlFilter.Parameters)
-            {
-                parameters.Add(param ?? DBNull.Value);
-            }
+            throw new NotSupportedException(
+                "Translated FeatureQuery.SqlFilter fragments are not executable against the Oracle provider in this slice. " +
+                "The shared ISqlFilterTranslator pipeline emits Postgres-flavored SQL, which is not valid Oracle SQL. " +
+                "Route the request through a protocol path that populates the canonical Where text (FeatureServer 'where'), " +
+                "or restrict CQL2/FES/OData $filter usage to providers that register their own ISqlFilterTranslator.");
         }
     }
 
@@ -292,15 +294,6 @@ internal static partial class OracleFeatureQueryBuilder
             sb.Append(" FETCH NEXT :p").Append(parameters.Count.ToString(CultureInfo.InvariantCulture)).Append(" ROWS ONLY");
             parameters.Add(query.Limit.Value);
         }
-    }
-
-    private static string RebindNamedParameters(string sql, int startIndex)
-    {
-        var current = startIndex;
-        // Rebind both @p<N> and :p<N> styles so fragments authored against other dialects line up.
-        sql = AtPrefixedNamedParameterRegex().Replace(sql, _ => ":p" + (current++).ToString(CultureInfo.InvariantCulture));
-        current = startIndex;
-        return ColonPrefixedNamedParameterRegex().Replace(sql, _ => ":p" + (current++).ToString(CultureInfo.InvariantCulture));
     }
 
     private static string ParseAndParameterizeWhereClause(string whereClause, List<object> parameters)
@@ -445,10 +438,4 @@ internal static partial class OracleFeatureQueryBuilder
         @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IS\s+(?<not>NOT\s+)?NULL$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex NullCheckRegex();
-
-    [GeneratedRegex(@"@p(\d+)", RegexOptions.CultureInvariant)]
-    private static partial Regex AtPrefixedNamedParameterRegex();
-
-    [GeneratedRegex(@":p(\d+)", RegexOptions.CultureInvariant)]
-    private static partial Regex ColonPrefixedNamedParameterRegex();
 }

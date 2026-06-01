@@ -111,6 +111,14 @@ emitted SQL, so they are case-preserving (configure them exactly as they exist i
 The provider rejects any input that fails the allow-list and emits a problem-details response
 through the shared exception pipeline.
 
+The ArcSDE / versioning guard (`ALL_TAB_COLUMNS` probe) compares against the configured
+identifier values verbatim, so the same case-preserving rule applies to the SDO detection
+path. Conventional unquoted Oracle tables (e.g. `CREATE TABLE parcels (...)`) are stored
+upper-case in the catalog, so configure them as `PARCELS`. Quoted mixed/lower-case tables
+(e.g. `CREATE TABLE "Parcels" (...)`) keep their exact case, so configure them as
+`"Parcels"` would appear — `Parcels` here. A case mismatch makes the guard report the
+table as non-`SDO_GEOMETRY` and refuse the read.
+
 ## ArcSDE / Versioning Detection
 
 At first query execution per binding, the provider probes Oracle's `ALL_TAB_COLUMNS` catalog
@@ -181,6 +189,18 @@ When a request supplies both `Where` and a translated `SqlFilter`, the provider 
 re-parses the canonical `Where` text with its own Oracle parser and ignores the
 `SqlFilter`. The shared `ISqlFilterTranslator` pipeline currently registers a PostgreSQL
 translator only, so `SqlFilter` fragments cannot be assumed to be valid Oracle SQL.
+
+When a request supplies only a translated `SqlFilter` (no canonical `Where`), the provider
+throws `NotSupportedException` rather than pasting Postgres-flavored SQL into an Oracle
+query. In practice this means:
+
+- **GeoServices FeatureServer**: works — the handler populates the canonical `Where` text
+  alongside the translated `SqlFilter`, so the provider takes the Oracle parser path.
+- **WFS 2.0 FES filters, OGC API Features/STAC CQL2 filters, OData `$filter`**: rejected
+  at query-build time for Oracle layers in this slice. Either expose the layer through a
+  GeoServices/FeatureServer endpoint, or restrict filter usage to providers that register
+  their own `ISqlFilterTranslator` (PostGIS, MySQL). Native Oracle/CQL2 filter translation
+  is tracked as a follow-up.
 
 ### Pagination
 

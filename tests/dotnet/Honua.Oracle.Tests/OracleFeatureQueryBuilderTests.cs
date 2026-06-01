@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
 using Honua.Oracle.Features.FeatureStore.Services;
 
 namespace Honua.Oracle.Tests;
@@ -200,6 +201,59 @@ public class OracleFeatureQueryBuilderTests
 
         Assert.Throws<NotSupportedException>(
             () => OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns));
+    }
+
+    [Fact]
+    public void BuildSelectQuery_SqlFilterWithoutWhere_ThrowsNotSupported()
+    {
+        // The shared ISqlFilterTranslator pipeline registers a PostgreSQL translator, so
+        // FeatureQuery.SqlFilter carries Postgres-flavored SQL (JSONB ->>, casts, ST_*).
+        // Pasting it through to Oracle would emit invalid SQL; the builder must reject it
+        // explicitly so callers see the limitation instead of an opaque ORA-* failure.
+        var mapping = BuildMapping();
+        var query = new FeatureQuery
+        {
+            SqlFilter = new SqlFragment("\"attributes\" ->> 'name' = @p0", new object?[] { "Alpha" })
+        };
+
+        var ex = Assert.Throws<NotSupportedException>(
+            () => OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns));
+
+        Assert.Contains("SqlFilter", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("Oracle", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildCountQuery_SqlFilterWithoutWhere_ThrowsNotSupported()
+    {
+        var mapping = BuildMapping();
+        var query = new FeatureQuery
+        {
+            SqlFilter = new SqlFragment("\"attributes\" ->> 'name' = @p0", new object?[] { "Alpha" })
+        };
+
+        Assert.Throws<NotSupportedException>(
+            () => OracleFeatureQueryBuilder.BuildCountQuery(mapping, query));
+    }
+
+    [Fact]
+    public void BuildSelectQuery_SqlFilterIgnoredWhenWherePresent_UsesOracleParser()
+    {
+        // Canonical Where wins over SqlFilter — the docs promise the provider re-parses
+        // Where with its own Oracle parser and ignores any Postgres-styled SqlFilter.
+        var mapping = BuildMapping();
+        var query = new FeatureQuery
+        {
+            Where = "name = 'Alpha'",
+            SqlFilter = new SqlFragment("\"attributes\" ->> 'name' = @p0", new object?[] { "ShouldNotAppear" })
+        };
+
+        var result = OracleFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns);
+
+        Assert.Contains("\"name\" = :p0", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("attributes", result.Sql, StringComparison.Ordinal);
+        Assert.Single(result.WhereParameters);
+        Assert.Equal("Alpha", result.WhereParameters[0]);
     }
 
     [Fact]

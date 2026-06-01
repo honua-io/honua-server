@@ -35,19 +35,9 @@ internal sealed class OracleSpatialMetadataProbe : IOracleSpatialMetadataProbe
 
         await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
 
-        var sql = new StringBuilder()
-            .Append("SELECT DATA_TYPE FROM ALL_TAB_COLUMNS ")
-            .Append("WHERE TABLE_NAME = UPPER(:p_table) ")
-            .Append("AND COLUMN_NAME = UPPER(:p_column)");
-
-        if (!string.IsNullOrWhiteSpace(mapping.SchemaName))
-        {
-            sql.Append(" AND OWNER = UPPER(:p_owner)");
-        }
-
         await using var command = connection.CreateCommand();
         command.BindByName = true;
-        command.CommandText = sql.ToString();
+        command.CommandText = BuildGeometryColumnTypeSql(includeOwner: !string.IsNullOrWhiteSpace(mapping.SchemaName));
         command.Parameters.Add(new OracleParameter("p_table", mapping.TableName));
         command.Parameters.Add(new OracleParameter("p_column", mapping.GeometryColumn));
         if (!string.IsNullOrWhiteSpace(mapping.SchemaName))
@@ -73,19 +63,9 @@ internal sealed class OracleSpatialMetadataProbe : IOracleSpatialMetadataProbe
 
         await using var connection = await _connectionFactory.OpenAsync(dataConnection, cancellationToken).ConfigureAwait(false);
 
-        var sql = new StringBuilder()
-            .Append("SELECT COLUMN_NAME FROM ALL_TAB_COLUMNS ")
-            .Append("WHERE TABLE_NAME = UPPER(:p_table) ")
-            .Append("AND COLUMN_NAME IN ('GDB_FROM_DATE','GDB_TO_DATE','SDE_STATE_ID')");
-
-        if (!string.IsNullOrWhiteSpace(mapping.SchemaName))
-        {
-            sql.Append(" AND OWNER = UPPER(:p_owner)");
-        }
-
         await using var command = connection.CreateCommand();
         command.BindByName = true;
-        command.CommandText = sql.ToString();
+        command.CommandText = BuildArcSdeVersioningSql(includeOwner: !string.IsNullOrWhiteSpace(mapping.SchemaName));
         command.Parameters.Add(new OracleParameter("p_table", mapping.TableName));
         if (!string.IsNullOrWhiteSpace(mapping.SchemaName))
         {
@@ -103,5 +83,44 @@ internal sealed class OracleSpatialMetadataProbe : IOracleSpatialMetadataProbe
         }
 
         return matches;
+    }
+
+    // ALL_TAB_COLUMNS stores identifiers with their exact case (unquoted-created tables are
+    // folded to upper-case by Oracle; quoted mixed/lower-case names retain their case).
+    // The provider documents that operators must configure identifiers exactly as Oracle
+    // stores them and the query builder emits quoted (case-preserving) identifiers, so the
+    // probe compares against the configured values literally. Folding the parameter through
+    // UPPER() here would silently miss valid SDO_GEOMETRY columns on tables created with
+    // quoted mixed-case names (e.g. "Parcels"."Shape") and trigger the guard to reject them
+    // as non-SDO. ArcSDE versioning literals stay upper-case because Esri/SDE always create
+    // those columns unquoted, so Oracle stores them upper-case.
+    internal static string BuildGeometryColumnTypeSql(bool includeOwner)
+    {
+        var sb = new StringBuilder()
+            .Append("SELECT DATA_TYPE FROM ALL_TAB_COLUMNS ")
+            .Append("WHERE TABLE_NAME = :p_table ")
+            .Append("AND COLUMN_NAME = :p_column");
+
+        if (includeOwner)
+        {
+            sb.Append(" AND OWNER = :p_owner");
+        }
+
+        return sb.ToString();
+    }
+
+    internal static string BuildArcSdeVersioningSql(bool includeOwner)
+    {
+        var sb = new StringBuilder()
+            .Append("SELECT COLUMN_NAME FROM ALL_TAB_COLUMNS ")
+            .Append("WHERE TABLE_NAME = :p_table ")
+            .Append("AND COLUMN_NAME IN ('GDB_FROM_DATE','GDB_TO_DATE','SDE_STATE_ID')");
+
+        if (includeOwner)
+        {
+            sb.Append(" AND OWNER = :p_owner");
+        }
+
+        return sb.ToString();
     }
 }
