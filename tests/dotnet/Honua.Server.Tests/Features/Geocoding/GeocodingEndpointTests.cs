@@ -283,6 +283,65 @@ public sealed class GeocodingEndpointTests
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
+    public async Task BatchGeocode_Post_WithEsriAddressesParameter_ReturnsLocationsArray()
+    {
+        // The ArcGIS API for Python batch_geocode and ArcGIS Pro send the batch payload under
+        // the "addresses" parameter (addresses={"records":[{"attributes":{...}}]}), not "records".
+        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
+            SupportsSuggest: true,
+            SupportsBatch: true,
+            SupportsStructuredInput: false,
+            SupportsBiasing: true)));
+        using var client = factory.CreateClient();
+
+        var addresses = """{"records":[{"attributes":{"OBJECTID":1,"SingleLine":"1600 Pennsylvania Ave NW"}},{"attributes":{"OBJECTID":2,"SingleLine":"350 Fifth Avenue, New York"}}]}""";
+        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["addresses"] = addresses,
+            ["f"] = "json"
+        });
+
+        using var response = await client.PostAsync("/rest/services/World/GeocodeServer/geocodeAddresses", content);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = payload.RootElement;
+        Assert.True(root.TryGetProperty("locations", out var locations));
+        Assert.Equal(JsonValueKind.Array, locations.ValueKind);
+        Assert.Equal(2, locations.GetArrayLength());
+        Assert.True(locations[0].TryGetProperty("location", out _));
+        Assert.True(locations[0].TryGetProperty("score", out _));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
+    public async Task GeocodeServerMetadata_AdvertisesSupportsSuggest_WhenProviderSupports()
+    {
+        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
+            SupportsSuggest: true,
+            SupportsBatch: true,
+            SupportsStructuredInput: false,
+            SupportsBiasing: true)));
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = payload.RootElement;
+
+        Assert.Contains("Suggest", root.GetProperty("capabilities").GetString(), StringComparison.Ordinal);
+        var locatorProperties = root.GetProperty("locatorProperties");
+        Assert.Equal("true", locatorProperties.GetProperty("SupportsSuggest").GetString());
+        Assert.Equal("true", locatorProperties.GetProperty("SupportsBatch").GetString());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
     public async Task BatchGeocode_MissingRecords_Returns400()
     {

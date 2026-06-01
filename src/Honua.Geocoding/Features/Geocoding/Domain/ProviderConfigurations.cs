@@ -29,14 +29,23 @@ public sealed record NominatimProviderConfiguration : GeocodeProviderConfigurati
     public string? Email { get; init; }
 
     /// <summary>
-    /// Enable suggest functionality using search endpoint
+    /// Enable suggest functionality using search endpoint. Enabled by default so the
+    /// GeocodeServer <c>suggest</c> operation works out of the box (Esri SDK certification
+    /// expects suggest support); set to <c>false</c> to disable for a deployment.
     /// </summary>
-    public bool EnableSuggestFromSearch { get; init; }
+    public bool EnableSuggestFromSearch { get; init; } = true;
 
     /// <summary>
     /// Default maximum suggestions for autocomplete
     /// </summary>
     public int MaxSuggestions { get; init; } = 5;
+
+    /// <summary>
+    /// Maximum number of addresses accepted in a single batch (geocodeAddresses) request.
+    /// Nominatim has no native batch endpoint, so batches are fanned out to sequential
+    /// forward-geocode calls; this is kept modest to respect the public service usage policy.
+    /// </summary>
+    public int MaxBatchSize { get; init; } = 100;
 }
 
 /// <summary>

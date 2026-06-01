@@ -55,13 +55,17 @@ public sealed class NominatimGeocodeProvider : BaseGeocodeProvider
         SupportsForwardGeocode: true,
         SupportsReverseGeocode: true,
         SupportsSuggest: _configuration.EnableSuggestFromSearch,
-        SupportsBatch: false, // Nominatim doesn't have native batch support
+        // Nominatim has no native batch endpoint, but BaseGeocodeProvider fans the batch out
+        // to sequential forward-geocode calls so the Esri geocodeAddresses operation works.
+        SupportsBatch: true,
         SupportsStructuredInput: true,
         SupportsBiasing: true)
     {
         SupportedSpatialReferences = [4326], // Nominatim returns WGS84 coordinates
         MaxResultsPerRequest = 50,
-        MaxBatchSize = 0,
+        // Kept conservative because batch is fanned out to sequential single-address requests
+        // against the public Nominatim usage policy (max ~1 req/sec).
+        MaxBatchSize = _configuration.MaxBatchSize,
         RequiresAuthentication = false,
         SupportedLanguages = ["en", "de", "fr", "es", "it", "pt", "ru", "zh", "ja"],
         DefaultTimeoutSeconds = _configuration.TimeoutSeconds

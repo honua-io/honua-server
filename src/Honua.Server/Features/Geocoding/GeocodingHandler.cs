@@ -441,7 +441,10 @@ internal sealed class GeocodingHandler(
                 "Batch geocoding is not supported by the configured geocode provider.");
         }
 
-        var recordsJson = GetValue(values, "records");
+        // Esri clients (ArcGIS API for Python batch_geocode, ArcGIS Pro) send the batch payload
+        // under the "addresses" parameter, e.g. addresses={"records":[{"attributes":{...}}]}.
+        // Accept that as the primary name and fall back to "records" for direct callers.
+        var recordsJson = GetValue(values, "addresses") ?? GetValue(values, "records");
         if (!TryParseRecords(recordsJson, out var queries, out var parseError))
         {
             GeocodingLog.BatchRecordsParseFailed(_logger, parseError ?? "Unknown parse error");
