@@ -125,7 +125,7 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         return Map(reader);
     }
 
-    public async Task<ReplicaConflictRecord?> ResolveAsync(
+    public async Task<ReplicaConflictResolutionOutcome> ResolveAsync(
         ReplicaConflictResolution resolution,
         CancellationToken cancellationToken = default)
     {
@@ -161,13 +161,16 @@ internal sealed class PostgresReplicaConflictRepository : IReplicaConflictReposi
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            return Map(reader);
+            // This call won the guarded update and applied the resolution.
+            return new ReplicaConflictResolutionOutcome(Map(reader), Applied: true);
         }
 
-        // No row updated: either the conflict does not exist or it is already resolved. Re-read so
-        // the caller can distinguish not-found (null) from already-resolved (terminal record).
+        // No row updated: either the conflict does not exist or it was already resolved (possibly by
+        // a concurrent caller). Re-read so the caller can distinguish not-found (null record) from
+        // already-resolved (a terminal record with Applied == false).
         await reader.DisposeAsync().ConfigureAwait(false);
-        return await GetAsync(resolution.ConflictId, cancellationToken).ConfigureAwait(false);
+        var current = await GetAsync(resolution.ConflictId, cancellationToken).ConfigureAwait(false);
+        return new ReplicaConflictResolutionOutcome(current, Applied: false);
     }
 
     private static ReplicaConflictRecord Map(NpgsqlDataReader reader) => new()

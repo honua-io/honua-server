@@ -363,14 +363,27 @@ internal static class ReplicaManagementEndpoints
             DateTimeOffset.UtcNow,
             resolvedGeneration);
 
-        var resolved = await conflictRepository.ResolveAsync(resolution, cancellationToken).ConfigureAwait(false);
-        if (resolved is null)
+        var outcome = await conflictRepository.ResolveAsync(resolution, cancellationToken).ConfigureAwait(false);
+        if (outcome.Record is null)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context,
                 StatusCodes.Status404NotFound,
                 $"Conflict '{conflictId}' not found for replica '{replicaId}'.");
         }
+
+        if (!outcome.Applied)
+        {
+            // The conflict was already resolved (e.g. by a concurrent operator that won the guarded
+            // update); do not re-report this losing request as a success or emit a success audit
+            // event. Mirror the pre-check's already-resolved response.
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status409Conflict,
+                $"Conflict '{conflictId}' has already been resolved.");
+        }
+
+        var resolved = outcome.Record;
 
         await auditLog.RecordAsync(
             new AuditEvent

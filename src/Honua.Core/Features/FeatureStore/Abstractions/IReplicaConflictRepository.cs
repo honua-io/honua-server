@@ -24,6 +24,21 @@ public readonly record struct ReplicaConflictResolution(
     long? ResolvedServerGeneration);
 
 /// <summary>
+/// Outcome of a <see cref="IReplicaConflictRepository.ResolveAsync"/> call.
+/// </summary>
+/// <param name="Record">
+/// The conflict record after the call, or null when the conflict does not exist.
+/// </param>
+/// <param name="Applied">
+/// True when this call applied the resolution; false when the conflict was already resolved by a
+/// prior (possibly concurrent) call, in which case <see cref="Record"/> reflects that prior
+/// resolution and the caller must not re-report this request as a successful resolution.
+/// </param>
+public readonly record struct ReplicaConflictResolutionOutcome(
+    ReplicaConflictRecord? Record,
+    bool Applied);
+
+/// <summary>
 /// Persistent storage for durable disconnected-sync conflict records (#1167). Conflict records are
 /// written when a replica upload cannot be applied cleanly and are reviewed/resolved through the
 /// operator-facing admin API after the synchronize response has returned.
@@ -61,12 +76,14 @@ public interface IReplicaConflictRepository
     Task<ReplicaConflictRecord?> GetAsync(string conflictId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Applies a resolution to a pending conflict, transitioning it to a terminal status and
-    /// recording the resolution evidence. Returns the updated record, or null when the conflict was
-    /// not found. The record is returned unchanged (without re-applying) when it is already in a
-    /// terminal, non-deferred status, so callers can detect a conflicting resolution attempt.
+    /// Applies a resolution to a pending or deferred conflict, transitioning it to a terminal status
+    /// and recording the resolution evidence. The transition is atomic: if the conflict was already
+    /// resolved (including by a concurrent caller) the resolution is not re-applied and the returned
+    /// outcome reports <see cref="ReplicaConflictResolutionOutcome.Applied"/> as <c>false</c> with the
+    /// prior record, so the losing caller of a race does not report a spurious success. A missing
+    /// conflict yields a null record.
     /// </summary>
-    Task<ReplicaConflictRecord?> ResolveAsync(
+    Task<ReplicaConflictResolutionOutcome> ResolveAsync(
         ReplicaConflictResolution resolution,
         CancellationToken cancellationToken = default);
 }
