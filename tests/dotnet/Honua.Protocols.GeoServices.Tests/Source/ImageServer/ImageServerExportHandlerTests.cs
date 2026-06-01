@@ -487,6 +487,40 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithEsriJsonBboxSr_PassesParsedSridToRasterStore()
+    {
+        // ArcGIS API for Python sends spatial references as Esri JSON ({"wkid":N}).
+        SetupSuccessfulExport();
+        RasterQuery? capturedQuery = null;
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedQuery = callInfo.ArgAt<RasterQuery>(2);
+                return CreateTestRasterResult();
+            });
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(
+            bbox: "-20037508,-20037508,20037508,20037508",
+            bboxSr: "{\"wkid\":3857}",
+            imageSr: "{\"latestWkid\":4326}");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.Value.OutputSrid.Should().Be(4326);
+        var clipRegion = capturedQuery.Value.ClipRegion;
+        clipRegion.HasValue.Should().BeTrue();
+        if (!clipRegion.HasValue)
+        {
+            throw new InvalidOperationException("Clip region should be set when bbox is provided.");
+        }
+
+        clipRegion.Value.Srid.Should().Be(3857);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task ExportImageAsync_NullExtent_FallsBackToSelectedRasterExtent()
     {
         SetupLayerAndRasters();
