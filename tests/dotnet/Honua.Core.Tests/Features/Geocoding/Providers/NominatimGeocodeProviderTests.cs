@@ -154,6 +154,78 @@ public sealed class NominatimGeocodeProviderTests
         Assert.Equal(0, handler.SendCount);
     }
 
+    [Fact]
+    public void Capabilities_DefaultConfiguration_AdvertisesSuggestAndBatch()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler())
+        {
+            BaseAddress = new Uri("https://example.com/", UriKind.Absolute)
+        };
+
+        var provider = new NominatimGeocodeProvider(
+            new NominatimProviderConfiguration
+            {
+                BaseUrl = "https://example.com",
+                UserAgent = "Honua.Tests/1.0"
+            },
+            httpClient);
+
+        Assert.True(provider.Capabilities.SupportsSuggest);
+        Assert.True(provider.Capabilities.SupportsBatch);
+        Assert.True(provider.Capabilities.MaxBatchSize > 0);
+    }
+
+    [Fact]
+    public async Task SuggestAsync_DefaultConfiguration_ReturnsSuggestionsFromSearch()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler())
+        {
+            BaseAddress = new Uri("https://example.com/", UriKind.Absolute)
+        };
+
+        var provider = new NominatimGeocodeProvider(
+            new NominatimProviderConfiguration
+            {
+                BaseUrl = "https://example.com",
+                UserAgent = "Honua.Tests/1.0"
+            },
+            httpClient);
+
+        var suggestions = await provider.SuggestAsync(
+            new SuggestGeocodeRequest("10 Downing", 5),
+            CancellationToken.None);
+
+        var suggestion = Assert.Single(suggestions);
+        Assert.Equal("10 Downing St, London", suggestion.Text);
+        Assert.False(string.IsNullOrWhiteSpace(suggestion.MagicKey));
+    }
+
+    [Fact]
+    public async Task BatchGeocodeAsync_FansOutToForwardGeocode_ReturnsCandidatePerInput()
+    {
+        var handler = new StubHttpMessageHandler();
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://example.com/", UriKind.Absolute)
+        };
+
+        var provider = new NominatimGeocodeProvider(
+            new NominatimProviderConfiguration
+            {
+                BaseUrl = "https://example.com",
+                UserAgent = "Honua.Tests/1.0"
+            },
+            httpClient);
+
+        var results = await provider.BatchGeocodeAsync(
+            new BatchGeocodeRequest(["10 Downing St", "350 Fifth Avenue"], 4326),
+            CancellationToken.None);
+
+        Assert.Equal(2, results.Count);
+        Assert.Equal(2, handler.SendCount);
+        Assert.All(results, candidate => Assert.Equal("10 Downing St, London", candidate.Address));
+    }
+
     private sealed class StubHttpMessageHandler : HttpMessageHandler
     {
         public int SendCount { get; private set; }

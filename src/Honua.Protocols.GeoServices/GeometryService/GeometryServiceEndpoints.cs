@@ -273,6 +273,28 @@ internal static class GeometryServiceEndpoints
             .WithTags("GeometryService")
             .AllowAnonymous();
 
+        endpoints.MapGet($"{GeometryRoutePrefix}/toGeoCoordinateString", (Delegate)HandleToGeoCoordinateString)
+            .WithDisplayName("Geometry Service To Geo Coordinate String (GET)")
+            .WithName("GeometryServiceToGeoCoordinateStringGet")
+            .WithTags("GeometryService");
+
+        endpoints.MapPost($"{GeometryRoutePrefix}/toGeoCoordinateString", (Delegate)HandleToGeoCoordinateString)
+            .WithDisplayName("Geometry Service To Geo Coordinate String (POST)")
+            .WithName("GeometryServiceToGeoCoordinateStringPost")
+            .WithTags("GeometryService")
+            .AllowAnonymous();
+
+        endpoints.MapGet($"{GeometryRoutePrefix}/fromGeoCoordinateString", (Delegate)HandleFromGeoCoordinateString)
+            .WithDisplayName("Geometry Service From Geo Coordinate String (GET)")
+            .WithName("GeometryServiceFromGeoCoordinateStringGet")
+            .WithTags("GeometryService");
+
+        endpoints.MapPost($"{GeometryRoutePrefix}/fromGeoCoordinateString", (Delegate)HandleFromGeoCoordinateString)
+            .WithDisplayName("Geometry Service From Geo Coordinate String (POST)")
+            .WithName("GeometryServiceFromGeoCoordinateStringPost")
+            .WithTags("GeometryService")
+            .AllowAnonymous();
+
         return endpoints;
     }
 
@@ -281,7 +303,7 @@ internal static class GeometryServiceEndpoints
     // their discovery handshake before invoking buffer/simplify/etc.
     private const string GeometryServerInfoJson =
         "{\"currentVersion\":11.1,"
-        + "\"serviceDescription\":\"Honua Geometry Service — buffer, simplify, project, intersect, union, clip, difference, areasAndLengths, lengths, distance, relation, densify, convexHull, generalize, labelPoints, cut, trimExtend, offset, autoComplete, reshape, findTransformations.\","
+        + "\"serviceDescription\":\"Honua Geometry Service — buffer, simplify, project, intersect, union, clip, difference, areasAndLengths, lengths, distance, relation, densify, convexHull, generalize, labelPoints, cut, trimExtend, offset, autoComplete, reshape, findTransformations, toGeoCoordinateString, fromGeoCoordinateString.\","
         + "\"maxBufferCount\":1000,"
         + "\"maxSimplifyCount\":1000,"
         + "\"resampled\":true}";
@@ -455,5 +477,21 @@ internal static class GeometryServiceEndpoints
     {
         var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         return await handler.HandleFindTransformationsAsync(context, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> HandleToGeoCoordinateString(
+        HttpContext context,
+        GeometryServiceHandler handler)
+    {
+        var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        return await handler.HandleToGeoCoordinateStringAsync(context, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<IResult> HandleFromGeoCoordinateString(
+        HttpContext context,
+        GeometryServiceHandler handler)
+    {
+        var ct = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        return await handler.HandleFromGeoCoordinateStringAsync(context, ct).ConfigureAwait(false);
     }
 }

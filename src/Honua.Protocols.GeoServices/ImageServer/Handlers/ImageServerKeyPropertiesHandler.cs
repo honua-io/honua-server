@@ -74,9 +74,16 @@ internal sealed class ImageServerKeyPropertiesHandler
                 };
             }
 
+            var (lowCellSize, highCellSize) = ComputeCellSizes(raster.GeoTransform);
+
             var response = new KeyPropertiesResponse
             {
                 BandProperties = bandProperties,
+                LowCellSize = lowCellSize,
+                HighCellSize = highCellSize,
+                MaxCellSize = highCellSize,
+                ConfigKeyword = string.Empty,
+                BandDefinitionKeyword = string.Empty,
                 DataType = MapPixelType(raster.PixelType),
                 BandCount = raster.BandCount,
                 NoDataValue = raster.NoDataValue,
@@ -97,6 +104,40 @@ internal sealed class ImageServerKeyPropertiesHandler
             scope.RecordException(ex);
             return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving key properties.");
         }
+    }
+
+    /// <summary>
+    /// Derives the finest/coarsest cell size from the raster geotransform.
+    /// GeoTransform layout: [upperLeftX, scaleX, skewX, upperLeftY, skewY, scaleY];
+    /// pixel width is <c>|scaleX|</c> (index 1) and pixel height is <c>|scaleY|</c> (index 5).
+    /// Returns <c>(null, null)</c> when no geotransform is available.
+    /// </summary>
+    private static (double? Low, double? High) ComputeCellSizes(double[]? geoTransform)
+    {
+        if (geoTransform is not { Length: >= 6 })
+        {
+            return (null, null);
+        }
+
+        var pixelWidth = Math.Abs(geoTransform[1]);
+        var pixelHeight = Math.Abs(geoTransform[5]);
+
+        if (pixelWidth <= 0 && pixelHeight <= 0)
+        {
+            return (null, null);
+        }
+
+        if (pixelWidth <= 0)
+        {
+            return (pixelHeight, pixelHeight);
+        }
+
+        if (pixelHeight <= 0)
+        {
+            return (pixelWidth, pixelWidth);
+        }
+
+        return (Math.Min(pixelWidth, pixelHeight), Math.Max(pixelWidth, pixelHeight));
     }
 
     private static string MapPixelType(string postgisPixelType)

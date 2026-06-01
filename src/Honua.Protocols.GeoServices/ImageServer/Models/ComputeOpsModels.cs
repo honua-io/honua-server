@@ -91,6 +91,9 @@ public sealed class SampleLocation
 
 /// <summary>
 /// Esri-conformant response for the Image Server <c>keyProperties</c> endpoint.
+/// Mirrors the ArcGIS REST "Key Properties" document so the ArcGIS API for Python
+/// <c>ImageryLayer.key_properties()</c> receives the flat raster key-property dictionary
+/// it expects: a <c>BandProperties</c> array plus cell-size and configuration keywords.
 /// </summary>
 public sealed class KeyPropertiesResponse
 {
@@ -101,7 +104,39 @@ public sealed class KeyPropertiesResponse
     public BandProperty[] BandProperties { get; init; } = [];
 
     /// <summary>
+    /// Coarsest (largest) cell size of the raster, in source spatial-reference units.
+    /// </summary>
+    [JsonPropertyName("HighCellSize")]
+    public double? HighCellSize { get; init; }
+
+    /// <summary>
+    /// Finest (smallest) cell size of the raster, in source spatial-reference units.
+    /// </summary>
+    [JsonPropertyName("LowCellSize")]
+    public double? LowCellSize { get; init; }
+
+    /// <summary>
+    /// Maximum cell size of the raster, in source spatial-reference units.
+    /// </summary>
+    [JsonPropertyName("MaxCellSize")]
+    public double? MaxCellSize { get; init; }
+
+    /// <summary>
+    /// Raster storage configuration keyword. Empty when the source does not declare one.
+    /// </summary>
+    [JsonPropertyName("ConfigKeyword")]
+    public string ConfigKeyword { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Band definition keyword identifying the sensor/product band layout.
+    /// Empty when the source does not declare one.
+    /// </summary>
+    [JsonPropertyName("BandDefinitionKeyword")]
+    public string BandDefinitionKeyword { get; init; } = string.Empty;
+
+    /// <summary>
     /// Esri pixel data type of the raster (e.g. <c>U8</c>, <c>F32</c>).
+    /// Retained alongside the canonical keys for callers that read it directly.
     /// </summary>
     [JsonPropertyName("DataType")]
     public string? DataType { get; init; }
@@ -125,7 +160,7 @@ public sealed class KeyPropertiesResponse
 public sealed class BandProperty
 {
     /// <summary>
-    /// 1-based band index.
+    /// Human-readable band name (e.g. <c>Band_1</c>).
     /// </summary>
     [JsonPropertyName("BandName")]
     public required string BandName { get; init; }

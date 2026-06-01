@@ -258,6 +258,13 @@ internal sealed partial class FeatureServerQueryHandler(
                     [unsupportedError!]));
             }
 
+            if (!TryValidateSqlFormat(validatedParams, out var sqlFormatError))
+            {
+                return (null, StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid sqlFormat",
+                    [sqlFormatError!]));
+            }
+
             // A having clause only filters aggregated groups, so reject it when no
             // outStatistics are present rather than silently ignoring it.
             if (!string.IsNullOrWhiteSpace(validatedParams.Having) &&
@@ -415,6 +422,13 @@ internal sealed partial class FeatureServerQueryHandler(
                 return StandardErrorHelpers.CreateBadRequest(context,
                     "Unsupported query parameters",
                     [unsupportedError!]);
+            }
+
+            if (!TryValidateSqlFormat(validatedParams, out var sqlFormatError))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context,
+                    "Invalid sqlFormat",
+                    [sqlFormatError!]);
             }
 
             var requestedFormat = FeatureServerEndpoints.ResolveRequestedQueryFormat(
@@ -677,13 +691,23 @@ internal sealed partial class FeatureServerQueryHandler(
                     queryLayer.StorageLayerId,
                     query,
                     cancellationToken).ConfigureAwait(false);
+                // Esri's returnExtentOnly response is {extent, count}; report the number of
+                // features that contributed to the computed envelope alongside the extent.
+                var extentCount = await _queryExecutor.CountAsync(
+                    queryLayer.Service,
+                    queryLayer.Resource,
+                    queryLayer.Publication,
+                    queryLayer.StorageLayerId,
+                    query,
+                    cancellationToken).ConfigureAwait(false);
                 stopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "extent", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
                 extent ??= await ResolveExtentFallbackAsync(context, validatedParams, queryLayer.Resource, outputSrid, cancellationToken);
-                HonuaTelemetry.SetSuccess(featureActivity);
+                HonuaTelemetry.SetSuccess(featureActivity, (int)Math.Min(extentCount, int.MaxValue));
                 var response = new QueryResponse
                 {
                     Extent = extent.HasValue ? extent.Value.ToExtentInfo() : null,
+                    Count = extentCount,
                     Features = null
                 };
 
@@ -1488,12 +1512,20 @@ internal sealed partial class FeatureServerQueryHandler(
                 queryLayer.StorageLayerId,
                 query,
                 cancellationToken).ConfigureAwait(false);
+            var extentCount = await _queryExecutor.CountAsync(
+                queryLayer.Service,
+                queryLayer.Resource,
+                queryLayer.Publication,
+                queryLayer.StorageLayerId,
+                query,
+                cancellationToken).ConfigureAwait(false);
             stopwatch.Stop();
             FeatureServerLog.QueryExecuted(_logger, "extent", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
             extent ??= await ResolveExtentFallbackAsync(context, validatedParams, queryLayer.Resource, outputSrid, cancellationToken).ConfigureAwait(false);
             return new QueryResponse
             {
                 Extent = extent.HasValue ? extent.Value.ToExtentInfo() : null,
+                Count = extentCount,
                 Features = null
             };
         }
@@ -2092,11 +2124,6 @@ internal sealed partial class FeatureServerQueryHandler(
             unsupported.Add("returnExceededLimitFeatures");
         }
 
-        if (!string.IsNullOrWhiteSpace(queryParams.SqlFormat))
-        {
-            unsupported.Add("sqlFormat");
-        }
-
         if (queryParams.ReturnCentroid)
         {
             unsupported.Add("returnCentroid");
@@ -2109,6 +2136,32 @@ internal sealed partial class FeatureServerQueryHandler(
         }
 
         errorMessage = $"Unsupported query parameters: {string.Join(", ", unsupported)}.";
+        return false;
+    }
+
+    /// <summary>
+    /// Validates the Esri <c>sqlFormat</c> parameter. ArcGIS Pro and the SDKs send
+    /// <c>standard</c> (SQL-92 standardized where syntax) or <c>native</c> (provider-native).
+    /// Honua parses the where clause under its standardized ArcGIS-SQL dialect for both, so the
+    /// value is accepted and honored; only an unrecognized token is rejected.
+    /// </summary>
+    private static bool TryValidateSqlFormat(QueryParameters queryParams, out string? errorMessage)
+    {
+        errorMessage = null;
+        if (string.IsNullOrWhiteSpace(queryParams.SqlFormat))
+        {
+            return true;
+        }
+
+        var normalized = queryParams.SqlFormat.Trim();
+        if (normalized.Equals("standard", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("native", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("none", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        errorMessage = "sqlFormat must be one of: standard, native.";
         return false;
     }
 

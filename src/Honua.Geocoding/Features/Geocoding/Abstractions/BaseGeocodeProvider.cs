@@ -99,16 +99,49 @@ public abstract class BaseGeocodeProvider : IGeocodeProvider
     }
 
     /// <summary>
-    /// Core implementation of batch geocoding functionality
+    /// Core implementation of batch geocoding functionality.
     /// </summary>
+    /// <remarks>
+    /// The default implementation fans the batch out to <see cref="ForwardGeocodeAsync"/>,
+    /// returning the best candidate for each input address in request order. Providers with a
+    /// native batch endpoint should override this for efficiency. This keeps the Esri
+    /// <c>geocodeAddresses</c> operation working for providers (such as Nominatim) that only
+    /// expose a single-address forward-geocode API.
+    /// </remarks>
     /// <param name="request">Batch geocoding request</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>List of geocoding candidates</returns>
-    protected virtual Task<IReadOnlyList<GeocodeCandidate>> BatchGeocodeCoreAsync(
+    /// <returns>List of geocoding candidates, one per input address in request order</returns>
+    protected virtual async Task<IReadOnlyList<GeocodeCandidate>> BatchGeocodeCoreAsync(
         BatchGeocodeRequest request,
         CancellationToken cancellationToken = default)
     {
-        throw new NotSupportedException($"Provider '{Name}' does not support batch geocoding functionality.");
+        ArgumentNullException.ThrowIfNull(request);
+
+        var results = new List<GeocodeCandidate>(request.Queries.Count);
+
+        foreach (var query in request.Queries)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                continue;
+            }
+
+            var forwardRequest = new ForwardGeocodeRequest(
+                Query: query,
+                MaxResults: Math.Max(1, request.MaxResultsPerQuery),
+                SpatialReferenceWkid: request.SpatialReferenceWkid,
+                CountryCodes: request.CountryCodes);
+
+            var candidates = await ForwardGeocodeAsync(forwardRequest, cancellationToken).ConfigureAwait(false);
+            if (candidates.Count > 0)
+            {
+                results.Add(candidates[0]);
+            }
+        }
+
+        return results;
     }
 
     /// <summary>

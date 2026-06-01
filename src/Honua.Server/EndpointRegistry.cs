@@ -876,6 +876,10 @@ public static class EndpointRegistry
         new("POST", "/rest/services/Utilities/Geometry/GeometryServer/reshape"),
         new("GET", "/rest/services/Utilities/Geometry/GeometryServer/findTransformations"),
         new("POST", "/rest/services/Utilities/Geometry/GeometryServer/findTransformations"),
+        new("GET", "/rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString"),
+        new("POST", "/rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString"),
+        new("GET", "/rest/services/Utilities/Geometry/GeometryServer/fromGeoCoordinateString"),
+        new("POST", "/rest/services/Utilities/Geometry/GeometryServer/fromGeoCoordinateString"),
 
         // NAServer minimal mobile routing compatibility (#366)
         new("POST", "/rest/services/{serviceId}/NAServer/Route/solve"),

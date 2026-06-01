@@ -153,7 +153,9 @@ public class ImageServerMultidimensionalInfoHandlerTests
     };
 
     private static MultidimensionalCoverageRegistration CreateRegistration(
-        MultidimensionalCoverageMetadata? metadata) => new()
+        MultidimensionalCoverageMetadata? metadata)
+    {
+        return new MultidimensionalCoverageRegistration
         {
             Id = 7,
             LayerId = 1,
@@ -167,6 +169,7 @@ public class ImageServerMultidimensionalInfoHandlerTests
             MetadataScannedAt = metadata is null ? null : DateTimeOffset.UtcNow,
             CreatedAt = DateTimeOffset.UtcNow
         };
+    }
 
     private static DefaultHttpContext CreateImageServerContext()
     {

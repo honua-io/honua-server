@@ -26,7 +26,6 @@ public sealed class FeatureServerQueryParameterTests : IAsyncLifetime
     [Theory]
     [InlineData("returnTrueCurves=true", "returnTrueCurves")]
     [InlineData("returnExceededLimitFeatures=true", "returnExceededLimitFeatures")]
-    [InlineData("sqlFormat=standard", "sqlFormat")]
     [InlineData("returnCentroid=true", "returnCentroid")]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
