@@ -441,6 +441,17 @@ jobs:
       - name: Canonical Instruction Check
         run: bash scripts/ci/check-instructions-sync.sh
 
+      # The full-solution build can exhaust ubuntu-latest disk once every
+      # project writes Release bin/obj outputs. Reclaim unused hosted toolchains
+      # before .NET setup and restore so runner diagnostics keep enough space.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /usr/share/swift || true
+          sudo rm -rf /usr/local/.ghcup || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          df -h / || true
+
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
         with:

@@ -117,6 +117,7 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IFeatureReader>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
         services.AddScoped<IFeatureWriter>(_ => new ReadOnlyFeatureWriter("DuckDB"));
         services.AddScoped<IReplicaRepository>(_ => new NoOpReplicaRepository());
+        services.AddScoped<IReplicaConflictRepository>(_ => new NoOpReplicaConflictRepository());
         services.AddScoped<IChangeTracker>(_ => new NoOpChangeTracker());
         services.AddScoped<IGeoJsonFeatureStore>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
         services.AddScoped<IStreamingFeatureStore>(sp => sp.GetRequiredService<DuckDBFeatureStore>());

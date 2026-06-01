@@ -80,7 +80,7 @@ Cross-repo coordination between Honua server and the first-party SDKs (`honua-sd
 
 ## Operator-side compatibility
 
-- **Database support matrix** — [`operator/database-support-matrix.md`](../operator/database-support-matrix.md). Tested PostgreSQL/PostGIS versions, Aurora, Azure, plus the read-only DuckDB / SQL Server / MySQL provider envelopes.
+- **Database support matrix** — [`operator/database-support-matrix.md`](../operator/database-support-matrix.md). Tested PostgreSQL/PostGIS versions, Aurora, Azure, plus the read-only DuckDB / SQL Server / Oracle / MySQL provider envelopes.
 
 ## Refresh cadence at a glance
 

@@ -73,6 +73,16 @@ internal static class InfrastructureCompositionRoot
             Honua.ArcGisRest.ServiceCollectionExtensions.AddArcGisRestFeatureProvider(services, configuration);
         }
 
+        // Register the Oracle spatial provider as an additional read-only feature backend (#1252).
+        // Metadata v2 publications whose connection resolves to provider 'oracle'/'oracledb' are routed here
+        // through the shared FeatureProviderQueryRouter. Disabled when Oracle:Enabled is explicitly false.
+        // Oracle.ManagedDataAccess.Core uses internal reflection and is not Native AOT-compatible;
+        // operators publishing trimmed/AOT artifacts should leave the provider disabled.
+        if (configuration.GetValue("Oracle:Enabled", true))
+        {
+            Honua.Oracle.ServiceCollectionExtensions.AddOracleFeatureProvider(services, configuration);
+        }
+
         services.TryAddScoped<IFeatureDataProviderRegistry>(serviceProvider =>
             new FeatureDataProviderRegistry(serviceProvider.GetServices<IFeatureDataProvider>()));
         services.TryAddScoped(serviceProvider =>

@@ -253,7 +253,7 @@ or `child` when a concrete consumer needs it.
   is not a transitional layer — it's a permanent home for genuinely
   format-specific facts. We name them well and document them.
 - **Per-resource integer storage handle (`StorageBinding.StorageLayerId`)
-  remains.** Storage backends (Postgres / MySql / DuckDB / SqlServer
+  remains.** Storage backends (Postgres / MySql / DuckDB / SqlServer / Oracle
   FeatureStores, ILayerStyleCatalog, OutputCacheInvalidationService) take an
   int. That int is the storage abstraction boundary, not a v1 leak.
 - **Adapter contract methods carry v1 + V2 overloads** during the cutover.

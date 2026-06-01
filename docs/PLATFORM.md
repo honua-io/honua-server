@@ -42,7 +42,7 @@ Honua is a cloud-native geospatial feature server. It publishes, queries, edits,
 
 ## Protocols at a Glance
 
-Honua serves multiple protocols from a single dataset. No ETL, no data duplication. The PostGIS, DuckDB, SQL Server, and MySQL/MariaDB providers each expose the same protocol surface for the operations they support. Only PostGIS supports writes today; read-only providers report `false` on capabilities they do not implement (edits, native MVT, statistics) and the protocol layer surfaces those limitations as `NotSupportedException` or HTTP 501.
+Honua serves multiple protocols from a single dataset. No ETL, no data duplication. The PostGIS, DuckDB, SQL Server, Oracle Spatial, and MySQL/MariaDB providers each expose the same protocol surface for the operations they support. Only PostGIS supports writes today; read-only providers report `false` on capabilities they do not implement (edits, native MVT, statistics) and the protocol layer surfaces those limitations as `NotSupportedException` or HTTP 501.
 
 | Protocol | Primary Clients | Use Case |
 |---|---|---|
@@ -89,11 +89,19 @@ Honua serves multiple protocols from a single dataset. No ETL, no data duplicati
                          │ MySQL/MariaDB├──Serve──▶ Same clients
                          │ (read/query) │          (query only)
                          └──────────────┘
+
+                         ┌──────────────┐
+                         │ Oracle       ├──Serve──▶ Same clients
+                         │ (read-only,  │          (query only)
+                         │  SDO_GEOMETRY)│
+                         └──────────────┘
 ```
 
 The DuckDB provider serves pre-built `.duckdb` files containing data prepared offline (e.g. from GeoParquet, Shapefile, or CSV imports). It supports feature queries, spatial filters, statistics, and GeoJSON/streaming export, but not editing, MVT, H3, native WFS GML output, or replica/extract workflows. See the [DuckDB Provider Guide](operator/duckdb-provider.md) for configuration and limitations.
 
 The SQL Server provider exposes existing `geometry`/`geography` tables as read-only feature layers without copying data into PostGIS. It supports feature query, count, extent, and pagination, but not editing, statistics, top-features, date/value/H3 bins, temporal extents, or native MVT/FlatGeobuf/Geobuf/GML output (which fall back to the in-process formatter). See the [SQL Server Provider Guide](operator/sqlserver-provider.md) for supported versions, configuration, and limitations.
+
+The Oracle provider exposes standard Oracle Spatial (`SDO_GEOMETRY`) tables as read-only feature layers via the same shared catalog binding flow. It supports feature query, count, extent, and pagination, and detects ArcSDE `ST_Geometry`/binary columns and versioned enterprise-geodatabase tables at first execution and refuses to serve them (the IP / clean-room enforcement point). Edits, statistics, native MVT/FlatGeobuf/Geobuf/GML, KNN/distance filters, and Native AOT publishing are not supported. See the [Oracle Provider Guide](operator/oracle-provider.md) for supported sources, layer mapping, and limitations.
 
 The MySQL/MariaDB provider serves user-managed tables in MySQL 8.0.11+ or MariaDB 10.6+. It supports feature query, count, pagination, attribute filters, OGC spatial relationships (Intersects, Within, Contains, etc.), and buffered/paged `IStreamingFeatureStore` iteration; it does **not** support edits, statistics, native MVT/FlatGeobuf/Geobuf/GML, streaming GeoJSON, KNN/nearest-neighbor, cross-SRID `ST_Transform`, or temporal (`datetime`) filters. `GetExtentAsync` is supported for Point and Polygon/MultiPolygon layers only — other geometry types raise `NotSupportedException` (the slice avoids the MySQL-only 2-arg `ST_SRID` retag and the point-only `ST_X`/`ST_Y` patterns to keep the emitted SQL portable across both engines). Invalid `GeometryType` configuration values are rejected at startup. See the [MySQL/MariaDB Provider Guide](operator/mysql-provider.md) for layer mapping, version floors, spatial filter mapping, and cloud-hosted deployment notes.
 

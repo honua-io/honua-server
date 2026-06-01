@@ -103,8 +103,34 @@ internal sealed class ImageServerIdentifyHandler
             var selectedRasters = await _rasterStore.QueryRastersAsync(layerId, selectionQuery, cancellationToken);
             if (selectedRasters.Length == 0)
             {
+                // ArcGIS ImageServer identify returns a 200 NoData document (not a 404) when the
+                // requested location does not intersect any raster, mirroring getSamples which
+                // returns an empty 200. Returning 404 here breaks the ArcGIS JS/Python SDK
+                // imageService.identify call for out-of-extent or no-data points.
                 ImageServerLog.NoRastersFound(_logger, layerId);
-                return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
+                var noDataResponse = new IdentifyResponse
+                {
+                    ObjectId = null,
+                    Name = resolved.DisplayName,
+                    Value = "NoData",
+                    Location = new Point
+                    {
+                        X = x.Value,
+                        Y = y.Value
+                    },
+                    Properties = new Dictionary<string, object?>
+                    {
+                        ["HasData"] = false,
+                        ["Coordinates"] = $"{x.Value}, {y.Value}",
+                        ["SRID"] = srid,
+                        ["BandCount"] = 0
+                    },
+                    CatalogItems = request.ReturnCatalogItems == true
+                        ? Array.Empty<CatalogItem>()
+                        : null
+                };
+
+                return Results.Json(noDataResponse, ImageServerJsonContext.Default.IdentifyResponse);
             }
 
             ImageServerLog.IdentifyStarted(_logger, layerId, x.Value, y.Value);

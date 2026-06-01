@@ -174,8 +174,8 @@ Entry points:
 
 Steps:
 
-1. Choose provider: PostgreSQL/PostGIS, SQL Server, MySQL/MariaDB, DuckDB,
-   object store, local file store, or remote API.
+1. Choose provider: PostgreSQL/PostGIS, SQL Server, Oracle Spatial,
+   MySQL/MariaDB, DuckDB, object store, local file store, or remote API.
 2. Enter endpoint details and credentials. Credentials are write-only and stored
    as a secret reference.
 3. Test connection.

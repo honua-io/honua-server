@@ -122,6 +122,11 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/services/{serviceId}/replicas"),
         new("GET", "/api/v1/admin/services/{serviceId}/replicas/{replicaId}"),
 
+        // v1 admin replica conflict-review endpoints (#1167, slice 2)
+        new("GET", "/api/v1/admin/services/{serviceId}/replicas/{replicaId}/conflicts"),
+        new("GET", "/api/v1/admin/services/{serviceId}/replicas/{replicaId}/conflicts/{conflictId}"),
+        new("POST", "/api/v1/admin/services/{serviceId}/replicas/{replicaId}/conflicts/{conflictId}/resolve"),
+
         // v1 admin secure connection endpoints
         new("GET", "/api/v1/admin/connections"),
         new("GET", "/api/v1/admin/connections/{id}"),
@@ -217,6 +222,20 @@ public static class EndpointRegistry
         new("GET", "/api/v1/console/share/content/{id}"),
         new("GET", "/api/v1/console/share/link/{token}"),
         new("POST", "/api/v1/console/share/embed/{token}/redeem"),
+        // v1 Console open-data DCAT + STAC publication API (#1214)
+        new("GET", "/api/v1/console/content/{id}/open-data"),
+        new("PUT", "/api/v1/console/content/{id}/open-data"),
+        new("GET", "/api/v1/console/content/{id}/open-data/eligibility"),
+        new("GET", "/api/v1/console/content/{id}/open-data/dcat"),
+        new("GET", "/api/v1/console/content/{id}/open-data/stac"),
+        new("POST", "/api/v1/console/content/{id}/open-data/stac/publish"),
+        new("DELETE", "/api/v1/console/content/{id}/open-data/stac"),
+        new("GET", "/api/v1/open-data/datasets/{id}"),
+        new("GET", "/api/v1/open-data/datasets/{id}/data.json"),
+        new("GET", "/api/v1/open-data/datasets/{id}/schema.org"),
+        new("GET", "/api/v1/open-data/stac"),
+        new("GET", "/api/v1/open-data/stac/collections/{collectionId}"),
+        new("GET", "/api/v1/open-data/stac/collections/{collectionId}/items/{itemId}"),
         // v1 Console catalog discovery-endpoints registry read API (#1279)
         new("GET", "/api/v1/console/catalog-endpoints/{workspaceId}"),
         new("GET", "/api/v1/console/catalog-endpoints/{workspaceId}/{endpointKey}"),

@@ -19,6 +19,16 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(ReplicaManagementListResponse))]
 [JsonSerializable(typeof(ApiResponse<ReplicaManagementListResponse>))]
 [JsonSerializable(typeof(ApiResponse<ReplicaManagementDetail>))]
+[JsonSerializable(typeof(ReplicaConflictSummary))]
+[JsonSerializable(typeof(ReplicaConflictSummary[]))]
+[JsonSerializable(typeof(ReplicaConflictDetail))]
+[JsonSerializable(typeof(ReplicaConflictListResponse))]
+[JsonSerializable(typeof(ReplicaConflictResolutionRequest))]
+[JsonSerializable(typeof(ReplicaConflictResolutionResponse))]
+[JsonSerializable(typeof(ApiResponse<ReplicaConflictListResponse>))]
+[JsonSerializable(typeof(ApiResponse<ReplicaConflictDetail>))]
+[JsonSerializable(typeof(ApiResponse<ReplicaConflictResolutionResponse>))]
+[JsonSerializable(typeof(System.Text.Json.JsonElement))]
 public sealed partial class ReplicaManagementJsonContext : JsonSerializerContext
 {
 }
