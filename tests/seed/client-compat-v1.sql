@@ -315,6 +315,28 @@ BEGIN
                 COALESCE(NULLIF(l.table_schema, ''), 'public') AS table_schema,
                 l.table_name,
                 l.geometry_type,
+                -- Storage binding options. Layers published onto the shared 'features'
+                -- table store attributes in the JSONB 'attributes' column and share the
+                -- table across layers via the 'layer_id' discriminator. Mirror the
+                -- production BuildPublishedStorageBinding path
+                -- (PostgreSqlLayerPublishingService.MetadataV2Graph) so the storage-mapped
+                -- reader projects attributes/geometry and constrains reads to this layer's
+                -- rows (WHERE layer_id = StorageLayerId). Without these the reader leaks
+                -- every layer's rows and returns null geometry. (honua-server#1312.)
+                CASE
+                    WHEN l.table_name = 'features' THEN
+                        COALESCE(l.storage_options, '{}'::jsonb) || jsonb_build_object(
+                            'attributesColumn', 'attributes',
+                            'geometryColumn', 'geometry',
+                            'layerDiscriminatorColumn', 'layer_id'
+                        )
+                    ELSE COALESCE(l.storage_options, '{}'::jsonb)
+                END AS storage_options,
+                -- Access policy carried through from v1 service/layer metadata so a
+                -- service declared non-anonymous stays protected after compile. Defaults
+                -- to anonymous only when no policy was seeded. (honua-server#1345.)
+                COALESCE(s.metadata -> 'accessPolicy', jsonb_build_object('allowAnonymous', true)) AS service_access_policy,
+                COALESCE(l.metadata -> 'accessPolicy', jsonb_build_object('allowAnonymous', true)) AS layer_access_policy,
                 l.srid,
                 ST_XMin(l.extent)::double precision AS west,
                 ST_YMin(l.extent)::double precision AS south,
@@ -425,7 +447,7 @@ BEGIN
                             'north', north
                         )
                     ),
-                    'accessPolicy', jsonb_build_object('allowAnonymous', true),
+                    'accessPolicy', layer_access_policy,
                     'status', (SELECT value FROM status_doc),
                     'extensions', '{}'::jsonb
                 ) AS value,
@@ -483,7 +505,7 @@ BEGIN
                             'north', north
                         )
                     ),
-                    'accessPolicy', jsonb_build_object('allowAnonymous', true),
+                    'accessPolicy', layer_access_policy,
                     'status', (SELECT value FROM status_doc),
                     'extensions', '{}'::jsonb
                 ) AS value,
@@ -500,7 +522,7 @@ BEGIN
                     'locator', table_schema || '.' || table_name,
                     'storageLayerId', layer_id,
                     'capabilities', to_jsonb(ARRAY['query', 'filter', 'sort', 'aggregate', 'edit', 'transactions', 'render', 'tile', 'search']::text[]),
-                    'options', '{}'::jsonb,
+                    'options', storage_options,
                     'status', (SELECT value FROM status_doc),
                     'extensions', '{}'::jsonb
                 ) AS value,
@@ -525,7 +547,7 @@ BEGIN
             FROM layer_rows
         ),
         service_names AS (
-            SELECT DISTINCT service_name, service_part
+            SELECT DISTINCT service_name, service_part, service_access_policy
             FROM layer_rows
         ),
         service_rows AS (
@@ -537,7 +559,7 @@ BEGIN
                     'protocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
                     'enabledProtocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
                     'options', '{}'::jsonb,
-                    'accessPolicy', jsonb_build_object('allowAnonymous', true),
+                    'accessPolicy', service_access_policy,
                     'status', (SELECT value FROM status_doc),
                     'extensions', '{}'::jsonb
                 ) AS value,
@@ -554,7 +576,7 @@ BEGIN
                     'protocols', to_jsonb(ARRAY['MapServer', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
                     'enabledProtocols', to_jsonb(ARRAY['MapServer', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
                     'options', '{}'::jsonb,
-                    'accessPolicy', jsonb_build_object('allowAnonymous', true),
+                    'accessPolicy', service_access_policy,
                     'status', (SELECT value FROM status_doc),
                     'extensions', '{}'::jsonb
                 ) AS value,
@@ -571,7 +593,7 @@ BEGIN
                     'protocols', to_jsonb(ARRAY['ImageServer', 'Wcs', 'OGC-API-Coverages']::text[]),
                     'enabledProtocols', to_jsonb(ARRAY['ImageServer', 'Wcs', 'OGC-API-Coverages']::text[]),
                     'options', '{}'::jsonb,
-                    'accessPolicy', jsonb_build_object('allowAnonymous', true),
+                    'accessPolicy', service_access_policy,
                     'status', (SELECT value FROM status_doc),
                     'extensions', '{}'::jsonb
                 ) AS value,
@@ -589,7 +611,7 @@ BEGIN
                     'protocols', to_jsonb(ARRAY['OgcFeatures', 'Wfs20']::text[]),
                     'enabledProtocols', to_jsonb(ARRAY['OgcFeatures', 'Wfs20']::text[]),
                     'options', '{}'::jsonb,
-                    'accessPolicy', jsonb_build_object('allowAnonymous', true),
+                    'accessPolicy', service_access_policy,
                     'status', (SELECT value FROM status_doc),
                     'extensions', '{}'::jsonb
                 ) AS value,
@@ -607,7 +629,7 @@ BEGIN
                     'protocols', to_jsonb(ARRAY['Stac']::text[]),
                     'enabledProtocols', to_jsonb(ARRAY['Stac']::text[]),
                     'options', '{}'::jsonb,
-                    'accessPolicy', jsonb_build_object('allowAnonymous', true),
+                    'accessPolicy', service_access_policy,
                     'status', (SELECT value FROM status_doc),
                     'extensions', '{}'::jsonb
                 ) AS value,
