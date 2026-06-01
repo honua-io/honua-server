@@ -200,6 +200,16 @@ internal static class ImageServerEndpoints
             .Produces<KeyPropertiesResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(404);
 
+        // POST mirror of keyProperties. The ArcGIS API for Python ImageryLayer.key_properties()
+        // issues an HTTP POST; without this route the SDK receives a 405 and surfaces an empty {}.
+        group.MapPost("/keyProperties", KeyPropertiesPost)
+            .WithDisplayName("Get Key Properties (POST)")
+            .WithName("GetKeyPropertiesPost")
+            .WithSummary("Get raster key properties using POST")
+            .WithDescription("POST equivalent of the ArcGIS ImageServer keyProperties endpoint")
+            .Produces<KeyPropertiesResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(404);
+
         // Legend endpoint - per-class swatches for the layer renderer
         group.MapGet("/legend", GetLegend)
             .WithDisplayName("Get Image Server Legend")
@@ -383,6 +393,13 @@ internal static class ImageServerEndpoints
             .WithDisplayName("Get Key Properties by Service")
             .WithName("GetKeyPropertiesByService")
             .WithSummary("Get raster key properties")
+            .Produces<KeyPropertiesResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(404);
+
+        serviceGroup.MapPost("/keyProperties", KeyPropertiesPostByService)
+            .WithDisplayName("Get Key Properties by Service (POST)")
+            .WithName("GetKeyPropertiesByServicePost")
+            .WithSummary("Get raster key properties using POST")
             .Produces<KeyPropertiesResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(404);
 
@@ -1057,6 +1074,43 @@ internal static class ImageServerEndpoints
     {
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
         return resolution.ErrorResult ?? await KeyPropertiesGet(resolution.LayerId, f, context, handler, cancellationToken);
+    }
+
+    private static async Task<IResult> KeyPropertiesPost(
+        int id,
+        HttpContext context,
+        ImageServerKeyPropertiesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var bodyValues = await ReadPostValuesAsync(context, cancellationToken);
+        if (bodyValues.Error != null)
+        {
+            return bodyValues.Error;
+        }
+
+        var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
+        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        return await handler.GetKeyPropertiesAsync(context, id, cancellationToken);
+    }
+
+    private static async Task<IResult> KeyPropertiesPostByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerKeyPropertiesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await KeyPropertiesPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
     /// <summary>

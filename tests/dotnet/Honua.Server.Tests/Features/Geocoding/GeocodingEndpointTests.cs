@@ -316,6 +316,53 @@ public sealed class GeocodingEndpointTests
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
+    public async Task BatchGeocode_Post_EmitsJsSdkAddressesToLocationsResponseShape()
+    {
+        // The ArcGIS Maps SDK for JavaScript locator.addressesToLocations switches from GET
+        // to POST once the addresses payload makes the URL too long. Its response parser reads
+        // { locations, spatialReference } from the response ROOT and maps each entry via
+        // AddressCandidate.fromJSON, which requires address/location/score per location and a
+        // root spatialReference applied to each location. This locks that shape in for the POST path.
+        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
+            SupportsSuggest: true,
+            SupportsBatch: true,
+            SupportsStructuredInput: false,
+            SupportsBiasing: true)));
+        using var client = factory.CreateClient();
+
+        var addresses = """{"records":[{"attributes":{"OBJECTID":1,"SingleLine":"1600 Pennsylvania Ave NW"}}]}""";
+        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["addresses"] = addresses,
+            ["f"] = "json"
+        });
+
+        using var response = await client.PostAsync("/rest/services/World/GeocodeServer/geocodeAddresses", content);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = payload.RootElement;
+
+        // Root-level keys the JS SDK destructures: { locations, spatialReference }.
+        Assert.True(root.TryGetProperty("spatialReference", out var spatialReference));
+        Assert.True(spatialReference.TryGetProperty("wkid", out _));
+        Assert.True(root.TryGetProperty("locations", out var locations));
+        Assert.Equal(JsonValueKind.Array, locations.ValueKind);
+        Assert.Equal(1, locations.GetArrayLength());
+
+        // Per-location keys AddressCandidate.fromJSON consumes.
+        var first = locations[0];
+        Assert.True(first.TryGetProperty("address", out _));
+        Assert.True(first.TryGetProperty("score", out _));
+        Assert.True(first.TryGetProperty("location", out var location));
+        Assert.True(location.TryGetProperty("x", out _));
+        Assert.True(location.TryGetProperty("y", out _));
+    }
+
+    [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
     public async Task GeocodeServerMetadata_AdvertisesSupportsSuggest_WhenProviderSupports()

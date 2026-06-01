@@ -232,6 +232,16 @@ public sealed class LayerResponse
     public string[] SupportedSqlFormats { get; init; } = ["none", "standard", "native"];
 
     /// <summary>
+    /// Whether the layer can return the aggregate extent of a query result set
+    /// (<c>returnExtentOnly=true</c>). Mirrors
+    /// <see cref="AdvancedQueryCapabilities.SupportsReturningQueryExtent"/>, but is also
+    /// emitted at the layer root because the ArcGIS Maps SDK for JavaScript reads this flag
+    /// from the layer object root (<c>p(layer, "supportsReturningQueryExtent", false)</c>)
+    /// when deciding whether <c>FeatureLayer.queryExtent()</c> is allowed.
+    /// </summary>
+    public bool SupportsReturningQueryExtent { get; init; }
+
+    /// <summary>
     /// Whether the layer supports spatial queries
     /// </summary>
     public bool SupportsCoordinatesQuantization { get; init; } = true;
