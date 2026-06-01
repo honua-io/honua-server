@@ -44,6 +44,12 @@ public sealed class ReplicaManagementSummary
     /// Timestamp (UTC) of the last successful synchronization.
     /// </summary>
     public required DateTimeOffset LastSyncTime { get; init; }
+
+    /// <summary>
+    /// Derived operator-facing status: <c>active</c> when the replica has synced within the
+    /// staleness window, otherwise <c>expired</c>.
+    /// </summary>
+    public required string Status { get; init; }
 }
 
 /// <summary>
@@ -91,6 +97,12 @@ public sealed class ReplicaManagementDetail
     /// Server generation cursor recorded at the last successful synchronization.
     /// </summary>
     public required long LastSyncGeneration { get; init; }
+
+    /// <summary>
+    /// Derived operator-facing status: <c>active</c> when the replica has synced within the
+    /// staleness window, otherwise <c>expired</c>.
+    /// </summary>
+    public required string Status { get; init; }
 }
 
 /// <summary>

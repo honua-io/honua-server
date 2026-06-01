@@ -122,6 +122,11 @@ public static class EndpointRegistry
         new("GET", "/api/v1/admin/services/{serviceId}/replicas"),
         new("GET", "/api/v1/admin/services/{serviceId}/replicas/{replicaId}"),
 
+        // v1 admin replica conflict-review endpoints (#1167, slice 2)
+        new("GET", "/api/v1/admin/services/{serviceId}/replicas/{replicaId}/conflicts"),
+        new("GET", "/api/v1/admin/services/{serviceId}/replicas/{replicaId}/conflicts/{conflictId}"),
+        new("POST", "/api/v1/admin/services/{serviceId}/replicas/{replicaId}/conflicts/{conflictId}/resolve"),
+
         // v1 admin secure connection endpoints
         new("GET", "/api/v1/admin/connections"),
         new("GET", "/api/v1/admin/connections/{id}"),

@@ -143,6 +143,9 @@ public static class Operations
     public const string ExtractChanges = "ExtractChanges";
     public const string SynchronizeReplica = "SynchronizeReplica";
     public const string UnRegisterReplica = "UnRegisterReplica";
+    public const string ListReplicaConflicts = "ListReplicaConflicts";
+    public const string ReplicaConflictDetail = "ReplicaConflictDetail";
+    public const string ResolveReplicaConflict = "ResolveReplicaConflict";
 
     // Maintenance Operations
     public const string Append = "Append";
