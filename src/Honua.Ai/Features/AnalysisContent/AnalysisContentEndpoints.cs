@@ -543,16 +543,15 @@ internal static partial class AnalysisContentEndpoints
             case AnalysisContentValidationException validationEx:
                 // Surface the field-addressable RFC-7807 ProblemDetails errors[] of FieldValidationError so
                 // console clients can bind the finding onto the offending input rather than a flat message.
+                var validationError = FieldValidationError.Create(
+                    validationEx.Code,
+                    validationEx.Message,
+                    ValidationSeverity.Error,
+                    validationEx.Path);
                 problem = ProblemDetailsHelpers.CreateValidationProblem(
                     context,
                     StatusCodes.Status400BadRequest,
-                    [
-                        FieldValidationError.Create(
-                            validationEx.Code,
-                            validationEx.Message,
-                            ValidationSeverity.Error,
-                            validationEx.Path),
-                    ],
+                    [validationError],
                     validationEx.Message);
                 return true;
             case AnalysisContentNotFoundException notFoundEx:
