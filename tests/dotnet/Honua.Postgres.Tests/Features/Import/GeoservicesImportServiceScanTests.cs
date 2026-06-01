@@ -430,20 +430,65 @@ public sealed class GeoservicesImportServiceScanTests
             new GeoservicesFieldInfo { Name = "PLAIN", Type = "esriFieldTypeString", Domain = null }
         };
 
+        var map = InvokeBuildFieldDomains(fields);
+
+        map.Should().NotBeNull();
+        // Map keys are case-insensitive; lookups by the raw source name still
+        // succeed via the dictionary comparer, and the dropped over-cap entry
+        // is absent regardless of casing.
+        map!.ContainsKey("WITHIN_CAP").Should().BeTrue();
+        map.ContainsKey("ELEVATION").Should().BeTrue();
+        map["WITHIN_CAP"].Should().BeSameAs(withinCap);
+        map["ELEVATION"].Should().BeSameAs(rangeDomain);
+        map.ContainsKey("OVER_CAP").Should().BeFalse(
+            "over-cap coded-value domains are dropped to match inventory truncation semantics");
+    }
+
+    [Fact]
+    public void BuildFieldDomains_FieldNameRequiresSanitization_KeysMapBySanitizedAndRawName()
+    {
+        // Source fields with spaces, leading digits, dots, or over-63-char
+        // length get rewritten by SanitizeFieldName when the import path
+        // creates the PG table. The publish path then discovers columns by the
+        // sanitized name, so the domain map must be keyed by that same name to
+        // survive the round-trip. Keeping the raw source name as a fallback is
+        // defensive for any future caller that still references it.
+        var spacedDomain = new MetadataV2FieldDomain { Type = "codedValue", Name = "ZoningCode" };
+        var leadingDigitDomain = new MetadataV2FieldDomain { Type = "codedValue", Name = "TwoDType" };
+        var dottedDomain = new MetadataV2FieldDomain { Type = "codedValue", Name = "DotName" };
+
+        var fields = new[]
+        {
+            new GeoservicesFieldInfo { Name = "Zoning Code", Type = "esriFieldTypeString", Domain = spacedDomain },
+            new GeoservicesFieldInfo { Name = "2D_Type", Type = "esriFieldTypeString", Domain = leadingDigitDomain },
+            new GeoservicesFieldInfo { Name = "scope.area", Type = "esriFieldTypeString", Domain = dottedDomain }
+        };
+
+        var map = InvokeBuildFieldDomains(fields);
+
+        map.Should().NotBeNull();
+
+        // Sanitized PG column lookups (what BuildLayerFields will use) all hit.
+        map!["zoning_code"].Should().BeSameAs(spacedDomain);
+        map["_2d_type"].Should().BeSameAs(leadingDigitDomain);
+        map["scope_area"].Should().BeSameAs(dottedDomain);
+
+        // Raw source-name lookups also hit, so admin/audit tooling that still
+        // references the inventory-side name does not silently miss.
+        map["Zoning Code"].Should().BeSameAs(spacedDomain);
+        map["2D_Type"].Should().BeSameAs(leadingDigitDomain);
+        map["scope.area"].Should().BeSameAs(dottedDomain);
+    }
+
+    private static System.Collections.Generic.IReadOnlyDictionary<string, MetadataV2FieldDomain>?
+        InvokeBuildFieldDomains(GeoservicesFieldInfo[] fields)
+    {
         var method = typeof(GeoservicesImportService).GetMethod(
             "BuildFieldDomains",
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
         method.Should().NotBeNull();
-
         var result = method!.Invoke(null, [fields]);
-        var map = (System.Collections.Generic.IReadOnlyDictionary<string, MetadataV2FieldDomain>?)result;
-
-        map.Should().NotBeNull();
-        map!.Keys.Should().BeEquivalentTo(["WITHIN_CAP", "ELEVATION"]);
-        map["WITHIN_CAP"].Should().BeSameAs(withinCap);
-        map["ELEVATION"].Should().BeSameAs(rangeDomain);
-        map.Should().NotContainKey("OVER_CAP",
-            "over-cap coded-value domains are dropped to match inventory truncation semantics");
+        return (System.Collections.Generic.IReadOnlyDictionary<string, MetadataV2FieldDomain>?)result;
     }
 
     private static MetadataV2FieldDomain BuildCodedValueDomain(int entryCount)

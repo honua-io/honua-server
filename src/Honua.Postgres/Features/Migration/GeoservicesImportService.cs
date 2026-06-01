@@ -391,7 +391,19 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             }
 
             map ??= new Dictionary<string, MetadataV2FieldDomain>(StringComparer.OrdinalIgnoreCase);
-            map[field.Name] = field.Domain;
+            // The publish path discovers PostgreSQL column names that the
+            // importer created via SanitizeFieldName (spaces/dots → _, leading
+            // digit gets prefixed, truncated to 63 chars, lowercased). Key the
+            // map with the sanitized column name so ResolveDomain finds the
+            // entry against the PG column. Retain the raw source name when it
+            // differs so admin tooling that still references the source name
+            // (and any future caller passing the raw name) keeps working.
+            var sanitized = field.Name.SanitizeFieldName();
+            map[sanitized] = field.Domain;
+            if (!string.Equals(sanitized, field.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                map.TryAdd(field.Name, field.Domain);
+            }
         }
 
         return map;
