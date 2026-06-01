@@ -180,6 +180,7 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
             restClient,
             new FixtureConnectionProvider(fixture),
             crsRegistry.Object,
+            new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance,
             layerPublishingService: publishingService,
             attachmentStore: attachmentStore);
