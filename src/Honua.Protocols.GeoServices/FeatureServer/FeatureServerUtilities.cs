@@ -247,6 +247,10 @@ internal static partial class FeatureServerEndpoints
             SupportsReturningQueryExtent = supportsAdvancedQueries,
             SupportsQueryWithDistance = supportsAdvancedQueries,
             SupportsSqlExpression = supportsAdvancedQueries,
+            // queryTopFeatures is served unconditionally by HandleQueryTopFeatures;
+            // advertise it whenever the layer supports advanced queries so Esri
+            // clients (arcgis query_top_features) discover the operation.
+            SupportsTopFeaturesQuery = supportsAdvancedQueries,
             SupportsBatchEditing = supportsAdvancedQueries
         };
     }

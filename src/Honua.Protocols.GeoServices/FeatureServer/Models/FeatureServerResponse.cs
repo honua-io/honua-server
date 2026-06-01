@@ -117,4 +117,12 @@ public sealed class FeatureServerResponse
     /// Whether the service allows geometry updates on features
     /// </summary>
     public bool AllowGeometryUpdates { get; init; } = true;
+
+    /// <summary>
+    /// Whether the service is sync-enabled (supports offline replicas:
+    /// createReplica / synchronizeReplica / extractChanges). Emitted so Esri
+    /// clients (ArcGIS API for Python <c>FeatureLayerCollection</c>, ArcGIS Pro
+    /// offline workflows) discover the replication surface the server exposes.
+    /// </summary>
+    public bool SyncEnabled { get; init; }
 }

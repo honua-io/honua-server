@@ -340,6 +340,47 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
             "the v1 seed inserts three deterministic offline-site features");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/mobile_offline_demo/FeatureServer")]
+    public async Task MobileOfflineFixture_ServiceMetadata_AdvertisesSyncEnabled()
+    {
+        // The fixture declares a "Sync" capability, so the FeatureServer service
+        // metadata must advertise syncEnabled=true (the replica/extractChanges
+        // surface Esri offline clients discover). Without the Sync capability the
+        // flag stays false.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{ServiceId}/FeatureServer?f=json");
+
+        response.Be200Ok();
+
+        using var document = await ReadJsonDocumentAsync(response);
+        var root = document.RootElement;
+        root.TryGetProperty("error", out _).Should().BeFalse();
+        root.GetProperty("syncEnabled").GetBoolean().Should().BeTrue(
+            "the fixture declares a 'Sync' capability so the service is sync-enabled");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/mobile_offline_demo/FeatureServer/68910")]
+    public async Task MobileOfflineFixture_LayerMetadata_AdvertisesSupportsTopFeaturesQuery()
+    {
+        // queryTopFeatures is served unconditionally, so advanced-query layers must
+        // advertise advancedQueryCapabilities.supportsTopFeaturesQuery=true.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{ServiceId}/FeatureServer/{OfflineSitesLayerId}?f=json");
+
+        response.Be200Ok();
+
+        using var document = await ReadJsonDocumentAsync(response);
+        var root = document.RootElement;
+        root.TryGetProperty("error", out _).Should().BeFalse();
+        root.GetProperty("advancedQueryCapabilities")
+            .GetProperty("supportsTopFeaturesQuery").GetBoolean().Should().BeTrue(
+            "queryTopFeatures is served unconditionally for advanced-query layers");
+    }
+
     // Regression for honua-server#1238: the JSONB-attribute layer must be queryable
     // ONLY because the binding declares attributesColumn=attributes. This test republishes
     // the graph WITHOUT that accessor to prove the bug reproduces (bare columns =>
