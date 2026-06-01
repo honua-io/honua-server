@@ -53,8 +53,13 @@ public class ImageServerIdentifyHandlerTests
 
     [UnitTest]
     [Operation(Operations.Identify)]
-    public async Task IdentifyAsync_NoRasters_ReturnsNotFound()
+    public async Task IdentifyAsync_NoRasters_ReturnsOkNoData()
     {
+        // ArcGIS ImageServer identify returns a 200 NoData document (not 404) when the
+        // requested location does not intersect any raster, matching getSamples. Returning
+        // 404 broke imageService.identify for out-of-extent points in the Esri-SDK matrix.
+        // POST /rest/services/0/ImageServer/identify
+        // GET /rest/services/0/ImageServer/identify
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs(Array.Empty<RasterInfo>());
 
@@ -63,7 +68,14 @@ public class ImageServerIdentifyHandlerTests
         var result = await _handler.IdentifyAsync(context, 1, request);
         await result.ExecuteAsync(context);
 
-        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.Response.Body.Position = 0;
+
+        using var responseJson = await JsonDocument.ParseAsync(context.Response.Body);
+        responseJson.RootElement.GetProperty("value").GetString().Should().Be("NoData");
+        responseJson.RootElement.GetProperty("properties").GetProperty("HasData").GetBoolean().Should().BeFalse();
+        responseJson.RootElement.GetProperty("location").GetProperty("x").GetDouble().Should().Be(10);
+        responseJson.RootElement.GetProperty("location").GetProperty("y").GetDouble().Should().Be(20);
     }
 
     [UnitTest]
