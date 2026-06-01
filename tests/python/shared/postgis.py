@@ -1069,7 +1069,18 @@ class PostGISFixture:
                     "tile",
                     "search",
                 ],
-                "options": {},
+                # Physical storage columns for the shared `features` table. Without these,
+                # FeatureStorageMapping.FromStorageBinding falls back to field-name/default
+                # heuristics (geometryColumn -> the geometry field's name, no layer filter),
+                # which breaks v2 feature reads against this fixture. The features table is
+                # shared across layers and keyed by layer_id, so the layer discriminator is
+                # required to constrain queries to the bound layer's rows.
+                "options": {
+                    "geometryColumn": "geometry",
+                    "primaryKeyColumn": "objectid",
+                    "attributesColumn": "attributes",
+                    "layerDiscriminatorColumn": "layer_id",
+                },
                 "status": status,
             })
             storage_by_id.setdefault(image_storage_id, {
