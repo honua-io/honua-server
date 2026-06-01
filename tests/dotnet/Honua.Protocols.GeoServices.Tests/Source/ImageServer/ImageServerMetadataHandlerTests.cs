@@ -132,6 +132,24 @@ public class ImageServerMetadataHandlerTests
 
     [UnitTest]
     [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_ResponseEmitsNonNullFieldsWithOid()
+    {
+        // The ArcGIS Maps SDK for JavaScript calls fields.find(...) during
+        // ImageryLayer.load(); a null fields array makes it throw. Assert the
+        // metadata emits the standard raster-catalog fields including the OID.
+        SetupSuccessfulMetadata();
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
+        jsonResult.Should().NotBeNull();
+        jsonResult!.Value!.Fields.Should().NotBeNullOrEmpty();
+        jsonResult.Value.Fields.Should().Contain(f => f.Type == "esriFieldTypeOID");
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
     public async Task GetServiceInfoAsync_NonMultidimensionalLayer_HasMultidimensionsFalse()
     {
         SetupSuccessfulMetadata();

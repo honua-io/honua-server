@@ -313,7 +313,7 @@ internal sealed class ImageServerCatalogQueryHandler
         };
     }
 
-    private static Field[] BuildCatalogFields()
+    internal static Field[] BuildCatalogFields()
     {
         return
         [

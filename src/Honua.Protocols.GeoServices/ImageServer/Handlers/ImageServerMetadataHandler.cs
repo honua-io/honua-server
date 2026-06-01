@@ -126,6 +126,11 @@ internal sealed class ImageServerMetadataHandler
                 ServiceDescription = resolved.Description ?? $"Image service for {resolved.DisplayName}",
                 Name = resolved.DisplayName,
                 Description = resolved.Description,
+                // Emit the standard raster-catalog attribute fields so Esri clients
+                // (notably the ArcGIS Maps SDK for JavaScript, which calls
+                // fields.find(...) during ImageryLayer.load) get a non-null fields
+                // array with the OID field they expect.
+                Fields = ImageServerCatalogQueryHandler.BuildCatalogFields(),
                 Extent = new ImageServerExtent
                 {
                     XMin = extent.Value.XMin,
