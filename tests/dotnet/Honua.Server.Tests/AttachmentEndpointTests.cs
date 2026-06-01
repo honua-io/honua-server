@@ -170,6 +170,51 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.AddAttachment)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments")]
+    public async Task AddAttachment_ThenGetAttachmentInfos_ReturnsNewAttachmentNotStaleCache()
+    {
+        // Regression: the per-feature attachment-infos GET must not be served from the
+        // anonymous-only output cache, otherwise the ArcGIS SDK round-trip
+        // attachments.add(oid) -> get_list(oid) returns the stale empty list cached by the
+        // first get_list. Prime the cache, add, then re-read for the SAME oid.
+        // GET /rest/services/test/FeatureServer/0/1/attachments
+        var primeResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments?f=json");
+        primeResponse.BeSuccessful();
+        var primeContent = await primeResponse.Content.ReadAsStringAsync();
+        var primed = JsonSerializer.Deserialize(primeContent, FeatureServerJsonContext.Default.AttachmentInfosResponse);
+        var primedCount = primed!.AttachmentInfos.Length;
+
+        var fileContent = "Round trip file content"u8.ToArray();
+        var byteContent = new ByteArrayContent(fileContent);
+        byteContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
+
+        var form = new MultipartFormDataContent
+        {
+            { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" },
+            { byteContent, "attachment", "roundtrip.pdf" }
+        };
+
+        var addResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment", form);
+        addResponse.BeSuccessful();
+
+        var addContent = await addResponse.Content.ReadAsStringAsync();
+        var added = JsonSerializer.Deserialize(addContent, FeatureServerJsonContext.Default.AddAttachmentResponse);
+        var newId = added!.AddAttachmentResult.ObjectId;
+
+        var afterResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments?f=json");
+        afterResponse.BeSuccessful();
+        var afterContent = await afterResponse.Content.ReadAsStringAsync();
+        var after = JsonSerializer.Deserialize(afterContent, FeatureServerJsonContext.Default.AttachmentInfosResponse);
+
+        after!.AttachmentInfos.Length.Should().Be(primedCount + 1);
+        after.AttachmentInfos.Should().Contain(a => a.Id == newId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.AddAttachment)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public async Task AddAttachment_WithCanonicalFeatureRoute_ReturnsSuccess()
     {

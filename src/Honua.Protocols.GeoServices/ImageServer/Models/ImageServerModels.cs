@@ -68,8 +68,12 @@ public sealed class ImageServerServiceInfo
     [JsonPropertyName("objectIdField")]
     public string? ObjectIdField { get; init; }
 
+    // Esri ImageServers always emit a `fields` array (the raster catalog
+    // attribute fields). Default to an empty array rather than null: the ArcGIS
+    // Maps SDK for JavaScript calls fields.find(...) during ImageryLayer.load()
+    // and throws "Cannot read properties of null (reading 'find')" on a null.
     [JsonPropertyName("fields")]
-    public Field[]? Fields { get; init; }
+    public Field[] Fields { get; init; } = [];
 
     [JsonPropertyName("capabilities")]
     public required string Capabilities { get; init; } = "Catalog,Image,Metadata,Pixels";
