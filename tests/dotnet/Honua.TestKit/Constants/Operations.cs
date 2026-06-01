@@ -53,6 +53,8 @@ public static class Operations
     public const string AutoComplete = "AutoComplete";
     public const string Reshape = "Reshape";
     public const string FindTransformations = "FindTransformations";
+    public const string ToGeoCoordinateString = "ToGeoCoordinateString";
+    public const string FromGeoCoordinateString = "FromGeoCoordinateString";
 
     // Metadata Operations
     public const string GetMetadata = "GetMetadata";

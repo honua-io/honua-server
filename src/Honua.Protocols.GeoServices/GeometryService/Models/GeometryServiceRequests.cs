@@ -195,6 +195,30 @@ internal sealed class FindTransformationsParameters
 }
 
 /// <summary>
+/// Parsed parameters for the toGeoCoordinateString operation (coordinates -> MGRS/USNG strings).
+/// </summary>
+internal sealed class ToGeoCoordinateStringParameters
+{
+    public required double[][] Coordinates { get; init; }
+    public int SR { get; init; }
+    public required string ConversionType { get; init; }
+    public string? ConversionMode { get; init; }
+    public int NumOfDigits { get; init; } = 5;
+    public bool AddSpaces { get; init; } = true;
+}
+
+/// <summary>
+/// Parsed parameters for the fromGeoCoordinateString operation (MGRS/USNG strings -> coordinates).
+/// </summary>
+internal sealed class FromGeoCoordinateStringParameters
+{
+    public required string[] Strings { get; init; }
+    public int SR { get; init; }
+    public required string ConversionType { get; init; }
+    public string? ConversionMode { get; init; }
+}
+
+/// <summary>
 /// Parsed parameters for area and length operations.
 /// </summary>
 internal enum MeasurementCalculationType
