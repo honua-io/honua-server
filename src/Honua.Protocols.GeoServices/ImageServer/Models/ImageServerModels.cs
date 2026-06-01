@@ -584,10 +584,15 @@ public sealed class ExportImageRequest
     [StringLength(11, ErrorMessage = "Size is too long")]
     public string? Size { get; init; }
 
-    [RegularExpression(@"^\d{1,6}$", ErrorMessage = "ImageSr must be a valid SRID")]
+    // No RegularExpression constraint: the handler parses imageSR/bboxSR through
+    // SpatialReferenceHelpers, which accepts bare SRIDs, EPSG:/URN/OGC URI forms,
+    // CRS84, and the Esri JSON spatial-reference form ({"wkid":N}/{"latestWkid":N})
+    // that ArcGIS SDK clients (ArcGIS API for Python export_image) send. A digits-only
+    // regex would advertise an incorrect contract and reject those valid SDK forms.
+    [StringLength(512, ErrorMessage = "ImageSr is too long")]
     public string? ImageSr { get; init; }
 
-    [RegularExpression(@"^\d{1,6}$", ErrorMessage = "BboxSr must be a valid SRID")]
+    [StringLength(512, ErrorMessage = "BboxSr is too long")]
     public string? BboxSr { get; init; }
 
     [RegularExpression(@"^(png|jpg|jpeg|tiff|tif)$",

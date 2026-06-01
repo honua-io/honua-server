@@ -436,6 +436,47 @@ public class ImageServerEndpointsTests
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/keyProperties")]
     [Operation(Operations.Metadata)]
+    public async Task KeyProperties_Get_ReturnsEsriConformantKeyPropertyShape()
+    {
+        // The ArcGIS API for Python ImageryLayer.key_properties() expects the
+        // canonical Esri raster key-properties document: a flat object whose
+        // BandProperties entries carry a BandName, plus cell-size and config
+        // keyword properties. See ArcGIS REST "Key Properties" reference.
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute(bandCount: 2));
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/keyProperties?f=json");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = json.RootElement;
+
+            // Canonical Esri keyProperties keys must be present.
+            root.TryGetProperty("BandProperties", out var bands).Should().BeTrue();
+            root.TryGetProperty("HighCellSize", out _).Should().BeTrue();
+            root.TryGetProperty("LowCellSize", out _).Should().BeTrue();
+            root.TryGetProperty("MaxCellSize", out _).Should().BeTrue();
+            root.TryGetProperty("ConfigKeyword", out _).Should().BeTrue();
+            root.TryGetProperty("BandDefinitionKeyword", out _).Should().BeTrue();
+
+            bands.ValueKind.Should().Be(JsonValueKind.Array);
+            bands.GetArrayLength().Should().Be(2);
+            bands[0].GetProperty("BandName").GetString().Should().Be("Band_1");
+
+            // GeoTransform [-180, 1.40625, 0, 90, 0, -0.703125] -> cell sizes 1.40625 / 0.703125.
+            root.GetProperty("MaxCellSize").GetDouble().Should().BeApproximately(1.40625, 1e-6);
+            root.GetProperty("LowCellSize").GetDouble().Should().BeApproximately(0.703125, 1e-6);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/keyProperties")]
+    [Operation(Operations.Metadata)]
     public async Task KeyProperties_NonExistentLayer_ReturnsNotFound()
     {
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());

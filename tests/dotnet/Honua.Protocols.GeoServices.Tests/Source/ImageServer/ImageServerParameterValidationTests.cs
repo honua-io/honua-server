@@ -206,6 +206,52 @@ public class ImageServerParameterValidationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Export)]
+    [Endpoint("POST /rest/services/{id}/ImageServer/exportImage")]
+    public async Task ExportImage_PostFormBody_WithEsriJsonSpatialReferences_DoesNotReturnBadRequest()
+    {
+        // The ArcGIS API for Python ImageryLayer.export_image POSTs a form body
+        // carrying the spatial references in Esri JSON form (bboxSR={"wkid":4326}).
+        using var content = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("bbox", "-180,-90,180,90"),
+            new KeyValuePair<string, string>("size", "256,256"),
+            new KeyValuePair<string, string>("format", "png"),
+            new KeyValuePair<string, string>("bboxSR", "{\"wkid\":4326}"),
+            new KeyValuePair<string, string>("imageSR", "{\"wkid\":4326}"),
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/exportImage",
+            content);
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+        response.StatusCode.Should().NotBe(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("POST /rest/services/{id}/ImageServer/exportImage")]
+    public async Task ExportImage_PostJsonBody_WithEsriJsonSpatialReferences_DoesNotReturnBadRequest()
+    {
+        // ArcGIS clients may also POST a JSON body where bboxSR/imageSR are nested
+        // JSON objects ({"wkid":4326}) rather than strings.
+        using var content = new StringContent(
+            "{\"f\":\"json\",\"bbox\":\"-180,-90,180,90\",\"size\":\"256,256\"," +
+            "\"format\":\"png\",\"bboxSR\":{\"wkid\":4326},\"imageSR\":{\"latestWkid\":3857}}",
+            System.Text.Encoding.UTF8,
+            "application/json");
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestLayerId}/ImageServer/exportImage",
+            content);
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound);
+        response.StatusCode.Should().NotBe(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
     public async Task ExportImage_MinimumSize_ReturnsSuccessOrNotFound()
     {
