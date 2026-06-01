@@ -982,7 +982,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         queryResponse!.Extent.Should().NotBeNull();
         queryResponse.Extent!.SpatialReference.Should().NotBeNull();
         queryResponse.ObjectIds.Should().BeNull();
-        queryResponse.Count.Should().BeNull();
+        // Esri's returnExtentOnly response is {extent, count}; the handler reports the
+        // number of features that contributed to the computed envelope alongside the extent.
+        queryResponse.Count.Should().Be(5);
         queryResponse.Features.Should().BeNull();
         queryResponse.ObjectIdFieldName.Should().BeNull();
 
