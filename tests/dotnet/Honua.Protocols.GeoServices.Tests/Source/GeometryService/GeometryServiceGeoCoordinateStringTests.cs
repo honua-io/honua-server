@@ -20,8 +20,6 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService;
 [Collection("Database")]
 public sealed class GeometryServiceGeoCoordinateStringTests : IAsyncLifetime
 {
-    private const string ToRoute = "/rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString";
-    private const string FromRoute = "/rest/services/Utilities/Geometry/GeometryServer/fromGeoCoordinateString";
 
     private readonly WebAppFixture _fixture = new();
 
@@ -43,7 +41,7 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IAsyncLifetime
         """;
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync(ToRoute, content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString", content);
 
         response.Be200Ok();
 
@@ -68,7 +66,7 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IAsyncLifetime
         """;
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync(ToRoute, content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString", content);
 
         response.Be200Ok();
 
@@ -84,7 +82,9 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IAsyncLifetime
     public async Task ToGeoCoordinateString_GetWithQueryString_ReturnsGridStrings()
     {
         var coordinates = Uri.EscapeDataString("[[-77.0353, 38.8895]]");
-        var url = $"{ToRoute}?sr=4326&coordinates={coordinates}&conversionType=MGRS";
+        // Literal route path  so the EndpointRegistry drift
+        // scanner's per-method source check finds the GET request for this route.
+        var url = $"/rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString?sr=4326&coordinates={coordinates}&conversionType=MGRS";
 
         var response = await _fixture.Client.GetAsync(url);
 
@@ -110,7 +110,7 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IAsyncLifetime
         """;
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync(ToRoute, content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString", content);
 
         response.Be200Ok();
 
@@ -133,7 +133,7 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IAsyncLifetime
         """;
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync(ToRoute, content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString", content);
 
         response.Be400BadRequest();
     }
@@ -146,7 +146,7 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IAsyncLifetime
         var body = """{"sr": 4326, "conversionType": "MGRS"}""";
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync(ToRoute, content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString", content);
 
         response.Be400BadRequest();
     }
@@ -165,7 +165,7 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IAsyncLifetime
         """;
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync(FromRoute, content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/fromGeoCoordinateString", content);
 
         response.Be200Ok();
 
@@ -182,7 +182,9 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IAsyncLifetime
     public async Task FromGeoCoordinateString_GetWithQueryString_ReturnsCoordinates()
     {
         var strings = Uri.EscapeDataString("""["18SUJ2347806483"]""");
-        var url = $"{FromRoute}?sr=4326&strings={strings}&conversionType=MGRS";
+        // Use the literal route path  so the EndpointRegistry
+        // drift scanner's per-method source check finds the GET request for this route.
+        var url = $"/rest/services/Utilities/Geometry/GeometryServer/fromGeoCoordinateString?sr=4326&strings={strings}&conversionType=MGRS";
 
         var response = await _fixture.Client.GetAsync(url);
 
@@ -208,7 +210,7 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IAsyncLifetime
         }
         """;
         var toResponse = await _fixture.Client.PostAsync(
-            ToRoute, new StringContent(toBody, Encoding.UTF8, "application/json"));
+            "/rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString", new StringContent(toBody, Encoding.UTF8, "application/json"));
         toResponse.Be200Ok();
         var encoded = (await DeserializeToAsync(toResponse))!.Strings![0];
 
@@ -220,7 +222,7 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IAsyncLifetime
         }
         """;
         var fromResponse = await _fixture.Client.PostAsync(
-            FromRoute, new StringContent(fromBody, Encoding.UTF8, "application/json"));
+            "/rest/services/Utilities/Geometry/GeometryServer/fromGeoCoordinateString", new StringContent(fromBody, Encoding.UTF8, "application/json"));
         fromResponse.Be200Ok();
         var decoded = (await DeserializeFromAsync(fromResponse))!.Coordinates![0];
 
@@ -236,7 +238,7 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IAsyncLifetime
         var body = """{"sr": 4326, "conversionType": "MGRS"}""";
         var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-        var response = await _fixture.Client.PostAsync(FromRoute, content);
+        var response = await _fixture.Client.PostAsync("/rest/services/Utilities/Geometry/GeometryServer/fromGeoCoordinateString", content);
 
         response.Be400BadRequest();
     }
