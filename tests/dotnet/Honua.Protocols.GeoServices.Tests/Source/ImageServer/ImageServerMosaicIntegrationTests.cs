@@ -152,7 +152,7 @@ public sealed class ImageServerMosaicIntegrationTests
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/identify")]
     [Operation(Operations.Identify)]
-    public async Task Identify_WithTimeOnProEdition_WhenNewestLayerSnapshotMissesPoint_ReturnsNotFound()
+    public async Task Identify_WithTimeOnProEdition_WhenNewestLayerSnapshotMissesPoint_ReturnsNoData()
     {
         var fixture = await CreateFixtureAsync(HonuaEdition.Pro).ConfigureAwait(false);
         try
@@ -161,7 +161,12 @@ public sealed class ImageServerMosaicIntegrationTests
                 $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/identify" +
                 "?geometry=1.5,1&geometryType=esriGeometryPoint&time=2024-01-20T00:00:00Z&f=json");
 
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            // ArcGIS ImageServer identify returns a 200 NoData document (not a 404) when the
+            // location does not intersect any raster for the active spatial/temporal selection,
+            // matching getSamples. Returning 404 here breaks the ArcGIS JS/Python SDK identify call.
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+            json.RootElement.GetProperty("value").GetString().Should().Be("NoData");
         }
         finally
         {
