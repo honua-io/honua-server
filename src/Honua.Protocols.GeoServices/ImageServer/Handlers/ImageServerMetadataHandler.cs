@@ -41,15 +41,18 @@ internal sealed class ImageServerMetadataHandler
 
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
+    private readonly IImageServerMultidimensionalInfoBuilder _multidimensionalInfoBuilder;
     private readonly ILogger<ImageServerMetadataHandler> _logger;
 
     public ImageServerMetadataHandler(
         IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
+        IImageServerMultidimensionalInfoBuilder multidimensionalInfoBuilder,
         ILogger<ImageServerMetadataHandler> logger)
     {
         _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
+        _multidimensionalInfoBuilder = multidimensionalInfoBuilder ?? throw new ArgumentNullException(nameof(multidimensionalInfoBuilder));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -91,6 +94,13 @@ internal sealed class ImageServerMetadataHandler
             var aggregateExtent = ImageServerMosaicHelpers.ComputeAggregateExtent(rasters);
             var referenceRaster = CreateMosaicReferenceRaster(rasters, aggregateExtent);
             var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null);
+
+            // Discover multidimensional coverage metadata (cubes) registered for the
+            // layer so the service advertises hasMultidimensions and inline info that
+            // matches the dedicated /multidimensionalInfo operation.
+            var multidimensionalInfo = await _multidimensionalInfoBuilder
+                .BuildAsync(layerId, cancellationToken)
+                .ConfigureAwait(false);
 
             // Get raster statistics for the layer mosaic.
             var statistics = rasters.Length == 1
@@ -148,7 +158,9 @@ internal sealed class ImageServerMetadataHandler
                 CacheType = null,
                 TileInfo = null,
                 HasHistograms = true,
-                TimeInfo = BuildTimeInfo(ImageServerV2Lookups.ReadTimeFieldHints(resolved.Resource), rasters)
+                TimeInfo = BuildTimeInfo(ImageServerV2Lookups.ReadTimeFieldHints(resolved.Resource), rasters),
+                HasMultidimensions = multidimensionalInfo is { Variables.Length: > 0 },
+                MultidimensionalInfo = multidimensionalInfo is { Variables.Length: > 0 } ? multidimensionalInfo : null
             };
 
             ImageServerLog.ServiceInfoGenerated(_logger, layerId, referenceRaster.BandCount, statistics.Length);

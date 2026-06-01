@@ -1043,7 +1043,7 @@ internal static partial class MapServerEndpoints
             }
 
             var spec = layersParam.Trim();
-            var requestedStaticLayerIds = ParseLayerIds(spec);
+            var (visibility, requestedStaticLayerIds) = ParseLayerVisibilitySpec(spec);
             if (requestedStaticLayerIds.Count == 0)
             {
                 return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(context, "Invalid layers parameter."));
@@ -1057,8 +1057,27 @@ internal static partial class MapServerEndpoints
                     "layers parameter references an invalid or inaccessible layer."));
             }
 
+            // Apply GeoServices visibility semantics:
+            //   show / (bare list) -> only the requested layers
+            //   hide               -> all accessible layers except the requested ones
+            //   include            -> default-visible layers plus the requested ones
+            //   exclude            -> default-visible layers minus the requested ones
+            bool LayerSelected(MapServerMetadataLayerDescriptor layer)
+            {
+                var requested = requestedStaticLayerIds.Contains(layer.PublicLayerId);
+                var defaultVisible = layer.Resource.Display?.DefaultVisibility ?? true;
+                return visibility switch
+                {
+                    ExportLayerVisibility.Show => requested,
+                    ExportLayerVisibility.Hide => !requested,
+                    ExportLayerVisibility.Include => defaultVisible || requested,
+                    ExportLayerVisibility.Exclude => defaultVisible && !requested,
+                    _ => requested,
+                };
+            }
+
             return (accessibleLayers
-                .Where(layer => requestedStaticLayerIds.Contains(layer.PublicLayerId))
+                .Where(LayerSelected)
                 .Select(static layer => new ExportRenderLayer(layer, layer.PublicLayerId, null))
                 .ToArray(), null);
         }
@@ -1069,52 +1088,19 @@ internal static partial class MapServerEndpoints
         if (!string.IsNullOrWhiteSpace(layersParam))
         {
             var spec = layersParam.Trim();
-            if (spec.StartsWith("show:", StringComparison.OrdinalIgnoreCase))
+            var (visibility, ids) = ParseLayerVisibilitySpec(spec);
+            requestedIds = ids;
+            selected = visibility switch
             {
-                var ids = ParseLayerIds(spec["show:".Length..]);
-                requestedIds = ids;
-                selected = dynamicLayers.Where(layer => ids.Contains(layer.Id));
-            }
-            else if (spec.StartsWith("hide:", StringComparison.OrdinalIgnoreCase))
-            {
-                var ids = ParseLayerIds(spec["hide:".Length..]);
-                requestedIds = ids;
-                selected = dynamicLayers.Where(layer => !ids.Contains(layer.Id));
-            }
-            else if (spec.StartsWith("include:", StringComparison.OrdinalIgnoreCase))
-            {
-                var ids = ParseLayerIds(spec["include:".Length..]);
-                requestedIds = ids;
-                selected = dynamicLayers.Where(layer =>
-                {
-                    if (!layerLookup.TryGetValue(layer.MapLayerId, out var mapLayer))
-                    {
-                        return false;
-                    }
-
-                    return (mapLayer.Resource.Display?.DefaultVisibility ?? true) || ids.Contains(layer.Id);
-                });
-            }
-            else if (spec.StartsWith("exclude:", StringComparison.OrdinalIgnoreCase))
-            {
-                var ids = ParseLayerIds(spec["exclude:".Length..]);
-                requestedIds = ids;
-                selected = dynamicLayers.Where(layer =>
-                {
-                    if (!layerLookup.TryGetValue(layer.MapLayerId, out var mapLayer))
-                    {
-                        return false;
-                    }
-
-                    return (mapLayer.Resource.Display?.DefaultVisibility ?? true) && !ids.Contains(layer.Id);
-                });
-            }
-            else
-            {
-                var ids = ParseLayerIds(spec);
-                requestedIds = ids;
-                selected = dynamicLayers.Where(layer => ids.Contains(layer.Id));
-            }
+                ExportLayerVisibility.Hide => dynamicLayers.Where(layer => !ids.Contains(layer.Id)),
+                ExportLayerVisibility.Include => dynamicLayers.Where(layer =>
+                    layerLookup.TryGetValue(layer.MapLayerId, out var mapLayer) &&
+                    ((mapLayer.Resource.Display?.DefaultVisibility ?? true) || ids.Contains(layer.Id))),
+                ExportLayerVisibility.Exclude => dynamicLayers.Where(layer =>
+                    layerLookup.TryGetValue(layer.MapLayerId, out var mapLayer) &&
+                    (mapLayer.Resource.Display?.DefaultVisibility ?? true) && !ids.Contains(layer.Id)),
+                _ => dynamicLayers.Where(layer => ids.Contains(layer.Id)),
+            };
 
             if (requestedIds is { Count: > 0 })
             {
@@ -1561,6 +1547,54 @@ internal static partial class MapServerEndpoints
         }
 
         return ids;
+    }
+
+    /// <summary>
+    /// Visibility prefix carried by a GeoServices <c>layers</c> parameter
+    /// (<c>[show|hide|include|exclude]:id1,id2</c>). A bare id list is treated as <see cref="Show"/>.
+    /// </summary>
+    private enum ExportLayerVisibility
+    {
+        /// <summary>Render only the listed layers (also the meaning of a bare id list).</summary>
+        Show,
+
+        /// <summary>Render every layer except the listed ones.</summary>
+        Hide,
+
+        /// <summary>Render the default-visible layers plus the listed ones.</summary>
+        Include,
+
+        /// <summary>Render the default-visible layers minus the listed ones.</summary>
+        Exclude,
+    }
+
+    /// <summary>
+    /// Parses the optional visibility prefix from a GeoServices <c>layers</c> parameter and the
+    /// associated layer ids. A bare id list (no prefix) is treated as <see cref="ExportLayerVisibility.Show"/>.
+    /// </summary>
+    private static (ExportLayerVisibility Visibility, HashSet<int> Ids) ParseLayerVisibilitySpec(string spec)
+    {
+        if (spec.StartsWith("show:", StringComparison.OrdinalIgnoreCase))
+        {
+            return (ExportLayerVisibility.Show, ParseLayerIds(spec["show:".Length..]));
+        }
+
+        if (spec.StartsWith("hide:", StringComparison.OrdinalIgnoreCase))
+        {
+            return (ExportLayerVisibility.Hide, ParseLayerIds(spec["hide:".Length..]));
+        }
+
+        if (spec.StartsWith("include:", StringComparison.OrdinalIgnoreCase))
+        {
+            return (ExportLayerVisibility.Include, ParseLayerIds(spec["include:".Length..]));
+        }
+
+        if (spec.StartsWith("exclude:", StringComparison.OrdinalIgnoreCase))
+        {
+            return (ExportLayerVisibility.Exclude, ParseLayerIds(spec["exclude:".Length..]));
+        }
+
+        return (ExportLayerVisibility.Show, ParseLayerIds(spec));
     }
 
     private static bool HasEmptyLayerToken(string? layersParam)

@@ -551,6 +551,30 @@ public class RasterParsingHelpersTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public void TryParseSrid_EsriJsonWkid_ReturnsSrid()
+    {
+        var result = SpatialReferenceHelpers.TryParseSrid("{\"wkid\":4326}");
+        result.Should().Be(4326);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void TryParseSrid_EsriJsonLatestWkid_ReturnsSrid()
+    {
+        var result = SpatialReferenceHelpers.TryParseSrid("{\"latestWkid\":3857}");
+        result.Should().Be(3857);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void TryParseSrid_EsriJsonZeroWkid_ReturnsNull()
+    {
+        var result = SpatialReferenceHelpers.TryParseSrid("{\"wkid\":0}");
+        result.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public void TryParseSrid_NegativeSrid_ReturnsNull()
     {
         var result = SpatialReferenceHelpers.TryParseSrid("-1");

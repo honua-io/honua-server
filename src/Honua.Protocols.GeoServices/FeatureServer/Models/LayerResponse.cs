@@ -201,8 +201,11 @@ public sealed class LayerResponse
     public bool SupportsQueryRelated { get; init; }
 
     /// <summary>
-    /// Supported query formats
+    /// Supported query formats. The GeoServices spec defines this as a
+    /// comma-delimited string (the ArcGIS Maps SDK for JavaScript calls
+    /// <c>value.split(",")</c> on it), so it is serialized as one.
     /// </summary>
+    [System.Text.Json.Serialization.JsonConverter(typeof(CommaDelimitedStringArrayConverter))]
     public string[] SupportedQueryFormats { get; init; } = ["JSON", "GeoJSON"];
 
     /// <summary>

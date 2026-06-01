@@ -140,6 +140,14 @@ public readonly record struct FeatureQuery
     public ImmutableArray<string>? GroupByFields { get; init; }
 
     /// <summary>
+    /// Aggregate filter conditions applied after grouping (the SQL <c>HAVING</c>
+    /// clause). Each condition is a structured aggregate comparison; the provider
+    /// rebuilds and parameterizes the clause so no raw SQL is passed through.
+    /// Only meaningful alongside <see cref="OutStatistics"/>.
+    /// </summary>
+    public ImmutableArray<HavingCondition>? Having { get; init; }
+
+    /// <summary>
     /// Top features filter for queryTopFeatures operations (window-function partitioning)
     /// </summary>
     public TopFilter? TopFilter { get; init; }

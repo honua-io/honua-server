@@ -246,12 +246,15 @@ public sealed class ImageServerTimeReference
 }
 
 /// <summary>
-/// Skeleton for Esri-compatible multidimensional info; populated when cube ingestion lands.
+/// Esri-compatible <c>multidimensionalInfo</c> document describing the variables
+/// and dimensional axes of a multidimensional raster (cube). Mirrors the shape
+/// the ArcGIS Maps SDK reads via <c>ImageryLayer.multidimensional_info</c>.
 /// </summary>
 public sealed class ImageServerMultidimensionalInfo
 {
     /// <summary>
-    /// Variables (dimensional axes) declared by the cube.
+    /// Variables (data fields) declared by the cube, each carrying its own
+    /// dimensional axes. Empty when the layer is not multidimensional.
     /// </summary>
     [JsonPropertyName("variables")]
     public ImageServerMultidimensionalVariable[] Variables { get; init; } = [];
@@ -281,6 +284,75 @@ public sealed class ImageServerMultidimensionalVariable
     [JsonPropertyName("unit")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Unit { get; init; }
+
+    /// <summary>
+    /// Dimensional axes the variable is sampled over (e.g. StdTime, StdZ).
+    /// </summary>
+    [JsonPropertyName("dimensions")]
+    public ImageServerMultidimensionalDimension[] Dimensions { get; init; } = [];
+}
+
+/// <summary>
+/// Single dimensional axis (e.g. <c>StdTime</c>) of a multidimensional variable,
+/// following the Esri <c>multidimensionalInfo</c> dimension contract.
+/// </summary>
+public sealed class ImageServerMultidimensionalDimension
+{
+    /// <summary>
+    /// Dimension name (e.g. "StdTime", "StdZ").
+    /// </summary>
+    [JsonPropertyName("name")]
+    public required string Name { get; init; }
+
+    /// <summary>
+    /// Unit of the dimension's coordinate values (e.g. "ISO8601", "meters").
+    /// </summary>
+    [JsonPropertyName("unit")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Unit { get; init; }
+
+    /// <summary>
+    /// Inclusive [min, max] extent of the dimension's coordinate values.
+    /// Time dimensions are expressed in milliseconds since the Unix epoch.
+    /// </summary>
+    [JsonPropertyName("extent")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double[]? Extent { get; init; }
+
+    /// <summary>
+    /// Explicit coordinate values along the dimension, when enumerable.
+    /// Omitted for large or irregular axes where only the extent is known.
+    /// </summary>
+    [JsonPropertyName("values")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double[]? Values { get; init; }
+
+    /// <summary>
+    /// Whether the dimension uses a regular (evenly spaced) interval.
+    /// </summary>
+    [JsonPropertyName("hasRegularIntervals")]
+    public bool HasRegularIntervals { get; init; }
+
+    /// <summary>
+    /// Number of discrete slices along the dimension.
+    /// </summary>
+    [JsonPropertyName("dimensionSize")]
+    public long DimensionSize { get; init; }
+}
+
+/// <summary>
+/// Top-level response for the ImageServer <c>multidimensionalInfo</c> operation.
+/// Wraps the <see cref="ImageServerMultidimensionalInfo"/> document under the
+/// <c>multidimensionalInfo</c> key, matching the ArcGIS REST contract.
+/// </summary>
+public sealed class MultidimensionalInfoResponse
+{
+    /// <summary>
+    /// The multidimensional info document. Always present; carries an empty
+    /// <c>variables</c> array when the layer is not multidimensional.
+    /// </summary>
+    [JsonPropertyName("multidimensionalInfo")]
+    public required ImageServerMultidimensionalInfo MultidimensionalInfo { get; init; }
 }
 
 /// <summary>

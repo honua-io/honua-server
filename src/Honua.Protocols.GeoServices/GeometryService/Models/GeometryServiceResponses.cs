@@ -115,6 +115,74 @@ public sealed class GeometryServiceGeometryResponse
 }
 
 /// <summary>
+/// Response payload for the <c>labelPoints</c> operation. The Esri operation
+/// returns the result points under a <c>labelPoints</c> key (not the generic
+/// <c>geometries</c> array), which is what the ArcGIS clients read.
+/// </summary>
+public sealed class GeometryServiceLabelPointsResponse
+{
+    /// <summary>
+    /// Label placement points, one per input polygon, in GeoServices JSON format.
+    /// </summary>
+    [JsonPropertyName("labelPoints")]
+    public JsonElement[]? LabelPoints { get; init; }
+}
+
+/// <summary>
+/// Response payload for the <c>cut</c> operation.
+/// </summary>
+public sealed class GeometryServiceCutResponse
+{
+    /// <summary>
+    /// Result geometries (pieces) produced by cutting the input geometries.
+    /// </summary>
+    [JsonPropertyName("geometries")]
+    public JsonElement[]? Geometries { get; init; }
+
+    /// <summary>
+    /// For each result geometry, the zero-based index of the source geometry it was cut from.
+    /// </summary>
+    [JsonPropertyName("cutIndexes")]
+    public int[]? CutIndexes { get; init; }
+}
+
+/// <summary>
+/// Response payload for the <c>findTransformations</c> operation.
+/// </summary>
+public sealed class GeometryServiceFindTransformationsResponse
+{
+    /// <summary>
+    /// Candidate datum transformations between the input and output spatial references.
+    /// </summary>
+    [JsonPropertyName("transformations")]
+    public GeometryServiceTransformation[]? Transformations { get; init; }
+}
+
+/// <summary>
+/// A single candidate datum transformation entry.
+/// </summary>
+public sealed class GeometryServiceTransformation
+{
+    /// <summary>
+    /// Well-Known ID of the transformation, when known.
+    /// </summary>
+    [JsonPropertyName("wkid")]
+    public int? Wkid { get; init; }
+
+    /// <summary>
+    /// Latest Well-Known ID of the transformation, when known.
+    /// </summary>
+    [JsonPropertyName("latestWkid")]
+    public int? LatestWkid { get; init; }
+
+    /// <summary>
+    /// Human-readable name of the transformation.
+    /// </summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; init; }
+}
+
+/// <summary>
 /// Error response for geometry service operations.
 /// </summary>
 public sealed class GeometryServiceErrorResponse

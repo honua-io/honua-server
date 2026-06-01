@@ -184,4 +184,16 @@ internal static partial class ImageServerLog
         Level = LogLevel.Error,
         Message = "Failed to analyze raster function chain for layer {LayerId}")]
     public static partial void AnalyzeFailed(ILogger logger, Exception ex, int layerId);
+
+    [LoggerMessage(
+        EventId = 5829,
+        Level = LogLevel.Information,
+        Message = "Generated multidimensional info for layer {LayerId}: {VariableCount} variables, hasMultidimensions={HasMultidimensions}")]
+    public static partial void MultidimensionalInfoGenerated(ILogger logger, int layerId, int variableCount, bool hasMultidimensions);
+
+    [LoggerMessage(
+        EventId = 5830,
+        Level = LogLevel.Error,
+        Message = "Failed to get multidimensional info for layer {LayerId}")]
+    public static partial void MultidimensionalInfoFailed(ILogger logger, Exception ex, int layerId);
 }

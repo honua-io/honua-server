@@ -9,6 +9,7 @@ using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
+using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
@@ -28,13 +29,20 @@ public class ImageServerMetadataHandlerTests
 {
     private readonly TestMetadataV2GraphProvider _graphProvider = BuildGraphWithLayer(1);
     private readonly IRasterStore _rasterStore = Substitute.For<IRasterStore>();
+    private readonly IImageServerMultidimensionalInfoBuilder _multidimensionalInfoBuilder =
+        Substitute.For<IImageServerMultidimensionalInfoBuilder>();
     private readonly ImageServerMetadataHandler _handler;
 
     public ImageServerMetadataHandlerTests()
     {
+        _multidimensionalInfoBuilder
+            .BuildAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns((ImageServerMultidimensionalInfo?)null);
+
         _handler = new ImageServerMetadataHandler(
             _graphProvider,
             _rasterStore,
+            _multidimensionalInfoBuilder,
             NullLogger<ImageServerMetadataHandler>.Instance);
     }
 
@@ -120,6 +128,61 @@ public class ImageServerMetadataHandlerTests
         var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
         jsonResult.Should().NotBeNull();
         jsonResult!.Value!.BandCount.Should().Be(3);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_NonMultidimensionalLayer_HasMultidimensionsFalse()
+    {
+        SetupSuccessfulMetadata();
+        // Builder returns null (no multidimensional coverage) by default.
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
+        jsonResult.Should().NotBeNull();
+        jsonResult!.Value!.HasMultidimensions.Should().BeFalse();
+        jsonResult.Value.MultidimensionalInfo.Should().BeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_MultidimensionalLayer_HasMultidimensionsTrueWithInfo()
+    {
+        SetupSuccessfulMetadata();
+        _multidimensionalInfoBuilder
+            .BuildAsync(1, Arg.Any<CancellationToken>())
+            .Returns(new ImageServerMultidimensionalInfo
+            {
+                Variables =
+                [
+                    new ImageServerMultidimensionalVariable
+                    {
+                        Name = "temperature",
+                        Unit = "K",
+                        Dimensions =
+                        [
+                            new ImageServerMultidimensionalDimension
+                            {
+                                Name = "StdTime",
+                                Unit = "ISO8601",
+                                DimensionSize = 12
+                            }
+                        ]
+                    }
+                ]
+            });
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        var jsonResult = result as JsonHttpResult<ImageServerServiceInfo>;
+        jsonResult.Should().NotBeNull();
+        jsonResult!.Value!.HasMultidimensions.Should().BeTrue();
+        jsonResult.Value.MultidimensionalInfo.Should().NotBeNull();
+        jsonResult.Value.MultidimensionalInfo!.Variables.Should().ContainSingle()
+            .Which.Name.Should().Be("temperature");
     }
 
     [UnitTest]

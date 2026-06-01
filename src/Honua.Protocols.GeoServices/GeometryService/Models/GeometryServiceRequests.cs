@@ -130,6 +130,71 @@ internal sealed class LabelPointsParameters
 }
 
 /// <summary>
+/// Parsed parameters for the cut operation (split target geometries by a cutter polyline).
+/// </summary>
+internal sealed class CutParameters
+{
+    public required string[] TargetJsonStrings { get; init; }
+    public string? GeometryType { get; init; }
+    public required string CutterJson { get; init; }
+    public int SR { get; init; }
+}
+
+/// <summary>
+/// Parsed parameters for the trimExtend operation (trim or extend polylines against a trim polyline).
+/// </summary>
+internal sealed class TrimExtendParameters
+{
+    public required string[] PolylineJsonStrings { get; init; }
+    public required string TrimExtendToJson { get; init; }
+    public int SR { get; init; }
+    public string? ExtendHow { get; init; }
+}
+
+/// <summary>
+/// Parsed parameters for the offset operation (offset polylines/polygons by a distance).
+/// </summary>
+internal sealed class OffsetParameters
+{
+    public required string[] GeometryJsonStrings { get; init; }
+    public string? GeometryType { get; init; }
+    public int SR { get; init; }
+    public double OffsetDistance { get; init; }
+    public string? OffsetUnit { get; init; }
+    public string? OffsetHow { get; init; }
+    public double BevelRatio { get; init; }
+}
+
+/// <summary>
+/// Parsed parameters for the autoComplete operation (close polygons from boundary polylines).
+/// </summary>
+internal sealed class AutoCompleteParameters
+{
+    public required string[] PolygonJsonStrings { get; init; }
+    public required string[] PolylineJsonStrings { get; init; }
+    public int SR { get; init; }
+}
+
+/// <summary>
+/// Parsed parameters for the reshape operation (reshape a polygon/polyline with a reshaper line).
+/// </summary>
+internal sealed class ReshapeParameters
+{
+    public required string TargetJson { get; init; }
+    public required string ReshaperJson { get; init; }
+    public int SR { get; init; }
+}
+
+/// <summary>
+/// Parsed parameters for the findTransformations operation (candidate datum transformations).
+/// </summary>
+internal sealed class FindTransformationsParameters
+{
+    public int InSR { get; init; }
+    public int OutSR { get; init; }
+}
+
+/// <summary>
 /// Parsed parameters for area and length operations.
 /// </summary>
 internal enum MeasurementCalculationType

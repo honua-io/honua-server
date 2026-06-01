@@ -951,6 +951,7 @@ internal static partial class MapServerEndpoints
         IdentifyLayerMode mode = IdentifyLayerMode.Top;
         var hasExplicitMode = false;
         HashSet<int>? ids = null;
+        var excludeIds = false;
 
         if (!string.IsNullOrWhiteSpace(layersParam))
         {
@@ -973,13 +974,7 @@ internal static partial class MapServerEndpoints
                 idPart = spec;
             }
 
-            mode = modeToken?.ToLowerInvariant() switch
-            {
-                "all" => IdentifyLayerMode.All,
-                "visible" => IdentifyLayerMode.Visible,
-                "top" => IdentifyLayerMode.Top,
-                _ => IdentifyLayerMode.All
-            };
+            (mode, excludeIds) = ResolveIdentifyLayerMode(modeToken);
             hasExplicitMode = modeToken != null;
 
             if (!string.IsNullOrWhiteSpace(idPart))
@@ -1028,7 +1023,9 @@ internal static partial class MapServerEndpoints
 
         if (ids is { Count: > 0 })
         {
-            candidates = candidates.Where(l => ids.Contains(l.PublicLayerId));
+            candidates = excludeIds
+                ? candidates.Where(l => !ids.Contains(l.PublicLayerId))
+                : candidates.Where(l => ids.Contains(l.PublicLayerId));
         }
 
         return new IdentifyLayerSelection(
@@ -1045,6 +1042,7 @@ internal static partial class MapServerEndpoints
     {
         IdentifyLayerMode mode = IdentifyLayerMode.Top;
         HashSet<int>? ids = null;
+        var excludeIds = false;
 
         if (!string.IsNullOrWhiteSpace(layersParam))
         {
@@ -1067,13 +1065,7 @@ internal static partial class MapServerEndpoints
                 idPart = spec;
             }
 
-            mode = modeToken?.ToLowerInvariant() switch
-            {
-                "all" => IdentifyLayerMode.All,
-                "visible" => IdentifyLayerMode.Visible,
-                "top" => IdentifyLayerMode.Top,
-                _ => IdentifyLayerMode.All
-            };
+            (mode, excludeIds) = ResolveIdentifyLayerMode(modeToken);
 
             if (!string.IsNullOrWhiteSpace(idPart))
             {
@@ -1103,7 +1095,9 @@ internal static partial class MapServerEndpoints
 
         if (ids is { Count: > 0 })
         {
-            candidates = candidates.Where(layer => ids.Contains(layer.PublicLayerId));
+            candidates = excludeIds
+                ? candidates.Where(layer => !ids.Contains(layer.PublicLayerId))
+                : candidates.Where(layer => ids.Contains(layer.PublicLayerId));
         }
 
         return candidates.ToArray();
@@ -1124,6 +1118,26 @@ internal static partial class MapServerEndpoints
         return string.Equals(token, "all", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(token, "visible", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(token, "top", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Maps an identify <c>layers</c> mode/visibility token to an <see cref="IdentifyLayerMode"/> and
+    /// whether the accompanying ids should be excluded rather than selected.
+    /// Accepts the identify mode tokens (<c>top</c>/<c>visible</c>/<c>all</c>) and the GeoServices
+    /// visibility prefixes (<c>show</c>/<c>hide</c>/<c>include</c>/<c>exclude</c>). <c>show</c> and
+    /// <c>include</c> select the listed ids; <c>hide</c> and <c>exclude</c> exclude them.
+    /// </summary>
+    private static (IdentifyLayerMode Mode, bool ExcludeIds) ResolveIdentifyLayerMode(string? modeToken)
+    {
+        return modeToken?.ToLowerInvariant() switch
+        {
+            "all" => (IdentifyLayerMode.All, false),
+            "visible" => (IdentifyLayerMode.Visible, false),
+            "top" => (IdentifyLayerMode.Top, false),
+            "hide" => (IdentifyLayerMode.All, true),
+            "exclude" => (IdentifyLayerMode.All, true),
+            _ => (IdentifyLayerMode.All, false),
+        };
     }
 
     private static bool HasNonIntegerIdentifyLayerToken(string? layersParam)

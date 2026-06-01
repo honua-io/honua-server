@@ -47,6 +47,12 @@ public static class Operations
     public const string ConvexHull = "ConvexHull";
     public const string Generalize = "Generalize";
     public const string LabelPoints = "LabelPoints";
+    public const string Cut = "Cut";
+    public const string TrimExtend = "TrimExtend";
+    public const string Offset = "Offset";
+    public const string AutoComplete = "AutoComplete";
+    public const string Reshape = "Reshape";
+    public const string FindTransformations = "FindTransformations";
 
     // Metadata Operations
     public const string GetMetadata = "GetMetadata";

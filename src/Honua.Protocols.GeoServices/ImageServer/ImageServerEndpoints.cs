@@ -139,19 +139,66 @@ internal static class ImageServerEndpoints
             .WithDisplayName("Compute Statistics Histograms (GET)")
             .WithName("ComputeStatisticsHistogramsGet")
             .WithSummary("Compute per-band statistics and histograms")
-            .WithDescription("ArcGIS ImageServer computeStatisticsHistograms contract. Requires geometry and geometryType; returns 501 until geometry-scoped raster statistics are implemented.")
+            .WithDescription("ArcGIS ImageServer computeStatisticsHistograms contract. Requires geometry and geometryType; returns per-band statistics and histograms for the rasters intersecting the AOI.")
+            .Produces<ComputeStatisticsHistogramsResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
-            .Produces(404)
-            .Produces(501);
+            .Produces(404);
 
         group.MapPost("/computeStatisticsHistograms", ComputeStatisticsHistogramsPost)
             .WithDisplayName("Compute Statistics Histograms (POST)")
             .WithName("ComputeStatisticsHistogramsPost")
             .WithSummary("Compute per-band statistics and histograms via POST")
             .WithDescription("POST equivalent of the ArcGIS ImageServer computeStatisticsHistograms endpoint")
+            .Produces<ComputeStatisticsHistogramsResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
-            .Produces(404)
-            .Produces(501);
+            .Produces(404);
+
+        // Compute histograms only for the layer's primary raster
+        group.MapGet("/computeHistograms", ComputeHistogramsGet)
+            .WithDisplayName("Compute Histograms (GET)")
+            .WithName("ComputeHistogramsGet")
+            .WithSummary("Compute per-band histograms")
+            .WithDescription("ArcGIS ImageServer computeHistograms contract. Requires geometry and geometryType; returns per-band histograms for the rasters intersecting the AOI.")
+            .Produces<ComputeHistogramsResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        group.MapPost("/computeHistograms", ComputeHistogramsPost)
+            .WithDisplayName("Compute Histograms (POST)")
+            .WithName("ComputeHistogramsPost")
+            .WithSummary("Compute per-band histograms via POST")
+            .WithDescription("POST equivalent of the ArcGIS ImageServer computeHistograms endpoint")
+            .Produces<ComputeHistogramsResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        // Sample pixel values at points / along a geometry
+        group.MapGet("/getSamples", GetSamplesGet)
+            .WithDisplayName("Get Samples (GET)")
+            .WithName("GetSamplesGet")
+            .WithSummary("Sample pixel values at points")
+            .WithDescription("ArcGIS ImageServer getSamples contract. Returns sampled pixel values at the points of (or vertices along) the supplied geometry.")
+            .Produces<GetSamplesResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        group.MapPost("/getSamples", GetSamplesPost)
+            .WithDisplayName("Get Samples (POST)")
+            .WithName("GetSamplesPost")
+            .WithSummary("Sample pixel values at points via POST")
+            .WithDescription("POST equivalent of the ArcGIS ImageServer getSamples endpoint")
+            .Produces<GetSamplesResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        // Raster key properties metadata
+        group.MapGet("/keyProperties", KeyPropertiesGet)
+            .WithDisplayName("Get Key Properties")
+            .WithName("GetKeyProperties")
+            .WithSummary("Get raster key properties")
+            .WithDescription("ArcGIS ImageServer keyProperties contract. Returns per-band properties, data type, band count, and NoData for the layer's primary raster.")
+            .Produces<KeyPropertiesResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(404);
 
         // Legend endpoint - per-class swatches for the layer renderer
         group.MapGet("/legend", GetLegend)
@@ -183,6 +230,24 @@ internal static class ImageServerEndpoints
             .Produces(400)
             .Produces(404)
             .Produces(501);
+
+        // Multidimensional info endpoint - exposes cube variables/dimensions
+        group.MapGet("/multidimensionalInfo", GetMultidimensionalInfo)
+            .WithDisplayName("Get Multidimensional Info (GET)")
+            .WithName("ImageServerMultidimensionalInfoGet")
+            .WithSummary("Get multidimensional variables and dimensions")
+            .WithDescription("Returns the Esri multidimensionalInfo document (variables with dimensions) for a multidimensional raster; returns an empty variables array when the layer is not multidimensional")
+            .Produces<MultidimensionalInfoResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        group.MapPost("/multidimensionalInfo", GetMultidimensionalInfoPost)
+            .WithDisplayName("Get Multidimensional Info (POST)")
+            .WithName("ImageServerMultidimensionalInfoPost")
+            .WithSummary("Get multidimensional variables and dimensions via POST")
+            .WithDescription("POST equivalent of the ArcGIS ImageServer multidimensionalInfo endpoint")
+            .Produces<MultidimensionalInfoResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
 
         var serviceGroup = app.MapGroup("/rest/services/{serviceId:regex(^(?!\\d+$).+$)}/ImageServer")
             .WithTags("ImageServer")
@@ -273,16 +338,53 @@ internal static class ImageServerEndpoints
             .WithDisplayName("Compute Statistics Histograms by Service (GET)")
             .WithName("ComputeStatisticsHistogramsGetByService")
             .WithSummary("Compute per-band statistics and histograms")
+            .Produces<ComputeStatisticsHistogramsResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
-            .Produces(404)
-            .Produces(501);
+            .Produces(404);
         serviceGroup.MapPost("/computeStatisticsHistograms", ComputeStatisticsHistogramsPostByService)
             .WithDisplayName("Compute Statistics Histograms by Service (POST)")
             .WithName("ComputeStatisticsHistogramsPostByService")
             .WithSummary("Compute per-band statistics and histograms")
+            .Produces<ComputeStatisticsHistogramsResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
-            .Produces(404)
-            .Produces(501);
+            .Produces(404);
+
+        serviceGroup.MapGet("/computeHistograms", ComputeHistogramsGetByService)
+            .WithDisplayName("Compute Histograms by Service (GET)")
+            .WithName("ComputeHistogramsGetByService")
+            .WithSummary("Compute per-band histograms")
+            .Produces<ComputeHistogramsResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        serviceGroup.MapPost("/computeHistograms", ComputeHistogramsPostByService)
+            .WithDisplayName("Compute Histograms by Service (POST)")
+            .WithName("ComputeHistogramsPostByService")
+            .WithSummary("Compute per-band histograms")
+            .Produces<ComputeHistogramsResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        serviceGroup.MapGet("/getSamples", GetSamplesGetByService)
+            .WithDisplayName("Get Samples by Service (GET)")
+            .WithName("GetSamplesGetByService")
+            .WithSummary("Sample pixel values at points")
+            .Produces<GetSamplesResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        serviceGroup.MapPost("/getSamples", GetSamplesPostByService)
+            .WithDisplayName("Get Samples by Service (POST)")
+            .WithName("GetSamplesPostByService")
+            .WithSummary("Sample pixel values at points")
+            .Produces<GetSamplesResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+
+        serviceGroup.MapGet("/keyProperties", KeyPropertiesGetByService)
+            .WithDisplayName("Get Key Properties by Service")
+            .WithName("GetKeyPropertiesByService")
+            .WithSummary("Get raster key properties")
+            .Produces<KeyPropertiesResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(404);
 
         serviceGroup.MapGet("/legend", GetLegendByService)
             .WithDisplayName("Get Image Server Legend by Service")
@@ -306,6 +408,21 @@ internal static class ImageServerEndpoints
             .Produces(400)
             .Produces(404)
             .Produces(501);
+
+        serviceGroup.MapGet("/multidimensionalInfo", GetMultidimensionalInfoByService)
+            .WithDisplayName("Get Multidimensional Info by Service (GET)")
+            .WithName("ImageServerMultidimensionalInfoGetByService")
+            .WithSummary("Get multidimensional variables and dimensions")
+            .Produces<MultidimensionalInfoResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
+        serviceGroup.MapPost("/multidimensionalInfo", GetMultidimensionalInfoPostByService)
+            .WithDisplayName("Get Multidimensional Info by Service (POST)")
+            .WithName("ImageServerMultidimensionalInfoPostByService")
+            .WithSummary("Get multidimensional variables and dimensions via POST")
+            .Produces<MultidimensionalInfoResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(400)
+            .Produces(404);
     }
 
     /// <summary>
@@ -341,6 +458,72 @@ internal static class ImageServerEndpoints
     {
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
         return resolution.ErrorResult ?? await GetServiceInfo(resolution.LayerId, f, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Get the Esri multidimensionalInfo document for a multidimensional raster layer.
+    /// </summary>
+    private static async Task<IResult> GetMultidimensionalInfo(
+        int id,
+        string? f,
+        HttpContext context,
+        ImageServerMultidimensionalInfoHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsSupportedJsonResponseFormat(f))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        return await handler.GetMultidimensionalInfoAsync(context, id, cancellationToken);
+    }
+
+    private static async Task<IResult> GetMultidimensionalInfoByService(
+        string serviceId,
+        string? f,
+        HttpContext context,
+        ImageServerMultidimensionalInfoHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await GetMultidimensionalInfo(resolution.LayerId, f, context, handler, cancellationToken);
+    }
+
+    private static async Task<IResult> GetMultidimensionalInfoPost(
+        int id,
+        HttpContext context,
+        ImageServerMultidimensionalInfoHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var bodyValues = await ReadPostValuesAsync(context, cancellationToken);
+        if (bodyValues.Error != null)
+        {
+            return bodyValues.Error;
+        }
+
+        var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
+        return await GetMultidimensionalInfo(id, GetString(merged, "f"), context, handler, cancellationToken);
+    }
+
+    private static async Task<IResult> GetMultidimensionalInfoPostByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerMultidimensionalInfoHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        if (resolution.ErrorResult is not null)
+        {
+            return resolution.ErrorResult;
+        }
+
+        return await GetMultidimensionalInfoPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
     /// <summary>
@@ -605,9 +788,7 @@ internal static class ImageServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, error ?? "Invalid request.");
         }
 
-        return StandardErrorHelpers.CreateNotImplemented(
-            context,
-            "computeStatisticsHistograms is not yet implemented on this service.");
+        return await handler.ComputeAsync(context, id, values, cancellationToken);
     }
 
     private static async Task<IResult> ComputeStatisticsHistogramsGetByService(
@@ -662,9 +843,7 @@ internal static class ImageServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, error ?? "Invalid request.");
         }
 
-        return StandardErrorHelpers.CreateNotImplemented(
-            context,
-            "computeStatisticsHistograms is not yet implemented on this service.");
+        return await handler.ComputeAsync(context, id, merged, cancellationToken);
     }
 
     private static async Task<IResult> ComputeStatisticsHistogramsPostByService(
@@ -675,6 +854,209 @@ internal static class ImageServerEndpoints
     {
         var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
         return resolution.ErrorResult ?? await ComputeStatisticsHistogramsPost(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Compute histograms only for the primary raster (GET).
+    /// </summary>
+    private static async Task<IResult> ComputeHistogramsGet(
+        int id,
+        HttpContext context,
+        ImageServerStatisticsHistogramsHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
+        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        if (!TryValidateComputeStatisticsHistogramsRequest(values, out var error))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, error ?? "Invalid request.");
+        }
+
+        return await handler.ComputeHistogramsAsync(context, id, values, cancellationToken);
+    }
+
+    private static async Task<IResult> ComputeHistogramsGetByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerStatisticsHistogramsHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await ComputeHistogramsGet(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Compute histograms only for the primary raster (POST).
+    /// </summary>
+    private static async Task<IResult> ComputeHistogramsPost(
+        int id,
+        HttpContext context,
+        ImageServerStatisticsHistogramsHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var bodyValues = await ReadPostValuesAsync(context, cancellationToken);
+        if (bodyValues.Error != null)
+        {
+            return bodyValues.Error;
+        }
+
+        var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
+        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        if (!TryValidateComputeStatisticsHistogramsRequest(merged, out var error))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, error ?? "Invalid request.");
+        }
+
+        return await handler.ComputeHistogramsAsync(context, id, merged, cancellationToken);
+    }
+
+    private static async Task<IResult> ComputeHistogramsPostByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerStatisticsHistogramsHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await ComputeHistogramsPost(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Sample pixel values at points / along a geometry (GET).
+    /// </summary>
+    private static async Task<IResult> GetSamplesGet(
+        int id,
+        HttpContext context,
+        ImageServerSamplesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var values = GeoServicesRequestValueHelpers.ToCaseInsensitiveDictionary(context.Request.Query);
+        if (!IsSupportedJsonResponseFormat(GetString(values, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        if (!TryValidateGetSamplesRequest(values, out var error))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, error ?? "Invalid request.");
+        }
+
+        return await handler.GetSamplesAsync(context, id, values, cancellationToken);
+    }
+
+    private static async Task<IResult> GetSamplesGetByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerSamplesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await GetSamplesGet(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Sample pixel values at points / along a geometry (POST).
+    /// </summary>
+    private static async Task<IResult> GetSamplesPost(
+        int id,
+        HttpContext context,
+        ImageServerSamplesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        var bodyValues = await ReadPostValuesAsync(context, cancellationToken);
+        if (bodyValues.Error != null)
+        {
+            return bodyValues.Error;
+        }
+
+        var merged = MergeQueryAndBodyValues(context, bodyValues.Values!);
+        if (!IsSupportedJsonResponseFormat(GetString(merged, "f")))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        if (!TryValidateGetSamplesRequest(merged, out var error))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, error ?? "Invalid request.");
+        }
+
+        return await handler.GetSamplesAsync(context, id, merged, cancellationToken);
+    }
+
+    private static async Task<IResult> GetSamplesPostByService(
+        string serviceId,
+        HttpContext context,
+        ImageServerSamplesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await GetSamplesPost(resolution.LayerId, context, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Get raster key properties for the layer's primary raster.
+    /// </summary>
+    private static async Task<IResult> KeyPropertiesGet(
+        int id,
+        string? f,
+        HttpContext context,
+        ImageServerKeyPropertiesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsSupportedJsonResponseFormat(f))
+        {
+            return CreateUnsupportedJsonFormatResult(context);
+        }
+
+        var layerError = await ValidateImageLayerAsync(id, context, cancellationToken);
+        if (layerError is not null)
+        {
+            return layerError;
+        }
+
+        return await handler.GetKeyPropertiesAsync(context, id, cancellationToken);
+    }
+
+    private static async Task<IResult> KeyPropertiesGetByService(
+        string serviceId,
+        string? f,
+        HttpContext context,
+        ImageServerKeyPropertiesHandler handler,
+        CancellationToken cancellationToken = default)
+    {
+        var resolution = await ResolveImageServiceLayerIdAsync(serviceId, context, cancellationToken);
+        return resolution.ErrorResult ?? await KeyPropertiesGet(resolution.LayerId, f, context, handler, cancellationToken);
     }
 
     /// <summary>
@@ -970,6 +1352,21 @@ internal static class ImageServerEndpoints
 
         if (!TryValidateEsriGeometry(GetString(values, "geometry"), geometryType, out error))
         {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryValidateGetSamplesRequest(
+        IReadOnlyDictionary<string, StringValues> values,
+        out string? error)
+    {
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(GetString(values, "geometry")))
+        {
+            error = "geometry is required.";
             return false;
         }
 

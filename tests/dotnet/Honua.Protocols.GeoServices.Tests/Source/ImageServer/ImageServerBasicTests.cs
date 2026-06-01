@@ -278,9 +278,16 @@ public class ImageServerBasicTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/ImageServer/query")]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/computeStatisticsHistograms")]
     [Endpoint("POST /rest/services/{serviceId}/ImageServer/computeStatisticsHistograms")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/computeHistograms")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/computeHistograms")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/getSamples")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/getSamples")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/keyProperties")]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/legend")]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/computeClassStatistics")]
     [Endpoint("POST /rest/services/{serviceId}/ImageServer/computeClassStatistics")]
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/multidimensionalInfo")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/multidimensionalInfo")]
     [Operation(Operations.Metadata)]
     public async Task ServiceNameRoutes_DispatchToImageServerSurface()
     {
@@ -298,8 +305,12 @@ public class ImageServerBasicTests : IAsyncLifetime
             $"/rest/services/{serviceId}/ImageServer/tile/0/0/0?format=png",
             $"/rest/services/{serviceId}/ImageServer/query?f=json",
             $"/rest/services/{serviceId}/ImageServer/computeStatisticsHistograms?f=json&geometryType=esriGeometryEnvelope&geometry={geometry}",
+            $"/rest/services/{serviceId}/ImageServer/computeHistograms?f=json&geometryType=esriGeometryEnvelope&geometry={geometry}",
+            $"/rest/services/{serviceId}/ImageServer/getSamples?f=json&geometryType=esriGeometryMultipoint&geometry={geometry}",
+            $"/rest/services/{serviceId}/ImageServer/keyProperties?f=json",
             $"/rest/services/{serviceId}/ImageServer/legend?f=json",
             $"/rest/services/{serviceId}/ImageServer/computeClassStatistics?f=json&classDescriptions={classDescriptions}",
+            $"/rest/services/{serviceId}/ImageServer/multidimensionalInfo?f=json",
         };
 
         foreach (var uri in getUris)
@@ -337,10 +348,26 @@ public class ImageServerBasicTests : IAsyncLifetime
                 new("geometryType", "esriGeometryEnvelope"),
                 new("geometry", """{"xmin":-180,"ymin":-90,"xmax":180,"ymax":90,"spatialReference":{"wkid":4326}}""")
             ]),
+            ($"/rest/services/{serviceId}/ImageServer/computeHistograms",
+            [
+                new("f", "json"),
+                new("geometryType", "esriGeometryEnvelope"),
+                new("geometry", """{"xmin":-180,"ymin":-90,"xmax":180,"ymax":90,"spatialReference":{"wkid":4326}}""")
+            ]),
+            ($"/rest/services/{serviceId}/ImageServer/getSamples",
+            [
+                new("f", "json"),
+                new("geometryType", "esriGeometryMultipoint"),
+                new("geometry", """{"points":[[0,0]],"spatialReference":{"wkid":4326}}""")
+            ]),
             ($"/rest/services/{serviceId}/ImageServer/computeClassStatistics",
             [
                 new("f", "json"),
                 new("classDescriptions", """{"classes":[{"id":1,"name":"water","geometry":{"rings":[[[-1,-1],[-1,1],[1,1],[1,-1],[-1,-1]]]}}]}""")
+            ]),
+            ($"/rest/services/{serviceId}/ImageServer/multidimensionalInfo",
+            [
+                new("f", "json")
             ]),
         };
 

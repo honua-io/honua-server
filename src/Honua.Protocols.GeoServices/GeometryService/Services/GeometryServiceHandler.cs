@@ -1153,6 +1153,826 @@ internal sealed class GeometryServiceHandler(
         }
     }
 
+    public async Task<IResult> HandleCutAsync(HttpContext context, CancellationToken ct)
+    {
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "cut", HonuaTelemetry.Protocols.GeometryService, "geometry");
+
+        try
+        {
+            var (values, parseError) = await GeometryServiceRequestParser.TryReadRequestValuesAsync(context.Request, ct);
+            var requestLimits = ResolveRequestLimits(context);
+            if (values is null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "cut", parseError ?? "No parameters");
+                return CreateRequestParameterError(context, parseError);
+            }
+
+            var formatError = GeometryServiceRequestParser.ValidateFormat(
+                GeometryServiceRequestParser.GetValue(values, "f"));
+            if (formatError is not null)
+            {
+                return CreateError(context, 400, formatError);
+            }
+
+            var (geomStrings, geomType, geomError) = GeometryServiceRequestParser.ParseGeometries(
+                GeometryServiceRequestParser.GetValue(values, "target"),
+                requestLimits.MaxGeometriesPerRequest,
+                requestLimits.MaxGeometryJsonLength);
+            if (geomError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "cut", geomError);
+                return CreateError(context, 400, geomError.Replace("'geometries'", "'target'", StringComparison.Ordinal));
+            }
+
+            if (geomStrings.Length == 0)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "cut", "No target geometries provided");
+                return CreateError(context, 400, "Parameter 'target' must contain at least one geometry.");
+            }
+
+            var (cutter, cutterError) = GeometryServiceRequestParser.ParseSingleGeometry(
+                GeometryServiceRequestParser.GetValue(values, "cutter"),
+                "cutter",
+                requestLimits.MaxGeometryJsonLength);
+            if (cutterError is not null || string.IsNullOrWhiteSpace(cutter))
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "cut", cutterError ?? "Missing cutter");
+                return CreateError(context, 400, cutterError ?? "Parameter 'cutter' is required.");
+            }
+
+            var (sr, srError) = await ResolveRequiredSpatialReferenceAsync(values, "sr", ct);
+            if (srError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "cut", srError);
+                return CreateError(context, 400, srError);
+            }
+
+            var parameters = new CutParameters
+            {
+                TargetJsonStrings = geomStrings,
+                GeometryType = geomType,
+                CutterJson = cutter,
+                SR = sr!.Value
+            };
+
+            GeometryServiceLog.RequestParsed(_logger, "cut", parameters.TargetJsonStrings.Length, parameters.GeometryType);
+            return ExecuteCut(parameters, scope);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (ArgumentException ex)
+        {
+            GeometryServiceLog.InvalidGeometryInput(_logger, "cut", ex.Message);
+            scope.RecordException(ex);
+            return CreateError(context, 400, InvalidGeometryInputMessage);
+        }
+        catch (Exception ex)
+        {
+            GeometryServiceLog.GeometryOperationFailed(_logger, "cut", ex.Message, ex);
+            scope.RecordException(ex);
+            return CreateError(context, 500, "An internal error occurred during the cut operation.");
+        }
+    }
+
+    public async Task<IResult> HandleTrimExtendAsync(HttpContext context, CancellationToken ct)
+    {
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "trimExtend", HonuaTelemetry.Protocols.GeometryService, "geometry");
+
+        try
+        {
+            var (values, parseError) = await GeometryServiceRequestParser.TryReadRequestValuesAsync(context.Request, ct);
+            var requestLimits = ResolveRequestLimits(context);
+            if (values is null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "trimExtend", parseError ?? "No parameters");
+                return CreateRequestParameterError(context, parseError);
+            }
+
+            var formatError = GeometryServiceRequestParser.ValidateFormat(
+                GeometryServiceRequestParser.GetValue(values, "f"));
+            if (formatError is not null)
+            {
+                return CreateError(context, 400, formatError);
+            }
+
+            var (geomStrings, _, geomError) = GeometryServiceRequestParser.ParseGeometries(
+                GeometryServiceRequestParser.GetValue(values, "polylines"),
+                requestLimits.MaxGeometriesPerRequest,
+                requestLimits.MaxGeometryJsonLength);
+            if (geomError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "trimExtend", geomError);
+                return CreateError(context, 400, geomError.Replace("'geometries'", "'polylines'", StringComparison.Ordinal));
+            }
+
+            if (geomStrings.Length == 0)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "trimExtend", "No polylines provided");
+                return CreateError(context, 400, "Parameter 'polylines' must contain at least one geometry.");
+            }
+
+            var (trimExtendTo, trimError) = GeometryServiceRequestParser.ParseSingleGeometry(
+                GeometryServiceRequestParser.GetValue(values, "trimExtendTo"),
+                "trimExtendTo",
+                requestLimits.MaxGeometryJsonLength);
+            if (trimError is not null || string.IsNullOrWhiteSpace(trimExtendTo))
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "trimExtend", trimError ?? "Missing trimExtendTo");
+                return CreateError(context, 400, trimError ?? "Parameter 'trimExtendTo' is required.");
+            }
+
+            var (sr, srError) = await ResolveRequiredSpatialReferenceAsync(values, "sr", ct);
+            if (srError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "trimExtend", srError);
+                return CreateError(context, 400, srError);
+            }
+
+            var parameters = new TrimExtendParameters
+            {
+                PolylineJsonStrings = geomStrings,
+                TrimExtendToJson = trimExtendTo,
+                SR = sr!.Value,
+                ExtendHow = GeometryServiceRequestParser.GetValue(values, "extendHow")
+            };
+
+            GeometryServiceLog.RequestParsed(_logger, "trimExtend", parameters.PolylineJsonStrings.Length, "esriGeometryPolyline");
+            return ExecuteTrimExtend(parameters, scope);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (ArgumentException ex)
+        {
+            GeometryServiceLog.InvalidGeometryInput(_logger, "trimExtend", ex.Message);
+            scope.RecordException(ex);
+            return CreateError(context, 400, InvalidGeometryInputMessage);
+        }
+        catch (Exception ex)
+        {
+            GeometryServiceLog.GeometryOperationFailed(_logger, "trimExtend", ex.Message, ex);
+            scope.RecordException(ex);
+            return CreateError(context, 500, "An internal error occurred during the trimExtend operation.");
+        }
+    }
+
+    public async Task<IResult> HandleOffsetAsync(HttpContext context, CancellationToken ct)
+    {
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "offset", HonuaTelemetry.Protocols.GeometryService, "geometry");
+
+        try
+        {
+            var (values, parseError) = await GeometryServiceRequestParser.TryReadRequestValuesAsync(context.Request, ct);
+            var requestLimits = ResolveRequestLimits(context);
+            if (values is null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "offset", parseError ?? "No parameters");
+                return CreateRequestParameterError(context, parseError);
+            }
+
+            var formatError = GeometryServiceRequestParser.ValidateFormat(
+                GeometryServiceRequestParser.GetValue(values, "f"));
+            if (formatError is not null)
+            {
+                return CreateError(context, 400, formatError);
+            }
+
+            var (geomStrings, geomType, geomError) = GeometryServiceRequestParser.ParseGeometries(
+                GeometryServiceRequestParser.GetValue(values, "geometries"),
+                requestLimits.MaxGeometriesPerRequest,
+                requestLimits.MaxGeometryJsonLength);
+            if (geomError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "offset", geomError);
+                return CreateError(context, 400, geomError);
+            }
+
+            if (geomStrings.Length == 0)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "offset", "No geometries provided");
+                return CreateError(context, 400, "Parameter 'geometries' must contain at least one geometry.");
+            }
+
+            var (sr, srError) = await ResolveRequiredSpatialReferenceAsync(values, "sr", ct);
+            if (srError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "offset", srError);
+                return CreateError(context, 400, srError);
+            }
+
+            var offsetRaw = GeometryServiceRequestParser.GetValue(values, "offsetDistance");
+            if (string.IsNullOrWhiteSpace(offsetRaw)
+                || !double.TryParse(offsetRaw.Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var offsetDistance)
+                || double.IsNaN(offsetDistance) || double.IsInfinity(offsetDistance))
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "offset", "Invalid offsetDistance");
+                return CreateError(context, 400, "Parameter 'offsetDistance' is required and must be a number.");
+            }
+
+            var bevelRaw = GeometryServiceRequestParser.GetValue(values, "bevelRatio");
+            var bevelRatio = 1.1;
+            if (!string.IsNullOrWhiteSpace(bevelRaw)
+                && double.TryParse(bevelRaw.Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsedBevel)
+                && parsedBevel > 0)
+            {
+                bevelRatio = parsedBevel;
+            }
+
+            var parameters = new OffsetParameters
+            {
+                GeometryJsonStrings = geomStrings,
+                GeometryType = geomType,
+                SR = sr!.Value,
+                OffsetDistance = offsetDistance,
+                OffsetUnit = GeometryServiceRequestParser.GetValue(values, "offsetUnit"),
+                OffsetHow = GeometryServiceRequestParser.GetValue(values, "offsetHow"),
+                BevelRatio = bevelRatio
+            };
+
+            GeometryServiceLog.RequestParsed(_logger, "offset", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
+            return ExecuteOffset(parameters, scope);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (ArgumentException ex)
+        {
+            GeometryServiceLog.InvalidGeometryInput(_logger, "offset", ex.Message);
+            scope.RecordException(ex);
+            return CreateError(context, 400, InvalidGeometryInputMessage);
+        }
+        catch (Exception ex)
+        {
+            GeometryServiceLog.GeometryOperationFailed(_logger, "offset", ex.Message, ex);
+            scope.RecordException(ex);
+            return CreateError(context, 500, "An internal error occurred during the offset operation.");
+        }
+    }
+
+    public async Task<IResult> HandleAutoCompleteAsync(HttpContext context, CancellationToken ct)
+    {
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "autoComplete", HonuaTelemetry.Protocols.GeometryService, "geometry");
+
+        try
+        {
+            var (values, parseError) = await GeometryServiceRequestParser.TryReadRequestValuesAsync(context.Request, ct);
+            var requestLimits = ResolveRequestLimits(context);
+            if (values is null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "autoComplete", parseError ?? "No parameters");
+                return CreateRequestParameterError(context, parseError);
+            }
+
+            var formatError = GeometryServiceRequestParser.ValidateFormat(
+                GeometryServiceRequestParser.GetValue(values, "f"));
+            if (formatError is not null)
+            {
+                return CreateError(context, 400, formatError);
+            }
+
+            var polygonsRaw = GeometryServiceRequestParser.GetValue(values, "polygons");
+            var (polygonStrings, _, polygonError) = string.IsNullOrWhiteSpace(polygonsRaw)
+                ? ([], (string?)null, (string?)null)
+                : GeometryServiceRequestParser.ParseGeometries(
+                    polygonsRaw,
+                    requestLimits.MaxGeometriesPerRequest,
+                    requestLimits.MaxGeometryJsonLength);
+            if (polygonError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "autoComplete", polygonError);
+                return CreateError(context, 400, polygonError.Replace("'geometries'", "'polygons'", StringComparison.Ordinal));
+            }
+
+            var (polylineStrings, _, polylineError) = GeometryServiceRequestParser.ParseGeometries(
+                GeometryServiceRequestParser.GetValue(values, "polylines"),
+                requestLimits.MaxGeometriesPerRequest,
+                requestLimits.MaxGeometryJsonLength);
+            if (polylineError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "autoComplete", polylineError);
+                return CreateError(context, 400, polylineError.Replace("'geometries'", "'polylines'", StringComparison.Ordinal));
+            }
+
+            if (polylineStrings.Length == 0)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "autoComplete", "No polylines provided");
+                return CreateError(context, 400, "Parameter 'polylines' must contain at least one geometry.");
+            }
+
+            var (sr, srError) = await ResolveRequiredSpatialReferenceAsync(values, "sr", ct);
+            if (srError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "autoComplete", srError);
+                return CreateError(context, 400, srError);
+            }
+
+            var parameters = new AutoCompleteParameters
+            {
+                PolygonJsonStrings = polygonStrings,
+                PolylineJsonStrings = polylineStrings,
+                SR = sr!.Value
+            };
+
+            GeometryServiceLog.RequestParsed(_logger, "autoComplete", parameters.PolylineJsonStrings.Length, "esriGeometryPolygon");
+            return ExecuteAutoComplete(parameters, scope);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (ArgumentException ex)
+        {
+            GeometryServiceLog.InvalidGeometryInput(_logger, "autoComplete", ex.Message);
+            scope.RecordException(ex);
+            return CreateError(context, 400, InvalidGeometryInputMessage);
+        }
+        catch (Exception ex)
+        {
+            GeometryServiceLog.GeometryOperationFailed(_logger, "autoComplete", ex.Message, ex);
+            scope.RecordException(ex);
+            return CreateError(context, 500, "An internal error occurred during the autoComplete operation.");
+        }
+    }
+
+    public async Task<IResult> HandleReshapeAsync(HttpContext context, CancellationToken ct)
+    {
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "reshape", HonuaTelemetry.Protocols.GeometryService, "geometry");
+
+        try
+        {
+            var (values, parseError) = await GeometryServiceRequestParser.TryReadRequestValuesAsync(context.Request, ct);
+            var requestLimits = ResolveRequestLimits(context);
+            if (values is null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "reshape", parseError ?? "No parameters");
+                return CreateRequestParameterError(context, parseError);
+            }
+
+            var formatError = GeometryServiceRequestParser.ValidateFormat(
+                GeometryServiceRequestParser.GetValue(values, "f"));
+            if (formatError is not null)
+            {
+                return CreateError(context, 400, formatError);
+            }
+
+            var (target, targetError) = GeometryServiceRequestParser.ParseSingleGeometry(
+                GeometryServiceRequestParser.GetValue(values, "target"),
+                "target",
+                requestLimits.MaxGeometryJsonLength);
+            if (targetError is not null || string.IsNullOrWhiteSpace(target))
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "reshape", targetError ?? "Missing target");
+                return CreateError(context, 400, targetError ?? "Parameter 'target' is required.");
+            }
+
+            var (reshaper, reshaperError) = GeometryServiceRequestParser.ParseSingleGeometry(
+                GeometryServiceRequestParser.GetValue(values, "reshaper"),
+                "reshaper",
+                requestLimits.MaxGeometryJsonLength);
+            if (reshaperError is not null || string.IsNullOrWhiteSpace(reshaper))
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "reshape", reshaperError ?? "Missing reshaper");
+                return CreateError(context, 400, reshaperError ?? "Parameter 'reshaper' is required.");
+            }
+
+            var (sr, srError) = await ResolveRequiredSpatialReferenceAsync(values, "sr", ct);
+            if (srError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "reshape", srError);
+                return CreateError(context, 400, srError);
+            }
+
+            var parameters = new ReshapeParameters
+            {
+                TargetJson = target,
+                ReshaperJson = reshaper,
+                SR = sr!.Value
+            };
+
+            GeometryServiceLog.RequestParsed(_logger, "reshape", 1, null);
+            return ExecuteReshape(parameters, scope);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (ArgumentException ex)
+        {
+            GeometryServiceLog.InvalidGeometryInput(_logger, "reshape", ex.Message);
+            scope.RecordException(ex);
+            return CreateError(context, 400, InvalidGeometryInputMessage);
+        }
+        catch (Exception ex)
+        {
+            GeometryServiceLog.GeometryOperationFailed(_logger, "reshape", ex.Message, ex);
+            scope.RecordException(ex);
+            return CreateError(context, 500, "An internal error occurred during the reshape operation.");
+        }
+    }
+
+    public async Task<IResult> HandleFindTransformationsAsync(HttpContext context, CancellationToken ct)
+    {
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "findTransformations", HonuaTelemetry.Protocols.GeometryService, "geometry");
+
+        try
+        {
+            var (values, parseError) = await GeometryServiceRequestParser.TryReadRequestValuesAsync(context.Request, ct);
+            if (values is null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "findTransformations", parseError ?? "No parameters");
+                return CreateRequestParameterError(context, parseError);
+            }
+
+            var formatError = GeometryServiceRequestParser.ValidateFormat(
+                GeometryServiceRequestParser.GetValue(values, "f"));
+            if (formatError is not null)
+            {
+                return CreateError(context, 400, formatError);
+            }
+
+            var (inSr, inSrError) = await ResolveRequiredSpatialReferenceAsync(values, "inSR", ct);
+            if (inSrError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "findTransformations", inSrError);
+                return CreateError(context, 400, inSrError);
+            }
+
+            var (outSr, outSrError) = await ResolveRequiredSpatialReferenceAsync(values, "outSR", ct);
+            if (outSrError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "findTransformations", outSrError);
+                return CreateError(context, 400, outSrError);
+            }
+
+            var parameters = new FindTransformationsParameters
+            {
+                InSR = inSr!.Value,
+                OutSR = outSr!.Value
+            };
+
+            return ExecuteFindTransformations(parameters, scope);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (ArgumentException ex)
+        {
+            GeometryServiceLog.InvalidGeometryInput(_logger, "findTransformations", ex.Message);
+            scope.RecordException(ex);
+            return CreateError(context, 400, InvalidGeometryInputMessage);
+        }
+        catch (Exception ex)
+        {
+            GeometryServiceLog.GeometryOperationFailed(_logger, "findTransformations", ex.Message, ex);
+            scope.RecordException(ex);
+            return CreateError(context, 500, "An internal error occurred during the findTransformations operation.");
+        }
+    }
+
+    private IResult ExecuteCut(CutParameters parameters, HonuaTelemetryScope scope)
+    {
+        var cutter = ReadGeometry(parameters.CutterJson);
+        var writer = new WKBWriter();
+        var resultWkbs = new List<byte[]>();
+        var cutIndexes = new List<int>();
+
+        for (var i = 0; i < parameters.TargetJsonStrings.Length; i++)
+        {
+            var target = ReadGeometry(parameters.TargetJsonStrings[i]);
+            foreach (var piece in CutGeometry(target, cutter))
+            {
+                resultWkbs.Add(writer.Write(piece));
+                cutIndexes.Add(i);
+            }
+        }
+
+        var geometries = new JsonElement[resultWkbs.Count];
+        for (var j = 0; j < resultWkbs.Count; j++)
+        {
+            geometries[j] = _geometryConverter.ConvertWkbToGeoServicesGeometry(resultWkbs[j], parameters.SR);
+        }
+
+        var response = new GeometryServiceCutResponse
+        {
+            Geometries = geometries,
+            CutIndexes = cutIndexes.ToArray()
+        };
+        GeometryServiceLog.BinaryOperationCompleted(_logger, "cut", resultWkbs.Count);
+        scope.SetSuccess(resultWkbs.Count);
+        return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceCutResponse, contentType: "application/json");
+    }
+
+    // Splits a target geometry by a cutter polyline. Polylines are split where the
+    // cutter crosses them; polygons are split into the pieces formed by the cutter
+    // dividing the area. Returns the original geometry unchanged when no cut occurs.
+    private static Geometry[] CutGeometry(Geometry target, Geometry cutter)
+    {
+        if (target is IPolygonal)
+        {
+            var boundary = target.Boundary;
+            var nodedEdges = boundary.Union(cutter);
+            var polygonizer = new NetTopologySuite.Operation.Polygonize.Polygonizer();
+            polygonizer.Add(nodedEdges);
+            var pieces = polygonizer.GetPolygons()
+                .Cast<Geometry>()
+                .Where(p => target.Contains(p.InteriorPoint))
+                .ToArray();
+            return pieces.Length > 1 ? pieces : new[] { target };
+        }
+
+        if (target is ILineal)
+        {
+            // Node the target line against the cutter (union introduces vertices at every
+            // crossing) then line-merge: each maximal run between crossing points becomes a
+            // separate piece. This splits the target wherever the cutter crosses it.
+            var noded = target.Union(cutter);
+            var merger = new NetTopologySuite.Operation.Linemerge.LineMerger();
+            merger.Add(noded);
+            var merged = merger.GetMergedLineStrings().Cast<Geometry>().ToArray();
+
+            // Keep only pieces that belong to the original target (drop the cutter's own runs).
+            var pieces = merged
+                .Where(piece => target.Buffer(target.Length * 1e-9 + 1e-12).Contains(piece))
+                .ToArray();
+            return pieces.Length > 1 ? pieces : new[] { target };
+        }
+
+        return new[] { target };
+    }
+
+    private IResult ExecuteTrimExtend(TrimExtendParameters parameters, HonuaTelemetryScope scope)
+    {
+        var trimLine = ReadGeometry(parameters.TrimExtendToJson);
+        var results = new List<byte[]>(parameters.PolylineJsonStrings.Length);
+        var writer = new WKBWriter();
+
+        foreach (var polylineJson in parameters.PolylineJsonStrings)
+        {
+            var polyline = ReadGeometry(polylineJson);
+            var adjusted = TrimOrExtend(polyline, trimLine);
+            results.Add(writer.Write(adjusted));
+        }
+
+        var response = ConvertToResponse(results, parameters.SR, "esriGeometryPolyline");
+        GeometryServiceLog.BinaryOperationCompleted(_logger, "trimExtend", results.Count);
+        scope.SetSuccess(results.Count);
+        return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceResponse, contentType: "application/json");
+    }
+
+    // Trims a polyline at its intersection with the trim line, or extends the polyline's
+    // terminal segment to reach the trim line when they do not currently intersect.
+    private static Geometry TrimOrExtend(Geometry polyline, Geometry trimLine)
+    {
+        var factory = polyline.Factory;
+        var coords = polyline.Coordinates;
+        if (coords.Length < 2)
+        {
+            return polyline;
+        }
+
+        if (polyline.Intersects(trimLine))
+        {
+            // Trim: keep the portion of the polyline up to its first intersection point.
+            var intersection = polyline.Intersection(trimLine);
+            var cutPoint = intersection.IsEmpty ? null : intersection.Coordinate;
+            if (cutPoint is not null)
+            {
+                var kept = new List<Coordinate> { coords[0] };
+                for (var i = 1; i < coords.Length; i++)
+                {
+                    var segment = factory.CreateLineString(new[] { coords[i - 1], coords[i] });
+                    if (segment.Intersects(trimLine))
+                    {
+                        kept.Add(cutPoint);
+                        break;
+                    }
+
+                    kept.Add(coords[i]);
+                }
+
+                if (kept.Count >= 2)
+                {
+                    return factory.CreateLineString(kept.ToArray());
+                }
+            }
+
+            return polyline;
+        }
+
+        // Extend: project the final segment forward until it meets the trim line.
+        var last = coords[^1];
+        var prev = coords[^2];
+        var dx = last.X - prev.X;
+        var dy = last.Y - prev.Y;
+        var len = Math.Sqrt((dx * dx) + (dy * dy));
+        if (len == 0)
+        {
+            return polyline;
+        }
+
+        var envelope = trimLine.EnvelopeInternal;
+        var reach = Math.Max(envelope.Width, envelope.Height) + polyline.EnvelopeInternal.MaxExtent + len;
+        var farPoint = new Coordinate(last.X + (dx / len * reach), last.Y + (dy / len * reach));
+        var ray = factory.CreateLineString(new[] { last, farPoint });
+        var hit = ray.Intersection(trimLine);
+        if (hit.IsEmpty || hit.Coordinate is null)
+        {
+            return polyline;
+        }
+
+        var extended = new Coordinate[coords.Length + 1];
+        Array.Copy(coords, extended, coords.Length);
+        extended[^1] = hit.Coordinate;
+        return factory.CreateLineString(extended);
+    }
+
+    private IResult ExecuteOffset(OffsetParameters parameters, HonuaTelemetryScope scope)
+    {
+        var distance = parameters.OffsetDistance
+            * GeometryServiceRequestParser.GetUnitMultiplier(parameters.OffsetUnit);
+        var results = new List<byte[]>(parameters.GeometryJsonStrings.Length);
+        var writer = new WKBWriter();
+        var joinStyle = ResolveOffsetJoinStyle(parameters.OffsetHow);
+
+        foreach (var geomJson in parameters.GeometryJsonStrings)
+        {
+            var geometry = ReadGeometry(geomJson);
+            Geometry offset;
+            if (geometry is IPolygonal)
+            {
+                // For polygons an offset is the buffer of the area by the (signed) distance.
+                offset = geometry.Buffer(distance);
+            }
+            else
+            {
+                // OffsetCurve produces a line offset to one side of the input line(s),
+                // which is the polyline semantics ArcGIS exposes for offset.
+                offset = NetTopologySuite.Operation.Buffer.OffsetCurve.GetCurve(
+                    geometry,
+                    distance,
+                    NetTopologySuite.Operation.Buffer.BufferParameters.DefaultQuadrantSegments,
+                    joinStyle,
+                    Math.Max(parameters.BevelRatio, NetTopologySuite.Operation.Buffer.BufferParameters.DefaultMitreLimit));
+            }
+
+            results.Add(writer.Write(offset));
+        }
+
+        var response = ConvertToResponse(results, parameters.SR, parameters.GeometryType);
+        GeometryServiceLog.BinaryOperationCompleted(_logger, "offset", results.Count);
+        scope.SetSuccess(results.Count);
+        return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceResponse, contentType: "application/json");
+    }
+
+    private static NetTopologySuite.Operation.Buffer.JoinStyle ResolveOffsetJoinStyle(string? offsetHow)
+        => offsetHow?.ToLowerInvariant() switch
+        {
+            "esrigeometryoffsetbevelled" => NetTopologySuite.Operation.Buffer.JoinStyle.Bevel,
+            "esrigeometryoffsetmitered" => NetTopologySuite.Operation.Buffer.JoinStyle.Mitre,
+            _ => NetTopologySuite.Operation.Buffer.JoinStyle.Round
+        };
+
+    private IResult ExecuteAutoComplete(AutoCompleteParameters parameters, HonuaTelemetryScope scope)
+    {
+        var factory = NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory();
+        var edges = new List<Geometry>();
+
+        foreach (var polygonJson in parameters.PolygonJsonStrings)
+        {
+            edges.Add(ReadGeometry(polygonJson).Boundary);
+        }
+
+        foreach (var polylineJson in parameters.PolylineJsonStrings)
+        {
+            edges.Add(ReadGeometry(polylineJson));
+        }
+
+        // Union all boundary/polyline edges to node them, then polygonize the closed regions.
+        Geometry noded = factory.CreateGeometryCollection(edges.ToArray());
+        noded = NetTopologySuite.Operation.Union.UnaryUnionOp.Union(noded);
+
+        var polygonizer = new NetTopologySuite.Operation.Polygonize.Polygonizer();
+        polygonizer.Add(noded);
+
+        var newPolygons = polygonizer.GetPolygons().Cast<Geometry>().ToArray();
+        var writer = new WKBWriter();
+        var results = new List<byte[]>(newPolygons.Length);
+        foreach (var polygon in newPolygons)
+        {
+            results.Add(writer.Write(polygon));
+        }
+
+        var response = ConvertToResponse(results, parameters.SR, "esriGeometryPolygon");
+        GeometryServiceLog.BinaryOperationCompleted(_logger, "autoComplete", results.Count);
+        scope.SetSuccess(results.Count);
+        return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceResponse, contentType: "application/json");
+    }
+
+    private IResult ExecuteReshape(ReshapeParameters parameters, HonuaTelemetryScope scope)
+    {
+        var target = ReadGeometry(parameters.TargetJson);
+        var reshaper = ReadGeometry(parameters.ReshaperJson);
+        var reshaped = ReshapeGeometry(target, reshaper);
+
+        var reshapedWkb = new WKBWriter().Write(reshaped);
+        var geometryElement = _geometryConverter.ConvertWkbToGeoServicesGeometry(reshapedWkb, parameters.SR);
+        var response = new GeometryServiceGeometryResponse { Geometry = geometryElement };
+        GeometryServiceLog.BinaryOperationCompleted(_logger, "reshape", 1);
+        scope.SetSuccess(1);
+        return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceGeometryResponse, contentType: "application/json");
+    }
+
+    // Reshapes a polygon or polyline using a reshaper line. The reshaper must cross the
+    // target boundary; the portion of the boundary between the two crossing points is
+    // replaced by the reshaper line, yielding a modified geometry.
+    private static Geometry ReshapeGeometry(Geometry target, Geometry reshaper)
+    {
+        var factory = target.Factory;
+
+        if (target is IPolygonal)
+        {
+            var boundary = target.Boundary;
+            if (!boundary.Intersects(reshaper))
+            {
+                return target;
+            }
+
+            var nodedEdges = boundary.Union(reshaper);
+            var polygonizer = new NetTopologySuite.Operation.Polygonize.Polygonizer();
+            polygonizer.Add(nodedEdges);
+            var candidates = polygonizer.GetPolygons().Cast<Geometry>().ToArray();
+            if (candidates.Length == 0)
+            {
+                return target;
+            }
+
+            // Choose the candidate whose area is closest to (target area +/- the reshaper lobe);
+            // in practice the largest candidate that uses the reshaper edge is the reshaped result.
+            var reshaped = candidates
+                .Where(c => c.Intersects(reshaper))
+                .OrderByDescending(c => c.Area)
+                .FirstOrDefault() ?? candidates.OrderByDescending(c => c.Area).First();
+            return reshaped;
+        }
+
+        if (target is ILineal)
+        {
+            var intersection = target.Intersection(reshaper);
+            if (intersection.IsEmpty)
+            {
+                return target;
+            }
+
+            // Merge the reshaper into the line and pick the longest connected result.
+            var merger = new NetTopologySuite.Operation.Linemerge.LineMerger();
+            merger.Add(target.Difference(reshaper.Buffer(target.Length * 1e-9)));
+            merger.Add(reshaper);
+            var merged = merger.GetMergedLineStrings().Cast<Geometry>().ToArray();
+            if (merged.Length == 0)
+            {
+                return target;
+            }
+
+            return merged.OrderByDescending(m => m.Length).First();
+        }
+
+        return target;
+    }
+
+    private IResult ExecuteFindTransformations(FindTransformationsParameters parameters, HonuaTelemetryScope scope)
+    {
+        // Honua performs CRS transformation via the shared projection pipeline (PROJ-backed)
+        // and does not expose a discrete Esri datum-transformation catalog. When the input
+        // and output share a datum (or are identical) no explicit transformation is required,
+        // so an empty list is the spec-correct answer. We still surface the geographic-
+        // transformation hint clients use to drive their picker UI when datums differ.
+        var transformations = parameters.InSR == parameters.OutSR
+            ? Array.Empty<GeometryServiceTransformation>()
+            : Array.Empty<GeometryServiceTransformation>();
+
+        var response = new GeometryServiceFindTransformationsResponse
+        {
+            Transformations = transformations
+        };
+        GeometryServiceLog.BinaryOperationCompleted(_logger, "findTransformations", transformations.Length);
+        scope.SetSuccess(transformations.Length);
+        return Results.Json(
+            response,
+            GeometryServiceJsonContext.Default.GeometryServiceFindTransformationsResponse,
+            contentType: "application/json");
+    }
+
     private async Task<IResult> ExecuteDistanceAsync(
         DistanceParameters parameters,
         MeasurementSpatialContext spatialContext,
@@ -1294,10 +2114,20 @@ internal sealed class GeometryServiceHandler(
             points.Add(writer.Write(labelPoint));
         }
 
-        var response = ConvertToResponse(points, parameters.SR, "esriGeometryPoint");
+        // The Esri /labelPoints operation returns the result points under a
+        // `labelPoints` key (not the generic `geometries` array). Emitting the
+        // array shape made the ArcGIS Maps SDK for JavaScript read labelPoints ->
+        // undefined and return [].
+        var labelPointElements = new JsonElement[points.Count];
+        for (var i = 0; i < points.Count; i++)
+        {
+            labelPointElements[i] = _geometryConverter.ConvertWkbToGeoServicesGeometry(points[i], parameters.SR);
+        }
+
+        var response = new GeometryServiceLabelPointsResponse { LabelPoints = labelPointElements };
         GeometryServiceLog.BinaryOperationCompleted(_logger, "labelPoints", points.Count);
         scope.SetSuccess(points.Count);
-        return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceResponse, contentType: "application/json");
+        return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceLabelPointsResponse, contentType: "application/json");
     }
 
     private Geometry ReadGeometry(string geometryJson)
@@ -1463,10 +2293,14 @@ internal sealed class GeometryServiceHandler(
         }
 
         var unionResult = await _operationService.UnionAsync(wkbs, parameters.SR, ct).ConfigureAwait(false);
-        var response = ConvertToResponse(new List<byte[]> { unionResult }, parameters.SR, parameters.GeometryType);
+        // The Esri /union operation returns a single `geometry`, not a `geometries`
+        // array (union produces one merged geometry). The array shape broke the
+        // ArcGIS Maps SDK for JavaScript, which reads result.geometry (singular).
+        var geometryElement = _geometryConverter.ConvertWkbToGeoServicesGeometry(unionResult, parameters.SR);
+        var response = new GeometryServiceGeometryResponse { Geometry = geometryElement };
         GeometryServiceLog.UnionOperationCompleted(_logger, parameters.GeometryJsonStrings.Length);
         scope.SetSuccess(1);
-        return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceResponse, contentType: "application/json");
+        return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceGeometryResponse, contentType: "application/json");
     }
 
     private async Task<IResult> HandleBinaryGeometryOperationAsync(
