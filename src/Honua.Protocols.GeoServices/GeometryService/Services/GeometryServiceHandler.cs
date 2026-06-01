@@ -1640,6 +1640,391 @@ internal sealed class GeometryServiceHandler(
         }
     }
 
+    public async Task<IResult> HandleToGeoCoordinateStringAsync(HttpContext context, CancellationToken ct)
+    {
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "toGeoCoordinateString", HonuaTelemetry.Protocols.GeometryService, "geometry");
+
+        try
+        {
+            var (values, parseError) = await GeometryServiceRequestParser.TryReadRequestValuesAsync(context.Request, ct);
+            if (values is null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "toGeoCoordinateString", parseError ?? "No parameters");
+                return CreateRequestParameterError(context, parseError);
+            }
+
+            var formatError = GeometryServiceRequestParser.ValidateFormat(
+                GeometryServiceRequestParser.GetValue(values, "f"));
+            if (formatError is not null)
+            {
+                return CreateError(context, 400, formatError);
+            }
+
+            var (sr, srError) = await ResolveRequiredSpatialReferenceAsync(values, "sr", ct);
+            if (srError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "toGeoCoordinateString", srError);
+                return CreateError(context, 400, srError);
+            }
+
+            var (conversionType, typeError) = ResolveGeoCoordinateConversionType(values);
+            if (typeError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "toGeoCoordinateString", typeError);
+                return CreateError(context, 400, typeError);
+            }
+
+            var (coordinates, coordError) = ParseCoordinatePairs(
+                GeometryServiceRequestParser.GetValue(values, "coordinates"));
+            if (coordError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "toGeoCoordinateString", coordError);
+                return CreateError(context, 400, coordError);
+            }
+
+            if (coordinates.Length == 0)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "toGeoCoordinateString", "No coordinates provided");
+                return CreateError(context, 400, "Parameter 'coordinates' must contain at least one coordinate.");
+            }
+
+            var (numOfDigits, digitsError) = ParseNumOfDigits(GeometryServiceRequestParser.GetValue(values, "numOfDigits"));
+            if (digitsError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "toGeoCoordinateString", digitsError);
+                return CreateError(context, 400, digitsError);
+            }
+
+            var parameters = new ToGeoCoordinateStringParameters
+            {
+                Coordinates = coordinates,
+                SR = sr!.Value,
+                ConversionType = conversionType,
+                ConversionMode = GeometryServiceRequestParser.GetValue(values, "conversionMode"),
+                NumOfDigits = numOfDigits,
+                AddSpaces = !GeometryServiceRequestParser.ParseBool(
+                    GeometryServiceRequestParser.GetValue(values, "rounding"))
+            };
+
+            return await ExecuteToGeoCoordinateStringAsync(parameters, scope, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (ArgumentException ex)
+        {
+            GeometryServiceLog.InvalidGeometryInput(_logger, "toGeoCoordinateString", ex.Message);
+            scope.RecordException(ex);
+            return CreateError(context, 400, InvalidGeometryInputMessage);
+        }
+        catch (Exception ex)
+        {
+            GeometryServiceLog.GeometryOperationFailed(_logger, "toGeoCoordinateString", ex.Message, ex);
+            scope.RecordException(ex);
+            return CreateError(context, 500, "An internal error occurred during the toGeoCoordinateString operation.");
+        }
+    }
+
+    public async Task<IResult> HandleFromGeoCoordinateStringAsync(HttpContext context, CancellationToken ct)
+    {
+        using var scope = HonuaTelemetryScope.StartFeature(
+            "fromGeoCoordinateString", HonuaTelemetry.Protocols.GeometryService, "geometry");
+
+        try
+        {
+            var (values, parseError) = await GeometryServiceRequestParser.TryReadRequestValuesAsync(context.Request, ct);
+            if (values is null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "fromGeoCoordinateString", parseError ?? "No parameters");
+                return CreateRequestParameterError(context, parseError);
+            }
+
+            var formatError = GeometryServiceRequestParser.ValidateFormat(
+                GeometryServiceRequestParser.GetValue(values, "f"));
+            if (formatError is not null)
+            {
+                return CreateError(context, 400, formatError);
+            }
+
+            var (sr, srError) = await ResolveRequiredSpatialReferenceAsync(values, "sr", ct);
+            if (srError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "fromGeoCoordinateString", srError);
+                return CreateError(context, 400, srError);
+            }
+
+            var (conversionType, typeError) = ResolveGeoCoordinateConversionType(values);
+            if (typeError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "fromGeoCoordinateString", typeError);
+                return CreateError(context, 400, typeError);
+            }
+
+            var (strings, stringsError) = ParseGeoCoordinateStrings(
+                GeometryServiceRequestParser.GetValue(values, "strings"));
+            if (stringsError is not null)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "fromGeoCoordinateString", stringsError);
+                return CreateError(context, 400, stringsError);
+            }
+
+            if (strings.Length == 0)
+            {
+                GeometryServiceLog.InvalidGeometryInput(_logger, "fromGeoCoordinateString", "No strings provided");
+                return CreateError(context, 400, "Parameter 'strings' must contain at least one grid reference string.");
+            }
+
+            var parameters = new FromGeoCoordinateStringParameters
+            {
+                Strings = strings,
+                SR = sr!.Value,
+                ConversionType = conversionType,
+                ConversionMode = GeometryServiceRequestParser.GetValue(values, "conversionMode")
+            };
+
+            return await ExecuteFromGeoCoordinateStringAsync(parameters, scope, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (ArgumentException ex)
+        {
+            GeometryServiceLog.InvalidGeometryInput(_logger, "fromGeoCoordinateString", ex.Message);
+            scope.RecordException(ex);
+            return CreateError(context, 400, InvalidGeometryInputMessage);
+        }
+        catch (Exception ex)
+        {
+            GeometryServiceLog.GeometryOperationFailed(_logger, "fromGeoCoordinateString", ex.Message, ex);
+            scope.RecordException(ex);
+            return CreateError(context, 500, "An internal error occurred during the fromGeoCoordinateString operation.");
+        }
+    }
+
+    private async Task<IResult> ExecuteToGeoCoordinateStringAsync(
+        ToGeoCoordinateStringParameters parameters,
+        HonuaTelemetryScope scope,
+        CancellationToken ct)
+    {
+        var strings = new string[parameters.Coordinates.Length];
+        for (var i = 0; i < parameters.Coordinates.Length; i++)
+        {
+            var coordinate = parameters.Coordinates[i];
+            var (longitude, latitude) = await ToWgs84Async(coordinate[0], coordinate[1], parameters.SR, ct)
+                .ConfigureAwait(false);
+
+            // USNG conventionally inserts spaces; MGRS conventionally omits them. The
+            // grid scheme is identical, so only the formatting differs.
+            var addSpaces = parameters.AddSpaces
+                && !string.Equals(parameters.ConversionType, "MGRS", StringComparison.OrdinalIgnoreCase);
+
+            strings[i] = MgrsConverter.ToMgrs(longitude, latitude, parameters.NumOfDigits, addSpaces);
+        }
+
+        var response = new GeometryServiceToGeoCoordinateStringResponse { Strings = strings };
+        GeometryServiceLog.BinaryOperationCompleted(_logger, "toGeoCoordinateString", strings.Length);
+        scope.SetSuccess(strings.Length);
+        return Results.Json(
+            response,
+            GeometryServiceJsonContext.Default.GeometryServiceToGeoCoordinateStringResponse,
+            contentType: "application/json");
+    }
+
+    private async Task<IResult> ExecuteFromGeoCoordinateStringAsync(
+        FromGeoCoordinateStringParameters parameters,
+        HonuaTelemetryScope scope,
+        CancellationToken ct)
+    {
+        var coordinates = new double[parameters.Strings.Length][];
+        for (var i = 0; i < parameters.Strings.Length; i++)
+        {
+            var (longitude, latitude) = MgrsConverter.FromMgrs(parameters.Strings[i]);
+            var (x, y) = await FromWgs84Async(longitude, latitude, parameters.SR, ct).ConfigureAwait(false);
+            coordinates[i] = [x, y];
+        }
+
+        var response = new GeometryServiceFromGeoCoordinateStringResponse { Coordinates = coordinates };
+        GeometryServiceLog.BinaryOperationCompleted(_logger, "fromGeoCoordinateString", coordinates.Length);
+        scope.SetSuccess(coordinates.Length);
+        return Results.Json(
+            response,
+            GeometryServiceJsonContext.Default.GeometryServiceFromGeoCoordinateStringResponse,
+            contentType: "application/json");
+    }
+
+    // MGRS / USNG are defined on geographic (longitude/latitude) coordinates, so
+    // projected inputs are reprojected to WGS84 before grid encoding.
+    private async Task<(double Longitude, double Latitude)> ToWgs84Async(double x, double y, int srid, CancellationToken ct)
+    {
+        if (srid == 4326)
+        {
+            return (x, y);
+        }
+
+        var pointWkb = new WKBWriter().Write(
+            NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory().CreatePoint(new Coordinate(x, y)));
+        var projectedWkb = await _operationService.ProjectAsync(pointWkb, srid, 4326, ct).ConfigureAwait(false);
+        var projected = (Point)new WKBReader().Read(projectedWkb);
+        return (projected.X, projected.Y);
+    }
+
+    private async Task<(double X, double Y)> FromWgs84Async(double longitude, double latitude, int srid, CancellationToken ct)
+    {
+        if (srid == 4326)
+        {
+            return (longitude, latitude);
+        }
+
+        var pointWkb = new WKBWriter().Write(
+            NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory().CreatePoint(new Coordinate(longitude, latitude)));
+        var projectedWkb = await _operationService.ProjectAsync(pointWkb, 4326, srid, ct).ConfigureAwait(false);
+        var projected = (Point)new WKBReader().Read(projectedWkb);
+        return (projected.X, projected.Y);
+    }
+
+    private static (string ConversionType, string? Error) ResolveGeoCoordinateConversionType(
+        IReadOnlyDictionary<string, StringValues> values)
+    {
+        var raw = GeometryServiceRequestParser.GetValue(values, "conversionType");
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            // Esri defaults to MGRS when conversionType is omitted.
+            return ("MGRS", null);
+        }
+
+        var normalized = raw.Trim();
+        if (string.Equals(normalized, "MGRS", StringComparison.OrdinalIgnoreCase))
+        {
+            return ("MGRS", null);
+        }
+
+        if (string.Equals(normalized, "USNG", StringComparison.OrdinalIgnoreCase))
+        {
+            return ("USNG", null);
+        }
+
+        // UTM, GARS, and GEOREF are recognized Esri conversion types but are not yet
+        // implemented; return a clear 400 rather than a 500.
+        if (string.Equals(normalized, "UTM", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(normalized, "GARS", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(normalized, "GEOREF", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(normalized, "DD", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(normalized, "DDM", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(normalized, "DMS", StringComparison.OrdinalIgnoreCase))
+        {
+            return (normalized, $"Conversion type '{normalized}' is not supported. Supported types: MGRS, USNG.");
+        }
+
+        return (normalized, $"Parameter 'conversionType' value '{normalized}' is not recognized. Supported types: MGRS, USNG.");
+    }
+
+    private static (double[][] Coordinates, string? Error) ParseCoordinatePairs(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return ([], "Parameter 'coordinates' is required.");
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return ([], "Parameter 'coordinates' must be a JSON array of [x, y] pairs.");
+            }
+
+            var result = new List<double[]>(doc.RootElement.GetArrayLength());
+            foreach (var pair in doc.RootElement.EnumerateArray())
+            {
+                if (pair.ValueKind != JsonValueKind.Array || pair.GetArrayLength() < 2)
+                {
+                    return ([], "Each entry in 'coordinates' must be an [x, y] array with at least two numbers.");
+                }
+
+                if (!pair[0].TryGetDouble(out var x) || !pair[1].TryGetDouble(out var y))
+                {
+                    return ([], "Each coordinate in 'coordinates' must contain numeric x and y values.");
+                }
+
+                result.Add([x, y]);
+            }
+
+            return (result.ToArray(), null);
+        }
+        catch (JsonException)
+        {
+            return ([], "Parameter 'coordinates' contains invalid JSON.");
+        }
+    }
+
+    private static (string[] Strings, string? Error) ParseGeoCoordinateStrings(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return ([], "Parameter 'strings' is required.");
+        }
+
+        var trimmed = raw.TrimStart();
+        if (trimmed.StartsWith('['))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(raw);
+                if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                {
+                    return ([], "Parameter 'strings' must be a JSON array of grid reference strings.");
+                }
+
+                var result = new List<string>(doc.RootElement.GetArrayLength());
+                foreach (var item in doc.RootElement.EnumerateArray())
+                {
+                    if (item.ValueKind != JsonValueKind.String)
+                    {
+                        return ([], "Each entry in 'strings' must be a string.");
+                    }
+
+                    var value = item.GetString();
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        result.Add(value);
+                    }
+                }
+
+                return (result.ToArray(), null);
+            }
+            catch (JsonException)
+            {
+                return ([], "Parameter 'strings' contains invalid JSON.");
+            }
+        }
+
+        // Single bare string value (GET convenience form).
+        return ([raw], null);
+    }
+
+    private static (int NumOfDigits, string? Error) ParseNumOfDigits(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return (5, null);
+        }
+
+        if (!int.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture, out var digits))
+        {
+            return (5, "Parameter 'numOfDigits' must be an integer between 0 and 5.");
+        }
+
+        if (digits is < 0 or > 5)
+        {
+            return (5, "Parameter 'numOfDigits' must be between 0 and 5.");
+        }
+
+        return (digits, null);
+    }
+
     private IResult ExecuteCut(CutParameters parameters, HonuaTelemetryScope scope)
     {
         var cutter = ReadGeometry(parameters.CutterJson);

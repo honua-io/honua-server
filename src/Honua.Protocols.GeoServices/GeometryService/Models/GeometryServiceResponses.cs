@@ -183,6 +183,31 @@ public sealed class GeometryServiceTransformation
 }
 
 /// <summary>
+/// Response payload for the <c>toGeoCoordinateString</c> operation.
+/// </summary>
+public sealed class GeometryServiceToGeoCoordinateStringResponse
+{
+    /// <summary>
+    /// Grid reference strings (for example MGRS or USNG), one per input coordinate.
+    /// </summary>
+    [JsonPropertyName("strings")]
+    public string[]? Strings { get; init; }
+}
+
+/// <summary>
+/// Response payload for the <c>fromGeoCoordinateString</c> operation.
+/// </summary>
+public sealed class GeometryServiceFromGeoCoordinateStringResponse
+{
+    /// <summary>
+    /// Decoded coordinates as <c>[x, y]</c> pairs in the requested spatial reference,
+    /// one per input grid reference string.
+    /// </summary>
+    [JsonPropertyName("coordinates")]
+    public double[][]? Coordinates { get; init; }
+}
+
+/// <summary>
 /// Error response for geometry service operations.
 /// </summary>
 public sealed class GeometryServiceErrorResponse

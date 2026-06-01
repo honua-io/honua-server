@@ -30,6 +30,8 @@ Sources:
 | Union | `/GeometryServer/union` | GET, POST | Implemented | `GET/POST /rest/services/geometry/union` | Returns a single unioned geometry. |
 | Clip | `/GeometryServer/clip` | GET, POST | Implemented | `GET/POST /rest/services/geometry/clip` | Uses `geometries` plus a clipping `geometry`; see limitations for envelope behavior. |
 | Difference | `/GeometryServer/difference` | GET, POST | Implemented | `GET/POST /rest/services/geometry/difference` | Uses `geometries` plus an eraser `geometry`. |
+| To Geo Coordinate String | `/GeometryServer/toGeoCoordinateString` | GET, POST | Implemented | `GET/POST /rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString` | Supports `conversionType` of `MGRS` and `USNG`. Coordinates are reprojected to WGS84 when `sr` is not 4326. `UTM`, `GARS`, and `GEOREF` return a clear 400. |
+| From Geo Coordinate String | `/GeometryServer/fromGeoCoordinateString` | GET, POST | Implemented | `GET/POST /rest/services/Utilities/Geometry/GeometryServer/fromGeoCoordinateString` | Supports `conversionType` of `MGRS` and `USNG`. Decoded WGS84 coordinates are reprojected to `sr` when it is not 4326. |
 
 ### Not implemented
 
@@ -42,14 +44,12 @@ Sources:
 | Densify | `/GeometryServer/densify` | GET, POST | Not implemented | |
 | Distance | `/GeometryServer/distance` | GET, POST | Not implemented | |
 | Find Transformations | `/GeometryServer/findTransformations` | GET, POST | Not implemented | |
-| From Geo Coordinate String | `/GeometryServer/fromGeoCoordinateString` | GET, POST | Not implemented | |
 | Generalize | `/GeometryServer/generalize` | GET, POST | Not implemented | |
 | Label Points | `/GeometryServer/labelPoints` | GET, POST | Not implemented | |
 | Lengths | `/GeometryServer/lengths` | GET, POST | Not implemented | Honua exposes `/rest/services/geometry/length` instead of the Esri canonical route. |
 | Offset | `/GeometryServer/offset` | GET, POST | Not implemented | |
 | Relation | `/GeometryServer/relation` | GET, POST | Not implemented | |
 | Reshape | `/GeometryServer/reshape` | GET, POST | Not implemented | |
-| To Geo Coordinate String | `/GeometryServer/toGeoCoordinateString` | GET, POST | Not implemented | |
 | Trim/Extend | `/GeometryServer/trimExtend` | GET, POST | Not implemented | |
 
 ## Honua supplemental routes
