@@ -449,6 +449,11 @@ builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleS
         sp.GetService<TimeProvider>() ?? TimeProvider.System));
 builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleDependencyClosureValidator,
     Honua.Server.Features.Console.Services.ConsoleDependencyClosureValidator>();
+// Console open-data DCAT + STAC publication state (#1214). In-memory store shares
+// the persistent-store follow-on (#1163) with the content/share stores.
+builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleOpenDataStore>(sp =>
+    new Honua.Server.Features.Console.Services.InMemoryConsoleOpenDataStore(
+        sp.GetService<TimeProvider>() ?? TimeProvider.System));
 // Console catalog discovery-endpoints registry read model (#1279). The discovery
 // dialects a server publishes are a server-wide config/metadata concern; this
 // config-backed read model materialises them into the Console projection. A
@@ -1066,6 +1071,9 @@ app.MapConsoleActionEndpoints();
 app.MapConsoleShareEndpoints();
 app.MapCatalogDiscoveryEndpoints();
 app.MapConsoleSharePublicEndpoints();
+// Console open-data DCAT + STAC publication API (#1214)
+app.MapConsoleOpenDataEndpoints();
+app.MapConsoleOpenDataPublicEndpoints();
 app.MapStudioPackageEndpoints();
 app.MapStudioMapCollaborationEndpoints();
 app.MapWorkflowPackageEndpoints();

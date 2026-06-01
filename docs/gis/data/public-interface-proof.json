@@ -488,6 +488,51 @@
       ]
     },
     {
+      "surfaceId": "console-open-data-dcat-stac",
+      "displayName": "Console open-data DCAT and STAC publication API",
+      "surfaceKind": "http-route-family",
+      "protocol": "Admin API + HTTP",
+      "canonicalIdentifier": "/api/v1/console/content/{id}/open-data/** + /api/v1/open-data/**",
+      "parentSurfaceId": "console-content-rbac",
+      "endpointPrefixes": [
+        "/api/v1/open-data/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [
+        "/open-data"
+      ],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus open-data endpoint integration tests for the authenticated page read/write, eligibility, DCAT export preview, and STAC publish/update/unpublish/status controls, and the anonymous dataset, data.json, Schema.org, and STAC catalog/collection/item reads",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Console/ConsoleOpenDataEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1214",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "scenario-depth",
+          "proofMechanism": "Open-data projection tests cover DCAT-US 3.0/data.json field mapping and validation success and exceptions, STAC collection/item projection, Schema.org Dataset projection, eligibility transitions for distributable and non-distributable types, and non-leaking anonymous denial for private, ineligible, missing, and unpublished resources",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "tests/dotnet/Honua.Server.Tests/Features/Console/ConsoleOpenDataEndpointsTests.cs",
+            "src/Honua.Server/Features/Console/Services/ConsoleOpenDataMapper.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#1214",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "studio-package-lifecycle",
       "displayName": "Studio package lifecycle API",
       "surfaceKind": "http-route-family",

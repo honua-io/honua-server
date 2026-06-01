@@ -376,6 +376,68 @@ All denial paths for missing, private, expired, revoked, invalid, or
 no-longer-covered tokens return `404` with a generic `ApiResponse<object>`
 message and do not include the private item id, title, or existence hint.
 
+## Open-data DCAT and STAC publication (#1214)
+
+The open-data API exposes server-owned open-data page editing, eligibility
+evaluation, DCAT-US 3.0/data.json export, STAC publication controls, and the
+anonymous open-data/STAC reads. It builds on the Share access tier: an item is
+open-data eligible only when it is a distributable type (`layer`, `service`,
+`open-data`) and its effective Share access tier is `public-indexed`.
+
+### Authenticated controls
+
+Routes are admin-authorized under `/api/v1/console/content/{id}/open-data`:
+
+- `GET /open-data` — `ConsoleOpenDataPageResponse`: the editable page (filled
+  with item-derived defaults for blank fields), the eligibility decision, STAC
+  publication state, and DCAT validation status.
+- `PUT /open-data` — creates/replaces the page from `UpdateOpenDataPageRequest`.
+- `GET /open-data/eligibility` — `ConsoleOpenDataEligibilityResponse` with a
+  stable `reasonCode` (`eligible`, `not-distributable-type`,
+  `not-public-indexed`).
+- `GET /open-data/dcat` — `ConsoleDcatExportResponse`: the generated DCAT-US
+  catalog plus its `ConsoleOpenDataValidationResult`.
+- `GET /open-data/stac` — current `ConsoleStacPublicationState`.
+- `POST /open-data/stac/publish` — publishes/re-publishes. Returns `409` with a
+  `ConsoleOpenDataValidationResult` when the item is ineligible or the page has
+  DCAT validation errors; otherwise increments the publication revision and
+  assigns a stable collection id on first publish.
+- `DELETE /open-data/stac` — unpublishes (returns `404` when not published).
+
+### Anonymous reads
+
+Public, no-cache routes under `/api/v1/open-data`. Every handler re-checks
+eligibility (and, for STAC, publication) before disclosing anything; private,
+ineligible, missing, and unpublished resources all return an identical generic
+`404` that never leaks the item id, title, or existence:
+
+- `GET /open-data/datasets/{id}` — anonymous open-data page projection.
+- `GET /open-data/datasets/{id}/data.json` — DCAT-US 3.0/data.json document.
+- `GET /open-data/datasets/{id}/schema.org` — Schema.org `Dataset` JSON-LD.
+- `GET /open-data/stac` — STAC catalog root over published items.
+- `GET /open-data/stac/collections/{collectionId}` — STAC collection.
+- `GET /open-data/stac/collections/{collectionId}/items/{itemId}` — the
+  representative STAC item (one per published collection).
+
+### Field mapping
+
+| Open-data page field | DCAT-US 3.0 / data.json | STAC | Schema.org Dataset |
+|---|---|---|---|
+| `title` | `dataset.title` | collection/item `title` | `name` |
+| `description` | `dataset.description` | collection `description` | `description` |
+| `publisherName` | `dataset.publisher.name` | — | `publisher.name` |
+| `contactName` / `contactEmail` | `dataset.contactPoint.fn` / `hasEmail` (`mailto:`) | — | — |
+| `license` | `dataset.license` | collection `license` (`other` fallback) | `license` |
+| `landingPage` | `dataset.landingPage` | — | `url` |
+| `tags` | `dataset.keyword` | `keywords` | `keywords` |
+| `distributions[]` | `dataset.distribution[]` | `assets` | `distribution[]` (`DataDownload`) |
+| `spatialExtent` | `dataset.spatial` (`W,S,E,N`) | `extent.spatial.bbox` + item geometry | `spatialCoverage` (`GeoShape` box) |
+| `temporalExtent` | `dataset.temporal` (ISO interval) | `extent.temporal.interval` + item `datetime` | `temporalCoverage` |
+
+`accessLevel` is always `public` for open-data datasets. DCAT validation treats
+title, description, publisher, contact, and license as required (`error`
+severity) and distributions/spatial extent as recommended (`warning`).
+
 ## Bootstrap response
 
 `GET /api/v1/console/session` returns user profile, capability strings, route
@@ -393,8 +455,11 @@ produce typed helpers per `itemType` for the `typeMetadata` sidecar.
 `ConsoleJsonContext` names (`ConsoleShareProjection`,
 `ConsolePublicLinkToken`, `ConsoleEmbedToken`,
 `ConsoleShareDependencyClosureResponse`,
-`ConsolePublicLinkResolutionResponse`, and `ConsoleEmbedRedeemResponse`). No
-frontend-specific DTO forks.
+`ConsolePublicLinkResolutionResponse`, and `ConsoleEmbedRedeemResponse`). The
+open-data API adds `ConsoleOpenDataPage`, `ConsoleOpenDataEligibilityResponse`,
+`ConsoleStacPublicationState`, `ConsoleOpenDataValidationResult`, the DCAT
+(`DcatCatalog`), STAC projection (`StacProjectionCatalog`/`Collection`/`Item`),
+and Schema.org (`SchemaOrgDataset`) shapes. No frontend-specific DTO forks.
 
 ## Known follow-ons
 

@@ -435,6 +435,7 @@ public class ImageServerEndpointsTests
 
     [IntegrationTest]
     [Endpoint("POST /rest/services/{id}/ImageServer/keyProperties")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/keyProperties")]
     [Operation(Operations.Metadata)]
     public async Task KeyProperties_Post_ReturnsNonEmptyBandProperties()
     {
