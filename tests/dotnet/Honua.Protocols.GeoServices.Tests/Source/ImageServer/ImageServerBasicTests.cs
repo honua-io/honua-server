@@ -283,6 +283,7 @@ public class ImageServerBasicTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/getSamples")]
     [Endpoint("POST /rest/services/{serviceId}/ImageServer/getSamples")]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/keyProperties")]
+    [Endpoint("POST /rest/services/{serviceId}/ImageServer/keyProperties")]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/legend")]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/computeClassStatistics")]
     [Endpoint("POST /rest/services/{serviceId}/ImageServer/computeClassStatistics")]
@@ -339,6 +340,10 @@ public class ImageServerBasicTests : IAsyncLifetime
                 new("f", "json")
             ]),
             ($"/rest/services/{serviceId}/ImageServer/query",
+            [
+                new("f", "json")
+            ]),
+            ($"/rest/services/{serviceId}/ImageServer/keyProperties",
             [
                 new("f", "json")
             ]),
