@@ -37,8 +37,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         LayerExtentInsert? extent,
         CancellationToken cancellationToken)
     {
-        var snapshot = await _metadataGraphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var graph = snapshot.Graph;
+        var (graph, expectedEtag) = await LoadCurrentOrEmptyGraphAsync(cancellationToken).ConfigureAwait(false);
         var now = DateTimeOffset.UtcNow;
         var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
         var service = BuildPublishedService(graph, serviceName, srid, now);
@@ -99,7 +98,26 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 $"Published layer metadata v2 graph is invalid: {string.Join("; ", validation.Errors)}");
         }
 
-        await _metadataGraphStore.SaveAsync(updatedGraph, snapshot.Etag, cancellationToken).ConfigureAwait(false);
+        await _metadataGraphStore.SaveAsync(updatedGraph, expectedEtag, cancellationToken).ConfigureAwait(false);
+    }
+
+    // Loads the active Metadata v2 graph for mutation, tolerating a fresh-DB
+    // container where no snapshot has been activated yet (e.g. migration 031 ran
+    // but the compat/bootstrap compile has not). In that case we start from an
+    // empty graph and force the first write (null expectedEtag) instead of 500ing
+    // the admin layer-publish path. (honua-server#1341.)
+    private async Task<(MetadataV2Graph Graph, string? ExpectedEtag)> LoadCurrentOrEmptyGraphAsync(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var snapshot = await _metadataGraphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            return (snapshot.Graph, snapshot.Etag);
+        }
+        catch (InvalidOperationException)
+        {
+            return (new MetadataV2Graph(), null);
+        }
     }
 
     private async Task SyncRefreshedExtentsIntoV2GraphAsync(

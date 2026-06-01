@@ -22,6 +22,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore
 {
     private readonly IDatabaseConnectionProvider _connectionProvider;
     private readonly string _environment;
+    private readonly string _schemaName;
     private readonly string _snapshotsTable;
     private readonly string _currentTable;
     private readonly string _resourcesIdxTable;
@@ -44,6 +45,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore
 
         _connectionProvider = connectionProvider;
         _environment = environment;
+        _schemaName = string.IsNullOrWhiteSpace(schemaName) ? "honua" : schemaName.Trim();
         _snapshotsTable = Infrastructure.SchemaSearchPath.QualifyTable("metadata_v2_snapshots", schemaName);
         _currentTable = Infrastructure.SchemaSearchPath.QualifyTable("metadata_v2_current", schemaName);
         _resourcesIdxTable = Infrastructure.SchemaSearchPath.QualifyTable("metadata_v2_resources_idx", schemaName);
@@ -113,6 +115,13 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore
         var etag = ComputeEtag(json);
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+        // Self-heal the Metadata v2 schema so a fresh-DB container where migration
+        // 031 has not yet run does not 500 the admin layer-publish path. Idempotent
+        // CREATE TABLE IF NOT EXISTS — a no-op once the migration is applied.
+        // (honua-server#1341.)
+        await EnsureSchemaAsync(connection, cancellationToken).ConfigureAwait(false);
+
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         if (expectedEtag is not null)
@@ -136,6 +145,112 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore
         return snapshot;
     }
 
+    private async Task EnsureSchemaAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        // Mirrors migration 031_CreateMetadataV2Snapshot.sql. Idempotent so it is a
+        // no-op once the migration has run; only the snapshot + current tables and
+        // their referencing sidecars are required by this store's writes.
+        var schema = Infrastructure.SchemaSearchPath.ValidateAndQuote(_schemaName);
+        var sql = $"""
+            CREATE SCHEMA IF NOT EXISTS {schema};
+
+            CREATE TABLE IF NOT EXISTS {_snapshotsTable} (
+                environment       TEXT          NOT NULL,
+                revision          BIGINT        NOT NULL,
+                schema_version    TEXT          NOT NULL,
+                api_version       TEXT          NOT NULL,
+                document          JSONB         NOT NULL,
+                etag              TEXT          NOT NULL,
+                generated_at      TIMESTAMPTZ   NOT NULL,
+                created_at        TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (environment, revision)
+            );
+
+            CREATE TABLE IF NOT EXISTS {_currentTable} (
+                environment       TEXT          NOT NULL PRIMARY KEY,
+                revision          BIGINT        NOT NULL,
+                etag              TEXT          NOT NULL,
+                activated_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+                FOREIGN KEY (environment, revision)
+                    REFERENCES {_snapshotsTable}(environment, revision)
+                    ON DELETE RESTRICT
+            );
+
+            CREATE TABLE IF NOT EXISTS {_resourcesIdxTable} (
+                environment       TEXT          NOT NULL,
+                revision          BIGINT        NOT NULL,
+                resource_id       TEXT          NOT NULL,
+                name              TEXT          NOT NULL,
+                namespace         TEXT          NULL,
+                type              TEXT          NOT NULL,
+                primary_storage_binding_id TEXT NULL,
+                PRIMARY KEY (environment, revision, resource_id),
+                FOREIGN KEY (environment, revision)
+                    REFERENCES {_snapshotsTable}(environment, revision)
+                    ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS {_servicesIdxTable} (
+                environment       TEXT          NOT NULL,
+                revision          BIGINT        NOT NULL,
+                service_id        TEXT          NOT NULL,
+                name              TEXT          NOT NULL,
+                service_type      TEXT          NOT NULL,
+                route             TEXT          NULL,
+                PRIMARY KEY (environment, revision, service_id),
+                FOREIGN KEY (environment, revision)
+                    REFERENCES {_snapshotsTable}(environment, revision)
+                    ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS {_publicationsIdxTable} (
+                environment       TEXT          NOT NULL,
+                revision          BIGINT        NOT NULL,
+                publication_id    TEXT          NOT NULL,
+                service_id        TEXT          NOT NULL,
+                resource_id       TEXT          NOT NULL,
+                storage_binding_id TEXT         NULL,
+                publication_type  TEXT          NOT NULL,
+                path              TEXT          NULL,
+                layer_index       INT           NULL,
+                service_local_id  TEXT          NULL,
+                PRIMARY KEY (environment, revision, publication_id),
+                FOREIGN KEY (environment, revision)
+                    REFERENCES {_snapshotsTable}(environment, revision)
+                    ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS {_storageBindingsIdxTable} (
+                environment       TEXT          NOT NULL,
+                revision          BIGINT        NOT NULL,
+                storage_binding_id TEXT         NOT NULL,
+                resource_id       TEXT          NOT NULL,
+                connection_id     TEXT          NULL,
+                storage_type      TEXT          NOT NULL,
+                locator           TEXT          NOT NULL,
+                PRIMARY KEY (environment, revision, storage_binding_id),
+                FOREIGN KEY (environment, revision)
+                    REFERENCES {_snapshotsTable}(environment, revision)
+                    ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS {_connectionsIdxTable} (
+                environment       TEXT          NOT NULL,
+                revision          BIGINT        NOT NULL,
+                connection_id     TEXT          NOT NULL,
+                name              TEXT          NOT NULL,
+                type              TEXT          NOT NULL,
+                provider          TEXT          NULL,
+                PRIMARY KEY (environment, revision, connection_id),
+                FOREIGN KEY (environment, revision)
+                    REFERENCES {_snapshotsTable}(environment, revision)
+                    ON DELETE CASCADE
+            );
+            """;
+        await using var command = new NpgsqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task<MetadataV2GraphSnapshot?> TryLoadCurrentAsync(CancellationToken cancellationToken)
     {
         var sql = $"""
@@ -148,15 +263,26 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@environment", _environment);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        try
         {
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                return null;
+            }
+
+            var json = reader.GetString(0);
+            var etag = reader.GetString(1);
+            return MaterializeSnapshot(json, etag);
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            // Fresh-DB container where migration 031 has not yet created the
+            // metadata_v2 tables. Treat as "no snapshot" rather than 500ing the
+            // admin layer-publish path; SaveAsync self-heals the schema on write.
+            // (honua-server#1341.)
             return null;
         }
-
-        var json = reader.GetString(0);
-        var etag = reader.GetString(1);
-        return MaterializeSnapshot(json, etag);
     }
 
     private async Task<string?> ReadCurrentEtagAsync(
