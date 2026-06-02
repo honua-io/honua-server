@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -264,7 +265,7 @@ internal static partial class TilesEndpoints
 
         var cancellationToken = OgcTilesUtilities.GetTimeoutAwareCancellationToken(context);
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var resolution = ResolveCollectionLayer(context, snapshot, collectionId, missingCollectionIsBadRequest: false);
+        var resolution = await ResolveCollectionLayer(context, snapshot, collectionId, missingCollectionIsBadRequest: false, cancellationToken).ConfigureAwait(false);
         if (resolution.Error is not null)
         {
             return resolution.Error;
@@ -312,7 +313,7 @@ internal static partial class TilesEndpoints
 
         var cancellationToken = OgcTilesUtilities.GetTimeoutAwareCancellationToken(context);
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var resolution = ResolveCollectionLayer(context, snapshot, collectionId, missingCollectionIsBadRequest: false);
+        var resolution = await ResolveCollectionLayer(context, snapshot, collectionId, missingCollectionIsBadRequest: false, cancellationToken).ConfigureAwait(false);
         if (resolution.Error is not null)
         {
             return resolution.Error;
@@ -375,7 +376,7 @@ internal static partial class TilesEndpoints
             async cancellationToken =>
             {
                 var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-                var resolution = ResolveCollectionLayer(context, snapshot, collectionId, missingCollectionIsBadRequest: false);
+                var resolution = await ResolveCollectionLayer(context, snapshot, collectionId, missingCollectionIsBadRequest: false, cancellationToken).ConfigureAwait(false);
                 if (resolution.Error is not null)
                 {
                     return (Array.Empty<TileRequestLayer>(), resolution.Error);
@@ -1138,7 +1139,7 @@ internal static partial class TilesEndpoints
         var selectedLayers = new List<TileRequestLayer>(collectionIds.Length);
         foreach (var collectionId in collectionIds)
         {
-            var resolution = ResolveCollectionLayer(context, snapshot, collectionId, missingCollectionIsBadRequest: true);
+            var resolution = await ResolveCollectionLayer(context, snapshot, collectionId, missingCollectionIsBadRequest: true, cancellationToken).ConfigureAwait(false);
             if (resolution.Error is not null)
             {
                 return (Array.Empty<TileRequestLayer>(), resolution.Error);
@@ -1195,11 +1196,12 @@ internal static partial class TilesEndpoints
         return true;
     }
 
-    private static TileRequestLayerResolution ResolveCollectionLayer(
+    private static async Task<TileRequestLayerResolution> ResolveCollectionLayer(
         HttpContext context,
         MetadataV2GraphSnapshot snapshot,
         string collectionId,
-        bool missingCollectionIsBadRequest)
+        bool missingCollectionIsBadRequest,
+        CancellationToken cancellationToken)
     {
         var publication = FindCollectionPublication(snapshot, collectionId, requireProtocol: true, out var service);
         if (publication is null || service is null)
@@ -1220,7 +1222,10 @@ internal static partial class TilesEndpoints
             return new TileRequestLayerResolution(null, error);
         }
 
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+        // Tiles are a read surface: consult the per-operation resolver for the
+        // query grant first (#1376), falling back to the coarse AccessPolicy.
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resource, AuthorizationOperation.Query, service, cancellationToken).ConfigureAwait(false);
         if (accessError is not null)
         {
             return new TileRequestLayerResolution(null, accessError);

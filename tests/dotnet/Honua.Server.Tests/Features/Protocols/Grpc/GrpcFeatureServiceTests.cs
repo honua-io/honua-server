@@ -6,6 +6,9 @@ using System.Security.Claims;
 using FluentAssertions;
 using Grpc.Core;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -1006,6 +1009,62 @@ public sealed class GrpcFeatureServiceTests
         ex.Which.Status.Detail.Should().Be(AccessPolicyHelpers.AuthRequiredMessage);
     }
 
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    [Operation(Operations.Query)]
+    public async Task QueryFeatures_PerOperationQueryGrant_OverridesCoarseDeny()
+    {
+        // Coarse policy requires a role the user lacks (would deny), but the
+        // principal's role carries a per-operation "query" grant on the service,
+        // which the resolver must honor across the gRPC read seam (#1376).
+        var protectedService = CreateService(
+            "protected",
+            accessPolicy: new AccessPolicy { AllowedRoles = ["coarse-only"] });
+
+        _resourceValidator
+            .ValidateServiceLayerV2Async("protected", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(CreateTriple(protectedService, _testResource)));
+        _featureReader
+            .QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(0, ImmutableArray<Feature>.Empty));
+
+        var request = new Proto.QueryFeaturesRequest { ServiceId = "protected", LayerId = 0 };
+
+        var grant = new PermissionGrant { Service = "protected", Layer = "*", Operation = "query" };
+        var response = await _sut.QueryFeatures(
+            request,
+            CreateCallContext(CreateAuthenticatedUser("granted-role"), grant));
+
+        response.Should().NotBeNull();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    [Operation(Operations.Query)]
+    public async Task QueryFeatures_NoGrant_FallsBackToCoarseDeny()
+    {
+        // Same coarse deny, resolver registered but the user's role carries no
+        // matching grant → no-match → coarse AccessPolicy fallback denies (no
+        // regression for ungranted principals).
+        var protectedService = CreateService(
+            "protected",
+            accessPolicy: new AccessPolicy { AllowedRoles = ["coarse-only"] });
+
+        _resourceValidator
+            .ValidateServiceLayerV2Async("protected", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(CreateTriple(protectedService, _testResource)));
+
+        var request = new Proto.QueryFeaturesRequest { ServiceId = "protected", LayerId = 0 };
+
+        var grant = new PermissionGrant { Service = "other-service", Layer = "*", Operation = "query" };
+        var act = async () => await _sut.QueryFeatures(
+            request,
+            CreateCallContext(CreateAuthenticatedUser("granted-role"), grant));
+
+        var ex = await act.Should().ThrowAsync<RpcException>();
+        ex.Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
+    }
+
     private static MetadataV2Service CreateService(
         string name,
         AccessPolicy? accessPolicy = null,
@@ -1081,6 +1140,11 @@ public sealed class GrpcFeatureServiceTests
             resource);
 
     private static TestServerCallContext CreateCallContext(ClaimsPrincipal? user = null)
+        => CreateCallContext(user, resolverGrants: null);
+
+    private static TestServerCallContext CreateCallContext(
+        ClaimsPrincipal? user,
+        params PermissionGrant[]? resolverGrants)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
@@ -1088,6 +1152,17 @@ public sealed class GrpcFeatureServiceTests
         {
             opts.DataEditorRoles = ["data-editor"];
         });
+
+        // Register the per-operation resolver (#1376) so the gRPC read/write seams
+        // consult grants first; when no grant matches they fall back to the coarse
+        // AccessPolicy exactly as before. Omitting grants exercises that fallback.
+        if (resolverGrants is { Length: > 0 })
+        {
+            services.AddSingleton<IRoleStore>(new GrpcMatrixRoleStore(resolverGrants));
+            services.AddSingleton<IPermissionResolver>(sp =>
+                new PermissionResolver(sp.GetRequiredService<IRoleStore>()));
+        }
+
         var serviceProvider = services.BuildServiceProvider();
 
         var httpContext = new DefaultHttpContext
@@ -1163,6 +1238,46 @@ public sealed class GrpcFeatureServiceTests
             Pages.Add(message);
             return Task.CompletedTask;
         }
+    }
+
+    /// <summary>
+    /// Minimal <see cref="IRoleStore"/> that resolves the supplied per-operation
+    /// grants for any role, so the gRPC resolver-seam tests can prove a grant is
+    /// honored without standing up the full RBAC store.
+    /// </summary>
+    private sealed class GrpcMatrixRoleStore(PermissionGrant[] grants) : IRoleStore
+    {
+        public Task<EffectivePermissions> GetEffectivePermissionsAsync(
+            string userId,
+            IReadOnlyList<string> roles,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new EffectivePermissions
+            {
+                UserId = userId,
+                Roles = roles,
+                Permissions = roles.Count > 0 ? grants : [],
+            });
+
+        public Task<IReadOnlyList<RoleDefinition>> ListRolesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<RoleDefinition>>([]);
+
+        public Task<RoleDefinition?> GetRoleAsync(Guid roleId, CancellationToken cancellationToken = default)
+            => Task.FromResult<RoleDefinition?>(null);
+
+        public Task<RoleDefinition> CreateRoleAsync(RoleDefinition role, CancellationToken cancellationToken = default)
+            => Task.FromResult(role);
+
+        public Task<RoleDefinition?> UpdateRoleAsync(RoleDefinition role, CancellationToken cancellationToken = default)
+            => Task.FromResult<RoleDefinition?>(role);
+
+        public Task<bool> DeleteRoleAsync(Guid roleId, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
+        public Task<IReadOnlyList<PermissionGrant>> GetPermissionsAsync(Guid roleId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<PermissionGrant>>([]);
+
+        public Task<IReadOnlyList<PermissionGrant>> SetPermissionsAsync(Guid roleId, IReadOnlyList<PermissionGrant> permissions, CancellationToken cancellationToken = default)
+            => Task.FromResult(permissions);
     }
 }
 

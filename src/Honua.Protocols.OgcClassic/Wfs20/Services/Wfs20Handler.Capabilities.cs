@@ -15,6 +15,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
@@ -153,7 +154,12 @@ internal sealed partial class Wfs20Handler
 
             var resource = snapshot.ResolveResource(publication);
             if (resource is null ||
-                !AccessPolicyHelpers.IsResourceAccessible(context, resource, service))
+                !await AccessPolicyHelpers.IsResourceAccessibleAsync(
+                    context,
+                    resource,
+                    service,
+                    AuthorizationOperation.Query,
+                    cancellationToken).ConfigureAwait(false))
             {
                 continue;
             }

@@ -119,8 +119,24 @@ real (#1374 + #1375):
   per-operation grants, **falling back to the coarse `AccessPolicy` when no
   grant matches** (no behavior change for unconfigured services).
 
-Deferred to **#1376**: re-wiring every protocol adapter to call the resolver
-with the full per-operation taxonomy (the cross-protocol conformance matrix).
+- **#1376** — re-wired the remaining protocol adapters to the shared
+  `AccessPolicyHelpers` seam with the full per-operation taxonomy, so a
+  per-operation grant is honored consistently across surfaces: GeoServices
+  FeatureServer (query + edits/applyEdits/append/calculate/related-records/
+  attachments), OData (query + CRUD + batch), OGC API Features (read +
+  mutations), OGC API Tiles, WFS (GetFeature read filter + Transaction), and
+  gRPC. Routing happens centrally through the shared layer/collection/service
+  validators (`LayerValidationHelpers`, `ServiceResourceValidationHelpers`) plus
+  the write data-editor gate (`ServiceDataEditorAuthorization`), keeping adapters
+  thin. Explicit `AccessPolicy` write restrictions stay authoritative over the
+  resolver for writes; absent a grant, every surface falls back to the coarse
+  `AccessPolicy` exactly as before. A cross-protocol conformance matrix
+  (`CrossProtocolPermissionMatrixTests`) proves grant-honored vs no-grant-fallback
+  per protocol. MCP resource/tool access is intentionally out of scope: it
+  authorizes against the distinct operator-grant taxonomy
+  (`OperatorResourceType`/`OperatorOperation`), not the per-layer/service
+  `AuthorizationOperation` taxonomy, so it is tracked as a separate follow-up.
+
 Deferred to **#1242**: the OAuth2 bridge itself.
 
 ## Cross-references
@@ -128,4 +144,4 @@ Deferred to **#1242**: the OAuth2 bridge itself.
 - Complements ADR-0024 (Open-Core Edition Model) and the RBAC enforcement model.
 - Linked from #348 (OIDC SSO), #349 (RBAC tracking), #1240 (ArcGIS portal
   facade), #1242 (ArcGIS OAuth2 named-user), #1374 (persistent store),
-  #1375 (resolver).
+  #1375 (resolver), #1376 (cross-protocol per-operation enforcement).

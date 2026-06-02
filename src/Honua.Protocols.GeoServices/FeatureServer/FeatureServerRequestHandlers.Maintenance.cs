@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -77,7 +78,8 @@ internal static partial class FeatureServerEndpoints
 
         var service = validationResult.Service!;
         var resource = validationResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service, AccessScope.Write);
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resource, AuthorizationOperation.Insert, service, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return accessError;
@@ -146,7 +148,8 @@ internal static partial class FeatureServerEndpoints
 
         var service = validationResult.Service!;
         var resource = validationResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service, AccessScope.Write);
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resource, AuthorizationOperation.Insert, service, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return accessError;
@@ -232,7 +235,8 @@ internal static partial class FeatureServerEndpoints
         var service = validationResult.Service!;
         var publication = validationResult.Publication!;
         var resource = validationResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service, AccessScope.Write);
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resource, AuthorizationOperation.Update, service, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return accessError;
@@ -828,7 +832,8 @@ internal static partial class FeatureServerEndpoints
 
         var service = validationResult.Service!;
         var resource = validationResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resource, AuthorizationOperation.Query, service, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return accessError;

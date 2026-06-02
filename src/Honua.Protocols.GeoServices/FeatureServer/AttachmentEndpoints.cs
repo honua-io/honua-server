@@ -633,7 +633,12 @@ internal static class AttachmentEndpoints
         var publication = validationResult.Publication!;
         var resource = validationResult.Resource!;
 
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service, scope);
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context,
+            resource,
+            AccessPolicyHelpers.DefaultOperationForScope(scope),
+            service,
+            context.RequestAborted).ConfigureAwait(false);
         if (accessError != null)
         {
             await accessError.ExecuteAsync(context);
