@@ -62,6 +62,10 @@ Sources:
 | --- | --- | --- | --- |
 | Key Properties | `.../ImageServer/keyProperties` | Implemented | `GET\|POST /rest/services/{id}/ImageServer/keyProperties` returns the canonical Esri raster key-properties document (per-band `BandProperties`, `DataType`, `BandCount`, `NoDataValue`, `LowCellSize`/`HighCellSize`/`MaxCellSize`) for the layer's primary raster, sourced from the shared raster store metadata. A POST mirror exists because the ArcGIS API for Python `ImageryLayer.key_properties()` issues an HTTP POST. |
 | Multidimensional Info | `.../ImageServer/multidimensionalInfo` | Implemented | `GET\|POST /rest/services/{id}/ImageServer/multidimensionalInfo` returns the Esri `multidimensionalInfo` document (variables with dimensions). Non-multidimensional layers return a spec-correct empty document (`{ "variables": [] }`) rather than a 404, matching ArcGIS behaviour for non-cube rasters. |
+| Statistics | `.../ImageServer/statistics` | Implemented | `GET\|POST /rest/services/{id}/ImageServer/statistics` returns the Esri `statistics[]` document (per-band `min`, `max`, `mean`, `standardDeviation`, `count`) for the layer's primary raster, or the resolved mosaic when multiple rasters are present. Sourced from the shared raster store statistics pipeline (the same path the legend renderer keys off). |
+| Histograms | `.../ImageServer/histograms` | Implemented | `GET\|POST /rest/services/{id}/ImageServer/histograms` returns the Esri `histograms[]` document (per-band `size`, `min`, `max`, `counts[]`) for the primary raster or resolved mosaic, using the default 256-bin count. Shares the raster store histogram pipeline used by `computeStatisticsHistograms`. |
+| Raster Function Info | `.../ImageServer/rasterFunctionInfos` | Implemented | `GET\|POST /rest/services/{id}/ImageServer/rasterFunctionInfos` returns the Esri `rasterFunctionInfos[]` document advertising the raster functions the service accepts through `renderingRule` (`None`, `Identity`, `Stretch`, `Clip`), mirroring the shared raster-function planner's supported set so the advertised list stays honest. |
+| Raster Attribute Table | `.../ImageServer/rasterAttributeTable` | Implemented | `GET\|POST /rest/services/{id}/ImageServer/rasterAttributeTable` returns the Esri raster attribute table as a feature set (`objectIdFieldName`, `fields[]`, `features[]`). Honua rasters are continuous (non-thematic) and carry no value/attribute table, so the canonical `OBJECTID`/`Value`/`Count` column schema is returned with an empty `features[]` array rather than a 404, matching the document shape ArcGIS clients parse. |
 
 ### Partial
 
@@ -75,16 +79,12 @@ Sources:
 | Esri child resource | Esri path | Honua status | Notes |
 | --- | --- | --- | --- |
 | Colormap | `.../ImageServer/colormap` | Not implemented | |
-| Histograms | `.../ImageServer/histograms` | Not implemented | |
 | Image Service Info (`iteminfo`, `metadata`, `thumbnail`) | `.../ImageServer/info/*` | Not implemented | |
 | Image Support Data | `.../ImageServer/imageSupportData` | Not implemented | |
 | KML Image | `.../ImageServer/kml` | Not implemented | |
-| Raster Attribute Table | `.../ImageServer/rasterAttributeTable` | Not implemented | |
 | Raster Catalog Item and nested raster resources | `.../ImageServer/{rasterId}/*` | Not implemented | |
 | Raster File | `.../ImageServer/rasterFile` | Not implemented | |
-| Raster Function Info | `.../ImageServer/rasterFunctionInfos` | Not implemented | |
 | Slices | `.../ImageServer/slices` | Not implemented | |
-| Statistics | `.../ImageServer/statistics` | Not implemented | |
 | WMTS | `.../ImageServer/WMTS` | Not implemented | |
 
 ## Parameter coverage
@@ -323,6 +323,7 @@ Merge strategy resolution is request `mosaicRule` first, then the layer's admin 
 - Statistics/histograms implementation: [ImageServerStatisticsHistogramsHandler](../../src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerStatisticsHistogramsHandler.cs) (also serves `computeHistograms`)
 - Get Samples implementation: [ImageServerSamplesHandler](../../src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerSamplesHandler.cs)
 - Key Properties implementation: [ImageServerKeyPropertiesHandler](../../src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerKeyPropertiesHandler.cs)
+- Raster metadata child resources (`statistics`, `histograms`, `rasterAttributeTable`, `rasterFunctionInfos`): [ImageServerRasterMetadataHandler](../../src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerRasterMetadataHandler.cs), [RasterMetadataModels](../../src/Honua.Protocols.GeoServices/ImageServer/Models/RasterMetadataModels.cs); integration tests: [ImageServerRasterMetadataTests](../../tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerRasterMetadataTests.cs)
 - Multidimensional Info implementation: [ImageServerMultidimensionalInfoHandler](../../src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerMultidimensionalInfoHandler.cs), [ImageServerMultidimensionalInfoBuilder](../../src/Honua.Protocols.GeoServices/ImageServer/Services/ImageServerMultidimensionalInfoBuilder.cs)
 - Legend implementation: [ImageServerLegendHandler](../../src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerLegendHandler.cs)
 - Raster function chain analysis (`computeClass`): [ImageServerAnalyzeHandler](../../src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Handlers/ImageServerAnalyzeHandler.cs), [ImageServerRasterFunctionPlanner](../../src/Honua.Server/Features/Protocols/GeoServices/ImageServer/Services/ImageServerRasterFunctionPlanner.cs)
