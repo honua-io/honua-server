@@ -19,6 +19,7 @@ jobs:
   build-aot:
     name: Build & Push AOT (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -79,13 +80,18 @@ jobs:
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
           cache-from: type=gha,scope=nightly-aot-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=nightly-aot-${{ matrix.arch }}
+          # ignore-error: a failed/interrupted GHA cache export (common on the
+          # hosted arm64 runner fleet, which can be preempted mid-export) must
+          # not fail an otherwise-successful build+push. The cache is a build
+          # accelerator, not a release artifact.
+          cache-to: type=gha,mode=max,scope=nightly-aot-${{ matrix.arch }},ignore-error=true
           provenance: true
           sbom: true
 
   build-jit:
     name: Build & Push JIT (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -146,7 +152,11 @@ jobs:
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
           cache-from: type=gha,scope=nightly-jit-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=nightly-jit-${{ matrix.arch }}
+          # ignore-error: a failed/interrupted GHA cache export (common on the
+          # hosted arm64 runner fleet, which can be preempted mid-export) must
+          # not fail an otherwise-successful build+push. The cache is a build
+          # accelerator, not a release artifact.
+          cache-to: type=gha,mode=max,scope=nightly-jit-${{ matrix.arch }},ignore-error=true
           provenance: true
           sbom: true
 
