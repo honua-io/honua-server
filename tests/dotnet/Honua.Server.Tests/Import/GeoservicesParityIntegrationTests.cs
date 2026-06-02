@@ -1711,6 +1711,17 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
             sourceSnapshot.ExpectedImportedFields,
             because: "published layer should expose imported source fields");
 
+        // ExtractComparableFieldMappings intentionally drops the esriFieldTypeOID
+        // primary-key field (it is not value-comparable across source/Honua), so add
+        // the published object id field back in before diffing. Honua publishes the
+        // import-created primary key as esriFieldTypeOID, which is the correct Esri
+        // behavior; this check verifies it is the only field added beyond the imported
+        // source attributes.
+        var honuaObjectIdField = ResolveObjectIdField(honuaLayerMetadata);
+        honuaObjectIdField.Should().NotBeNullOrWhiteSpace(
+            because: "published layer metadata should expose an object id field");
+        honuaFields.Add(honuaObjectIdField!.SanitizeFieldName());
+
         var unexpectedHonuaFields = honuaFields
             .Except(sourceSnapshot.ExpectedImportedFields, StringComparer.Ordinal)
             .ToArray();
