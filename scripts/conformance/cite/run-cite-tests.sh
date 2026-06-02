@@ -139,22 +139,59 @@ wait_for_honua_server() {
 # the freshly seeded collections catalog are fully serving, so a single curl
 # right after a restart can transiently 404/503. Retry briefly to absorb that
 # readiness race instead of aborting the whole suite.
+#
+# On exhaustion the helper records the last observed HTTP status and response
+# body in LAST_ENDPOINT_STATUS / LAST_ENDPOINT_BODY so the caller can surface
+# the actual server-side failure (e.g. a 500 from /collections) instead of
+# letting the suite abort with only a generic "not accessible" message. A
+# preflight abort here happens *before* conformance.json is captured, so an
+# unsurfaced failure otherwise reaches the downstream validator as the much
+# more confusing "Missing conformance declaration".
+LAST_ENDPOINT_STATUS=""
+LAST_ENDPOINT_BODY=""
 wait_for_endpoint() {
     local url="$1"
     local label="$2"
     local attempts="${3:-12}"
     local attempt=1
+    local body_file status
+
+    LAST_ENDPOINT_STATUS=""
+    LAST_ENDPOINT_BODY=""
+    body_file=$(mktemp)
 
     while (( attempt <= attempts )); do
-        if curl -s -f "$url" > /dev/null; then
+        status=$(curl -s -o "$body_file" -w "%{http_code}" "$url" || echo "000")
+        if [[ "$status" =~ ^2 ]]; then
+            rm -f "$body_file"
             return 0
         fi
-        echo "Waiting for ${label} to respond (attempt ${attempt}/${attempts})..."
+        LAST_ENDPOINT_STATUS="$status"
+        LAST_ENDPOINT_BODY=$(head -c 600 "$body_file" 2>/dev/null || true)
+        echo "Waiting for ${label} to respond (attempt ${attempt}/${attempts}, last HTTP ${status})..."
         sleep 5
         attempt=$((attempt + 1))
     done
 
+    rm -f "$body_file"
     return 1
+}
+
+# Print the captured HTTP status/body for the failing preflight endpoint and
+# dump the Honua Server log so CI shows the actual server-side error (the most
+# common real failure is /ogc/features/collections returning 500 when the
+# canonical Metadata v2 graph snapshot was never activated for the seeded
+# layer). Without this the suite aborts before writing conformance.json and the
+# only signal in CI is the misleading "Missing conformance declaration".
+report_endpoint_failure() {
+    local label="$1"
+    echo -e "${RED}❌ ${label} not accessible (last HTTP ${LAST_ENDPOINT_STATUS:-unknown})${NC}"
+    if [[ -n "$LAST_ENDPOINT_BODY" ]]; then
+        echo -e "${YELLOW}Last response body:${NC}"
+        echo "$LAST_ENDPOINT_BODY"
+    fi
+    echo -e "${YELLOW}Honua Server logs (tail):${NC}"
+    $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" logs --tail=80 honua-server 2>&1 || true
 }
 
 # Build Honua Server image unless an existing local image is requested.
@@ -272,19 +309,19 @@ HONUA_BASE_URL="http://localhost:${HONUA_CITE_FEATURES_SERVER_PORT}"
 
 # Test landing page
 if ! wait_for_endpoint "$HONUA_BASE_URL/ogc/features" "landing page"; then
-    echo -e "${RED}❌ Landing page not accessible${NC}"
+    report_endpoint_failure "Landing page"
     exit 1
 fi
 
 # Test conformance endpoint
 if ! wait_for_endpoint "$HONUA_BASE_URL/ogc/features/conformance" "conformance endpoint"; then
-    echo -e "${RED}❌ Conformance endpoint not accessible${NC}"
+    report_endpoint_failure "Conformance endpoint"
     exit 1
 fi
 
 # Test collections endpoint
 if ! wait_for_endpoint "$HONUA_BASE_URL/ogc/features/collections" "collections endpoint"; then
-    echo -e "${RED}❌ Collections endpoint not accessible${NC}"
+    report_endpoint_failure "Collections endpoint"
     exit 1
 fi
 
