@@ -55,6 +55,15 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -108,7 +117,7 @@ jobs:
           dsn = f"host={host} port={port} dbname={dbname} user={user} password={password}"
 
           conn = None
-          for _ in range(30):
+          for _ in range(60):
               try:
                   conn = psycopg.connect(dsn)
                   break
@@ -139,6 +148,7 @@ jobs:
           HostValidation__AllowedHosts__0: "localhost"
           Security__DisableHttpsRedirection: "true"
           Security__ConnectionEncryption__MasterKey: "test-master-key-32-chars-long-000000"
+          ConnectionStrings__redis: "localhost:6379"
           ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=${{ env.DB_NAME }};Username=${{ env.DB_USER }};Password=${{ env.DB_PASSWORD }};Maximum Pool Size=50
         run: |
           dotnet run --project src/Honua.Server -c Release --no-build --no-launch-profile > server.log 2>&1 &
@@ -146,7 +156,10 @@ jobs:
 
       - name: Wait for readiness
         run: |
-          for i in {1..30}; do
+          # Production cold start runs the PostGIS preflight check, database
+          # migrations, and high-frequency query preparation before /healthz/ready
+          # reports 200, so budget generously (90 iterations x 2s = 180s).
+          for i in {1..90}; do
             if curl -sf "$BASE_URL/healthz/ready" >/dev/null; then
               exit 0
             fi
