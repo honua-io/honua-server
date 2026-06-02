@@ -336,7 +336,7 @@ DECLARE
     snapshot_document jsonb;
     snapshot_etag text;
 BEGIN
-    FOREACH target_environment IN ARRAY ARRAY['default', 'Development', 'Test']
+    FOREACH target_environment IN ARRAY ARRAY['default', 'Development', 'Test', 'Production']
     LOOP
         WITH
         status_doc AS (
