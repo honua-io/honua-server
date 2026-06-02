@@ -436,13 +436,19 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         {
             parts.Add($"'{EscapeSqlLiteral(field.Name)}'");
             // When the resource declares an attributes JSONB column (a single column holding
-            // the per-field values), pull the field via {attributes}->>'name' instead of
-            // expecting a column-per-field on the table — the seed-driven test fixture's
-            // shared 'features' table follows that shape, and v1 catalog readers used the
-            // same projection before the cutover.
+            // the per-field values), pull the field from that column instead of expecting a
+            // column-per-field on the table — the seed-driven test fixture's shared 'features'
+            // table follows that shape, and v1 catalog readers used the same projection before
+            // the cutover.
+            //
+            // Use the jsonb-preserving accessor (->) for numeric/boolean/json fields so the
+            // value round-trips with its declared type (an integer field returns a JSON
+            // number, not a string). Text-like types keep the text accessor (->>) so existing
+            // string/date formatting is unchanged.
             if (jsonbAccessor is not null)
             {
-                parts.Add($"{jsonbAccessor} ->> '{EscapeSqlLiteral(field.Name)}'");
+                var accessor = PreservesJsonType(field.Type) ? "->" : "->>";
+                parts.Add($"{jsonbAccessor} {accessor} '{EscapeSqlLiteral(field.Name)}'");
             }
             else
             {
@@ -452,6 +458,19 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
         return $"jsonb_build_object({string.Join(", ", parts)})";
     }
+
+    /// <summary>
+    /// Whether a field's value should be projected with the jsonb-preserving
+    /// accessor (<c>-&gt;</c>) so its declared numeric/boolean/json type survives,
+    /// rather than the text accessor (<c>-&gt;&gt;</c>) which stringifies it.
+    /// </summary>
+    private static bool PreservesJsonType(MetadataV2FieldType type)
+        => type is MetadataV2FieldType.Integer
+            or MetadataV2FieldType.BigInteger
+            or MetadataV2FieldType.Double
+            or MetadataV2FieldType.Float
+            or MetadataV2FieldType.Boolean
+            or MetadataV2FieldType.Json;
 
     private MetadataV2Field[] ResolveAttributeFields(FeatureQuery query)
     {
