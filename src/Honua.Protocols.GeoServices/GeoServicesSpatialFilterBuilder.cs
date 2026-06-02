@@ -38,7 +38,13 @@ internal static class GeoServicesSpatialFilterBuilder
                 queryParams.Distance.Value,
                 unit,
                 relationship == SpatialRelationship.WithinDistance,
-                inputSrid);
+                inputSrid) with
+            {
+                // `returnDistance` is spec-compliant for the general /query operation: the
+                // store computes the geodesic distance from the query geometry for each
+                // matched feature when this flag is set, not only for KNN queries.
+                ReturnDistance = queryParams.ReturnDistance
+            };
         }
 
         // Esri semantics: a `distance` (+ optional `units`) supplied alongside the default
@@ -55,7 +61,10 @@ internal static class GeoServicesSpatialFilterBuilder
                 queryParams.Distance.Value,
                 unit,
                 withinDistance: true,
-                inputSrid);
+                inputSrid) with
+            {
+                ReturnDistance = queryParams.ReturnDistance
+            };
         }
 
         var isSimpleEnvelope = geometry is
@@ -71,6 +80,7 @@ internal static class GeoServicesSpatialFilterBuilder
             Geometry = wkbBytes,
             SpatialRelationship = relationship,
             Srid = inputSrid,
+            ReturnDistance = queryParams.ReturnDistance,
             IsSimpleEnvelope = isSimpleEnvelope,
             AllowEnvelopeOnly = relationship == SpatialRelationship.EnvelopeIntersects && isSimpleEnvelope,
             EnvelopeMinX = isSimpleEnvelope ? geometry.Xmin : null,

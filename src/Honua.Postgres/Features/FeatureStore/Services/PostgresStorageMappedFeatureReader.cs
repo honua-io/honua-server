@@ -1091,13 +1091,18 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     {
         var spatialFilter = query.SpatialFilter;
         if (!spatialFilter.HasValue ||
-            spatialFilter.Value.SpatialRelationship != SpatialRelationship.NearestNeighbor ||
             !spatialFilter.Value.ReturnDistance ||
             _geometryColumn == null)
         {
             return string.Empty;
         }
 
+        // `returnDistance` is spec-compliant for the general layer /query operation, not
+        // just KNN (esriSpatialRelNearestNeighbor): whenever a spatial filter geometry is
+        // supplied, each returned feature carries its geodesic distance (meters) from that
+        // query geometry under the `distance` attribute. The distance expression is the
+        // same ST_Distance computation the KNN ordering uses; it works for every spatial
+        // relationship because it only needs a valid filter geometry.
         return $", {BuildNearestNeighborDistanceExpression(query, sql)} AS {FeatureQueryEncoding.InternalDistanceColumn}";
     }
 
