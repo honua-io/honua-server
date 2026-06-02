@@ -106,5 +106,7 @@ internal static class ProtocolRequestClassifier
 
     internal static bool IsGeoServices(PathString path) =>
         path.StartsWithSegments("/rest/services") ||
-        path.StartsWithSegments("/tiles");
+        path.StartsWithSegments("/tiles") ||
+        path.StartsWithSegments("/sharing/rest") ||
+        path.StartsWithSegments("/rest/info");
 }

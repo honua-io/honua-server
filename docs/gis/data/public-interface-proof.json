@@ -1147,7 +1147,9 @@
       "protocol": "ArcGIS Portal Sharing",
       "canonicalIdentifier": "/sharing/rest/generateToken",
       "parentSurfaceId": null,
-      "endpointPrefixes": [],
+      "endpointPrefixes": [
+        "/sharing/rest/"
+      ],
       "endpointExactMatches": [
         "/sharing/rest/generateToken"
       ],
