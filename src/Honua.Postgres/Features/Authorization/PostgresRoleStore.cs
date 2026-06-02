@@ -237,15 +237,32 @@ internal sealed class PostgresRoleStore : IRoleStore
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("role_names", NpgsqlDbType.Array | NpgsqlDbType.Text, loweredNames);
 
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            try
             {
-                grants.Add(new PermissionGrant
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
-                    Service = reader.GetString(0),
-                    Layer = reader.GetString(1),
-                    Operation = reader.GetString(2),
-                });
+                    grants.Add(new PermissionGrant
+                    {
+                        Service = reader.GetString(0),
+                        Layer = reader.GetString(1),
+                        Operation = reader.GetString(2),
+                    });
+                }
+            }
+            catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+            {
+                // Fresh/legacy DB where migration 041 has not created the
+                // rbac_roles / rbac_role_permissions tables. Treat as "no grants"
+                // so PermissionResolver yields NoMatch and AccessPolicyHelpers
+                // falls back to the coarse AccessPolicy instead of 500ing
+                // enforced query paths (honua-server#1341 pattern).
+                return new EffectivePermissions
+                {
+                    UserId = userId ?? string.Empty,
+                    Roles = roles,
+                    Permissions = [],
+                };
             }
         }
 
@@ -273,8 +290,9 @@ internal sealed class PostgresRoleStore : IRoleStore
         var roles = new List<RoleDefinition>();
         var permissionsByRole = new Dictionary<Guid, List<PermissionGrant>>();
 
-        await using (var command = new NpgsqlCommand(sql, connection))
+        try
         {
+            await using var command = new NpgsqlCommand(sql, connection);
             if (roleId.HasValue)
             {
                 command.Parameters.AddWithValue("role_id", NpgsqlDbType.Uuid, roleId.Value);
@@ -296,6 +314,11 @@ internal sealed class PostgresRoleStore : IRoleStore
                     Permissions = [],
                 });
             }
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            // RBAC tables absent (migration 041 not applied): no roles defined.
+            return [];
         }
 
         if (roles.Count == 0)
@@ -363,15 +386,23 @@ internal sealed class PostgresRoleStore : IRoleStore
         command.Parameters.AddWithValue("role_id", NpgsqlDbType.Uuid, roleId);
 
         var grants = new List<PermissionGrant>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        try
         {
-            grants.Add(new PermissionGrant
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                Service = reader.GetString(0),
-                Layer = reader.GetString(1),
-                Operation = reader.GetString(2),
-            });
+                grants.Add(new PermissionGrant
+                {
+                    Service = reader.GetString(0),
+                    Layer = reader.GetString(1),
+                    Operation = reader.GetString(2),
+                });
+            }
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            // RBAC tables absent (migration 041 not applied): no grants.
+            return [];
         }
 
         return grants;

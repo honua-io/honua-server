@@ -212,6 +212,38 @@ public sealed class PostgresRoleStoreTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task GetEffectivePermissions_RbacTablesAbsent_ReturnsNoGrants_DoesNotThrow()
+    {
+        // Regression (#1385): integration-test fixtures and fresh/legacy DBs that
+        // never ran migration 041 lack the rbac_* tables. The store must treat the
+        // missing relation (42P01) as "no grants" so PermissionResolver yields
+        // NoMatch and AccessPolicyHelpers falls back to the coarse AccessPolicy,
+        // instead of surfacing a Postgres 42P01 as an HTTP 500 on enforced query
+        // and OGC Features paths.
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRoleStoreTests));
+        try
+        {
+            // Deliberately do NOT call EnsureRbacTablesAsync: the schema exists but
+            // the RBAC tables do not.
+            var store = CreateStore(schema);
+
+            var effective = await store.GetEffectivePermissionsAsync("user-1", ["viewer", "admin"]);
+            effective.Should().NotBeNull();
+            effective.UserId.Should().Be("user-1");
+            effective.Permissions.Should().BeEmpty();
+
+            // Sibling read paths must be resilient too (admin list / get-permissions).
+            (await store.ListRolesAsync()).Should().BeEmpty();
+            (await store.GetRoleAsync(AdminRoleId)).Should().BeNull();
+            (await store.GetPermissionsAsync(ViewerRoleId)).Should().BeEmpty();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     private PostgresRoleStore CreateStore(string schema)
         => new(new TestConnectionProvider(fixture.DataSource, schema), schemaName: schema);
 
