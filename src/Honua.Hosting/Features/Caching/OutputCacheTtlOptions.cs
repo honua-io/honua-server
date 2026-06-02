@@ -80,6 +80,31 @@ public sealed class OutputCacheTtlOptions
     public TimeSpan OgcMapsOpenApi { get; set; } = TimeSpan.FromHours(1);
 
     /// <summary>
+    /// OGC Styles list cache duration. Default: 5 minutes.
+    /// </summary>
+    public TimeSpan OgcStylesList { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// OGC Styles conformance endpoint cache duration. Default: 1 hour.
+    /// </summary>
+    public TimeSpan OgcStylesConformance { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>
+    /// OGC Styles OpenAPI spec cache duration. Default: 1 hour.
+    /// </summary>
+    public TimeSpan OgcStylesOpenApi { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>
+    /// OGC Styles stylesheet cache duration. Default: 5 minutes.
+    /// </summary>
+    public TimeSpan OgcStylesStylesheet { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// OGC Styles metadata cache duration. Default: 5 minutes.
+    /// </summary>
+    public TimeSpan OgcStylesMetadata { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
     /// OGC Coverages landing page cache duration. Default: 30 minutes.
     /// </summary>
     public TimeSpan OgcCoveragesLandingPage { get; set; } = TimeSpan.FromMinutes(30);

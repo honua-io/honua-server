@@ -223,6 +223,51 @@ internal static class ObservabilityServiceCollectionExtensions
                 policy.Tag("ogc-maps", "metadata");
             });
 
+            // OGC API Styles caching policies (ADR-0048). Styles map to finite
+            // styleId/encoding/format keys, so output caching is appropriate.
+            options.AddPolicy("OgcStylesList", policy =>
+            {
+                policy.Expire(ttl.OgcStylesList);
+                policy.SetVaryByQuery("f");
+                policy.SetVaryByHeader("Accept");
+                policy.Tag("ogc-styles", "metadata");
+            });
+
+            options.AddPolicy("OgcStylesConformance", policy =>
+            {
+                policy.Expire(ttl.OgcStylesConformance);
+                policy.SetVaryByQuery("f");
+                policy.SetVaryByHeader("Accept");
+                policy.Tag("ogc-styles", "metadata");
+            });
+
+            options.AddPolicy("OgcStylesOpenApi", policy =>
+            {
+                policy.Expire(ttl.OgcStylesOpenApi);
+                policy.SetVaryByQuery("f");
+                policy.SetVaryByHeader("Accept");
+                policy.Tag("ogc-styles", "metadata");
+            });
+
+            options.AddPolicy("OgcStylesStylesheet", policy =>
+            {
+                policy.Expire(ttl.OgcStylesStylesheet);
+                // Vary by every behavior-changing input: the style identifier and the
+                // negotiated encoding (Accept selects MapLibre vs SLD 1.0/1.1).
+                policy.SetVaryByRouteValue("styleId");
+                policy.SetVaryByHeader("Accept");
+                policy.Tag("ogc-styles");
+            });
+
+            options.AddPolicy("OgcStylesMetadata", policy =>
+            {
+                policy.Expire(ttl.OgcStylesMetadata);
+                policy.SetVaryByRouteValue("styleId");
+                policy.SetVaryByQuery("f");
+                policy.SetVaryByHeader("Accept");
+                policy.Tag("ogc-styles", "metadata");
+            });
+
             options.AddPolicy("OgcCoveragesLandingPage", policy =>
             {
                 policy.Expire(ttl.OgcCoveragesLandingPage);

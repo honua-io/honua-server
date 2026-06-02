@@ -572,6 +572,24 @@ internal static class CollectionsEndpoints
                 rel: RelationTypes.Style,
                 type: MediaTypes.Json,
                 title: "Style"));
+
+            // OGC API - Styles (ADR-0048): the styleId is the collection's stable
+            // resource name (forward-compatible with the Phase 2 styleId catalog).
+            var styleId = Uri.EscapeDataString(resource.Metadata.Name);
+
+            // Styles list scoped to this collection.
+            collectionLinks.Add(Link.Create(
+                href: $"{baseUrl}/ogc/styles",
+                rel: RelationTypes.Styles,
+                type: MediaTypes.Json,
+                title: "Styles"));
+
+            // The collection's OGC stylesheet (content-negotiated encoding).
+            collectionLinks.Add(Link.Create(
+                href: $"{baseUrl}/ogc/styles/{styleId}",
+                rel: RelationTypes.Stylesheet,
+                type: MediaTypes.MapboxStyle,
+                title: "Stylesheet"));
         }
 
         if (IsProtocolEnabled(service, OgcApiTilesProtocolName))
