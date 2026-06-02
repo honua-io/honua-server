@@ -202,6 +202,15 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
+        // Register Postgres-backed RBAC role/permission store (#1374). Durable
+        // storage wins over the in-memory default registered in Program.cs, so
+        // roles, per-operation grants, and memberships survive restart and are
+        // shared across scaled nodes.
+        services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IRoleStore>(serviceProvider =>
+            new Features.Authorization.PostgresRoleStore(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+
         // Register layer style catalog for MapLibre/GeoServices styling
         services.AddScoped<ILayerStyleCatalog>(serviceProvider =>
             new PostgresLayerStyleCatalog(

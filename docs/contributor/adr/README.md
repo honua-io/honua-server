@@ -52,10 +52,8 @@ This folder contains Architecture Decision Records (ADRs) for the Honua greenfie
 | [0044](0044-server-infrastructure-decomposition.md) | Server.Features.Infrastructure Decomposition (Audit-A1 / Phase 1 Prerequisite) | Proposed | 2026-05 |
 | [0045](0045-defer-migration-sequence-collision-renumbering.md) | Defer Renumbering of Colliding Migration Sequence Numbers | Accepted | 2026-05 |
 | [0046](0046-audit-c3-database-session-progressive-migration.md) | Audit C3 — Progressive `IDatabaseSession` Migration With Coexistence | Accepted | 2026-05 |
-<<<<<<< HEAD
 | [0047](0047-module-dependency-policy.md) | Module Dependency Policy | Accepted | 2026-05 |
-=======
->>>>>>> c7f99d944... docs(adr): refresh stale ADR statuses
+| [0048](0048-single-auth-identity-token-foundation.md) | Single Auth/Identity/Token Foundation Shared by OIDC SSO and ArcGIS OAuth2 | Accepted | 2026-06 |
 
 ## Template
 

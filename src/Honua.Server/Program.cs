@@ -430,6 +430,11 @@ builder.Services.AddSingleton<Honua.Core.Features.Identity.Abstractions.IUserSto
     Honua.Server.Features.Admin.Services.InMemoryUserStore>();
 builder.Services.AddSingleton<Honua.Core.Features.Authorization.Abstractions.IRoleStore,
     Honua.Server.Features.Admin.Services.InMemoryRoleStore>();
+// Canonical per-operation permission resolver (#1375): the shared authorization
+// seam over EffectivePermissions. Scoped so it can consume the (scoped) Postgres
+// role store when durable RBAC is active.
+builder.Services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IPermissionResolver,
+    Honua.Core.Features.Authorization.PermissionResolver>();
 builder.Services.AddSingleton<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(sp =>
     new Honua.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>()));
 // v1 metadata-resource / manifest-approval / gitops-watch admin surface removed in #1035 cutover.
