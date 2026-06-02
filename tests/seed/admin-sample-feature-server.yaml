@@ -505,3 +505,19 @@ sql:
           pg_get_serial_sequence('honua.layers', 'layer_id'),
           (SELECT COALESCE(MAX(layer_id), 0) FROM honua.layers)
       );
+
+  # Recompile the Metadata v2 compat snapshot so admin_sample resolves in the
+  # services catalog and its FeatureServer endpoints return data instead of 404.
+  # The helper is owned by the SQL base seed (tests/seed/base-schema.sql) or
+  # tests/seed/client-compat-v1.sql, whichever was applied before this file.
+  # Guarded so this YAML stays usable in seed paths that do not apply those SQL
+  # bases (e.g. the admin-sample integration fixtures), where the helper is
+  # absent — there the recompile is a no-op rather than a hard 42883 failure.
+  # (honua-server#1345 Finding 3.)
+  - |
+      DO $$
+      BEGIN
+          IF to_regprocedure('honua.seed_metadata_v2_compat_snapshot()') IS NOT NULL THEN
+              PERFORM honua.seed_metadata_v2_compat_snapshot();
+          END IF;
+      END $$;
