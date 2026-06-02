@@ -193,6 +193,32 @@ public sealed class FeatureServerQueryGapsTests : IAsyncLifetime
         content.Should().Contain("sqlFormat");
     }
 
+    // Gap 4: the Esri GeoServices query contract always returns exceededTransferLimit,
+    // including the false case. It was [JsonIgnore(WhenWritingDefault)], so a single-page
+    // (false) result omitted the field and the ArcGIS API for Python query paginator
+    // dereferenced a missing value (fetched >= None -> TypeError). It must be present in
+    // the raw JSON even when false.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_FalseCase_AlwaysEmitsExceededTransferLimit()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=json&where=1%3D1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        using var document = JsonDocument.Parse(content);
+        var root = document.RootElement;
+
+        // The seeded result fits in a single page, so exceededTransferLimit is false —
+        // but the field MUST still be present in the wire payload (Esri always returns it).
+        root.TryGetProperty("exceededTransferLimit", out var exceeded)
+            .Should().BeTrue("Esri's query contract always emits exceededTransferLimit, including the false case");
+        exceeded.ValueKind.Should().Be(JsonValueKind.False);
+    }
+
     private static long? GetObjectId(Dictionary<string, object?> attributes)
     {
         if (!attributes.TryGetValue("objectid", out var value) || value is null)

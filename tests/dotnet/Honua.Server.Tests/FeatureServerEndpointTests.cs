@@ -912,7 +912,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         using var jsonDoc = JsonDocument.Parse(content);
         jsonDoc.RootElement.TryGetProperty("features", out _).Should().BeFalse();
-        jsonDoc.RootElement.TryGetProperty("exceededTransferLimit", out _).Should().BeFalse();
+        // Esri's query contract always emits exceededTransferLimit (including false).
+        jsonDoc.RootElement.TryGetProperty("exceededTransferLimit", out var countExceeded).Should().BeTrue();
+        countExceeded.GetBoolean().Should().BeFalse();
     }
 
     [IntegrationTest]
@@ -938,6 +940,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         using var jsonDoc = JsonDocument.Parse(content);
         jsonDoc.RootElement.TryGetProperty("features", out _).Should().BeFalse();
+        // returnIdsOnly returns the full id set (paged by offset), not a transfer-limited
+        // FeatureSet, so Esri does not emit exceededTransferLimit on this shape.
         jsonDoc.RootElement.TryGetProperty("exceededTransferLimit", out _).Should().BeFalse();
     }
 
@@ -961,6 +965,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         using var jsonDoc = JsonDocument.Parse(content);
         jsonDoc.RootElement.TryGetProperty("features", out _).Should().BeFalse();
+        // returnIdsOnly is not a FeatureSet; exceededTransferLimit is not part of this shape.
         jsonDoc.RootElement.TryGetProperty("exceededTransferLimit", out _).Should().BeFalse();
     }
 
@@ -990,7 +995,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         using var jsonDoc = JsonDocument.Parse(content);
         jsonDoc.RootElement.TryGetProperty("features", out _).Should().BeFalse();
-        jsonDoc.RootElement.TryGetProperty("exceededTransferLimit", out _).Should().BeFalse();
+        // Esri's query contract always emits exceededTransferLimit (including false).
+        jsonDoc.RootElement.TryGetProperty("exceededTransferLimit", out var extentExceeded).Should().BeTrue();
+        extentExceeded.GetBoolean().Should().BeFalse();
     }
 
     [IntegrationTest]
@@ -1777,7 +1784,11 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         queryResponse.ExceededTransferLimit.Should().BeFalse("because all available features were returned");
 
         using var jsonDoc = JsonDocument.Parse(content);
-        jsonDoc.RootElement.TryGetProperty("exceededTransferLimit", out _).Should().BeFalse();
+        // Esri's query contract always emits exceededTransferLimit; the false case must be
+        // present in the wire payload (the ArcGIS API for Python paginator reads it
+        // unconditionally — a missing value caused a fetched >= None TypeError).
+        jsonDoc.RootElement.TryGetProperty("exceededTransferLimit", out var allResultsExceeded).Should().BeTrue();
+        allResultsExceeded.GetBoolean().Should().BeFalse();
     }
 
     /// <summary>
