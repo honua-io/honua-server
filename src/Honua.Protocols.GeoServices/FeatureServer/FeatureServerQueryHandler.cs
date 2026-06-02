@@ -160,7 +160,16 @@ internal sealed partial class FeatureServerQueryHandler(
         var publication = resourceValidationResult.Publication!;
         var resource = resourceValidationResult.Resource!;
 
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+        // Per-operation RBAC grants are consulted first (#1375); the coarse
+        // AccessPolicy seam is the fallback when no grant matches. This is the
+        // enforced read path wired to the resolver for this PR — the remaining
+        // protocol adapters are re-wired in #1376.
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context,
+            resource,
+            service,
+            AccessScope.Read,
+            cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return (null, accessError);
