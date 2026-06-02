@@ -102,8 +102,15 @@ jobs:
           github_token=${{ secrets.GITHUB_TOKEN }}
         cache-from: type=gha,scope=cite-wfs20
         cache-to: type=gha,mode=max,scope=cite-wfs20
-        provenance: true
-        sbom: true
+        # buildx defaults to attaching provenance/SBOM attestations, which
+        # produce an OCI image index (manifest list). The docker exporter
+        # used by `load: true` cannot export a manifest list, so the build
+        # fails with "docker exporter does not currently support exporting
+        # manifest lists". Disable inline attestations to keep a single-image
+        # output that loads into the local daemon for the CITE run. The SPDX
+        # SBOM is still captured by the anchore/sbom-action step below.
+        provenance: false
+        sbom: false
 
     # Capture SPDX SBOM alongside CITE WFS 2.0 evidence so conformance
     # artifacts are reproducible to a known component list.
