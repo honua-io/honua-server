@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "lastReviewed": "2026-05-30",
+  "lastReviewed": "2026-06-02",
   "canonicalDocs": {
     "landingPage": "docs/gis/geoservices-rest-parity.md",
     "machineReadableExport": "docs/gis/data/geoservices-rest-parity.json"
@@ -1941,73 +1941,103 @@
           {
             "name": "Task Metadata",
             "esriPath": "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task",
-            "methods": ["GET"],
+            "methods": [
+              "GET"
+            ],
             "notes": "Returns task name, display name, parameters, and choice lists. Served via PrintingTools endpoints."
           },
           {
             "name": "Execute Task (sync)",
             "esriPath": "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute",
-            "methods": ["GET", "POST"],
+            "methods": [
+              "GET",
+              "POST"
+            ],
             "notes": "Synchronous map export returning image bytes. PrintingTools-specific implementation."
           },
           {
             "name": "Submit Job (async)",
             "esriPath": "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/submitJob",
-            "methods": ["GET", "POST"],
+            "methods": [
+              "GET",
+              "POST"
+            ],
             "notes": "Asynchronous map export job submission. PrintingTools-specific implementation."
           },
           {
             "name": "Job Status",
             "esriPath": "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/jobs/{jobId}",
-            "methods": ["GET"],
+            "methods": [
+              "GET"
+            ],
             "notes": "Job status polling with result parameter URL. PrintingTools-specific implementation."
           },
           {
             "name": "Job Results",
             "esriPath": "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/jobs/{jobId}/results/Output_File",
-            "methods": ["GET"],
+            "methods": [
+              "GET"
+            ],
             "notes": "Single-parameter result access (Output_File only). PrintingTools-specific implementation."
           },
           {
             "name": "Template Listing (sync)",
             "esriPath": "/rest/services/Utilities/PrintingTools/GPServer/Get Layout Templates Info Task/execute",
-            "methods": ["GET"],
+            "methods": [
+              "GET"
+            ],
             "notes": "Returns available layout templates. PrintingTools-specific implementation."
           },
           {
             "name": "GP Service Info (generic)",
             "esriPath": "/rest/services/{serviceId}/GPServer",
-            "methods": ["GET", "POST"],
+            "methods": [
+              "GET",
+              "POST"
+            ],
             "notes": "Returns service metadata and the published task list projected from the built-in IProcessCatalog. Implemented in #723."
           },
           {
             "name": "GP Task Info (generic)",
             "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}",
-            "methods": ["GET", "POST"],
+            "methods": [
+              "GET",
+              "POST"
+            ],
             "notes": "Returns task metadata projected from the built-in IProcessCatalog, including parameter descriptions and Esri data types. Implemented in #723."
           },
           {
             "name": "Job Status (generic)",
             "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}",
-            "methods": ["GET"],
+            "methods": [
+              "GET"
+            ],
             "notes": "Job status polling with route binding validation. Maps ExecutionJobRecord to Esri status. Implemented in #723."
           },
           {
             "name": "Job Results (generic)",
             "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}",
-            "methods": ["GET"],
+            "methods": [
+              "GET"
+            ],
             "notes": "Per-output result access with route binding validation. Result storage pending execution engine. Implemented in #723."
           },
           {
             "name": "Cancel Job (generic)",
             "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/cancel",
-            "methods": ["GET", "POST"],
+            "methods": [
+              "GET",
+              "POST"
+            ],
             "notes": "Job cancellation with route binding validation. Implemented in #723."
           },
           {
             "name": "Submit Job (generic)",
             "esriPath": "/rest/services/{serviceId}/GPServer/{taskName}/submitJob",
-            "methods": ["GET", "POST"],
+            "methods": [
+              "GET",
+              "POST"
+            ],
             "notes": "Resolves the published task name against the built-in IProcessCatalog, validates inputs, persists GPServer route metadata, and returns an Esri job envelope. Implemented in #723."
           }
         ],
@@ -2071,7 +2101,10 @@
           {
             "name": "Generate Token",
             "esriPath": "/sharing/rest/generateToken",
-            "methods": ["POST", "GET"],
+            "methods": [
+              "POST",
+              "GET"
+            ],
             "notes": "Accepts username, password, client (referer|ip), referer, expiration (minutes; clamped to MaxExpirationMinutes), and f=json. Returns { token, expires (Unix ms), ssl: true }. Issuance is HTTPS-only by default and edition-gated by identity.portal-token (402 Payment Required when inactive)."
           }
         ]
@@ -2080,6 +2113,209 @@
         "Token issuance is the only Portal Sharing operation exposed in this slice. OAuth2 named-user, item editing, and the broader Portal item/group/community graph are tracked separately.",
         "Tokens are opaque and carry no embedded claims; ClaimsPrincipal hydration occurs at validation time from issuer-stored state.",
         "Default scheme remains API-key / OIDC; the PortalToken scheme is engaged by a bridge middleware only when the request carries a token indicator and no other scheme has authenticated."
+      ]
+    },
+    {
+      "id": "geocode-server",
+      "displayName": "GeocodeServer",
+      "parity": "partial",
+      "drillDownDoc": "docs/gis/geocode-server-matrix.md",
+      "implementedSurface": [
+        "service metadata",
+        "findAddressCandidates",
+        "reverseGeocode",
+        "suggest",
+        "geocodeAddresses (batch)"
+      ],
+      "knownGaps": [
+        "outFields projection",
+        "magicKey round-trip",
+        "category filtering",
+        "forStorage",
+        "matchOutOfRange",
+        "non-default outSR reprojection",
+        "candidateFields metadata",
+        "categories metadata"
+      ],
+      "evidence": {
+        "code": [
+          "src/Honua.Server/Features/Geocoding/GeocodingEndpoints.cs",
+          "src/Honua.Server/Features/Geocoding/GeocodingHandler.cs",
+          "src/Honua.Server/Features/Geocoding/GeocodingModels.cs",
+          "src/Honua.Geocoding/Features/Geocoding/Domain/GeocodeModels.cs",
+          "src/Honua.Geocoding/Features/Geocoding/Providers/NominatimGeocodeProvider.cs"
+        ],
+        "tests": [
+          "tests/dotnet/Honua.Server.Tests/Features/Geocoding/GeocodingEndpointTests.cs"
+        ]
+      },
+      "operations": {
+        "implemented": [
+          {
+            "name": "GeocodeServer metadata",
+            "esriPath": "/GeocodeServer",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{locatorName}/GeocodeServer",
+              "POST /rest/services/{locatorName}/GeocodeServer",
+              "GET /rest/services/GeocodeServer",
+              "POST /rest/services/GeocodeServer"
+            ],
+            "notes": "candidateFields and categories are not advertised."
+          },
+          {
+            "name": "Find Address Candidates",
+            "esriPath": "/GeocodeServer/findAddressCandidates",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates",
+              "POST /rest/services/{locatorName}/GeocodeServer/findAddressCandidates",
+              "GET /rest/services/GeocodeServer/findAddressCandidates"
+            ],
+            "notes": "Honors singleLine/structured fields, maxLocations, outSR (default WKID only), countryCode(s), and searchExtent."
+          },
+          {
+            "name": "Reverse Geocode",
+            "esriPath": "/GeocodeServer/reverseGeocode",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode",
+              "POST /rest/services/{locatorName}/GeocodeServer/reverseGeocode",
+              "GET /rest/services/GeocodeServer/reverseGeocode"
+            ],
+            "notes": "Honors location, outSR (default WKID only), and langCode."
+          },
+          {
+            "name": "Suggest",
+            "esriPath": "/GeocodeServer/suggest",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{locatorName}/GeocodeServer/suggest",
+              "POST /rest/services/{locatorName}/GeocodeServer/suggest",
+              "GET /rest/services/GeocodeServer/suggest"
+            ],
+            "notes": "Honors text, maxSuggestions, countryCode(s), searchExtent, and location bias where the provider supports them."
+          },
+          {
+            "name": "Geocode Addresses (batch)",
+            "esriPath": "/GeocodeServer/geocodeAddresses",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{locatorName}/GeocodeServer/geocodeAddresses",
+              "POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses",
+              "GET /rest/services/GeocodeServer/geocodeAddresses"
+            ],
+            "notes": "Accepts the Esri addresses={\"records\":[...]} payload and a bare records array. Honors outSR (default WKID only) and countryCode(s); enforces the provider batch-size cap."
+          }
+        ],
+        "notImplemented": []
+      },
+      "parameterCoverage": {
+        "common": [
+          {
+            "name": "f",
+            "status": "partial",
+            "notes": "Only json and pjson are supported."
+          },
+          {
+            "name": "provider",
+            "status": "implemented",
+            "notes": "Honua extension to select a registered provider."
+          }
+        ],
+        "findAddressCandidates": [
+          {
+            "name": "singleLine, address, city, region, postal, countryCode, maxLocations, countryCodes",
+            "status": "implemented"
+          },
+          {
+            "name": "outSR",
+            "status": "partial",
+            "notes": "Only the default WKID (4326) is accepted."
+          },
+          {
+            "name": "searchExtent",
+            "status": "implemented",
+            "notes": "Accepts xmin,ymin,xmax,ymax or an Esri envelope JSON in the default SR; forwarded to the provider as a search/view bounds."
+          },
+          {
+            "name": "outFields, category, magicKey, location, matchOutOfRange, forStorage",
+            "status": "notImplemented",
+            "notes": "Accepted but not applied."
+          }
+        ],
+        "reverseGeocode": [
+          {
+            "name": "location",
+            "status": "implemented",
+            "notes": "Required; x,y or JSON {x,y}/{lon,lat}."
+          },
+          {
+            "name": "outSR",
+            "status": "partial",
+            "notes": "Only the default WKID (4326) is accepted."
+          },
+          {
+            "name": "langCode",
+            "status": "implemented",
+            "notes": "Forwarded to providers that support localized results."
+          },
+          {
+            "name": "featureTypes, distance",
+            "status": "notImplemented"
+          }
+        ],
+        "suggest": [
+          {
+            "name": "text, maxSuggestions, countryCode, countryCodes",
+            "status": "implemented"
+          },
+          {
+            "name": "searchExtent, location",
+            "status": "implemented",
+            "notes": "Forwarded to providers that honor suggestion bounds/bias."
+          },
+          {
+            "name": "category",
+            "status": "notImplemented"
+          }
+        ],
+        "geocodeAddresses": [
+          {
+            "name": "addresses, records, countryCode, countryCodes",
+            "status": "implemented"
+          },
+          {
+            "name": "outSR",
+            "status": "partial",
+            "notes": "Only the default WKID (4326) is accepted."
+          },
+          {
+            "name": "sourceCountry, matchOutOfRange, category",
+            "status": "notImplemented"
+          }
+        ]
+      },
+      "knownLimitations": [
+        "Output is WGS84 (wkid 4326) only; a non-default outSR is rejected rather than reprojected.",
+        "Only f=json and f=pjson responses are supported.",
+        "outFields projection, magicKey round-tripping, category filtering, and forStorage/matchOutOfRange are not implemented.",
+        "A parameter is only forwarded when at least one backing provider acts on it (Nominatim honors searchExtent for forward and langCode for reverse; Azure Maps and Amazon Location additionally honor suggestion bounds/bias)."
       ]
     }
   ]
