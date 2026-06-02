@@ -443,7 +443,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
             SemanticRoles = semanticRoles.ToArray(),
             Alias = field.Name,
             Editable = field.Type != MetadataV2FieldType.Geometry,
-            Length = field.MaxLength
+            Length = field.MaxLength,
+            // Carry the captured Esri coded-value/range domain into the canonical
+            // graph so it survives the compat-compile snapshot and is served via the
+            // FeatureServer field domain and queryDomains surfaces (honua-server#1255).
+            Domain = field.Domain
         };
     }
 

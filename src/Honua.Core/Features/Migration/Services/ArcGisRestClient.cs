@@ -774,7 +774,11 @@ internal sealed partial class ArcGisRestClient
             Type = f.Type ?? "esriFieldTypeString",
             Alias = f.Alias,
             Length = f.Length,
-            Nullable = f.Nullable ?? true
+            Nullable = f.Nullable ?? true,
+            // Persisted through publish so coded-value/range domains survive to the
+            // served FeatureServer surface. A coded-value domain over the cap is
+            // reported via the inventory warning path and intentionally not persisted.
+            Domain = EsriFieldDomainParser.ParseDomain(f.Domain).Domain
         }).ToArray();
     }
 
@@ -1012,6 +1016,9 @@ internal sealed record ArcGisField
 
     [JsonPropertyName("nullable")]
     public bool? Nullable { get; init; }
+
+    [JsonPropertyName("domain")]
+    public JsonElement? Domain { get; init; }
 }
 
 internal sealed record ArcGisCountResponse
