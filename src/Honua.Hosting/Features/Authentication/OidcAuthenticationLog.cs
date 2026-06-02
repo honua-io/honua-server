@@ -134,4 +134,24 @@ internal static partial class OidcAuthenticationLog
         Message = "OIDC token replay protection is enabled but no replay cache is available. Allowing token to avoid permanent lockout.")]
     public static partial void TokenReplayCacheUnavailable(ILogger logger);
 
+    /// <summary>
+    /// Logs when the OIDC-backed portal credential verifier rejects a named-user
+    /// login (#1370).
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4215,
+        Level = LogLevel.Information,
+        Message = "Portal named-user credential rejected by OIDC verifier: {Reason}")]
+    public static partial void PortalCredentialRejected(ILogger logger, string reason);
+
+    /// <summary>
+    /// Logs when OIDC discovery metadata cannot be retrieved during portal
+    /// credential verification (#1370).
+    /// </summary>
+    [LoggerMessage(
+        EventId = 4216,
+        Level = LogLevel.Warning,
+        Message = "OIDC discovery metadata unavailable for portal credential verification: {Reason}")]
+    public static partial void PortalCredentialMetadataUnavailable(ILogger logger, string reason);
+
 }

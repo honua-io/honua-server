@@ -123,29 +123,10 @@ internal sealed class ImageServerCatalogFilterEvaluator : IImageServerCatalogFil
     }
 
     private static object? ResolveProperty(string propertyName, ImageServerCatalogItem item)
-    {
-        // Esri raster catalog field names are case-insensitive.
-        return propertyName.ToUpperInvariant() switch
-        {
-            "OBJECTID" => item.ObjectId,
-            "NAME" => item.Name,
-            "MINPS" => item.MinPixelSize,
-            "MAXPS" => item.MaxPixelSize,
-            "LOWPS" => item.LowPixelSize,
-            "HIGHPS" => item.HighPixelSize,
-            "CENTERX" => item.CenterX,
-            "CENTERY" => item.CenterY,
-            "ZORDER" => item.ZOrder,
-            "SHAPE_LENGTH" => item.ShapeLength,
-            "SHAPE_AREA" => item.ShapeArea,
-            "BANDCOUNT" or "NUM_BANDS" => item.BandCount,
-            "PIXELTYPE" or "PIXEL_TYPE" => item.PixelType,
-            "ACQUISITIONDATE" => item.AcquisitionDate?.UtcDateTime,
-            "CREATEDAT" or "CREATED_AT" => item.CreatedAt.UtcDateTime,
-            _ => throw new ImageServerCatalogFilterException(
-                $"Unknown raster catalog field '{propertyName}'.")
-        };
-    }
+        => ImageServerCatalogFields.TryResolve(propertyName, item, out var value)
+            ? value
+            : throw new ImageServerCatalogFilterException(
+                $"Unknown raster catalog field '{propertyName}'.");
 
     private static bool CompareEquality(object? left, object? right)
     {

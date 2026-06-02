@@ -516,6 +516,210 @@ public class ImageServerCatalogQueryHandlerTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_OrderByFieldsAscending_SortsByField()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(300, "c-scene"),
+            CreateRaster(100, "a-scene"),
+            CreateRaster(200, "b-scene"),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["orderByFields"] = "Name ASC",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
+        jsonResult.Should().NotBeNull();
+        jsonResult!.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+            .Should().ContainInOrder(100L, 200L, 300L);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_OrderByFieldsDescending_SortsByFieldDescending()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "a-scene"),
+            CreateRaster(300, "c-scene"),
+            CreateRaster(200, "b-scene"),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["orderByFields"] = "OBJECTID DESC",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
+        jsonResult.Should().NotBeNull();
+        jsonResult!.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+            .Should().ContainInOrder(300L, 200L, 100L);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_OrderByFieldsMultiKey_BreaksTiesWithSecondaryField()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "shared", bandCount: 3),
+            CreateRaster(300, "shared", bandCount: 1),
+            CreateRaster(200, "shared", bandCount: 1),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            // Primary key (Name) is identical for all rows, so the secondary key
+            // (OBJECTID ascending) determines the order.
+            ["orderByFields"] = "Name ASC, OBJECTID ASC",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
+        jsonResult.Should().NotBeNull();
+        jsonResult!.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+            .Should().ContainInOrder(100L, 200L, 300L);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_OrderByFieldsAppliesBeforePagination()
+    {
+        SetupLayerWithRasters([
+            CreateRaster(100, "a-scene"),
+            CreateRaster(400, "d-scene"),
+            CreateRaster(200, "b-scene"),
+            CreateRaster(300, "c-scene"),
+        ]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["orderByFields"] = "OBJECTID DESC",
+            ["resultOffset"] = "1",
+            ["resultRecordCount"] = "2",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
+        jsonResult.Should().NotBeNull();
+        // Sorted desc => 400,300,200,100; offset 1, count 2 => 300,200.
+        jsonResult!.Value!.Features.Select(f => f.Attributes["OBJECTID"])
+            .Should().ContainInOrder(300L, 200L);
+        jsonResult.Value.ExceededTransferLimit.Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_OrderByFieldsUnknownField_ReturnsBadRequest()
+    {
+        SetupLayerWithRasters([CreateRaster(100, "first")]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["orderByFields"] = "BogusField",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_OrderByFieldsInvalidDirection_ReturnsBadRequest()
+    {
+        SetupLayerWithRasters([CreateRaster(100, "first")]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["orderByFields"] = "OBJECTID SIDEWAYS",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_OutFields_ProjectsAttributesAndSchema()
+    {
+        SetupLayerWithRasters([CreateRaster(100, "scene-a")]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["outFields"] = "Name,BandCount",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
+        jsonResult.Should().NotBeNull();
+
+        // OBJECTID is always retained alongside the requested fields.
+        jsonResult!.Value!.Fields.Select(f => f.Name)
+            .Should().BeEquivalentTo(["OBJECTID", "Name", "BandCount"]);
+
+        var attributes = jsonResult.Value.Features[0].Attributes;
+        attributes.Keys.Should().BeEquivalentTo(["OBJECTID", "Name", "BandCount"]);
+        attributes.Should().NotContainKey("PixelType");
+        attributes.Should().NotContainKey("CenterX");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_OutFieldsWildcard_ReturnsAllFields()
+    {
+        SetupLayerWithRasters([CreateRaster(100, "scene-a")]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["outFields"] = "*",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+
+        var jsonResult = result as JsonHttpResult<CatalogQueryResponse>;
+        jsonResult.Should().NotBeNull();
+        jsonResult!.Value!.Fields.Should().HaveCount(15);
+        jsonResult.Value.Features[0].Attributes.Should().ContainKey("PixelType");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalogAsync_OutFieldsUnknownField_ReturnsBadRequest()
+    {
+        SetupLayerWithRasters([CreateRaster(100, "first")]);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["outFields"] = "BogusField",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.QueryCatalogAsync(context, 1, values, CancellationToken.None);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public async Task QueryCatalogAsync_RasterStoreThrows_ReturnsServerError()
     {
         _rasterStore.ListRastersAsync(1, Arg.Any<CancellationToken>())

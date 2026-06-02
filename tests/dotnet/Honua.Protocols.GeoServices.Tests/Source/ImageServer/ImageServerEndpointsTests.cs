@@ -104,6 +104,30 @@ public class ImageServerEndpointsTests
         return store;
     }
 
+    private static IRasterStore CreateMultiRasterStoreSubstitute()
+    {
+        var store = Substitute.For<IRasterStore>();
+        RasterInfo Build(long id, string name) => new()
+        {
+            Id = id,
+            LayerId = TestLayerId,
+            Name = name,
+            Width = 256,
+            Height = 256,
+            BandCount = 1,
+            PixelType = "8BUI",
+            Srid = 4326,
+            GeoTransform = [-180, 1.40625, 0, 90, 0, -0.703125],
+            Extent = new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 },
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+
+        // Returned in deliberately unsorted order so orderByFields has work to do.
+        var rasters = new[] { Build(200, "b"), Build(100, "a"), Build(300, "c") };
+        store.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(rasters);
+        return store;
+    }
+
     private static async Task<WebAppFixture> CreateFixtureAsync(IRasterStore rasterStore)
     {
         var fixture = new WebAppFixture()
@@ -180,6 +204,74 @@ public class ImageServerEndpointsTests
                 "/rest/services/99999/ImageServer/query?f=json");
 
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/query")]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalog_Get_OrderByFieldsDescending_SortsFeatures()
+    {
+        var fixture = await CreateFixtureAsync(CreateMultiRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/query?f=json&orderByFields=OBJECTID%20DESC");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var ids = json.RootElement.GetProperty("features").EnumerateArray()
+                .Select(f => f.GetProperty("attributes").GetProperty("OBJECTID").GetInt64())
+                .ToArray();
+            ids.Should().ContainInOrder(300L, 200L, 100L);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/query")]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalog_Get_OutFields_ProjectsAttributes()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/query?f=json&outFields=Name,BandCount");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var attributes = json.RootElement.GetProperty("features")[0].GetProperty("attributes");
+            attributes.TryGetProperty("OBJECTID", out _).Should().BeTrue();
+            attributes.TryGetProperty("Name", out _).Should().BeTrue();
+            attributes.TryGetProperty("BandCount", out _).Should().BeTrue();
+            attributes.TryGetProperty("PixelType", out _).Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/query")]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalog_Get_OutFieldsUnknownField_ReturnsBadRequest()
+    {
+        var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
+        try
+        {
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{TestLayerId}/ImageServer/query?f=json&outFields=Bogus");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
         finally
         {

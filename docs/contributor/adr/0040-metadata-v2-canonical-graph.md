@@ -298,7 +298,11 @@ handler porting:
 5. `Resource.Editing.*` — Esri capability + OGC API Features Part 4 parity
 6. `Service.Settings.*` — operational limits per protocol
 7. `Resource.Spatial.{SupportedCrs, StorageCrs, StorageCrsCoordinateEpoch}` — OGC API Features Part 2
-8. `Resource.Style` + `Resource.StyleResourceIds` — OGC API Styles + multi-encoding
+8. `Resource.Style` + `Resource.StyleResourceIds` — OGC API Styles + multi-encoding.
+   **Resolved by ADR-0048.** The typed slots exist but are dormant scaffolding: nothing
+   produces a `Type=Style` resource and `StyleResourceIds` is never populated. ADR-0048
+   sets the first-class style model + OGC API – Styles contract, and tracks the
+   producer + styleId-keyed storage as a phased data-layer epic.
 
 The 5-slice landing plan is in `metadata-v2-crosswalk.md`.
 

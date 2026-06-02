@@ -1,8 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication;
@@ -44,8 +46,14 @@ public static class PortalTokenAuthenticationExtensions
             .Bind(configuration.GetSection(PortalTokenAuthenticationOptions.SectionName))
             .ValidateOnStart();
 
+        services
+            .AddOptions<PortalCredentialVerifierOptions>()
+            .Bind(configuration.GetSection(PortalCredentialVerifierOptions.SectionName))
+            .ValidateOnStart();
+
         services.TryAddSingletonPortalTokenIssuer();
-        services.TryAddDefaultPortalCredentialVerifier();
+        services.TryAddPortalCredentialVerifier();
+        services.TryAddPortalAccessProjection(configuration);
 
         services.AddAuthentication()
             .AddScheme<AuthenticationSchemeOptions, PortalTokenAuthenticationHandler>(
@@ -77,13 +85,62 @@ public static class PortalTokenAuthenticationExtensions
         }
     }
 
-    private static void TryAddDefaultPortalCredentialVerifier(this IServiceCollection services)
+    private static void TryAddPortalCredentialVerifier(this IServiceCollection services)
     {
-        if (!services.Any(d => d.ServiceType == typeof(IPortalCredentialVerifier)))
+        if (services.Any(d => d.ServiceType == typeof(IPortalCredentialVerifier)))
         {
-            services.AddScoped<IPortalCredentialVerifier, AdminPortalCredentialVerifier>();
+            // An operator-supplied custom verifier takes precedence over the
+            // built-in admin/OIDC selection.
+            return;
         }
+
+        // The admin verifier (admin password / admin API key) remains the default
+        // and community option. The OIDC-backed verifier is opt-in and, when
+        // enabled, may fall back to the admin verifier so admin/API-key access
+        // keeps working alongside named-user login.
+        services.AddScoped<AdminPortalCredentialVerifier>();
+        services.AddScoped<OidcPortalCredentialVerifier>();
+        services.AddScoped<IPortalCredentialVerifier>(static provider =>
+        {
+            var options = provider.GetRequiredService<IOptions<PortalCredentialVerifierOptions>>().Value;
+            var admin = provider.GetRequiredService<AdminPortalCredentialVerifier>();
+
+            if (!options.UseOidc)
+            {
+                return admin;
+            }
+
+            var oidc = provider.GetRequiredService<OidcPortalCredentialVerifier>();
+            return options.FallBackToAdminVerifier
+                ? new CompositePortalCredentialVerifier(oidc, admin)
+                : oidc;
+        });
     }
+
+    private static void TryAddPortalAccessProjection(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.TryAddSingleton<IPortalAccessProjection>(_ =>
+        {
+            // The Portal access/visibility projection is off-by-default so the
+            // facade never exposes a discovery surface unless an operator opts in,
+            // consistent with the entitlement-gated generateToken surface (#1370).
+            var enabled = configuration.GetValue(
+                $"{PortalAccessProjectionConfiguration.SectionName}:Enabled",
+                defaultValue: false);
+            return new PortalAccessProjection(enabled);
+        });
+    }
+}
+
+/// <summary>
+/// Configuration keys for the Portal access/visibility projection (#1370).
+/// </summary>
+public static class PortalAccessProjectionConfiguration
+{
+    /// <summary>
+    /// Configuration section binding root for the projection gate.
+    /// </summary>
+    public const string SectionName = "Authentication:PortalAccessProjection";
 }
 
 /// <summary>
