@@ -53,11 +53,28 @@ internal static partial class FeatureServerEndpoints
     /// </summary>
     private static class AllowedQueryParameters
     {
+        // Standard Esri metadata-request parameters that ArcGIS clients (notably
+        // ArcGIS Pro / arcpy) append by default when resolving a FeatureServer
+        // service or layer by URL. They do not change the metadata document, but a
+        // strict allowlist that rejects them returns 400 and makes ArcGIS Pro report
+        // the layer as "does not exist or is not supported" (MakeFeatureLayer /
+        // Add Data fails). Accept and ignore them, mirroring the layer-query
+        // treatment of unsupported-but-harmless ArcGIS client parameters (#1276).
+        private static readonly string[] EsriMetadataClientParameters =
+        [
+            "returnFieldGroups",
+            "returnPbfFeatureEncodings"
+        ];
+
         public static readonly FrozenSet<string> ServiceMetadata =
-            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            new[] { "f" }
+                .Concat(EsriMetadataClientParameters)
+                .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> LayerMetadata =
-            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            new[] { "f" }
+                .Concat(EsriMetadataClientParameters)
+                .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> Query = GeoServicesRequestValueHelpers.LayerQueryAllowedParameters;
 
