@@ -32,6 +32,27 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
     private const int SampleFeatureCount = 15;
     private const int QueryMatrixPageSize = 50;
     private const double MaxSpatialParityEnvelopeSpanDegrees = 2d;
+
+    // Import budget tuning for the external parity suite.
+    //
+    // The candidate layers are tiny-to-modest (12-3557 features) and the public Esri
+    // sample servers normally answer a page in <2s, so a healthy import completes in
+    // well under a minute. The previous configuration paired a 90s per-request timeout
+    // with MaxRetries=1, which let a single transient upstream stall consume
+    // 90s + retry delay + 90s ~= 181s by itself. That already exceeded the 180s
+    // WaitForCompletionAsync budget, so one slow page on a free shared Esri endpoint
+    // tipped a multi-page import (e.g. usa_cities = 18 pages) over the deadline and
+    // produced the nightly TimeoutException flake.
+    //
+    // Cap a single request (incl. retry) far below the overall wait so no one page can
+    // exhaust the budget, and give the overall wait generous headroom for multi-page
+    // imports that hit a couple of slow pages, while staying well inside the workflow's
+    // 90-minute job timeout. A genuinely stuck import still fails at a bounded deadline
+    // rather than hanging the suite.
+    private const int ImportRequestTimeoutSeconds = 30;
+    private const int ImportMaxRetries = 2;
+    private static readonly TimeSpan _importCompletionTimeout = TimeSpan.FromMinutes(5);
+
     private static readonly JsonSerializerOptions _scorecardJsonOptions = new() { WriteIndented = true };
 
     private static readonly ParityServiceCase[] _serviceCases =
@@ -148,7 +169,7 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
             _importedTables.Add(tableName);
 
             var jobId = await StartImportAsync(serviceCase, tableName);
-            var progress = await WaitForCompletionAsync(jobId, TimeSpan.FromMinutes(3));
+            var progress = await WaitForCompletionAsync(jobId, _importCompletionTimeout);
 
             ReadStatus(progress.GetProperty("status")).Should().Be(
                 GeoservicesImportStatus.Completed,
@@ -253,7 +274,7 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
             _importedTables.Add(tableName);
 
             var jobId = await StartImportAsync(serviceCase, tableName);
-            var progress = await WaitForCompletionAsync(jobId, TimeSpan.FromMinutes(3));
+            var progress = await WaitForCompletionAsync(jobId, _importCompletionTimeout);
 
             ReadStatus(progress.GetProperty("status")).Should().Be(
                 GeoservicesImportStatus.Completed,
@@ -527,8 +548,8 @@ public sealed class GeoservicesParityIntegrationTests : IAsyncLifetime, IDisposa
             TargetSchema = _schema,
             OverwriteExisting = true,
             BatchSize = 200,
-            RequestTimeoutSeconds = 90,
-            MaxRetries = 1,
+            RequestTimeoutSeconds = ImportRequestTimeoutSeconds,
+            MaxRetries = ImportMaxRetries,
             AutoPublish = false
         };
 
