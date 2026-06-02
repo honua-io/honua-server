@@ -9,6 +9,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Protocols.GeoServices;
@@ -88,7 +89,8 @@ internal sealed class FeatureServerEditsHandler(
             var service = validationResult.Service!;
             var publication = validationResult.Publication!;
             var resource = validationResult.Resource!;
-            var accessError = AccessPolicyHelpers.RequireResourceAccess(httpContext, resource, service, AccessScope.Write);
+            var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+                httpContext, resource, AuthorizationOperation.Update, service, cancellationToken).ConfigureAwait(false);
             if (accessError != null)
             {
                 return accessError;

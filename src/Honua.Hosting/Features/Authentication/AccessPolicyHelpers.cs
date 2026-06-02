@@ -88,11 +88,40 @@ internal static class AccessPolicyHelpers
     /// <param name="scope">The requested access scope (read/write).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>An error result when denied, otherwise <see langword="null"/>.</returns>
-    public static async Task<IResult?> RequireResourceAccessAsync(
+    public static Task<IResult?> RequireResourceAccessAsync(
         HttpContext context,
         MetadataV2Resource resource,
         MetadataV2Service? service = null,
         AccessScope scope = AccessScope.Read,
+        CancellationToken cancellationToken = default)
+        => RequireResourceAccessAsync(
+            context,
+            resource,
+            DefaultOperationForScope(scope),
+            service,
+            cancellationToken);
+
+    /// <summary>
+    /// Operation-aware resource access check (#1376). Routes the request through
+    /// the canonical per-operation permission resolver for the supplied
+    /// <see cref="AuthorizationOperation"/>, then falls back to the coarse
+    /// <see cref="AccessPolicy"/> seam (using the scope implied by the operation)
+    /// when no grant matches. This is the shared seam every protocol adapter
+    /// re-wires to so a per-operation grant (e.g. allow <c>query</c> but deny
+    /// <c>update</c>) is honored consistently across surfaces while services with
+    /// no per-operation grants keep their current coarse behavior.
+    /// </summary>
+    /// <param name="context">The request context.</param>
+    /// <param name="resource">The resource (layer) being accessed.</param>
+    /// <param name="operation">The canonical operation being authorized.</param>
+    /// <param name="service">The owning service, when known.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>An error result when denied, otherwise <see langword="null"/>.</returns>
+    public static async Task<IResult?> RequireResourceAccessAsync(
+        HttpContext context,
+        MetadataV2Resource resource,
+        AuthorizationOperation operation,
+        MetadataV2Service? service = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -104,7 +133,7 @@ internal static class AccessPolicyHelpers
                 context,
                 serviceName,
                 resource.Metadata.Name,
-                scope,
+                operation,
                 cancellationToken).ConfigureAwait(false);
 
             // An explicit per-operation grant authorizes the request directly.
@@ -116,8 +145,116 @@ internal static class AccessPolicyHelpers
 
         // No matching grant (or no service context): preserve current behavior
         // by falling back to the coarse AccessPolicy evaluation.
-        return RequireAccess(context, resource.AccessPolicy, service?.AccessPolicy, scope);
+        return RequireAccess(context, resource.AccessPolicy, service?.AccessPolicy, ScopeForOperation(operation));
     }
+
+    /// <summary>
+    /// Service-level operation-aware access check (#1376). Mirrors
+    /// <see cref="RequireResourceAccessAsync(HttpContext, MetadataV2Resource, AuthorizationOperation, MetadataV2Service?, CancellationToken)"/>
+    /// for service-scoped operations (no specific layer), consulting the resolver
+    /// with a wildcard layer then falling back to the coarse service policy.
+    /// </summary>
+    /// <param name="context">The request context.</param>
+    /// <param name="service">The service being accessed.</param>
+    /// <param name="operation">The canonical operation being authorized.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>An error result when denied, otherwise <see langword="null"/>.</returns>
+    public static async Task<IResult?> RequireServiceAccessAsync(
+        HttpContext context,
+        MetadataV2Service service,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(service);
+
+        var serviceName = service.Metadata.Name;
+        if (!string.IsNullOrWhiteSpace(serviceName))
+        {
+            var grantDecision = await EvaluateGrantAsync(
+                context,
+                serviceName,
+                layerName: null,
+                operation,
+                cancellationToken).ConfigureAwait(false);
+
+            if (grantDecision == GrantOutcome.Allow)
+            {
+                return null;
+            }
+        }
+
+        return RequireAccess(context, null, service.AccessPolicy, ScopeForOperation(operation));
+    }
+
+    /// <summary>
+    /// Operation-aware resource access evaluation that returns an
+    /// <see cref="AccessDecision"/> (rather than an <see cref="IResult"/>) for
+    /// non-HTTP adapters such as gRPC (#1376). Consults the resolver first and
+    /// reports the matched grant as an allowed decision; otherwise it falls back
+    /// to the coarse <see cref="AccessPolicy"/> evaluation for the implied scope.
+    /// </summary>
+    /// <param name="context">The request context.</param>
+    /// <param name="resource">The resource (layer) being accessed.</param>
+    /// <param name="service">The owning service, when known.</param>
+    /// <param name="operation">The canonical operation being authorized.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The access decision.</returns>
+    public static async Task<AccessDecision> EvaluateResourceAccessAsync(
+        HttpContext context,
+        MetadataV2Resource resource,
+        MetadataV2Service? service,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+
+        var serviceName = service?.Metadata.Name;
+        if (!string.IsNullOrWhiteSpace(serviceName))
+        {
+            var grantDecision = await EvaluateGrantAsync(
+                context,
+                serviceName,
+                resource.Metadata.Name,
+                operation,
+                cancellationToken).ConfigureAwait(false);
+
+            if (grantDecision == GrantOutcome.Allow)
+            {
+                return AccessDecision.Allowed();
+            }
+        }
+
+        return EvaluateAccess(context, resource.AccessPolicy, service?.AccessPolicy, ScopeForOperation(operation));
+    }
+
+    /// <summary>
+    /// Maps an <see cref="AccessScope"/> to the canonical read/write operation it
+    /// implies. Read scope maps to <see cref="AuthorizationOperation.Query"/> and
+    /// write scope to <see cref="AuthorizationOperation.Update"/>; callers that
+    /// distinguish insert/delete/export/metadata should use the operation-aware
+    /// overloads directly.
+    /// </summary>
+    /// <param name="scope">The coarse access scope.</param>
+    /// <returns>The implied canonical operation.</returns>
+    public static AuthorizationOperation DefaultOperationForScope(AccessScope scope)
+        => scope == AccessScope.Write
+            ? AuthorizationOperation.Update
+            : AuthorizationOperation.Query;
+
+    /// <summary>
+    /// Maps a canonical operation back to the coarse <see cref="AccessScope"/>
+    /// used by the legacy <see cref="AccessPolicy"/> fallback. Mutating operations
+    /// (insert/update/delete/admin) require write scope; read-style operations
+    /// (query/read/metadata/export) require read scope.
+    /// </summary>
+    private static AccessScope ScopeForOperation(AuthorizationOperation operation) => operation switch
+    {
+        AuthorizationOperation.Insert => AccessScope.Write,
+        AuthorizationOperation.Update => AccessScope.Write,
+        AuthorizationOperation.Delete => AccessScope.Write,
+        AuthorizationOperation.Admin => AccessScope.Write,
+        _ => AccessScope.Read,
+    };
 
     /// <summary>
     /// Consults the per-operation permission resolver for the supplied
@@ -128,7 +265,7 @@ internal static class AccessPolicyHelpers
         HttpContext context,
         string serviceName,
         string? layerName,
-        AccessScope scope,
+        AuthorizationOperation operation,
         CancellationToken cancellationToken)
     {
         var resolver = context.RequestServices.GetService<IPermissionResolver>();
@@ -150,10 +287,6 @@ internal static class AccessPolicyHelpers
             ?? principal.FindFirstValue("sub")
             ?? string.Empty;
         var isAuthenticated = principal.Identity?.IsAuthenticated == true;
-
-        var operation = scope == AccessScope.Write
-            ? AuthorizationOperation.Update
-            : AuthorizationOperation.Query;
 
         var decision = await resolver.AuthorizeAsync(
             userId,
@@ -217,6 +350,32 @@ internal static class AccessPolicyHelpers
     {
         ArgumentNullException.ThrowIfNull(resource);
         return EvaluateAccess(context, resource.AccessPolicy, service?.AccessPolicy, scope).IsAllowed;
+    }
+
+    /// <summary>
+    /// Resolver-aware accessibility predicate (#1376). Consults the canonical
+    /// per-operation permission resolver for the supplied operation first; when no
+    /// grant matches it falls back to the coarse <see cref="AccessPolicy"/>
+    /// evaluation, so visibility filtering (e.g. WFS GetFeature published types)
+    /// honors per-operation grants while ungranted services behave as before.
+    /// </summary>
+    /// <param name="context">The request context.</param>
+    /// <param name="resource">The resource (layer) being accessed.</param>
+    /// <param name="service">The owning service, when known.</param>
+    /// <param name="operation">The canonical operation being authorized.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns><see langword="true"/> when the resource is accessible.</returns>
+    public static async Task<bool> IsResourceAccessibleAsync(
+        HttpContext context,
+        MetadataV2Resource resource,
+        MetadataV2Service? service,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        var decision = await EvaluateResourceAccessAsync(
+            context, resource, service, operation, cancellationToken).ConfigureAwait(false);
+        return decision.IsAllowed;
     }
 
     public static bool AllowsAnonymousResourceAccess(

@@ -135,7 +135,13 @@ internal static class LayerValidationHelpers
             return new MetadataV2ValidationResult(false, null, null, null, error);
         }
 
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service, scope);
+        // Per-operation RBAC grants are consulted first (#1376) via the shared
+        // seam; the coarse AccessPolicy is the no-grant fallback. This central
+        // validator is the enforcement point for OData / OGC API Features / WFS /
+        // tiles / STAC layer reads & mutations, so wiring it here re-routes those
+        // adapters through the resolver consistently.
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resource, service, scope, effectiveToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return new MetadataV2ValidationResult(false, publication, resource, service, accessError);
@@ -177,7 +183,8 @@ internal static class LayerValidationHelpers
             return new MetadataV2ValidationResult(false, null, null, null, error);
         }
 
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service, scope);
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resource, service, scope, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return new MetadataV2ValidationResult(false, publication, resource, service, accessError);
@@ -278,7 +285,8 @@ internal static class LayerValidationHelpers
                 StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found."));
         }
 
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service, scope);
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resource, service, scope, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return new MetadataV2ValidationResult(false, publication, resource, service, accessError);
@@ -730,7 +738,8 @@ internal static class LayerValidationHelpers
                     context, $"{requiredProtocol} is not enabled for service '{serviceName}'."));
         }
 
-        var serviceAccessError = AccessPolicyHelpers.RequireServiceAccess(context, service, scope);
+        var serviceAccessError = await AccessPolicyHelpers.RequireServiceAccessAsync(
+            context, service, AccessPolicyHelpers.DefaultOperationForScope(scope), cancellationToken).ConfigureAwait(false);
         if (serviceAccessError != null)
         {
             return new MetadataV2ServiceValidationResult(false, service, [], [], serviceAccessError);

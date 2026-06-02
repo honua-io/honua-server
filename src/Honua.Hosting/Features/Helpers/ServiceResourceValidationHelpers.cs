@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
@@ -82,7 +83,8 @@ internal static class ServiceResourceValidationHelpers
 
         if (requireServiceAccess)
         {
-            var accessError = AccessPolicyHelpers.RequireServiceAccess(context, service);
+            var accessError = await AccessPolicyHelpers.RequireServiceAccessAsync(
+                context, service, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false);
             if (accessError != null)
             {
                 return new ServiceValidationV2Result(false, null, accessError);
