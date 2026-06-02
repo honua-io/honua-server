@@ -144,6 +144,21 @@ public static class RelationTypes
     public const string Style = "style";
 
     /// <summary>
+    /// Refers to a stylesheet (the encoded style document itself) per OGC API - Styles.
+    /// </summary>
+    public const string Stylesheet = "stylesheet";
+
+    /// <summary>
+    /// Refers to a preview (e.g. thumbnail) of a style per OGC API - Styles.
+    /// </summary>
+    public const string Preview = "preview";
+
+    /// <summary>
+    /// Refers to the styles available for a resource per OGC API - Styles.
+    /// </summary>
+    public const string Styles = "http://www.opengis.net/def/rel/ogc/1.0/styles";
+
+    /// <summary>
     /// Indicates the link target provides service documentation.
     /// </summary>
     public const string ServiceDoc = "service-doc";
@@ -334,4 +349,19 @@ public static class MediaTypes
     /// PNG image media type.
     /// </summary>
     public const string Png = "image/png";
+
+    /// <summary>
+    /// Mapbox/MapLibre style document media type (OGC API - Styles canonical encoding).
+    /// </summary>
+    public const string MapboxStyle = "application/vnd.mapbox.style+json";
+
+    /// <summary>
+    /// OGC Styled Layer Descriptor 1.0 media type.
+    /// </summary>
+    public const string Sld10 = "application/vnd.ogc.sld+xml;version=1.0";
+
+    /// <summary>
+    /// OGC Styled Layer Descriptor 1.1 media type.
+    /// </summary>
+    public const string Sld11 = "application/vnd.ogc.sld+xml;version=1.1";
 }

@@ -475,6 +475,8 @@ Honua.Core.Features.Publishing.Content.ContentPublishingServiceCollectionExtensi
 builder.Services.AddScoped<Honua.Infrastructure.Services.IGeometryConverter,
     Honua.Infrastructure.Services.GeometryConverter>();
 builder.Services.AddScoped<ILayerStyleService, LayerStyleService>();
+builder.Services.AddScoped<Honua.Core.Features.Styling.Abstractions.IOgcStyleProjection,
+    Honua.Server.Features.Styling.OgcStyleProjection>();
 builder.Services.AddSingleton<Honua.Core.Features.Styling.Abstractions.IGeoServicesStyleConverter,
     Honua.Server.Features.Styling.GeoServicesStyleConverter>();
 builder.Services.AddSingleton<Honua.Core.Features.Styling.Abstractions.ISldStyleConverter,
@@ -594,6 +596,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
         Honua.Protocols.Ogc.Api.Features.OgcJsonContext.Default,
         Honua.Protocols.Ogc.Api.Maps.Models.OgcMapsJsonContext.Default,
         Honua.Protocols.Ogc.Api.Records.OgcRecordsJsonContext.Default,
+        Honua.Protocols.Ogc.Api.Styles.OgcStylesJsonContext.Default,
         Honua.Protocols.Ogc.Api.Tiles.OgcTilesJsonContext.Default,
         Honua.Server.Features.Admin.Models.SecureConnectionJsonContext.Default,
         Honua.Server.Features.Admin.Models.LayerPublishingJsonContext.Default,

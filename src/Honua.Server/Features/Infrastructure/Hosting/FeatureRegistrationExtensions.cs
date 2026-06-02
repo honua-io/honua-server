@@ -39,6 +39,7 @@ using Honua.Protocols.Ogc.Api.Features;
 using Honua.Protocols.Ogc.Api.Maps;
 using Honua.Protocols.Ogc.Api.Processes;
 using Honua.Protocols.Ogc.Api.Records;
+using Honua.Protocols.Ogc.Api.Styles;
 using Honua.Protocols.Ogc.Api.Tiles;
 using Honua.Server.Features.Orchestration;
 using Honua.PackageReview;
@@ -85,6 +86,7 @@ internal static class FeatureRegistrationExtensions
         services.AddOgcCoverages();
         services.AddOgcFeatures(configuration);
         services.AddOgcMaps();
+        services.AddOgcStyles();
         services.AddOgcProcesses(configuration);
         services.AddWfs20(configuration);
         services.AddWcs20();
@@ -171,6 +173,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapOgcCoveragesEndpoints();
         endpoints.MapOgcFeaturesEndpoints();
         endpoints.MapOgcMapsEndpoints();
+        endpoints.MapOgcStylesEndpoints();
         endpoints.MapOgcProcessesEndpoints();
         endpoints.MapOgcRecordsEndpoints();
         endpoints.MapOgcTilesEndpoints();

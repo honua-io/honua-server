@@ -88,6 +88,22 @@ The WFS 2.0 explicit transactional slice is tracked separately and passes
 - **WMS 1.3 `default`** — the official ETS default profile.
 - **WMTS 1.0 `default`** — the official ETS default profile.
 
+## OGC API surfaces without an official CITE ETS
+
+Some OGC API standards do not (yet) have an official CITE Executable Test Suite,
+so they are not part of the 952/952 suite count above. They are still shipped as
+conformant protocol adapters and proven with targeted integration tests plus an
+accurate `/conformance` declaration:
+
+- **OGC API – Styles (Part 1)** — `/ogc/styles`. Phase 1 adapter over Honua's
+  per-layer style storage (ADR-0048, issue #1388). Declares `core`,
+  `mapbox-styles`, `sld-10`, `sld-11`, `style-validation`, and **partial**
+  `manage-styles` (PUT only; standalone POST-create and DELETE return `501`
+  until the Phase 2 independent style catalog, issue #1389). MapLibre is served
+  from canonical storage; SLD 1.0/1.1 are derived on demand. Covered by
+  `tests/dotnet/Honua.Server.Tests/Features/Styling/OgcStylesEndpointTests.cs`.
+  See [`docs/gis/style-engine-protocol-consumption.md`](gis/style-engine-protocol-consumption.md).
+
 ## How To Refresh This Page
 
 1. Trigger the

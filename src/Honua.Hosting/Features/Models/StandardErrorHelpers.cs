@@ -151,6 +151,23 @@ internal static class StandardErrorHelpers
     }
 
     /// <summary>
+    /// Creates an Unsupported Media Type error response.
+    /// </summary>
+    /// <param name="context">The HTTP context for protocol detection.</param>
+    /// <param name="detail">The error detail message.</param>
+    /// <param name="additionalDetails">Optional additional details.</param>
+    /// <returns>A protocol-specific Unsupported Media Type response.</returns>
+    internal static IResult CreateUnsupportedMediaType(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
+    {
+        var errorResponse = new StandardErrorResponse(
+            StatusCodes.Status415UnsupportedMediaType,
+            "Unsupported Media Type",
+            detail,
+            additionalDetails);
+        return StandardErrorResponseFormatter.FormatError(context, errorResponse);
+    }
+
+    /// <summary>
     /// Creates an Unprocessable Entity error response.
     /// </summary>
     /// <param name="context">The HTTP context for protocol detection.</param>
