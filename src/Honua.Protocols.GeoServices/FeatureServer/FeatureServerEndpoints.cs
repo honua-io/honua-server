@@ -463,6 +463,8 @@ internal static partial class FeatureServerEndpoints
             .WithTags("Tiles")
             .CacheOutput("H3MvtTile");
 
+        MapFeatureServerNotImplementedEndpoints(endpoints);
+
         return endpoints;
     }
 }
