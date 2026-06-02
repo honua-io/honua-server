@@ -56,6 +56,64 @@ public sealed class ClientCompatSeedSequenceTests
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ClientCompatSeed_LayerStorageBinding_DeclaresPhysicalFeaturesTableColumns()
+    {
+        // Regression for the PyQGIS nightly: the certification layer binds to the shared
+        // `features` table, whose physical layout stores attributes in the `attributes`
+        // JSONB column and geometry in the `geometry` column (keyed by `layer_id`). The
+        // resource's schema fields name the geometry field `shape` (the Esri-style client
+        // facing name) and tag it `geometry.primary`. Without explicit storage-binding
+        // options, FeatureStorageMapping.FromMetadata falls back to the `geometry.primary`
+        // field name (`shape`) and to bare per-field column projection, producing Postgres
+        // 42703 "column \"shape\" does not exist" on every OGC API Features items query.
+        await using var container = new PostgreSqlBuilder()
+            .WithImage(PostgisImage)
+            .WithDatabase("honua_seed_binding_regression")
+            .WithUsername("postgres")
+            .WithPassword("compat_password")
+            .WithEnvironment("POSTGIS_GDAL_ENABLED_DRIVERS", "ENABLE_ALL")
+            .WithLabel("honua.test.owner", "honua-server")
+            .WithLabel("honua.test.run_id", Environment.GetEnvironmentVariable(TestRunIdEnv) ?? "manual")
+            .Build();
+
+        await container.StartAsync();
+
+        var connectionString = new NpgsqlConnectionStringBuilder(container.GetConnectionString())
+        {
+            Timeout = 60,
+            CommandTimeout = 120
+        }.ToString();
+        await using var dataSource = NpgsqlDataSource.Create(connectionString);
+        await ExecuteSqlFileAsync(dataSource, RepositoryPaths.Resolve("tests", "seed", "client-compat-v1.sql"));
+
+        var snapshots = await ReadCurrentSnapshotsAsync(dataSource);
+
+        foreach (var snapshot in snapshots.Values)
+        {
+            using var document = JsonDocument.Parse(snapshot);
+
+            var binding = document.RootElement
+                .GetProperty("storageBindings")
+                .EnumerateArray()
+                .Single(b => b.GetProperty("metadata").GetProperty("id").GetString() == "storage-layer-0");
+
+            var options = binding.GetProperty("options");
+
+            options.GetProperty("geometryColumn").GetString().Should().Be(
+                "geometry",
+                "the physical features table stores geometry in the `geometry` column, not the `shape` schema field");
+            options.GetProperty("attributesColumn").GetString().Should().Be(
+                "attributes",
+                "declared schema fields live in the shared features.attributes JSONB document");
+            options.GetProperty("layerDiscriminatorColumn").GetString().Should().Be(
+                "layer_id",
+                "the features table is shared across layers and reads must be constrained by layer_id");
+            options.GetProperty("primaryKeyColumn").GetString().Should().Be("objectid");
+        }
+    }
+
     private static async Task ExecuteSqlFileAsync(NpgsqlDataSource dataSource, string path)
     {
         await ExecuteSqlAsync(dataSource, await File.ReadAllTextAsync(path));

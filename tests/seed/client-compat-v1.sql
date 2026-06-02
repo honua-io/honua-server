@@ -500,7 +500,23 @@ BEGIN
                     'locator', table_schema || '.' || table_name,
                     'storageLayerId', layer_id,
                     'capabilities', to_jsonb(ARRAY['query', 'filter', 'sort', 'aggregate', 'edit', 'transactions', 'render', 'tile', 'search']::text[]),
-                    'options', '{}'::jsonb,
+                    -- The certification layers all bind to the shared `features` table, whose
+                    -- physical layout is: pk `objectid`, geometry in the `geometry` column,
+                    -- declared schema fields stored as keys in the `attributes` JSONB document,
+                    -- and rows discriminated by `layer_id`. Declare those columns explicitly so
+                    -- the storage-mapped reader projects `attributes->>'field'` and selects the
+                    -- real geometry column. Without `geometryColumn`, FromMetadata() would fall
+                    -- back to the `geometry.primary` schema field name (`shape`), and without
+                    -- `attributesColumn` the reader would project bare per-field columns; both
+                    -- produce Postgres 42703 "column ... does not exist" at query time.
+                    'options', jsonb_build_object(
+                        'schemaName', table_schema,
+                        'tableName', table_name,
+                        'primaryKeyColumn', 'objectid',
+                        'geometryColumn', 'geometry',
+                        'attributesColumn', 'attributes',
+                        'layerDiscriminatorColumn', 'layer_id'
+                    ),
                     'status', (SELECT value FROM status_doc),
                     'extensions', '{}'::jsonb
                 ) AS value,
