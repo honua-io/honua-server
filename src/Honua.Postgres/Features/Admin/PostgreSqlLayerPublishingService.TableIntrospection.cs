@@ -241,11 +241,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private static List<LayerFieldInsert> BuildLayerFields(
         List<ColumnInfo> selectedColumns,
         ColumnInfo primaryKeyColumn,
-        string geometryColumn)
+        string geometryColumn,
+        IReadOnlyDictionary<string, MetadataV2FieldDomain> fieldDomains)
     {
         var fields = new List<LayerFieldInsert>();
         var added = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        // The object-id column is identity, never a domain-bearing attribute, so it
+        // intentionally publishes without a domain even if the source advertised one.
         var primaryKeyType = MapPostgresType(primaryKeyColumn.DataType);
         fields.Add(new LayerFieldInsert(
             primaryKeyColumn.Name,
@@ -268,7 +271,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 fieldType,
                 column.MaxLength,
                 column.IsNullable,
-                null));
+                null,
+                Domain: fieldDomains.TryGetValue(column.Name, out var domain) ? domain : null));
             _ = added.Add(column.Name);
         }
 

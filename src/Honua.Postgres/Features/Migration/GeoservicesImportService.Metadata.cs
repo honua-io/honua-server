@@ -18,7 +18,10 @@ namespace Honua.Postgres.Features.Migration;
 
 internal sealed partial class GeoservicesImportService
 {
-    private const int CodedValueDomainCap = 100;
+    // Single source of truth for the coded-value capture cap, shared with the
+    // publish-path capture (EsriFieldDomainParser) so persistence and the inventory
+    // artifact agree and a large domain does not later false-fail reconciliation.
+    private const int CodedValueDomainCap = EsriFieldDomainParser.CodedValueDomainCap;
 
     private async Task<MigrationSpatialReferenceInfo[]> BuildArcGisSpatialReferencesAsync(
         JsonElement resourceElement,

@@ -149,6 +149,15 @@ public sealed record GeoservicesLayerInfo
 public sealed record GeoservicesFieldInfo : FieldDefinitionBase
 {
     /// <summary>
+    /// Canonical value domain (coded values or numeric range) captured from the
+    /// source field, or <c>null</c> when the field carries no domain. Carried
+    /// through the auto-publish pipeline so the domain persists into the
+    /// Metadata v2 graph and is served via the FeatureServer field <c>domain</c>
+    /// and <c>queryDomains</c> surfaces.
+    /// </summary>
+    public Honua.Core.Features.Metadata.Domain.V2.MetadataV2FieldDomain? Domain { get; init; }
+
+    /// <summary>
     /// Whether this is the ObjectID field.
     /// </summary>
     public bool IsObjectId => Type.Equals("esriFieldTypeOID", StringComparison.OrdinalIgnoreCase);
