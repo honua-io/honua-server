@@ -1,7 +1,10 @@
 # ADR-0002: MapLibre as Canonical Style Format
 
 ## Status
-Accepted
+Accepted. The canonical-format decision (MapLibre v8) stands. The "one style per layer"
+*storage* framing below is superseded as the target by **ADR-0048**, which adopts first-class,
+reusable, styleId-keyed style resources (one style → many layers) and defines the OGC API –
+Styles contract on top. MapLibre remains the single canonical encoding throughout.
 
 ## Context
 Honua serves layers via multiple protocols (FeatureServer, OGC API Features, OData). Each protocol has different styling expectations:
