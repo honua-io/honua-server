@@ -234,27 +234,80 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /ogc/styles")]
-    public async Task PostStyle_Returns501NotImplemented()
+    public async Task PostStyle_WithValidMapLibre_Returns201AndIsRetrievable()
     {
         var client = _fixture.CreateAdminClient();
 
+        var styleId = $"created-{Guid.NewGuid():N}";
         using var content = new StringContent(BuildDefaultStyleJson(), Encoding.UTF8, MapboxStyleMediaType);
-        var response = await client.PostAsync("/ogc/styles", content);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/ogc/styles") { Content = content };
+        request.Headers.TryAddWithoutValidation("X-Style-Id", styleId);
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        response.Headers.Location.Should().NotBeNull();
+        response.Headers.Location!.ToString().Should().Contain(Uri.EscapeDataString(styleId));
+
+        // The newly created standalone style is retrievable through the read path.
+        var fetched = await client.GetAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}");
+        fetched.Be200Ok();
+        fetched.Content.Headers.ContentType?.MediaType.Should().Be(MapboxStyleMediaType);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /ogc/styles")]
+    public async Task PostStyle_DuplicateId_Returns409Conflict()
+    {
+        var client = _fixture.CreateAdminClient();
+
+        var styleId = $"dup-{Guid.NewGuid():N}";
+
+        using var first = new StringContent(BuildDefaultStyleJson(), Encoding.UTF8, MapboxStyleMediaType);
+        using var firstRequest = new HttpRequestMessage(HttpMethod.Post, "/ogc/styles") { Content = first };
+        firstRequest.Headers.TryAddWithoutValidation("X-Style-Id", styleId);
+        (await client.SendAsync(firstRequest)).StatusCode.Should().Be(HttpStatusCode.Created);
+
+        using var second = new StringContent(BuildDefaultStyleJson(), Encoding.UTF8, MapboxStyleMediaType);
+        using var secondRequest = new HttpRequestMessage(HttpMethod.Post, "/ogc/styles") { Content = second };
+        secondRequest.Headers.TryAddWithoutValidation("X-Style-Id", styleId);
+
+        var response = await client.SendAsync(secondRequest);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 
     [IntegrationTest]
     [Operation(Operations.Delete)]
     [Endpoint("DELETE /ogc/styles/{styleId}")]
-    public async Task DeleteStyle_Returns501NotImplemented()
+    public async Task DeleteStyle_AfterCreate_Returns204ThenNotFound()
     {
         var client = _fixture.CreateAdminClient();
-        var styleId = await SeedAndResolveStyleIdAsync(client);
 
-        var response = await client.DeleteAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}");
+        var styleId = $"del-{Guid.NewGuid():N}";
+        using var content = new StringContent(BuildDefaultStyleJson(), Encoding.UTF8, MapboxStyleMediaType);
+        using var createRequest = new HttpRequestMessage(HttpMethod.Post, "/ogc/styles") { Content = content };
+        createRequest.Headers.TryAddWithoutValidation("X-Style-Id", styleId);
+        (await client.SendAsync(createRequest)).StatusCode.Should().Be(HttpStatusCode.Created);
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        var deleteResponse = await client.DeleteAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}");
+        deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var getResponse = await client.GetAsync($"/ogc/styles/{Uri.EscapeDataString(styleId)}");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Delete)]
+    [Endpoint("DELETE /ogc/styles/{styleId}")]
+    public async Task DeleteStyle_Unknown_Returns404()
+    {
+        var client = _fixture.CreateAdminClient();
+
+        var response = await client.DeleteAsync($"/ogc/styles/missing-{Guid.NewGuid():N}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [IntegrationTest]

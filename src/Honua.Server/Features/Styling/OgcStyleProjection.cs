@@ -25,15 +25,18 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly ILayerStyleService _styleService;
     private readonly ILayerStyleCatalog _styleCatalog;
+    private readonly IStyleCatalog? _independentStyleCatalog;
 
     public OgcStyleProjection(
         IMetadataV2GraphProvider graphProvider,
         ILayerStyleService styleService,
-        ILayerStyleCatalog styleCatalog)
+        ILayerStyleCatalog styleCatalog,
+        IStyleCatalog? independentStyleCatalog = null)
     {
         _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
         _styleService = styleService ?? throw new ArgumentNullException(nameof(styleService));
         _styleCatalog = styleCatalog ?? throw new ArgumentNullException(nameof(styleCatalog));
+        _independentStyleCatalog = independentStyleCatalog;
     }
 
     /// <inheritdoc />
@@ -69,6 +72,24 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             summaries.Add(new OgcStyleSummary(styleId, ResolveTitle(resource)));
         }
 
+        // Phase 2: also surface standalone catalog styles that are not already
+        // represented as a Phase 1 collection-keyed style.
+        if (_independentStyleCatalog is not null)
+        {
+            var catalogStyles = await _independentStyleCatalog.ListStylesAsync(cancellationToken).ConfigureAwait(false);
+            foreach (var style in catalogStyles)
+            {
+                if (!seen.Add(style.StyleId))
+                {
+                    continue;
+                }
+
+                summaries.Add(new OgcStyleSummary(
+                    style.StyleId,
+                    string.IsNullOrWhiteSpace(style.Title) ? style.StyleId : style.Title!));
+            }
+        }
+
         summaries.Sort(static (a, b) => string.CompareOrdinal(a.StyleId, b.StyleId));
         return summaries;
     }
@@ -84,13 +105,15 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         var (resource, storageLayerId, snapshot) = await ResolveStyledResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
         if (resource is null || !storageLayerId.HasValue)
         {
-            return null;
+            // Phase 2: the styleId may identify a standalone catalog style rather than a
+            // Phase 1 collection-keyed style. Serve it from the independent catalog.
+            return await GetCatalogStylesheetAsync(styleId, encoding, cancellationToken).ConfigureAwait(false);
         }
 
         var stored = await _styleCatalog.GetLayerStyleAsync(storageLayerId.Value, cancellationToken).ConfigureAwait(false);
         if (stored is null || string.IsNullOrWhiteSpace(stored.MapLibreStyleJson))
         {
-            return null;
+            return await GetCatalogStylesheetAsync(styleId, encoding, cancellationToken).ConfigureAwait(false);
         }
 
         var mapLibreJson = stored.MapLibreStyleJson!;
@@ -103,6 +126,30 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         return sld;
     }
 
+    private async Task<OgcStylesheet?> GetCatalogStylesheetAsync(
+        string styleId,
+        OgcStyleEncoding encoding,
+        CancellationToken cancellationToken)
+    {
+        if (_independentStyleCatalog is null)
+        {
+            return null;
+        }
+
+        var style = await _independentStyleCatalog.GetStyleAsync(styleId, cancellationToken).ConfigureAwait(false);
+        if (style is null || string.IsNullOrWhiteSpace(style.MapLibreStyleJson))
+        {
+            return null;
+        }
+
+        if (encoding == OgcStyleEncoding.MapboxStyle)
+        {
+            return new OgcStylesheet(style.MapLibreStyleJson, OgcStyleMediaTypes.MapboxStyle, OgcStyleEncoding.MapboxStyle);
+        }
+
+        return DeriveSldFromMapLibre(style.MapLibreStyleJson, style.StyleId, encoding);
+    }
+
     /// <inheritdoc />
     public async Task<OgcStyleMetadata?> GetStyleMetadataAsync(
         string styleId,
@@ -113,13 +160,13 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         var (resource, storageLayerId, _) = await ResolveStyledResourceAsync(styleId, cancellationToken).ConfigureAwait(false);
         if (resource is null || !storageLayerId.HasValue)
         {
-            return null;
+            return await GetCatalogStyleMetadataAsync(styleId, cancellationToken).ConfigureAwait(false);
         }
 
         var stored = await _styleCatalog.GetLayerStyleAsync(storageLayerId.Value, cancellationToken).ConfigureAwait(false);
         if (stored is null || string.IsNullOrWhiteSpace(stored.MapLibreStyleJson))
         {
-            return null;
+            return await GetCatalogStyleMetadataAsync(styleId, cancellationToken).ConfigureAwait(false);
         }
 
         var version = stored.StyleVersion > 0
@@ -132,6 +179,32 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             resource.Metadata.Description,
             resource.Metadata.Keywords,
             resource.Metadata.License,
+            version);
+    }
+
+    private async Task<OgcStyleMetadata?> GetCatalogStyleMetadataAsync(string styleId, CancellationToken cancellationToken)
+    {
+        if (_independentStyleCatalog is null)
+        {
+            return null;
+        }
+
+        var style = await _independentStyleCatalog.GetStyleAsync(styleId, cancellationToken).ConfigureAwait(false);
+        if (style is null)
+        {
+            return null;
+        }
+
+        var version = style.StyleVersion > 0
+            ? style.StyleVersion.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : null;
+
+        return new OgcStyleMetadata(
+            style.StyleId,
+            string.IsNullOrWhiteSpace(style.Title) ? style.StyleId : style.Title!,
+            style.Description,
+            Array.Empty<string>(),
+            License: null,
             version);
     }
 
@@ -174,6 +247,112 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         };
     }
 
+    /// <inheritdoc />
+    public async Task<OgcStyleCreateResult> CreateStyleAsync(
+        string? styleId,
+        string mapLibreStyleJson,
+        bool strict,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(mapLibreStyleJson);
+
+        if (_independentStyleCatalog is null)
+        {
+            return new OgcStyleCreateResult(
+                OgcStyleCreateStatus.Invalid,
+                null,
+                "Standalone style creation requires the independent style catalog, which is not configured.");
+        }
+
+        if (!TryValidateStandaloneMapLibre(mapLibreStyleJson, strict, out var error))
+        {
+            return new OgcStyleCreateResult(OgcStyleCreateStatus.Invalid, null, error);
+        }
+
+        var resolvedStyleId = string.IsNullOrWhiteSpace(styleId)
+            ? $"style-{Guid.NewGuid():N}"
+            : styleId.Trim();
+
+        var created = await _independentStyleCatalog
+            .CreateStyleAsync(resolvedStyleId, mapLibreStyleJson, title: resolvedStyleId, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        if (created is null)
+        {
+            return new OgcStyleCreateResult(
+                OgcStyleCreateStatus.Conflict,
+                null,
+                $"A style with identifier '{resolvedStyleId}' already exists.");
+        }
+
+        return new OgcStyleCreateResult(OgcStyleCreateStatus.Created, created.StyleId, null);
+    }
+
+    /// <inheritdoc />
+    public async Task<OgcStyleDeleteResult> DeleteStyleAsync(
+        string styleId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(styleId);
+
+        if (_independentStyleCatalog is null)
+        {
+            return new OgcStyleDeleteResult(
+                OgcStyleDeleteStatus.NotFound,
+                "Standalone style deletion requires the independent style catalog, which is not configured.");
+        }
+
+        var deleted = await _independentStyleCatalog.DeleteStyleAsync(styleId, cancellationToken).ConfigureAwait(false);
+        return deleted
+            ? new OgcStyleDeleteResult(OgcStyleDeleteStatus.Deleted, null)
+            : new OgcStyleDeleteResult(OgcStyleDeleteStatus.NotFound, $"Style '{styleId}' not found.");
+    }
+
+    // Lightweight validation for a standalone (not-yet-layer-bound) MapLibre style.
+    // Unlike the per-layer normalizer, it does not require a Honua tile source binding,
+    // since a standalone catalog style is decoupled from any layer; binding (and the
+    // stricter normalization) happens when the style is associated with a layer.
+    private static bool TryValidateStandaloneMapLibre(string mapLibreStyleJson, bool strict, out string? error)
+    {
+        error = null;
+        try
+        {
+            using var document = JsonDocument.Parse(mapLibreStyleJson);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                error = "MapLibre style must be a JSON object.";
+                return false;
+            }
+
+            if (strict)
+            {
+                if (!root.TryGetProperty("version", out var version)
+                    || version.ValueKind != JsonValueKind.Number
+                    || version.GetInt32() != 8)
+                {
+                    error = "MapLibre style must include version 8.";
+                    return false;
+                }
+
+                if (!root.TryGetProperty("layers", out var layers)
+                    || layers.ValueKind != JsonValueKind.Array
+                    || layers.GetArrayLength() == 0)
+                {
+                    error = "MapLibre style must include at least one layer.";
+                    return false;
+                }
+            }
+
+            return true;
+        }
+        catch (JsonException ex)
+        {
+            error = $"MapLibre style is not valid JSON: {ex.Message}";
+            return false;
+        }
+    }
+
     private static OgcStylesheet DeriveSld(
         string mapLibreJson,
         MetadataV2Resource resource,
@@ -183,6 +362,19 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         var layerName = string.IsNullOrWhiteSpace(resource.Metadata.Name)
             ? $"layer-{storageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
             : resource.Metadata.Name;
+
+        return DeriveSldFromMapLibre(mapLibreJson, layerName, encoding);
+    }
+
+    private static OgcStylesheet DeriveSldFromMapLibre(
+        string mapLibreJson,
+        string layerName,
+        OgcStyleEncoding encoding)
+    {
+        if (string.IsNullOrWhiteSpace(layerName))
+        {
+            layerName = "style";
+        }
 
         MapLibreStyleLayer[] layers;
         using (var document = JsonDocument.Parse(mapLibreJson))

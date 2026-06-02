@@ -106,6 +106,34 @@ ALTER TABLE IF EXISTS honua.layers
 ALTER TABLE IF EXISTS honua.layers
     ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE;
 
+-- Independent styleId-keyed style catalog (ADR-0048 Phase 2, migration 042, #1389).
+CREATE TABLE IF NOT EXISTS honua.styles (
+    style_id            TEXT PRIMARY KEY,
+    title               TEXT,
+    description         TEXT,
+    maplibre_style      JSONB NOT NULL,
+    drawing_info        JSONB,
+    style_version       INT NOT NULL DEFAULT 1,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    revised_by          TEXT,
+    change_summary      TEXT,
+    CONSTRAINT styles_style_id_not_blank_check CHECK (length(btrim(style_id)) > 0),
+    CONSTRAINT styles_change_summary_length_check
+        CHECK (change_summary IS NULL OR char_length(change_summary) <= 1000)
+);
+
+CREATE TABLE IF NOT EXISTS honua.layer_style_refs (
+    layer_id    INT NOT NULL REFERENCES honua.layers (layer_id) ON DELETE CASCADE,
+    style_id    TEXT NOT NULL REFERENCES honua.styles (style_id) ON DELETE CASCADE,
+    ordinal     INT NOT NULL DEFAULT 0,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (layer_id, style_id)
+);
+
+CREATE INDEX IF NOT EXISTS layer_style_refs_layer_idx ON honua.layer_style_refs (layer_id, ordinal);
+CREATE INDEX IF NOT EXISTS layer_style_refs_style_idx ON honua.layer_style_refs (style_id);
+
 CREATE TABLE IF NOT EXISTS honua.service_layers (
     service_name VARCHAR(64) NOT NULL REFERENCES honua.services(service_name) ON DELETE CASCADE,
     layer_id INT NOT NULL REFERENCES honua.layers(layer_id) ON DELETE CASCADE,

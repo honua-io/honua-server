@@ -217,6 +217,15 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
+        // Register the independent, styleId-keyed style catalog (ADR-0048 Phase 2, #1389)
+        services.AddScoped<IStyleCatalog>(serviceProvider =>
+            new PostgresStyleCatalog(
+                serviceProvider.GetRequiredService<IDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+
+        // Reconciles Type=Style graph resources + StyleResourceIds with the style catalog
+        services.AddScoped<IMetadataV2StyleGraphSync, Features.Metadata.PostgresMetadataV2StyleGraphSync>();
+
         // Register field profiling service for style suggestions (#400)
         services.AddScoped<IFieldProfilingService>(serviceProvider =>
             new PostgresFieldProfilingService(
@@ -233,7 +242,8 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<ITableDiscoveryService>(),
                 serviceProvider.GetRequiredService<IMetadataV2GraphStore>(),
                 serviceProvider.GetRequiredService<ILogger<PostgreSqlLayerPublishingService>>(),
-                configuration["Database:Schema"]));
+                configuration["Database:Schema"],
+                serviceProvider.GetService<IStyleCatalog>()));
 
         // Register health checker
         services.AddScoped<IDatabaseHealthChecker, PostgresDatabaseHealthChecker>();
