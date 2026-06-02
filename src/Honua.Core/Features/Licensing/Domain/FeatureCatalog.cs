@@ -118,6 +118,8 @@ public static class FeatureCatalog
         // Identity — Community (ArcGIS Portal interop)
         new("identity.portal-token", "ArcGIS Portal Token Issuance", Categories.Identity,
             HonuaEdition.Community, "Expose POST/GET /sharing/rest/generateToken so Esri clients can authenticate against Honua-secured /rest/services."),
+        new("identity.portal-sharing", "ArcGIS Portal Sharing Read Surface", Categories.Identity,
+            HonuaEdition.Community, "Expose the read-only /sharing/rest Portal facade (info, portals/self, search, content/items) so Esri clients can discover Honua content as portal items."),
 
         // Identity — Enterprise
         new("identity.oidc", "OIDC Authentication", Categories.Identity,

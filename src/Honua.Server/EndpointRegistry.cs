@@ -560,6 +560,14 @@ public static class EndpointRegistry
         new("POST", "/sharing/rest/generateToken"),
         new("GET", "/sharing/rest/generateToken"),
 
+        // ArcGIS Portal Sharing read surface (#1243).
+        new("GET", "/sharing/rest/info"),
+        new("GET", "/sharing/rest/portals/self"),
+        new("GET", "/sharing/rest/community/self"),
+        new("GET", "/sharing/rest/search"),
+        new("GET", "/sharing/rest/content/items/{id}"),
+        new("GET", "/sharing/rest/content/items/{id}/data"),
+
         new("GET", "/rest/services"),
         new("GET", "/rest/info"),
         new("GET", "/rest/services/{locatorName}/GeocodeServer"),
