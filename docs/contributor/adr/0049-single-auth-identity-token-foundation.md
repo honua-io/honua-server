@@ -1,4 +1,4 @@
-# ADR-0048: Single Auth/Identity/Token Foundation Shared by OIDC SSO and ArcGIS OAuth2
+# ADR-0049: Single Auth/Identity/Token Foundation Shared by OIDC SSO and ArcGIS OAuth2
 
 ## Status
 
