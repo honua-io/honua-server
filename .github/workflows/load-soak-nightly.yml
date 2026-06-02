@@ -134,7 +134,9 @@ jobs:
         env:
           ASPNETCORE_URLS: ${{ env.BASE_URL }}
           ASPNETCORE_ENVIRONMENT: Production
-          HONUA_ADMIN_PASSWORD: "load-soak-admin-password"
+          HONUA_ADMIN_PASSWORD: "Load-Soak-Admin-Pass1!"
+          PUBLIC_BASE_URL: ${{ env.BASE_URL }}
+          HostValidation__AllowedHosts__0: "localhost"
           Security__DisableHttpsRedirection: "true"
           Security__ConnectionEncryption__MasterKey: "test-master-key-32-chars-long-000000"
           ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=${{ env.DB_NAME }};Username=${{ env.DB_USER }};Password=${{ env.DB_PASSWORD }};Maximum Pool Size=50
@@ -156,7 +158,7 @@ jobs:
 
       - name: Run load/soak tests
         env:
-          HONUA_API_KEY: "load-soak-admin-password"
+          HONUA_API_KEY: "Load-Soak-Admin-Pass1!"
         run: |
           PROFILE="${{ github.event.inputs.profile || 'nightly' }}"
           DURATION="${{ github.event.inputs.duration || '' }}"
