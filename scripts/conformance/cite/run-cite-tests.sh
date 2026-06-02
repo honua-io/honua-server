@@ -134,6 +134,29 @@ wait_for_honua_server() {
     done
 }
 
+# Poll an endpoint until it returns success. The container healthcheck
+# (/healthz/ready) can flip to healthy a moment before the OGC API routes and
+# the freshly seeded collections catalog are fully serving, so a single curl
+# right after a restart can transiently 404/503. Retry briefly to absorb that
+# readiness race instead of aborting the whole suite.
+wait_for_endpoint() {
+    local url="$1"
+    local label="$2"
+    local attempts="${3:-12}"
+    local attempt=1
+
+    while (( attempt <= attempts )); do
+        if curl -s -f "$url" > /dev/null; then
+            return 0
+        fi
+        echo "Waiting for ${label} to respond (attempt ${attempt}/${attempts})..."
+        sleep 5
+        attempt=$((attempt + 1))
+    done
+
+    return 1
+}
+
 # Build Honua Server image unless an existing local image is requested.
 if [[ "$SKIP_BUILD" == "true" ]]; then
     echo -e "${YELLOW}Skipping Honua Server Docker image build; using existing honua-server:latest${NC}"
@@ -248,19 +271,19 @@ echo -e "${YELLOW}Verifying OGC API Features endpoints...${NC}"
 HONUA_BASE_URL="http://localhost:${HONUA_CITE_FEATURES_SERVER_PORT}"
 
 # Test landing page
-if ! curl -s -f "$HONUA_BASE_URL/ogc/features" > /dev/null; then
+if ! wait_for_endpoint "$HONUA_BASE_URL/ogc/features" "landing page"; then
     echo -e "${RED}❌ Landing page not accessible${NC}"
     exit 1
 fi
 
 # Test conformance endpoint
-if ! curl -s -f "$HONUA_BASE_URL/ogc/features/conformance" > /dev/null; then
+if ! wait_for_endpoint "$HONUA_BASE_URL/ogc/features/conformance" "conformance endpoint"; then
     echo -e "${RED}❌ Conformance endpoint not accessible${NC}"
     exit 1
 fi
 
 # Test collections endpoint
-if ! curl -s -f "$HONUA_BASE_URL/ogc/features/collections" > /dev/null; then
+if ! wait_for_endpoint "$HONUA_BASE_URL/ogc/features/collections" "collections endpoint"; then
     echo -e "${RED}❌ Collections endpoint not accessible${NC}"
     exit 1
 fi
