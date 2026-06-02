@@ -283,6 +283,16 @@ if (!isTestEnvironment || registerInfrastructureInTestEnvironment)
     InfrastructureCompositionRoot.RegisterInfrastructureServices(builder.Services, builder.Configuration);
 }
 
+// Provider-aware admin connection testing: register every engine's connection driver + the registry so the
+// connection create/test endpoints build and probe MySQL / SQL Server / Oracle / PostgreSQL with the correct
+// ADO.NET provider instead of always speaking Npgsql. Registered unconditionally — independent of the primary
+// data-source provider — because any of these engines can be an external secured connection.
+Honua.Postgres.Features.Security.PostgresConnectionDriverServiceCollectionExtensions.AddPostgresConnectionDriver(builder.Services);
+Honua.MySql.Features.Security.MySqlConnectionDriverServiceCollectionExtensions.AddMySqlConnectionDriver(builder.Services);
+Honua.SqlServer.Features.Security.SqlServerConnectionDriverServiceCollectionExtensions.AddSqlServerConnectionDriver(builder.Services);
+Honua.Oracle.Features.Security.OracleConnectionDriverServiceCollectionExtensions.AddOracleConnectionDriver(builder.Services);
+builder.Services.AddSingleton<Honua.Core.Features.Security.Abstractions.IConnectionDriverRegistry, Honua.Core.Features.Security.Abstractions.ConnectionDriverRegistry>();
+
 // IGeometryService is a pure NTS-backed compute service (its only dependency is
 // IOptions<LimitsOptions>), not a data provider the WebAppFixture substitutes.
 // RegisterInfrastructureServices — skipped in the Test environment so the

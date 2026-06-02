@@ -74,17 +74,23 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
     private readonly IConnectionEncryptionService _encryptionService;
     private readonly IConnectionSecretResolver _secretResolver;
     private readonly ILogger<SecureConnectionResolver> _logger;
+    // Optional: when present, health checks route to the per-provider driver so non-PostgreSQL connections
+    // (MySQL, SQL Server, Oracle) are tested with the right ADO.NET provider instead of always via Npgsql.
+    // Null when no driver registry is registered (e.g. minimal/unit-test composition) — falls back to Npgsql.
+    private readonly Honua.Core.Features.Security.Abstractions.IConnectionDriverRegistry? _connectionDriverRegistry;
 
     public SecureConnectionResolver(
         ISecureConnectionRegistry registry,
         IConnectionEncryptionService encryptionService,
         IConnectionSecretResolver secretResolver,
-        ILogger<SecureConnectionResolver> logger)
+        ILogger<SecureConnectionResolver> logger,
+        Honua.Core.Features.Security.Abstractions.IConnectionDriverRegistry? connectionDriverRegistry = null)
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _encryptionService = encryptionService ?? throw new ArgumentNullException(nameof(encryptionService));
         _secretResolver = secretResolver ?? throw new ArgumentNullException(nameof(secretResolver));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _connectionDriverRegistry = connectionDriverRegistry;
     }
 
     public async Task<string> ResolveConnectionStringAsync(string connectionName, CancellationToken cancellationToken = default)
@@ -214,38 +220,49 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
                 throw new InvalidOperationException($"Resolved connection string for '{connection.Name}' is null or empty");
             }
 
-            // Parse and validate connection string format
-            try
+            // Parse and validate connection string format. This validation is Npgsql-specific (it parses the
+            // string with NpgsqlConnectionStringBuilder and reads Npgsql's SslMode/Host/Port), so it only applies
+            // to the PostgreSQL/PostGIS family. MySQL, SQL Server, and Oracle use connection-string formats Npgsql
+            // cannot parse; their per-provider driver validates the string by actually opening the connection.
+            var normalizedProvider = Honua.Core.Features.FeatureStore.Domain.DataProviderNames.Normalize(connection.Provider);
+            var isPostgresFamily =
+                normalizedProvider == Honua.Core.Features.FeatureStore.Domain.DataProviderNames.Postgis
+                || normalizedProvider == Honua.Core.Features.FeatureStore.Domain.DataProviderNames.PostgreSql;
+
+            if (isPostgresFamily)
             {
-                var builder = new NpgsqlConnectionStringBuilder(connectionString);
+                try
+                {
+                    var builder = new NpgsqlConnectionStringBuilder(connectionString);
 
-                // Verify SSL requirements are met
-                if (!DataConnection.IsSslModeCompatibleWithRequirement(MapSslMode(builder.SslMode), connection.SslRequired))
+                    // Verify SSL requirements are met
+                    if (!DataConnection.IsSslModeCompatibleWithRequirement(MapSslMode(builder.SslMode), connection.SslRequired))
+                    {
+                        throw new InvalidOperationException(
+                            $"Connection '{connection.Name}' requires SSL but the resolved connection string allows plaintext fallback");
+                    }
+
+                    // Additional validation: ensure host/port match expected values
+                    if (!string.IsNullOrWhiteSpace(builder.Host) && !string.Equals(builder.Host, connection.Host, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _logConnectionHostMismatch(_logger, builder.Host, connection.Host, connection.Name, null);
+                        throw new InvalidOperationException(
+                            $"Connection '{connection.Name}' resolved host does not match configured host.");
+                    }
+
+                    if (builder.Port != 0 && builder.Port != connection.Port)
+                    {
+                        _logConnectionPortMismatch(_logger, builder.Port, connection.Port, connection.Name, null);
+                        throw new InvalidOperationException(
+                            $"Connection '{connection.Name}' resolved port does not match configured port.");
+                    }
+                }
+                catch (ArgumentException ex)
                 {
                     throw new InvalidOperationException(
-                        $"Connection '{connection.Name}' requires SSL but the resolved connection string allows plaintext fallback");
+                        $"Invalid connection string format for '{connection.Name}'.",
+                        ex);
                 }
-
-                // Additional validation: ensure host/port match expected values
-                if (!string.IsNullOrWhiteSpace(builder.Host) && !string.Equals(builder.Host, connection.Host, StringComparison.OrdinalIgnoreCase))
-                {
-                    _logConnectionHostMismatch(_logger, builder.Host, connection.Host, connection.Name, null);
-                    throw new InvalidOperationException(
-                        $"Connection '{connection.Name}' resolved host does not match configured host.");
-                }
-
-                if (builder.Port != 0 && builder.Port != connection.Port)
-                {
-                    _logConnectionPortMismatch(_logger, builder.Port, connection.Port, connection.Name, null);
-                    throw new InvalidOperationException(
-                        $"Connection '{connection.Name}' resolved port does not match configured port.");
-                }
-            }
-            catch (ArgumentException ex)
-            {
-                throw new InvalidOperationException(
-                    $"Invalid connection string format for '{connection.Name}'.",
-                    ex);
             }
 
             _logConnectionStringResolved(_logger, connection.Name, null);
@@ -289,6 +306,26 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
     /// <returns>True if connection is successful</returns>
     private async Task<bool> TestActualConnectionAsync(string connectionString, DataConnection connection, CancellationToken cancellationToken)
     {
+        // Provider-aware path: route to the engine driver (MySQL/SQL Server/Oracle/PostgreSQL) so the probe
+        // opens the right ADO.NET provider for this connection's engine instead of always speaking Npgsql.
+        var driver = _connectionDriverRegistry?.Find(connection.Provider);
+        if (driver is not null)
+        {
+            var status = await driver.TestConnectionAsync(connectionString, cancellationToken).ConfigureAwait(false);
+            var driverHealthy = status == Honua.Core.Features.Security.Domain.ConnectionHealthStatus.Healthy;
+            if (driverHealthy)
+            {
+                _logHealthCheckSuccess(_logger, connection.Name, null);
+            }
+            else
+            {
+                _logHealthCheckUnexpectedResult(_logger, connection.Name, status, null);
+            }
+
+            await _registry.UpdateHealthStatusAsync(connection.ConnectionId.ToString(), driverHealthy, cancellationToken);
+            return driverHealthy;
+        }
+
         try
         {
             using var testConnection = new NpgsqlConnection(connectionString);
