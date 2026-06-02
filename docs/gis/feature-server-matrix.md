@@ -60,7 +60,7 @@ MapServer coverage is tracked separately:
 | Add Features | `/rest/services/{serviceName}/FeatureServer/{layerId}/addFeatures` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/addFeatures` | Standalone add endpoint. rollbackOnFailure defaults to `true`. |
 | Update Features | `/rest/services/{serviceName}/FeatureServer/{layerId}/updateFeatures` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures` | Standalone update endpoint. rollbackOnFailure defaults to `true`. |
 | Delete Features | `/rest/services/{serviceName}/FeatureServer/{layerId}/deleteFeatures` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures` | Supports `objectIds`, `where` clause, and `geometry`/`geometryType`/`spatialRel`/`inSR` for spatial deletes. rollbackOnFailure defaults to `true`. |
-| Query Related Records | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryRelatedRecords` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords` | Supports objectIds, relationshipId, where, outFields, returnGeometry, resultRecordCount. |
+| Query Related Records | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryRelatedRecords` | GET, POST | Implemented | `GET/POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords` | Supports `objectIds`, `relationshipId`, `where`/`definitionExpression`, `outFields`, `returnGeometry`, `resultRecordCount`/`resultOffset`, `outSR`, `returnZ`/`returnM`, `geometryPrecision`, `maxAllowableOffset`. See parameter coverage below. |
 | Generate Renderer | `/rest/services/{serviceName}/FeatureServer/{layerId}/generateRenderer` | GET | Partial | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/generateRenderer` | Returns a simple renderer. `classificationDef` is rejected with 400. For classification-based styling (equal interval, quantile, natural breaks, unique value), use the Admin API `POST /api/v1/admin/metadata/layers/{layerId}/suggest-style` endpoint, gated by the `styling.auto-suggest` entitlement. |
 | Append | `/rest/services/{serviceName}/FeatureServer/{layerId}/append` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/append` | Bulk append features. Parses `edits` as a JSON array of GeoServices features; delegates to `applyEdits` internally. Returns `numFeaturesAppended` / `numFeaturesFailed`. |
 | Calculate | `/rest/services/{serviceName}/FeatureServer/{layerId}/calculate` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/calculate` | Calculates field values using expressions. Supports `where` filter, `calcExpression` as JSON array of `{field, sqlExpression}`. Applies string literals, numeric literals, NULL, and field references. |
@@ -135,25 +135,25 @@ The analytics routes are mapped unconditionally and reach a PostGIS-backed `ISpa
 | Output format | `f=json`, `f=geojson`, `f=pbf`, `f=fgb`, `f=geobuf`, `f=parquet`, `f=arrow` | Implemented | Seven output formats supported. Binary formats (`fgb`, `geobuf`, `parquet`, `arrow`) also accept `Accept` header negotiation; `f=` takes precedence. See [Output format details](#output-format-details) below. |
 | Geometry precision | `geometryPrecision` | Implemented | Rounds coordinates to specified decimal places. |
 | Geometry simplification | `maxAllowableOffset` | Implemented | Simplifies geometry to the given tolerance. Applies to `json`, `geojson`, `pbf`, `parquet`, and `arrow`; `fgb` and `geobuf` do not apply it. |
+| Statistics HAVING | `having` | Implemented | Parsed and applied as a post-aggregation filter on statistics queries (`AGG(field) <op> number` terms, AND-combined). Requires `outStatistics`; supplying `having` without `outStatistics` is rejected with `400`. |
 
 ### Partial / compatibility-only
 
 | Area | Esri parameters | Honua status | Notes |
 | --- | --- | --- | --- |
 | Result type | `resultType=standard|tile` | Partial | Accepted for GeoServices parity and browser-client compatibility. Values other than `standard` and `tile` are rejected. The current implementation follows the standard query path for both accepted values. |
+| SQL format | `sqlFormat` | Partial | Accepted for ArcGIS Pro / SDK compatibility. `standard`, `native`, and `none` are accepted; the where clause is always parsed under Honua's standardized ArcGIS-SQL dialect regardless of value. Unrecognized tokens are rejected with `400`. |
+| GDB version | `gdbVersion` | Partial | Accepted but ignored (versioned geodatabase workflows not supported). |
+| Quantization | `quantizationParameters` | Partial | Accepted but ignored (server-side coordinate quantization not implemented). |
+| Datum transform | `datumTransformation` | Partial | Accepted but ignored (custom datum transformations not applied; `outSR` reprojection only). |
 
 ### Not implemented (explicitly rejected)
 
 | Area | Esri parameters | Notes |
 | --- | --- | --- |
-| Having | `having` | Rejected; HAVING clause for statistics not yet supported. |
-| Centroid | `returnCentroid` | Rejected. |
-| True curves | `returnTrueCurves` | Rejected. |
-| Exceeded limit | `returnExceededLimitFeatures` | Rejected. |
-| SQL format | `sqlFormat` | Rejected. |
-| GDB version | `gdbVersion` | Rejected. |
-| Quantization | `quantizationParameters` | Rejected. |
-| Datum transform | `datumTransformation` | Rejected. |
+| Centroid | `returnCentroid` | Rejected with `400`. |
+| True curves | `returnTrueCurves` | Rejected with `400`. |
+| Exceeded limit | `returnExceededLimitFeatures` | Rejected with `400`. |
 
 ### Output format details
 
@@ -185,27 +185,36 @@ All non-JSON formats also accept `Accept` header negotiation (e.g. `Accept: appl
 | `updates` | Requires `objectId` in attributes. |
 | `deletes` | Expects object ID values; global/unique IDs not supported. |
 | `rollbackOnFailure` | Default `false` for applyEdits, `true` for standalone add/update/delete endpoints. |
+| `f` | Accepted for compatibility but only JSON output is produced; a non-JSON `f` value is rejected with `400`. |
 
-### Not implemented
+### Not implemented (explicitly rejected)
+
+These parameters are modeled and actively rejected with `400 Bad Request` when supplied with an effective value.
 
 | Esri parameter | Notes |
 | --- | --- |
 | `useGlobalIds` | Rejected; object IDs are required. |
 | `gdbVersion` | Rejected (`400 Bad Request`). |
-| `returnEditMoment` | Ignored. |
-| `attachments` | Use dedicated attachment endpoints. |
+| `returnEditMoment` | Rejected (`400 Bad Request`). |
+| `attachments` | Rejected (`400 Bad Request`); use the dedicated attachment endpoints. |
+
+### Not implemented (accepted but ignored)
+
+These parameters are not present on the request model, so they are silently dropped during deserialization and have no effect.
+
+| Esri parameter | Notes |
+| --- | --- |
 | `assetMaps` | Ignored. |
 | `trueCurveClient` | Ignored. |
 | `sessionID` | Ignored. |
 | `usePreviousEditMoment` | Ignored. |
-| `datumTransformation` | Geometry must match layer SRID. |
+| `datumTransformation` | Ignored; geometry must already match the layer SRID (a mismatched geometry `spatialReference` is rejected with `400`). |
 | `timeReferenceUnknownClient` | Ignored. |
-| `async` | Ignored. |
-| `returnEditResults` | Results are always returned. |
+| `async` | Ignored; edits always apply synchronously. |
+| `returnEditResults` | Ignored; per-row results are always returned. |
 | `editsUploadId` | Ignored. |
 | `editsUploadFormat` | Ignored. |
 | `useUniqueIds` | Ignored. |
-| `f` | Response is always JSON. |
 
 ## QueryRelatedRecords parameter coverage (layer `/queryRelatedRecords`)
 
@@ -220,22 +229,22 @@ All non-JSON formats also accept `Accept` header negotiation (e.g. `Accept: appl
 | `returnGeometry` | Defaults to true. |
 | `resultRecordCount` | Applies limit. |
 | `resultOffset` | Applies offset. |
+| `outSR` | Resolved and validated; related-record geometry is reprojected to the requested SR (falls back to the related layer SR when omitted). An unresolvable `outSR` is rejected with `400`. |
+| `returnZ` | Applied when building the output geometry. |
+| `returnM` | Applied when building the output geometry. |
+| `geometryPrecision` | Applied; rounds output geometry coordinates. |
+| `maxAllowableOffset` | Applied; simplifies output geometry to the given tolerance. |
+| `f` | Accepted for compatibility but only JSON output is produced; a non-JSON `f` value is rejected with `400`. |
 
-### Not implemented
+### Not implemented (explicitly rejected)
 
 | Esri parameter | Notes |
 | --- | --- |
-| `maxAllowableOffset` | Ignored. |
-| `geometryPrecision` | Ignored. |
-| `historicMoment` | Ignored. |
-| `outSR` | Output SR always uses the related layer SR. |
-| `returnZ` | Ignored. |
-| `returnM` | Ignored. |
-| `returnTrueCurves` | Ignored. |
+| `returnTrueCurves` | Rejected (`400 Bad Request`) when `true`. |
 | `gdbVersion` | Rejected (`400 Bad Request`). |
-| `orderByFields` | Ignored. |
-| `returnCountOnly` | Ignored. |
-| `f` | Response is always JSON. |
+| `historicMoment` | Rejected (`400 Bad Request`). |
+| `orderByFields` | Not in the accepted-parameter set; rejected with `400` (unknown parameter). |
+| `returnCountOnly` | Not in the accepted-parameter set; rejected with `400` (unknown parameter). |
 
 ## Service metadata properties
 
