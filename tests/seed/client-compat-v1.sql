@@ -278,7 +278,7 @@ DECLARE
     snapshot_document jsonb;
     snapshot_etag text;
 BEGIN
-    FOREACH target_environment IN ARRAY ARRAY['default', 'Development', 'Test']
+    FOREACH target_environment IN ARRAY ARRAY['default', 'Development', 'Test', 'Production']
     LOOP
         WITH
         status_doc AS (
@@ -321,11 +321,18 @@ BEGIN
                 -- production BuildPublishedStorageBinding path
                 -- (PostgreSqlLayerPublishingService.MetadataV2Graph) so the storage-mapped
                 -- reader projects attributes/geometry and constrains reads to this layer's
-                -- rows (WHERE layer_id = StorageLayerId). Without these the reader leaks
-                -- every layer's rows and returns null geometry. (honua-server#1312.)
+                -- rows (WHERE layer_id = StorageLayerId). Declare the full physical column
+                -- set (schema/table/primaryKey/geometry/attributes/discriminator) so
+                -- FeatureStorageMapping.FromMetadata does NOT fall back to the
+                -- `geometry.primary` schema field name (`shape`) or bare per-field column
+                -- projection — either fallback produces Postgres 42703
+                -- "column ... does not exist" at query time. (honua-server#1312, #1356.)
                 CASE
                     WHEN l.table_name = 'features' THEN
                         COALESCE(l.storage_options, '{}'::jsonb) || jsonb_build_object(
+                            'schemaName', COALESCE(NULLIF(l.table_schema, ''), 'public'),
+                            'tableName', l.table_name,
+                            'primaryKeyColumn', COALESCE(NULLIF(l.primary_key_column, ''), 'objectid'),
                             'attributesColumn', 'attributes',
                             'geometryColumn', 'geometry',
                             'layerDiscriminatorColumn', 'layer_id'
