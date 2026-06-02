@@ -434,6 +434,8 @@ public sealed class FormPackageValidator
                 AddError(issues, "sectionLabelRequired", $"Section '{section.SectionId}' requires a label.", path: "sections.label");
             }
 
+            ValidateRepeatBounds(section, issues);
+
             foreach (var fieldId in section.FieldIds)
             {
                 if (!fieldIds.Contains(fieldId))
@@ -441,6 +443,35 @@ public sealed class FormPackageValidator
                     AddError(issues, "sectionFieldNotFound", $"Section '{section.SectionId}' references unknown field '{fieldId}'.", fieldId);
                 }
             }
+        }
+    }
+
+    private static void ValidateRepeatBounds(FormSectionDefinition section, List<FormValidationIssue> issues)
+    {
+        // Instance bounds only apply to repeatable sections.
+        if (!section.Repeatable)
+        {
+            if (section.MinInstances is not null || section.MaxInstances is not null)
+            {
+                AddError(issues, "sectionRepeatBoundsWithoutRepeatable", $"Section '{section.SectionId}' specifies instance bounds but is not repeatable.", path: "sections.repeatable");
+            }
+
+            return;
+        }
+
+        if (section.MinInstances is < 0)
+        {
+            AddError(issues, "sectionMinInstancesInvalid", $"Section '{section.SectionId}' minInstances must be zero or greater.", path: "sections.minInstances");
+        }
+
+        if (section.MaxInstances is < 1)
+        {
+            AddError(issues, "sectionMaxInstancesInvalid", $"Section '{section.SectionId}' maxInstances must be one or greater.", path: "sections.maxInstances");
+        }
+
+        if (section.MinInstances is { } min && section.MaxInstances is { } max && min > max)
+        {
+            AddError(issues, "sectionInstanceBoundsInverted", $"Section '{section.SectionId}' minInstances ({min}) cannot exceed maxInstances ({max}).", path: "sections.minInstances");
         }
     }
 

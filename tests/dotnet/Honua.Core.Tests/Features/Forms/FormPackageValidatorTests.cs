@@ -531,6 +531,78 @@ public sealed class FormPackageValidatorTests
         ]);
     }
 
+    [UnitTest]
+    public async Task ValidateForPublish_WithValidRepeatableSection_ReturnsValidResult()
+    {
+        var validator = CreateValidator();
+
+        var result = await validator.ValidateForPublishAsync(CreateRepeatablePackage(repeatable: true, min: 1, max: 3));
+
+        result.IsValid.Should().BeTrue();
+        result.Issues.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task ValidateForPublish_WithInstanceBoundsButNotRepeatable_ReturnsError()
+    {
+        var validator = CreateValidator();
+
+        var result = await validator.ValidateForPublishAsync(CreateRepeatablePackage(repeatable: false, min: 1, max: 3));
+
+        result.IsValid.Should().BeFalse();
+        result.Issues.Select(static issue => issue.Code).Should().Contain("sectionRepeatBoundsWithoutRepeatable");
+    }
+
+    [UnitTest]
+    public async Task ValidateForPublish_WithInvertedInstanceBounds_ReturnsError()
+    {
+        var validator = CreateValidator();
+
+        var result = await validator.ValidateForPublishAsync(CreateRepeatablePackage(repeatable: true, min: 5, max: 2));
+
+        result.IsValid.Should().BeFalse();
+        result.Issues.Select(static issue => issue.Code).Should().Contain("sectionInstanceBoundsInverted");
+    }
+
+    [UnitTest]
+    public Task RepeatableSection_RoundTripsThroughJson()
+    {
+        var package = CreateRepeatablePackage(repeatable: true, min: 1, max: 3);
+
+        var json = JsonSerializer.Serialize(package, FormPackageJsonContext.Default.FormPackageDocument);
+        var restored = JsonSerializer.Deserialize(json, FormPackageJsonContext.Default.FormPackageDocument)!;
+
+        var section = restored.Sections.Single();
+        section.Repeatable.Should().BeTrue();
+        section.MinInstances.Should().Be(1);
+        section.MaxInstances.Should().Be(3);
+        return Task.CompletedTask;
+    }
+
+    private static FormPackageDocument CreateRepeatablePackage(bool repeatable, int? min, int? max)
+        => new()
+        {
+            Title = "Inspection Form",
+            Target = new FormTargetDefinition { ServiceId = "test", LayerId = 0 },
+            Sections =
+            [
+                new FormSectionDefinition
+                {
+                    SectionId = "main",
+                    Label = "Main",
+                    FieldIds = ["name"],
+                    Repeatable = repeatable,
+                    MinInstances = min,
+                    MaxInstances = max
+                }
+            ],
+            Fields = [CreateNameField()],
+            SubmitPolicy = new FormSubmitPolicy
+            {
+                AllowedOperations = [FormSubmissionOperations.Create]
+            }
+        };
+
     private static FormPackageValidator CreateValidator(
         string[]? serviceCapabilities = null,
         MetadataV2SpatialReference? spatialReference = null)

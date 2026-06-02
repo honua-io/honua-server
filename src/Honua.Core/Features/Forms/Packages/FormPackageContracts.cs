@@ -128,6 +128,22 @@ public sealed class FormSectionDefinition
     /// <summary>Field ids included in this section.</summary>
     [JsonPropertyName("fieldIds")]
     public string[] FieldIds { get; init => field = value ?? []; } = [];
+
+    /// <summary>
+    /// Whether this section can be captured multiple times per record (a
+    /// Survey123 "repeat" / Fulcrum "repeatable section"). Each captured row
+    /// carries its own values and attachments.
+    /// </summary>
+    [JsonPropertyName("repeatable")]
+    public bool Repeatable { get; init; }
+
+    /// <summary>Minimum number of rows required when <see cref="Repeatable"/> is set.</summary>
+    [JsonPropertyName("minInstances")]
+    public int? MinInstances { get; init; }
+
+    /// <summary>Maximum number of rows allowed when <see cref="Repeatable"/> is set.</summary>
+    [JsonPropertyName("maxInstances")]
+    public int? MaxInstances { get; init; }
 }
 
 /// <summary>
