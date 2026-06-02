@@ -94,12 +94,30 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 .ToArray()
         };
 
+        // ADR-0048 Phase 2 (#1389): project the independent style catalog into the
+        // canonical graph. Emit a Type=Style resource per associated catalog style and
+        // point the data resource's StyleResourceIds at them ([0] = primary), so the
+        // FeatureServer/MapServer StyleResourceIds read path lights up with real data
+        // and one style can be shared by many resources.
+        var (styleResources, styleResourceIds) =
+            await BuildStyleResourcesForLayerAsync(layerId, now, cancellationToken).ConfigureAwait(false);
+        if (styleResourceIds.Count > 0)
+        {
+            resource = resource with { StyleResourceIds = styleResourceIds };
+        }
+
+        var resourcesWithStyles = UpsertById(graph.Resources, resource, static item => item.Metadata.Id);
+        foreach (var styleResource in styleResources)
+        {
+            resourcesWithStyles = UpsertById(resourcesWithStyles, styleResource, static item => item.Metadata.Id);
+        }
+
         var updatedGraph = graph with
         {
             Revision = Math.Max(graph.Revision + 1, 1),
             GeneratedAt = now,
             Services = UpsertById(graph.Services, service, static item => item.Metadata.Id),
-            Resources = UpsertById(graph.Resources, resource, static item => item.Metadata.Id),
+            Resources = resourcesWithStyles,
             StorageBindings = UpsertById(graph.StorageBindings, binding, static item => item.Metadata.Id),
             Publications = UpsertPublication(graph.Publications, publication),
             Connections = connection is null
@@ -621,6 +639,45 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
 
         return result;
+    }
+
+    // Builds the Type=Style graph resources for a layer's associated catalog styles
+    // and the ordered StyleResourceIds the data resource should reference. Returns
+    // empty when the style catalog is unavailable or the layer has no associations
+    // (e.g. a freshly published, not-yet-styled layer), so the publish path degrades
+    // gracefully and the data resource simply carries no StyleResourceIds.
+    private async Task<(IReadOnlyList<MetadataV2Resource> Styles, IReadOnlyList<string> StyleResourceIds)>
+        BuildStyleResourcesForLayerAsync(int layerId, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        if (_styleCatalog is null)
+        {
+            return (Array.Empty<MetadataV2Resource>(), Array.Empty<string>());
+        }
+
+        var styles = await _styleCatalog.GetStylesForLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        if (styles.Count == 0)
+        {
+            return (Array.Empty<MetadataV2Resource>(), Array.Empty<string>());
+        }
+
+        var resources = new List<MetadataV2Resource>(styles.Count);
+        var ids = new List<string>(styles.Count);
+        foreach (var style in styles)
+        {
+            var resourceId = MetadataV2StyleResourceFactory.BuildStyleResourceId(style.StyleId);
+            resources.Add(MetadataV2StyleResourceFactory.BuildStyleResource(
+                style.StyleId,
+                style.MapLibreStyleJson,
+                style.Title,
+                style.Description,
+                style.DrawingInfoJson,
+                style.StyleVersion,
+                style.CreatedAt == default ? now : style.CreatedAt,
+                style.UpdatedAt == default ? now : style.UpdatedAt));
+            ids.Add(resourceId);
+        }
+
+        return (resources, ids);
     }
 
     private static string BuildResourceId(int layerId)

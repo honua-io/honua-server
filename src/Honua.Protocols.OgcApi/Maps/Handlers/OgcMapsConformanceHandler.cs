@@ -35,6 +35,9 @@ internal sealed class OgcMapsConformanceHandler
                 // Collection maps support
                 "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/collection-map",
 
+                // Styled maps support (styleId-resolved MapLibre styling of vector collections, ADR-0048)
+                "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/styled-map",
+
                 // Dataset-wide maps support
                 "https://www.opengis.net/spec/ogcapi-maps-1/1.0/conf/dataset-map",
 

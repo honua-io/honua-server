@@ -1160,4 +1160,57 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
     }
 
     #endregion
+
+    #region CQL2-Text Temporal Filter Tests (regression: attribute-backed timestamp fields)
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithCql2TextTemporalInstantOnAttributeField_Returns200()
+    {
+        // Regression: a CQL2-text T_AFTER against an attribute-backed timestamp
+        // field literally named "created_at" previously triggered a special-case
+        // in the SQL filter translator that emitted a bare column reference. In
+        // the JSONB-attributes storage model that produced
+        // "operator does not exist: text > timestamp with time zone" (PostgreSQL
+        // 42883) and surfaced as a 500. The field must instead resolve through the
+        // schema to the typed attributes JSON path and return 200.
+        _fixture.UpdateV2ResourceSchemaField(
+            WebAppFixture.TestLayerId,
+            new Honua.Core.Features.Metadata.Domain.V2.MetadataV2Field
+            {
+                Name = "created_at",
+                Type = Honua.Core.Features.Metadata.Domain.V2.MetadataV2FieldType.DateTime,
+                Nullable = true,
+                Description = "Created timestamp",
+            });
+
+        var filter = Uri.EscapeDataString("T_AFTER(created_at, TIMESTAMP('2024-01-01T00:00:00Z'))");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestCollectionId}/items?filter={filter}&limit=1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithCql2TextTemporalOnUndefinedField_Returns400()
+    {
+        // Regression: T_BEFORE against an undefined queryable (e.g. "updated_at"
+        // on a layer that does not expose it) previously emitted a bare column
+        // reference that failed at the database and surfaced as a 500. It must be
+        // a client error (400) instead, with no parser/syntax detail leaked.
+        var filter = Uri.EscapeDataString("T_BEFORE(updated_at, TIMESTAMP('2024-12-31T23:59:59Z'))");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{TestCollectionId}/items?filter={filter}&limit=1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var body = await response.Content.ReadAsStringAsync();
+        body.ToLowerInvariant().Should().NotContain("syntax");
+        body.ToLowerInvariant().Should().NotContain("parse error");
+    }
+
+    #endregion
 }

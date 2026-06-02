@@ -37,16 +37,16 @@ MapServer coverage is tracked separately:
 | Synchronize Replica | `/rest/services/{serviceName}/FeatureServer/synchronizeReplica` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica` | Synchronizes a replica. Supports `download`, `upload`, and `bidirectional` sync directions. Incoming edits on upload/bidirectional syncs are applied via `applyEdits`. |
 | Unregister Replica | `/rest/services/{serviceName}/FeatureServer/unRegisterReplica` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/unRegisterReplica` | Removes a registered replica. |
 | Get Estimates | `/rest/services/{serviceName}/FeatureServer/getEstimates` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/getEstimates` | Returns approximate feature count and spatial extent aggregated across service layers. |
+| Query Contingent Values | `/rest/services/{serviceName}/FeatureServer/queryContingentValues` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/queryContingentValues` | Thin adapter over the shared service-validation/access pipeline. Returns the spec-shaped contingent values document (`typeCodes`, `stringDicts`, `contingentValuesDefinitions`). **Deferred data model:** Honua does not yet store contingent attribute value rules, so `stringDicts` and `contingentValuesDefinitions` are always empty. SDK clients parse the document and observe that no contingent value rules are configured. |
+| Shared Templates | `/rest/services/{serviceName}/FeatureServer/sharedTemplates` and child `query`/`add`/`update`/`delete` operations | GET, POST | Implemented | `GET /rest/services/{serviceId}/FeatureServer/sharedTemplates`, `GET .../sharedTemplates/query`, `POST .../sharedTemplates/{add,update,delete}` | Thin adapter over the shared validation/access pipeline. `sharedTemplates` and `sharedTemplates/query` return an empty `sharedTemplates` collection. **Deferred data model:** Honua does not persist shared editing templates, so the mutation operations (`add`/`update`/`delete`) resolve the service and enforce write access, then honestly return HTTP 400 (no template store) rather than fabricating success. |
+| HTML Popup | `/rest/services/{serviceName}/FeatureServer/htmlPopup` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/htmlPopup` | Thin adapter over the shared service-validation/access pipeline. Returns `{ "htmlPopupType": "esriServerHTMLPopupTypeNone" }` per the Esri spec. **Deferred data model:** Honua does not serve author-defined HTML pop-up content (authored in ArcGIS Pro), so the type is always `esriServerHTMLPopupTypeNone`. |
+| Image | `/rest/services/{serviceName}/FeatureServer/image` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/image` | Thin adapter over the shared service-validation/access pipeline. **Deferred data model:** Honua does not store author-attached feature images served by the FeatureServer image resource, so the endpoint resolves the service (404 for unknown services, 401/403 for unauthorized callers) and then honestly returns HTTP 404 rather than fabricating a placeholder image. |
 
 ### Not implemented (service-level resources and operations)
 
 | Esri operation or resource | Esri path | Methods | Honua status | Notes |
 | --- | --- | --- | --- | --- |
-| Cleanup Change Tracking | `/rest/services/{serviceName}/FeatureServer/cleanupChangeTracking` | POST | Not implemented | |
-| Query Contingent Values | `/rest/services/{serviceName}/FeatureServer/queryContingentValues` | GET | Not implemented | |
-| Shared Templates | `/rest/services/{serviceName}/FeatureServer/sharedTemplates` and child add/update/delete/query operations | GET, POST | Not implemented | |
-| HTML Popup | `/rest/services/{serviceName}/FeatureServer/htmlPopup` | GET | Not implemented | |
-| Image | `/rest/services/{serviceName}/FeatureServer/image` | GET | Not implemented | |
+| Cleanup Change Tracking | `/rest/services/{serviceName}/FeatureServer/cleanupChangeTracking` | POST | Not implemented | Honua does not maintain change-tracking tables (see `extractChanges`), so there is nothing to clean up; deferred until change tracking is implemented. |
 
 ## Feature Layer (resource + operations)
 
@@ -89,17 +89,19 @@ The analytics routes are mapped unconditionally and reach a PostGIS-backed `ISpa
 | Query Buffer Aggregate | POST | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryBufferAggregate` | Buffers each input feature by `distance` (in `unit`: `meters`/`kilometers`/`feet`/`miles`, aliases `m`/`km`/`ft`/`mi`). The cap (`Limits.Analytics.MaxBufferDistanceMeters`) is enforced in meters after unit conversion so it cannot be bypassed by switching units. `dissolve=true` (default) unions overlapping buffers per group via `ST_Union` and returns dissolved polygons with `featureCount` plus any group/stat columns; `dissolve=false` returns one row per input feature with buffered geometry and the source `objectId`. `groupByFields` and `outStatistics` follow the standard GeoServices statistics shape. `outStatistics` requires `dissolve=true` — per-feature output (`dissolve=false`) cannot carry aggregate columns and the server returns HTTP 400 if both are supplied. |
 | Query Density | POST | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryDensity` | Hex (`mode=hex`/`hexgrid`/`hex-grid`) or square grid (`mode=square`/`squaregrid`/`square-grid`) binning over Web Mercator. `cellSize` is meters and is clamped to `[Limits.Analytics.MinDensityCellSizeMeters, Limits.Analytics.MaxDensityCellSizeMeters]`. Output rows include `cellId` and `featureCount`; optional `weightField` adds a weighted sum column named `weight`. Output is bounded by `Limits.Analytics.MaxDensityCells`. |
 
-### Not implemented
+### Layer-level operations completed as honest, spec-shaped adapters
 
-| Esri operation | Esri path | Methods | Honua status | Notes |
-| --- | --- | --- | --- | --- |
-| Cleanup Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/cleanupAssets` | GET | Not implemented | |
-| Convert 3D | `/rest/services/{serviceName}/FeatureServer/{layerId}/convert3D` | GET | Not implemented | |
-| Has Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/hasAssets` | GET | Not implemented | |
-| Query 3D | `/rest/services/{serviceName}/FeatureServer/{layerId}/query3D` | GET | Not implemented | |
-| Query Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryAssets` | GET | Not implemented | |
-| Update Metadata | `/rest/services/{serviceName}/FeatureServer/{layerId}/metadata/update` | POST | Not implemented | |
-| Upload Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/uploadAssets` | GET | Not implemented | |
+These layer-level operations are now registered as thin protocol adapters over the shared (service, layer) validation and access pipeline. Each enforces the appropriate access scope (read for queries; write for asset cleanup/upload and metadata updates) and returns the Esri specification's response shape. The underlying data model (layer asset storage, 3D geometry, FeatureServer-side metadata persistence) is deferred, so read-style operations return empty/`false` results and mutation/conversion operations return spec-compliant HTTP 400 rather than fabricating success.
+
+| Esri operation | Esri path | Methods | Honua status | Honua endpoint(s) | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Has Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/hasAssets` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/hasAssets` | Returns `{ "hasAssets": false }`. **Deferred data model:** no layer asset store. |
+| Query Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/queryAssets` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryAssets` | Returns an empty `assets` collection with `exceededTransferLimit=false`. **Deferred data model:** no layer asset store. |
+| Cleanup Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/cleanupAssets` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/cleanupAssets` | Requires write access; returns `{ "success": true, "cleanedAssetCount": 0 }` (no-op). **Deferred data model:** no layer asset store, so no orphaned assets exist. |
+| Upload Assets | `/rest/services/{serviceName}/FeatureServer/{layerId}/uploadAssets` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/uploadAssets` | Requires write access; honestly returns HTTP 400 (nowhere to persist assets). **Deferred data model:** no layer asset store. |
+| Convert 3D | `/rest/services/{serviceName}/FeatureServer/{layerId}/convert3D` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/convert3D` | Resolves the layer; honestly returns HTTP 400. **Deferred data model:** no 3D geometry conversion pipeline. |
+| Query 3D | `/rest/services/{serviceName}/FeatureServer/{layerId}/query3D` | GET | Implemented | `GET /rest/services/{serviceId}/FeatureServer/{layerId}/query3D` | Resolves the layer; honestly returns HTTP 400. **Deferred data model:** no 3D query surface. |
+| Update Metadata | `/rest/services/{serviceName}/FeatureServer/{layerId}/metadata/update` | POST | Implemented | `POST /rest/services/{serviceId}/FeatureServer/{layerId}/metadata/update` | Requires write access; honestly returns HTTP 400. **Deferred behavior:** layer metadata is authored through the Honua Admin API; the FeatureServer protocol surface is read-through only. |
 
 ## Attachments
 

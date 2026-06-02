@@ -2338,13 +2338,12 @@ internal sealed class GeometryServiceHandler(
     private IResult ExecuteFindTransformations(FindTransformationsParameters parameters, HonuaTelemetryScope scope)
     {
         // Honua performs CRS transformation via the shared projection pipeline (PROJ-backed)
-        // and does not expose a discrete Esri datum-transformation catalog. When the input
-        // and output share a datum (or are identical) no explicit transformation is required,
-        // so an empty list is the spec-correct answer. We still surface the geographic-
-        // transformation hint clients use to drive their picker UI when datums differ.
-        var transformations = parameters.InSR == parameters.OutSR
-            ? Array.Empty<GeometryServiceTransformation>()
-            : Array.Empty<GeometryServiceTransformation>();
+        // and does not expose a discrete Esri datum-transformation catalog. The PROJ pipeline
+        // selects and applies the appropriate transformation internally during `project`, so
+        // there is no explicit transformation for clients to choose between; an empty list is
+        // the spec-correct answer for every inSR/outSR pair. This is documented as a known
+        // limitation in docs/gis/geometry-service-matrix.md.
+        var transformations = Array.Empty<GeometryServiceTransformation>();
 
         var response = new GeometryServiceFindTransformationsResponse
         {

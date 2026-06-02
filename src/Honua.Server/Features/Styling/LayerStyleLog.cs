@@ -33,4 +33,10 @@ internal static partial class LayerStyleLog
         Level = LogLevel.Debug,
         Message = "Theme transform for layer {LayerId} skipped property '{Property}' due to malformed color '{Color}'.")]
     public static partial void ThemeColorParseFailure(ILogger logger, int layerId, string property, string color);
+
+    [LoggerMessage(
+        EventId = 6404,
+        Level = LogLevel.Warning,
+        Message = "Failed to mirror layer {LayerId} style into the independent style catalog/graph. The per-layer style update succeeded; StyleResourceIds may lag until the next publish.")]
+    public static partial void StyleCatalogSyncFailed(ILogger logger, int layerId, Exception exception);
 }

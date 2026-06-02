@@ -158,6 +158,17 @@ public static class Operations
     public const string QueryDateBins = "QueryDateBins";
     public const string QueryBins = "QueryBins";
     public const string QueryH3 = "QueryH3";
+    public const string QueryContingentValues = "QueryContingentValues";
+    public const string SharedTemplates = "SharedTemplates";
+    public const string HtmlPopup = "HtmlPopup";
+    public const string Image = "Image";
+    public const string HasAssets = "HasAssets";
+    public const string QueryAssets = "QueryAssets";
+    public const string CleanupAssets = "CleanupAssets";
+    public const string UploadAssets = "UploadAssets";
+    public const string Convert3D = "Convert3D";
+    public const string Query3D = "Query3D";
+    public const string UpdateMetadata = "UpdateMetadata";
 
     // Spatial Analytics Operations (Pro tier)
     public const string QueryClusters = "QueryClusters";

@@ -746,8 +746,16 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
             return true;
         }
 
-        if (propertyName.Equals("created_at", StringComparison.OrdinalIgnoreCase) ||
-            propertyName.Equals("updated_at", StringComparison.OrdinalIgnoreCase))
+        // Audit-trail system columns are physically named "created"/"updated" on
+        // managed feature tables (see DatabaseSchema.CreatedColumn/UpdatedColumn).
+        // Only map them when the resource actually exposes them as queryable
+        // fields; otherwise fall through to normal schema resolution so unknown or
+        // attribute-backed temporal fields (e.g. a "created_at" defined in the
+        // layer schema and stored in the JSONB attributes column) are not rewritten
+        // into a bare column reference that does not exist on the table.
+        if ((propertyName.Equals(DatabaseSchema.CreatedColumn, StringComparison.OrdinalIgnoreCase) ||
+             propertyName.Equals(DatabaseSchema.UpdatedColumn, StringComparison.OrdinalIgnoreCase)) &&
+            context.TryGetField(propertyName) is null)
         {
             expression = QuoteIdentifier(propertyName.ToLowerInvariant());
             return true;
