@@ -744,11 +744,14 @@
       "implementedSurface": [
         "service metadata",
         "layer metadata",
+        "all layers and tables",
         "export",
         "identify",
         "find",
         "legend",
         "query",
+        "query domains",
+        "feature child resource",
         "tiles",
         "generateKml",
         "WMS",
@@ -759,7 +762,6 @@
         "estimateExportTilesSize",
         "generateRenderer",
         "queryAttachments",
-        "queryDomains",
         "queryLegends",
         "queryRelatedRecords",
         "additional Esri child resources"
@@ -907,6 +909,36 @@
               "GET /rest/services/{serviceId}/MapServer/WMS",
               "GET /ogc/services/{serviceId}/wms"
             ]
+          },
+          {
+            "name": "All Layers and Tables",
+            "esriPath": "/rest/services/{serviceId}/MapServer/allLayersAndTables",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/allLayersAndTables"
+            ]
+          },
+          {
+            "name": "Query Domains",
+            "esriPath": "/rest/services/{serviceId}/MapServer/queryDomains",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/queryDomains"
+            ]
+          },
+          {
+            "name": "Feature child resource",
+            "esriPath": "/rest/services/{serviceId}/MapServer/{layerId}/{featureId}",
+            "methods": [
+              "GET"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/MapServer/{layerId}/{featureId}"
+            ]
           }
         ],
         "partial": [
@@ -957,13 +989,6 @@
             ]
           },
           {
-            "name": "Query Domains",
-            "esriPath": "/rest/services/{serviceId}/MapServer/queryDomains",
-            "methods": [
-              "GET"
-            ]
-          },
-          {
             "name": "Query Legends",
             "esriPath": "/rest/services/{serviceId}/MapServer/queryLegends",
             "methods": [
@@ -988,22 +1013,8 @@
             ]
           },
           {
-            "name": "All Layers and Tables",
-            "esriPath": "/rest/services/{serviceId}/MapServer/allLayersAndTables",
-            "methods": [
-              "GET"
-            ]
-          },
-          {
             "name": "Dynamic Layer or Table resource",
             "esriPath": "/rest/services/{serviceId}/MapServer/dynamicLayer",
-            "methods": [
-              "GET"
-            ]
-          },
-          {
-            "name": "Feature child resource",
-            "esriPath": "/rest/services/{serviceId}/MapServer/{layerId}/{featureId}",
             "methods": [
               "GET"
             ]
