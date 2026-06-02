@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Compliance;
 using Honua.Core.Features.Metadata;
+using Honua.Core.Features.Portal;
 using Honua.Core.Features.Temporal;
 using Honua.Server.Features.Temporal;
 using Honua.Postgres.Features.Scene;
@@ -119,6 +120,9 @@ internal static class FeatureRegistrationExtensions
         services.AddSpec(configuration);
         services.AddEnhancedAdminServices();
         services.AddMetadataReleaseServices();
+        // RBAC-aware ArcGIS Portal item projector consumed by the Portal/Sharing
+        // REST read surface (#1371 → #1243).
+        services.AddPortalItemProjection();
         services.AddStudioPackageLifecycle();
         // Durable Studio map collaboration: comment threads + activity feed (#1278, slice 1).
         // In-memory store is the default; AddPostgreSqlServices overrides it with durable storage.
