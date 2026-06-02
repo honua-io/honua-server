@@ -242,19 +242,25 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
                             $"Connection '{connection.Name}' requires SSL but the resolved connection string allows plaintext fallback");
                     }
 
-                    // Additional validation: ensure host/port match expected values
-                    if (!string.IsNullOrWhiteSpace(builder.Host) && !string.Equals(builder.Host, connection.Host, StringComparison.OrdinalIgnoreCase))
+                    // Host/port match is a tamper check for managed (encrypted) connections, where the stored
+                    // host/port are authoritative and the connection string is assembled from them. For
+                    // secret-reference connections the resolved secret IS the source of truth (the stored
+                    // host/port are optional display metadata), so this match check does not apply.
+                    if (string.IsNullOrWhiteSpace(connection.SecretRef))
                     {
-                        _logConnectionHostMismatch(_logger, builder.Host, connection.Host, connection.Name, null);
-                        throw new InvalidOperationException(
-                            $"Connection '{connection.Name}' resolved host does not match configured host.");
-                    }
+                        if (!string.IsNullOrWhiteSpace(builder.Host) && !string.Equals(builder.Host, connection.Host, StringComparison.OrdinalIgnoreCase))
+                        {
+                            _logConnectionHostMismatch(_logger, builder.Host, connection.Host, connection.Name, null);
+                            throw new InvalidOperationException(
+                                $"Connection '{connection.Name}' resolved host does not match configured host.");
+                        }
 
-                    if (builder.Port != 0 && builder.Port != connection.Port)
-                    {
-                        _logConnectionPortMismatch(_logger, builder.Port, connection.Port, connection.Name, null);
-                        throw new InvalidOperationException(
-                            $"Connection '{connection.Name}' resolved port does not match configured port.");
+                        if (builder.Port != 0 && builder.Port != connection.Port)
+                        {
+                            _logConnectionPortMismatch(_logger, builder.Port, connection.Port, connection.Name, null);
+                            throw new InvalidOperationException(
+                                $"Connection '{connection.Name}' resolved port does not match configured port.");
+                        }
                     }
                 }
                 catch (ArgumentException ex)

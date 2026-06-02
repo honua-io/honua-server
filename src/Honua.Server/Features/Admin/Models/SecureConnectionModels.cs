@@ -143,11 +143,12 @@ public sealed class CreateSecureConnectionRequest
     public string? Description { get; init; }
 
     /// <summary>
-    /// Database server hostname or IP address.
+    /// Database server hostname or IP address. Required when using an inline <see cref="Password"/>; optional
+    /// (display metadata only) when using a <see cref="SecretReference"/>, since the resolved secret holds the
+    /// full connection string and is the source of truth.
     /// </summary>
-    [Required]
-    [StringLength(255, MinimumLength = 1)]
-    public required string Host { get; init; }
+    [StringLength(255)]
+    public string? Host { get; init; }
 
     /// <summary>
     /// Database server port number.
@@ -156,18 +157,16 @@ public sealed class CreateSecureConnectionRequest
     public int Port { get; init; } = 5432;
 
     /// <summary>
-    /// Database name to connect to.
+    /// Database name to connect to. Required with a password; optional (display metadata) with a secret reference.
     /// </summary>
-    [Required]
-    [StringLength(64, MinimumLength = 1)]
-    public required string DatabaseName { get; init; }
+    [StringLength(64)]
+    public string? DatabaseName { get; init; }
 
     /// <summary>
-    /// Database username.
+    /// Database username. Required with a password; optional (display metadata) with a secret reference.
     /// </summary>
-    [Required]
-    [StringLength(64, MinimumLength = 1)]
-    public required string Username { get; init; }
+    [StringLength(64)]
+    public string? Username { get; init; }
 
     /// <summary>
     /// Provider engine for this connection.
@@ -235,6 +234,17 @@ public sealed class CreateSecureConnectionRequest
         if (hasSecretRef && string.IsNullOrWhiteSpace(SecretType))
         {
             validationError = "SecretType is required when using SecretReference";
+            return false;
+        }
+
+        // With an inline password the connection string is assembled from these fields, so they are required.
+        // With a secret reference the resolved secret holds the full connection string, so they are optional.
+        if (hasPassword &&
+            (string.IsNullOrWhiteSpace(Host) ||
+             string.IsNullOrWhiteSpace(DatabaseName) ||
+             string.IsNullOrWhiteSpace(Username)))
+        {
+            validationError = "Host, database, and username are required when using a password.";
             return false;
         }
 

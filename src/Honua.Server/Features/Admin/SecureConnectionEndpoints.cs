@@ -174,17 +174,17 @@ internal static partial class SecureConnectionEndpoints
 
                 connectionString = driver is not null
                     ? driver.BuildConnectionString(new ConnectionTarget(
-                        request.Host,
+                        request.Host!,
                         request.Port,
-                        request.DatabaseName,
-                        request.Username,
+                        request.DatabaseName!,
+                        request.Username!,
                         request.Password,
                         parsedSslMode))
                     : connectionStringBuilder.BuildConnectionString(
-                        request.Host,
+                        request.Host!,
                         request.Port,
-                        request.DatabaseName,
-                        request.Username,
+                        request.DatabaseName!,
+                        request.Username!,
                         request.Password,
                         parsedSslMode);
             }
@@ -363,13 +363,16 @@ internal static partial class SecureConnectionEndpoints
 
             if (!string.IsNullOrWhiteSpace(request.SecretReference))
             {
-                // Create with secret reference
+                // Create with secret reference. The resolved secret holds the full connection string and is the
+                // source of truth, so host/database/username are optional display metadata here; fall back to a
+                // neutral placeholder when the caller omits them.
+                const string secretMetadataPlaceholder = "(from secret reference)";
                 connection = DataConnection.CreateWithSecretReference(
                     request.Name,
-                    request.Host,
+                    string.IsNullOrWhiteSpace(request.Host) ? secretMetadataPlaceholder : request.Host,
                     request.Port,
-                    request.DatabaseName,
-                    request.Username,
+                    string.IsNullOrWhiteSpace(request.DatabaseName) ? secretMetadataPlaceholder : request.DatabaseName,
+                    string.IsNullOrWhiteSpace(request.Username) ? secretMetadataPlaceholder : request.Username,
                     request.SecretReference,
                     request.SecretType!,
                     userIdentity,
@@ -392,17 +395,17 @@ internal static partial class SecureConnectionEndpoints
                 var createDriver = driverRegistry.Find(request.Provider);
                 var connectionString = createDriver is not null
                     ? createDriver.BuildConnectionString(new ConnectionTarget(
-                        request.Host,
+                        request.Host!,
                         request.Port,
-                        request.DatabaseName,
-                        request.Username,
+                        request.DatabaseName!,
+                        request.Username!,
                         request.Password,
                         parsedSslMode))
                     : connectionStringBuilder.BuildConnectionString(
-                        request.Host,
+                        request.Host!,
                         request.Port,
-                        request.DatabaseName,
-                        request.Username,
+                        request.DatabaseName!,
+                        request.Username!,
                         request.Password,
                         parsedSslMode);
 
@@ -411,10 +414,10 @@ internal static partial class SecureConnectionEndpoints
 
                 connection = DataConnection.CreateWithEncryptedCredentials(
                     request.Name,
-                    request.Host,
+                    request.Host!,
                     request.Port,
-                    request.DatabaseName,
-                    request.Username,
+                    request.DatabaseName!,
+                    request.Username!,
                     encryptedData,
                     keyVersion,
                     userIdentity,
