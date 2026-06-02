@@ -405,7 +405,7 @@ public sealed class FeatureServerQueryExecutorTests
     }
 
     [Fact]
-    public async Task StreamQueryAsync_WithPagedQueryThatFits_DoesNotSetExceededTransferLimit()
+    public async Task StreamQueryAsync_WithPagedQueryThatFits_EmitsExceededTransferLimitFalse()
     {
         var featureReader = Substitute.For<IFeatureReader>();
         featureReader.CountAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
@@ -441,7 +441,9 @@ public sealed class FeatureServerQueryExecutorTests
         var json = await ReadResponseAsync(context);
         using var document = JsonDocument.Parse(json);
         document.RootElement.GetProperty("features").GetArrayLength().Should().Be(2);
-        document.RootElement.TryGetProperty("exceededTransferLimit", out _).Should().BeFalse();
+        // Esri's query contract always emits exceededTransferLimit, including the false case.
+        document.RootElement.TryGetProperty("exceededTransferLimit", out var exceeded).Should().BeTrue();
+        exceeded.GetBoolean().Should().BeFalse();
     }
 
     [Fact]

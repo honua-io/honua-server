@@ -49,6 +49,45 @@ public sealed class FeatureServerQueryTopFeaturesTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.QueryTopFeatures)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures")]
+    public async Task QueryTopFeatures_WithReturnCountOnly_ReturnsCountNotFeatures()
+    {
+        // The ArcGIS API for Python issues returnCountOnly=true as the first step of
+        // query_top_features paging and reads `count`. queryTopFeatures previously
+        // returned a FeatureSet regardless, leaving the paginator with a null total
+        // (fetched >= None -> TypeError). It must honor returnCountOnly: return the
+        // top-feature count and no `features`, with exceededTransferLimit always present.
+        var topFilter = JsonSerializer.Serialize(new
+        {
+            groupByFields = "category",
+            topCount = 2,
+            orderByFields = "objectid desc"
+        });
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/queryTopFeatures?topFilter={Uri.EscapeDataString(topFilter)}&returnCountOnly=true&f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(content);
+        var root = document.RootElement;
+
+        root.TryGetProperty("count", out var count).Should().BeTrue(
+            "returnCountOnly=true must return a top-feature count for the arcgis paginator");
+        count.ValueKind.Should().Be(JsonValueKind.Number);
+        count.GetInt64().Should().BeGreaterThan(0);
+
+        root.TryGetProperty("features", out _).Should().BeFalse(
+            "returnCountOnly=true must not return a FeatureSet");
+
+        root.TryGetProperty("exceededTransferLimit", out var exceeded).Should().BeTrue(
+            "the count-only response must still carry exceededTransferLimit (Esri always emits it)");
+        exceeded.ValueKind.Should().Be(JsonValueKind.False);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryTopFeatures)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures")]
     public async Task QueryTopFeatures_MissingTopFilter_ReturnsBadRequest()
     {
         var response = await _fixture.Client.GetAsync(

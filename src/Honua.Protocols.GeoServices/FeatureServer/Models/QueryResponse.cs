@@ -87,9 +87,13 @@ public sealed class QueryResponse : ICollectionResponse<GeoServicesFeature>
     public GeoServicesFeature[]? Features { get; init; }
 
     /// <summary>
-    /// Whether the transfer limit was exceeded
+    /// Whether the transfer limit was exceeded. Always emitted (including
+    /// <c>false</c>) to match the Esri GeoServices query contract — Esri always
+    /// returns this field. Omitting it on the <c>false</c> path made the ArcGIS
+    /// API for Python <c>query_top_features</c> paginator dereference a missing
+    /// value (<c>fetched &gt;= None</c> -&gt; TypeError), so a single-page
+    /// queryTopFeatures result could not be read.
     /// </summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool ExceededTransferLimit { get; init; }
 
     ImmutableArray<GeoServicesFeature> ICollectionResponse<GeoServicesFeature>.Items =>

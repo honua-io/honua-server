@@ -948,10 +948,10 @@ internal sealed class StreamingQueryFormatter
 
         writer.WriteEndArray();
 
-        if (hasMoreResults)
-        {
-            writer.WriteBoolean("exceededTransferLimit", true);
-        }
+        // Always emit exceededTransferLimit (including false). Esri's GeoServices query
+        // contract always returns this field; omitting the false case made the ArcGIS API
+        // for Python paginator dereference a missing value (fetched >= None -> TypeError).
+        writer.WriteBoolean("exceededTransferLimit", hasMoreResults);
 
         writer.WriteEndObject();
 
